@@ -1,0 +1,1 @@
+import { Text } from 'react-native'; import { Screen } from '@/components/ui/Screen'; export default function EventRegistration(){ return <Screen><Text style={{color:'#fff'}}>Event registration (mock)</Text></Screen>; }

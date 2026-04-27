@@ -1,66 +1,28 @@
 # Среди Своих
 
-iOS-приложение для русскоязычной еврейской общины.
+Production-oriented bootstrap Expo React Native приложения по прототипу `docs/prototype/sredi-svoih.html`.
 
-## Цель
+## Стек
 
-Создать полноценное Expo React Native приложение по HTML/JavaScript-прототипу.
-
-## Главные исходные файлы
-
-- `docs/prototype/sredi-svoih.html` — главный HTML/React-прототип интерфейса.
-- `docs/prototype/ios-frame.jsx` — дополнительный визуальный reference по iOS/Liquid Glass-элементам.
-- `docs/product/app-description.txt` — продуктово-техническое описание проекта.
-- `assets/logo.svg` — векторный логотип из прототипа.
-
-## Важное правило
-
-HTML-прототип используется только как визуальная и продуктовая спецификация.
-
-Запрещено:
-- использовать WebView;
-- переносить HTML как HTML;
-- использовать DOM;
-- рисовать fake iPhone shell;
-- рисовать fake Dynamic Island;
-- рисовать fake status bar.
-
-Нужно:
-- создать нативное Expo React Native приложение;
-- использовать TypeScript;
-- использовать expo-router;
-- использовать Zustand;
-- подготовить Supabase/PostgreSQL;
-- подготовить Hebcal;
-- подготовить iOS Contacts;
-- подготовить Notifications.
-
-## Планируемый стек
-
-- Expo
-- React Native
-- TypeScript
+- Expo + TypeScript
 - expo-router
 - Zustand
-- @hebcal/core
-- Supabase / PostgreSQL
-- expo-contacts
-- expo-notifications
-- expo-location
-- expo-secure-store
-- expo-blur
-- expo-linear-gradient
+- Supabase/PostgreSQL (подготовлено)
+- @hebcal/core (абстракция подготовлена)
+- expo-contacts / expo-notifications (абстракции подготовлены)
 
-## Приоритет источников для Codex
-
-1. UI, экраны, навигация и визуальная композиция — `docs/prototype/sredi-svoih.html`.
-2. iOS/Liquid Glass reference — `docs/prototype/ios-frame.jsx`.
-3. Архитектура, стек, Hebcal, Supabase/PostgreSQL, контакты и уведомления — `docs/product/app-description.txt`.
-
-Если описание экранов в `docs/product/app-description.txt` расходится с HTML-прототипом, приоритет у HTML-прототипа.
-
-## Запуск после генерации проекта
+## Запуск
 
 ```bash
 npm install
 npx expo start
+```
+
+Приложение запускается в mock режиме даже без Supabase env keys.
+
+## Структура
+
+- `app/` — маршруты и экраны
+- `src/` — компоненты, store, data, lib, services
+- `supabase/` — SQL migration и seed
+- `docs/` — заметки по архитектуре и privacy
