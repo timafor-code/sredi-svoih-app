@@ -1,2 +1,10 @@
-import { Text, View } from 'react-native';
-export default function Stub() { return <View><Text style={{ color: '#fff' }} /></View>; }
+import { View, type ViewProps } from 'react-native';
+import { GlassCard } from '@/components/glass/GlassCard';
+
+export function IOSGroup({ children, style }: ViewProps) {
+  return (
+    <GlassCard style={style}>
+      <View style={{ paddingHorizontal: 2 }}>{children}</View>
+    </GlassCard>
+  );
+}
