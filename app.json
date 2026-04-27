@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "Среди Своих",
+    "slug": "sredi-svoih-app",
+    "scheme": "sredi-svoih",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "plugins": ["expo-router"],
+    "experiments": { "typedRoutes": true }
+  }
+}

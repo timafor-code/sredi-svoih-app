@@ -1,0 +1,1 @@
+import { Text } from 'react-native'; import { Screen } from '@/components/ui/Screen'; export default function CityPicker(){ return <Screen><Text style={{color:'#fff'}}>City picker (mock)</Text></Screen>; }
