@@ -1,0 +1,2376 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Среди Своих</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: #060810;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  .phone-shell {
+    width: 393px;
+    height: 852px;
+    background: #0d0f18;
+    border-radius: 54px;
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.12),
+      0 0 0 3px #1a1c28,
+      0 0 0 4px rgba(255,255,255,0.06),
+      0 40px 100px rgba(0,0,0,0.8),
+      inset 0 1px 0 rgba(255,255,255,0.1);
+  }
+
+  /* Dynamic island */
+  .dynamic-island {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 120px;
+    height: 34px;
+    background: #000;
+    border-radius: 20px;
+    z-index: 100;
+  }
+
+  /* Status bar */
+  .status-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 59px;
+    display: flex;
+    align-items: flex-end;
+    padding: 0 28px 8px;
+    justify-content: space-between;
+    z-index: 90;
+    pointer-events: none;
+  }
+  .status-time {
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    letter-spacing: -0.3px;
+  }
+  .status-icons {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .status-icons svg { fill: #fff; }
+
+  /* Screen container */
+  .screen {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .screen-scroll {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-top: 59px;
+    padding-bottom: 90px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .screen-scroll::-webkit-scrollbar { display: none; }
+
+  /* Tab bar */
+  .tab-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 90px;
+    background: rgba(13,15,24,0.85);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-top: 1px solid rgba(255,255,255,0.08);
+    display: flex;
+    align-items: flex-start;
+    padding-top: 10px;
+    z-index: 80;
+  }
+  .tab-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    padding: 0 4px;
+  }
+  .tab-item:active { opacity: 0.7; }
+  .tab-icon {
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .tab-label {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.1px;
+  }
+
+  /* Glass card */
+  .glass-card {
+    background: rgba(255,255,255,0.05);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 18px;
+    overflow: hidden;
+  }
+  .glass-card-hover {
+    transition: background 0.15s;
+  }
+  .glass-card-hover:active {
+    background: rgba(255,255,255,0.08);
+  }
+
+  /* Orange button */
+  .btn-orange {
+    background: linear-gradient(135deg, #F07A2A, #E05A10);
+    border-radius: 12px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    cursor: pointer;
+    border: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(240,122,42,0.35);
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .btn-orange:active { opacity: 0.85; transform: scale(0.97); }
+
+  /* Segment control */
+  .seg-control {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    display: flex;
+    padding: 3px;
+    gap: 2px;
+  }
+  .seg-item {
+    flex: 1;
+    padding: 7px 12px;
+    border-radius: 9px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.5);
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .seg-item.active {
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  /* Tag pill */
+  .tag-pill {
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    display: inline-block;
+  }
+
+  /* Progress bar */
+  .progress-track {
+    height: 4px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #F07A2A, #E05A10);
+  }
+
+  /* Separator */
+  .sep {
+    height: 1px;
+    background: rgba(255,255,255,0.06);
+    margin: 0 16px;
+  }
+
+  /* Page transition */
+  .page-enter { animation: fadeSlideIn 0.25s ease forwards; }
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+<script type="text/babel">
+const { useState, useRef } = React;
+
+/* ── Icons ── */
+const IconHome = ({active}) => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H15v-5h-6v5H4a1 1 0 01-1-1V9.5z"
+      fill={active ? '#F07A2A' : 'rgba(255,255,255,0.4)'} />
+  </svg>
+);
+const IconPrayer = ({active}) => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <circle cx="12" cy="12" r="9" stroke={active ? '#F07A2A' : 'rgba(255,255,255,0.4)'} strokeWidth="1.8"/>
+    <path d="M12 7v5l3 2" stroke={active ? '#F07A2A' : 'rgba(255,255,255,0.4)'} strokeWidth="1.8" strokeLinecap="round"/>
+  </svg>
+);
+const IconEvents = ({active}) => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <rect x="3" y="5" width="18" height="16" rx="3" stroke={active ? '#F07A2A' : 'rgba(255,255,255,0.4)'} strokeWidth="1.8"/>
+    <path d="M8 3v4M16 3v4M3 10h18" stroke={active ? '#F07A2A' : 'rgba(255,255,255,0.4)'} strokeWidth="1.8" strokeLinecap="round"/>
+    <rect x="7" y="14" width="3" height="3" rx="1" fill={active ? '#F07A2A' : 'rgba(255,255,255,0.4)'}/>
+    <rect x="14" y="14" width="3" height="3" rx="1" fill={active ? '#F07A2A' : 'rgba(255,255,255,0.4)'}/>
+  </svg>
+);
+const IconContacts = ({active}) => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <circle cx="9" cy="8" r="3" stroke={active ? '#F07A2A' : 'rgba(255,255,255,0.4)'} strokeWidth="1.8"/>
+    <path d="M3 20c0-3.314 2.686-6 6-6" stroke={active ? '#F07A2A' : 'rgba(255,255,255,0.4)'} strokeWidth="1.8" strokeLinecap="round"/>
+    <circle cx="17" cy="8" r="3" stroke={active ? '#F07A2A' : 'rgba(255,255,255,0.4)'} strokeWidth="1.8"/>
+    <path d="M21 20c0-3.314-2.686-6-6-6" stroke={active ? '#F07A2A' : 'rgba(255,255,255,0.4)'} strokeWidth="1.8" strokeLinecap="round"/>
+  </svg>
+);
+const IconProfile = ({active}) => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <circle cx="12" cy="8" r="4" stroke={active ? '#F07A2A' : 'rgba(255,255,255,0.4)'} strokeWidth="1.8"/>
+    <path d="M4 20c0-4.418 3.582-8 8-8s8 3.582 8 8" stroke={active ? '#F07A2A' : 'rgba(255,255,255,0.4)'} strokeWidth="1.8" strokeLinecap="round"/>
+  </svg>
+);
+
+const TABS = [
+  { id: 'main',    label: 'Главная',  Icon: IconHome },
+  { id: 'prayers', label: 'Молитвы',  Icon: IconPrayer },
+  { id: 'events',  label: 'События',  Icon: IconEvents },
+  { id: 'contacts',label: 'Контакты', Icon: IconContacts },
+  { id: 'profile', label: 'Профиль',  Icon: IconProfile },
+];
+
+/* ── Logo ── */
+const Logo = () => (
+  <div style={{height:44,display:'flex',alignItems:'center'}}>
+    <svg width="110" height="45" viewBox="0 0 131 53" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path fillRule="evenodd" clipRule="evenodd" d="M28.6069 23.5711L26.9346 20.6279L25.2623 23.5711H22.3359L23.7991 26.1463L22.336 28.7215H25.2623L26.9346 31.6647L28.6068 28.7215H31.5332L30.07 26.1463L31.5332 23.5711H28.6069Z" fill="#E52C36"/>
+      <path fillRule="evenodd" clipRule="evenodd" d="M26.4816 8.54147C23.3362 8.50532 20.2377 9.30632 17.5038 10.8623C14.77 12.4184 12.4991 14.6734 10.924 17.3963C9.34894 20.1193 8.52631 23.2121 8.54047 26.3577C8.55464 29.5033 9.40508 32.5886 11.0046 35.2972C12.6042 38.0058 14.8952 40.2404 17.643 41.7717C20.3908 43.303 23.4963 44.0761 26.6413 44.0116C29.7863 43.9472 32.8576 43.0475 35.5403 41.4049L40 48.6882C36.0256 51.1218 31.4756 52.4546 26.8163 52.5501C22.1571 52.6456 17.5562 51.5004 13.4855 49.2317C9.41474 46.9631 6.02054 43.6526 3.65085 39.6399C1.28116 35.6271 0.0212465 31.0563 0.000266372 26.3961C-0.0207138 21.7359 1.198 17.154 3.53146 13.1201C5.86492 9.08611 9.22918 5.74528 13.2793 3.44007C17.3295 1.13485 21.9198 -0.0518104 26.5798 0.00173508C31.2397 0.0552805 35.8015 1.34711 39.7977 3.74478L35.4037 11.068C32.7063 9.44959 29.6271 8.57761 26.4816 8.54147Z" fill="#E52C36"/>
+      <path fillRule="evenodd" clipRule="evenodd" d="M22.8476 19.9172C21.9971 20.3758 21.2472 21.0004 20.6423 21.7539C20.0373 22.5074 19.5897 23.3746 19.3258 24.3041C19.0619 25.2337 18.9871 26.2067 19.1058 27.1656C19.2245 28.1246 19.5344 29.05 20.017 29.8871C20.4996 30.7243 21.1452 31.4561 21.9156 32.0393C22.6861 32.6226 23.5656 33.0454 24.5023 33.2827C25.439 33.5201 26.4137 33.5672 27.3689 33.4213C28.3241 33.2753 29.2404 32.9393 30.0634 32.433L34.5377 39.7074C32.742 40.812 30.7429 41.5451 28.6589 41.8636C26.5748 42.182 24.448 42.0792 22.4044 41.5614C20.3607 41.0435 18.4417 40.121 16.7608 38.8485C15.0799 37.5759 13.6713 35.9792 12.6183 34.1528C11.5653 32.3263 10.8892 30.3072 10.6302 28.215C10.3712 26.1227 10.5344 23.9997 11.1102 21.9716C11.686 19.9435 12.6627 18.0515 13.9825 16.4075C15.3023 14.7634 16.9384 13.4008 18.7941 12.4001L22.8476 19.9172Z" fill="#F6A400"/>
+      <path d="M65.7074 11.6614H61.9744C61.9062 11.1785 61.767 10.7495 61.5568 10.3745C61.3466 9.99383 61.0767 9.66997 60.7472 9.40292C60.4176 9.13588 60.0369 8.93133 59.6051 8.78928C59.179 8.64724 58.7159 8.57622 58.2159 8.57622C57.3125 8.57622 56.5256 8.80065 55.8551 9.24951C55.1847 9.69269 54.6648 10.3404 54.2955 11.1927C53.9261 12.0393 53.7415 13.0677 53.7415 14.2779C53.7415 15.5222 53.9261 16.5677 54.2955 17.4143C54.6705 18.2609 55.1932 18.9001 55.8636 19.3319C56.5341 19.7637 57.3097 19.9796 58.1903 19.9796C58.6847 19.9796 59.142 19.9143 59.5625 19.7836C59.9886 19.6529 60.3665 19.4626 60.696 19.2126C61.0256 18.9569 61.2983 18.6472 61.5142 18.2836C61.7358 17.92 61.8892 17.5052 61.9744 17.0393L65.7074 17.0563C65.6108 17.8575 65.3693 18.6302 64.983 19.3745C64.6023 20.1131 64.0881 20.7751 63.4403 21.3603C62.7983 21.9399 62.0312 22.4001 61.1392 22.741C60.2528 23.0762 59.25 23.2438 58.1307 23.2438C56.5739 23.2438 55.1818 22.8916 53.9545 22.187C52.733 21.4825 51.767 20.4626 51.0568 19.1274C50.3523 17.7921 50 16.1756 50 14.2779C50 12.3745 50.358 10.7552 51.0739 9.41997C51.7898 8.08474 52.7614 7.06769 53.9886 6.36883C55.2159 5.66428 56.5966 5.31201 58.1307 5.31201C59.142 5.31201 60.0795 5.45406 60.9432 5.73815C61.8125 6.02224 62.5824 6.43701 63.2528 6.98247C63.9233 7.52224 64.4688 8.18417 64.8892 8.96826C65.3153 9.75235 65.5881 10.6501 65.7074 11.6614Z" fill="#E52C36"/>
+      <path d="M67.1537 23.0052V5.55065H74.0401C75.3639 5.55065 76.4918 5.80349 77.4236 6.30917C78.3554 6.80917 79.0656 7.50519 79.5543 8.39724C80.0486 9.2836 80.2957 10.3063 80.2957 11.4654C80.2957 12.6245 80.0457 13.6472 79.5457 14.5336C79.0457 15.42 78.3213 16.1103 77.3724 16.6046C76.4293 17.0989 75.2872 17.3461 73.9463 17.3461H69.5571V14.3887H73.3497C74.0599 14.3887 74.6452 14.2666 75.1054 14.0222C75.5713 13.7722 75.9179 13.4285 76.1452 12.991C76.3781 12.5478 76.4946 12.0393 76.4946 11.4654C76.4946 10.8859 76.3781 10.3802 76.1452 9.94838C75.9179 9.51088 75.5713 9.17281 75.1054 8.93417C74.6395 8.68985 74.0486 8.56769 73.3327 8.56769H70.844V23.0052H67.1537Z" fill="#E52C36"/>
+      <path d="M81.4928 23.0052V5.55065H93.2541V8.59326H85.1831V12.7524H92.649V15.795H85.1831V19.9626H93.2882V23.0052H81.4928Z" fill="#E52C36"/>
+      <path d="M94.042 27.2154V20.0649H95.2267C95.6301 19.7751 95.9994 19.366 96.3347 18.8376C96.6699 18.3035 96.9568 17.5677 97.1955 16.6302C97.4341 15.687 97.6045 14.4541 97.7068 12.9313L98.2011 5.55065H109.749V20.0649H111.659V27.1984H108.113V23.0052H97.5875V27.2154H94.042ZM99.4881 20.0649H106.204V8.59326H101.525L101.252 12.9313C101.178 14.0847 101.056 15.1075 100.886 15.9995C100.721 16.8916 100.519 17.6728 100.281 18.3433C100.048 19.008 99.7835 19.5819 99.4881 20.0649Z" fill="#E52C36"/>
+      <path d="M112.702 5.55065H116.384V16.5279H116.529L124.071 5.55065H127.302V23.0052H123.611V12.0194H123.483L115.898 23.0052H112.702V5.55065Z" fill="#E52C36"/>
+      <path d="M65.7074 35.6614H61.9744C61.9062 35.1785 61.767 34.7495 61.5568 34.3745C61.3466 33.9938 61.0767 33.67 60.7472 33.4029C60.4176 33.1359 60.0369 32.9313 59.6051 32.7893C59.179 32.6472 58.7159 32.5762 58.2159 32.5762C57.3125 32.5762 56.5256 32.8006 55.8551 33.2495C55.1847 33.6927 54.6648 34.3404 54.2955 35.1927C53.9261 36.0393 53.7415 37.0677 53.7415 38.2779C53.7415 39.5222 53.9261 40.5677 54.2955 41.4143C54.6705 42.2609 55.1932 42.9001 55.8636 43.3319C56.5341 43.7637 57.3097 43.9796 58.1903 43.9796C58.6847 43.9796 59.142 43.9143 59.5625 43.7836C59.9886 43.6529 60.3665 43.4626 60.696 43.2126C61.0256 42.9569 61.2983 42.6472 61.5142 42.2836C61.7358 41.92 61.8892 41.5052 61.9744 41.0393L65.7074 41.0563C65.6108 41.8575 65.3693 42.6302 64.983 43.3745C64.6023 44.1131 64.0881 44.7751 63.4403 45.3603C62.7983 45.9398 62.0312 46.4001 61.1392 46.741C60.2528 47.0762 59.25 47.2438 58.1307 47.2438C56.5739 47.2438 55.1818 46.8916 53.9545 46.187C52.733 45.4825 51.767 44.4626 51.0568 43.1274C50.3523 41.7921 50 40.1756 50 38.2779C50 36.3745 50.358 34.7552 51.0739 33.42C51.7898 32.0847 52.7614 31.0677 53.9886 30.3688C55.2159 29.6643 56.5966 29.312 58.1307 29.312C59.142 29.312 60.0795 29.4541 60.9432 29.7381C61.8125 30.0222 62.5824 30.437 63.2528 30.9825C63.9233 31.5222 64.4688 32.1842 64.8892 32.9683C65.3153 33.7524 65.5881 34.6501 65.7074 35.6614Z" fill="#F6A400"/>
+      <path d="M67.1537 47.0052V29.5506H74.1423C75.4264 29.5506 76.4974 29.741 77.3554 30.1217C78.2134 30.5024 78.8582 31.0308 79.2901 31.7069C79.7219 32.3774 79.9378 33.1501 79.9378 34.0251C79.9378 34.7069 79.8014 35.3063 79.5287 35.8234C79.256 36.3347 78.881 36.7552 78.4037 37.0847C77.9321 37.4086 77.3923 37.6387 76.7844 37.7751V37.9455C77.4491 37.9739 78.0713 38.1614 78.6509 38.508C79.2361 38.8546 79.7105 39.3404 80.0741 39.9654C80.4378 40.5847 80.6196 41.3234 80.6196 42.1813C80.6196 43.1075 80.3895 43.9342 79.9293 44.6614C79.4747 45.383 78.8014 45.9541 77.9094 46.3745C77.0173 46.795 75.9179 47.0052 74.6111 47.0052H67.1537ZM70.844 43.9881H73.8526C74.881 43.9881 75.631 43.7921 76.1026 43.4001C76.5741 43.0024 76.8099 42.4739 76.8099 41.8149C76.8099 41.3319 76.6935 40.9058 76.4605 40.5364C76.2276 40.1671 75.8952 39.8774 75.4634 39.6671C75.0372 39.4569 74.5287 39.3518 73.9378 39.3518H70.844V43.9881ZM70.844 36.8546H73.5798C74.0855 36.8546 74.5344 36.7666 74.9264 36.5904C75.3241 36.4086 75.6366 36.1529 75.8639 35.8234C76.0969 35.4938 76.2134 35.0989 76.2134 34.6387C76.2134 34.008 75.9889 33.4995 75.5401 33.1131C75.0969 32.7268 74.4662 32.5336 73.648 32.5336H70.844V36.8546Z" fill="#F6A400"/>
+      <path d="M97.8607 38.2779C97.8607 40.1813 97.4999 41.8006 96.7783 43.1359C96.0624 44.4711 95.0851 45.491 93.8465 46.1955C92.6135 46.8944 91.2271 47.2438 89.6874 47.2438C88.1362 47.2438 86.7442 46.8916 85.5112 46.187C84.2783 45.4825 83.3038 44.4626 82.5879 43.1274C81.872 41.7921 81.5141 40.1756 81.5141 38.2779C81.5141 36.3745 81.872 34.7552 82.5879 33.42C83.3038 32.0847 84.2783 31.0677 85.5112 30.3688C86.7442 29.6643 88.1362 29.312 89.6874 29.312C91.2271 29.312 92.6135 29.6643 93.8465 30.3688C95.0851 31.0677 96.0624 32.0847 96.7783 33.42C97.4999 34.7552 97.8607 36.3745 97.8607 38.2779ZM94.1192 38.2779C94.1192 37.045 93.9345 36.0052 93.5652 35.1586C93.2016 34.312 92.6874 33.67 92.0226 33.2325C91.3578 32.795 90.5794 32.5762 89.6874 32.5762C88.7953 32.5762 88.0169 32.795 87.3521 33.2325C86.6874 33.67 86.1703 34.312 85.801 35.1586C85.4374 36.0052 85.2555 37.045 85.2555 38.2779C85.2555 39.5109 85.4374 40.5506 85.801 41.3972C86.1703 42.2438 86.6874 42.8859 87.3521 43.3234C88.0169 43.7609 88.7953 43.9796 89.6874 43.9796C90.5794 43.9796 91.3578 43.7609 92.0226 43.3234C92.6874 42.8859 93.2016 42.2438 93.5652 41.3972C93.9345 40.5506 94.1192 39.5109 94.1192 38.2779Z" fill="#F6A400"/>
+      <path d="M99.3943 29.5506H103.076V40.5279H103.221L110.764 29.5506H113.994V47.0052H110.303V36.0194H110.176L102.59 47.0052H99.3943V29.5506Z" fill="#F6A400"/>
+      <path d="M119.303 29.5506L122.823 35.4995H122.959L126.496 29.5506H130.664L125.337 38.2779L130.783 47.0052H126.539L122.959 41.0478H122.823L119.243 47.0052H115.016L120.479 38.2779L115.118 29.5506H119.303Z" fill="#F6A400"/>
+    </svg>
+  </div>
+);
+
+/* ── Omer pill ── */
+const OmerPill = () => {
+  const [open, setOpen] = React.useState(false);
+  const omerData = {
+    day:8, sefirah:'Хесед', sefirahHeb:'חֶסֶד', inSefirah:'Гвура', inSefirahHeb:'גְּבוּרָה',
+    fullName:'Хесед ше-бе-Гвура', fullNameHeb:'חֶסֶד שֶׁבִּגְבוּרָה', meaning:'Любовь внутри Силы',
+    description:'Восьмой день — Хесед ше-бе-Гвура, Любовь внутри Силы. Сегодня мы исследуем, как проявлять безусловную доброту в моменты строгости и дисциплины. Гвура — это граница, а Хесед внутри неё — умение оставаться мягким, сохраняя твёрдость.',
+    kavvanah:'Есть ли в вашей строгости место для сострадания? Можете ли вы удерживать границы с теплом и любовью?',
+    recommendations:[
+      {icon:'🤲',text:'Совершите акт доброты к тому, с кем у вас напряжённые отношения'},
+      {icon:'📖',text:'Изучите главу из Пиркей Авот о мере суда и мере милосердия'},
+      {icon:'🕯️',text:'Поразмышляйте о балансе строгости и любви в вашей жизни'},
+      {icon:'🌿',text:'Попросите прощения у человека, с которым были слишком строги'},
+    ],
+    counting:'הַיּוֹם שְׁמוֹנָה יָמִים שֶׁהֵם שָׁבוּעַ אֶחָד וְיוֹם אֶחָד לָעֹמֶר',
+    countingRu:'Сегодня восемь дней, что составляет одну неделю и один день Омера',
+  };
+  return (
+    <>
+      <div onClick={()=>setOpen(true)} style={{
+        background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.1)',
+        borderRadius:20,padding:'7px 14px',display:'flex',alignItems:'center',gap:6,
+        cursor:'pointer',transition:'background 0.15s'
+      }}
+      onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.11)'}
+      onMouseLeave={e=>e.currentTarget.style.background='rgba(255,255,255,0.07)'}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="5" width="18" height="16" rx="3" stroke="rgba(255,255,255,0.6)" strokeWidth="1.8"/>
+          <path d="M8 3v4M16 3v4M3 10h18" stroke="rgba(255,255,255,0.6)" strokeWidth="1.8" strokeLinecap="round"/>
+        </svg>
+        <span style={{fontSize:13,fontWeight:500,color:'rgba(255,255,255,0.8)'}}>8-й день Омера</span>
+      </div>
+
+      {open && (
+        <div onClick={()=>setOpen(false)} style={{
+          position:'absolute',inset:0,background:'rgba(0,0,0,0.75)',
+          backdropFilter:'blur(8px)',zIndex:200,
+          display:'flex',flexDirection:'column',justifyContent:'flex-end'
+        }}>
+          <div onClick={e=>e.stopPropagation()} style={{
+            background:'linear-gradient(170deg,#141620,#0d0f18)',
+            border:'1px solid rgba(255,255,255,0.1)',
+            borderRadius:'28px 28px 0 0',
+            maxHeight:'82%',overflowY:'auto',
+            scrollbarWidth:'none'
+          }}>
+            {/* Handle */}
+            <div style={{display:'flex',justifyContent:'center',padding:'12px 0 4px'}}>
+              <div style={{width:36,height:4,borderRadius:2,background:'rgba(255,255,255,0.2)'}}/>
+            </div>
+            {/* Hero */}
+            <div style={{
+              padding:'12px 20px 18px',
+              background:'linear-gradient(135deg,rgba(255,200,50,0.08),rgba(240,122,42,0.04))',
+              borderBottom:'1px solid rgba(255,255,255,0.06)',
+              display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:12
+            }}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:10,fontWeight:600,color:'rgba(255,200,50,0.7)',letterSpacing:0.8,marginBottom:6}}>СЧЁТ ОМЕРА · ДЕНЬ {omerData.day}</div>
+                <div style={{fontSize:21,fontWeight:800,color:'#fff',letterSpacing:-0.5}}>{omerData.fullName}</div>
+                <div style={{fontSize:14,color:'rgba(255,255,255,0.4)',fontStyle:'italic',marginTop:2,direction:'rtl',textAlign:'left'}}>{omerData.fullNameHeb}</div>
+                <div style={{display:'inline-block',marginTop:8,background:'rgba(255,200,50,0.15)',border:'1px solid rgba(255,200,50,0.3)',borderRadius:10,padding:'4px 12px',fontSize:12,fontWeight:600,color:'rgba(255,200,50,0.9)'}}>{omerData.meaning}</div>
+              </div>
+              <div style={{width:46,height:46,borderRadius:'50%',background:'rgba(255,200,50,0.1)',border:'1.5px solid rgba(255,200,50,0.25)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}>🌾</div>
+            </div>
+
+            <div style={{padding:'16px 20px 0',display:'flex',flexDirection:'column',gap:14}}>
+              {/* Sefirot */}
+              <div className="glass-card" style={{padding:'14px 16px'}}>
+                <div style={{fontSize:10,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,marginBottom:12}}>СФИРОТ</div>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <div style={{flex:1,textAlign:'center'}}>
+                    <div style={{fontSize:10,color:'rgba(255,255,255,0.35)',marginBottom:6}}>Неделя (בְּ)</div>
+                    <div style={{background:'rgba(220,50,50,0.12)',border:'1px solid rgba(220,50,50,0.25)',borderRadius:12,padding:'10px 6px'}}>
+                      <div style={{fontSize:15,fontWeight:700,color:'#e07070'}}>{omerData.inSefirah}</div>
+                      <div style={{fontSize:12,color:'rgba(200,80,80,0.6)',fontStyle:'italic'}}>{omerData.inSefirahHeb}</div>
+                    </div>
+                  </div>
+                  <div style={{fontSize:16,color:'rgba(255,200,50,0.4)',flexShrink:0}}>✦</div>
+                  <div style={{flex:1,textAlign:'center'}}>
+                    <div style={{fontSize:10,color:'rgba(255,255,255,0.35)',marginBottom:6}}>День</div>
+                    <div style={{background:'rgba(50,100,220,0.12)',border:'1px solid rgba(50,100,220,0.25)',borderRadius:12,padding:'10px 6px'}}>
+                      <div style={{fontSize:15,fontWeight:700,color:'#7090e0'}}>{omerData.sefirah}</div>
+                      <div style={{fontSize:12,color:'rgba(80,110,200,0.6)',fontStyle:'italic'}}>{omerData.sefirahHeb}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div style={{background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.07)',borderRadius:16,padding:'14px 16px'}}>
+                <div style={{fontSize:10,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,marginBottom:8}}>О КАЧЕСТВЕ ДНЯ</div>
+                <div style={{fontSize:14,color:'rgba(255,255,255,0.7)',lineHeight:1.6}}>{omerData.description}</div>
+              </div>
+
+              {/* Kavvanah */}
+              <div style={{background:'rgba(255,200,50,0.05)',border:'1px solid rgba(255,200,50,0.12)',borderRadius:16,padding:'14px 16px',display:'flex',gap:12}}>
+                <span style={{fontSize:20,flexShrink:0}}>💭</span>
+                <div>
+                  <div style={{fontSize:10,fontWeight:600,color:'rgba(255,200,50,0.6)',letterSpacing:0.8,marginBottom:6}}>КАВАНА НА СЕГОДНЯ</div>
+                  <div style={{fontSize:14,color:'rgba(255,255,255,0.65)',lineHeight:1.55,fontStyle:'italic'}}>«{omerData.kavvanah}»</div>
+                </div>
+              </div>
+
+              {/* Recommendations */}
+              <div>
+                <div style={{fontSize:10,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,marginBottom:10}}>РЕКОМЕНДАЦИИ</div>
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  {omerData.recommendations.map((r,i)=>(
+                    <div key={i} style={{display:'flex',alignItems:'flex-start',gap:12,background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.07)',borderRadius:12,padding:'12px 14px'}}>
+                      <span style={{fontSize:18,flexShrink:0}}>{r.icon}</span>
+                      <span style={{fontSize:13,color:'rgba(255,255,255,0.65)',lineHeight:1.5}}>{r.text}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Counting */}
+              <div style={{background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.07)',borderRadius:16,padding:'14px 16px',textAlign:'center',marginBottom:16}}>
+                <div style={{fontSize:10,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,marginBottom:10}}>ТЕКСТ СЧЁТА</div>
+                <div style={{fontSize:14,color:'rgba(255,200,50,0.8)',direction:'rtl',lineHeight:1.7,marginBottom:8}}>{omerData.counting}</div>
+                <div style={{fontSize:12,color:'rgba(255,255,255,0.4)',lineHeight:1.5}}>{omerData.countingRu}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+/* ── MAIN SCREEN ── */
+const MainScreen = () => {
+  return (
+    <div className="page-enter" style={{padding:'0 16px', display:'flex', flexDirection:'column', gap:12}}>
+      {/* Header */}
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', paddingTop:8}}>
+        <Logo />
+        <OmerPill />
+      </div>
+
+      {/* Date */}
+      <div>
+        <div style={{fontSize:28,fontWeight:700,color:'#fff',letterSpacing:-0.5}}>23 Нисана 5785</div>
+        <div style={{fontSize:14,color:'rgba(255,255,255,0.45)',marginTop:2}}>22 апреля 2026</div>
+      </div>
+
+      {/* Location pill */}
+      <div style={{
+        display:'inline-flex', alignItems:'center', gap:6,
+        background:'rgba(255,255,255,0.07)',
+        border:'1px solid rgba(255,255,255,0.1)',
+        borderRadius:20, padding:'6px 14px',
+        cursor:'pointer', alignSelf:'flex-start'
+      }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(255,255,255,0.6)">
+          <path d="M12 2C8.134 2 5 5.134 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.866-3.134-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z"/>
+        </svg>
+        <span style={{fontSize:13,fontWeight:500,color:'rgba(255,255,255,0.7)'}}>Москва · зманим</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(255,255,255,0.4)">
+          <path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/>
+        </svg>
+      </div>
+
+      {/* Shma deadline block */}
+      {(()=>{
+        const totalMins = 9*60+48 - 6*60+5; // 09:48 - 06:05 = 223 min window
+        const elapsed = 14*60+30 - 6*60+5;  // current 14:30 - start 06:05
+        // Shma deadline is 09:48, current time 14:30 — already passed, show as expired gracefully
+        // Let's use a realistic "not yet passed" scenario: current time is 08:15
+        const shmaDeadline = 9*60+48; // 09:48
+        const nowMins = 8*60+15;      // 08:15
+        const windowStart = 6*60+5;   // 06:05 sunrise
+        const windowTotal = shmaDeadline - windowStart; // 223 min
+        const remaining = shmaDeadline - nowMins;       // 93 min
+        const progress = Math.max(0, Math.min(1, (nowMins - windowStart) / windowTotal)); // ~0.42
+        const pct = Math.round(progress * 100);
+        const hrs = Math.floor(remaining / 60);
+        const mins = remaining % 60;
+        const timeStr = hrs > 0 ? `${hrs} ч ${mins} мин` : `${mins} мин`;
+        const urgency = progress > 0.8 ? '#ff5555' : progress > 0.6 ? '#F07A2A' : '#4CAF50';
+        return (
+          <div className="glass-card" style={{padding:'13px 16px', overflow:'hidden', position:'relative'}}>
+            {/* Faint background fill */}
+            <div style={{
+              position:'absolute', top:0, left:0, bottom:0,
+              width:`${pct}%`,
+              background:`linear-gradient(90deg,${urgency}18,${urgency}06)`,
+              transition:'width 0.8s ease',
+              pointerEvents:'none'
+            }}/>
+            <div style={{position:'relative',display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <div style={{
+                  width:28,height:28,borderRadius:8,flexShrink:0,
+                  background:`rgba(${urgency==='#4CAF50'?'76,175,80':urgency==='#F07A2A'?'240,122,42':'255,85,85'},0.15)`,
+                  border:`1px solid rgba(${urgency==='#4CAF50'?'76,175,80':urgency==='#F07A2A'?'240,122,42':'255,85,85'},0.3)`,
+                  display:'flex',alignItems:'center',justifyContent:'center',fontSize:14
+                }}>🙏</div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.4)',letterSpacing:0.7}}>УТРЕННЕЕ ШМА ДО</div>
+                  <div style={{fontSize:18,fontWeight:800,color:'#fff',letterSpacing:-0.3,lineHeight:1.1}}>09:48</div>
+                </div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:20,fontWeight:800,color:urgency,letterSpacing:-0.5}}>{timeStr}</div>
+                <div style={{fontSize:10,color:'rgba(255,255,255,0.35)',fontWeight:500}}>осталось · {pct}%</div>
+              </div>
+            </div>
+            {/* Progress bar */}
+            <div style={{position:'relative',height:6,borderRadius:3,background:'rgba(255,255,255,0.08)',overflow:'hidden'}}>
+              <div style={{
+                height:'100%', borderRadius:3,
+                width:`${pct}%`,
+                background:`linear-gradient(90deg,${urgency}aa,${urgency})`,
+                position:'relative', overflow:'hidden'
+              }}>
+                {/* Shimmer */}
+                <div style={{
+                  position:'absolute',top:0,bottom:0,right:0,width:40,
+                  background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.35),transparent)',
+                }}/>
+              </div>
+              {/* Tick markers */}
+              {[25,50,75].map(t=>(
+                <div key={t} style={{
+                  position:'absolute',top:0,bottom:0,left:`${t}%`,
+                  width:1,background:'rgba(255,255,255,0.12)'
+                }}/>
+              ))}
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',marginTop:5}}>
+              <span style={{fontSize:9,color:'rgba(255,255,255,0.3)'}}>06:05 восход</span>
+              <span style={{fontSize:9,color:'rgba(255,255,255,0.3)'}}>09:48 дедлайн</span>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Event card big */}
+      <div className="glass-card glass-card-hover" style={{cursor:'pointer'}}>
+        <div style={{display:'flex', minHeight:130}}>
+          <div style={{
+            width:140, minHeight:130,
+            background:'linear-gradient(135deg,#1a1a2e,#2a2a3e)',
+            position:'relative', overflow:'hidden', flexShrink:0
+          }}>
+            {/* Two people silhouette placeholder */}
+            <div style={{
+              position:'absolute', inset:0,
+              background:'linear-gradient(160deg,#2a2a3a 0%,#111118 100%)',
+              display:'flex',alignItems:'flex-end',justifyContent:'center'
+            }}>
+              {/* Person 1 */}
+              <div style={{position:'absolute',bottom:0,left:10,width:55,height:90,background:'linear-gradient(to top,#1a1a28,rgba(255,255,255,0.05))',borderRadius:'40px 40px 0 0'}}/>
+              <div style={{position:'absolute',bottom:70,left:22,width:30,height:30,background:'rgba(255,255,255,0.1)',borderRadius:'50%'}}/>
+              {/* Person 2 */}
+              <div style={{position:'absolute',bottom:0,right:10,width:60,height:100,background:'linear-gradient(to top,#1a1a28,rgba(255,255,255,0.04))',borderRadius:'40px 40px 0 0'}}/>
+              <div style={{position:'absolute',bottom:80,right:16,width:32,height:32,background:'rgba(255,255,255,0.08)',borderRadius:'50%'}}/>
+              <div style={{position:'absolute',inset:0,background:'linear-gradient(to right,transparent,rgba(13,15,24,0.6))'}}/>
+            </div>
+          </div>
+          <div style={{flex:1, padding:'14px 14px 14px 12px', display:'flex', flexDirection:'column', justifyContent:'space-between'}}>
+            <div>
+              <div style={{fontSize:11,color:'rgba(255,255,255,0.4)',marginBottom:6,display:'flex',alignItems:'center',gap:5}}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="rgba(255,255,255,0.4)">
+                  <rect x="3" y="5" width="18" height="16" rx="3" stroke="rgba(255,255,255,0.4)" strokeWidth="2" fill="none"/>
+                  <path d="M8 3v4M16 3v4M3 10h18" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+                23 апреля, 19:00
+              </div>
+              <div style={{fontSize:15,fontWeight:700,color:'#fff',lineHeight:1.3}}>Встреча с Игорем Маричем</div>
+            </div>
+            <button className="btn-orange" style={{marginTop:10, justifyContent:'space-between'}}>
+              Записаться <span>→</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Current prayer card — Shacharit style */}
+      {(()=>{
+        const start = 6*60+5;   // 06:05
+        const end   = 9*60+48;  // 09:48
+        const now   = 8*60+15;  // 08:15 (показательное время)
+        const total = end - start;
+        const elapsed = now - start;
+        const remaining = end - now;
+        const progress = Math.max(0,Math.min(1, elapsed/total));
+        const pct = Math.round(progress*100);
+        const hrs = Math.floor(remaining/60);
+        const mins = remaining%60;
+        const timeStr = hrs>0 ? `${hrs} ч ${mins} мин` : `${mins} мин`;
+        const urgency = '#F6A400';
+        return (
+          <div className="glass-card" style={{padding:'13px 16px',overflow:'hidden',position:'relative'}}>
+            <div style={{position:'absolute',top:0,left:0,bottom:0,width:`${pct}%`,background:'linear-gradient(90deg,rgba(246,164,0,0.12),rgba(246,164,0,0.04))',pointerEvents:'none'}}/>
+            <div style={{position:'relative',display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <div style={{
+                  width:28,height:28,borderRadius:8,flexShrink:0,
+                  background:'rgba(246,164,0,0.15)',border:'1px solid rgba(246,164,0,0.3)',
+                  display:'flex',alignItems:'center',justifyContent:'center',fontSize:14
+                }}>🌅</div>
+                <div>
+                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.4)',letterSpacing:0.7}}>СЕЙЧАС · ШАХАРИТ</div>
+                    <span style={{background:'rgba(246,164,0,0.2)',color:'#F6A400',fontSize:9,fontWeight:700,borderRadius:5,padding:'2px 6px',letterSpacing:0.4}}>ИДЁТ</span>
+                  </div>
+                  <div style={{fontSize:18,fontWeight:800,color:'#fff',letterSpacing:-0.3,lineHeight:1.1}}>до {String(Math.floor(end/60)).padStart(2,'0')}:{String(end%60).padStart(2,'0')}</div>
+                </div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:20,fontWeight:800,color:urgency,letterSpacing:-0.5}}>{timeStr}</div>
+                <div style={{fontSize:10,color:'rgba(255,255,255,0.35)',fontWeight:500}}>осталось · {pct}%</div>
+              </div>
+            </div>
+            <div style={{position:'relative',height:6,borderRadius:3,background:'rgba(255,255,255,0.08)',overflow:'hidden'}}>
+              <div style={{height:'100%',borderRadius:3,width:`${pct}%`,background:`linear-gradient(90deg,${urgency}99,${urgency})`,position:'relative',overflow:'hidden'}}>
+                <div style={{position:'absolute',top:0,bottom:0,right:0,width:40,background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.35),transparent)'}}/>
+              </div>
+              {[25,50,75].map(t=>(
+                <div key={t} style={{position:'absolute',top:0,bottom:0,left:`${t}%`,width:1,background:'rgba(255,255,255,0.12)'}}/>
+              ))}
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',marginTop:5}}>
+              <span style={{fontSize:9,color:'rgba(255,255,255,0.3)'}}>06:05 восход</span>
+              <span style={{fontSize:9,color:'rgba(255,255,255,0.3)'}}>09:48 окончание</span>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Timeline */}
+      <div className="glass-card" style={{padding:'12px 16px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+          <span style={{fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.5)',letterSpacing:0.5}}>МОЛИТВЫ СЕГОДНЯ</span>
+          <span style={{
+            background:'rgba(255,255,255,0.12)', borderRadius:8,
+            padding:'2px 8px', fontSize:12,fontWeight:600,color:'#fff'
+          }}>14:30</span>
+          <span style={{fontSize:12,color:'#F07A2A',cursor:'pointer',fontWeight:500}}>Все зманим →</span>
+        </div>
+        {/* Timeline bar */}
+        <div style={{position:'relative',height:8,borderRadius:4,overflow:'visible',marginBottom:16}}>
+          <div style={{position:'absolute',inset:0,borderRadius:4,overflow:'hidden',display:'flex'}}>
+            <div style={{width:'35%',background:'rgba(255,200,50,0.5)'}}/>
+            <div style={{width:'35%',background:'rgba(240,100,42,0.7)'}}/>
+            <div style={{flex:1,background:'rgba(80,100,200,0.4)'}}/>
+          </div>
+          {/* Marker */}
+          <div style={{
+            position:'absolute',top:-4,left:'50%',transform:'translateX(-50%)',
+            width:3,height:16,background:'#ff4444',borderRadius:2
+          }}/>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between'}}>
+          {['05:12','06:05','12:47','19:52','20:16'].map((t,i)=>
+            <span key={i} style={{fontSize:10,color:'rgba(255,255,255,0.35)',fontWeight:500}}>{t}</span>
+          )}
+        </div>
+      </div>
+
+      <div className="glass-card glass-card-hover" style={{padding:'16px',cursor:'pointer'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div>
+            <div style={{fontSize:10,fontWeight:600,color:'rgba(255,255,255,0.4)',letterSpacing:0.8,marginBottom:6}}>НЕДЕЛЬНАЯ ГЛАВА</div>
+            <div style={{fontSize:16,fontWeight:700,color:'#fff'}}>Ахарей Мот</div>
+            <div style={{fontSize:12,color:'rgba(255,255,255,0.3)',marginTop:2,fontStyle:'italic'}}>אחרי מות</div>
+            <div style={{fontSize:12,color:'rgba(255,255,255,0.4)',marginTop:5,display:'flex',alignItems:'center',gap:4}}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="8" r="4" stroke="rgba(255,255,255,0.4)" strokeWidth="1.8"/>
+                <path d="M4 20c0-4.418 3.582-8 8-8s8 3.582 8 8" stroke="rgba(255,255,255,0.4)" strokeWidth="1.8" strokeLinecap="round"/>
+              </svg>
+              Урок раввина Рувена Колина
+            </div>
+          </div>
+          <div style={{
+            width:52,height:52,borderRadius:'50%',
+            background:'rgba(80,120,200,0.15)',
+            border:'1.5px solid rgba(80,120,200,0.3)',
+            display:'flex',alignItems:'center',justifyContent:'center',
+            fontSize:26
+          }}>📖</div>
+        </div>
+      </div>
+
+      {/* Candle lighting */}
+      <div className="glass-card glass-card-hover" style={{padding:'16px',cursor:'pointer'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div style={{display:'flex',gap:14,alignItems:'center'}}>
+            <div style={{fontSize:30}}>🕯️</div>
+            <div>
+              <div style={{fontSize:10,fontWeight:600,color:'rgba(255,255,255,0.4)',letterSpacing:0.8,marginBottom:4}}>ЗАЖИГАНИЕ СВЕЧЕЙ</div>
+              <div style={{fontSize:26,fontWeight:700,color:'#fff'}}>19:52</div>
+              <div style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>пятница, 24 апр</div>
+            </div>
+          </div>
+          <button className="btn-orange" style={{flexDirection:'column',alignItems:'center',gap:2,padding:'10px 12px'}}>
+            <span style={{fontSize:12,fontWeight:700}}>Записаться</span>
+            <span style={{fontSize:11,fontWeight:500,opacity:0.8}}>на Шабат</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Holiday */}
+      <div className="glass-card" style={{padding:'14px 16px'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+          <div style={{display:'flex',gap:12,alignItems:'center'}}>
+            <div style={{fontSize:26}}>📜</div>
+            <div>
+              <div style={{fontSize:10,fontWeight:600,color:'rgba(255,255,255,0.4)',letterSpacing:0.8,marginBottom:4}}>БЛИЖАЙШИЙ ПРАЗДНИК</div>
+              <div style={{fontSize:16,fontWeight:700,color:'#F07A2A'}}>Шавуот</div>
+              <div style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>11–13 июня · 6–7 Сивана 5785</div>
+            </div>
+          </div>
+          <div style={{textAlign:'center'}}>
+            <div style={{fontSize:36,fontWeight:800,color:'#F07A2A',lineHeight:1}}>15</div>
+            <div style={{fontSize:11,color:'rgba(255,255,255,0.4)'}}>дней</div>
+          </div>
+        </div>
+        <button className="btn-orange" style={{width:'100%',justifyContent:'center',padding:'11px',fontSize:14,fontWeight:700,borderRadius:12}}>
+          Записаться на Шавуот →
+        </button>
+      </div>
+
+      {/* Birthdays */}
+      <div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <span style={{fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.5)',letterSpacing:0.5}}>ДНИ РОЖДЕНИЯ · КОНТАКТЫ</span>
+          <span style={{fontSize:12,color:'#F07A2A',cursor:'pointer',fontWeight:500}}>Все контакты →</span>
+        </div>
+        <div className="glass-card">
+          {[
+            {init:'ДК',name:'Давид Коэн',heb:'דוד כהן',bg:'#c0392b',when:'Сегодня 🎉',color:'#F07A2A'},
+            {init:'РЛ',name:'Рахель Леви',heb:'רחל לוי',bg:'#8e44ad',when:'через 7д',color:'rgba(255,255,255,0.4)'},
+            {init:'МБ',name:'Моше Берг',heb:'משה ברג',bg:'#2c7a4b',when:'через 15д',color:'rgba(255,255,255,0.4)'},
+          ].map((p,i)=>(
+            <div key={i}>
+              {i>0 && <div className="sep"/>}
+              <div style={{display:'flex',alignItems:'center',padding:'12px 16px',gap:12,cursor:'pointer'}}>
+                <div style={{
+                  width:40,height:40,borderRadius:'50%',
+                  background:p.bg, display:'flex',alignItems:'center',justifyContent:'center',
+                  fontSize:13,fontWeight:700,color:'#fff',flexShrink:0
+                }}>{p.init}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:14,fontWeight:600,color:'#fff'}}>{p.name}</div>
+                  <div style={{fontSize:12,color:'rgba(255,255,255,0.35)',fontStyle:'italic'}}>{p.heb}</div>
+                </div>
+                <span style={{fontSize:13,fontWeight:600,color:p.color}}>{p.when}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{height:4}}/>
+    </div>
+  );
+};
+
+/* ── PRAYERS SCREEN ── */
+const PrayersScreen = () => {
+  const zmanim = [
+    {icon:'🌅',name:'Алот ха-шахар (рассвет)',time:'05:12',hl:false},
+    {icon:'🌄',name:'Мишейакир',time:'05:39',hl:false},
+    {icon:'☀️',name:'Восход солнца',time:'06:05',hl:false},
+    {icon:'🌤️',name:'Шма (Маген Авраам)',time:'09:18',hl:false},
+    {icon:'🌤️',name:'Шма (Гра)',time:'09:48',hl:false},
+    {icon:'⚡',name:'Хацот (полдень)',time:'12:47',hl:false},
+    {icon:'🌞',name:'Минха Гедола',time:'13:20',hl:false},
+    {icon:'🌞',name:'Минха Ктана',time:'16:40',hl:false},
+    {icon:'🌆',name:'Плаг хаМинха',time:'18:17',hl:false},
+    {icon:'🌇',name:'Закат',time:'19:52',hl:false},
+    {icon:'🌃',name:'Цет хаКохавим (появление звёзд)',time:'20:16',hl:false},
+    {icon:'🕯️',name:'Зажигание свечей',time:'19:52',hl:true},
+  ];
+
+  return (
+    <div className="page-enter" style={{padding:'0 16px', display:'flex', flexDirection:'column', gap:12}}>
+      {/* Header */}
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', paddingTop:8}}>
+        <Logo />
+        <div style={{
+          background:'rgba(255,255,255,0.07)',
+          border:'1px solid rgba(255,255,255,0.1)',
+          borderRadius:20, padding:'7px 14px',
+          display:'flex', alignItems:'center', gap:6, cursor:'pointer'
+        }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(255,255,255,0.6)">
+            <path d="M12 2C8.134 2 5 5.134 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.866-3.134-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z"/>
+          </svg>
+          <span style={{fontSize:11,fontWeight:500,color:'rgba(255,255,255,0.6)',lineHeight:1.2,maxWidth:100,textAlign:'center'}}>По выбранному городу<br/>не по GPS</span>
+        </div>
+      </div>
+
+      <div>
+        <div style={{fontSize:24,fontWeight:700,color:'#fff',letterSpacing:-0.5}}>Молитвы и зманим</div>
+        <div style={{fontSize:13,color:'rgba(255,255,255,0.4)',marginTop:3,display:'flex',alignItems:'center',gap:6}}>
+          23 Нисана 5785 · 22 апреля 2026 ·
+          <span style={{color:'rgba(255,255,255,0.6)',cursor:'pointer'}}>Москва ▾</span>
+        </div>
+      </div>
+
+      {/* Filter icon */}
+      <div style={{display:'flex',justifyContent:'flex-end'}}>
+        <div style={{
+          width:36,height:36,borderRadius:10,
+          background:'rgba(255,255,255,0.07)',
+          border:'1px solid rgba(255,255,255,0.1)',
+          display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'
+        }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2" strokeLinecap="round">
+            <path d="M3 6h18M7 12h10M11 18h2"/>
+          </svg>
+        </div>
+      </div>
+
+      {/* Day scale */}
+      <div className="glass-card" style={{padding:'14px 16px'}}>
+        <div style={{fontSize:10,fontWeight:600,color:'rgba(255,255,255,0.4)',letterSpacing:0.8,marginBottom:10}}>ШКАЛА ДНЯ</div>
+        {/* Timeline */}
+        <div style={{position:'relative',marginBottom:12}}>
+          <div style={{display:'flex',height:24,borderRadius:4,overflow:'hidden',gap:1}}>
+            <div style={{flex:2,background:'rgba(255,190,40,0.55)',borderRadius:'4px 0 0 4px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:600,color:'rgba(255,255,255,0.9)'}}>Шахарит</div>
+            <div style={{flex:2,background:'rgba(240,100,42,0.7)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:600,color:'rgba(255,255,255,0.9)'}}>Минха</div>
+            <div style={{flex:1.2,background:'rgba(80,100,200,0.55)',borderRadius:'0 4px 4px 0',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:600,color:'rgba(255,255,255,0.9)'}}>Маарив</div>
+          </div>
+          {/* 14:30 marker */}
+          <div style={{
+            position:'absolute',top:-26,left:'50%',transform:'translateX(-50%)',
+            background:'rgba(255,255,255,0.12)',border:'1px solid rgba(255,255,255,0.2)',
+            borderRadius:6,padding:'1px 6px',fontSize:10,fontWeight:700,color:'#fff',
+            whiteSpace:'nowrap'
+          }}>14:30</div>
+          <div style={{
+            position:'absolute',top:-6,left:'50%',transform:'translateX(-50%)',
+            width:2,height:36,background:'#fff',borderRadius:1,opacity:0.6
+          }}/>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',paddingTop:4}}>
+          {[
+            {t:'05:12',l:'Рассвет',e:'🌅'},
+            {t:'12:47',l:'Полдень',e:'⚡'},
+            {t:'19:52',l:'Закат',e:'🌇'},
+            {t:'20:16',l:'Ночь',e:'🌃'},
+          ].map((x,i)=>(
+            <div key={i} style={{textAlign:'center'}}>
+              <div style={{fontSize:16}}>{x.e}</div>
+              <div style={{fontSize:10,fontWeight:600,color:'rgba(255,255,255,0.7)',marginTop:2}}>{x.t}</div>
+              <div style={{fontSize:9,color:'rgba(255,255,255,0.35)'}}>{x.l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Shacharit */}
+      <div className="glass-card" style={{padding:'14px 16px'}}>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div style={{
+            width:48,height:48,borderRadius:14,
+            background:'linear-gradient(135deg,#2a1a05,#3a2a10)',
+            border:'1px solid rgba(255,180,40,0.2)',
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:22
+          }}>🌅</div>
+          <div style={{flex:1}}>
+            <div style={{display:'flex',alignItems:'baseline',gap:6}}>
+              <span style={{fontSize:18,fontWeight:700,color:'#fff'}}>Шахарит</span>
+              <span style={{fontSize:12,color:'rgba(255,255,255,0.35)',fontStyle:'italic'}}>שחרית</span>
+            </div>
+            <div style={{fontSize:13,color:'rgba(255,255,255,0.4)',marginTop:2}}>06:05 – 09:48</div>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:4}}>
+            <span style={{fontSize:13,color:'rgba(255,255,255,0.4)'}}>завершена</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.2)" strokeWidth="1.5"/>
+              <path d="M8 12l3 3 5-5" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      {/* Mincha — active */}
+      <div className="glass-card" style={{
+        padding:'14px 16px',
+        background:'rgba(240,100,42,0.08)',
+        border:'1px solid rgba(240,100,42,0.3)',
+      }}>
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
+          <div style={{
+            width:48,height:48,borderRadius:14,
+            background:'linear-gradient(135deg,#2a1505,#3a1a05)',
+            border:'1px solid rgba(240,120,42,0.3)',
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:22
+          }}>☀️</div>
+          <div style={{flex:1}}>
+            <div style={{display:'flex',alignItems:'baseline',gap:6}}>
+              <span style={{fontSize:18,fontWeight:700,color:'#fff'}}>Минха</span>
+              <span style={{
+                background:'rgba(240,100,42,0.25)',color:'#F07A2A',
+                fontSize:10,fontWeight:700,borderRadius:5,padding:'2px 6px',letterSpacing:0.5
+              }}>СЕЙЧАС</span>
+              <span style={{fontSize:12,color:'rgba(255,255,255,0.35)',fontStyle:'italic'}}>מנחה</span>
+            </div>
+            <div style={{fontSize:13,color:'#F07A2A',marginTop:2,fontWeight:600}}>13:20 – 19:52 · осталось 322 мин</div>
+          </div>
+        </div>
+        {/* Progress */}
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'rgba(255,255,255,0.35)',marginBottom:6}}>
+          <span>13:20</span><span style={{color:'#F07A2A',fontWeight:600}}>18%</span><span>19:52</span>
+        </div>
+        <div className="progress-track">
+          <div className="progress-fill" style={{width:'18%'}}/>
+        </div>
+      </div>
+
+      {/* Maariv */}
+      <div className="glass-card" style={{padding:'14px 16px'}}>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div style={{
+            width:48,height:48,borderRadius:14,
+            background:'linear-gradient(135deg,#0a0a1a,#12122a)',
+            border:'1px solid rgba(80,100,200,0.2)',
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:22
+          }}>🌙</div>
+          <div style={{flex:1}}>
+            <div style={{display:'flex',alignItems:'baseline',gap:6}}>
+              <span style={{fontSize:18,fontWeight:700,color:'#fff'}}>Маарив</span>
+              <span style={{fontSize:12,color:'rgba(255,255,255,0.35)',fontStyle:'italic'}}>ערבית</span>
+            </div>
+            <div style={{fontSize:13,color:'rgba(255,255,255,0.4)',marginTop:2}}>20:10 – 23:59 · через 340 мин</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Zmanim table */}
+      <div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <span style={{fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.5)',letterSpacing:0.5}}>ЗМАНИМ · ТАБЛИЦА</span>
+          <div style={{
+            background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.1)',
+            borderRadius:10,padding:'4px 10px',cursor:'pointer',
+            display:'flex',alignItems:'center',gap:5
+          }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.5)" strokeWidth="1.8"/>
+              <path d="M12 8v4l2 2" stroke="rgba(255,255,255,0.5)" strokeWidth="1.8" strokeLinecap="round"/>
+            </svg>
+            <span style={{fontSize:11,color:'rgba(255,255,255,0.5)'}}>Подробнее о зманим</span>
+          </div>
+        </div>
+        <div className="glass-card">
+          {zmanim.map((z,i)=>(
+            <div key={i}>
+              {i>0 && <div className="sep"/>}
+              <div style={{
+                display:'flex',alignItems:'center',padding:'10px 16px',gap:10,
+                background: z.hl ? 'rgba(240,120,42,0.05)' : 'transparent'
+              }}>
+                <span style={{fontSize:15,width:20,textAlign:'center'}}>{z.icon}</span>
+                <span style={{flex:1,fontSize:13,color: z.hl ? '#F07A2A' : 'rgba(255,255,255,0.7)'}}>{z.name}</span>
+                <span style={{fontSize:14,fontWeight:700,color: z.hl ? '#F07A2A' : '#fff'}}>{z.time}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{height:4}}/>
+    </div>
+  );
+};
+
+/* ── EVENTS SCREEN ── */
+const EventsScreen = () => {
+  const [filter, setFilter] = useState('Все');
+  const filters = ['Все','Курсы','Праздники'];
+
+  const events = [
+    {tag:'Курс',tagColor:'#4A90D9',img:'📚',title:'Курс по изучению недельных глав Торы: от текста к жизни',big:true},
+    {tag:'Клуб',tagColor:'#7B68EE',img:'♟️',title:'Шахматный клуб «Среди своих»: начните играть осознанно',big:false},
+    {tag:'Для детей',tagColor:'#E84393',img:'🎨',title:'Воскресная школа «Среди своих»',big:false},
+    {tag:'Курс',tagColor:'#4A90D9',img:'📜',title:'Курс еврейской истории',big:false},
+    {tag:'Курс',tagColor:'#4A90D9',img:'🕍',title:'Основы иудаизма',big:false},
+    {tag:'Курс',tagColor:'#4A90D9',img:'📖',title:'Курс этики и философии',big:false},
+    {tag:'Праздник',tagColor:'#F07A2A',img:'🕯️',title:'Шаббат',sub:'🕐 19:00',big:false},
+  ];
+
+  const filtered = filter === 'Все' ? events
+    : filter === 'Курсы' ? events.filter(e=>e.tag==='Курс')
+    : events.filter(e=>e.tag==='Праздник');
+
+  return (
+    <div className="page-enter" style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:12}}>
+      {/* Header */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',paddingTop:8}}>
+        <Logo />
+        <OmerPill />
+      </div>
+
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}>
+        <div>
+          <div style={{fontSize:28,fontWeight:700,color:'#fff',letterSpacing:-0.5}}>События</div>
+          <div style={{fontSize:13,color:'rgba(255,255,255,0.4)',marginTop:2}}>Афиша мероприятий общины</div>
+        </div>
+        <div style={{
+          width:38,height:38,borderRadius:12,
+          background:'rgba(255,255,255,0.07)',
+          border:'1px solid rgba(255,255,255,0.1)',
+          display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'
+        }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/>
+          </svg>
+        </div>
+      </div>
+
+      {/* Filter */}
+      <div className="seg-control">
+        {filters.map(f=>(
+          <div key={f} className={`seg-item${filter===f?' active':''}`} onClick={()=>setFilter(f)}>{f}</div>
+        ))}
+      </div>
+
+      {/* Events list */}
+      {filtered.map((ev,i)=>(
+        ev.big ? (
+          <div key={i} className="glass-card glass-card-hover" style={{cursor:'pointer',overflow:'hidden'}}>
+            <div style={{height:140,background:'linear-gradient(135deg,#1a1440,#0f0f1a)',position:'relative',display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <div style={{fontSize:60,opacity:0.3}}>{ev.img}</div>
+              <div style={{
+                position:'absolute',inset:0,
+                background:'linear-gradient(to right,rgba(10,10,20,0.8),transparent)'
+              }}/>
+              <div style={{position:'absolute',top:12,left:12,
+                background:'rgba(74,144,217,0.85)',borderRadius:6,padding:'3px 8px',fontSize:11,fontWeight:700,color:'#fff'
+              }}>{ev.tag}</div>
+              <div style={{position:'absolute',bottom:10,left:14,right:14,fontSize:12,color:'rgba(255,255,255,0.6)'}}>
+                www.sredisvoyih.com
+              </div>
+            </div>
+            <div style={{padding:'14px 16px 16px'}}>
+              <div style={{fontSize:16,fontWeight:700,color:'#fff',lineHeight:1.3,marginBottom:14}}>{ev.title}</div>
+              <button className="btn-orange" style={{width:'100%',justifyContent:'center',padding:'13px 16px'}}>
+                Хочу пойти →
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div key={i} className="glass-card glass-card-hover" style={{cursor:'pointer'}}>
+            <div style={{display:'flex',alignItems:'stretch',minHeight:84}}>
+              <div style={{
+                width:100,
+                background:'linear-gradient(135deg,#1a1440,#0f0f1a)',
+                display:'flex',alignItems:'center',justifyContent:'center',
+                fontSize:36,flexShrink:0,position:'relative',overflow:'hidden'
+              }}>
+                <div style={{fontSize:40,opacity:0.5}}>{ev.img}</div>
+                <div style={{position:'absolute',inset:0,background:'linear-gradient(to right,transparent,rgba(13,15,24,0.4))'}}/>
+              </div>
+              <div style={{flex:1,padding:'12px 14px',display:'flex',flexDirection:'column',justifyContent:'space-between'}}>
+                <div>
+                  <span className="tag-pill" style={{background:`${ev.tagColor}22`,color:ev.tagColor,marginBottom:6,display:'inline-block'}}>{ev.tag}</span>
+                  <div style={{fontSize:13,fontWeight:600,color:'#fff',lineHeight:1.3}}>{ev.title}</div>
+                  {ev.sub && <div style={{fontSize:12,color:'rgba(255,255,255,0.35)',marginTop:3}}>{ev.sub}</div>}
+                </div>
+                <button className="btn-orange" style={{alignSelf:'flex-start',padding:'7px 12px',marginTop:8,fontSize:12}}>
+                  Хочу пойти →
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      ))}
+
+      <div style={{height:4}}/>
+    </div>
+  );
+};
+
+/* ── STUB SCREEN ── */
+const StubScreen = ({title}) => (
+  <div className="page-enter" style={{
+    flex:1, display:'flex', flexDirection:'column',
+    alignItems:'center', justifyContent:'center', gap:16, padding:32
+  }}>
+    <div style={{
+      width:80,height:80,borderRadius:24,
+      background:'rgba(255,255,255,0.05)',
+      border:'1px solid rgba(255,255,255,0.08)',
+      display:'flex',alignItems:'center',justifyContent:'center',fontSize:36
+    }}>🚧</div>
+    <div style={{fontSize:20,fontWeight:700,color:'rgba(255,255,255,0.6)',textAlign:'center'}}>{title}</div>
+    <div style={{fontSize:14,color:'rgba(255,255,255,0.3)',textAlign:'center'}}>Раздел в разработке</div>
+  </div>
+);
+
+/* ── SHARED: Back header ── */
+const SubHeader = ({title, subtitle, onBack}) => (
+  <div style={{paddingTop:8, marginBottom:4}}>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6,cursor:'pointer'}} onClick={onBack}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+        <path d="M15 18l-6-6 6-6" stroke="#F07A2A" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+      <span style={{fontSize:15,color:'#F07A2A',fontWeight:500}}>Профиль</span>
+    </div>
+    <div style={{fontSize:26,fontWeight:700,color:'#fff',letterSpacing:-0.5}}>{title}</div>
+    {subtitle && <div style={{fontSize:13,color:'rgba(255,255,255,0.4)',marginTop:2}}>{subtitle}</div>}
+  </div>
+);
+
+/* toggle component */
+const Toggle = ({value, onChange}) => (
+  <div onClick={()=>onChange(!value)} style={{
+    width:48,height:28,borderRadius:14,
+    background: value ? 'linear-gradient(135deg,#F07A2A,#E05A10)' : 'rgba(255,255,255,0.12)',
+    border: value ? 'none' : '1px solid rgba(255,255,255,0.15)',
+    position:'relative',cursor:'pointer',flexShrink:0,
+    transition:'background 0.2s',
+    boxShadow: value ? '0 2px 8px rgba(240,122,42,0.4)' : 'none'
+  }}>
+    <div style={{
+      position:'absolute',top:3,
+      left: value ? 23 : 3,
+      width:22,height:22,borderRadius:'50%',
+      background:'#fff',
+      transition:'left 0.2s',
+      boxShadow:'0 1px 4px rgba(0,0,0,0.3)'
+    }}/>
+  </div>
+);
+
+/* settings row */
+const SettingRow = ({icon, label, value, onPress, danger, toggle, toggleVal, onToggle, last}) => (
+  <div>
+    <div onClick={onPress} style={{
+      display:'flex',alignItems:'center',padding:'14px 16px',gap:14,
+      cursor: onPress ? 'pointer' : 'default',
+      transition:'background 0.15s',
+    }}
+    onMouseEnter={e=>{ if(onPress) e.currentTarget.style.background='rgba(255,255,255,0.04)'; }}
+    onMouseLeave={e=>{ e.currentTarget.style.background='transparent'; }}
+    >
+      {icon && <div style={{
+        width:34,height:34,borderRadius:9,flexShrink:0,
+        background:'rgba(255,255,255,0.07)',
+        border:'1px solid rgba(255,255,255,0.08)',
+        display:'flex',alignItems:'center',justifyContent:'center',fontSize:16
+      }}>{icon}</div>}
+      <div style={{flex:1}}>
+        <div style={{fontSize:15,fontWeight:500,color: danger ? '#ff5555' : '#fff'}}>{label}</div>
+        {value && <div style={{fontSize:12,color:'rgba(255,255,255,0.35)',marginTop:2}}>{value}</div>}
+      </div>
+      {toggle ? <Toggle value={toggleVal} onChange={onToggle}/> :
+        onPress ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+          <path d="M9 18l6-6-6-6" stroke="rgba(255,255,255,0.3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg> : null
+      }
+    </div>
+    {!last && <div className="sep"/>}
+  </div>
+);
+
+/* ── SUB: Настройки молитв ── */
+const PrayerSettingsPage = ({onBack}) => {
+  const [city, setCity] = React.useState('Москва');
+  const [nusach, setNusach] = React.useState('Ашкеназ');
+  const [lang, setLang] = React.useState('Русский');
+  const [remBefore, setRemBefore] = React.useState(true);
+  const [remShabbat, setRemShabbat] = React.useState(true);
+  const [remHoliday, setRemHoliday] = React.useState(false);
+  const [remCandle, setRemCandle] = React.useState(true);
+  return (
+    <div className="page-enter" style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:16}}>
+      <SubHeader title="Молитвы и календарь" subtitle="Город, нусах, язык сидура, напоминания" onBack={onBack}/>
+      <div>
+        <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,marginBottom:8,paddingLeft:4}}>МЕСТОПОЛОЖЕНИЕ</div>
+        <div className="glass-card">
+          <SettingRow icon="📍" label="Город" value={city} onPress={()=>{}}/>
+          <SettingRow icon="🌍" label="Часовой пояс" value="Europe/Moscow" onPress={()=>{}} last/>
+        </div>
+      </div>
+      <div>
+        <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,marginBottom:8,paddingLeft:4}}>НУСАХ И ЯЗЫК</div>
+        <div className="glass-card">
+          {['Ашкеназ','Сефард','Хасид (Ари)'].map((n,i,arr)=>(
+            <div key={n}>
+              <div onClick={()=>setNusach(n)} style={{display:'flex',alignItems:'center',padding:'14px 16px',gap:14,cursor:'pointer'}}>
+                <div style={{flex:1,fontSize:15,fontWeight:500,color:'#fff'}}>{n}</div>
+                {nusach===n && <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M5 12l5 5L19 7" stroke="#F07A2A" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>}
+              </div>
+              {i<arr.length-1 && <div className="sep"/>}
+            </div>
+          ))}
+        </div>
+        <div style={{marginTop:12}} className="glass-card">
+          <SettingRow icon="🌐" label="Язык сидура" value={lang} onPress={()=>{}} last/>
+        </div>
+      </div>
+      <div>
+        <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,marginBottom:8,paddingLeft:4}}>НАПОМИНАНИЯ</div>
+        <div className="glass-card">
+          <SettingRow icon="⏰" label="Напомнить о молитве" value="За 15 минут до начала" toggle toggleVal={remBefore} onToggle={setRemBefore}/>
+          <SettingRow icon="🕯️" label="Зажигание свечей" value="Шаббат и праздники" toggle toggleVal={remCandle} onToggle={setRemCandle}/>
+          <SettingRow icon="✡️" label="Начало Шаббата" toggle toggleVal={remShabbat} onToggle={setRemShabbat}/>
+          <SettingRow icon="🎉" label="Праздники" toggle toggleVal={remHoliday} onToggle={setRemHoliday} last/>
+        </div>
+      </div>
+      <div style={{height:4}}/>
+    </div>
+  );
+};
+
+/* ── SUB: Мои записи ── */
+const MyEventsPage = ({onBack}) => {
+  const events = [
+    {title:'Встреча с Игорем Маричем',date:'23 апреля, 19:00',status:'Вы записаны',statusColor:'#4CAF50',active:true},
+    {title:'Курс по недельной главе',date:'Каждый вторник, 20:00',status:'Активный курс',statusColor:'#4A90D9',active:true},
+    {title:'Шахматный клуб',date:'15 апреля, 18:00',status:'Завершено',statusColor:'rgba(255,255,255,0.3)',active:false},
+    {title:'Воскресная школа',date:'7 апреля, 11:00',status:'Завершено',statusColor:'rgba(255,255,255,0.3)',active:false},
+  ];
+  return (
+    <div className="page-enter" style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:16}}>
+      <SubHeader title="Мои записи" subtitle="Ваши записи и билеты" onBack={onBack}/>
+      <div>
+        <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,marginBottom:8,paddingLeft:4}}>ПРЕДСТОЯЩИЕ</div>
+        <div className="glass-card" style={{border:'1px solid rgba(240,122,42,0.2)'}}>
+          {events.filter(e=>e.active).map((ev,i,arr)=>(
+            <div key={i}>
+              <div style={{padding:'14px 16px',cursor:'pointer'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
+                  <div style={{fontSize:15,fontWeight:600,color:'#fff',flex:1,paddingRight:8}}>{ev.title}</div>
+                  <button className="btn-orange" style={{padding:'6px 12px',fontSize:12}}>Открыть →</button>
+                </div>
+                <div style={{fontSize:12,color:'rgba(255,255,255,0.4)',marginBottom:4}}>{ev.date}</div>
+                <div style={{display:'flex',alignItems:'center',gap:5}}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                    <path d="M5 12l5 5L19 7" stroke={ev.statusColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  <span style={{fontSize:12,color:ev.statusColor,fontWeight:500}}>{ev.status}</span>
+                </div>
+              </div>
+              {i<arr.length-1 && <div className="sep"/>}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
+        <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,marginBottom:8,paddingLeft:4}}>ИСТОРИЯ</div>
+        <div className="glass-card">
+          {events.filter(e=>!e.active).map((ev,i,arr)=>(
+            <div key={i}>
+              <div style={{padding:'14px 16px',opacity:0.6}}>
+                <div style={{fontSize:15,fontWeight:500,color:'#fff',marginBottom:4}}>{ev.title}</div>
+                <div style={{fontSize:12,color:'rgba(255,255,255,0.4)',marginBottom:4}}>{ev.date}</div>
+                <span style={{fontSize:12,color:ev.statusColor}}>{ev.status}</span>
+              </div>
+              {i<arr.length-1 && <div className="sep"/>}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{height:4}}/>
+    </div>
+  );
+};
+
+/* ── SUB: Контакты ── */
+const ContactsSettingsPage = ({onBack}) => {
+  const [sync, setSync] = React.useState(true);
+  const [jewDate, setJewDate] = React.useState(true);
+  const [remBday, setRemBday] = React.useState(true);
+  const [remYahrzeit, setRemYahrzeit] = React.useState(false);
+  const [remAdvance, setRemAdvance] = React.useState('За 3 дня');
+  return (
+    <div className="page-enter" style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:16}}>
+      <SubHeader title="Контакты и дни рождения" subtitle="Синхронизация, еврейская дата, напоминания" onBack={onBack}/>
+      <div className="glass-card">
+        <SettingRow icon="🔄" label="Синхронизация контактов" value="Разрешено" toggle toggleVal={sync} onToggle={setSync}/>
+        <SettingRow icon="✡️" label="Еврейская дата рождения" value="Отображать в профиле" toggle toggleVal={jewDate} onToggle={setJewDate} last/>
+      </div>
+      <div>
+        <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,marginBottom:8,paddingLeft:4}}>НАПОМИНАНИЯ</div>
+        <div className="glass-card">
+          <SettingRow icon="🎂" label="Дни рождения" value="Напоминать в день" toggle toggleVal={remBday} onToggle={setRemBday}/>
+          <SettingRow icon="🕯️" label="Яарцайт" value="Годовщина ухода" toggle toggleVal={remYahrzeit} onToggle={setRemYahrzeit}/>
+          <SettingRow icon="⏰" label="Заблаговременно" value={remAdvance} onPress={()=>{}} last/>
+        </div>
+      </div>
+      <div className="glass-card" style={{padding:'14px 16px'}}>
+        <div style={{fontSize:13,color:'rgba(255,255,255,0.4)',lineHeight:1.5}}>
+          Приложение использует доступ к контактам только для отображения дней рождения и расчёта еврейских дат. Данные не передаются третьим лицам.
+        </div>
+      </div>
+      <div style={{height:4}}/>
+    </div>
+  );
+};
+
+/* ── SUB: Уведомления ── */
+const NotificationsPage = ({onBack}) => {
+  const [vals, setVals] = React.useState({
+    prayers:true, shabbat:true, holidays:true, events:true,
+    news:false, birthdays:true, weekly:true, candle:true
+  });
+  const set = (k,v) => setVals(p=>({...p,[k]:v}));
+  const items = [
+    {k:'prayers',icon:'🕌',label:'Молитвы',sub:'Напоминания о начале молитв'},
+    {k:'shabbat',icon:'✡️',label:'Шаббат',sub:'Начало и окончание Шаббата'},
+    {k:'holidays',icon:'🎉',label:'Праздники',sub:'Еврейские праздники и даты'},
+    {k:'candle',icon:'🕯️',label:'Зажигание свечей',sub:'Пятница и ערב праздников'},
+    {k:'events',icon:'📅',label:'Мероприятия',sub:'Ваши записи и напоминания'},
+    {k:'birthdays',icon:'🎂',label:'Дни рождения',sub:'Дни рождения контактов'},
+    {k:'weekly',icon:'📖',label:'Недельная глава',sub:'Каждую пятницу утром'},
+    {k:'news',icon:'📰',label:'Новости общины',sub:'Объявления и новости'},
+  ];
+  return (
+    <div className="page-enter" style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:16}}>
+      <SubHeader title="Уведомления" subtitle="Настройте, что и когда вам напоминать" onBack={onBack}/>
+      <div className="glass-card">
+        {items.map((item,i)=>(
+          <SettingRow key={item.k} icon={item.icon} label={item.label} value={item.sub}
+            toggle toggleVal={vals[item.k]} onToggle={v=>set(item.k,v)} last={i===items.length-1}/>
+        ))}
+      </div>
+      <div style={{height:4}}/>
+    </div>
+  );
+};
+
+/* ── SUB: Сидур ── */
+const SiddurPage = ({onBack}) => {
+  const [nusach, setNusach] = React.useState('Ашкеназ');
+  const [lang, setLang] = React.useState('Иврит + русский');
+  const [fontSize, setFontSize] = React.useState(16);
+  const [nikud, setNikud] = React.useState(true);
+  const [transliteration, setTranslit] = React.useState(false);
+  const [nightMode, setNightMode] = React.useState(true);
+  return (
+    <div className="page-enter" style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:16}}>
+      <SubHeader title="Сидур" subtitle="Нусах, язык, шрифт и другие настройки" onBack={onBack}/>
+      <div>
+        <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,marginBottom:8,paddingLeft:4}}>НУСАХ</div>
+        <div className="glass-card">
+          {['Ашкеназ','Сефард','Хасид (Ари)','Йемени'].map((n,i,arr)=>(
+            <div key={n}>
+              <div onClick={()=>setNusach(n)} style={{display:'flex',alignItems:'center',padding:'14px 16px',gap:14,cursor:'pointer'}}>
+                <div style={{flex:1,fontSize:15,fontWeight:500,color:'#fff'}}>{n}</div>
+                {nusach===n && <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M5 12l5 5L19 7" stroke="#F07A2A" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>}
+              </div>
+              {i<arr.length-1 && <div className="sep"/>}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
+        <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,marginBottom:8,paddingLeft:4}}>ОТОБРАЖЕНИЕ</div>
+        <div className="glass-card">
+          <SettingRow icon="🌐" label="Язык перевода" value={lang} onPress={()=>{}}/>
+          <SettingRow icon="🔤" label="Транслитерация" toggle toggleVal={transliteration} onToggle={setTranslit}/>
+          <SettingRow icon="◌" label="Огласовки (никуд)" toggle toggleVal={nikud} onToggle={setNikud}/>
+          <SettingRow icon="🌙" label="Тёмный режим" toggle toggleVal={nightMode} onToggle={setNightMode} last/>
+        </div>
+      </div>
+      <div>
+        <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,marginBottom:8,paddingLeft:4}}>РАЗМЕР ШРИФТА</div>
+        <div className="glass-card" style={{padding:'16px'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+            <span style={{fontSize:13,color:'rgba(255,255,255,0.5)'}}>A</span>
+            <span style={{fontSize:fontSize,fontWeight:500,color:'#fff',fontFamily:'serif'}}>בָּרוּךְ</span>
+            <span style={{fontSize:20,color:'rgba(255,255,255,0.5)'}}>A</span>
+          </div>
+          <input type="range" min="12" max="24" value={fontSize}
+            onChange={e=>setFontSize(Number(e.target.value))}
+            style={{width:'100%',accentColor:'#F07A2A'}}/>
+        </div>
+      </div>
+      <div style={{height:4}}/>
+    </div>
+  );
+};
+
+/* ── SUB: Поддержать ── */
+const SupportPage = ({onBack}) => {
+  const [selected, setSelected] = React.useState(1);
+  const tiers = [
+    {id:0,name:'Базовый',amount:'300 ₽/мес',desc:'Поддержка деятельности общины',color:'rgba(255,255,255,0.1)'},
+    {id:1,name:'Участник',amount:'1 000 ₽/мес',desc:'Участник общины со скидками на мероприятия',color:'rgba(240,122,42,0.15)',border:'rgba(240,122,42,0.4)',badge:'Популярный'},
+    {id:2,name:'Меценат',amount:'5 000 ₽/мес',desc:'Значительный вклад в развитие общины',color:'rgba(255,200,50,0.08)',border:'rgba(255,200,50,0.3)'},
+  ];
+  return (
+    <div className="page-enter" style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:16}}>
+      <SubHeader title="Поддержать общину" subtitle="Ваш вклад в развитие общины" onBack={onBack}/>
+      <div style={{
+        background:'linear-gradient(135deg,rgba(240,122,42,0.1),rgba(200,80,20,0.05))',
+        border:'1px solid rgba(240,122,42,0.2)',
+        borderRadius:18,padding:'20px 16px',textAlign:'center'
+      }}>
+        <div style={{fontSize:32,marginBottom:8}}>🤝</div>
+        <div style={{fontSize:17,fontWeight:700,color:'#fff',marginBottom:6}}>«Среди Своих» — для вас и с вами</div>
+        <div style={{fontSize:13,color:'rgba(255,255,255,0.5)',lineHeight:1.5}}>Ваш вклад помогает нам проводить мероприятия, развивать приложение и укреплять общину</div>
+      </div>
+      {tiers.map(t=>(
+        <div key={t.id} onClick={()=>setSelected(t.id)} style={{
+          borderRadius:18,padding:'16px',cursor:'pointer',
+          background: selected===t.id ? (t.color||'rgba(255,255,255,0.08)') : 'rgba(255,255,255,0.04)',
+          border: `1px solid ${selected===t.id ? (t.border||'rgba(255,255,255,0.2)') : 'rgba(255,255,255,0.06)'}`,
+          position:'relative',transition:'all 0.2s'
+        }}>
+          {t.badge && <div style={{
+            position:'absolute',top:-10,right:16,
+            background:'linear-gradient(135deg,#F07A2A,#E05A10)',
+            borderRadius:8,padding:'2px 10px',fontSize:11,fontWeight:700,color:'#fff'
+          }}>{t.badge}</div>}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <div>
+              <div style={{fontSize:17,fontWeight:700,color:'#fff'}}>{t.name}</div>
+              <div style={{fontSize:13,color:'rgba(255,255,255,0.5)',marginTop:3}}>{t.desc}</div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{fontSize:16,fontWeight:700,color: selected===t.id ? '#F07A2A' : '#fff'}}>{t.amount}</div>
+              {selected===t.id && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{marginTop:4}}>
+                <circle cx="12" cy="12" r="10" fill="#F07A2A"/>
+                <path d="M7 12l4 4 6-7" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>}
+            </div>
+          </div>
+        </div>
+      ))}
+      <button className="btn-orange" style={{justifyContent:'center',padding:'15px',fontSize:15,fontWeight:700,borderRadius:14}}>
+        Поддержать общину →
+      </button>
+      <div style={{textAlign:'center',fontSize:12,color:'rgba(255,255,255,0.3)'}}>Безопасная оплата · Отмена в любое время</div>
+      <div style={{height:4}}/>
+    </div>
+  );
+};
+
+/* ── SUB: О приложении ── */
+const AboutPage = ({onBack}) => (
+  <div className="page-enter" style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:16}}>
+    <SubHeader title="О приложении" subtitle="Версия, поддержка, политика конфиденциальности" onBack={onBack}/>
+    <div style={{textAlign:'center',padding:'24px 16px 16px'}}>
+      <div style={{display:'inline-flex',flexDirection:'column',alignItems:'center',gap:12}}>
+        <svg width="80" height="32" viewBox="0 0 131 53" fill="none" xmlns="http://www.w3.org/2000/svg" style={{height:32,width:'auto'}}>
+          <path fillRule="evenodd" clipRule="evenodd" d="M28.6069 23.5711L26.9346 20.6279L25.2623 23.5711H22.3359L23.7991 26.1463L22.336 28.7215H25.2623L26.9346 31.6647L28.6068 28.7215H31.5332L30.07 26.1463L31.5332 23.5711H28.6069Z" fill="#E52C36"/>
+          <path fillRule="evenodd" clipRule="evenodd" d="M26.4816 8.54147C23.3362 8.50532 20.2377 9.30632 17.5038 10.8623C14.77 12.4184 12.4991 14.6734 10.924 17.3963C9.34894 20.1193 8.52631 23.2121 8.54047 26.3577C8.55464 29.5033 9.40508 32.5886 11.0046 35.2972C12.6042 38.0058 14.8952 40.2404 17.643 41.7717C20.3908 43.303 23.4963 44.0761 26.6413 44.0116C29.7863 43.9472 32.8576 43.0475 35.5403 41.4049L40 48.6882C36.0256 51.1218 31.4756 52.4546 26.8163 52.5501C22.1571 52.6456 17.5562 51.5004 13.4855 49.2317C9.41474 46.9631 6.02054 43.6526 3.65085 39.6399C1.28116 35.6271 0.0212465 31.0563 0.000266372 26.3961C-0.0207138 21.7359 1.198 17.154 3.53146 13.1201C5.86492 9.08611 9.22918 5.74528 13.2793 3.44007C17.3295 1.13485 21.9198 -0.0518104 26.5798 0.00173508C31.2397 0.0552805 35.8015 1.34711 39.7977 3.74478L35.4037 11.068C32.7063 9.44959 29.6271 8.57761 26.4816 8.54147Z" fill="#E52C36"/>
+          <path fillRule="evenodd" clipRule="evenodd" d="M22.8476 19.9172C21.9971 20.3758 21.2472 21.0004 20.6423 21.7539C20.0373 22.5074 19.5897 23.3746 19.3258 24.3041C19.0619 25.2337 18.9871 26.2067 19.1058 27.1656C19.2245 28.1246 19.5344 29.05 20.017 29.8871C20.4996 30.7243 21.1452 31.4561 21.9156 32.0393C22.6861 32.6226 23.5656 33.0454 24.5023 33.2827C25.439 33.5201 26.4137 33.5672 27.3689 33.4213C28.3241 33.2753 29.2404 32.9393 30.0634 32.433L34.5377 39.7074C32.742 40.812 30.7429 41.5451 28.6589 41.8636C26.5748 42.182 24.448 42.0792 22.4044 41.5614C20.3607 41.0435 18.4417 40.121 16.7608 38.8485C15.0799 37.5759 13.6713 35.9792 12.6183 34.1528C11.5653 32.3263 10.8892 30.3072 10.6302 28.215C10.3712 26.1227 10.5344 23.9997 11.1102 21.9716C11.686 19.9435 12.6627 18.0515 13.9825 16.4075C15.3023 14.7634 16.9384 13.4008 18.7941 12.4001L22.8476 19.9172Z" fill="#F6A400"/>
+        </svg>
+        <div style={{fontSize:26,fontWeight:700,color:'#fff'}}>Среди Своих</div>
+        <div style={{fontSize:13,color:'rgba(255,255,255,0.35)'}}>Версия 2.4.1 (build 241)</div>
+      </div>
+    </div>
+    <div className="glass-card">
+      <SettingRow icon="💬" label="Написать в поддержку" value="support@sredisvoyikh.com" onPress={()=>{}}/>
+      <SettingRow icon="⭐" label="Оценить приложение" value="App Store" onPress={()=>{}}/>
+      <SettingRow icon="📣" label="Telegram-канал общины" onPress={()=>{}}/>
+      <SettingRow icon="🌐" label="Сайт общины" value="sredisvoyikh.com" onPress={()=>{}} last/>
+    </div>
+    <div className="glass-card">
+      <SettingRow icon="📄" label="Политика конфиденциальности" onPress={()=>{}}/>
+      <SettingRow icon="📋" label="Пользовательское соглашение" onPress={()=>{}} last/>
+    </div>
+    <div style={{textAlign:'center',padding:'8px 0 4px'}}>
+      <div style={{fontSize:12,color:'rgba(255,255,255,0.2)'}}>© 2026 Среди Своих · Сделано с ❤️ для общины</div>
+    </div>
+    <div style={{height:4}}/>
+  </div>
+);
+
+/* ── SUB: Редактировать профиль ── */
+const EditProfilePage = ({onBack}) => {
+  const [name, setName] = React.useState('Давид');
+  const [lastName, setLastName] = React.useState('Коэн');
+  const [hebrewName, setHebrewName] = React.useState('דוד בן אברהם');
+  const [phone, setPhone] = React.useState('+7 (916) 234-56-78');
+  const [email, setEmail] = React.useState('david.cohen@gmail.com');
+  const [city, setCity] = React.useState('Москва');
+  const [tribe, setTribe] = React.useState('Коэн');
+  const [status, setStatus] = React.useState('Женат');
+  const [bio, setBio] = React.useState('');
+  const [dob, setDob] = React.useState('1988-05-14');
+  const [showPrivacy, setShowPrivacy] = React.useState(false);
+  const [privBday, setPrivBday] = React.useState('Все участники');
+  const [privPhone, setPrivPhone] = React.useState('Только раввин');
+  const [privProfile, setPrivProfile] = React.useState('Все участники');
+  const [saved, setSaved] = React.useState(false);
+
+  const fieldStyle = {
+    width:'100%',
+    background:'rgba(255,255,255,0.06)',
+    border:'1px solid rgba(255,255,255,0.1)',
+    borderRadius:12, padding:'13px 14px',
+    fontSize:15, color:'#fff',
+    outline:'none', fontFamily:'Inter, sans-serif',
+    caretColor:'#F07A2A',
+    transition:'border-color 0.2s',
+  };
+  const labelStyle = {
+    fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.4)',
+    letterSpacing:0.8,marginBottom:6,paddingLeft:2,display:'block'
+  };
+
+  const Field = ({label, value, onChange, placeholder, multiline, keyboard}) => (
+    <div>
+      <label style={labelStyle}>{label}</label>
+      {multiline
+        ? <textarea value={value} onChange={e=>onChange(e.target.value)}
+            placeholder={placeholder||''}
+            rows={3}
+            style={{...fieldStyle,resize:'none',lineHeight:1.5}}
+            onFocus={e=>e.target.style.borderColor='rgba(240,122,42,0.5)'}
+            onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'}
+          />
+        : <input type={keyboard||'text'} value={value} onChange={e=>onChange(e.target.value)}
+            placeholder={placeholder||''}
+            style={fieldStyle}
+            onFocus={e=>e.target.style.borderColor='rgba(240,122,42,0.5)'}
+            onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'}
+          />
+      }
+    </div>
+  );
+
+  const SelectPill = ({options, value, onChange}) => (
+    <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+      {options.map(o=>(
+        <div key={o} onClick={()=>onChange(o)} style={{
+          padding:'8px 14px',borderRadius:10,fontSize:13,fontWeight:500,cursor:'pointer',
+          background: value===o ? 'linear-gradient(135deg,#F07A2A,#E05A10)' : 'rgba(255,255,255,0.07)',
+          border: value===o ? 'none' : '1px solid rgba(255,255,255,0.1)',
+          color: value===o ? '#fff' : 'rgba(255,255,255,0.6)',
+          boxShadow: value===o ? '0 2px 8px rgba(240,122,42,0.3)' : 'none',
+          transition:'all 0.15s'
+        }}>{o}</div>
+      ))}
+    </div>
+  );
+
+  const PrivacyRow = ({label, value, onChange}) => {
+    const opts = ['Только раввин','Все участники','Публично'];
+    return (
+      <div>
+        {!false && <div className="sep"/>}
+        <div style={{padding:'12px 16px'}}>
+          <div style={{fontSize:13,fontWeight:500,color:'rgba(255,255,255,0.7)',marginBottom:8}}>{label}</div>
+          <div style={{display:'flex',gap:6}}>
+            {opts.map(o=>(
+              <div key={o} onClick={()=>onChange(o)} style={{
+                flex:1,textAlign:'center',padding:'7px 4px',borderRadius:9,fontSize:11,fontWeight:500,cursor:'pointer',
+                background: value===o ? 'rgba(240,122,42,0.2)' : 'rgba(255,255,255,0.05)',
+                border: value===o ? '1px solid rgba(240,122,42,0.4)' : '1px solid rgba(255,255,255,0.07)',
+                color: value===o ? '#F07A2A' : 'rgba(255,255,255,0.4)',
+                transition:'all 0.15s'
+              }}>{o}</div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Jewish date approximate display
+  const jewishDobDisplay = '26 Ияра 5748';
+
+  return (
+    <div className="page-enter" style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:20}}>
+      {/* Header */}
+      <div style={{paddingTop:8}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={onBack}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M15 18l-6-6 6-6" stroke="#F07A2A" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <span style={{fontSize:15,color:'#F07A2A',fontWeight:500}}>Профиль</span>
+          </div>
+          {saved && (
+            <div style={{
+              display:'flex',alignItems:'center',gap:5,
+              background:'rgba(76,175,80,0.15)',border:'1px solid rgba(76,175,80,0.3)',
+              borderRadius:10,padding:'5px 12px',fontSize:12,fontWeight:600,color:'#4CAF50'
+            }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                <path d="M5 12l5 5L19 7" stroke="#4CAF50" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              Сохранено
+            </div>
+          )}
+        </div>
+        <div style={{fontSize:26,fontWeight:700,color:'#fff',letterSpacing:-0.5}}>Редактировать профиль</div>
+      </div>
+
+      {/* Avatar */}
+      <div style={{display:'flex',alignItems:'center',gap:16}}>
+        <div style={{position:'relative',flexShrink:0}}>
+          <div style={{
+            width:80,height:80,borderRadius:'50%',
+            background:'linear-gradient(135deg,#1a3a5c,#2a5080)',
+            display:'flex',alignItems:'center',justifyContent:'center',
+            fontSize:28,fontWeight:700,color:'#fff',
+            border:'2px solid rgba(255,255,255,0.12)'
+          }}>ДК</div>
+          <div style={{
+            position:'absolute',bottom:0,right:0,
+            width:28,height:28,borderRadius:'50%',
+            background:'linear-gradient(135deg,#F07A2A,#E05A10)',
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,
+            cursor:'pointer',boxShadow:'0 2px 8px rgba(240,122,42,0.4)'
+          }}>📷</div>
+        </div>
+        <div>
+          <div style={{fontSize:16,fontWeight:700,color:'#fff',marginBottom:3}}>Фото профиля</div>
+          <div style={{fontSize:12,color:'rgba(255,255,255,0.4)',lineHeight:1.4}}>Видно участникам общины<br/>Рекомендуем 400×400 px</div>
+        </div>
+      </div>
+
+      {/* Name block */}
+      <div style={{display:'flex',flexDirection:'column',gap:12}}>
+        <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,paddingLeft:2}}>ИМЯ</div>
+        <div style={{display:'flex',gap:10}}>
+          <div style={{flex:1}}><Field label="Имя" value={name} onChange={setName} placeholder="Давид"/></div>
+          <div style={{flex:1}}><Field label="Фамилия" value={lastName} onChange={setLastName} placeholder="Коэн"/></div>
+        </div>
+        <Field label="ЕВРЕЙСКОЕ ИМЯ (שם עברי)" value={hebrewName} onChange={setHebrewName} placeholder="דוד בן אברהם"/>
+        <div className="glass-card" style={{padding:'10px 14px',display:'flex',alignItems:'center',gap:8}}>
+          <span style={{fontSize:16}}>💡</span>
+          <span style={{fontSize:12,color:'rgba(255,255,255,0.4)',lineHeight:1.4}}>Еврейское имя используется в молитвенных записках (мисрах) и уведомлениях общины</span>
+        </div>
+      </div>
+
+      {/* Date of birth */}
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,paddingLeft:2}}>ДАТА РОЖДЕНИЯ</div>
+        <Field label="Гражданская дата" value={dob} onChange={setDob} keyboard="date"/>
+        <div style={{
+          background:'rgba(255,200,50,0.07)',border:'1px solid rgba(255,200,50,0.15)',
+          borderRadius:12,padding:'10px 14px',
+          display:'flex',alignItems:'center',gap:10
+        }}>
+          <span style={{fontSize:18}}>✡️</span>
+          <div>
+            <div style={{fontSize:11,color:'rgba(255,200,50,0.6)',fontWeight:600,letterSpacing:0.5}}>ЕВРЕЙСКАЯ ДАТА</div>
+            <div style={{fontSize:15,fontWeight:700,color:'rgba(255,200,50,0.9)',marginTop:1}}>{jewishDobDisplay}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tribe */}
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,paddingLeft:2}}>ПРОИСХОЖДЕНИЕ</div>
+        <SelectPill options={['Коэн','Леви','Исраэль']} value={tribe} onChange={setTribe}/>
+        <div style={{fontSize:11,color:'rgba(255,255,255,0.3)',paddingLeft:2,lineHeight:1.5}}>
+          Влияет на порядок алии к Торе и некоторые галахические аспекты
+        </div>
+      </div>
+
+      {/* Marital status */}
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,paddingLeft:2}}>СЕМЕЙНОЕ ПОЛОЖЕНИЕ</div>
+        <SelectPill options={['Холост','Женат','Замужем','Разведён/а','Вдов/а']} value={status} onChange={setStatus}/>
+      </div>
+
+      {/* Contacts */}
+      <div style={{display:'flex',flexDirection:'column',gap:12}}>
+        <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,paddingLeft:2}}>КОНТАКТЫ</div>
+        <Field label="Телефон" value={phone} onChange={setPhone} keyboard="tel"/>
+        <Field label="Email" value={email} onChange={setEmail} keyboard="email"/>
+        <Field label="Город проживания" value={city} onChange={setCity} placeholder="Москва"/>
+      </div>
+
+      {/* Bio */}
+      <div>
+        <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,paddingLeft:2,marginBottom:10}}>О СЕБЕ</div>
+        <Field label="Несколько слов о себе" value={bio} onChange={setBio}
+          placeholder="Расскажите о себе, интересах, как связаны с общиной…" multiline/>
+        <div style={{textAlign:'right',fontSize:11,color:'rgba(255,255,255,0.25)',marginTop:4}}>
+          {bio.length} / 200
+        </div>
+      </div>
+
+      {/* Privacy */}
+      <div>
+        <div style={{
+          display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',
+          paddingBottom:10
+        }} onClick={()=>setShowPrivacy(p=>!p)}>
+          <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,paddingLeft:2}}>ПРИВАТНОСТЬ</div>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{transform:showPrivacy?'rotate(180deg)':'rotate(0)',transition:'transform 0.2s'}}>
+            <path d="M6 9l6 6 6-6" stroke="rgba(255,255,255,0.35)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+        {showPrivacy && (
+          <div className="glass-card" style={{overflow:'hidden'}}>
+            <div style={{padding:'12px 16px 0'}}>
+              <div style={{fontSize:13,fontWeight:500,color:'rgba(255,255,255,0.7)',marginBottom:6}}>Профиль виден</div>
+              <div style={{display:'flex',gap:6}}>
+                {['Только раввин','Все участники','Публично'].map(o=>(
+                  <div key={o} onClick={()=>setPrivProfile(o)} style={{
+                    flex:1,textAlign:'center',padding:'7px 4px',borderRadius:9,fontSize:11,fontWeight:500,cursor:'pointer',
+                    background: privProfile===o ? 'rgba(240,122,42,0.2)' : 'rgba(255,255,255,0.05)',
+                    border: privProfile===o ? '1px solid rgba(240,122,42,0.4)' : '1px solid rgba(255,255,255,0.07)',
+                    color: privProfile===o ? '#F07A2A' : 'rgba(255,255,255,0.4)',transition:'all 0.15s'
+                  }}>{o}</div>
+                ))}
+              </div>
+            </div>
+            <PrivacyRow label="День рождения виден" value={privBday} onChange={setPrivBday}/>
+            <PrivacyRow label="Телефон виден" value={privPhone} onChange={setPrivPhone}/>
+          </div>
+        )}
+      </div>
+
+      {/* Save */}
+      <button className="btn-orange" onClick={()=>{setSaved(true); setTimeout(()=>setSaved(false),3000);}}
+        style={{justifyContent:'center',padding:'15px',fontSize:15,fontWeight:700,borderRadius:14,width:'100%',border:'none',cursor:'pointer'}}>
+        Сохранить изменения
+      </button>
+
+      <div style={{
+        display:'flex',alignItems:'center',justifyContent:'center',gap:6,
+        cursor:'pointer',padding:'8px',borderRadius:10
+      }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+          <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="#ff5555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        <span style={{fontSize:13,color:'#ff5555',fontWeight:500}}>Удалить аккаунт</span>
+      </div>
+
+      <div style={{height:4}}/>
+    </div>
+  );
+};
+
+/* ── PROFILE SCREEN ── */
+const ProfileScreen = () => {
+  const [subPage, setSubPage] = React.useState(null);
+
+  const goTo = (page) => { setSubPage(page); };
+  const goBack = () => { setSubPage(null); };
+
+  if (subPage === 'edit-profile') return <EditProfilePage onBack={goBack}/>;
+  if (subPage === 'prayers-settings') return <PrayerSettingsPage onBack={goBack}/>;
+  if (subPage === 'my-events') return <MyEventsPage onBack={goBack}/>;
+  if (subPage === 'contacts') return <ContactsSettingsPage onBack={goBack}/>;
+  if (subPage === 'notifications') return <NotificationsPage onBack={goBack}/>;
+  if (subPage === 'siddur') return <SiddurPage onBack={goBack}/>;
+  if (subPage === 'support') return <SupportPage onBack={goBack}/>;
+  if (subPage === 'about') return <AboutPage onBack={goBack}/>;
+
+  const menuItems = [
+    {id:'prayers-settings', icon:'📍', label:'Настройки молитв и календаря', sub:'Город, нусах, язык сидура, напоминания'},
+    {id:'my-events',        icon:'📅', label:'Мои записи на мероприятия',     sub:'Ваши записи и билеты'},
+    {id:'contacts',         icon:'👥', label:'Контакты и дни рождения',        sub:'Синхронизация, еврейская дата, напоминания'},
+    {id:'notifications',    icon:'🔔', label:'Уведомления',                    sub:'Настройте, что и когда вам напоминать'},
+    {id:'siddur',           icon:'📖', label:'Сидур',                          sub:'Нусах, язык, шрифт и другие настройки'},
+    {id:'support',          icon:'❤️', label:'Поддержать общину',               sub:'Ваш вклад в развитие общины'},
+    {id:'about',            icon:'ℹ️', label:'О приложении',                   sub:'Версия, поддержка, политика конфиденциальности'},
+  ];
+
+  return (
+    <div className="page-enter" style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:12}}>
+      {/* Header */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',paddingTop:8}}>
+        <Logo/>
+        <div style={{
+          width:38,height:38,borderRadius:12,
+          background:'rgba(255,255,255,0.07)',
+          border:'1px solid rgba(255,255,255,0.1)',
+          display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'
+        }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="1.8">
+            <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" strokeLinecap="round"/>
+          </svg>
+        </div>
+      </div>
+
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}>
+        <div>
+          <div style={{fontSize:28,fontWeight:700,color:'#fff',letterSpacing:-0.5}}>Профиль</div>
+          <div style={{fontSize:13,color:'rgba(255,255,255,0.4)',marginTop:2}}>Личные настройки и община</div>
+        </div>
+      </div>
+
+      {/* User card */}
+      <div className="glass-card" style={{padding:'18px 16px'}}>
+        <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:14}}>
+          <div style={{position:'relative',flexShrink:0}}>
+            <div style={{
+              width:64,height:64,borderRadius:'50%',
+              background:'linear-gradient(135deg,#1a3a5c,#2a5080)',
+              display:'flex',alignItems:'center',justifyContent:'center',
+              fontSize:22,fontWeight:700,color:'#fff',
+              border:'2px solid rgba(255,255,255,0.12)'
+            }}>ДК</div>
+            <div style={{
+              position:'absolute',bottom:0,right:0,
+              width:22,height:22,borderRadius:'50%',
+              background:'rgba(30,30,50,0.95)',
+              border:'1.5px solid rgba(255,255,255,0.15)',
+              display:'flex',alignItems:'center',justifyContent:'center',fontSize:11
+            }}>📷</div>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div>
+                <div style={{fontSize:18,fontWeight:700,color:'#fff'}}>Давид Коэн</div>
+                <div style={{fontSize:13,color:'rgba(255,255,255,0.35)',fontStyle:'italic',marginTop:1}}>דוד כהן</div>
+                <div style={{display:'flex',alignItems:'center',gap:4,marginTop:4}}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="rgba(255,255,255,0.4)">
+                    <path d="M12 2C8.134 2 5 5.134 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.866-3.134-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z"/>
+                  </svg>
+                  <span style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>Москва · Среди Своих</span>
+                </div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M9 18l6-6-6-6" stroke="rgba(255,255,255,0.3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+        <div style={{marginBottom:14}}>
+          <span style={{
+            background:'rgba(240,122,42,0.15)',border:'1px solid rgba(240,122,42,0.3)',
+            borderRadius:10,padding:'4px 10px',fontSize:12,fontWeight:600,color:'#F07A2A'
+          }}>Участник общины</span>
+        </div>
+        <button className="btn-orange" onClick={()=>goTo('edit-profile')} style={{width:'100%',justifyContent:'center',padding:'13px',fontSize:14,fontWeight:700,borderRadius:12}}>
+          Редактировать профиль →
+        </button>
+      </div>
+
+      {/* Nearest booking */}
+      <div className="glass-card" style={{
+        padding:'14px 16px',
+        background:'rgba(240,122,42,0.06)',
+        border:'1px solid rgba(240,122,42,0.2)'
+      }}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <span style={{fontSize:13,fontWeight:600,color:'rgba(255,255,255,0.6)'}}>Мои ближайшие записи</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M9 18l6-6-6-6" stroke="rgba(255,255,255,0.3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div style={{
+            width:40,height:40,borderRadius:12,
+            background:'rgba(240,122,42,0.15)',border:'1px solid rgba(240,122,42,0.25)',
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0
+          }}>📅</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:14,fontWeight:600,color:'#fff'}}>Встреча с Игорем Маричем</div>
+            <div style={{fontSize:11,color:'rgba(255,255,255,0.4)',marginTop:2,display:'flex',alignItems:'center',gap:4}}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                <rect x="3" y="5" width="18" height="16" rx="3" stroke="rgba(255,255,255,0.4)" strokeWidth="2" fill="none"/>
+                <path d="M8 3v4M16 3v4M3 10h18" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+              23 апреля, 19:00
+            </div>
+            <div style={{fontSize:11,color:'#4CAF50',marginTop:3,display:'flex',alignItems:'center',gap:4}}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                <path d="M5 12l5 5L19 7" stroke="#4CAF50" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              Вы записаны
+            </div>
+          </div>
+          <button className="btn-orange" style={{padding:'8px 14px',fontSize:13,flexShrink:0}}>Открыть →</button>
+        </div>
+      </div>
+
+      {/* Menu */}
+      <div className="glass-card">
+        {menuItems.map((item,i)=>(
+          <SettingRow key={item.id} icon={item.icon} label={item.label} value={item.sub}
+            onPress={()=>goTo(item.id)} last={i===menuItems.length-1}/>
+        ))}
+      </div>
+
+      {/* Sign out */}
+      <div style={{
+        display:'flex',alignItems:'center',justifyContent:'center',gap:8,
+        padding:'14px',cursor:'pointer',borderRadius:14,
+        transition:'background 0.15s',
+      }}
+      onMouseEnter={e=>e.currentTarget.style.background='rgba(255,60,60,0.06)'}
+      onMouseLeave={e=>e.currentTarget.style.background='transparent'}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" stroke="#ff5555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        <span style={{fontSize:15,fontWeight:500,color:'#ff5555'}}>Выйти из аккаунта</span>
+      </div>
+
+      <div style={{height:4}}/>
+    </div>
+  );
+};
+
+/* ── CONTACT DETAIL PAGE ── */
+const ContactDetailPage = ({contact:c, onBack}) => {
+  const InfoRow = ({icon, label, value, sub, accent}) => (
+    <div style={{display:'flex',alignItems:'flex-start',gap:14,padding:'13px 16px'}}>
+      <div style={{width:36,height:36,borderRadius:10,flexShrink:0,background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.08)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>{icon}</div>
+      <div style={{flex:1}}>
+        <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.6,marginBottom:3}}>{label}</div>
+        <div style={{fontSize:15,fontWeight:500,color:accent?'#F07A2A':'#fff'}}>{value}</div>
+        {sub && <div style={{fontSize:12,color:'rgba(255,255,255,0.35)',marginTop:2}}>{sub}</div>}
+      </div>
+    </div>
+  );
+  const SectionTitle = ({title}) => (
+    <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.35)',letterSpacing:0.8,paddingLeft:2,marginBottom:8,marginTop:4}}>{title}</div>
+  );
+  return (
+    <div className="page-enter" style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:16}}>
+      <div style={{paddingTop:8,display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={onBack}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="#F07A2A" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        <span style={{fontSize:15,color:'#F07A2A',fontWeight:500}}>Контакты</span>
+      </div>
+
+      {/* Hero */}
+      <div className="glass-card" style={{padding:'20px 16px',display:'flex',flexDirection:'column',alignItems:'center',gap:12,background:'linear-gradient(160deg,rgba(229,44,54,0.07),rgba(13,15,24,0))',border:'1px solid rgba(229,44,54,0.15)'}}>
+        <div style={{position:'relative'}}>
+          <div style={{width:88,height:88,borderRadius:'50%',background:`linear-gradient(135deg,${c.bg},rgba(0,0,0,0.4))`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:30,fontWeight:700,color:'rgba(255,255,255,0.8)',border:'2.5px solid rgba(229,44,54,0.3)',boxShadow:'0 0 0 4px rgba(229,44,54,0.08)'}}>{c.init}</div>
+          {c.role && <div style={{position:'absolute',bottom:0,right:-4,background:c.roleColor,borderRadius:10,padding:'3px 8px',fontSize:10,fontWeight:700,color:'#fff',boxShadow:'0 2px 6px rgba(0,0,0,0.4)'}}>{c.role}</div>}
+        </div>
+        <div style={{textAlign:'center'}}>
+          <div style={{fontSize:24,fontWeight:700,color:'#fff',letterSpacing:-0.5}}>{c.name}</div>
+          <div style={{fontSize:15,color:'rgba(255,255,255,0.4)',fontStyle:'italic',marginTop:3}}>{c.hebrewName}</div>
+        </div>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',justifyContent:'center'}}>
+          {c.role && <span style={{background:`${c.roleColor}22`,border:`1px solid ${c.roleColor}55`,borderRadius:10,padding:'5px 12px',fontSize:12,fontWeight:600,color:c.roleColor}}>{c.role}</span>}
+          <span style={{background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'5px 12px',fontSize:12,fontWeight:500,color:'rgba(255,255,255,0.6)'}}>{c.tribe}</span>
+          <span style={{background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'5px 12px',fontSize:12,fontWeight:500,color:'rgba(255,255,255,0.6)'}}>{c.city}</span>
+        </div>
+        {c.bio && <div style={{fontSize:14,color:'rgba(255,255,255,0.55)',textAlign:'center',lineHeight:1.55,padding:'0 8px',fontStyle:'italic'}}>«{c.bio}»</div>}
+        <div style={{display:'flex',gap:10,width:'100%',marginTop:4}}>
+          <button style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:8,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:14,padding:'12px',cursor:'pointer',color:'#fff',fontSize:14,fontWeight:600,fontFamily:'Inter,sans-serif',transition:'background 0.15s'}}
+            onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.13)'}
+            onMouseLeave={e=>e.currentTarget.style.background='rgba(255,255,255,0.08)'}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            Написать
+          </button>
+          <button className="btn-orange" style={{flex:1,justifyContent:'center',gap:8,padding:'12px',borderRadius:14,fontSize:14}}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 01.01 1.18 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+            Позвонить
+          </button>
+        </div>
+      </div>
+
+      {/* Personal info */}
+      <div>
+        <SectionTitle title="ЛИЧНЫЕ ДАННЫЕ"/>
+        <div className="glass-card" style={{overflow:'hidden'}}>
+          <InfoRow icon="✡️" label="ЕВРЕЙСКОЕ ИМЯ" value={c.hebrewName}/>
+          <div className="sep"/>
+          <InfoRow icon="🎂" label="ДАТА РОЖДЕНИЯ" value={c.dobGregorian} sub={`${c.dobHebrew} · ${c.age} лет`}/>
+          <div className="sep"/>
+          <InfoRow icon="🕍" label="ПРОИСХОЖДЕНИЕ" value={c.tribe} sub="Влияет на порядок алии к Торе"/>
+          <div className="sep"/>
+          <InfoRow icon="💍" label="СЕМЕЙНОЕ ПОЛОЖЕНИЕ" value={c.marital}/>
+          <div className="sep"/>
+          <InfoRow icon="📍" label="ГОРОД" value={c.city}/>
+        </div>
+      </div>
+
+      {/* Contacts */}
+      <div>
+        <SectionTitle title="КОНТАКТЫ"/>
+        <div className="glass-card" style={{overflow:'hidden'}}>
+          <InfoRow icon="📞" label="ТЕЛЕФОН" value={c.phone} accent/>
+          <div className="sep"/>
+          <InfoRow icon="✉️" label="EMAIL" value={c.email} accent/>
+        </div>
+      </div>
+
+      {/* Activities */}
+      {c.activities && c.activities.length > 0 && (
+        <div>
+          <SectionTitle title="ДЕЯТЕЛЬНОСТЬ В ОБЩИНЕ"/>
+          <div className="glass-card" style={{overflow:'hidden'}}>
+            {c.activities.map((a,i)=>(
+              <div key={i}>
+                {i>0 && <div className="sep"/>}
+                <div style={{display:'flex',alignItems:'center',padding:'13px 16px',gap:14,cursor:'pointer'}}
+                  onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.04)'}
+                  onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                  <div style={{width:36,height:36,borderRadius:10,flexShrink:0,fontSize:16,background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.08)',display:'flex',alignItems:'center',justifyContent:'center'}}>{a.icon}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:14,fontWeight:600,color:'#fff'}}>{a.title}</div>
+                    <div style={{fontSize:12,color:'rgba(255,255,255,0.35)',marginTop:1}}>{a.sub}</div>
+                  </div>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="rgba(255,255,255,0.25)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Birthday */}
+      <div>
+        <SectionTitle title="ЕВРЕЙСКИЙ КАЛЕНДАРЬ"/>
+        <div className="glass-card" style={{padding:'16px',background:'rgba(255,200,50,0.05)',border:'1px solid rgba(255,200,50,0.12)'}}>
+          <div style={{display:'flex',alignItems:'center',gap:14}}>
+            <div style={{fontSize:32}}>🎂</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:11,fontWeight:600,color:'rgba(255,200,50,0.6)',letterSpacing:0.6,marginBottom:4}}>СЛЕДУЮЩИЙ ДЕНЬ РОЖДЕНИЯ</div>
+              <div style={{fontSize:18,fontWeight:700,color:'rgba(255,200,50,0.9)'}}>{c.nextBday}</div>
+              <div style={{fontSize:12,color:'rgba(255,255,255,0.35)',marginTop:2}}>{c.nextBdaySub}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{height:4}}/>
+    </div>
+  );
+};
+
+/* ── CONTACTS SCREEN ── */
+const ContactsScreen = () => {
+  const [tab, setTab] = React.useState('community');
+  const [search, setSearch] = React.useState('');
+  const [syncOn, setSyncOn] = React.useState(true);
+  const [selectedContact, setSelectedContact] = React.useState(null);
+
+  if (selectedContact) return <ContactDetailPage contact={selectedContact} onBack={()=>setSelectedContact(null)}/>;
+
+  const birthdays = [
+    {init:'ДК',name:'Давид Коэн',heb:'3 Ияра',bg:'#c0392b',when:'Сегодня 🎉',color:'#F07A2A'},
+    {init:'РЛ',name:'Рахель Леви',heb:'6 Ияра',bg:'#8e44ad',when:'через 7 д',color:'rgba(255,255,255,0.45)'},
+    {init:'МБ',name:'Моше Берг',heb:'10 Ияра',bg:'#2c7a4b',when:'через 15 д',color:'rgba(255,255,255,0.45)'},
+  ];
+
+  const community = [
+    {
+      init:'АЮ', name:'Авраам Юнаев', role:'Раввин', roleColor:'#E52C36', sub:'недельная глава',
+      photo:true, bg:'#2a3a4a',
+      hebrewName:'אברהם בן יצחק', dobGregorian:'12 марта 1965', dobHebrew:'19 Адара 5725',
+      age:61, tribe:'Коэн', marital:'Женат', city:'Москва',
+      phone:'+7 (916) 100-00-01', email:'av.yunaev@sredisvoyikh.com',
+      bio:'Раввин московской общины «Среди Своих» с 2003 года. Ученик раввина Адина Штайнзальца. Веду еженедельные уроки по Торе и Талмуду.',
+      nextBday:'19 Адара 5786', nextBdaySub:'12 марта 2026 · через 320 дней',
+      activities:[
+        {icon:'📖', title:'Урок недельной главы', sub:'Каждую пятницу, 18:00'},
+        {icon:'🕍', title:'Ведение молитв', sub:'Шаббат и праздники'},
+        {icon:'🎓', title:'Курс Талмуда', sub:'Вторник и четверг, 20:00'},
+        {icon:'💼', title:'Консультации', sub:'Личные встречи по записи'},
+      ]
+    },
+    {init:'ИМ',name:'Игорь Марич',role:'Лектор',roleColor:'#F6A400',sub:'встречи и беседы',photo:true,bg:'#3a2a1a',hebrewName:'יצחק בן משה',dobGregorian:'5 июня 1978',dobHebrew:'21 Сивана 5738',age:47,tribe:'Исраэль',marital:'Женат',city:'Москва',phone:'+7 (916) 200-00-02',email:'i.marich@sredisvoyikh.com',bio:'Философ, лектор, автор книг о еврейской идентичности.',nextBday:'21 Сивана 5786',nextBdaySub:'5 июня 2026 · через 39 дней',activities:[{icon:'🎤',title:'Встречи и беседы',sub:'Ежемесячно'},{icon:'📚',title:'Авторский курс',sub:'Основы иудаизма'}]},
+    {init:'СК',name:'Сара Коэн',role:'Координатор',roleColor:'#4A90D9',sub:'мероприятий',photo:true,bg:'#1a2a3a',hebrewName:'שרה בת דוד',dobGregorian:'20 января 1990',dobHebrew:'24 Тевета 5750',age:36,tribe:'Леви',marital:'Замужем',city:'Москва',phone:'+7 (916) 300-00-03',email:'s.cohen@sredisvoyikh.com',bio:'Координатор мероприятий общины. Организовываю встречи, праздники и обучающие программы.',nextBday:'24 Тевета 5786',nextBdaySub:'20 января 2026 · через 268 дней',activities:[{icon:'📅',title:'Организация мероприятий',sub:'Еженедельно'},{icon:'🤝',title:'Встречи новых участников',sub:'По записи'}]},
+    {init:'ДК',name:'Давид Коэн',role:null,sub:'Участник общины',bg:'#c0392b',hebrewName:'דוד בן אברהם',dobGregorian:'14 мая 1988',dobHebrew:'26 Ияра 5748',age:37,tribe:'Коэн',marital:'Женат',city:'Москва',phone:'+7 (916) 234-56-78',email:'david.cohen@gmail.com',bio:'',nextBday:'26 Ияра 5786',nextBdaySub:'14 мая 2026 · через 17 дней',activities:[]},
+    {init:'РЛ',name:'Рахель Леви',role:null,sub:'Участница общины',bg:'#8e44ad',hebrewName:'רחל בת יעקב',dobGregorian:'6 мая 1992',dobHebrew:'3 Сивана 5752',age:33,tribe:'Леви',marital:'Замужем',city:'Москва',phone:'+7 (916) 300-00-05',email:'r.levi@gmail.com',bio:'',nextBday:'3 Сивана 5786',nextBdaySub:'6 мая 2026 · через 9 дней',activities:[]},
+    {init:'МБ',name:'Моше Берг',role:null,sub:'Участник общины',bg:'#2c7a4b',hebrewName:'משה בן שלמה',dobGregorian:'10 мая 1985',dobHebrew:'10 Ияра 5745',age:40,tribe:'Исраэль',marital:'Женат',city:'Москва',phone:'+7 (916) 300-00-06',email:'m.berg@gmail.com',bio:'',nextBday:'10 Ияра 5786',nextBdaySub:'10 мая 2026 · через 13 дней',activities:[]},
+    {init:'НШ',name:'Наум Шапиро',role:null,sub:'Участник общины',bg:'#1a4a6a',hebrewName:'נחום בן אריה',dobGregorian:'3 августа 1979',dobHebrew:'19 Ава 5739',age:46,tribe:'Исраэль',marital:'Женат',city:'Москва',phone:'+7 (916) 300-00-07',email:'n.shapiro@gmail.com',bio:'',nextBday:'19 Ава 5786',nextBdaySub:'3 августа 2026 · через 98 дней',activities:[]},
+    {init:'ЕК',name:'Эстер Кац',role:null,sub:'Участница общины',bg:'#6a2a6a',hebrewName:'אסתר בת יוסף',dobGregorian:'17 октября 1995',dobHebrew:'23 Тишрея 5756',age:30,tribe:'Исраэль',marital:'Холост',city:'Москва',phone:'+7 (916) 300-00-08',email:'e.katz@gmail.com',bio:'',nextBday:'23 Тишрея 5786',nextBdaySub:'17 октября 2025 · через 173 дня',activities:[]},
+  ];
+
+  const myContacts = [
+    {init:'МК',name:'Мама Коэн',sub:'14 Нисана · др. через 358 д',bg:'#c0392b'},
+    {init:'АК',name:'Арон Коэн',sub:'2 Тишрея · др. через 160 д',bg:'#1a4a8a'},
+    {init:'РБ',name:'Ривка Берман',sub:'19 Сивана · др. через 53 д',bg:'#8e44ad'},
+    {init:'ЙЛ',name:'Йосеф Левин',sub:'7 Адара · др. через 285 д',bg:'#2c7a4b'},
+    {init:'ДФ',name:'Дина Фридман',sub:'25 Тевета · др. через 242 д',bg:'#b8860b'},
+  ];
+
+  const filtered = (tab === 'community' ? community : myContacts)
+    .filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+
+  const Avatar = ({c, size=44}) => (
+    c.photo
+      ? <div style={{
+          width:size,height:size,borderRadius:'50%',flexShrink:0,
+          background:`linear-gradient(135deg,${c.bg},rgba(0,0,0,0.3))`,
+          display:'flex',alignItems:'center',justifyContent:'center',
+          fontSize:size*0.32,fontWeight:700,color:'rgba(255,255,255,0.7)',
+          border:'1.5px solid rgba(255,255,255,0.1)'
+        }}>{c.init}</div>
+      : <div style={{
+          width:size,height:size,borderRadius:'50%',flexShrink:0,
+          background:c.bg,
+          display:'flex',alignItems:'center',justifyContent:'center',
+          fontSize:size*0.32,fontWeight:700,color:'#fff'
+        }}>{c.init}</div>
+  );
+
+  const ActionBtn = ({icon}) => (
+    <div style={{
+      width:38,height:38,borderRadius:'50%',
+      background:'rgba(255,255,255,0.07)',
+      border:'1px solid rgba(255,255,255,0.1)',
+      display:'flex',alignItems:'center',justifyContent:'center',
+      cursor:'pointer',flexShrink:0,
+      transition:'background 0.15s'
+    }}
+    onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.12)'}
+    onMouseLeave={e=>e.currentTarget.style.background='rgba(255,255,255,0.07)'}
+    >{icon}</div>
+  );
+
+  return (
+    <div className="page-enter" style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:14}}>
+      {/* Header */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',paddingTop:8}}>
+        <Logo/>
+        <OmerPill/>
+      </div>
+
+      <div>
+        <div style={{fontSize:28,fontWeight:700,color:'#fff',letterSpacing:-0.5}}>Контакты</div>
+        <div style={{fontSize:13,color:'rgba(255,255,255,0.4)',marginTop:2}}>Община и личные даты</div>
+      </div>
+
+      {/* Segment */}
+      <div className="seg-control">
+        <div className={`seg-item${tab==='community'?' active':''}`} onClick={()=>setTab('community')}>Община</div>
+        <div className={`seg-item${tab==='my'?' active':''}`} onClick={()=>setTab('my')}>Мои контакты</div>
+      </div>
+
+      {/* Search */}
+      <div style={{display:'flex',gap:10,alignItems:'center'}}>
+        <div style={{
+          flex:1,display:'flex',alignItems:'center',gap:10,
+          background:'rgba(255,255,255,0.07)',
+          border:'1px solid rgba(255,255,255,0.1)',
+          borderRadius:14,padding:'11px 14px'
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/>
+          </svg>
+          <input
+            type="text" value={search} onChange={e=>setSearch(e.target.value)}
+            placeholder="Поиск контактов"
+            style={{
+              flex:1,background:'none',border:'none',outline:'none',
+              fontSize:15,color:'#fff',fontFamily:'Inter,sans-serif',
+            }}
+          />
+          {search && <div onClick={()=>setSearch('')} style={{cursor:'pointer',fontSize:14,color:'rgba(255,255,255,0.3)'}}>✕</div>}
+        </div>
+        <div style={{
+          width:44,height:44,borderRadius:14,flexShrink:0,
+          background:'linear-gradient(135deg,#F07A2A,#E05A10)',
+          display:'flex',alignItems:'center',justifyContent:'center',
+          cursor:'pointer',boxShadow:'0 4px 12px rgba(240,122,42,0.35)'
+        }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round">
+            <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            <path d="M19 8v6M22 11h-6"/>
+          </svg>
+        </div>
+      </div>
+
+      {/* Birthdays — only on community tab */}
+      {tab === 'community' && !search && (
+        <div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+            <span style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.4)',letterSpacing:0.8}}>БЛИЖАЙШИЕ ДНИ РОЖДЕНИЯ</span>
+            <span style={{fontSize:12,color:'#F07A2A',cursor:'pointer',fontWeight:500}}>Все дни рождения →</span>
+          </div>
+          <div className="glass-card">
+            {birthdays.map((b,i)=>(
+              <div key={i}>
+                {i>0 && <div className="sep"/>}
+                <div style={{display:'flex',alignItems:'center',padding:'12px 16px',gap:12,cursor:'pointer'}}>
+                  <div style={{
+                    width:44,height:44,borderRadius:'50%',background:b.bg,flexShrink:0,
+                    display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:'#fff'
+                  }}>{b.init}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:14,fontWeight:600,color:'#fff'}}>{b.name}</div>
+                    <div style={{fontSize:12,color:'rgba(255,255,255,0.35)',marginTop:1}}>{b.heb}</div>
+                  </div>
+                  <span style={{fontSize:13,fontWeight:600,color:b.color}}>{b.when}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Sync banner — community tab only */}
+      {tab === 'community' && !search && (
+        <div className="glass-card glass-card-hover" style={{cursor:'pointer'}}>
+          <div style={{display:'flex',alignItems:'center',padding:'14px 16px',gap:12}}>
+            <div style={{
+              width:40,height:40,borderRadius:12,flexShrink:0,
+              background:'rgba(74,144,217,0.12)',border:'1px solid rgba(74,144,217,0.2)',
+              display:'flex',alignItems:'center',justifyContent:'center'
+            }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4A90D9" strokeWidth="2" strokeLinecap="round">
+                <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14,fontWeight:600,color:'#fff'}}>Синхронизация iPhone</div>
+              <div style={{fontSize:12,color:'rgba(255,255,255,0.4)',marginTop:1}}>128 личных контактов с еврейскими датами</div>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+              <span style={{fontSize:13,fontWeight:600,color:'#4CAF50'}}>Включена</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" fill="rgba(76,175,80,0.2)"/>
+                <path d="M7 12l4 4 6-7" stroke="#4CAF50" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M9 18l6-6-6-6" stroke="rgba(255,255,255,0.3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* My contacts hint */}
+      {tab === 'my' && !search && (
+        <div style={{
+          background:'rgba(74,144,217,0.08)',border:'1px solid rgba(74,144,217,0.2)',
+          borderRadius:16,padding:'14px 16px',
+          display:'flex',alignItems:'center',gap:12
+        }}>
+          <span style={{fontSize:22}}>📱</span>
+          <div>
+            <div style={{fontSize:14,fontWeight:600,color:'#fff',marginBottom:2}}>128 контактов синхронизировано</div>
+            <div style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>Еврейские даты рассчитаны автоматически</div>
+          </div>
+        </div>
+      )}
+
+      {/* Contact list */}
+      <div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <span style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.4)',letterSpacing:0.8}}>
+            {tab==='community' ? 'КОНТАКТЫ ОБЩИНЫ' : 'МОИ КОНТАКТЫ'}
+          </span>
+          {!search && <span style={{fontSize:12,color:'#F07A2A',cursor:'pointer',fontWeight:500}}>Все контакты →</span>}
+        </div>
+        <div className="glass-card">
+          {filtered.length === 0 && (
+            <div style={{padding:'24px 16px',textAlign:'center',color:'rgba(255,255,255,0.3)',fontSize:14}}>
+              Контакты не найдены
+            </div>
+          )}
+          {filtered.map((c,i)=>(
+            <div key={i}>
+              {i>0 && <div className="sep"/>}
+              <div style={{display:'flex',alignItems:'center',padding:'12px 16px',gap:12,cursor:'pointer'}}
+                onClick={()=>setSelectedContact(c)}
+                onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.04)'}
+                onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                <Avatar c={c}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:14,fontWeight:600,color:'#fff',marginBottom:2}}>{c.name}</div>
+                  <div style={{display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
+                    {c.role && (
+                      <span style={{
+                        background:`${c.roleColor}22`,color:c.roleColor,
+                        borderRadius:6,padding:'2px 7px',fontSize:11,fontWeight:600
+                      }}>{c.role}</span>
+                    )}
+                    <span style={{fontSize:12,color:'rgba(255,255,255,0.35)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.sub}</span>
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:8,alignItems:'center',flexShrink:0}}>
+                  <ActionBtn icon={
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+                    </svg>
+                  }/>
+                  <ActionBtn icon={
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 01.01 1.18 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/>
+                    </svg>
+                  }/>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <path d="M9 18l6-6-6-6" stroke="rgba(255,255,255,0.2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{height:4}}/>
+    </div>
+  );
+};
+const StatusBar = ({tab}) => {
+  const time = tab === 'prayers' ? '9:41' : '14:30';
+  return (
+    <div className="status-bar">
+      <span className="status-time">{time}</span>
+      <div className="status-icons">
+        {/* Signal */}
+        <svg width="17" height="12" viewBox="0 0 17 12">
+          <rect x="0" y="7" width="3" height="5" rx="1" fill="white"/>
+          <rect x="4.5" y="5" width="3" height="7" rx="1" fill="white"/>
+          <rect x="9" y="2" width="3" height="10" rx="1" fill="white"/>
+          <rect x="13.5" y="0" width="3" height="12" rx="1" fill="white"/>
+        </svg>
+        {/* Wifi */}
+        <svg width="16" height="12" viewBox="0 0 16 12">
+          <path d="M8 10a1.5 1.5 0 110 3 1.5 1.5 0 010-3z" fill="white"/>
+          <path d="M4.5 7.5a5 5 0 017 0" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+          <path d="M2 5a8 8 0 0112 0" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+          <path d="M0 2.5A11 11 0 0116 2.5" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+        </svg>
+        {/* Battery */}
+        <svg width="25" height="12" viewBox="0 0 25 12">
+          <rect x="0" y="1" width="21" height="10" rx="2.5" stroke="white" strokeWidth="1.2" fill="none"/>
+          <rect x="1.2" y="2.2" width="17" height="7.6" rx="1.5" fill="white"/>
+          <path d="M22.5 4v4c1.1-.5 1.8-1.2 1.8-2S23.6 4.5 22.5 4z" fill="white"/>
+        </svg>
+      </div>
+    </div>
+  );
+};
+
+/* ── APP ── */
+const App = () => {
+  const [tab, setTab] = useState('main');
+
+  const renderScreen = () => {
+    switch(tab) {
+      case 'main':     return <MainScreen />;
+      case 'prayers':  return <PrayersScreen />;
+      case 'events':   return <EventsScreen />;
+      case 'contacts': return <ContactsScreen />;
+      case 'profile':  return <ProfileScreen />;
+      default: return null;
+    }
+  };
+
+  return (
+    <div className="phone-shell">
+      <div className="dynamic-island"/>
+      <StatusBar tab={tab}/>
+
+      <div className="screen">
+        <div className="screen-scroll" key={tab}>
+          {renderScreen()}
+        </div>
+      </div>
+
+      {/* Tab bar */}
+      <div className="tab-bar">
+        {TABS.map(t => {
+          const active = tab === t.id;
+          return (
+            <div key={t.id} className="tab-item" onClick={()=>setTab(t.id)}>
+              <div className="tab-icon"><t.Icon active={active}/></div>
+              <span className="tab-label" style={{color: active ? '#F07A2A' : 'rgba(255,255,255,0.4)'}}>
+                {t.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+<div id="root"></div>
+</body>
+</html>
