@@ -1,13 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { HeaderButton, Logo, OmerPill } from '@/components/ui/BrandHeader';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { SegmentControl } from '@/components/ui/SegmentControl';
+import {
+  getEventRegistrationActionTitle,
+  useEventRegistrationAction,
+} from '@/hooks/useEventRegistrationAction';
 import { useAuthStore } from '@/store/useAuthStore';
 import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
@@ -28,41 +33,8 @@ type EventCardProps = {
   cancelling: boolean;
   onRegister: (event: EventItem, registration: EventRegistration | null) => void;
   onCancel: (registration: EventRegistration) => void;
+  onOpen: (event: EventItem) => void;
 };
-
-function getRegistrationStatusTitle(registration: EventRegistration): string {
-  switch (registration.status) {
-    case 'confirmed':
-      return 'Вы записаны';
-    case 'pending':
-      return 'Заявка отправлена';
-    case 'waitlisted':
-      return 'Вы в листе ожидания';
-    default:
-      return 'Записаться';
-  }
-}
-
-function getButtonTitle(event: EventItem, registration: EventRegistration | null, registering: boolean): string {
-  if (registering) {
-    return 'Записываем...';
-  }
-
-  switch (event.registrationMode) {
-    case 'none':
-      return 'Регистрация не нужна';
-    case 'external_link':
-      return 'Открыть регистрацию';
-    case 'internal_paid':
-      return 'Оплата позже';
-    case 'internal_free':
-      return registration && isActiveEventRegistration(registration)
-        ? getRegistrationStatusTitle(registration)
-        : 'Записаться';
-    default:
-      return 'Регистрация недоступна';
-  }
-}
 
 function EventCard({
   event,
@@ -71,26 +43,32 @@ function EventCard({
   cancelling,
   onRegister,
   onCancel,
+  onOpen,
 }: EventCardProps) {
   const activeRegistration = isActiveEventRegistration(registration) ? registration : null;
-  const buttonTitle = getButtonTitle(event, registration, registering);
+  const buttonTitle = getEventRegistrationActionTitle(event, registration, registering);
   const showCancelAction = Boolean(activeRegistration && event.registrationMode === 'internal_free');
 
   if (event.featured) {
     return (
       <GlassCard padded={false}>
-        <View style={styles.featuredImage}>
-          <Text style={styles.featuredEmoji}>{event.imageIcon}</Text>
-          <LinearGradient colors={['rgba(10,10,20,0.85)', 'transparent']} style={StyleSheet.absoluteFillObject} />
-          <View style={[styles.tag, styles.featuredTag, { backgroundColor: `${event.tagColor}DD` }]}>
-            <Text style={styles.tagTextWhite}>{event.category}</Text>
+        <Pressable onPress={() => onOpen(event)} style={({ pressed }) => [pressed && styles.pressed]}>
+          <View style={styles.featuredImage}>
+            <Text style={styles.featuredEmoji}>{event.imageIcon}</Text>
+            <LinearGradient colors={['rgba(10,10,20,0.85)', 'transparent']} style={StyleSheet.absoluteFillObject} />
+            <View style={[styles.tag, styles.featuredTag, { backgroundColor: `${event.tagColor}DD` }]}>
+              <Text style={styles.tagTextWhite}>{event.category}</Text>
+            </View>
+            <Text style={styles.siteText}>www.sredisvoih.com</Text>
           </View>
-          <Text style={styles.siteText}>www.sredisvoih.com</Text>
-        </View>
 
-        <View style={styles.featuredBody}>
-          <Text style={styles.featuredTitle}>{event.title}</Text>
-          {event.date ? <Text style={styles.featuredDate}>{event.date}</Text> : null}
+          <View style={styles.featuredBody}>
+            <Text style={styles.featuredTitle}>{event.title}</Text>
+            {event.date ? <Text style={styles.featuredDate}>{event.date}</Text> : null}
+          </View>
+        </Pressable>
+
+        <View style={styles.featuredActions}>
           <PrimaryButton title={buttonTitle} disabled={registering || cancelling} onPress={() => onRegister(event, registration)} />
           {showCancelAction && activeRegistration ? (
             <Pressable
@@ -109,25 +87,27 @@ function EventCard({
   return (
     <GlassCard padded={false}>
       <View style={styles.eventRow}>
-        <LinearGradient colors={['#1a1440', '#0f0f1a']} style={styles.eventImage}>
-          <Text style={styles.eventEmoji}>{event.imageIcon}</Text>
-          <LinearGradient colors={['transparent', 'rgba(13,15,24,0.45)']} style={StyleSheet.absoluteFillObject} />
-        </LinearGradient>
+        <Pressable onPress={() => onOpen(event)} style={({ pressed }) => [styles.eventImagePressable, pressed && styles.pressed]}>
+          <LinearGradient colors={['#1a1440', '#0f0f1a']} style={styles.eventImage}>
+            <Text style={styles.eventEmoji}>{event.imageIcon}</Text>
+            <LinearGradient colors={['transparent', 'rgba(13,15,24,0.45)']} style={StyleSheet.absoluteFillObject} />
+          </LinearGradient>
+        </Pressable>
 
         <View style={styles.eventBody}>
-          <View>
+          <Pressable onPress={() => onOpen(event)} style={({ pressed }) => [styles.eventTextPressable, pressed && styles.pressed]}>
             <View style={[styles.tag, { alignSelf: 'flex-start', backgroundColor: `${event.tagColor}22` }]}>
               <Text style={[styles.tagText, { color: event.tagColor }]}>{event.category}</Text>
             </View>
 
             <Text style={styles.eventTitle}>{event.title}</Text>
 
-            {event.subtitle || event.date ? (
-              <Text style={styles.eventSub}>{event.subtitle ?? event.date}</Text>
+            {event.subtitle || event.shortDescription || event.date ? (
+              <Text style={styles.eventSub}>{event.subtitle ?? event.shortDescription ?? event.date}</Text>
             ) : null}
 
             {event.date ? <Text style={styles.eventDate}>{event.date}</Text> : null}
-          </View>
+          </Pressable>
 
           <PrimaryButton
             title={buttonTitle}
@@ -152,9 +132,8 @@ function EventCard({
 }
 
 export default function EventsScreen() {
+  const router = useRouter();
   const [filter, setFilter] = useState<(typeof filters)[number]>('Все');
-  const [registeringEventId, setRegisteringEventId] = useState<string | null>(null);
-  const [cancellingRegistrationId, setCancellingRegistrationId] = useState<string | null>(null);
   const {
     events,
     myRegistrations,
@@ -162,9 +141,13 @@ export default function EventsScreen() {
     error,
     loadEvents,
     loadMyRegistrations,
-    registerForEvent,
-    cancelRegistration,
   } = useEventsStore();
+  const {
+    cancellingRegistrationId,
+    handleCancelRegistration,
+    handleRegistrationAction,
+    registeringEventId,
+  } = useEventRegistrationAction();
   const authUser = useAuthStore((state) => state.user);
   const membership = useAuthStore((state) => state.membership);
   const loadSession = useAuthStore((state) => state.loadSession);
@@ -197,112 +180,9 @@ export default function EventsScreen() {
     return registrationMap;
   }, [myRegistrations]);
 
-  const handleRegister = useCallback(async (event: EventItem, registration: EventRegistration | null) => {
-    switch (event.registrationMode) {
-      case 'none':
-        Alert.alert('Регистрация не требуется');
-        return;
-
-      case 'external_link':
-        if (!event.registrationUrl) {
-          Alert.alert('Ссылка недоступна', 'У события пока нет ссылки для регистрации.');
-          return;
-        }
-
-        try {
-          await Linking.openURL(event.registrationUrl);
-        } catch (error) {
-          Alert.alert(
-            'Не удалось открыть ссылку',
-            error instanceof Error ? error.message : 'Попробуйте открыть регистрацию позже.',
-          );
-        }
-        return;
-
-      case 'internal_free':
-        if (!authUser) {
-          Alert.alert('Нужен вход', 'Чтобы записаться на событие, войдите в приложение.');
-          return;
-        }
-
-        if (registration && isActiveEventRegistration(registration)) {
-          Alert.alert('Вы уже записаны', 'Вы уже записаны на это событие.');
-          return;
-        }
-
-        setRegisteringEventId(event.id);
-
-        try {
-          await registerForEvent(event.id);
-          Alert.alert('Вы записаны', 'Регистрация на событие создана.');
-        } catch (error) {
-          if (error instanceof Error && (error.message === 'Auth required' || error.message.includes('Нужен вход'))) {
-            Alert.alert('Нужен вход', 'Чтобы записаться на событие, войдите в приложение.');
-            return;
-          }
-
-          if (
-            error instanceof Error
-            && (
-              error.message.includes('Вы уже записаны')
-              || error.message.includes('duplicate key')
-              || error.message.includes('event_registrations_event_id_user_id_key')
-            )
-          ) {
-            Alert.alert('Вы уже записаны', 'Вы уже записаны на это событие.');
-            return;
-          }
-
-          Alert.alert(
-            'Не удалось выполнить действие',
-            'Проверьте подключение и попробуйте ещё раз.',
-          );
-        } finally {
-          setRegisteringEventId(null);
-        }
-        return;
-
-      case 'internal_paid':
-        Alert.alert('Оплата будет доступна позже');
-        return;
-
-      default:
-        Alert.alert('Регистрация недоступна');
-    }
-  }, [authUser, registerForEvent]);
-
-  const handleCancelRegistration = useCallback((registration: EventRegistration) => {
-    Alert.alert(
-      'Отменить запись?',
-      'Вы сможете записаться заново, если места ещё будут доступны.',
-      [
-        { text: 'Оставить', style: 'cancel' },
-        {
-          text: 'Отменить запись',
-          style: 'destructive',
-          onPress: () => {
-            async function cancelCurrentRegistration() {
-              setCancellingRegistrationId(registration.id);
-
-              try {
-                await cancelRegistration(registration.id);
-                Alert.alert('Запись отменена');
-              } catch {
-                Alert.alert(
-                  'Не удалось выполнить действие',
-                  'Проверьте подключение и попробуйте ещё раз.',
-                );
-              } finally {
-                setCancellingRegistrationId(null);
-              }
-            }
-
-            void cancelCurrentRegistration();
-          },
-        },
-      ],
-    );
-  }, [cancelRegistration]);
+  const handleOpenEvent = useCallback((event: EventItem) => {
+    router.push({ pathname: '/events/[id]', params: { id: event.id } });
+  }, [router]);
 
   return (
     <Screen>
@@ -336,8 +216,9 @@ export default function EventsScreen() {
             registration={registrationByEventId.get(event.id) ?? null}
             registering={registeringEventId === event.id}
             cancelling={cancellingRegistrationId === registrationByEventId.get(event.id)?.id}
-            onRegister={handleRegister}
+            onRegister={handleRegistrationAction}
             onCancel={handleCancelRegistration}
+            onOpen={handleOpenEvent}
           />
         </View>
       ))}
@@ -429,6 +310,10 @@ const styles = StyleSheet.create({
   featuredBody: {
     paddingHorizontal: 16,
     paddingTop: 14,
+    paddingBottom: 10,
+  },
+  featuredActions: {
+    paddingHorizontal: 16,
     paddingBottom: 16,
   },
   featuredTitle: {
@@ -448,9 +333,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   eventImage: {
+    flex: 1,
     width: 100,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  eventImagePressable: {
+    width: 100,
   },
   eventEmoji: {
     fontSize: 40,
@@ -461,6 +350,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 14,
     paddingVertical: 12,
+  },
+  eventTextPressable: {
+    flex: 1,
   },
   eventTitle: {
     color: colors.text,

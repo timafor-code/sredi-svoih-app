@@ -1,13 +1,13 @@
 import { supabase } from './supabaseClient';
-import type { EventRegistrationMode } from '@/types/event';
+import type {
+  Event,
+  EventRegistrationMode,
+  EventStatus,
+  EventVisibility,
+} from '@/types/event';
 
-export type EventVisibility = 'public' | 'members_only' | 'hidden';
-
-export type EventStatus = 'draft' | 'published' | 'cancelled' | 'archived';
-
-export type CommunityEvent = {
+export type CommunityEventRow = {
   id: string;
-  community_id: string;
 
   title: string;
   subtitle: string | null;
@@ -20,6 +20,8 @@ export type CommunityEvent = {
 
   location_name: string | null;
   address: string | null;
+  latitude: number | null;
+  longitude: number | null;
 
   image_url: string | null;
   category: string | null;
@@ -44,9 +46,8 @@ export type CommunityEvent = {
   published_at: string | null;
 };
 
-const EVENT_FIELDS = `
+export const EVENT_FIELDS = `
   id,
-  community_id,
   title,
   subtitle,
   short_description,
@@ -56,6 +57,8 @@ const EVENT_FIELDS = `
   timezone,
   location_name,
   address,
+  latitude,
+  longitude,
   image_url,
   category,
   audience,
@@ -73,7 +76,39 @@ const EVENT_FIELDS = `
   published_at
 `;
 
-export async function listPublishedEvents(): Promise<CommunityEvent[]> {
+export function normalizeEventRow(row: CommunityEventRow): Event {
+  return {
+    id: row.id,
+    title: row.title,
+    subtitle: row.subtitle,
+    shortDescription: row.short_description,
+    description: row.description,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    timezone: row.timezone,
+    locationName: row.location_name,
+    address: row.address,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    imageUrl: row.image_url,
+    category: row.category,
+    audience: row.audience,
+    visibility: row.visibility,
+    status: row.status,
+    sourceType: row.source_type,
+    sourceUrl: row.source_url,
+    registrationMode: row.registration_mode,
+    registrationUrl: row.registration_url,
+    capacity: row.capacity,
+    waitlistEnabled: row.waitlist_enabled,
+    requiresApproval: row.requires_approval,
+    priceAmount: row.price_amount,
+    priceCurrency: row.price_currency,
+    publishedAt: row.published_at,
+  };
+}
+
+export async function listPublishedEvents(): Promise<Event[]> {
   const { data, error } = await supabase
     .from('events')
     .select(EVENT_FIELDS)
@@ -85,10 +120,10 @@ export async function listPublishedEvents(): Promise<CommunityEvent[]> {
     throw new Error(error.message);
   }
 
-  return (data ?? []) as CommunityEvent[];
+  return ((data ?? []) as CommunityEventRow[]).map(normalizeEventRow);
 }
 
-export async function getEventById(id: string): Promise<CommunityEvent | null> {
+export async function getEventById(id: string): Promise<Event | null> {
   const { data, error } = await supabase
     .from('events')
     .select(EVENT_FIELDS)
@@ -99,5 +134,5 @@ export async function getEventById(id: string): Promise<CommunityEvent | null> {
     throw new Error(error.message);
   }
 
-  return data as CommunityEvent | null;
+  return data ? normalizeEventRow(data as CommunityEventRow) : null;
 }

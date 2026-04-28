@@ -1,24 +1,14 @@
 import { supabase } from './supabaseClient';
+import {
+  EVENT_FIELDS,
+  normalizeEventRow,
+  type CommunityEventRow,
+} from '@/services/eventsService';
 import type {
   Event,
   EventRegistration,
-  EventRegistrationMode,
   EventRegistrationStatus,
 } from '@/types/event';
-
-type EventRow = {
-  id: string;
-  title: string;
-  short_description: string | null;
-  starts_at: string;
-  ends_at: string | null;
-  timezone: string | null;
-  location_name: string | null;
-  address: string | null;
-  category: string | null;
-  image_url: string | null;
-  registration_mode: EventRegistrationMode;
-};
 
 type EventRegistrationRow = {
   id: string;
@@ -35,7 +25,7 @@ type EventRegistrationRow = {
   payment_id: string | null;
   created_at: string;
   updated_at: string;
-  event?: EventRow | EventRow[] | null;
+  event?: CommunityEventRow | CommunityEventRow[] | null;
 };
 
 const REGISTRATION_FIELDS = `
@@ -54,35 +44,9 @@ const REGISTRATION_FIELDS = `
   created_at,
   updated_at,
   event:events (
-    id,
-    title,
-    short_description,
-    starts_at,
-    ends_at,
-    timezone,
-    location_name,
-    address,
-    category,
-    image_url,
-    registration_mode
+    ${EVENT_FIELDS}
   )
 `;
-
-function normalizeEvent(row: EventRow): Event {
-  return {
-    id: row.id,
-    title: row.title,
-    shortDescription: row.short_description,
-    startsAt: row.starts_at,
-    endsAt: row.ends_at,
-    timezone: row.timezone,
-    locationName: row.location_name,
-    address: row.address,
-    category: row.category,
-    imageUrl: row.image_url,
-    registrationMode: row.registration_mode,
-  };
-}
 
 function normalizeEmbeddedEvent(event: EventRegistrationRow['event']): Event | undefined {
   if (!event) {
@@ -91,7 +55,7 @@ function normalizeEmbeddedEvent(event: EventRegistrationRow['event']): Event | u
 
   const row = Array.isArray(event) ? event[0] : event;
 
-  return row ? normalizeEvent(row) : undefined;
+  return row ? normalizeEventRow(row) : undefined;
 }
 
 function normalizeRegistration(row: EventRegistrationRow): EventRegistration {
