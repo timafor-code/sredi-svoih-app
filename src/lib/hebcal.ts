@@ -1,8 +1,26 @@
-import { HDate, HebrewCalendar, OmerEvent, getSedra } from '@hebcal/core';
+import { HDate, HebrewCalendar, OmerEvent, Zmanim, flags, getSedra } from '@hebcal/core';
+import type { Event, Location } from '@hebcal/core';
 
-import { monthNameRu, parshaNameRu, sefirahRu } from './hebcalRu';
+import { addDays, daysUntil } from './dates';
+import {
+  formatOmerCountingRu,
+  holidayNameRu,
+  monthNameRu,
+  parshaNameRu,
+  sefirahMeaningRu,
+  sefirahRu,
+} from './hebcalRu';
 
 export type HebcalLang = 'he' | 'ru' | 'en';
+
+export function getHebrewDate(
+  date: Date | HDate = new Date(),
+  location?: Location,
+  useElevation = false,
+): HDate {
+  if (date instanceof HDate) return date;
+  return location ? Zmanim.makeSunsetAwareHDate(location, date, useElevation) : new HDate(date);
+}
 
 /**
  * Render the Hebrew date for a given Gregorian (or Hebrew) date.
@@ -17,8 +35,10 @@ export type HebcalLang = 'he' | 'ru' | 'en';
 export function getHebrewDateLabel(
   date: Date | HDate = new Date(),
   lang: HebcalLang = 'ru',
+  location?: Location,
+  useElevation = false,
 ): string {
-  const hd = date instanceof HDate ? date : new HDate(date);
+  const hd = getHebrewDate(date, location, useElevation);
   if (lang === 'he') return hd.renderGematriya();
   if (lang === 'en') return hd.render('en');
   return `${hd.getDate()} ${monthNameRu(hd.getMonthName())} ${hd.getFullYear()}`;
@@ -67,20 +87,32 @@ export function getWeeklyParsha(
 export interface OmerInfo {
   /** Day of the Omer, 1..49 */
   day: number;
+  /** Hebrew day label, e.g. `כ״ו בָּעוֹמֶר` */
+  dayHe: string;
   /** Sefirah in Hebrew with nikud, e.g. `חֶֽסֶד שֶׁבִּגְבוּרָה` */
   sefirahHe: string;
   /** Sefirah transliterated, e.g. `Chesed shebiGevurah` */
   sefirahEn: string;
   /** Sefirah in Russian, e.g. `Хесед ше-бе-Гвура` */
   sefirahRu: string;
+  /** Short Russian meaning, e.g. `Любовь внутри строгости` */
+  meaningRu: string;
+  /** Full counting sentence in Hebrew */
+  countingHe: string;
+  /** Full counting sentence in Russian */
+  countingRu: string;
 }
 
 /**
  * Returns Omer info if `date` is between 16 Nisan and 5 Sivan inclusive,
  * otherwise `null` (Omer is not counted on those days).
  */
-export function getOmerInfo(date: Date | HDate = new Date()): OmerInfo | null {
-  const hd = date instanceof HDate ? date : new HDate(date);
+export function getOmerInfo(
+  date: Date | HDate = new Date(),
+  location?: Location,
+  useElevation = false,
+): OmerInfo | null {
+  const hd = getHebrewDate(date, location, useElevation);
   const events = HebrewCalendar.calendar({
     start: hd,
     end: hd,
@@ -91,9 +123,57 @@ export function getOmerInfo(date: Date | HDate = new Date()): OmerInfo | null {
   if (!omer) return null;
   return {
     day: omer.omer,
+    dayHe: omer.render('he'),
     sefirahHe: omer.sefira('he'),
     sefirahEn: omer.sefira('en'),
     sefirahRu: sefirahRu(omer.omer),
+    meaningRu: sefirahMeaningRu(omer.omer),
+    countingHe: omer.getTodayIs('he'),
+    countingRu: formatOmerCountingRu(omer.omer),
+  };
+}
+
+export interface UpcomingHoliday {
+  date: Date;
+  daysUntil: number;
+  emoji: string | null;
+  hebrewDateRu: string;
+  nameEn: string;
+  nameHe: string;
+  nameRu: string;
+}
+
+const UPCOMING_HOLIDAY_MASK =
+  flags.CHAG | flags.MINOR_HOLIDAY | flags.MODERN_HOLIDAY | flags.MAJOR_FAST | flags.MINOR_FAST;
+const UPCOMING_HOLIDAY_EXCLUDE_MASK = flags.EREV | flags.OMER_COUNT | flags.PARSHA_HASHAVUA | flags.SPECIAL_SHABBAT;
+
+function isDisplayHoliday(event: Event) {
+  const mask = event.getFlags();
+  return (mask & UPCOMING_HOLIDAY_MASK) !== 0 && (mask & UPCOMING_HOLIDAY_EXCLUDE_MASK) === 0;
+}
+
+export function getUpcomingHoliday(
+  date: Date | HDate = new Date(),
+  il = false,
+  maxDays = 370,
+): UpcomingHoliday | null {
+  const start = date instanceof HDate ? date : new HDate(date);
+  const end = new HDate(addDays(start.greg(), maxDays));
+  const event = HebrewCalendar.calendar({ start, end, il }).find(isDisplayHoliday);
+  if (!event) return null;
+
+  const eventDate = event.getDate();
+  const gregDate = eventDate.greg();
+  const nameEn = event.basename();
+
+  return {
+    date: gregDate,
+    daysUntil: daysUntil(gregDate, start.greg()),
+    emoji: event.getEmoji(),
+    hebrewDateRu: getHebrewDateLabel(eventDate),
+    nameEn,
+    nameHe: event.render('he'),
+    nameRu: holidayNameRu(nameEn),
   };
 }
 

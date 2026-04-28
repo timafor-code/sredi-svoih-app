@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
@@ -7,23 +8,37 @@ import { HeaderButton, Logo } from '@/components/ui/BrandHeader';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
-import { mockZmanim } from '@/data/mockZmanim';
+import { useNow } from '@/hooks/useNow';
+import { formatRuDate, formatRuTime, progressBetween } from '@/lib/dates';
+import { getHebrewDate, getHebrewDateLabel } from '@/lib/hebcal';
+import { getDailyZmanim, getHebcalLocation, getPrayerWindows } from '@/lib/zmanim';
+import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
 
 function PrayerCard({
   accent,
   active,
   icon,
+  progress = 0,
+  state = 'done',
   status,
   subtitle,
+  timeZone,
   title,
+  windowEnd,
+  windowStart,
 }: {
   accent: string;
   active?: boolean;
   icon: string;
+  progress?: number;
+  state?: 'done' | 'upcoming';
   status?: string;
   subtitle: string;
+  timeZone: string;
   title: string;
+  windowEnd: Date;
+  windowStart: Date;
 }) {
   return (
     <GlassCard style={active && styles.activePrayer}>
@@ -41,19 +56,19 @@ function PrayerCard({
         </View>
         {!active ? (
           <View style={styles.doneRow}>
-            <Text style={styles.doneText}>завершена</Text>
-            <Ionicons name="checkmark-circle-outline" size={18} color="rgba(255,255,255,0.35)" />
+            <Text style={styles.doneText}>{state === 'done' ? 'завершена' : 'ожидает'}</Text>
+            <Ionicons name={state === 'done' ? 'checkmark-circle-outline' : 'time-outline'} size={18} color="rgba(255,255,255,0.35)" />
           </View>
         ) : null}
       </View>
       {active ? (
         <View>
           <View style={styles.progressLabels}>
-            <Text style={styles.tinyMuted}>13:20</Text>
-            <Text style={styles.progressPercent}>18%</Text>
-            <Text style={styles.tinyMuted}>19:52</Text>
+            <Text style={styles.tinyMuted}>{formatRuTime(windowStart, timeZone)}</Text>
+            <Text style={styles.progressPercent}>{Math.round(progress * 100)}%</Text>
+            <Text style={styles.tinyMuted}>{formatRuTime(windowEnd, timeZone)}</Text>
           </View>
-          <ProgressBar value={0.18} color={colors.orange} height={4} />
+          <ProgressBar value={progress} color={colors.orange} height={4} />
         </View>
       ) : null}
     </GlassCard>
@@ -61,6 +76,21 @@ function PrayerCard({
 }
 
 export default function PrayersScreen() {
+  const now = useNow();
+  const city = useSettingsStore((state) => state.city);
+  const location = useMemo(() => getHebcalLocation(city), [city]);
+  const daily = useMemo(() => getDailyZmanim({ city, date: now }), [city, now]);
+  const hdate = useMemo(() => getHebrewDate(now, location), [location, now]);
+  const prayers = useMemo(() => getPrayerWindows(daily, now), [daily, now]);
+  const dayProgress = progressBetween(daily.times.alot.at, daily.times.tzeit.at, now);
+  const nextZmanId = daily.items.find((item) => now.getTime() < item.at.getTime())?.id;
+  const overview = [
+    { e: '🌅', l: 'Рассвет', t: daily.times.alot.time },
+    { e: '⚡', l: 'Полдень', t: daily.times.chatzot.time },
+    { e: '🌇', l: 'Закат', t: daily.times.sunset.time },
+    { e: '🌃', l: 'Ночь', t: daily.times.tzeit.time },
+  ];
+
   return (
     <Screen>
       <View style={styles.header}>
@@ -73,7 +103,9 @@ export default function PrayersScreen() {
 
       <View>
         <Text style={styles.title}>Молитвы и зманим</Text>
-        <Text style={styles.subtitle}>23 Нисана 5785 · 22 апреля 2026 · Москва ▾</Text>
+        <Text style={styles.subtitle}>
+          {getHebrewDateLabel(hdate)} · {formatRuDate(now, daily.timeZone)} · {city} ▾
+        </Text>
       </View>
 
       <View style={styles.filterRow}>
@@ -94,18 +126,13 @@ export default function PrayersScreen() {
               <Text style={styles.scaleText}>Маарив</Text>
             </View>
           </View>
-          <View style={styles.nowMarkerLabel}>
-            <Text style={styles.nowMarkerText}>14:30</Text>
+          <View style={[styles.nowMarkerLabel, { left: `${Math.round(dayProgress * 100)}%` }]}>
+            <Text style={styles.nowMarkerText}>{formatRuTime(now, daily.timeZone)}</Text>
           </View>
-          <View style={styles.nowMarker} />
+          <View style={[styles.nowMarker, { left: `${Math.round(dayProgress * 100)}%` }]} />
         </View>
         <View style={styles.zmanOverview}>
-          {[
-            { t: '05:12', l: 'Рассвет', e: '🌅' },
-            { t: '12:47', l: 'Полдень', e: '⚡' },
-            { t: '19:52', l: 'Закат', e: '🌇' },
-            { t: '20:16', l: 'Ночь', e: '🌃' },
-          ].map((item) => (
+          {overview.map((item) => (
             <View key={item.t} style={styles.zmanPoint}>
               <Text style={styles.zmanEmoji}>{item.e}</Text>
               <Text style={styles.zmanTime}>{item.t}</Text>
@@ -115,34 +142,43 @@ export default function PrayersScreen() {
         </View>
       </GlassCard>
 
-      <PrayerCard icon="🌅" title="Шахарит" status="שחרית" subtitle="06:05 – 09:48" accent="#F6A400" />
-      <PrayerCard
-        active
-        icon="☀️"
-        title="Минха"
-        status="מנחה"
-        subtitle="13:20 – 19:52 · осталось 322 мин"
-        accent={colors.orange}
-      />
-      <PrayerCard icon="🌙" title="Маарив" status="ערבית" subtitle="20:10 – 23:59 · через 340 мин" accent="#6B7FD4" />
+      {prayers.map((prayer) => (
+        <PrayerCard
+          key={prayer.id}
+          accent={prayer.accent}
+          active={prayer.active}
+          icon={prayer.icon}
+          progress={prayer.progress}
+          state={now.getTime() > prayer.end.getTime() ? 'done' : 'upcoming'}
+          status={prayer.hebrew}
+          subtitle={prayer.subtitle}
+          timeZone={daily.timeZone}
+          title={prayer.title}
+          windowEnd={prayer.end}
+          windowStart={prayer.start}
+        />
+      ))}
 
       <View>
         <SectionTitle title="ЗМАНИМ · ТАБЛИЦА" action="Подробнее о зманим" />
         <GlassCard padded={false}>
-          {mockZmanim.map((zman, index) => (
-            <View key={zman.name} style={[styles.zmanRow, index > 0 && styles.rowDivider, zman.highlight && styles.zmanRowHighlight]}>
-              <Text style={styles.zmanRowIcon}>{zman.icon}</Text>
-              <Text style={[styles.zmanRowName, zman.highlight && styles.zmanRowAccent]}>{zman.name}</Text>
-              <Text style={[styles.zmanRowTime, zman.highlight && styles.zmanRowAccent]}>{zman.time}</Text>
-            </View>
-          ))}
+          {daily.items.map((zman, index) => {
+            const highlight = zman.id === nextZmanId;
+            return (
+              <View key={zman.id} style={[styles.zmanRow, index > 0 && styles.rowDivider, highlight && styles.zmanRowHighlight]}>
+                <Text style={styles.zmanRowIcon}>{zman.icon}</Text>
+                <Text style={[styles.zmanRowName, highlight && styles.zmanRowAccent]}>{zman.name}</Text>
+                <Text style={[styles.zmanRowTime, highlight && styles.zmanRowAccent]}>{zman.time}</Text>
+              </View>
+            );
+          })}
         </GlassCard>
       </View>
 
       <Pressable style={styles.infoCard}>
         <LinearGradient colors={['rgba(74,144,217,0.10)', 'rgba(74,144,217,0.04)']} style={StyleSheet.absoluteFillObject} />
         <Ionicons name="information-circle-outline" size={18} color="#4A90D9" />
-        <Text style={styles.infoText}>Зманим рассчитаны по выбранному городу, а не по GPS.</Text>
+        <Text style={styles.infoText}>Зманим рассчитаны через Hebcal для города {city}, часовой пояс {daily.timeZone}.</Text>
       </Pressable>
     </Screen>
   );

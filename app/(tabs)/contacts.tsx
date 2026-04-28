@@ -10,29 +10,40 @@ import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { SegmentControl } from '@/components/ui/SegmentControl';
 import { mockContacts, mockPersonalContacts } from '@/data/mockContacts';
+import { useNow } from '@/hooks/useNow';
+import { getUpcomingContactBirthdays } from '@/lib/birthdays';
 import { colors } from '@/theme/colors';
 import type { ContactItem } from '@/types/contact';
 
 const tabs = ['Община', 'Мои контакты'] as const;
 
-const birthdays = [
-  { initials: 'ДК', name: 'Давид Коэн', date: '3 Ияра', bg: '#c0392b', when: 'Сегодня 🎉', active: true },
-  { initials: 'РЛ', name: 'Рахель Леви', date: '6 Ияра', bg: '#8e44ad', when: 'через 7 д' },
-  { initials: 'МБ', name: 'Моше Берг', date: '10 Ияра', bg: '#2c7a4b', when: 'через 15 д' },
-];
+type BirthdayPreviewItem = {
+  active: boolean;
+  bg: string;
+  date: string;
+  id: string;
+  initials: string;
+  name: string;
+  when: string;
+};
 
 type PersonalContact = (typeof mockPersonalContacts)[number];
 
-function BirthdayRow({ item, isLast }: { item: (typeof birthdays)[number]; isLast?: boolean }) {
+function BirthdayRow({ item, isLast }: { item: BirthdayPreviewItem; isLast?: boolean }) {
+  const router = useRouter();
+
   return (
-    <View style={[styles.birthdayRow, !isLast && styles.rowDivider]}>
+    <Pressable
+      onPress={() => router.push(`/contacts/${item.id}`)}
+      style={({ pressed }) => [styles.birthdayRow, !isLast && styles.rowDivider, pressed && styles.pressed]}
+    >
       <Avatar initials={item.initials} bg={item.bg} size={44} />
       <View style={styles.flex}>
         <Text style={styles.rowTitle}>{item.name}</Text>
         <Text style={styles.rowSubtitle}>{item.date}</Text>
       </View>
       <Text style={[styles.whenText, item.active && styles.whenTextActive]}>{item.when}</Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -99,6 +110,7 @@ function PersonalRow({ contact, isLast }: { contact: PersonalContact; isLast?: b
 }
 
 export default function ContactsScreen() {
+  const now = useNow();
   const [tab, setTab] = useState<(typeof tabs)[number]>('Община');
   const [search, setSearch] = useState('');
 
@@ -110,6 +122,19 @@ export default function ContactsScreen() {
   const personal = useMemo(
     () => mockPersonalContacts.filter((contact) => contact.name.toLowerCase().includes(normalizedSearch)),
     [normalizedSearch],
+  );
+  const birthdays = useMemo<BirthdayPreviewItem[]>(
+    () =>
+      getUpcomingContactBirthdays(mockContacts, now, 3).map(({ birthday, contact }) => ({
+        active: birthday.daysUntil === 0,
+        bg: contact.avatarBg ?? '#2a3a4a',
+        date: birthday.nextBirthday,
+        id: contact.id,
+        initials: contact.initials,
+        name: contact.name,
+        when: birthday.when,
+      })),
+    [now],
   );
 
   const isCommunity = tab === 'Община';

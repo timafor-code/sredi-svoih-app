@@ -103,6 +103,48 @@ export function parshaNameRu(name: string): string {
   return PARSHA_RU[name] ?? name;
 }
 
+const HOLIDAY_RU: Record<string, string> = {
+  'Asara B\'Tevet': 'Пост 10 Тевета',
+  'Chanukah': 'Ханука',
+  'Erev Pesach': 'Канун Песаха',
+  'Erev Rosh Hashana': 'Канун Рош ха-Шана',
+  'Erev Shavuot': 'Канун Шавуота',
+  'Erev Sukkot': 'Канун Суккота',
+  'Erev Tish\'a B\'Av': 'Канун 9 Ава',
+  'Erev Yom Kippur': 'Канун Йом Кипура',
+  'Lag BaOmer': 'Лаг ба-Омер',
+  'Pesach': 'Песах',
+  'Pesach Sheni': 'Песах Шени',
+  'Purim': 'Пурим',
+  'Rosh Chodesh': 'Рош Ходеш',
+  'Rosh Hashana': 'Рош ха-Шана',
+  'Shavuot': 'Шавуот',
+  'Shmini Atzeret': 'Шмини Ацерет',
+  'Simchat Torah': 'Симхат Тора',
+  'Sukkot': 'Суккот',
+  'Ta\'anit Bechorot': 'Пост первенцев',
+  'Ta\'anit Esther': 'Пост Эстер',
+  'Tish\'a B\'Av': '9 Ава',
+  'Tu B\'Av': 'Ту бе-Ав',
+  'Tu BiShvat': 'Ту би-Шват',
+  'Tzom Tammuz': 'Пост 17 Тамуза',
+  'Yom HaAtzma\'ut': 'Йом ха-Ацмаут',
+  'Yom HaShoah': 'Йом ха-Шоа',
+  'Yom HaZikaron': 'Йом ха-Зикарон',
+  'Yom Kippur': 'Йом Кипур',
+  'Yom Yerushalayim': 'Йом Йерушалаим',
+};
+
+export function holidayNameRu(name: string): string {
+  if (!name) return name;
+  const cleaned = name
+    .replace(/:.*$/, '')
+    .replace(/\s+\d+$/, '')
+    .replace(/\s+\([^)]*\)$/, '')
+    .trim();
+  return HOLIDAY_RU[name] ?? HOLIDAY_RU[cleaned] ?? cleaned;
+}
+
 /**
  * Counting of the Omer — sefirah for a given day (1..49).
  *
@@ -112,10 +154,30 @@ export function parshaNameRu(name: string): string {
  * Day 8 (week=1, inner=0) → "Хесед ше-бе-Гвура".
  */
 const ATTR_RU = ['Хесед', 'Гвура', 'Тиферет', 'Нецах', 'Ход', 'Йесод', 'Малхут'];
+const ATTR_MEANING_RU = ['Любовь', 'Строгость', 'Гармония', 'Победа', 'Смирение', 'Связь', 'Царство'];
+const ATTR_MEANING_GENITIVE_RU = ['любви', 'строгости', 'гармонии', 'победы', 'смирения', 'связи', 'царства'];
 
 export function sefirahRu(omerDay: number): string {
   if (!Number.isInteger(omerDay) || omerDay < 1 || omerDay > 49) return '';
   const week = Math.floor((omerDay - 1) / 7);
   const inner = (omerDay - 1) % 7;
   return `${ATTR_RU[inner]} ше-бе-${ATTR_RU[week]}`;
+}
+
+export function sefirahMeaningRu(omerDay: number): string {
+  if (!Number.isInteger(omerDay) || omerDay < 1 || omerDay > 49) return '';
+  const week = Math.floor((omerDay - 1) / 7);
+  const inner = (omerDay - 1) % 7;
+  return `${ATTR_MEANING_RU[inner]} внутри ${ATTR_MEANING_GENITIVE_RU[week]}`;
+}
+
+export function formatOmerDayRu(omerDay: number): string {
+  return `${omerDay}-й день Омера`;
+}
+
+export function formatOmerCountingRu(omerDay: number): string {
+  const lastTwo = omerDay % 100;
+  const last = omerDay % 10;
+  const unit = lastTwo >= 11 && lastTwo <= 14 ? 'дней' : last === 1 ? 'день' : last >= 2 && last <= 4 ? 'дня' : 'дней';
+  return `Сегодня ${omerDay} ${unit} Омера.`;
 }

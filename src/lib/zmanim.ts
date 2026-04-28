@@ -1,4 +1,259 @@
-export interface ZmanimRequest { city: string; source: 'manual' | 'gps'; }
-export function getZmanimMock(_req: ZmanimRequest) {
-  return { alot: '05:12', sunrise: '06:05', shemaGra: '09:48', sunset: '19:52', tzeit: '20:16' };
+import { CandleLightingEvent, HavdalahEvent, HebrewCalendar, Location, Zmanim } from '@hebcal/core';
+
+import { addDays, daysUntil, formatDurationRu, progressBetween } from './dates';
+import { getHebrewDateLabel } from './hebcal';
+
+export interface ZmanimRequest {
+  city?: string;
+  date?: Date;
+  source?: 'manual' | 'gps';
+  useElevation?: boolean;
+}
+
+export interface ZmanTime {
+  at: Date;
+  time: string;
+}
+
+export interface ZmanimItem extends ZmanTime {
+  highlight?: boolean;
+  icon: string;
+  id: string;
+  name: string;
+}
+
+export interface DailyZmanim {
+  city: string;
+  hebcalCity: string;
+  items: ZmanimItem[];
+  location: Location;
+  timeZone: string;
+  times: {
+    alot: ZmanTime;
+    chatzot: ZmanTime;
+    misheyakir: ZmanTime;
+    minchaGedola: ZmanTime;
+    minchaKetana: ZmanTime;
+    plagHaMincha: ZmanTime;
+    shemaGra: ZmanTime;
+    shemaMga: ZmanTime;
+    sofZmanTfilla: ZmanTime;
+    sunrise: ZmanTime;
+    sunset: ZmanTime;
+    tzeit: ZmanTime;
+  };
+}
+
+export interface CandleLightingInfo {
+  date: Date;
+  daysUntil: number;
+  hebrewDateRu: string;
+  time: string;
+}
+
+export interface HavdalahInfo {
+  date: Date;
+  daysUntil: number;
+  hebrewDateRu: string;
+  time: string;
+}
+
+export interface PrayerWindow {
+  accent: string;
+  active: boolean;
+  end: Date;
+  hebrew: string;
+  icon: string;
+  id: 'shacharit' | 'mincha' | 'maariv';
+  progress: number;
+  start: Date;
+  subtitle: string;
+  title: string;
+}
+
+const FALLBACK_CITY = 'Москва';
+const CITY_TO_HEBCAL: Record<string, string> = {
+  'Иерусалим': 'Jerusalem',
+  'Москва': 'Moscow',
+  'Нью-Йорк': 'New York',
+  'Санкт-Петербург': 'Saint Petersburg',
+  'Тель-Авив': 'Tel Aviv',
+};
+
+const FALLBACK_LOCATION = new Location(55.75222, 37.61556, false, 'Europe/Moscow', 'Moscow', 'RU', undefined, 144);
+
+export function getHebcalCityName(city = FALLBACK_CITY) {
+  return CITY_TO_HEBCAL[city] ?? city;
+}
+
+export function getHebcalLocation(city = FALLBACK_CITY) {
+  return Location.lookup(getHebcalCityName(city)) ?? FALLBACK_LOCATION;
+}
+
+function formatZman(date: Date, location: Location) {
+  return Zmanim.formatTime(Zmanim.roundTime(date), location.getTimeFormatter());
+}
+
+function makeTime(at: Date, location: Location): ZmanTime {
+  return { at, time: formatZman(at, location) };
+}
+
+export function getDailyZmanim(req: ZmanimRequest = {}): DailyZmanim {
+  const city = req.city ?? FALLBACK_CITY;
+  const date = req.date ?? new Date();
+  const location = getHebcalLocation(city);
+  const zmanim = new Zmanim(location, date, req.useElevation ?? false);
+
+  const times: DailyZmanim['times'] = {
+    alot: makeTime(zmanim.alotHaShachar(), location),
+    chatzot: makeTime(zmanim.chatzot(), location),
+    misheyakir: makeTime(zmanim.misheyakir(), location),
+    minchaGedola: makeTime(zmanim.minchaGedola(), location),
+    minchaKetana: makeTime(zmanim.minchaKetana(), location),
+    plagHaMincha: makeTime(zmanim.plagHaMincha(), location),
+    shemaGra: makeTime(zmanim.sofZmanShma(), location),
+    shemaMga: makeTime(zmanim.sofZmanShmaMGA(), location),
+    sofZmanTfilla: makeTime(zmanim.sofZmanTfilla(), location),
+    sunrise: makeTime(zmanim.sunrise(), location),
+    sunset: makeTime(zmanim.sunset(), location),
+    tzeit: makeTime(zmanim.tzeit(), location),
+  };
+
+  const items: ZmanimItem[] = [
+    { ...times.alot, icon: '🌅', id: 'alot', name: 'Алот ха-шахар (рассвет)' },
+    { ...times.misheyakir, icon: '🌄', id: 'misheyakir', name: 'Мишейакир' },
+    { ...times.sunrise, icon: '☀️', id: 'sunrise', name: 'Восход солнца' },
+    { ...times.shemaMga, icon: '🌤️', id: 'shema-mga', name: 'Шма (Маген Авраам)' },
+    { ...times.shemaGra, icon: '🌤️', id: 'shema-gra', name: 'Шма (Гра)' },
+    { ...times.sofZmanTfilla, icon: '🙏', id: 'tfilla-gra', name: 'Шахарит до (Гра)' },
+    { ...times.chatzot, icon: '⚡', id: 'chatzot', name: 'Хацот (полдень)' },
+    { ...times.minchaGedola, icon: '🌞', id: 'mincha-gedola', name: 'Минха Гедола' },
+    { ...times.minchaKetana, icon: '🌞', id: 'mincha-ketana', name: 'Минха Ктана' },
+    { ...times.plagHaMincha, icon: '🌆', id: 'plag', name: 'Плаг ха-Минха' },
+    { ...times.sunset, icon: '🌇', id: 'sunset', name: 'Закат' },
+    { ...times.tzeit, icon: '🌃', id: 'tzeit', name: 'Цет ха-Кохавим (появление звёзд)' },
+  ];
+
+  return {
+    city,
+    hebcalCity: getHebcalCityName(city),
+    items,
+    location,
+    timeZone: location.getTzid(),
+    times,
+  };
+}
+
+export function getUpcomingCandleLighting(date: Date = new Date(), location = getHebcalLocation()): CandleLightingInfo | null {
+  const events = HebrewCalendar.calendar({
+    candlelighting: true,
+    end: addDays(date, 14),
+    havdalahMins: 42,
+    location,
+    start: date,
+  });
+  const event = events.find(
+    (item): item is CandleLightingEvent => item instanceof CandleLightingEvent && item.eventTime.getTime() >= date.getTime() - 60_000,
+  );
+  if (!event) return null;
+
+  return {
+    date: event.eventTime,
+    daysUntil: daysUntil(event.eventTime, date),
+    hebrewDateRu: getHebrewDateLabel(event.getDate()),
+    time: event.eventTimeStr,
+  };
+}
+
+export function getUpcomingHavdalah(date: Date = new Date(), location = getHebcalLocation()): HavdalahInfo | null {
+  const events = HebrewCalendar.calendar({
+    candlelighting: true,
+    end: addDays(date, 14),
+    havdalahMins: 42,
+    location,
+    start: date,
+  });
+  const event = events.find(
+    (item): item is HavdalahEvent => item instanceof HavdalahEvent && item.eventTime.getTime() >= date.getTime() - 60_000,
+  );
+  if (!event) return null;
+
+  return {
+    date: event.eventTime,
+    daysUntil: daysUntil(event.eventTime, date),
+    hebrewDateRu: getHebrewDateLabel(event.getDate()),
+    time: event.eventTimeStr,
+  };
+}
+
+function endOfCivilDay(date: Date) {
+  const end = new Date(date);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
+function prayerSubtitle(start: ZmanTime, end: ZmanTime, now: Date) {
+  if (now.getTime() < start.at.getTime()) {
+    return `${start.time} – ${end.time} · через ${formatDurationRu(start.at.getTime() - now.getTime())}`;
+  }
+  if (now.getTime() <= end.at.getTime()) {
+    return `${start.time} – ${end.time} · осталось ${formatDurationRu(end.at.getTime() - now.getTime())}`;
+  }
+  return `${start.time} – ${end.time}`;
+}
+
+export function getPrayerWindows(daily: DailyZmanim, now: Date = new Date()): PrayerWindow[] {
+  const nightEnd = makeTime(endOfCivilDay(now), daily.location);
+  const windows = [
+    {
+      accent: '#F6A400',
+      end: daily.times.sofZmanTfilla,
+      hebrew: 'שחרית',
+      icon: '🌅',
+      id: 'shacharit' as const,
+      start: daily.times.sunrise,
+      title: 'Шахарит',
+    },
+    {
+      accent: '#F0642A',
+      end: daily.times.sunset,
+      hebrew: 'מנחה',
+      icon: '☀️',
+      id: 'mincha' as const,
+      start: daily.times.minchaGedola,
+      title: 'Минха',
+    },
+    {
+      accent: '#6B7FD4',
+      end: nightEnd,
+      hebrew: 'ערבית',
+      icon: '🌙',
+      id: 'maariv' as const,
+      start: daily.times.tzeit,
+      title: 'Маарив',
+    },
+  ];
+
+  return windows.map((window) => {
+    const active = now.getTime() >= window.start.at.getTime() && now.getTime() <= window.end.at.getTime();
+    return {
+      ...window,
+      active,
+      progress: active ? progressBetween(window.start.at, window.end.at, now) : 0,
+      start: window.start.at,
+      end: window.end.at,
+      subtitle: prayerSubtitle(window.start, window.end, now),
+    };
+  });
+}
+
+export function getZmanimMock(req: ZmanimRequest = {}) {
+  const daily = getDailyZmanim(req);
+  return {
+    alot: daily.times.alot.time,
+    shemaGra: daily.times.shemaGra.time,
+    sunrise: daily.times.sunrise.time,
+    sunset: daily.times.sunset.time,
+    tzeit: daily.times.tzeit.time,
+  };
 }

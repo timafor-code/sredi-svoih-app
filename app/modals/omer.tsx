@@ -4,11 +4,15 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GlassCard } from '@/components/glass/GlassCard';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
-import { mockOmer } from '@/data/mockOmer';
+import { useNow } from '@/hooks/useNow';
+import { getOmerInfo } from '@/lib/hebcal';
+import { getHebcalLocation } from '@/lib/zmanim';
 import { colors } from '@/theme/colors';
 
 export default function OmerModal() {
   const router = useRouter();
+  const now = useNow();
+  const omer = getOmerInfo(now, getHebcalLocation());
 
   return (
     <>
@@ -16,8 +20,8 @@ export default function OmerModal() {
       <Screen contentContainerStyle={{ gap: 16 }}>
         <View style={styles.header}>
           <View>
-            <Text style={styles.kicker}>ОМЕР · ДЕНЬ {mockOmer.day}</Text>
-            <Text style={styles.title}>{mockOmer.fullName}</Text>
+            <Text style={styles.kicker}>{omer ? `ОМЕР · ДЕНЬ ${omer.day}` : 'ОМЕР'}</Text>
+            <Text style={styles.title}>{omer?.sefirahRu ?? 'Сейчас Омер не считают'}</Text>
           </View>
           <Pressable onPress={() => router.back()} style={styles.close}>
             <Text style={styles.closeText}>×</Text>
@@ -25,21 +29,25 @@ export default function OmerModal() {
         </View>
 
         <GlassCard style={styles.hero}>
-          <Text style={styles.day}>{mockOmer.day}</Text>
-          <Text style={styles.hebrew}>{mockOmer.fullNameHeb}</Text>
-          <Text style={styles.meaning}>{mockOmer.meaning}</Text>
+          <Text style={styles.day}>{omer?.day ?? '-'}</Text>
+          <Text style={styles.hebrew}>{omer?.sefirahHe ?? 'בין פסח לשבועות'}</Text>
+          <Text style={styles.meaning}>{omer?.meaningRu ?? 'Счёт Омера идёт от второго вечера Песаха до Шавуота.'}</Text>
         </GlassCard>
 
         <GlassCard>
-          <Text style={styles.body}>{mockOmer.description}</Text>
+          <Text style={styles.body}>
+            {omer
+              ? `Сегодня по Hebcal: ${omer.dayHe}. Сфира дня: ${omer.sefirahRu}.`
+              : 'Когда начнётся период Омера, здесь появится реальный день счёта и сфира по Hebcal.'}
+          </Text>
         </GlassCard>
 
         <GlassCard style={styles.countingCard}>
-          <Text style={styles.countingHeb}>{mockOmer.countingHeb}</Text>
-          <Text style={styles.body}>{mockOmer.countingRu}</Text>
+          <Text style={styles.countingHeb}>{omer?.countingHe ?? 'היום לא סופרים את העומר'}</Text>
+          <Text style={styles.body}>{omer?.countingRu ?? 'Сегодня Омер не считают.'}</Text>
         </GlassCard>
 
-        <PrimaryButton title="Я посчитал(а) сегодня" onPress={() => router.back()} />
+        <PrimaryButton title={omer ? 'Я посчитал(а) сегодня' : 'Закрыть'} onPress={() => router.back()} />
       </Screen>
     </>
   );

@@ -1,27 +1,65 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link, useRouter } from 'expo-router';
+import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
+import { Avatar } from '@/components/ui/Avatar';
 import { Logo, OmerPill } from '@/components/ui/BrandHeader';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
-import { Avatar } from '@/components/ui/Avatar';
+import { mockContacts } from '@/data/mockContacts';
+import { useNow } from '@/hooks/useNow';
+import { getUpcomingContactBirthdays } from '@/lib/birthdays';
+import { formatDurationRu, formatRuDate, formatRuTime, formatRuWeekdayDayMonth, progressBetween } from '@/lib/dates';
+import { getHebrewDate, getHebrewDateLabel, getUpcomingHoliday, getWeeklyParsha } from '@/lib/hebcal';
+import type { UpcomingHoliday, WeeklyParsha } from '@/lib/hebcal';
+import {
+  getDailyZmanim,
+  getHebcalLocation,
+  getPrayerWindows,
+  getUpcomingCandleLighting,
+} from '@/lib/zmanim';
+import type { CandleLightingInfo, DailyZmanim, PrayerWindow } from '@/lib/zmanim';
+import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
 
-const birthdays = [
-  { initials: 'ДК', name: 'Давид Коэн', hebrew: 'דוד כהן', bg: '#c0392b', when: 'Сегодня 🎉', active: true },
-  { initials: 'РЛ', name: 'Рахель Леви', hebrew: 'רחל לוי', bg: '#8e44ad', when: 'через 7д' },
-  { initials: 'МБ', name: 'Моше Берг', hebrew: 'משה ברג', bg: '#2c7a4b', when: 'через 15д' },
-];
+type HomeBirthdayItem = {
+  active: boolean;
+  bg: string;
+  hebrew: string;
+  id: string;
+  initials: string;
+  name: string;
+  when: string;
+};
 
-function DeadlineCard() {
+function pluralDays(count: number) {
+  const lastTwo = count % 100;
+  const last = count % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) return 'дней';
+  if (last === 1) return 'день';
+  if (last >= 2 && last <= 4) return 'дня';
+  return 'дней';
+}
+
+function DeadlineCard({ daily, now }: { daily: DailyZmanim; now: Date }) {
+  const progress = progressBetween(daily.times.sunrise.at, daily.times.shemaGra.at, now);
+  const isBefore = now.getTime() < daily.times.sunrise.at.getTime();
+  const isDone = now.getTime() > daily.times.shemaGra.at.getTime();
+  const value = isDone
+    ? 'завершено'
+    : isBefore
+      ? `через ${formatDurationRu(daily.times.sunrise.at.getTime() - now.getTime())}`
+      : formatDurationRu(daily.times.shemaGra.at.getTime() - now.getTime());
+  const subtitle = isDone ? 'на сегодня' : isBefore ? 'до восхода' : `осталось · ${Math.round(progress * 100)}%`;
+
   return (
     <GlassCard style={styles.deadlineCard}>
-      <View style={styles.progressTint} />
+      <View style={[styles.progressTint, { width: `${Math.round(progress * 100)}%` }]} />
       <View style={styles.deadlineTop}>
         <View style={styles.deadlineLeft}>
           <View style={[styles.emojiBox, styles.greenBox]}>
@@ -29,18 +67,18 @@ function DeadlineCard() {
           </View>
           <View>
             <Text style={styles.overline}>УТРЕННЕЕ ШМА ДО</Text>
-            <Text style={styles.deadlineTime}>09:48</Text>
+            <Text style={styles.deadlineTime}>{daily.times.shemaGra.time}</Text>
           </View>
         </View>
         <View style={styles.deadlineRight}>
-          <Text style={styles.greenValue}>1 ч 33 мин</Text>
-          <Text style={styles.tinyMuted}>осталось · 42%</Text>
+          <Text style={styles.greenValue}>{value}</Text>
+          <Text style={styles.tinyMuted}>{subtitle}</Text>
         </View>
       </View>
-      <ProgressBar value={0.42} color={colors.success} />
+      <ProgressBar value={progress} color={colors.success} />
       <View style={styles.progressLegend}>
-        <Text style={styles.tinyMuted}>06:05 восход</Text>
-        <Text style={styles.tinyMuted}>09:48 дедлайн</Text>
+        <Text style={styles.tinyMuted}>{daily.times.sunrise.time} восход</Text>
+        <Text style={styles.tinyMuted}>{daily.times.shemaGra.time} дедлайн</Text>
       </View>
     </GlassCard>
   );
@@ -72,43 +110,51 @@ function EventCard() {
   );
 }
 
-function PrayerNowCard() {
+function PrayerNowCard({ prayer, timeZone }: { prayer: PrayerWindow; timeZone: string }) {
+  const progress = prayer.active ? prayer.progress : 0;
+  const status = prayer.active ? 'ИДЁТ' : 'СКОРО';
+
   return (
     <GlassCard>
-      <View style={styles.goldTint} />
+      <View style={[styles.goldTint, { width: `${Math.round(progress * 100)}%` }]} />
       <View style={styles.deadlineTop}>
         <View style={styles.deadlineLeft}>
           <View style={[styles.emojiBox, styles.goldBox]}>
-            <Text style={styles.emoji}>🌅</Text>
+            <Text style={styles.emoji}>{prayer.icon}</Text>
           </View>
           <View>
             <View style={styles.rowGap}>
-              <Text style={styles.overline}>СЕЙЧАС · ШАХАРИТ</Text>
-              <Text style={styles.statusBadge}>ИДЁТ</Text>
+              <Text style={styles.overline}>{prayer.active ? 'СЕЙЧАС' : 'ДАЛЬШЕ'} · {prayer.title.toUpperCase()}</Text>
+              <Text style={styles.statusBadge}>{status}</Text>
             </View>
-            <Text style={styles.deadlineTime}>до 09:48</Text>
+            <Text style={styles.deadlineTime}>до {formatRuTime(prayer.end, timeZone)}</Text>
           </View>
         </View>
         <View style={styles.deadlineRight}>
-          <Text style={styles.goldValue}>1 ч 33 мин</Text>
-          <Text style={styles.tinyMuted}>осталось · 42%</Text>
+          <Text style={styles.goldValue}>
+            {prayer.active ? formatDurationRu(prayer.end.getTime() - Date.now()) : formatRuTime(prayer.start, timeZone)}
+          </Text>
+          <Text style={styles.tinyMuted}>{prayer.active ? `осталось · ${Math.round(progress * 100)}%` : 'начало'}</Text>
         </View>
       </View>
-      <ProgressBar value={0.42} color={colors.gold} />
+      <ProgressBar value={progress} color={colors.gold} />
       <View style={styles.progressLegend}>
-        <Text style={styles.tinyMuted}>06:05 восход</Text>
-        <Text style={styles.tinyMuted}>09:48 окончание</Text>
+        <Text style={styles.tinyMuted}>{formatRuTime(prayer.start, timeZone)} начало</Text>
+        <Text style={styles.tinyMuted}>{formatRuTime(prayer.end, timeZone)} окончание</Text>
       </View>
     </GlassCard>
   );
 }
 
-function DayTimeline() {
+function DayTimeline({ daily, now }: { daily: DailyZmanim; now: Date }) {
+  const marker = progressBetween(daily.times.alot.at, daily.times.tzeit.at, now);
+  const labels = [daily.times.alot, daily.times.sunrise, daily.times.chatzot, daily.times.sunset, daily.times.tzeit];
+
   return (
     <GlassCard>
       <View style={styles.timelineHeader}>
         <Text style={styles.sectionInline}>МОЛИТВЫ СЕГОДНЯ</Text>
-        <Text style={styles.timeBadge}>14:30</Text>
+        <Text style={styles.timeBadge}>{formatRuTime(now, daily.timeZone)}</Text>
         <Link href="/prayers" asChild>
           <Pressable>
             <Text style={styles.linkText}>Все зманим →</Text>
@@ -119,12 +165,12 @@ function DayTimeline() {
         <View style={[styles.timelineSegment, { flex: 3.5, backgroundColor: 'rgba(255,200,50,0.5)' }]} />
         <View style={[styles.timelineSegment, { flex: 3.5, backgroundColor: 'rgba(240,100,42,0.7)' }]} />
         <View style={[styles.timelineSegment, { flex: 3, backgroundColor: 'rgba(80,100,200,0.4)' }]} />
-        <View style={styles.timelineMarker} />
+        <View style={[styles.timelineMarker, { left: `${Math.round(marker * 100)}%` }]} />
       </View>
       <View style={styles.progressLegend}>
-        {['05:12', '06:05', '12:47', '19:52', '20:16'].map((time) => (
-          <Text key={time} style={styles.tinyMuted}>
-            {time}
+        {labels.map((item) => (
+          <Text key={item.time} style={styles.tinyMuted}>
+            {item.time}
           </Text>
         ))}
       </View>
@@ -132,12 +178,12 @@ function DayTimeline() {
   );
 }
 
-function BirthdayRow({ item, isLast }: { item: (typeof birthdays)[number]; isLast?: boolean }) {
+function BirthdayRow({ item, isLast }: { item: HomeBirthdayItem; isLast?: boolean }) {
   const router = useRouter();
 
   return (
     <Pressable
-      onPress={() => router.push('/contacts/david-cohen')}
+      onPress={() => router.push(`/contacts/${item.id}`)}
       style={({ pressed }) => [styles.birthdayRow, !isLast && styles.rowDivider, pressed && styles.rowPressed]}
     >
       <Avatar initials={item.initials} bg={item.bg} size={40} />
@@ -153,6 +199,31 @@ function BirthdayRow({ item, isLast }: { item: (typeof birthdays)[number]; isLas
 }
 
 export default function HomeScreen() {
+  const now = useNow();
+  const city = useSettingsStore((state) => state.city);
+  const location = useMemo(() => getHebcalLocation(city), [city]);
+  const daily = useMemo(() => getDailyZmanim({ city, date: now }), [city, now]);
+  const hdate = useMemo(() => getHebrewDate(now, location), [location, now]);
+  const parsha = useMemo<WeeklyParsha | null>(() => getWeeklyParsha(hdate, location.getIsrael()), [hdate, location]);
+  const holiday = useMemo<UpcomingHoliday | null>(() => getUpcomingHoliday(hdate, location.getIsrael()), [hdate, location]);
+  const candle = useMemo<CandleLightingInfo | null>(() => getUpcomingCandleLighting(now, location), [location, now]);
+  const prayers = useMemo(() => getPrayerWindows(daily, now), [daily, now]);
+  const birthdays = useMemo<HomeBirthdayItem[]>(
+    () =>
+      getUpcomingContactBirthdays(mockContacts, now, 3).map(({ birthday, contact }) => ({
+        active: birthday.daysUntil === 0,
+        bg: contact.avatarBg ?? '#2a3a4a',
+        hebrew: contact.hebrewName,
+        id: contact.id,
+        initials: contact.initials,
+        name: contact.name,
+        when: birthday.when,
+      })),
+    [now],
+  );
+  const currentPrayer =
+    prayers.find((item) => item.active) ?? prayers.find((item) => now.getTime() < item.start.getTime()) ?? prayers[prayers.length - 1]!;
+
   return (
     <Screen>
       <View style={styles.header}>
@@ -161,27 +232,27 @@ export default function HomeScreen() {
       </View>
 
       <View>
-        <Text style={styles.dateTitle}>23 Нисана 5785</Text>
-        <Text style={styles.dateSubtitle}>22 апреля 2026</Text>
+        <Text style={styles.dateTitle}>{getHebrewDateLabel(hdate)}</Text>
+        <Text style={styles.dateSubtitle}>{formatRuDate(now, location.getTzid())}</Text>
       </View>
 
       <Pressable style={styles.locationPill}>
         <Ionicons name="location" size={13} color="rgba(255,255,255,0.62)" />
-        <Text style={styles.locationText}>Москва · зманим</Text>
+        <Text style={styles.locationText}>{city} · зманим</Text>
         <Ionicons name="chevron-forward" size={13} color="rgba(255,255,255,0.4)" />
       </Pressable>
 
-      <DeadlineCard />
+      <DeadlineCard daily={daily} now={now} />
       <EventCard />
-      <PrayerNowCard />
-      <DayTimeline />
+      <PrayerNowCard prayer={currentPrayer} timeZone={daily.timeZone} />
+      <DayTimeline daily={daily} now={now} />
 
       <GlassCard>
         <View style={styles.rowBetween}>
           <View>
             <Text style={styles.overline}>НЕДЕЛЬНАЯ ГЛАВА</Text>
-            <Text style={styles.cardTitle}>Ахарей Мот</Text>
-            <Text style={styles.hebrew}>אחרי מות</Text>
+            <Text style={styles.cardTitle}>{parsha?.ru ?? holiday?.nameRu ?? 'Особое чтение'}</Text>
+            <Text style={styles.hebrew}>{parsha?.he ?? holiday?.nameHe ?? ''}</Text>
             <View style={[styles.dateRow, styles.teacherRow]}>
               <Ionicons name="person-outline" size={11} color={colors.textDim} />
               <Text style={styles.mutedSmall}>Урок раввина Рувена Колина</Text>
@@ -199,8 +270,10 @@ export default function HomeScreen() {
             <Text style={styles.largeEmoji}>🕯️</Text>
             <View>
               <Text style={styles.overline}>ЗАЖИГАНИЕ СВЕЧЕЙ</Text>
-              <Text style={styles.bigTime}>19:52</Text>
-              <Text style={styles.mutedSmall}>пятница, 24 апр</Text>
+              <Text style={styles.bigTime}>{candle?.time ?? daily.times.sunset.time}</Text>
+              <Text style={styles.mutedSmall}>
+                {candle ? formatRuWeekdayDayMonth(candle.date, daily.timeZone) : 'перед Шабатом и праздниками'}
+              </Text>
             </View>
           </View>
           <PrimaryButton
@@ -217,16 +290,18 @@ export default function HomeScreen() {
             <Text style={styles.largeEmoji}>📜</Text>
             <View style={styles.flex}>
               <Text style={styles.overline}>БЛИЖАЙШИЙ ПРАЗДНИК</Text>
-              <Text style={styles.orangeTitle}>Шавуот</Text>
-              <Text style={styles.mutedSmall}>11–13 июня · 6–7 Сивана 5785</Text>
+              <Text style={styles.orangeTitle}>{holiday?.nameRu ?? 'Календарь'}</Text>
+              <Text style={styles.mutedSmall}>
+                {holiday ? `${formatRuWeekdayDayMonth(holiday.date, daily.timeZone)} · ${holiday.hebrewDateRu}` : 'Hebcal не нашёл событие'}
+              </Text>
             </View>
           </View>
           <View style={styles.daysBlock}>
-            <Text style={styles.daysNumber}>15</Text>
-            <Text style={styles.mutedSmall}>дней</Text>
+            <Text style={styles.daysNumber}>{holiday?.daysUntil ?? '-'}</Text>
+            <Text style={styles.mutedSmall}>{holiday ? pluralDays(holiday.daysUntil) : ''}</Text>
           </View>
         </View>
-        <PrimaryButton title="Записаться на Шавуот →" />
+        <PrimaryButton title={holiday ? `Подробнее: ${holiday.nameRu} →` : 'Открыть календарь →'} />
       </GlassCard>
 
       <View>

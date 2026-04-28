@@ -7,6 +7,8 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { mockContacts } from '@/data/mockContacts';
+import { useNow } from '@/hooks/useNow';
+import { getContactBirthdayInfo } from '@/lib/birthdays';
 import { colors } from '@/theme/colors';
 
 function InfoRow({
@@ -39,7 +41,9 @@ function InfoRow({
 export default function ContactDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const now = useNow();
   const contact = mockContacts.find((item) => item.id === id) ?? mockContacts[0];
+  const birthdayInfo = getContactBirthdayInfo(contact, now);
 
   return (
     <>
@@ -78,7 +82,7 @@ export default function ContactDetail() {
         <View>
           <SectionTitle title="ПРОФИЛЬ" />
           <GlassCard padded={false}>
-            <InfoRow icon="🎂" label="Дата рождения" value={contact.dobGregorian} subtitle={contact.dobHebrew} />
+            <InfoRow icon="🎂" label="Дата рождения" value={contact.dobGregorian} subtitle={birthdayInfo?.dobHebrew ?? contact.dobHebrew} />
             <View style={styles.separator} />
             <InfoRow icon="✡️" label="Происхождение" value={contact.tribe} />
             <View style={styles.separator} />
@@ -122,8 +126,8 @@ export default function ContactDetail() {
               <Text style={styles.birthdayEmoji}>🎂</Text>
               <View style={styles.flex}>
                 <Text style={styles.goldOverline}>СЛЕДУЮЩИЙ ДЕНЬ РОЖДЕНИЯ</Text>
-                <Text style={styles.goldTitle}>{contact.nextBirthday}</Text>
-                <Text style={styles.infoSubtitle}>{contact.nextBirthdaySub}</Text>
+                <Text style={styles.goldTitle}>{birthdayInfo?.nextBirthday ?? contact.nextBirthday}</Text>
+                <Text style={styles.infoSubtitle}>{birthdayInfo?.nextBirthdaySub ?? contact.nextBirthdaySub}</Text>
               </View>
             </View>
           </GlassCard>

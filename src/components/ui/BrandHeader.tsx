@@ -2,6 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
 import { Image, Pressable, StyleSheet, Text } from 'react-native';
 
+import { useNow } from '@/hooks/useNow';
+import { getOmerInfo } from '@/lib/hebcal';
+import { getHebcalLocation } from '@/lib/zmanim';
 import { colors } from '@/theme/colors';
 
 const logoSource = require('../../../assets/logo.png');
@@ -11,10 +14,15 @@ export function Logo() {
 }
 
 export function OmerPill() {
+  const now = useNow();
+  const omer = getOmerInfo(now, getHebcalLocation());
+
+  if (!omer) return null;
+
   return (
     <Link href="/modals/omer" asChild>
       <Pressable style={({ pressed }) => [styles.omerPill, pressed && styles.pressed]}>
-        <Text style={styles.omerText}>8-й день Омера</Text>
+        <Text style={styles.omerText}>{omer.day}-й день Омера</Text>
         <Ionicons name="chevron-forward" size={13} color="rgba(255,255,255,0.45)" />
       </Pressable>
     </Link>
