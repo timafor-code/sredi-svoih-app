@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -222,28 +223,45 @@ function RegistrationCard({ cancelling, onCancel, onOpen, registration }: Regist
   const now = Date.now();
   const canCancel = isActiveEventRegistration(registration) && !hasEventPassed(event, now);
   const statusTone = statusTones[registration.status];
+  const [imageFailed, setImageFailed] = useState(false);
+  const showThumbnail = Boolean(event?.imageUrl && !imageFailed);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [event?.imageUrl]);
+
   const cardContent = (
     <>
       <View style={styles.cardHeader}>
-        <View style={styles.cardTitleBlock}>
-          <View style={styles.cardTitleRow}>
-            <Text style={styles.cardTitle}>{event?.title ?? 'Событие'}</Text>
-            {event?.id ? (
-              <Ionicons name="chevron-forward" size={17} color="rgba(255,255,255,0.3)" />
-            ) : null}
-          </View>
-          <View
-            style={[
-              styles.statusPill,
-              {
-                backgroundColor: statusTone.backgroundColor,
-                borderColor: statusTone.borderColor,
-              },
-            ]}
-          >
-            <Text style={[styles.statusText, { color: statusTone.color }]}>
-              {statusTitles[registration.status]}
-            </Text>
+        <View style={styles.cardTopRow}>
+          {showThumbnail ? (
+            <Image
+              source={{ uri: event?.imageUrl ?? '' }}
+              resizeMode="cover"
+              style={styles.thumbnail}
+              onError={() => setImageFailed(true)}
+            />
+          ) : null}
+          <View style={styles.cardTitleBlock}>
+            <View style={styles.cardTitleRow}>
+              <Text style={styles.cardTitle}>{event?.title ?? 'Событие'}</Text>
+              {event?.id ? (
+                <Ionicons name="chevron-forward" size={17} color="rgba(255,255,255,0.3)" />
+              ) : null}
+            </View>
+            <View
+              style={[
+                styles.statusPill,
+                {
+                  backgroundColor: statusTone.backgroundColor,
+                  borderColor: statusTone.borderColor,
+                },
+              ]}
+            >
+              <Text style={[styles.statusText, { color: statusTone.color }]}>
+                {statusTitles[registration.status]}
+              </Text>
+            </View>
           </View>
         </View>
       </View>
@@ -451,7 +469,19 @@ const styles = StyleSheet.create({
   cardHeader: {
     gap: 10,
   },
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  thumbnail: {
+    width: 72,
+    height: 72,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+  },
   cardTitleBlock: {
+    flex: 1,
     gap: 9,
   },
   cardTitleRow: {
