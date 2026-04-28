@@ -2,7 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Image,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { HeaderButton, Logo, OmerPill } from '@/components/ui/BrandHeader';
@@ -36,6 +43,29 @@ type EventCardProps = {
   onOpen: (event: EventItem) => void;
 };
 
+function RegistrationModeBadge({ mode }: { mode: EventItem['registrationMode'] }) {
+  if (mode === 'none') {
+    return null;
+  }
+
+  const title = {
+    external_link: 'Внешняя запись',
+    internal_free: 'Бесплатно',
+    internal_paid: 'Платно',
+  }[mode];
+  const toneStyle = {
+    external_link: styles.badgeExternal,
+    internal_free: styles.badgeFree,
+    internal_paid: styles.badgePaid,
+  }[mode];
+
+  return (
+    <View style={[styles.modeBadge, toneStyle]}>
+      <Text style={styles.modeBadgeText}>{title}</Text>
+    </View>
+  );
+}
+
 function EventCard({
   event,
   registration,
@@ -48,22 +78,47 @@ function EventCard({
   const activeRegistration = isActiveEventRegistration(registration) ? registration : null;
   const buttonTitle = getEventRegistrationActionTitle(event, registration, registering);
   const showCancelAction = Boolean(activeRegistration && event.registrationMode === 'internal_free');
+  const [imageFailed, setImageFailed] = useState(false);
+  const showImage = Boolean(event.imageUrl && !imageFailed);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [event.imageUrl]);
 
   if (event.featured) {
     return (
       <GlassCard padded={false}>
         <Pressable onPress={() => onOpen(event)} style={({ pressed }) => [pressed && styles.pressed]}>
           <View style={styles.featuredImage}>
-            <Text style={styles.featuredEmoji}>{event.imageIcon}</Text>
+            {showImage ? (
+              <Image
+                source={{ uri: event.imageUrl ?? '' }}
+                resizeMode="cover"
+                style={styles.featuredPhoto}
+                onError={() => setImageFailed(true)}
+              />
+            ) : (
+              <LinearGradient
+                colors={['rgba(240,122,42,0.28)', 'rgba(74,144,217,0.18)', '#141420']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.featuredPlaceholder}
+              >
+                <Text style={styles.featuredEmoji}>{event.imageIcon}</Text>
+              </LinearGradient>
+            )}
             <LinearGradient colors={['rgba(10,10,20,0.85)', 'transparent']} style={StyleSheet.absoluteFillObject} />
-            <View style={[styles.tag, styles.featuredTag, { backgroundColor: `${event.tagColor}DD` }]}>
-              <Text style={styles.tagTextWhite}>{event.category}</Text>
-            </View>
-            {event.visibility === 'members_only' ? (
-              <View style={[styles.visibilityBadge, styles.featuredVisibilityBadge]}>
-                <Text style={styles.visibilityBadgeText}>Для участников</Text>
+            <View style={styles.featuredBadgeRow}>
+              <View style={[styles.tag, { backgroundColor: `${event.tagColor}DD` }]}>
+                <Text style={styles.tagTextWhite}>{event.category}</Text>
               </View>
-            ) : null}
+              <RegistrationModeBadge mode={event.registrationMode} />
+              {event.visibility === 'members_only' ? (
+                <View style={styles.visibilityBadge}>
+                  <Text style={styles.visibilityBadgeText}>Для участников</Text>
+                </View>
+              ) : null}
+            </View>
             <Text style={styles.siteText}>www.sredisvoih.com</Text>
           </View>
 
@@ -93,10 +148,19 @@ function EventCard({
     <GlassCard padded={false}>
       <View style={styles.eventRow}>
         <Pressable onPress={() => onOpen(event)} style={({ pressed }) => [styles.eventImagePressable, pressed && styles.pressed]}>
-          <LinearGradient colors={['#1a1440', '#0f0f1a']} style={styles.eventImage}>
-            <Text style={styles.eventEmoji}>{event.imageIcon}</Text>
-            <LinearGradient colors={['transparent', 'rgba(13,15,24,0.45)']} style={StyleSheet.absoluteFillObject} />
-          </LinearGradient>
+          {showImage ? (
+            <Image
+              source={{ uri: event.imageUrl ?? '' }}
+              resizeMode="cover"
+              style={styles.eventPhoto}
+              onError={() => setImageFailed(true)}
+            />
+          ) : (
+            <LinearGradient colors={['#1a1440', '#0f0f1a']} style={styles.eventImage}>
+              <Text style={styles.eventEmoji}>{event.imageIcon}</Text>
+              <LinearGradient colors={['transparent', 'rgba(13,15,24,0.45)']} style={StyleSheet.absoluteFillObject} />
+            </LinearGradient>
+          )}
         </Pressable>
 
         <View style={styles.eventBody}>
@@ -110,6 +174,7 @@ function EventCard({
                   <Text style={styles.visibilityBadgeText}>Для участников</Text>
                 </View>
               ) : null}
+              <RegistrationModeBadge mode={event.registrationMode} />
             </View>
 
             <Text style={styles.eventTitle}>{event.title}</Text>
@@ -146,6 +211,7 @@ function EventCard({
 export default function EventsScreen() {
   const router = useRouter();
   const [filter, setFilter] = useState<(typeof filters)[number]>('Все');
+  const [refreshing, setRefreshing] = useState(false);
   const {
     events,
     myRegistrations,
@@ -196,8 +262,34 @@ export default function EventsScreen() {
     router.push({ pathname: '/events/[id]', params: { id: event.id } });
   }, [router]);
 
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+
+    try {
+      await loadSession();
+      await loadEvents();
+    } catch {
+      // The store keeps the visible error state.
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadEvents, loadSession]);
+
+  const emptyStateText = !authUser
+    ? 'Войдите и примите приглашение, чтобы видеть события для участников общины.'
+    : 'Событий пока нет';
+
   return (
-    <Screen>
+    <Screen
+      refreshControl={(
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.orange}
+          colors={[colors.orange]}
+        />
+      )}
+    >
       <View style={styles.header}>
         <Logo />
         <OmerPill />
@@ -222,12 +314,12 @@ export default function EventsScreen() {
         </GlassCard>
       ) : null}
 
-      {loading ? <Text style={styles.stateText}>Загружаем события…</Text> : null}
+      {loading && !refreshing ? <Text style={styles.stateText}>Загружаем события…</Text> : null}
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
       {!loading && !error && items.length === 0 ? (
-        <Text style={styles.stateText}>Пока нет опубликованных событий</Text>
+        <Text style={styles.stateText}>{emptyStateText}</Text>
       ) : null}
 
       {items.map((event) => (
@@ -295,6 +387,16 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#141420',
   },
+  featuredPhoto: {
+    width: '100%',
+    height: '100%',
+  },
+  featuredPlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   featuredEmoji: {
     fontSize: 60,
     opacity: 0.34,
@@ -304,10 +406,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  featuredTag: {
+  featuredBadgeRow: {
     position: 'absolute',
     top: 12,
     left: 12,
+    right: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
   },
   tagTextWhite: {
     color: '#fff',
@@ -335,16 +442,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  featuredVisibilityBadge: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-  },
   visibilityBadgeText: {
     color: colors.orange,
     fontSize: 11,
     fontWeight: '700',
     includeFontPadding: false,
+  },
+  modeBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 6,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  modeBadgeText: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: '700',
+    includeFontPadding: false,
+  },
+  badgeExternal: {
+    borderColor: colors.accent.blueBorder,
+    backgroundColor: colors.accent.blueBg,
+  },
+  badgeFree: {
+    borderColor: colors.accent.greenBorder,
+    backgroundColor: colors.accent.greenBg,
+  },
+  badgePaid: {
+    borderColor: colors.accent.goldBorder,
+    backgroundColor: colors.accent.goldBg,
   },
   memberHint: {
     borderColor: colors.accent.orangeBorder,
@@ -402,6 +529,13 @@ const styles = StyleSheet.create({
   },
   eventImagePressable: {
     width: 100,
+    overflow: 'hidden',
+    backgroundColor: '#141420',
+  },
+  eventPhoto: {
+    width: 100,
+    height: '100%',
+    minHeight: 96,
   },
   eventEmoji: {
     fontSize: 40,

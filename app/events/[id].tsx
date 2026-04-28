@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -300,6 +300,7 @@ export default function EventDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const eventId = Array.isArray(params.id) ? params.id[0] : params.id;
+  const [heroImageFailed, setHeroImageFailed] = useState(false);
   const session = useAuthStore((state) => state.session);
   const authUser = useAuthStore((state) => state.user);
   const membership = useAuthStore((state) => state.membership);
@@ -355,6 +356,10 @@ export default function EventDetailScreen() {
 
     return events.find((item) => item.id === eventId) ?? null;
   }, [eventId, events, selectedEvent, selectedEventLoading]);
+
+  useEffect(() => {
+    setHeroImageFailed(false);
+  }, [event?.imageUrl]);
 
   const registration = useMemo(() => {
     if (!eventId) {
@@ -412,6 +417,7 @@ export default function EventDetailScreen() {
 
   const description = event?.description ?? event?.shortDescription ?? null;
   const statusTitle = event?.status ? eventStatusTitles[event.status] : undefined;
+  const showHeroImage = Boolean(event?.imageUrl && !heroImageFailed);
   const unavailableHint = !session
     ? 'Войдите и примите приглашение, чтобы увидеть это событие.'
     : membership?.status !== 'active'
@@ -459,8 +465,13 @@ export default function EventDetailScreen() {
         {event ? (
           <>
             <View style={styles.hero}>
-              {event.imageUrl ? (
-                <Image source={{ uri: event.imageUrl }} resizeMode="cover" style={styles.heroImage} />
+              {showHeroImage ? (
+                <Image
+                  source={{ uri: event.imageUrl ?? '' }}
+                  resizeMode="cover"
+                  style={styles.heroImage}
+                  onError={() => setHeroImageFailed(true)}
+                />
               ) : (
                 <LinearGradient
                   colors={['rgba(240,122,42,0.28)', 'rgba(74,144,217,0.18)', 'rgba(13,15,24,0.96)']}
