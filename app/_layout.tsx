@@ -1,8 +1,17 @@
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+
+import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
 
 export default function RootLayout() {
+  const loadSession = useAuthStore((state) => state.loadSession);
+
+  useEffect(() => {
+    void loadSession().catch(() => undefined);
+  }, [loadSession]);
+
   return (
     <>
       <StatusBar style="light" />
