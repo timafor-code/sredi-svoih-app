@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
+import type { Href } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -14,9 +15,11 @@ import { Screen } from '@/components/ui/Screen';
 import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
 
+const myRegistrationsHref = '/profile/my-registrations' as Href;
+
 const menuItems = [
   { href: '/profile/prayers-settings', icon: '📍', label: 'Настройки молитв и календаря', sub: 'Город, нусах, язык сидура, напоминания' },
-  { href: '/profile/my-events', icon: '📅', label: 'Мои записи на мероприятия', sub: 'Ваши записи и билеты' },
+  { href: myRegistrationsHref, icon: '📅', label: 'Мои записи', sub: 'Ваши регистрации на события' },
   { href: '/profile/contacts-settings', icon: '👥', label: 'Контакты и дни рождения', sub: 'Синхронизация, еврейская дата, напоминания' },
   { href: '/profile/notifications', icon: '🔔', label: 'Уведомления', sub: 'Настройте, что и когда вам напоминать' },
   { href: '/profile/siddur', icon: '📖', label: 'Сидур', sub: 'Нусах, язык, шрифт и другие настройки' },
@@ -34,6 +37,7 @@ function getInitials(name: string): string {
 }
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [inviteCode, setInviteCode] = useState('');
 
@@ -97,6 +101,14 @@ export default function ProfileScreen() {
       Alert.alert('Не удалось выйти', error instanceof Error ? error.message : 'Попробуйте ещё раз.');
     }
   }, [signOut]);
+
+  const handleOpenMyRegistrations = useCallback(() => {
+    if (!authUser) {
+      return;
+    }
+
+    router.push(myRegistrationsHref);
+  }, [authUser, router]);
 
   return (
     <Screen>
@@ -193,33 +205,36 @@ export default function ProfileScreen() {
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
       </GlassCard>
 
-      <GlassCard style={styles.bookingCard}>
-        <View style={styles.bookingHeader}>
-          <Text style={styles.bookingHeaderText}>Мои ближайшие записи</Text>
-          <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.3)" />
-        </View>
-        <View style={styles.bookingBody}>
-          <View style={styles.bookingIcon}>
-            <Text style={styles.bookingEmoji}>📅</Text>
-          </View>
-          <View style={styles.flex}>
-            <Text style={styles.bookingTitle}>Встреча с Игорем Маричем</Text>
-            <View style={styles.locationLine}>
-              <Ionicons name="calendar-outline" size={10} color={colors.textDim} />
-              <Text style={styles.mutedSmall}>23 апреля, 19:00</Text>
+      <GlassCard style={[styles.bookingCard, !authUser && styles.bookingCardDisabled]}>
+        <Pressable
+          disabled={!authUser}
+          onPress={handleOpenMyRegistrations}
+          style={({ pressed }) => [pressed && styles.pressed]}
+        >
+          <View style={styles.bookingBody}>
+            <View style={styles.bookingIcon}>
+              <Ionicons name="calendar-outline" size={20} color={authUser ? colors.orange : colors.textDim} />
             </View>
-            <View style={styles.locationLine}>
-              <Ionicons name="checkmark" size={10} color={colors.success} />
-              <Text style={styles.successText}>Вы записаны</Text>
+            <View style={styles.flex}>
+              <Text style={styles.bookingTitle}>Мои записи</Text>
+              <Text style={styles.bookingSubtitle}>
+                {authUser
+                  ? 'Ваши регистрации на события и их статусы'
+                  : 'Войдите, чтобы увидеть свои записи'}
+              </Text>
             </View>
+            {authUser ? (
+              <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.3)" />
+            ) : (
+              <Ionicons name="lock-closed-outline" size={18} color={colors.textDim} />
+            )}
           </View>
-          <PrimaryButton title="Открыть →" buttonStyle={styles.openButton} textStyle={styles.openButtonText} />
-        </View>
+        </Pressable>
       </GlassCard>
 
       <IOSGroup>
         {menuItems.map((item, index) => (
-          <Link key={item.href} href={item.href} asChild>
+          <Link key={item.label} href={item.href} asChild>
             <ListRow
               icon={item.icon}
               title={item.label}
@@ -378,16 +393,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(240,122,42,0.20)',
     backgroundColor: 'rgba(240,122,42,0.06)',
   },
-  bookingHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  bookingHeaderText: {
-    color: colors.textMuted,
-    fontSize: 13,
-    fontWeight: '700',
+  bookingCardDisabled: {
+    opacity: 0.72,
   },
   bookingBody: {
     flexDirection: 'row',
@@ -404,25 +411,16 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(240,122,42,0.25)',
     backgroundColor: 'rgba(240,122,42,0.15)',
   },
-  bookingEmoji: {
-    fontSize: 18,
-  },
   bookingTitle: {
     color: colors.text,
     fontSize: 14,
     fontWeight: '700',
   },
-  successText: {
-    color: colors.success,
-    fontSize: 11,
-  },
-  openButton: {
-    minHeight: 34,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  openButtonText: {
-    fontSize: 13,
+  bookingSubtitle: {
+    color: colors.textDim,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 3,
   },
   signOutPressed: {
     backgroundColor: 'rgba(255,60,60,0.06)',
