@@ -1,15 +1,7 @@
 import { supabase } from './supabaseClient';
+import type { EventRegistration, EventRegistrationStatus } from '@/types/event';
 
-export type EventRegistrationStatus =
-  | 'pending'
-  | 'confirmed'
-  | 'waitlisted'
-  | 'cancelled'
-  | 'rejected'
-  | 'attended'
-  | 'no_show';
-
-export type EventRegistration = {
+type EventRegistrationRow = {
   id: string;
   event_id: string;
   user_id: string;
@@ -43,6 +35,37 @@ const REGISTRATION_FIELDS = `
   updated_at
 `;
 
+function normalizeRegistration(row: EventRegistrationRow): EventRegistration {
+  return {
+    id: row.id,
+    eventId: row.event_id,
+    userId: row.user_id,
+    status: row.status,
+    seatsCount: row.seats_count,
+    guestNames: Array.isArray(row.guest_names) ? row.guest_names : [],
+    comment: row.comment,
+    registeredAt: row.registered_at,
+    confirmedAt: row.confirmed_at,
+    cancelledAt: row.cancelled_at,
+    paymentStatus: row.payment_status,
+    paymentId: row.payment_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function normalizeSingleResult(data: EventRegistrationRow | EventRegistrationRow[] | null): EventRegistration | null {
+  if (!data) {
+    return null;
+  }
+
+  if (Array.isArray(data)) {
+    return data[0] ? normalizeRegistration(data[0]) : null;
+  }
+
+  return normalizeRegistration(data);
+}
+
 export async function registerForEvent(
   eventId: string,
   seatsCount = 1,
@@ -58,7 +81,20 @@ export async function registerForEvent(
     throw new Error(error.message);
   }
 
-  return data as EventRegistration;
+  const registration = normalizeSingleResult(data as EventRegistrationRow | EventRegistrationRow[] | null);
+
+  if (registration) {
+    return registration;
+  }
+
+  const registrations = await loadMyRegistrations();
+  const fallbackRegistration = registrations.find((item) => item.eventId === eventId);
+
+  if (!fallbackRegistration) {
+    throw new Error('Registration result is empty');
+  }
+
+  return fallbackRegistration;
 }
 
 export async function loadMyRegistrations(): Promise<EventRegistration[]> {
@@ -71,23 +107,30 @@ export async function loadMyRegistrations(): Promise<EventRegistration[]> {
     throw new Error(error.message);
   }
 
-  return (data ?? []) as EventRegistration[];
+  return ((data ?? []) as EventRegistrationRow[]).map(normalizeRegistration);
 }
 
 export async function cancelRegistration(registrationId: string): Promise<EventRegistration> {
-  const { data, error } = await supabase
-    .from('event_registrations')
-    .update({
-      status: 'cancelled',
-      cancelled_at: new Date().toISOString(),
-    })
-    .eq('id', registrationId)
-    .select(REGISTRATION_FIELDS)
-    .single();
+  const { data, error } = await supabase.rpc('cancel_event_registration', {
+    registration_id: registrationId,
+  });
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return data as EventRegistration;
+  const registration = normalizeSingleResult(data as EventRegistrationRow | EventRegistrationRow[] | null);
+
+  if (registration) {
+    return registration;
+  }
+
+  const registrations = await loadMyRegistrations();
+  const fallbackRegistration = registrations.find((item) => item.id === registrationId);
+
+  if (!fallbackRegistration) {
+    throw new Error('Registration result is empty');
+  }
+
+  return fallbackRegistration;
 }
