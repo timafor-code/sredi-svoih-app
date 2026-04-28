@@ -518,24 +518,24 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   eventRow: {
-    minHeight: 96,
     flexDirection: 'row',
+    alignItems: 'flex-start',
   },
   eventImage: {
     flex: 1,
-    width: 100,
+    width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },
   eventImagePressable: {
     width: 100,
+    height: 154,
     overflow: 'hidden',
     backgroundColor: '#141420',
   },
   eventPhoto: {
-    width: 100,
+    width: '100%',
     height: '100%',
-    minHeight: 96,
   },
   eventEmoji: {
     fontSize: 40,
@@ -544,6 +544,7 @@ const styles = StyleSheet.create({
   eventBody: {
     flex: 1,
     justifyContent: 'space-between',
+    minHeight: 154,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
