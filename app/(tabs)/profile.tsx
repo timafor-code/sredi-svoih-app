@@ -13,6 +13,7 @@ import { ListRow } from '@/components/ui/ListRow';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
 
 const myRegistrationsHref = '/profile/my-registrations' as Href;
@@ -50,6 +51,8 @@ export default function ProfileScreen() {
   const signIn = useAuthStore((state) => state.signIn);
   const signOut = useAuthStore((state) => state.signOut);
   const acceptInvite = useAuthStore((state) => state.acceptInvite);
+  const loadEvents = useEventsStore((state) => state.loadEvents);
+  const resetEventPrivateState = useEventsStore((state) => state.resetPrivateState);
 
   useEffect(() => {
     void loadSession().catch(() => undefined);
@@ -77,30 +80,34 @@ export default function ProfileScreen() {
   const handleSignIn = useCallback(async () => {
     try {
       await signIn(email);
+      void loadEvents().catch(() => undefined);
       Alert.alert('Вход выполнен', 'Теперь можно принять приглашение или записаться на событие.');
     } catch (error) {
       Alert.alert('Не удалось войти', error instanceof Error ? error.message : 'Попробуйте ещё раз.');
     }
-  }, [email, signIn]);
+  }, [email, loadEvents, signIn]);
 
   const handleAcceptInvite = useCallback(async () => {
     try {
       await acceptInvite(inviteCode);
+      void loadEvents().catch(() => undefined);
       setInviteCode('');
       Alert.alert('Приглашение принято', 'Теперь вы участник общины.');
     } catch (error) {
       Alert.alert('Не удалось принять приглашение', error instanceof Error ? error.message : 'Проверьте код и попробуйте ещё раз.');
     }
-  }, [acceptInvite, inviteCode]);
+  }, [acceptInvite, inviteCode, loadEvents]);
 
   const handleSignOut = useCallback(async () => {
     try {
       await signOut();
+      resetEventPrivateState();
+      void loadEvents().catch(() => undefined);
       setInviteCode('');
     } catch (error) {
       Alert.alert('Не удалось выйти', error instanceof Error ? error.message : 'Попробуйте ещё раз.');
     }
-  }, [signOut]);
+  }, [loadEvents, resetEventPrivateState, signOut]);
 
   const handleOpenMyRegistrations = useCallback(() => {
     if (!authUser) {

@@ -14,6 +14,10 @@ import {
   type EventRegistration,
 } from '@/types/event';
 
+type LoadEventOptions = {
+  forceRefresh?: boolean;
+};
+
 type EventsState = {
   events: EventItem[];
   selectedEvent: EventItem | null;
@@ -24,11 +28,12 @@ type EventsState = {
   error: string | null;
   selectedEventError: string | null;
   loadEvents: () => Promise<void>;
-  loadEventById: (eventId: string) => Promise<EventItem | null>;
+  loadEventById: (eventId: string, options?: LoadEventOptions) => Promise<EventItem | null>;
   loadMyRegistrations: () => Promise<void>;
   registerForEvent: (eventId: string) => Promise<EventRegistration>;
   cancelRegistration: (registrationId: string) => Promise<EventRegistration>;
   getRegistrationForEvent: (eventId: string) => EventRegistration | null;
+  resetPrivateState: () => void;
 };
 
 const activeRegistrationStatuses = new Set(ACTIVE_EVENT_REGISTRATION_STATUSES);
@@ -227,9 +232,11 @@ export const useEventsStore = create<EventsState>((set, get) => ({
     }
   },
 
-  loadEventById: async (eventId: string) => {
+  loadEventById: async (eventId: string, options: LoadEventOptions = {}) => {
     const currentSelectedEvent = get().selectedEvent?.id === eventId ? get().selectedEvent : null;
-    const cachedEvent = currentSelectedEvent ?? findLoadedEvent(get().events, get().myRegistrations, eventId);
+    const cachedEvent = options.forceRefresh
+      ? null
+      : currentSelectedEvent ?? findLoadedEvent(get().events, get().myRegistrations, eventId);
 
     if (cachedEvent) {
       set({
@@ -250,11 +257,12 @@ export const useEventsStore = create<EventsState>((set, get) => ({
       const event = await getEventById(eventId);
 
       if (!event) {
-        set({
+        set((state) => ({
+          events: state.events.filter((item) => item.id !== eventId),
           selectedEvent: null,
           selectedEventLoading: false,
-          selectedEventError: 'Событие не найдено',
-        });
+          selectedEventError: 'Событие недоступно',
+        }));
         return null;
       }
 
@@ -361,4 +369,13 @@ export const useEventsStore = create<EventsState>((set, get) => ({
   },
 
   getRegistrationForEvent: (eventId: string) => findRegistrationForEvent(get().myRegistrations, eventId),
+
+  resetPrivateState: () => {
+    set((state) => ({
+      events: state.events.filter((event) => event.visibility === 'public'),
+      selectedEvent: state.selectedEvent?.visibility === 'public' ? state.selectedEvent : null,
+      myRegistrations: [],
+      registrationsLoading: false,
+    }));
+  },
 }));
