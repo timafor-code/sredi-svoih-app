@@ -1,37 +1,67 @@
-import { Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
+
+import { colors } from '@/theme/colors';
 
 type FormFieldProps = {
+  keyboardType?: 'default' | 'email-address' | 'phone-pad';
   label: string;
-  value: string;
+  multiline?: boolean;
   onChangeText: (text: string) => void;
   placeholder?: string;
-  multiline?: boolean;
-  keyboardType?: 'default' | 'email-address' | 'phone-pad';
+  value: string;
 };
 
-export function FormField({ label, value, onChangeText, placeholder, multiline, keyboardType = 'default' }: FormFieldProps) {
+export function FormField({
+  keyboardType = 'default',
+  label,
+  multiline,
+  onChangeText,
+  placeholder,
+  value,
+}: FormFieldProps) {
   return (
-    <View style={{ gap: 6 }}>
-      <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, fontWeight: '600' }}>{label}</Text>
+    <View style={styles.container}>
+      <Text style={styles.label}>{label}</Text>
       <TextInput
-        value={value}
+        keyboardType={keyboardType}
+        multiline={multiline}
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor="rgba(255,255,255,0.3)"
-        multiline={multiline}
-        keyboardType={keyboardType}
-        style={{
-          borderWidth: 1,
-          borderColor: 'rgba(255,255,255,0.1)',
-          borderRadius: 12,
-          paddingHorizontal: 12,
-          paddingVertical: multiline ? 10 : 12,
-          minHeight: multiline ? 90 : undefined,
-          textAlignVertical: multiline ? 'top' : 'center',
-          color: '#fff',
-          backgroundColor: 'rgba(255,255,255,0.05)',
-        }}
+        selectionColor={colors.orange}
+        style={[styles.input, multiline && styles.multiline]}
+        textAlignVertical={multiline ? 'top' : 'center'}
+        value={value}
       />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    gap: 6,
+  },
+  label: {
+    color: colors.textDim,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    includeFontPadding: false,
+  },
+  input: {
+    minHeight: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.glass.w10,
+    backgroundColor: colors.glass.w06,
+    color: colors.text,
+    fontSize: 15,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  multiline: {
+    minHeight: 90,
+    lineHeight: 22,
+  },
+});

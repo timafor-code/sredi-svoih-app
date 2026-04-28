@@ -1,11 +1,15 @@
 import { Stack } from 'expo-router';
 import { useState } from 'react';
 import { Text } from 'react-native';
+
+import { GlassCard } from '@/components/glass/GlassCard';
 import { IOSGroup } from '@/components/ui/IOSGroup';
 import { ListRow } from '@/components/ui/ListRow';
 import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
+import { SubHeader } from '@/components/ui/SubHeader';
 import { ToggleRow } from '@/components/ui/ToggleRow';
+import { colors } from '@/theme/colors';
 
 export default function ContactsSettingsScreen() {
   const [syncContacts, setSyncContacts] = useState(true);
@@ -16,23 +20,27 @@ export default function ContactsSettingsScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ headerShown: true, title: 'Контакты и дни рождения', headerStyle: { backgroundColor: '#0D0D1A' }, headerTintColor: '#fff' }} />
-      <Screen>
+      <Stack.Screen options={{ headerShown: false }} />
+      <Screen contentContainerStyle={{ gap: 16 }}>
+        <SubHeader title="Контакты и дни рождения" subtitle="Синхронизация, еврейская дата, напоминания" />
+
         <IOSGroup>
-          <ToggleRow label="Синхронизация контактов" subtitle="Разрешено" value={syncContacts} onValueChange={setSyncContacts} />
-          <ToggleRow label="Еврейская дата рождения" subtitle="Показывать в карточке" value={showHebrewBirthday} onValueChange={setShowHebrewBirthday} isLast />
+          <ToggleRow icon="🔄" label="Синхронизация контактов" subtitle="Разрешено" value={syncContacts} onValueChange={setSyncContacts} />
+          <ToggleRow icon="✡️" label="Еврейская дата рождения" subtitle="Отображать в профиле" value={showHebrewBirthday} onValueChange={setShowHebrewBirthday} isLast />
         </IOSGroup>
 
         <SectionTitle title="НАПОМИНАНИЯ" />
         <IOSGroup>
-          <ToggleRow label="Дни рождения" subtitle="Напоминать в день" value={birthdaysReminder} onValueChange={setBirthdaysReminder} />
-          <ToggleRow label="Яарцайт" subtitle="Годовщина ухода" value={yahrzeitReminder} onValueChange={setYahrzeitReminder} />
-          <ListRow title="Заблаговременно" rightText={advance} onPress={() => setAdvance(advance === 'За 3 дня' ? 'За 1 день' : 'За 3 дня')} isLast />
+          <ToggleRow icon="🎂" label="Дни рождения" subtitle="Напоминать в день" value={birthdaysReminder} onValueChange={setBirthdaysReminder} />
+          <ToggleRow icon="🕯️" label="Яарцайт" subtitle="Годовщина ухода" value={yahrzeitReminder} onValueChange={setYahrzeitReminder} />
+          <ListRow icon="⏰" title="Заблаговременно" rightText={advance} onPress={() => setAdvance(advance === 'За 3 дня' ? 'За 1 день' : 'За 3 дня')} isLast />
         </IOSGroup>
 
-        <Text style={{ color: 'rgba(255,255,255,0.5)', lineHeight: 20 }}>
-          Контакты используются локально для расчёта дней рождения и еврейских дат. Автоматическая отправка всех контактов на сервер не выполняется.
-        </Text>
+        <GlassCard>
+          <Text style={{ color: colors.textDim, fontSize: 13, lineHeight: 20 }}>
+            Приложение использует доступ к контактам только для отображения дней рождения и расчёта еврейских дат. Данные не передаются третьим лицам.
+          </Text>
+        </GlassCard>
       </Screen>
     </>
   );

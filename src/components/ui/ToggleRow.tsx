@@ -1,23 +1,125 @@
-import { Switch, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { colors } from '@/theme/colors';
 
 type ToggleRowProps = {
+  icon?: string;
+  isLast?: boolean;
   label: string;
+  onValueChange: (value: boolean) => void;
   subtitle?: string;
   value: boolean;
-  onValueChange: (value: boolean) => void;
-  isLast?: boolean;
 };
 
-export function ToggleRow({ label, subtitle, value, onValueChange, isLast }: ToggleRowProps) {
+export function ToggleRow({
+  icon,
+  isLast,
+  label,
+  onValueChange,
+  subtitle,
+  value,
+}: ToggleRowProps) {
   return (
-    <View style={{ paddingVertical: 12, borderBottomWidth: isLast ? 0 : 1, borderBottomColor: 'rgba(255,255,255,0.08)' }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-        <View style={{ flex: 1 }}>
-          <Text style={{ color: '#fff', fontSize: 16 }}>{label}</Text>
-          {subtitle ? <Text style={{ color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>{subtitle}</Text> : null}
+    <View style={[styles.row, !isLast && styles.divider]}>
+      {icon ? (
+        <View style={styles.iconBox}>
+          <Text style={styles.icon}>{icon}</Text>
         </View>
-        <Switch value={value} onValueChange={onValueChange} trackColor={{ false: '#4B4B5A', true: '#F07A2A' }} thumbColor="#fff" />
+      ) : null}
+      <View style={styles.textBlock}>
+        <Text numberOfLines={1} style={styles.label}>
+          {label}
+        </Text>
+        {subtitle ? (
+          <Text numberOfLines={2} style={styles.subtitle}>
+            {subtitle}
+          </Text>
+        ) : null}
       </View>
+      <Pressable
+        accessibilityRole="switch"
+        accessibilityState={{ checked: value }}
+        onPress={() => onValueChange(!value)}
+        style={[styles.switchTrack, value && styles.switchTrackOn]}
+      >
+        <View style={[styles.switchThumb, value && styles.switchThumbOn]} />
+      </Pressable>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  row: {
+    minHeight: 62,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  divider: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.separator,
+  },
+  iconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.glass.w08,
+    backgroundColor: colors.glass.w07,
+  },
+  icon: {
+    fontSize: 16,
+    includeFontPadding: false,
+  },
+  textBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  label: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '500',
+    includeFontPadding: false,
+  },
+  subtitle: {
+    color: colors.textGhost,
+    fontSize: 12,
+    marginTop: 3,
+    lineHeight: 16,
+  },
+  switchTrack: {
+    width: 48,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.glass.w16,
+    backgroundColor: colors.glass.w12,
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  switchTrackOn: {
+    borderColor: 'transparent',
+    backgroundColor: colors.orange,
+    shadowColor: colors.orange,
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  switchThumb: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+  },
+  switchThumbOn: {
+    transform: [{ translateX: 20 }],
+  },
+});

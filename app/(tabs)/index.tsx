@@ -1,31 +1,715 @@
-import { Link } from 'expo-router';
-import { Text, View } from 'react-native';
-import { Screen } from '@/components/ui/Screen';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Link, useRouter } from 'expo-router';
+import { useMemo } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+
 import { GlassCard } from '@/components/glass/GlassCard';
+import { Avatar } from '@/components/ui/Avatar';
+import { Logo, OmerPill } from '@/components/ui/BrandHeader';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import { Screen } from '@/components/ui/Screen';
+import { SectionTitle } from '@/components/ui/SectionTitle';
 import { mockContacts } from '@/data/mockContacts';
+import { useNow } from '@/hooks/useNow';
+import { getUpcomingContactBirthdays } from '@/lib/birthdays';
+import { formatDurationRu, formatRuDate, formatRuTime, formatRuWeekdayDayMonth, progressBetween } from '@/lib/dates';
+import { getHebrewDate, getHebrewDateLabel, getUpcomingHoliday, getWeeklyParsha } from '@/lib/hebcal';
+import type { UpcomingHoliday, WeeklyParsha } from '@/lib/hebcal';
+import {
+  getDailyZmanim,
+  getHebcalLocation,
+  getPrayerWindows,
+  getUpcomingCandleLighting,
+} from '@/lib/zmanim';
+import type { CandleLightingInfo, DailyZmanim, PrayerWindow } from '@/lib/zmanim';
+import { useSettingsStore } from '@/store/useSettingsStore';
+import { colors } from '@/theme/colors';
+
+type HomeBirthdayItem = {
+  active: boolean;
+  bg: string;
+  hebrew: string;
+  id: string;
+  initials: string;
+  name: string;
+  when: string;
+};
+
+function pluralDays(count: number) {
+  const lastTwo = count % 100;
+  const last = count % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) return 'дней';
+  if (last === 1) return 'день';
+  if (last >= 2 && last <= 4) return 'дня';
+  return 'дней';
+}
+
+function DeadlineCard({ daily, now }: { daily: DailyZmanim; now: Date }) {
+  const progress = progressBetween(daily.times.sunrise.at, daily.times.shemaGra.at, now);
+  const isBefore = now.getTime() < daily.times.sunrise.at.getTime();
+  const isDone = now.getTime() > daily.times.shemaGra.at.getTime();
+  const value = isDone
+    ? 'завершено'
+    : isBefore
+      ? `через ${formatDurationRu(daily.times.sunrise.at.getTime() - now.getTime())}`
+      : formatDurationRu(daily.times.shemaGra.at.getTime() - now.getTime());
+  const subtitle = isDone ? 'на сегодня' : isBefore ? 'до восхода' : `осталось · ${Math.round(progress * 100)}%`;
+
+  return (
+    <GlassCard style={styles.deadlineCard}>
+      <View style={[styles.progressTint, { width: `${Math.round(progress * 100)}%` }]} />
+      <View style={styles.deadlineTop}>
+        <View style={styles.deadlineLeft}>
+          <View style={[styles.emojiBox, styles.greenBox]}>
+            <Text style={styles.emoji}>🙏</Text>
+          </View>
+          <View>
+            <Text style={styles.overline}>УТРЕННЕЕ ШМА ДО</Text>
+            <Text style={styles.deadlineTime}>{daily.times.shemaGra.time}</Text>
+          </View>
+        </View>
+        <View style={styles.deadlineRight}>
+          <Text style={styles.greenValue}>{value}</Text>
+          <Text style={styles.tinyMuted}>{subtitle}</Text>
+        </View>
+      </View>
+      <ProgressBar value={progress} color={colors.success} />
+      <View style={styles.progressLegend}>
+        <Text style={styles.tinyMuted}>{daily.times.sunrise.time} восход</Text>
+        <Text style={styles.tinyMuted}>{daily.times.shemaGra.time} дедлайн</Text>
+      </View>
+    </GlassCard>
+  );
+}
+
+function EventCard() {
+  return (
+    <GlassCard padded={false}>
+      <View style={styles.eventCard}>
+        <LinearGradient colors={['#22233a', '#101119']} style={styles.eventImage}>
+          <View style={styles.personLeft} />
+          <View style={styles.personHeadLeft} />
+          <View style={styles.personRight} />
+          <View style={styles.personHeadRight} />
+          <LinearGradient colors={['transparent', 'rgba(13,15,24,0.72)']} style={styles.eventImageShade} />
+        </LinearGradient>
+        <View style={styles.eventBody}>
+          <View>
+            <View style={styles.dateRow}>
+              <Ionicons name="calendar-outline" size={11} color={colors.textDim} />
+              <Text style={styles.eventMeta}>23 апреля, 19:00</Text>
+            </View>
+            <Text style={styles.eventTitle}>Встреча с Игорем Маричем</Text>
+          </View>
+          <PrimaryButton title="Записаться →" buttonStyle={styles.eventButton} />
+        </View>
+      </View>
+    </GlassCard>
+  );
+}
+
+function PrayerNowCard({ prayer, timeZone }: { prayer: PrayerWindow; timeZone: string }) {
+  const progress = prayer.active ? prayer.progress : 0;
+  const status = prayer.active ? 'ИДЁТ' : 'СКОРО';
+
+  return (
+    <GlassCard>
+      <View style={[styles.goldTint, { width: `${Math.round(progress * 100)}%` }]} />
+      <View style={styles.deadlineTop}>
+        <View style={styles.deadlineLeft}>
+          <View style={[styles.emojiBox, styles.goldBox]}>
+            <Text style={styles.emoji}>{prayer.icon}</Text>
+          </View>
+          <View>
+            <View style={styles.rowGap}>
+              <Text style={styles.overline}>{prayer.active ? 'СЕЙЧАС' : 'ДАЛЬШЕ'} · {prayer.title.toUpperCase()}</Text>
+              <Text style={styles.statusBadge}>{status}</Text>
+            </View>
+            <Text style={styles.deadlineTime}>до {formatRuTime(prayer.end, timeZone)}</Text>
+          </View>
+        </View>
+        <View style={styles.deadlineRight}>
+          <Text style={styles.goldValue}>
+            {prayer.active ? formatDurationRu(prayer.end.getTime() - Date.now()) : formatRuTime(prayer.start, timeZone)}
+          </Text>
+          <Text style={styles.tinyMuted}>{prayer.active ? `осталось · ${Math.round(progress * 100)}%` : 'начало'}</Text>
+        </View>
+      </View>
+      <ProgressBar value={progress} color={colors.gold} />
+      <View style={styles.progressLegend}>
+        <Text style={styles.tinyMuted}>{formatRuTime(prayer.start, timeZone)} начало</Text>
+        <Text style={styles.tinyMuted}>{formatRuTime(prayer.end, timeZone)} окончание</Text>
+      </View>
+    </GlassCard>
+  );
+}
+
+function DayTimeline({ daily, now }: { daily: DailyZmanim; now: Date }) {
+  const marker = progressBetween(daily.times.alot.at, daily.times.tzeit.at, now);
+  const labels = [daily.times.alot, daily.times.sunrise, daily.times.chatzot, daily.times.sunset, daily.times.tzeit];
+
+  return (
+    <GlassCard>
+      <View style={styles.timelineHeader}>
+        <Text style={styles.sectionInline}>МОЛИТВЫ СЕГОДНЯ</Text>
+        <Text style={styles.timeBadge}>{formatRuTime(now, daily.timeZone)}</Text>
+        <Link href="/prayers" asChild>
+          <Pressable>
+            <Text style={styles.linkText}>Все зманим →</Text>
+          </Pressable>
+        </Link>
+      </View>
+      <View style={styles.timelineTrack}>
+        <View style={[styles.timelineSegment, { flex: 3.5, backgroundColor: 'rgba(255,200,50,0.5)' }]} />
+        <View style={[styles.timelineSegment, { flex: 3.5, backgroundColor: 'rgba(240,100,42,0.7)' }]} />
+        <View style={[styles.timelineSegment, { flex: 3, backgroundColor: 'rgba(80,100,200,0.4)' }]} />
+        <View style={[styles.timelineMarker, { left: `${Math.round(marker * 100)}%` }]} />
+      </View>
+      <View style={styles.progressLegend}>
+        {labels.map((item) => (
+          <Text key={item.time} style={styles.tinyMuted}>
+            {item.time}
+          </Text>
+        ))}
+      </View>
+    </GlassCard>
+  );
+}
+
+function BirthdayRow({ item, isLast }: { item: HomeBirthdayItem; isLast?: boolean }) {
+  const router = useRouter();
+
+  return (
+    <Pressable
+      onPress={() => router.push(`/contacts/${item.id}`)}
+      style={({ pressed }) => [styles.birthdayRow, !isLast && styles.rowDivider, pressed && styles.rowPressed]}
+    >
+      <Avatar initials={item.initials} bg={item.bg} size={40} />
+      <View style={styles.birthdayContent}>
+        <View style={styles.flex}>
+          <Text style={styles.birthdayName}>{item.name}</Text>
+          <Text style={styles.birthdayHebrew}>{item.hebrew}</Text>
+        </View>
+        <Text style={[styles.birthdayWhen, item.active && styles.birthdayToday]}>{item.when}</Text>
+      </View>
+    </Pressable>
+  );
+}
 
 export default function HomeScreen() {
+  const now = useNow();
+  const city = useSettingsStore((state) => state.city);
+  const location = useMemo(() => getHebcalLocation(city), [city]);
+  const daily = useMemo(() => getDailyZmanim({ city, date: now }), [city, now]);
+  const hdate = useMemo(() => getHebrewDate(now, location), [location, now]);
+  const parsha = useMemo<WeeklyParsha | null>(() => getWeeklyParsha(hdate, location.getIsrael()), [hdate, location]);
+  const holiday = useMemo<UpcomingHoliday | null>(() => getUpcomingHoliday(hdate, location.getIsrael()), [hdate, location]);
+  const candle = useMemo<CandleLightingInfo | null>(() => getUpcomingCandleLighting(now, location), [location, now]);
+  const prayers = useMemo(() => getPrayerWindows(daily, now), [daily, now]);
+  const birthdays = useMemo<HomeBirthdayItem[]>(
+    () =>
+      getUpcomingContactBirthdays(mockContacts, now, 3).map(({ birthday, contact }) => ({
+        active: birthday.daysUntil === 0,
+        bg: contact.avatarBg ?? '#2a3a4a',
+        hebrew: contact.hebrewName,
+        id: contact.id,
+        initials: contact.initials,
+        name: contact.name,
+        when: birthday.when,
+      })),
+    [now],
+  );
+  const currentPrayer =
+    prayers.find((item) => item.active) ?? prayers.find((item) => now.getTime() < item.start.getTime()) ?? prayers[prayers.length - 1]!;
+
   return (
     <Screen>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <Text style={{ color: '#fff', fontSize: 26, fontWeight: '700' }}>Среди Своих</Text>
-        <Link href="/modals/omer" style={{ color: '#F6A400' }}>8-й день Омера</Link>
+      <View style={styles.header}>
+        <Logo />
+        <OmerPill />
       </View>
-      <Text style={{ color: '#fff', fontSize: 28, fontWeight: '700' }}>23 Нисана 5785</Text>
-      <Text style={{ color: 'rgba(255,255,255,0.5)' }}>22 апреля 2026 · Москва (выбранный город)</Text>
 
-      <GlassCard><Text style={{ color: '#fff', fontWeight: '700', marginBottom: 8 }}>Утреннее Шма до 09:48</Text><ProgressBar value={0.42} /><Text style={{ color: '#F6A400', marginTop: 6 }}>Осталось 1 ч 33 мин</Text></GlassCard>
-      <GlassCard><Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>Встреча с Игорем Маричем</Text><Text style={{ color: 'rgba(255,255,255,0.55)', marginVertical: 6 }}>23 апреля, 19:00</Text><PrimaryButton title="Записаться" /></GlassCard>
-      <GlassCard><Text style={{ color: '#fff', fontWeight: '700' }}>Сейчас · Шахарит до 09:48</Text><ProgressBar value={0.6} /></GlassCard>
-      <GlassCard><Text style={{ color: '#fff', fontWeight: '700' }}>Недельная глава: Ахарей Мот</Text></GlassCard>
-      <GlassCard><Text style={{ color: '#fff', fontWeight: '700' }}>Зажигание свечей: 19:52</Text></GlassCard>
-      <GlassCard><Text style={{ color: '#F07A2A', fontWeight: '700' }}>Ближайший праздник: Шавуот (через 15 дней)</Text></GlassCard>
+      <View>
+        <Text style={styles.dateTitle}>{getHebrewDateLabel(hdate)}</Text>
+        <Text style={styles.dateSubtitle}>{formatRuDate(now, location.getTzid())}</Text>
+      </View>
+
+      <Pressable style={styles.locationPill}>
+        <Ionicons name="location" size={13} color="rgba(255,255,255,0.62)" />
+        <Text style={styles.locationText}>{city} · зманим</Text>
+        <Ionicons name="chevron-forward" size={13} color="rgba(255,255,255,0.4)" />
+      </Pressable>
+
+      <DeadlineCard daily={daily} now={now} />
+      <EventCard />
+      <PrayerNowCard prayer={currentPrayer} timeZone={daily.timeZone} />
+      <DayTimeline daily={daily} now={now} />
+
       <GlassCard>
-        <Text style={{ color: '#fff', fontWeight: '700', marginBottom: 8 }}>Ближайшие дни рождения</Text>
-        {mockContacts.map((c) => <Text key={c.id} style={{ color: 'rgba(255,255,255,0.7)', marginBottom: 4 }}>{c.name} · {c.nextBirthday}</Text>)}
+        <View style={styles.rowBetween}>
+          <View>
+            <Text style={styles.overline}>НЕДЕЛЬНАЯ ГЛАВА</Text>
+            <Text style={styles.cardTitle}>{parsha?.ru ?? holiday?.nameRu ?? 'Особое чтение'}</Text>
+            <Text style={styles.hebrew}>{parsha?.he ?? holiday?.nameHe ?? ''}</Text>
+            <View style={[styles.dateRow, styles.teacherRow]}>
+              <Ionicons name="person-outline" size={11} color={colors.textDim} />
+              <Text style={styles.mutedSmall}>Урок раввина Рувена Колина</Text>
+            </View>
+          </View>
+          <View style={[styles.roundIcon, styles.blueBox]}>
+            <Text style={styles.roundIconText}>📖</Text>
+          </View>
+        </View>
       </GlassCard>
+
+      <GlassCard>
+        <View style={styles.rowBetween}>
+          <View style={styles.candleLeft}>
+            <Text style={styles.largeEmoji}>🕯️</Text>
+            <View>
+              <Text style={styles.overline}>ЗАЖИГАНИЕ СВЕЧЕЙ</Text>
+              <Text style={styles.bigTime}>{candle?.time ?? daily.times.sunset.time}</Text>
+              <Text style={styles.mutedSmall}>
+                {candle ? formatRuWeekdayDayMonth(candle.date, daily.timeZone) : 'перед Шабатом и праздниками'}
+              </Text>
+            </View>
+          </View>
+          <PrimaryButton
+            title="Записаться на Шабат"
+            buttonStyle={styles.candleButton}
+            textStyle={styles.smallButtonText}
+          />
+        </View>
+      </GlassCard>
+
+      <GlassCard>
+        <View style={styles.holidayTop}>
+          <View style={styles.candleLeft}>
+            <Text style={styles.largeEmoji}>📜</Text>
+            <View style={styles.flex}>
+              <Text style={styles.overline}>БЛИЖАЙШИЙ ПРАЗДНИК</Text>
+              <Text style={styles.orangeTitle}>{holiday?.nameRu ?? 'Календарь'}</Text>
+              <Text style={styles.mutedSmall}>
+                {holiday ? `${formatRuWeekdayDayMonth(holiday.date, daily.timeZone)} · ${holiday.hebrewDateRu}` : 'Hebcal не нашёл событие'}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.daysBlock}>
+            <Text style={styles.daysNumber}>{holiday?.daysUntil ?? '-'}</Text>
+            <Text style={styles.mutedSmall}>{holiday ? pluralDays(holiday.daysUntil) : ''}</Text>
+          </View>
+        </View>
+        <PrimaryButton title={holiday ? `Подробнее: ${holiday.nameRu} →` : 'Открыть календарь →'} />
+      </GlassCard>
+
+      <View>
+        <SectionTitle title="ДНИ РОЖДЕНИЯ · КОНТАКТЫ" action="Все контакты →" />
+        <GlassCard padded={false}>
+          {birthdays.map((item, index) => (
+            <BirthdayRow key={item.name} item={item} isLast={index === birthdays.length - 1} />
+          ))}
+        </GlassCard>
+      </View>
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  dateTitle: {
+    color: colors.text,
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
+  dateSubtitle: {
+    color: colors.textDim,
+    fontSize: 14,
+    marginTop: 2,
+  },
+  locationPill: {
+    alignSelf: 'flex-start',
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.glass.w10,
+    backgroundColor: colors.glass.w07,
+    paddingHorizontal: 14,
+  },
+  locationText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  deadlineCard: {
+    position: 'relative',
+  },
+  progressTint: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: '42%',
+    backgroundColor: 'rgba(76,175,80,0.08)',
+  },
+  goldTint: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: '42%',
+    backgroundColor: 'rgba(246,164,0,0.08)',
+  },
+  deadlineTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 10,
+  },
+  deadlineLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  deadlineRight: {
+    alignItems: 'flex-end',
+  },
+  emojiBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  greenBox: {
+    borderColor: 'rgba(76,175,80,0.30)',
+    backgroundColor: 'rgba(76,175,80,0.15)',
+  },
+  goldBox: {
+    borderColor: 'rgba(246,164,0,0.30)',
+    backgroundColor: 'rgba(246,164,0,0.15)',
+  },
+  emoji: {
+    fontSize: 14,
+  },
+  overline: {
+    color: colors.textDim,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    includeFontPadding: false,
+  },
+  deadlineTime: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    marginTop: 2,
+  },
+  greenValue: {
+    color: colors.success,
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  goldValue: {
+    color: colors.gold,
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  tinyMuted: {
+    color: colors.textGhost,
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  progressLegend: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 5,
+  },
+  eventCard: {
+    minHeight: 130,
+    flexDirection: 'row',
+  },
+  eventImage: {
+    width: 140,
+    minHeight: 130,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  eventImageShade: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  personLeft: {
+    position: 'absolute',
+    bottom: 0,
+    left: 10,
+    width: 55,
+    height: 90,
+    borderTopLeftRadius: 40,
+    borderTopRightRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  personHeadLeft: {
+    position: 'absolute',
+    bottom: 70,
+    left: 22,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  personRight: {
+    position: 'absolute',
+    bottom: 0,
+    right: 10,
+    width: 60,
+    height: 100,
+    borderTopLeftRadius: 40,
+    borderTopRightRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  personHeadRight: {
+    position: 'absolute',
+    bottom: 80,
+    right: 16,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.09)',
+  },
+  eventBody: {
+    flex: 1,
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  eventMeta: {
+    color: colors.textDim,
+    fontSize: 11,
+  },
+  eventTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 20,
+    marginTop: 6,
+  },
+  eventButton: {
+    minHeight: 36,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  rowGap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusBadge: {
+    overflow: 'hidden',
+    borderRadius: 5,
+    backgroundColor: 'rgba(246,164,0,0.20)',
+    color: colors.gold,
+    fontSize: 9,
+    fontWeight: '700',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    includeFontPadding: false,
+  },
+  timelineHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 12,
+  },
+  sectionInline: {
+    color: colors.textFaint,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  timeBadge: {
+    overflow: 'hidden',
+    borderRadius: 8,
+    backgroundColor: colors.glass.w12,
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  linkText: {
+    color: colors.orange,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  timelineTrack: {
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    position: 'relative',
+    marginBottom: 11,
+  },
+  timelineSegment: {
+    height: 8,
+  },
+  timelineMarker: {
+    position: 'absolute',
+    top: -4,
+    left: '50%',
+    width: 3,
+    height: 16,
+    borderRadius: 2,
+    backgroundColor: '#ff4444',
+  },
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 14,
+  },
+  cardTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  hebrew: {
+    color: colors.textGhost,
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+  teacherRow: {
+    marginTop: 6,
+  },
+  mutedSmall: {
+    color: colors.textDim,
+    fontSize: 12,
+  },
+  roundIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+  },
+  blueBox: {
+    borderColor: 'rgba(80,120,200,0.30)',
+    backgroundColor: 'rgba(80,120,200,0.15)',
+  },
+  roundIconText: {
+    fontSize: 26,
+  },
+  candleLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  largeEmoji: {
+    fontSize: 30,
+  },
+  bigTime: {
+    color: colors.text,
+    fontSize: 26,
+    fontWeight: '700',
+  },
+  candleButton: {
+    width: 104,
+    minHeight: 48,
+    paddingHorizontal: 10,
+  },
+  smallButtonText: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  holidayTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  orangeTitle: {
+    color: colors.orange,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  daysBlock: {
+    alignItems: 'center',
+  },
+  daysNumber: {
+    color: colors.orange,
+    fontSize: 36,
+    fontWeight: '800',
+    lineHeight: 38,
+  },
+  birthdayRow: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  rowDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.12)',
+  },
+  rowPressed: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  birthdayContent: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  flex: {
+    flex: 1,
+    minWidth: 0,
+  },
+  birthdayName: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  birthdayHebrew: {
+    color: colors.textGhost,
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+  birthdayWhen: {
+    color: colors.textDim,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  birthdayToday: {
+    color: colors.orange,
+  },
+});

@@ -1,32 +1,63 @@
 import { Stack } from 'expo-router';
-import { Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+
 import { IOSGroup } from '@/components/ui/IOSGroup';
 import { ListRow } from '@/components/ui/ListRow';
+import { Logo } from '@/components/ui/BrandHeader';
 import { Screen } from '@/components/ui/Screen';
+import { SubHeader } from '@/components/ui/SubHeader';
+import { colors } from '@/theme/colors';
 
 export default function AboutScreen() {
   return (
     <>
-      <Stack.Screen options={{ headerShown: true, title: 'О приложении', headerStyle: { backgroundColor: '#0D0D1A' }, headerTintColor: '#fff' }} />
-      <Screen>
-        <View style={{ alignItems: 'center', gap: 6, marginVertical: 8 }}>
-          <Text style={{ color: '#fff', fontSize: 30, fontWeight: '700' }}>Среди Своих</Text>
-          <Text style={{ color: 'rgba(255,255,255,0.45)' }}>Версия 2.4.1 (build 241)</Text>
+      <Stack.Screen options={{ headerShown: false }} />
+      <Screen contentContainerStyle={{ gap: 16 }}>
+        <SubHeader title="О приложении" subtitle="Версия, поддержка, политика конфиденциальности" />
+
+        <View style={styles.appHero}>
+          <Logo />
+          <Text style={styles.appName}>Среди Своих</Text>
+          <Text style={styles.version}>Версия 2.4.1 (build 241)</Text>
         </View>
 
         <IOSGroup>
-          <ListRow title="Написать в поддержку" rightText="support@sredisvoyikh.com" />
-          <ListRow title="Сайт общины" rightText="sredisvoyikh.com" />
-          <ListRow title="Telegram-канал" rightText="@sredisvoyikh" isLast />
+          <ListRow icon="💬" title="Написать в поддержку" rightText="support@sredisvoyikh.com" onPress={() => undefined} />
+          <ListRow icon="⭐" title="Оценить приложение" rightText="App Store" onPress={() => undefined} />
+          <ListRow icon="📣" title="Telegram-канал общины" onPress={() => undefined} />
+          <ListRow icon="🌐" title="Сайт общины" rightText="sredisvoyikh.com" onPress={() => undefined} isLast />
         </IOSGroup>
 
         <IOSGroup>
-          <ListRow title="Политика конфиденциальности" />
-          <ListRow title="Пользовательское соглашение" isLast />
+          <ListRow icon="📄" title="Политика конфиденциальности" onPress={() => undefined} />
+          <ListRow icon="📋" title="Пользовательское соглашение" onPress={() => undefined} isLast />
         </IOSGroup>
 
-        <Text style={{ color: 'rgba(255,255,255,0.28)', textAlign: 'center', marginTop: 8 }}>© 2026 Среди Своих · Сделано с ❤️ для общины</Text>
+        <Text style={styles.copy}>© 2026 Среди Своих · Сделано с ❤️ для общины</Text>
       </Screen>
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  appHero: {
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 18,
+  },
+  appName: {
+    color: colors.text,
+    fontSize: 26,
+    fontWeight: '800',
+  },
+  version: {
+    color: colors.textGhost,
+    fontSize: 13,
+  },
+  copy: {
+    color: 'rgba(255,255,255,0.24)',
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+});
