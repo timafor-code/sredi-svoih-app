@@ -375,6 +375,9 @@ export const useEventsStore = create<EventsState>((set, get) => ({
       events: state.events.filter((event) => event.visibility === 'public'),
       selectedEvent: state.selectedEvent?.visibility === 'public' ? state.selectedEvent : null,
       myRegistrations: [],
+      error: null,
+      selectedEventError: null,
+      selectedEventLoading: false,
       registrationsLoading: false,
     }));
   },
