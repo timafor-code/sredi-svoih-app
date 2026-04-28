@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
@@ -8,7 +8,7 @@ import { HeaderButton, Logo, OmerPill } from '@/components/ui/BrandHeader';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { SegmentControl } from '@/components/ui/SegmentControl';
-import { mockEvents } from '@/data/mockEvents';
+import { useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
 import type { EventItem } from '@/types/event';
 
@@ -30,10 +30,12 @@ function EventCard({ event }: { event: EventItem }) {
           <View style={[styles.tag, styles.featuredTag, { backgroundColor: `${event.tagColor}DD` }]}>
             <Text style={styles.tagTextWhite}>{event.category}</Text>
           </View>
-          <Text style={styles.siteText}>www.sredisvoyih.com</Text>
+          <Text style={styles.siteText}>www.sredisvoih.com</Text>
         </View>
+
         <View style={styles.featuredBody}>
           <Text style={styles.featuredTitle}>{event.title}</Text>
+          {event.date ? <Text style={styles.featuredDate}>{event.date}</Text> : null}
           <PrimaryButton title="Хочу пойти →" />
         </View>
       </GlassCard>
@@ -47,16 +49,22 @@ function EventCard({ event }: { event: EventItem }) {
           <Text style={styles.eventEmoji}>{event.imageIcon}</Text>
           <LinearGradient colors={['transparent', 'rgba(13,15,24,0.45)']} style={StyleSheet.absoluteFillObject} />
         </LinearGradient>
+
         <View style={styles.eventBody}>
           <View>
             <View style={[styles.tag, { alignSelf: 'flex-start', backgroundColor: `${event.tagColor}22` }]}>
               <Text style={[styles.tagText, { color: event.tagColor }]}>{event.category}</Text>
             </View>
+
             <Text style={styles.eventTitle}>{event.title}</Text>
+
             {event.subtitle || event.date ? (
               <Text style={styles.eventSub}>{event.subtitle ?? event.date}</Text>
             ) : null}
+
+            {event.date ? <Text style={styles.eventDate}>{event.date}</Text> : null}
           </View>
+
           <PrimaryButton title="Хочу пойти →" buttonStyle={styles.smallButton} textStyle={styles.smallButtonText} />
         </View>
       </View>
@@ -66,7 +74,13 @@ function EventCard({ event }: { event: EventItem }) {
 
 export default function EventsScreen() {
   const [filter, setFilter] = useState<(typeof filters)[number]>('Все');
-  const items = useMemo(() => mockEvents.filter((event) => eventMatchesFilter(event, filter)), [filter]);
+  const { events, loading, error, loadEvents } = useEventsStore();
+
+  useEffect(() => {
+    void loadEvents();
+  }, [loadEvents]);
+
+  const items = useMemo(() => events.filter((event) => eventMatchesFilter(event, filter)), [events, filter]);
 
   return (
     <Screen>
@@ -84,6 +98,14 @@ export default function EventsScreen() {
       </View>
 
       <SegmentControl items={filters} value={filter} onChange={setFilter} />
+
+      {loading ? <Text style={styles.stateText}>Загружаем события…</Text> : null}
+
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+      {!loading && !error && items.length === 0 ? (
+        <Text style={styles.stateText}>Пока нет опубликованных событий</Text>
+      ) : null}
 
       {items.map((event) => (
         <Pressable key={event.id} style={({ pressed }) => [pressed && styles.pressed]}>
@@ -122,6 +144,18 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     fontSize: 13,
     marginTop: 2,
+  },
+  stateText: {
+    color: colors.textDim,
+    fontSize: 14,
+    textAlign: 'center',
+    paddingVertical: 18,
+  },
+  errorText: {
+    color: colors.red,
+    fontSize: 14,
+    textAlign: 'center',
+    paddingVertical: 18,
   },
   featuredImage: {
     height: 140,
@@ -173,6 +207,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     lineHeight: 21,
+    marginBottom: 6,
+  },
+  featuredDate: {
+    color: colors.textGhost,
+    fontSize: 12,
     marginBottom: 14,
   },
   eventRow: {
@@ -205,6 +244,11 @@ const styles = StyleSheet.create({
     color: colors.textGhost,
     fontSize: 12,
     marginTop: 3,
+  },
+  eventDate: {
+    color: colors.textDim,
+    fontSize: 12,
+    marginTop: 5,
   },
   smallButton: {
     alignSelf: 'flex-start',
