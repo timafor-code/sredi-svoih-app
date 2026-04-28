@@ -127,6 +127,11 @@ export default function EventsScreen() {
           await registerForEvent(event.id, 1, null);
           Alert.alert('Вы записаны');
         } catch (error) {
+          if (error instanceof Error && error.message === 'Auth required') {
+            Alert.alert('Нужен вход', 'Чтобы записаться на событие, войдите в приложение.');
+            return;
+          }
+
           Alert.alert(
             'Не удалось записаться',
             error instanceof Error ? error.message : 'Попробуйте повторить позже.',
