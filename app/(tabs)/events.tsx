@@ -1,13 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { HeaderButton, Logo, OmerPill } from '@/components/ui/BrandHeader';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { SegmentControl } from '@/components/ui/SegmentControl';
+import { registerForEvent } from '@/services/registrationService';
 import { useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
 import type { EventItem } from '@/types/event';
@@ -20,7 +21,15 @@ function eventMatchesFilter(event: EventItem, filter: (typeof filters)[number]) 
   return event.category === 'Праздник';
 }
 
-function EventCard({ event }: { event: EventItem }) {
+type EventCardProps = {
+  event: EventItem;
+  registering: boolean;
+  onRegister: (event: EventItem) => void;
+};
+
+function EventCard({ event, registering, onRegister }: EventCardProps) {
+  const buttonTitle = registering ? 'Записываем…' : 'Хочу пойти →';
+
   if (event.featured) {
     return (
       <GlassCard padded={false}>
@@ -36,7 +45,7 @@ function EventCard({ event }: { event: EventItem }) {
         <View style={styles.featuredBody}>
           <Text style={styles.featuredTitle}>{event.title}</Text>
           {event.date ? <Text style={styles.featuredDate}>{event.date}</Text> : null}
-          <PrimaryButton title="Хочу пойти →" />
+          <PrimaryButton title={buttonTitle} disabled={registering} onPress={() => onRegister(event)} />
         </View>
       </GlassCard>
     );
@@ -65,7 +74,13 @@ function EventCard({ event }: { event: EventItem }) {
             {event.date ? <Text style={styles.eventDate}>{event.date}</Text> : null}
           </View>
 
-          <PrimaryButton title="Хочу пойти →" buttonStyle={styles.smallButton} textStyle={styles.smallButtonText} />
+          <PrimaryButton
+            title={buttonTitle}
+            disabled={registering}
+            onPress={() => onRegister(event)}
+            buttonStyle={styles.smallButton}
+            textStyle={styles.smallButtonText}
+          />
         </View>
       </View>
     </GlassCard>
@@ -74,6 +89,7 @@ function EventCard({ event }: { event: EventItem }) {
 
 export default function EventsScreen() {
   const [filter, setFilter] = useState<(typeof filters)[number]>('Все');
+  const [registeringEventId, setRegisteringEventId] = useState<string | null>(null);
   const { events, loading, error, loadEvents } = useEventsStore();
 
   useEffect(() => {
@@ -81,6 +97,58 @@ export default function EventsScreen() {
   }, [loadEvents]);
 
   const items = useMemo(() => events.filter((event) => eventMatchesFilter(event, filter)), [events, filter]);
+
+  const handleRegister = useCallback(async (event: EventItem) => {
+    switch (event.registrationMode) {
+      case 'none':
+        Alert.alert('Регистрация не требуется');
+        return;
+
+      case 'external_link':
+        if (!event.registrationUrl) {
+          Alert.alert('Ссылка недоступна', 'У события пока нет ссылки для регистрации.');
+          return;
+        }
+
+        try {
+          await Linking.openURL(event.registrationUrl);
+        } catch (error) {
+          Alert.alert(
+            'Не удалось открыть ссылку',
+            error instanceof Error ? error.message : 'Попробуйте открыть регистрацию позже.',
+          );
+        }
+        return;
+
+      case 'internal_free':
+        setRegisteringEventId(event.id);
+
+        try {
+          await registerForEvent(event.id, 1, null);
+          Alert.alert('Вы записаны');
+        } catch (error) {
+          if (error instanceof Error && error.message === 'Auth required') {
+            Alert.alert('Нужен вход', 'Чтобы записаться на событие, войдите в приложение.');
+            return;
+          }
+
+          Alert.alert(
+            'Не удалось записаться',
+            error instanceof Error ? error.message : 'Попробуйте повторить позже.',
+          );
+        } finally {
+          setRegisteringEventId(null);
+        }
+        return;
+
+      case 'internal_paid':
+        Alert.alert('Оплата будет доступна позже');
+        return;
+
+      default:
+        Alert.alert('Регистрация недоступна');
+    }
+  }, []);
 
   return (
     <Screen>
@@ -109,7 +177,7 @@ export default function EventsScreen() {
 
       {items.map((event) => (
         <Pressable key={event.id} style={({ pressed }) => [pressed && styles.pressed]}>
-          <EventCard event={event} />
+          <EventCard event={event} registering={registeringEventId === event.id} onRegister={handleRegister} />
         </Pressable>
       ))}
 
