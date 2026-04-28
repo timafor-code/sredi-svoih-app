@@ -8,7 +8,8 @@ import { HeaderButton, Logo, OmerPill } from '@/components/ui/BrandHeader';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { SegmentControl } from '@/components/ui/SegmentControl';
-import { registerForEvent } from '@/services/registrationService';
+import { loadMyRegistrations, registerForEvent } from '@/services/registrationService';
+import { useAuthStore } from '@/store/useAuthStore';
 import { useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
 import type { EventItem } from '@/types/event';
@@ -23,12 +24,13 @@ function eventMatchesFilter(event: EventItem, filter: (typeof filters)[number]) 
 
 type EventCardProps = {
   event: EventItem;
+  registered: boolean;
   registering: boolean;
   onRegister: (event: EventItem) => void;
 };
 
-function EventCard({ event, registering, onRegister }: EventCardProps) {
-  const buttonTitle = registering ? 'Записываем…' : 'Хочу пойти →';
+function EventCard({ event, registered, registering, onRegister }: EventCardProps) {
+  const buttonTitle = registering ? 'Записываем…' : registered ? 'Вы записаны' : 'Хочу пойти →';
 
   if (event.featured) {
     return (
@@ -90,11 +92,53 @@ function EventCard({ event, registering, onRegister }: EventCardProps) {
 export default function EventsScreen() {
   const [filter, setFilter] = useState<(typeof filters)[number]>('Все');
   const [registeringEventId, setRegisteringEventId] = useState<string | null>(null);
+  const [registeredEventIds, setRegisteredEventIds] = useState<Set<string>>(() => new Set());
   const { events, loading, error, loadEvents } = useEventsStore();
+  const authUser = useAuthStore((state) => state.user);
+  const loadSession = useAuthStore((state) => state.loadSession);
 
   useEffect(() => {
     void loadEvents();
   }, [loadEvents]);
+
+  useEffect(() => {
+    void loadSession().catch(() => undefined);
+  }, [loadSession]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRegistrations() {
+      if (!authUser) {
+        setRegisteredEventIds(new Set());
+        return;
+      }
+
+      try {
+        const registrations = await loadMyRegistrations();
+
+        if (cancelled) {
+          return;
+        }
+
+        setRegisteredEventIds(new Set(
+          registrations
+            .filter((registration) => registration.status !== 'cancelled')
+            .map((registration) => registration.event_id),
+        ));
+      } catch {
+        if (!cancelled) {
+          setRegisteredEventIds(new Set());
+        }
+      }
+    }
+
+    void loadRegistrations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser]);
 
   const items = useMemo(() => events.filter((event) => eventMatchesFilter(event, filter)), [events, filter]);
 
@@ -121,14 +165,42 @@ export default function EventsScreen() {
         return;
 
       case 'internal_free':
+        if (!authUser) {
+          Alert.alert('Нужен вход', 'Чтобы записаться на событие, войдите в приложение.');
+          return;
+        }
+
+        if (registeredEventIds.has(event.id)) {
+          Alert.alert('Вы уже записаны');
+          return;
+        }
+
         setRegisteringEventId(event.id);
 
         try {
           await registerForEvent(event.id, 1, null);
-          Alert.alert('Вы записаны');
+          setRegisteredEventIds((current) => {
+            const next = new Set(current);
+            next.add(event.id);
+            return next;
+          });
+          Alert.alert('Вы записаны', 'Регистрация на событие создана.');
         } catch (error) {
           if (error instanceof Error && error.message === 'Auth required') {
             Alert.alert('Нужен вход', 'Чтобы записаться на событие, войдите в приложение.');
+            return;
+          }
+
+          if (
+            error instanceof Error
+            && (error.message.includes('duplicate key') || error.message.includes('event_registrations_event_id_user_id_key'))
+          ) {
+            setRegisteredEventIds((current) => {
+              const next = new Set(current);
+              next.add(event.id);
+              return next;
+            });
+            Alert.alert('Вы уже записаны');
             return;
           }
 
@@ -148,7 +220,7 @@ export default function EventsScreen() {
       default:
         Alert.alert('Регистрация недоступна');
     }
-  }, []);
+  }, [authUser, registeredEventIds]);
 
   return (
     <Screen>
@@ -177,7 +249,12 @@ export default function EventsScreen() {
 
       {items.map((event) => (
         <Pressable key={event.id} style={({ pressed }) => [pressed && styles.pressed]}>
-          <EventCard event={event} registering={registeringEventId === event.id} onRegister={handleRegister} />
+          <EventCard
+            event={event}
+            registered={registeredEventIds.has(event.id)}
+            registering={registeringEventId === event.id}
+            onRegister={handleRegister}
+          />
         </Pressable>
       ))}
 
@@ -206,7 +283,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 28,
     fontWeight: '700',
-    letterSpacing: -0.5,
+    letterSpacing: 0,
   },
   subtitle: {
     color: colors.textDim,
