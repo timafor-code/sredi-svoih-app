@@ -94,6 +94,12 @@ function mapEvent(event: CommunityEvent, index: number): EventItem {
     subtitle: event.short_description ?? event.subtitle ?? undefined,
     date: formatEventDate(event.starts_at),
     featured: index === 0,
+    startsAt: event.starts_at,
+    endsAt: event.ends_at,
+    timezone: event.timezone,
+    locationName: event.location_name,
+    address: event.address,
+    imageUrl: event.image_url,
     registrationMode: event.registration_mode,
     registrationUrl: event.registration_url ?? undefined,
     sourceUrl: event.source_url ?? undefined,
@@ -130,8 +136,13 @@ function upsertRegistration(
   registrations: EventRegistration[],
   registration: EventRegistration,
 ): EventRegistration[] {
+  const existingRegistration = registrations.find((item) => item.id === registration.id);
+  const nextRegistration = registration.event || !existingRegistration?.event
+    ? registration
+    : { ...registration, event: existingRegistration.event };
+
   return sortRegistrations([
-    registration,
+    nextRegistration,
     ...registrations.filter((item) => item.id !== registration.id),
   ]);
 }

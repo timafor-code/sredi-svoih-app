@@ -21,6 +21,20 @@ export const ACTIVE_EVENT_REGISTRATION_STATUSES: EventRegistrationStatus[] = [
   'waitlisted',
 ];
 
+export interface Event {
+  id: string;
+  title: string;
+  shortDescription: string | null;
+  startsAt: string;
+  endsAt: string | null;
+  timezone: string | null;
+  locationName: string | null;
+  address: string | null;
+  category: string | null;
+  imageUrl: string | null;
+  registrationMode: EventRegistrationMode;
+}
+
 export interface EventRegistration {
   id: string;
   eventId: string;
@@ -36,6 +50,7 @@ export interface EventRegistration {
   paymentId: string | null;
   createdAt: string;
   updatedAt: string;
+  event?: Event;
 }
 
 export interface EventItem {
@@ -47,6 +62,12 @@ export interface EventItem {
   imageIcon: string;
   featured?: boolean;
   subtitle?: string;
+  startsAt?: string;
+  endsAt?: string | null;
+  timezone?: string | null;
+  locationName?: string | null;
+  address?: string | null;
+  imageUrl?: string | null;
   registrationMode: EventRegistrationMode;
   registrationUrl?: string;
   sourceUrl?: string;

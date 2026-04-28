@@ -1,5 +1,24 @@
 import { supabase } from './supabaseClient';
-import type { EventRegistration, EventRegistrationStatus } from '@/types/event';
+import type {
+  Event,
+  EventRegistration,
+  EventRegistrationMode,
+  EventRegistrationStatus,
+} from '@/types/event';
+
+type EventRow = {
+  id: string;
+  title: string;
+  short_description: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  timezone: string | null;
+  location_name: string | null;
+  address: string | null;
+  category: string | null;
+  image_url: string | null;
+  registration_mode: EventRegistrationMode;
+};
 
 type EventRegistrationRow = {
   id: string;
@@ -16,6 +35,7 @@ type EventRegistrationRow = {
   payment_id: string | null;
   created_at: string;
   updated_at: string;
+  event?: EventRow | EventRow[] | null;
 };
 
 const REGISTRATION_FIELDS = `
@@ -32,8 +52,47 @@ const REGISTRATION_FIELDS = `
   payment_status,
   payment_id,
   created_at,
-  updated_at
+  updated_at,
+  event:events (
+    id,
+    title,
+    short_description,
+    starts_at,
+    ends_at,
+    timezone,
+    location_name,
+    address,
+    category,
+    image_url,
+    registration_mode
+  )
 `;
+
+function normalizeEvent(row: EventRow): Event {
+  return {
+    id: row.id,
+    title: row.title,
+    shortDescription: row.short_description,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    timezone: row.timezone,
+    locationName: row.location_name,
+    address: row.address,
+    category: row.category,
+    imageUrl: row.image_url,
+    registrationMode: row.registration_mode,
+  };
+}
+
+function normalizeEmbeddedEvent(event: EventRegistrationRow['event']): Event | undefined {
+  if (!event) {
+    return undefined;
+  }
+
+  const row = Array.isArray(event) ? event[0] : event;
+
+  return row ? normalizeEvent(row) : undefined;
+}
 
 function normalizeRegistration(row: EventRegistrationRow): EventRegistration {
   return {
@@ -51,6 +110,7 @@ function normalizeRegistration(row: EventRegistrationRow): EventRegistration {
     paymentId: row.payment_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    event: normalizeEmbeddedEvent(row.event),
   };
 }
 
