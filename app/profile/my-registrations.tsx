@@ -3,7 +3,6 @@ import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -15,6 +14,7 @@ import { GlassCard } from '@/components/glass/GlassCard';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { SubHeader } from '@/components/ui/SubHeader';
+import { useEventRegistrationAction } from '@/hooks/useEventRegistrationAction';
 import { useAuthStore } from '@/store/useAuthStore';
 import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
@@ -213,20 +213,25 @@ function getPlace(event: Event | undefined): string {
 type RegistrationCardProps = {
   cancelling: boolean;
   onCancel: (registration: EventRegistration) => void;
+  onOpen: (eventId: string) => void;
   registration: EventRegistration;
 };
 
-function RegistrationCard({ cancelling, onCancel, registration }: RegistrationCardProps) {
+function RegistrationCard({ cancelling, onCancel, onOpen, registration }: RegistrationCardProps) {
   const event = registration.event;
   const now = Date.now();
   const canCancel = isActiveEventRegistration(registration) && !hasEventPassed(event, now);
   const statusTone = statusTones[registration.status];
-
-  return (
-    <GlassCard style={!canCancel && inactiveStatuses.has(registration.status) ? styles.inactiveCard : undefined}>
+  const cardContent = (
+    <>
       <View style={styles.cardHeader}>
         <View style={styles.cardTitleBlock}>
-          <Text style={styles.cardTitle}>{event?.title ?? 'Событие'}</Text>
+          <View style={styles.cardTitleRow}>
+            <Text style={styles.cardTitle}>{event?.title ?? 'Событие'}</Text>
+            {event?.id ? (
+              <Ionicons name="chevron-forward" size={17} color="rgba(255,255,255,0.3)" />
+            ) : null}
+          </View>
           <View
             style={[
               styles.statusPill,
@@ -259,6 +264,19 @@ function RegistrationCard({ cancelling, onCancel, registration }: RegistrationCa
           </View>
         ) : null}
       </View>
+    </>
+  );
+
+  return (
+    <GlassCard style={!canCancel && inactiveStatuses.has(registration.status) ? styles.inactiveCard : undefined}>
+      {event?.id ? (
+        <Pressable
+          onPress={() => onOpen(event.id)}
+          style={({ pressed }) => [pressed && styles.pressed]}
+        >
+          {cardContent}
+        </Pressable>
+      ) : cardContent}
 
       {canCancel ? (
         <Pressable
@@ -284,14 +302,16 @@ export default function MyRegistrationsScreen() {
   const authUser = useAuthStore((state) => state.user);
   const loadSession = useAuthStore((state) => state.loadSession);
   const {
-    cancelRegistration,
     error,
     loadMyRegistrations,
     myRegistrations,
     registrationsLoading,
   } = useEventsStore();
+  const {
+    cancellingRegistrationId,
+    handleCancelRegistration,
+  } = useEventRegistrationAction();
   const [refreshing, setRefreshing] = useState(false);
-  const [cancellingRegistrationId, setCancellingRegistrationId] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -332,42 +352,12 @@ export default function MyRegistrationsScreen() {
     }
   }, [authUser, loadMyRegistrations]);
 
-  const handleCancelRegistration = useCallback((registration: EventRegistration) => {
-    Alert.alert(
-      'Отменить запись?',
-      'Вы действительно хотите отменить запись на это событие?',
-      [
-        { text: 'Нет', style: 'cancel' },
-        {
-          text: 'Отменить запись',
-          style: 'destructive',
-          onPress: () => {
-            async function cancelCurrentRegistration() {
-              setCancellingRegistrationId(registration.id);
-
-              try {
-                await cancelRegistration(registration.id);
-                void loadMyRegistrations().catch(() => undefined);
-                Alert.alert('Запись отменена', 'Вы больше не записаны на это событие.');
-              } catch {
-                Alert.alert(
-                  'Не удалось отменить запись',
-                  'Проверьте подключение и попробуйте ещё раз.',
-                );
-              } finally {
-                setCancellingRegistrationId(null);
-              }
-            }
-
-            void cancelCurrentRegistration();
-          },
-        },
-      ],
-    );
-  }, [cancelRegistration, loadMyRegistrations]);
-
   const openEvents = useCallback(() => {
     router.push('/events');
+  }, [router]);
+
+  const openEventDetails = useCallback((eventId: string) => {
+    router.push({ pathname: '/events/[id]', params: { id: eventId } });
   }, [router]);
 
   const showInitialLoading = authUser && registrationsLoading && sortedRegistrations.length === 0;
@@ -441,6 +431,7 @@ export default function MyRegistrationsScreen() {
                 registration={registration}
                 cancelling={cancellingRegistrationId === registration.id}
                 onCancel={handleCancelRegistration}
+                onOpen={openEventDetails}
               />
             ))}
           </View>
@@ -463,7 +454,13 @@ const styles = StyleSheet.create({
   cardTitleBlock: {
     gap: 9,
   },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
   cardTitle: {
+    flex: 1,
     color: colors.text,
     fontSize: 17,
     fontWeight: '700',
@@ -551,5 +548,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     textAlign: 'center',
+  },
+  pressed: {
+    opacity: 0.78,
   },
 });

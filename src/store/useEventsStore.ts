@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import { listPublishedEvents, type CommunityEvent } from '@/services/eventsService';
+import { getEventById, listPublishedEvents } from '@/services/eventsService';
 import {
   cancelRegistration as cancelRegistrationService,
   loadMyRegistrations as loadMyRegistrationsService,
@@ -9,17 +9,22 @@ import {
 import { useAuthStore } from '@/store/useAuthStore';
 import {
   ACTIVE_EVENT_REGISTRATION_STATUSES,
+  type Event,
   type EventItem,
   type EventRegistration,
 } from '@/types/event';
 
 type EventsState = {
   events: EventItem[];
+  selectedEvent: EventItem | null;
   myRegistrations: EventRegistration[];
   loading: boolean;
+  selectedEventLoading: boolean;
   registrationsLoading: boolean;
   error: string | null;
+  selectedEventError: string | null;
   loadEvents: () => Promise<void>;
+  loadEventById: (eventId: string) => Promise<EventItem | null>;
   loadMyRegistrations: () => Promise<void>;
   registerForEvent: (eventId: string) => Promise<EventRegistration>;
   cancelRegistration: (registrationId: string) => Promise<EventRegistration>;
@@ -85,25 +90,39 @@ function mapCategory(category: string | null): Pick<EventItem, 'category' | 'tag
   }
 }
 
-function mapEvent(event: CommunityEvent, index: number): EventItem {
+function mapEvent(event: Event, index = 1): EventItem {
   const category = mapCategory(event.category);
 
   return {
     id: event.id,
     title: event.title,
-    subtitle: event.short_description ?? event.subtitle ?? undefined,
-    date: formatEventDate(event.starts_at),
+    subtitle: event.subtitle ?? undefined,
+    shortDescription: event.shortDescription,
+    description: event.description,
+    date: formatEventDate(event.startsAt),
     featured: index === 0,
-    startsAt: event.starts_at,
-    endsAt: event.ends_at,
+    startsAt: event.startsAt,
+    endsAt: event.endsAt,
     timezone: event.timezone,
-    locationName: event.location_name,
+    locationName: event.locationName,
     address: event.address,
-    imageUrl: event.image_url,
-    registrationMode: event.registration_mode,
-    registrationUrl: event.registration_url ?? undefined,
-    sourceUrl: event.source_url ?? undefined,
-    capacity: event.capacity ?? undefined,
+    latitude: event.latitude,
+    longitude: event.longitude,
+    imageUrl: event.imageUrl,
+    rawCategory: event.category,
+    audience: event.audience,
+    visibility: event.visibility,
+    status: event.status,
+    sourceType: event.sourceType,
+    sourceUrl: event.sourceUrl,
+    registrationMode: event.registrationMode,
+    registrationUrl: event.registrationUrl,
+    capacity: event.capacity,
+    waitlistEnabled: event.waitlistEnabled,
+    requiresApproval: event.requiresApproval,
+    priceAmount: event.priceAmount,
+    priceCurrency: event.priceCurrency,
+    publishedAt: event.publishedAt,
     ...category,
   };
 }
@@ -156,12 +175,31 @@ function findRegistrationForEvent(
   return eventRegistrations.find(isActiveEventRegistration) ?? eventRegistrations[0] ?? null;
 }
 
+function findLoadedEvent(
+  events: EventItem[],
+  registrations: EventRegistration[],
+  eventId: string,
+): EventItem | null {
+  const listedEvent = events.find((event) => event.id === eventId);
+
+  if (listedEvent) {
+    return listedEvent;
+  }
+
+  const registrationEvent = registrations.find((registration) => registration.event?.id === eventId)?.event;
+
+  return registrationEvent ? mapEvent(registrationEvent) : null;
+}
+
 export const useEventsStore = create<EventsState>((set, get) => ({
   events: [],
+  selectedEvent: null,
   myRegistrations: [],
   loading: false,
+  selectedEventLoading: false,
   registrationsLoading: false,
   error: null,
+  selectedEventError: null,
 
   loadEvents: async () => {
     set({ loading: true, error: null });
@@ -186,6 +224,58 @@ export const useEventsStore = create<EventsState>((set, get) => ({
         loading: false,
         error: error instanceof Error ? error.message : 'Не удалось загрузить события',
       });
+    }
+  },
+
+  loadEventById: async (eventId: string) => {
+    const currentSelectedEvent = get().selectedEvent?.id === eventId ? get().selectedEvent : null;
+    const cachedEvent = currentSelectedEvent ?? findLoadedEvent(get().events, get().myRegistrations, eventId);
+
+    if (cachedEvent) {
+      set({
+        selectedEvent: cachedEvent,
+        selectedEventLoading: false,
+        selectedEventError: null,
+      });
+      return cachedEvent;
+    }
+
+    set({
+      selectedEvent: null,
+      selectedEventLoading: true,
+      selectedEventError: null,
+    });
+
+    try {
+      const event = await getEventById(eventId);
+
+      if (!event) {
+        set({
+          selectedEvent: null,
+          selectedEventLoading: false,
+          selectedEventError: 'Событие не найдено',
+        });
+        return null;
+      }
+
+      const eventItem = mapEvent(event);
+
+      set({
+        selectedEvent: eventItem,
+        selectedEventLoading: false,
+        selectedEventError: null,
+      });
+
+      return eventItem;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось загрузить событие';
+
+      set({
+        selectedEvent: null,
+        selectedEventLoading: false,
+        selectedEventError: message,
+      });
+      throw new Error(message);
     }
   },
 

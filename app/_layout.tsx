@@ -18,6 +18,7 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="contacts/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="events/[id]" options={{ presentation: 'card' }} />
         <Stack.Screen name="modals/omer" options={{ presentation: 'modal' }} />
         <Stack.Screen name="modals/event-registration" options={{ presentation: 'modal' }} />
         <Stack.Screen name="modals/city-picker" options={{ presentation: 'modal' }} />
