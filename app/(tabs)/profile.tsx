@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { Avatar } from '@/components/ui/Avatar';
@@ -12,8 +12,9 @@ import { IOSGroup } from '@/components/ui/IOSGroup';
 import { ListRow } from '@/components/ui/ListRow';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
+import type { CommunityMembershipRole } from '@/services/inviteService';
 import { useAuthStore } from '@/store/useAuthStore';
-import { useEventsStore } from '@/store/useEventsStore';
+import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
 
 const myRegistrationsHref = '/profile/my-registrations' as Href;
@@ -28,6 +29,14 @@ const menuItems = [
   { href: '/profile/about', icon: 'ℹ️', label: 'О приложении', sub: 'Версия, поддержка, политика конфиденциальности' },
 ] as const;
 
+const roleTitles: Record<CommunityMembershipRole, string> = {
+  member: 'Участник',
+  event_manager: 'Менеджер событий',
+  admin: 'Администратор',
+};
+
+type PendingAction = 'signIn' | 'invite' | 'signOut' | null;
+
 function getInitials(name: string): string {
   return name
     .split(' ')
@@ -41,6 +50,8 @@ export default function ProfileScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [inviteCode, setInviteCode] = useState('');
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
 
   const authUser = useAuthStore((state) => state.user);
   const profile = useAuthStore((state) => state.profile);
@@ -52,6 +63,8 @@ export default function ProfileScreen() {
   const signOut = useAuthStore((state) => state.signOut);
   const acceptInvite = useAuthStore((state) => state.acceptInvite);
   const loadEvents = useEventsStore((state) => state.loadEvents);
+  const loadMyRegistrations = useEventsStore((state) => state.loadMyRegistrations);
+  const myRegistrations = useEventsStore((state) => state.myRegistrations);
   const resetEventPrivateState = useEventsStore((state) => state.resetPrivateState);
 
   useEffect(() => {
@@ -64,48 +77,87 @@ export default function ProfileScreen() {
     }
   }, [authUser?.email]);
 
-  const displayName = useMemo(() => {
-    return profile?.display_name
-      ?? profile?.full_name
-      ?? authUser?.email?.split('@')[0]
-      ?? 'Гость';
-  }, [authUser?.email, profile?.display_name, profile?.full_name]);
+  useEffect(() => {
+    if (!authUser) {
+      return;
+    }
 
-  const memberStatus = membership?.status === 'active'
-    ? 'Участник общины'
-    : authUser
-      ? 'Приглашение не принято'
-      : 'Нужен вход';
+    void loadMyRegistrations().catch(() => undefined);
+  }, [authUser, loadMyRegistrations]);
+
+  const profileName = useMemo(() => {
+    const firstLastName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ');
+
+    return profile?.display_name
+      ?? (firstLastName || null)
+      ?? profile?.full_name
+      ?? null;
+  }, [profile?.display_name, profile?.first_name, profile?.full_name, profile?.last_name]);
+
+  const accountEmail = profile?.email ?? authUser?.email ?? '';
+  const displayName = profileName ?? accountEmail.split('@')[0] ?? 'Гость';
+  const isActiveMember = membership?.status === 'active';
+  const isSigningIn = pendingAction === 'signIn' || (!authUser && loading);
+  const isAcceptingInvite = pendingAction === 'invite';
+  const isSigningOut = pendingAction === 'signOut';
+  const visibleError = localError ?? error;
+  const signInError = !authUser ? visibleError : null;
+  const inviteError = localError?.startsWith('Не удалось принять приглашение') ? localError : null;
+  const signOutError = localError?.startsWith('Не удалось выйти') ? localError : null;
+  const activeRegistrationsCount = useMemo(
+    () => myRegistrations.filter(isActiveEventRegistration).length,
+    [myRegistrations],
+  );
+
+  const syncSignedInState = useCallback(async () => {
+    await Promise.allSettled([
+      loadEvents(),
+      loadMyRegistrations(),
+    ]);
+  }, [loadEvents, loadMyRegistrations]);
 
   const handleSignIn = useCallback(async () => {
+    setLocalError(null);
+    setPendingAction('signIn');
+
     try {
       await signIn(email);
-      void loadEvents().catch(() => undefined);
-      Alert.alert('Вход выполнен', 'Теперь можно принять приглашение или записаться на событие.');
-    } catch (error) {
-      Alert.alert('Не удалось войти', error instanceof Error ? error.message : 'Попробуйте ещё раз.');
+      await syncSignedInState();
+    } catch {
+      setLocalError('Не удалось войти. Проверьте email и попробуйте ещё раз.');
+    } finally {
+      setPendingAction(null);
     }
-  }, [email, loadEvents, signIn]);
+  }, [email, signIn, syncSignedInState]);
 
   const handleAcceptInvite = useCallback(async () => {
+    setLocalError(null);
+    setPendingAction('invite');
+
     try {
       await acceptInvite(inviteCode);
-      void loadEvents().catch(() => undefined);
+      await syncSignedInState();
       setInviteCode('');
-      Alert.alert('Приглашение принято', 'Теперь вы участник общины.');
-    } catch (error) {
-      Alert.alert('Не удалось принять приглашение', error instanceof Error ? error.message : 'Проверьте код и попробуйте ещё раз.');
+    } catch {
+      setLocalError('Не удалось принять приглашение. Проверьте код и попробуйте ещё раз.');
+    } finally {
+      setPendingAction(null);
     }
-  }, [acceptInvite, inviteCode, loadEvents]);
+  }, [acceptInvite, inviteCode, syncSignedInState]);
 
   const handleSignOut = useCallback(async () => {
+    setLocalError(null);
+    setPendingAction('signOut');
+
     try {
       await signOut();
       resetEventPrivateState();
-      void loadEvents().catch(() => undefined);
+      await loadEvents();
       setInviteCode('');
-    } catch (error) {
-      Alert.alert('Не удалось выйти', error instanceof Error ? error.message : 'Попробуйте ещё раз.');
+    } catch {
+      setLocalError('Не удалось выйти. Попробуйте ещё раз.');
+    } finally {
+      setPendingAction(null);
     }
   }, [loadEvents, resetEventPrivateState, signOut]);
 
@@ -118,61 +170,25 @@ export default function ProfileScreen() {
   }, [authUser, router]);
 
   return (
-    <Screen>
+    <Screen contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Logo />
         <HeaderButton icon="settings-outline" />
       </View>
 
-      <View>
+      <View style={styles.titleBlock}>
         <Text style={styles.title}>Профиль</Text>
-        <Text style={styles.subtitle}>Личные настройки и община</Text>
+        <Text style={styles.subtitle}>Ваш доступ к событиям, записям и функциям общины.</Text>
       </View>
 
-      <GlassCard>
-        <Link href="/profile/edit" asChild>
-          <Pressable disabled={!authUser} style={({ pressed }) => [pressed && styles.pressed]}>
-            <View style={styles.userHeader}>
-              <View style={styles.avatarWrap}>
-                <Avatar initials={getInitials(displayName)} size={64} />
-                <View style={styles.cameraBadge}>
-                  <Text style={styles.cameraText}>📷</Text>
-                </View>
-              </View>
-              <View style={styles.flex}>
-                <View style={styles.userTitleRow}>
-                  <View style={styles.flex}>
-                    <Text style={styles.userName}>{displayName}</Text>
-                    {profile?.hebrew_name ? <Text style={styles.hebrew}>{profile.hebrew_name}</Text> : null}
-                    <View style={styles.locationLine}>
-                      <Ionicons name="location" size={11} color={colors.textDim} />
-                      <Text style={styles.mutedSmall}>{profile?.city ?? 'Москва'} · Среди Своих</Text>
-                    </View>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.28)" />
-                </View>
-              </View>
-            </View>
-          </Pressable>
-        </Link>
+      {!authUser ? (
+        <GlassCard>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Вход</Text>
+            <Text style={styles.cardText}>Для локального MVP используется временный вход. Apple Sign-In будет позже.</Text>
+          </View>
 
-        <View style={styles.memberBadge}>
-          <Text style={styles.memberBadgeText}>{memberStatus}</Text>
-        </View>
-
-        <Link href="/profile/edit" asChild>
-          <PrimaryButton title="Редактировать профиль →" disabled={!authUser} />
-        </Link>
-      </GlassCard>
-
-      <GlassCard style={styles.authCard}>
-        <View style={styles.authHeader}>
-          <Text style={styles.authTitle}>Вход и приглашение</Text>
-          {authUser?.email ? <Text style={styles.authEmail}>{authUser.email}</Text> : null}
-        </View>
-
-        {!authUser ? (
-          <View style={styles.authForm}>
+          <View style={styles.form}>
             <FormField
               label="Email"
               value={email}
@@ -180,62 +196,120 @@ export default function ProfileScreen() {
               keyboardType="email-address"
               placeholder="name@example.com"
             />
-            <PrimaryButton title={loading ? 'Входим…' : 'Войти'} disabled={loading} onPress={handleSignIn} />
-            <Text style={styles.helperText}>Для локального MVP используется временный вход. Apple Sign-In будет позже.</Text>
+            <PrimaryButton title={isSigningIn ? 'Входим...' : 'Войти'} disabled={isSigningIn} onPress={handleSignIn} />
+            {signInError ? <Text style={styles.errorText}>{signInError}</Text> : null}
           </View>
-        ) : !membership ? (
-          <View style={styles.authForm}>
-            <FormField
-              label="Код приглашения"
-              value={inviteCode}
-              onChangeText={setInviteCode}
-              placeholder="DEV-SREDI-2026"
-            />
-            <PrimaryButton title={loading ? 'Проверяем…' : 'Принять приглашение'} disabled={loading} onPress={handleAcceptInvite} />
-            <Text style={styles.helperText}>Тестовый код для локальной проверки: DEV-SREDI-2026</Text>
-            <Pressable onPress={handleSignOut} style={({ pressed }) => [styles.inlineSignOut, pressed && styles.signOutPressed]}>
-              <Ionicons name="log-out-outline" size={15} color={colors.danger} />
-              <Text style={styles.signOutText}>Выйти</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View style={styles.authForm}>
-            <View style={styles.statusLine}>
-              <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-              <Text style={styles.statusText}>Вы участник общины</Text>
+        </GlassCard>
+      ) : (
+        <GlassCard>
+          <View style={styles.accountHeader}>
+            <Avatar initials={getInitials(displayName)} size={58} />
+            <View style={styles.flex}>
+              <Text style={styles.cardTitle}>Аккаунт</Text>
+              <Text style={styles.accountName}>{profileName ?? accountEmail}</Text>
+              {profileName && accountEmail ? <Text style={styles.accountEmail}>{accountEmail}</Text> : null}
             </View>
-            <Text style={styles.roleText}>Роль: {membership.role}</Text>
-            <PrimaryButton title={loading ? 'Выходим…' : 'Выйти'} disabled={loading} onPress={handleSignOut} />
           </View>
-        )}
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-      </GlassCard>
+          {profile?.city ? (
+            <View style={styles.infoRow}>
+              <Ionicons name="location-outline" size={15} color={colors.textDim} />
+              <Text style={styles.infoText}>{profile.city}</Text>
+            </View>
+          ) : null}
+
+          <Pressable
+            disabled={isSigningOut}
+            onPress={handleSignOut}
+            style={({ pressed }) => [
+              styles.signOutButton,
+              isSigningOut && styles.buttonDisabled,
+              pressed && !isSigningOut && styles.signOutPressed,
+            ]}
+          >
+            <Ionicons name="log-out-outline" size={17} color={colors.danger} />
+            <Text style={styles.signOutText}>{isSigningOut ? 'Выходим...' : 'Выйти'}</Text>
+          </Pressable>
+
+          {signOutError ? <Text style={styles.errorText}>{signOutError}</Text> : null}
+        </GlassCard>
+      )}
+
+      {authUser ? (
+        <GlassCard style={isActiveMember ? styles.memberCardActive : undefined}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardTitleRow}>
+              <Text style={styles.cardTitle}>Община</Text>
+              {isActiveMember ? (
+                <View style={styles.activeBadge}>
+                  <Text style={styles.activeBadgeText}>active</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+
+          {!isActiveMember ? (
+            <View style={styles.form}>
+              <View style={styles.statusLine}>
+                <Ionicons name="lock-closed-outline" size={18} color={colors.orange} />
+                <Text style={styles.statusText}>Доступ к общине не активирован</Text>
+              </View>
+              <Text style={styles.cardText}>Введите invite-код, чтобы открыть события и функции для участников.</Text>
+              <FormField
+                label="Invite-код"
+                value={inviteCode}
+                onChangeText={setInviteCode}
+                placeholder="DEV-SREDI-2026"
+              />
+              <PrimaryButton
+                title={isAcceptingInvite ? 'Проверяем...' : 'Принять приглашение'}
+                disabled={isAcceptingInvite}
+                onPress={handleAcceptInvite}
+              />
+              <Text style={styles.helperText}>Тестовый код: DEV-SREDI-2026</Text>
+              {inviteError ? <Text style={styles.errorText}>{inviteError}</Text> : null}
+            </View>
+          ) : (
+            <View style={styles.memberInfo}>
+              <View style={styles.statusLine}>
+                <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+                <Text style={styles.statusText}>Вы участник общины</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Ionicons name="people-outline" size={15} color={colors.textDim} />
+                <Text style={styles.infoText}>Среди Своих</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Ionicons name="shield-checkmark-outline" size={15} color={colors.textDim} />
+                <Text style={styles.infoText}>Роль: {roleTitles[membership.role]}</Text>
+              </View>
+            </View>
+          )}
+        </GlassCard>
+      ) : null}
 
       <GlassCard style={[styles.bookingCard, !authUser && styles.bookingCardDisabled]}>
         <Pressable
           disabled={!authUser}
           onPress={handleOpenMyRegistrations}
-          style={({ pressed }) => [pressed && styles.pressed]}
+          style={({ pressed }) => [styles.bookingPressable, pressed && styles.pressed]}
         >
-          <View style={styles.bookingBody}>
-            <View style={styles.bookingIcon}>
-              <Ionicons name="calendar-outline" size={20} color={authUser ? colors.orange : colors.textDim} />
-            </View>
-            <View style={styles.flex}>
-              <Text style={styles.bookingTitle}>Мои записи</Text>
-              <Text style={styles.bookingSubtitle}>
-                {authUser
-                  ? 'Ваши регистрации на события и их статусы'
-                  : 'Войдите, чтобы увидеть свои записи'}
-              </Text>
-            </View>
-            {authUser ? (
-              <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.3)" />
-            ) : (
-              <Ionicons name="lock-closed-outline" size={18} color={colors.textDim} />
-            )}
+          <View style={styles.bookingIcon}>
+            <Ionicons name="calendar-outline" size={20} color={authUser ? colors.orange : colors.textDim} />
           </View>
+          <View style={styles.flex}>
+            <Text style={styles.bookingTitle}>Мои записи</Text>
+            <Text style={styles.bookingSubtitle}>
+              {authUser
+                ? `Активных записей: ${activeRegistrationsCount}`
+                : 'Войдите, чтобы увидеть свои записи'}
+            </Text>
+          </View>
+          {authUser ? (
+            <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.3)" />
+          ) : (
+            <Ionicons name="lock-closed-outline" size={18} color={colors.textDim} />
+          )}
         </Pressable>
       </GlassCard>
 
@@ -257,11 +331,17 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  content: {
+    gap: 16,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
+  },
+  titleBlock: {
+    gap: 4,
   },
   title: {
     color: colors.text,
@@ -272,129 +352,131 @@ const styles = StyleSheet.create({
   subtitle: {
     color: colors.textDim,
     fontSize: 13,
-    marginTop: 2,
+    lineHeight: 18,
   },
-  userHeader: {
+  cardHeader: {
+    gap: 6,
+    marginBottom: 14,
+  },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  cardTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  cardText: {
+    color: colors.textDim,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  form: {
+    gap: 12,
+  },
+  accountHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
     marginBottom: 14,
   },
-  avatarWrap: {
-    position: 'relative',
+  accountName: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 23,
+    marginTop: 3,
   },
-  cameraBadge: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: colors.glass.w16,
-    backgroundColor: 'rgba(30,30,50,0.95)',
-  },
-  cameraText: {
-    fontSize: 11,
+  accountEmail: {
+    color: colors.textDim,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
   },
   flex: {
     flex: 1,
     minWidth: 0,
   },
-  userTitleRow: {
+  infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  userName: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  hebrew: {
-    color: colors.textGhost,
+  infoText: {
+    flex: 1,
+    color: colors.textDim,
     fontSize: 13,
-    fontStyle: 'italic',
-    marginTop: 2,
+    lineHeight: 18,
   },
-  locationLine: {
+  signOutButton: {
+    minHeight: 42,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
-  },
-  mutedSmall: {
-    color: colors.textDim,
-    fontSize: 12,
-  },
-  memberBadge: {
-    alignSelf: 'flex-start',
-    borderRadius: 10,
+    justifyContent: 'center',
+    gap: 7,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.accent.orangeBorder,
-    backgroundColor: colors.accent.orangeBg,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginBottom: 14,
+    borderColor: colors.accent.redBorder,
+    backgroundColor: colors.accent.redBg,
+    marginTop: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  memberBadgeText: {
-    color: colors.orange,
-    fontSize: 12,
+  signOutPressed: {
+    opacity: 0.78,
+  },
+  buttonDisabled: {
+    opacity: 0.55,
+  },
+  signOutText: {
+    color: colors.danger,
+    fontSize: 14,
     fontWeight: '700',
   },
-  authCard: {
-    borderColor: colors.glass.w16,
+  memberCardActive: {
+    borderColor: colors.accent.greenBorder,
   },
-  authHeader: {
-    gap: 3,
-    marginBottom: 14,
+  activeBadge: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.accent.greenBorder,
+    backgroundColor: colors.accent.greenBg,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
-  authTitle: {
+  activeBadgeText: {
+    color: colors.success,
+    fontSize: 11,
+    fontWeight: '700',
+    includeFontPadding: false,
+  },
+  statusLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusText: {
+    flex: 1,
     color: colors.text,
     fontSize: 15,
     fontWeight: '700',
+    lineHeight: 20,
   },
-  authEmail: {
-    color: colors.textDim,
-    fontSize: 12,
-  },
-  authForm: {
-    gap: 12,
+  memberInfo: {
+    gap: 11,
   },
   helperText: {
     color: colors.textGhost,
     fontSize: 12,
     lineHeight: 17,
   },
-  statusLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-  },
-  statusText: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  roleText: {
-    color: colors.textDim,
-    fontSize: 13,
-  },
   errorText: {
-    color: colors.red,
+    color: colors.danger,
     fontSize: 12,
     lineHeight: 17,
-    marginTop: 12,
-  },
-  inlineSignOut: {
-    minHeight: 36,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    borderRadius: 12,
   },
   bookingCard: {
     borderColor: 'rgba(240,122,42,0.20)',
@@ -403,7 +485,7 @@ const styles = StyleSheet.create({
   bookingCardDisabled: {
     opacity: 0.72,
   },
-  bookingBody: {
+  bookingPressable: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -428,14 +510,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     marginTop: 3,
-  },
-  signOutPressed: {
-    backgroundColor: 'rgba(255,60,60,0.06)',
-  },
-  signOutText: {
-    color: colors.danger,
-    fontSize: 15,
-    fontWeight: '600',
   },
   pressed: {
     opacity: 0.78,
