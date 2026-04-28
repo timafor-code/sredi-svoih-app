@@ -1,10 +1,5 @@
 import { supabase } from './supabaseClient';
-
-export type EventRegistrationMode =
-  | 'none'
-  | 'external_link'
-  | 'internal_free'
-  | 'internal_paid';
+import type { EventRegistrationMode } from '@/types/event';
 
 export type EventVisibility = 'public' | 'members_only' | 'hidden';
 

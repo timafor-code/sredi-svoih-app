@@ -70,6 +70,10 @@ function mapEvent(event: CommunityEvent, index: number): EventItem {
     subtitle: event.short_description ?? event.subtitle ?? undefined,
     date: formatEventDate(event.starts_at),
     featured: index === 0,
+    registrationMode: event.registration_mode,
+    registrationUrl: event.registration_url ?? undefined,
+    sourceUrl: event.source_url ?? undefined,
+    capacity: event.capacity ?? undefined,
     ...category,
   };
 }

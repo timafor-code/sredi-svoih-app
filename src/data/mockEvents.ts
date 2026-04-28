@@ -9,6 +9,7 @@ export const mockEvents: EventItem[] = [
     title: 'Курс по изучению недельных глав Торы: от текста к жизни',
     featured: true,
     date: 'Каждый вторник, 20:00',
+    registrationMode: 'none',
   },
   {
     id: 'chess',
@@ -17,6 +18,7 @@ export const mockEvents: EventItem[] = [
     imageIcon: '♟️',
     title: 'Шахматный клуб «Среди своих»: начните играть осознанно',
     date: '15 апреля, 18:00',
+    registrationMode: 'none',
   },
   {
     id: 'kids-school',
@@ -25,6 +27,7 @@ export const mockEvents: EventItem[] = [
     imageIcon: '🎨',
     title: 'Воскресная школа «Среди своих»',
     date: 'Воскресенье, 11:00',
+    registrationMode: 'none',
   },
   {
     id: 'jewish-history',
@@ -33,6 +36,7 @@ export const mockEvents: EventItem[] = [
     imageIcon: '📜',
     title: 'Курс еврейской истории',
     date: 'Четверг, 19:30',
+    registrationMode: 'none',
   },
   {
     id: 'judaism',
@@ -41,6 +45,7 @@ export const mockEvents: EventItem[] = [
     imageIcon: '🕍',
     title: 'Основы иудаизма',
     date: 'Понедельник, 19:00',
+    registrationMode: 'none',
   },
   {
     id: 'ethics',
@@ -49,6 +54,7 @@ export const mockEvents: EventItem[] = [
     imageIcon: '📖',
     title: 'Курс этики и философии',
     date: 'Среда, 20:00',
+    registrationMode: 'none',
   },
   {
     id: 'shabbat',
@@ -58,5 +64,6 @@ export const mockEvents: EventItem[] = [
     title: 'Шаббат',
     subtitle: '🕐 19:00',
     date: 'Пятница, 19:00',
+    registrationMode: 'none',
   },
 ];
