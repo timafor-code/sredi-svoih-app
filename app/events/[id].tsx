@@ -302,6 +302,7 @@ export default function EventDetailScreen() {
   const eventId = Array.isArray(params.id) ? params.id[0] : params.id;
   const session = useAuthStore((state) => state.session);
   const authUser = useAuthStore((state) => state.user);
+  const membership = useAuthStore((state) => state.membership);
   const loadSession = useAuthStore((state) => state.loadSession);
   const {
     events,
@@ -328,8 +329,8 @@ export default function EventDetailScreen() {
       return;
     }
 
-    void loadEventById(eventId).catch(() => undefined);
-  }, [eventId, loadEventById]);
+    void loadEventById(eventId, { forceRefresh: true }).catch(() => undefined);
+  }, [authUser?.id, eventId, loadEventById, membership?.id, membership?.status]);
 
   useEffect(() => {
     if (!authUser) {
@@ -337,7 +338,7 @@ export default function EventDetailScreen() {
     }
 
     void loadMyRegistrations().catch(() => undefined);
-  }, [authUser, loadMyRegistrations]);
+  }, [authUser?.id, loadMyRegistrations]);
 
   const event = useMemo(() => {
     if (!eventId) {
@@ -348,8 +349,12 @@ export default function EventDetailScreen() {
       return selectedEvent;
     }
 
+    if (selectedEventLoading) {
+      return null;
+    }
+
     return events.find((item) => item.id === eventId) ?? null;
-  }, [eventId, events, selectedEvent]);
+  }, [eventId, events, selectedEvent, selectedEventLoading]);
 
   const registration = useMemo(() => {
     if (!eventId) {
@@ -375,7 +380,7 @@ export default function EventDetailScreen() {
       return;
     }
 
-    void loadEventById(eventId).catch(() => undefined);
+    void loadEventById(eventId, { forceRefresh: true }).catch(() => undefined);
   }, [eventId, loadEventById]);
 
   const conditionRows = useMemo(() => {
@@ -407,6 +412,11 @@ export default function EventDetailScreen() {
 
   const description = event?.description ?? event?.shortDescription ?? null;
   const statusTitle = event?.status ? eventStatusTitles[event.status] : undefined;
+  const unavailableHint = !session
+    ? 'Войдите и примите приглашение, чтобы увидеть это событие.'
+    : membership?.status !== 'active'
+      ? 'Примите приглашение, чтобы увидеть события для участников общины.'
+      : 'У вас нет доступа к этому событию или оно больше не опубликовано.';
 
   return (
     <>
@@ -431,6 +441,7 @@ export default function EventDetailScreen() {
             <View style={styles.stateCard}>
               <Ionicons name="alert-circle-outline" size={24} color={colors.danger} />
               <Text style={styles.errorText}>{selectedEventError}</Text>
+              <Text style={styles.stateText}>{unavailableHint}</Text>
               <PrimaryButton title="Повторить" onPress={handleRetry} />
             </View>
           </GlassCard>
@@ -466,6 +477,7 @@ export default function EventDetailScreen() {
               />
               <View style={styles.heroChips}>
                 <Chip>{event.category}</Chip>
+                {event.visibility === 'members_only' ? <Chip tone="warning">Для участников</Chip> : null}
                 {event.audience ? <Chip>{event.audience}</Chip> : null}
               </View>
             </View>

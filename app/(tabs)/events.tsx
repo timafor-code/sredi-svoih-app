@@ -59,6 +59,11 @@ function EventCard({
             <View style={[styles.tag, styles.featuredTag, { backgroundColor: `${event.tagColor}DD` }]}>
               <Text style={styles.tagTextWhite}>{event.category}</Text>
             </View>
+            {event.visibility === 'members_only' ? (
+              <View style={[styles.visibilityBadge, styles.featuredVisibilityBadge]}>
+                <Text style={styles.visibilityBadgeText}>Для участников</Text>
+              </View>
+            ) : null}
             <Text style={styles.siteText}>www.sredisvoih.com</Text>
           </View>
 
@@ -96,8 +101,15 @@ function EventCard({
 
         <View style={styles.eventBody}>
           <Pressable onPress={() => onOpen(event)} style={({ pressed }) => [styles.eventTextPressable, pressed && styles.pressed]}>
-            <View style={[styles.tag, { alignSelf: 'flex-start', backgroundColor: `${event.tagColor}22` }]}>
-              <Text style={[styles.tagText, { color: event.tagColor }]}>{event.category}</Text>
+            <View style={styles.cardBadgeRow}>
+              <View style={[styles.tag, { backgroundColor: `${event.tagColor}22` }]}>
+                <Text style={[styles.tagText, { color: event.tagColor }]}>{event.category}</Text>
+              </View>
+              {event.visibility === 'members_only' ? (
+                <View style={styles.visibilityBadge}>
+                  <Text style={styles.visibilityBadgeText}>Для участников</Text>
+                </View>
+              ) : null}
             </View>
 
             <Text style={styles.eventTitle}>{event.title}</Text>
@@ -140,7 +152,6 @@ export default function EventsScreen() {
     loading,
     error,
     loadEvents,
-    loadMyRegistrations,
   } = useEventsStore();
   const {
     cancellingRegistrationId,
@@ -154,17 +165,18 @@ export default function EventsScreen() {
 
   useEffect(() => {
     void loadEvents();
-  }, [loadEvents]);
+  }, [authUser?.id, loadEvents, membership?.id, membership?.status]);
 
   useEffect(() => {
     void loadSession().catch(() => undefined);
   }, [loadSession]);
 
-  useEffect(() => {
-    void loadMyRegistrations().catch(() => undefined);
-  }, [authUser, loadMyRegistrations, membership?.id]);
-
   const items = useMemo(() => events.filter((event) => eventMatchesFilter(event, filter)), [events, filter]);
+  const memberEventsHint = !authUser
+    ? 'Войдите и примите приглашение, чтобы видеть события для участников общины.'
+    : membership?.status !== 'active'
+      ? 'Примите приглашение, чтобы видеть события для участников общины.'
+      : null;
 
   const registrationByEventId = useMemo(() => {
     const registrationMap = new Map<string, EventRegistration>();
@@ -200,6 +212,15 @@ export default function EventsScreen() {
       </View>
 
       <SegmentControl items={filters} value={filter} onChange={setFilter} />
+
+      {memberEventsHint ? (
+        <GlassCard style={styles.memberHint}>
+          <View style={styles.memberHintRow}>
+            <Ionicons name="lock-closed-outline" size={15} color={colors.orange} />
+            <Text style={styles.memberHintText}>{memberEventsHint}</Text>
+          </View>
+        </GlassCard>
+      ) : null}
 
       {loading ? <Text style={styles.stateText}>Загружаем события…</Text> : null}
 
@@ -298,6 +319,47 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     includeFontPadding: false,
+  },
+  cardBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+  },
+  visibilityBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.accent.orangeBorder,
+    backgroundColor: colors.accent.orangeBg,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  featuredVisibilityBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+  },
+  visibilityBadgeText: {
+    color: colors.orange,
+    fontSize: 11,
+    fontWeight: '700',
+    includeFontPadding: false,
+  },
+  memberHint: {
+    borderColor: colors.accent.orangeBorder,
+    backgroundColor: 'rgba(240,122,42,0.08)',
+  },
+  memberHintRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  memberHintText: {
+    flex: 1,
+    color: colors.textDim,
+    fontSize: 12,
+    lineHeight: 17,
   },
   siteText: {
     position: 'absolute',

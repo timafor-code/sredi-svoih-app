@@ -113,7 +113,6 @@ export async function listPublishedEvents(): Promise<Event[]> {
     .from('events')
     .select(EVENT_FIELDS)
     .eq('status', 'published')
-    .eq('visibility', 'public')
     .order('starts_at', { ascending: true });
 
   if (error) {
