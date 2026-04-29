@@ -6,6 +6,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
+import { PrayerWindowCard } from '@/components/prayer/PrayerWindowCard';
 import { Avatar } from '@/components/ui/Avatar';
 import { Logo, OmerPill } from '@/components/ui/BrandHeader';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
@@ -137,70 +138,6 @@ function EventCard() {
   );
 }
 
-function PrayerNowCard({
-  alreadyRecorded = false,
-  onPress,
-  prayer,
-  timeZone,
-}: {
-  alreadyRecorded?: boolean;
-  onPress?: () => void;
-  prayer: PrayerWindow;
-  timeZone: string;
-}) {
-  const progress = prayer.active ? prayer.progress : 0;
-  const status = prayer.active ? (alreadyRecorded ? 'Помолился' : 'ИДЁТ') : 'СКОРО';
-  const value = alreadyRecorded
-    ? 'Помолился'
-    : prayer.active
-      ? formatDurationRu(prayer.end.getTime() - Date.now())
-      : formatRuTime(prayer.start, timeZone);
-  const subtitle = alreadyRecorded ? 'на сегодня' : prayer.active ? `осталось · ${Math.round(progress * 100)}%` : 'начало';
-
-  const card = (
-    <GlassCard>
-      <View style={[styles.goldTint, { width: `${Math.round(progress * 100)}%` }]} />
-      <View style={styles.deadlineTop}>
-        <View style={styles.deadlineLeft}>
-          <View style={[styles.emojiBox, styles.goldBox]}>
-            <Text style={styles.emoji}>{prayer.icon}</Text>
-          </View>
-          <View>
-            <View style={styles.rowGap}>
-              <Text style={styles.overline}>{prayer.active ? 'СЕЙЧАС' : 'ДАЛЬШЕ'} · {prayer.title.toUpperCase()}</Text>
-              <Text style={[styles.statusBadge, alreadyRecorded && styles.recordedBadge]}>{status}</Text>
-            </View>
-            <Text style={styles.deadlineTime}>до {formatRuTime(prayer.end, timeZone)}</Text>
-          </View>
-        </View>
-        <View style={styles.deadlineRight}>
-          <Text style={[styles.goldValue, alreadyRecorded && styles.recordedValue]}>{value}</Text>
-          <Text style={styles.tinyMuted}>{subtitle}</Text>
-        </View>
-      </View>
-      <ProgressBar value={progress} color={colors.gold} />
-      <View style={styles.progressLegend}>
-        <Text style={styles.tinyMuted}>{formatRuTime(prayer.start, timeZone)} начало</Text>
-        <Text style={styles.tinyMuted}>{formatRuTime(prayer.end, timeZone)} окончание</Text>
-      </View>
-    </GlassCard>
-  );
-
-  if (!onPress) {
-    return card;
-  }
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => pressed && styles.cardPressed}
-    >
-      {card}
-    </Pressable>
-  );
-}
-
 function BirthdayRow({ item, isLast }: { item: HomeBirthdayItem; isLast?: boolean }) {
   const router = useRouter();
 
@@ -273,7 +210,6 @@ export default function HomeScreen() {
   const activityDate = useMemo(() => formatLocalDateKey(now, daily.timeZone), [daily.timeZone, now]);
   const currentPrayerAlreadyRecorded = Boolean(
     authUser
-    && currentPrayer.active
     && hasRecordedActivity(
       prayerActivityItems,
       prayerActivityTypeFromPrayerId(currentPrayer.id),
@@ -362,11 +298,21 @@ export default function HomeScreen() {
 
       {isShemaAvailable ? <DeadlineCard daily={daily} now={now} onPress={handleShemaPress} /> : null}
       <EventCard />
-      <PrayerNowCard
+      <PrayerWindowCard
+        accent={currentPrayer.accent}
+        active={currentPrayer.active}
         alreadyRecorded={currentPrayerAlreadyRecorded}
-        onPress={handlePrayerPress}
-        prayer={currentPrayer}
+        icon={currentPrayer.icon}
+        prayerId={currentPrayer.id}
+        progress={currentPrayer.progress}
+        recordable={currentPrayer.active}
+        state={now.getTime() > currentPrayer.end.getTime() ? 'done' : 'upcoming'}
+        status={currentPrayer.hebrew}
+        onPress={currentPrayer.active ? handlePrayerPress : undefined}
         timeZone={daily.timeZone}
+        title={currentPrayer.title}
+        windowEnd={currentPrayer.end}
+        windowStart={currentPrayer.start}
       />
 
       <GlassCard>
@@ -563,14 +509,6 @@ const styles = StyleSheet.create({
     width: '42%',
     backgroundColor: 'rgba(76,175,80,0.08)',
   },
-  goldTint: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    width: '42%',
-    backgroundColor: 'rgba(246,164,0,0.08)',
-  },
   deadlineTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -599,10 +537,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(76,175,80,0.30)',
     backgroundColor: 'rgba(76,175,80,0.15)',
   },
-  goldBox: {
-    borderColor: 'rgba(246,164,0,0.30)',
-    backgroundColor: 'rgba(246,164,0,0.15)',
-  },
   emoji: {
     fontSize: 14,
   },
@@ -622,12 +556,6 @@ const styles = StyleSheet.create({
   },
   greenValue: {
     color: colors.success,
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  goldValue: {
-    color: colors.gold,
     fontSize: 20,
     fontWeight: '800',
     letterSpacing: -0.5,
@@ -719,31 +647,6 @@ const styles = StyleSheet.create({
     minHeight: 36,
     paddingHorizontal: 12,
     paddingVertical: 8,
-  },
-  rowGap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  statusBadge: {
-    overflow: 'hidden',
-    borderRadius: 5,
-    backgroundColor: 'rgba(246,164,0,0.20)',
-    color: colors.gold,
-    fontSize: 9,
-    fontWeight: '700',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    includeFontPadding: false,
-  },
-  recordedBadge: {
-    backgroundColor: 'rgba(76,175,80,0.16)',
-    color: colors.success,
-  },
-  recordedValue: {
-    color: colors.success,
-    fontSize: 16,
-    letterSpacing: 0,
   },
   rowBetween: {
     flexDirection: 'row',
