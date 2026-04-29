@@ -31,6 +31,8 @@ export type PrayerActionDetail = {
 
 type PrayerActionModalProps = {
   activityType: PrayerActivityType;
+  alreadyRecorded?: boolean;
+  alreadyRecordedLabel?: string;
   canRecord?: () => boolean;
   city?: string | null;
   closeOnSuccess?: boolean;
@@ -97,6 +99,8 @@ function showRecordError(error: unknown) {
 
 export function PrayerActionModal({
   activityType,
+  alreadyRecorded = false,
+  alreadyRecordedLabel = 'Помолился',
   canRecord,
   city,
   closeOnSuccess = true,
@@ -132,7 +136,7 @@ export function PrayerActionModal({
   );
 
   const handleConfirm = async () => {
-    if (busy) {
+    if (busy || alreadyRecorded) {
       return;
     }
 
@@ -234,13 +238,19 @@ export function PrayerActionModal({
             >
               <Text style={styles.cancelText}>Отмена</Text>
             </Pressable>
-            <PrimaryButton
-              disabled={busy}
-              onPress={handleConfirm}
-              title={busy ? 'Записываем...' : confirmButtonTitle}
-              buttonStyle={styles.confirmButton}
-              style={styles.confirmPressable}
-            />
+            {alreadyRecorded ? (
+              <View style={[styles.recordedButton, styles.confirmPressable]}>
+                <Text style={styles.recordedText}>{alreadyRecordedLabel}</Text>
+              </View>
+            ) : (
+              <PrimaryButton
+                disabled={busy}
+                onPress={handleConfirm}
+                title={busy ? 'Записываем...' : confirmButtonTitle}
+                buttonStyle={styles.confirmButton}
+                style={styles.confirmPressable}
+              />
+            )}
           </View>
 
           {busy ? (
@@ -362,6 +372,21 @@ const styles = StyleSheet.create({
   confirmButton: {
     minHeight: 40,
     paddingHorizontal: 12,
+  },
+  recordedButton: {
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(76,175,80,0.24)',
+    backgroundColor: 'rgba(76,175,80,0.10)',
+    paddingHorizontal: 12,
+  },
+  recordedText: {
+    color: colors.success,
+    fontSize: 14,
+    fontWeight: '800',
   },
   loadingRow: {
     flexDirection: 'row',

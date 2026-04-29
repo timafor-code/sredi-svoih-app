@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
@@ -18,6 +18,7 @@ import { getUpcomingContactBirthdays } from '@/lib/birthdays';
 import { formatDurationRu, formatRuDate, formatRuTime, formatRuWeekdayDayMonth, progressBetween } from '@/lib/dates';
 import { getHebrewDate, getHebrewDateLabel, getUpcomingHoliday, getWeeklyParsha } from '@/lib/hebcal';
 import type { UpcomingHoliday, WeeklyParsha } from '@/lib/hebcal';
+import { formatLocalDateKey, hasRecordedActivity, prayerActivityTypeFromPrayerId } from '@/lib/prayerTracker';
 import {
   getDailyZmanim,
   getHebcalLocation,
@@ -25,6 +26,8 @@ import {
   getUpcomingCandleLighting,
 } from '@/lib/zmanim';
 import type { CandleLightingInfo, DailyZmanim, PrayerWindow } from '@/lib/zmanim';
+import { useAuthStore } from '@/store/useAuthStore';
+import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
 
@@ -103,6 +106,11 @@ function isShemaRecordableNow(daily: DailyZmanim) {
   return Date.now() <= daily.times.shemaGra.at.getTime();
 }
 
+function isPrayerRecordableNow(prayer: PrayerWindow) {
+  const nowMs = Date.now();
+  return nowMs >= prayer.start.getTime() && nowMs <= prayer.end.getTime();
+}
+
 function EventCard() {
   return (
     <GlassCard padded={false}>
@@ -129,11 +137,27 @@ function EventCard() {
   );
 }
 
-function PrayerNowCard({ prayer, timeZone }: { prayer: PrayerWindow; timeZone: string }) {
+function PrayerNowCard({
+  alreadyRecorded = false,
+  onPress,
+  prayer,
+  timeZone,
+}: {
+  alreadyRecorded?: boolean;
+  onPress?: () => void;
+  prayer: PrayerWindow;
+  timeZone: string;
+}) {
   const progress = prayer.active ? prayer.progress : 0;
-  const status = prayer.active ? 'ИДЁТ' : 'СКОРО';
+  const status = prayer.active ? (alreadyRecorded ? 'Помолился' : 'ИДЁТ') : 'СКОРО';
+  const value = alreadyRecorded
+    ? 'Помолился'
+    : prayer.active
+      ? formatDurationRu(prayer.end.getTime() - Date.now())
+      : formatRuTime(prayer.start, timeZone);
+  const subtitle = alreadyRecorded ? 'на сегодня' : prayer.active ? `осталось · ${Math.round(progress * 100)}%` : 'начало';
 
-  return (
+  const card = (
     <GlassCard>
       <View style={[styles.goldTint, { width: `${Math.round(progress * 100)}%` }]} />
       <View style={styles.deadlineTop}>
@@ -144,16 +168,14 @@ function PrayerNowCard({ prayer, timeZone }: { prayer: PrayerWindow; timeZone: s
           <View>
             <View style={styles.rowGap}>
               <Text style={styles.overline}>{prayer.active ? 'СЕЙЧАС' : 'ДАЛЬШЕ'} · {prayer.title.toUpperCase()}</Text>
-              <Text style={styles.statusBadge}>{status}</Text>
+              <Text style={[styles.statusBadge, alreadyRecorded && styles.recordedBadge]}>{status}</Text>
             </View>
             <Text style={styles.deadlineTime}>до {formatRuTime(prayer.end, timeZone)}</Text>
           </View>
         </View>
         <View style={styles.deadlineRight}>
-          <Text style={styles.goldValue}>
-            {prayer.active ? formatDurationRu(prayer.end.getTime() - Date.now()) : formatRuTime(prayer.start, timeZone)}
-          </Text>
-          <Text style={styles.tinyMuted}>{prayer.active ? `осталось · ${Math.round(progress * 100)}%` : 'начало'}</Text>
+          <Text style={[styles.goldValue, alreadyRecorded && styles.recordedValue]}>{value}</Text>
+          <Text style={styles.tinyMuted}>{subtitle}</Text>
         </View>
       </View>
       <ProgressBar value={progress} color={colors.gold} />
@@ -162,6 +184,20 @@ function PrayerNowCard({ prayer, timeZone }: { prayer: PrayerWindow; timeZone: s
         <Text style={styles.tinyMuted}>{formatRuTime(prayer.end, timeZone)} окончание</Text>
       </View>
     </GlassCard>
+  );
+
+  if (!onPress) {
+    return card;
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => pressed && styles.cardPressed}
+    >
+      {card}
+    </Pressable>
   );
 }
 
@@ -188,6 +224,12 @@ function BirthdayRow({ item, isLast }: { item: HomeBirthdayItem; isLast?: boolea
 export default function HomeScreen() {
   const now = useNow();
   const [showShemaAction, setShowShemaAction] = useState(false);
+  const [selectedPrayerId, setSelectedPrayerId] = useState<PrayerWindow['id'] | null>(null);
+  const requestedPrayerActivityForUserRef = useRef<string | null>(null);
+  const authUser = useAuthStore((state) => state.user);
+  const prayerActivityItems = usePrayerTrackerStore((state) => state.items);
+  const prayerActivityLoading = usePrayerTrackerStore((state) => state.loading);
+  const loadMyActivity = usePrayerTrackerStore((state) => state.loadMyActivity);
   const city = useSettingsStore((state) => state.city);
   const location = useMemo(() => getHebcalLocation(city), [city]);
   const daily = useMemo(() => getDailyZmanim({ city, date: now }), [city, now]);
@@ -224,12 +266,62 @@ export default function HomeScreen() {
   );
   const currentPrayer =
     prayers.find((item) => item.active) ?? prayers.find((item) => now.getTime() < item.start.getTime()) ?? prayers[prayers.length - 1]!;
+  const selectedPrayer = useMemo(
+    () => prayers.find((prayer) => prayer.id === selectedPrayerId) ?? null,
+    [prayers, selectedPrayerId],
+  );
+  const activityDate = useMemo(() => formatLocalDateKey(now, daily.timeZone), [daily.timeZone, now]);
+  const currentPrayerAlreadyRecorded = Boolean(
+    authUser
+    && currentPrayer.active
+    && hasRecordedActivity(
+      prayerActivityItems,
+      prayerActivityTypeFromPrayerId(currentPrayer.id),
+      activityDate,
+      authUser.id,
+    ),
+  );
+  const selectedPrayerAlreadyRecorded = Boolean(
+    authUser
+    && selectedPrayer
+    && hasRecordedActivity(
+      prayerActivityItems,
+      prayerActivityTypeFromPrayerId(selectedPrayer.id),
+      activityDate,
+      authUser.id,
+    ),
+  );
+
+  useEffect(() => {
+    if (!authUser) {
+      requestedPrayerActivityForUserRef.current = null;
+      return;
+    }
+
+    if (prayerActivityItems.some((item) => item.userId === authUser.id)) {
+      requestedPrayerActivityForUserRef.current = authUser.id;
+      return;
+    }
+
+    if (requestedPrayerActivityForUserRef.current === authUser.id || prayerActivityLoading) {
+      return;
+    }
+
+    requestedPrayerActivityForUserRef.current = authUser.id;
+    void loadMyActivity({ limit: 100 }).catch(() => undefined);
+  }, [authUser, loadMyActivity, prayerActivityItems, prayerActivityLoading]);
 
   useEffect(() => {
     if (!isShemaAvailable && showShemaAction) {
       setShowShemaAction(false);
     }
   }, [isShemaAvailable, showShemaAction]);
+
+  useEffect(() => {
+    if (selectedPrayer && !selectedPrayer.active) {
+      setSelectedPrayerId(null);
+    }
+  }, [selectedPrayer]);
 
   const handleShemaPress = () => {
     if (!isShemaRecordableNow(daily)) {
@@ -239,6 +331,15 @@ export default function HomeScreen() {
     }
 
     setShowShemaAction(true);
+  };
+
+  const handlePrayerPress = () => {
+    if (!currentPrayer.active) {
+      Alert.alert('Сейчас недоступно', 'Эту молитву можно отметить только в её текущее время.');
+      return;
+    }
+
+    setSelectedPrayerId(currentPrayer.id);
   };
 
   return (
@@ -261,7 +362,12 @@ export default function HomeScreen() {
 
       {isShemaAvailable ? <DeadlineCard daily={daily} now={now} onPress={handleShemaPress} /> : null}
       <EventCard />
-      <PrayerNowCard prayer={currentPrayer} timeZone={daily.timeZone} />
+      <PrayerNowCard
+        alreadyRecorded={currentPrayerAlreadyRecorded}
+        onPress={handlePrayerPress}
+        prayer={currentPrayer}
+        timeZone={daily.timeZone}
+      />
 
       <GlassCard>
         <View style={styles.rowBetween}>
@@ -362,6 +468,47 @@ export default function HomeScreen() {
         unavailableTitle="Сейчас недоступно"
         visible={showShemaAction && isShemaAvailable}
       />
+
+      {selectedPrayer?.active ? (
+        <PrayerActionModal
+          activityType={prayerActivityTypeFromPrayerId(selectedPrayer.id)}
+          alreadyRecorded={selectedPrayerAlreadyRecorded}
+          canRecord={() => {
+            const recordable = isPrayerRecordableNow(selectedPrayer);
+            if (!recordable) {
+              setSelectedPrayerId(null);
+            }
+            return recordable;
+          }}
+          city={city}
+          closeOnSuccess={false}
+          confirmButtonTitle="Начал молиться"
+          details={[
+            {
+              label: 'Окно',
+              value: `${formatRuTime(selectedPrayer.start, daily.timeZone)} - ${formatRuTime(selectedPrayer.end, daily.timeZone)}`,
+            },
+            { label: 'Город', value: city },
+            { label: 'Часовой пояс', value: daily.timeZone },
+            { label: 'Еврейская дата', value: hebrewDateLabel },
+          ]}
+          hebrewDate={hebrewDatePayload}
+          metadata={{
+            active: selectedPrayer.active,
+            prayerTitle: selectedPrayer.title,
+            source: 'home_prayer_card',
+            windowEnd: selectedPrayer.end.toISOString(),
+            windowStart: selectedPrayer.start.toISOString(),
+          }}
+          onClose={() => setSelectedPrayerId(null)}
+          subtitle={selectedPrayer.hebrew}
+          timezone={daily.timeZone}
+          title={selectedPrayer.title}
+          unavailableMessage="Эту молитву можно отметить только в её текущее время."
+          unavailableTitle="Сейчас недоступно"
+          visible
+        />
+      ) : null}
     </Screen>
   );
 }
@@ -588,6 +735,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     includeFontPadding: false,
+  },
+  recordedBadge: {
+    backgroundColor: 'rgba(76,175,80,0.16)',
+    color: colors.success,
+  },
+  recordedValue: {
+    color: colors.success,
+    fontSize: 16,
+    letterSpacing: 0,
   },
   rowBetween: {
     flexDirection: 'row',
