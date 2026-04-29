@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
+import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
 import { HeaderButton, Logo } from '@/components/ui/BrandHeader';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Screen } from '@/components/ui/Screen';
@@ -12,6 +13,7 @@ import { useNow } from '@/hooks/useNow';
 import { formatRuDate, formatRuTime, progressBetween } from '@/lib/dates';
 import { getHebrewDate, getHebrewDateLabel } from '@/lib/hebcal';
 import { getDailyZmanim, getHebcalLocation, getPrayerWindows } from '@/lib/zmanim';
+import type { PrayerWindow } from '@/lib/zmanim';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
 
@@ -23,6 +25,7 @@ function PrayerCard({
   state = 'done',
   status,
   subtitle,
+  onPress,
   timeZone,
   title,
   windowEnd,
@@ -35,12 +38,13 @@ function PrayerCard({
   state?: 'done' | 'upcoming';
   status?: string;
   subtitle: string;
+  onPress?: () => void;
   timeZone: string;
   title: string;
   windowEnd: Date;
   windowStart: Date;
 }) {
-  return (
+  const card = (
     <GlassCard style={active && styles.activePrayer}>
       <View style={styles.prayerTop}>
         <View style={[styles.prayerIcon, { borderColor: `${accent}55`, backgroundColor: `${accent}1F` }]}>
@@ -73,14 +77,41 @@ function PrayerCard({
       ) : null}
     </GlassCard>
   );
+
+  if (!onPress) {
+    return card;
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => pressed && styles.cardPressed}
+    >
+      {card}
+    </Pressable>
+  );
 }
 
 export default function PrayersScreen() {
   const now = useNow();
+  const [selectedPrayer, setSelectedPrayer] = useState<PrayerWindow | null>(null);
   const city = useSettingsStore((state) => state.city);
   const location = useMemo(() => getHebcalLocation(city), [city]);
   const daily = useMemo(() => getDailyZmanim({ city, date: now }), [city, now]);
   const hdate = useMemo(() => getHebrewDate(now, location), [location, now]);
+  const hebrewDateLabel = useMemo(() => getHebrewDateLabel(hdate), [hdate]);
+  const hebrewDatePayload = useMemo(
+    () => ({
+      day: hdate.getDate(),
+      hebrew: hdate.renderGematriya(),
+      label: hebrewDateLabel,
+      month: hdate.getMonth(),
+      monthName: hdate.getMonthName(),
+      year: hdate.getFullYear(),
+    }),
+    [hdate, hebrewDateLabel],
+  );
   const prayers = useMemo(() => getPrayerWindows(daily, now), [daily, now]);
   const dayProgress = progressBetween(daily.times.alot.at, daily.times.tzeit.at, now);
   const nextZmanId = daily.items.find((item) => now.getTime() < item.at.getTime())?.id;
@@ -104,7 +135,7 @@ export default function PrayersScreen() {
       <View>
         <Text style={styles.title}>Молитвы и зманим</Text>
         <Text style={styles.subtitle}>
-          {getHebrewDateLabel(hdate)} · {formatRuDate(now, daily.timeZone)} · {city} ▾
+          {hebrewDateLabel} · {formatRuDate(now, daily.timeZone)} · {city} ▾
         </Text>
       </View>
 
@@ -152,6 +183,7 @@ export default function PrayersScreen() {
           state={now.getTime() > prayer.end.getTime() ? 'done' : 'upcoming'}
           status={prayer.hebrew}
           subtitle={prayer.subtitle}
+          onPress={() => setSelectedPrayer(prayer)}
           timeZone={daily.timeZone}
           title={prayer.title}
           windowEnd={prayer.end}
@@ -180,6 +212,36 @@ export default function PrayersScreen() {
         <Ionicons name="information-circle-outline" size={18} color="#4A90D9" />
         <Text style={styles.infoText}>Зманим рассчитаны через Hebcal для города {city}, часовой пояс {daily.timeZone}.</Text>
       </Pressable>
+
+      {selectedPrayer ? (
+        <PrayerActionModal
+          activityType={selectedPrayer.id}
+          city={city}
+          confirmButtonTitle="Начал молиться"
+          details={[
+            {
+              label: 'Окно',
+              value: `${formatRuTime(selectedPrayer.start, daily.timeZone)} - ${formatRuTime(selectedPrayer.end, daily.timeZone)}`,
+            },
+            { label: 'Город', value: city },
+            { label: 'Часовой пояс', value: daily.timeZone },
+            { label: 'Еврейская дата', value: hebrewDateLabel },
+          ]}
+          hebrewDate={hebrewDatePayload}
+          metadata={{
+            active: selectedPrayer.active,
+            prayerTitle: selectedPrayer.title,
+            source: 'prayers_screen',
+            windowEnd: selectedPrayer.end.toISOString(),
+            windowStart: selectedPrayer.start.toISOString(),
+          }}
+          onClose={() => setSelectedPrayer(null)}
+          subtitle={selectedPrayer.hebrew}
+          timezone={daily.timeZone}
+          title={selectedPrayer.title}
+          visible
+        />
+      ) : null}
     </Screen>
   );
 }
@@ -349,6 +411,10 @@ const styles = StyleSheet.create({
   activePrayer: {
     borderColor: 'rgba(240,100,42,0.30)',
     backgroundColor: 'rgba(240,100,42,0.08)',
+  },
+  cardPressed: {
+    opacity: 0.86,
+    transform: [{ scale: 0.99 }],
   },
   nowBadge: {
     overflow: 'hidden',

@@ -8,9 +8,15 @@ Prayer activity is private user data. The table has row level security enabled, 
 
 Admins and community managers do not receive any special access to `prayer_activity_logs`. There is no delete policy in this foundation.
 
-## Later UI Actions
+## Connected UI Actions
 
-Future prayer, Shema, and Omer UI actions can record these activity types:
+The app now records Prayer Tracker activity from:
+
+- the prayer cards on the Prayers screen
+- the morning Shema deadline card on Home
+- the Omer counting modal when Omer is available
+
+Supported activity types:
 
 - `shacharit`
 - `mincha`
