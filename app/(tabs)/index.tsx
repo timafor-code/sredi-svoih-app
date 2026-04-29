@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
@@ -97,6 +97,10 @@ function DeadlineCard({ daily, now, onPress }: { daily: DailyZmanim; now: Date; 
       {card}
     </Pressable>
   );
+}
+
+function isShemaRecordableNow(daily: DailyZmanim) {
+  return Date.now() <= daily.times.shemaGra.at.getTime();
 }
 
 function EventCard() {
@@ -236,6 +240,7 @@ export default function HomeScreen() {
   const holiday = useMemo<UpcomingHoliday | null>(() => getUpcomingHoliday(hdate, location.getIsrael()), [hdate, location]);
   const candle = useMemo<CandleLightingInfo | null>(() => getUpcomingCandleLighting(now, location), [location, now]);
   const prayers = useMemo(() => getPrayerWindows(daily, now), [daily, now]);
+  const isShemaAvailable = now.getTime() <= daily.times.shemaGra.at.getTime();
   const birthdays = useMemo<HomeBirthdayItem[]>(
     () =>
       getUpcomingContactBirthdays(mockContacts, now, 3).map(({ birthday, contact }) => ({
@@ -251,6 +256,22 @@ export default function HomeScreen() {
   );
   const currentPrayer =
     prayers.find((item) => item.active) ?? prayers.find((item) => now.getTime() < item.start.getTime()) ?? prayers[prayers.length - 1]!;
+
+  useEffect(() => {
+    if (!isShemaAvailable && showShemaAction) {
+      setShowShemaAction(false);
+    }
+  }, [isShemaAvailable, showShemaAction]);
+
+  const handleShemaPress = () => {
+    if (!isShemaRecordableNow(daily)) {
+      Alert.alert('Сейчас недоступно', 'Время утреннего Шма на сегодня уже прошло.');
+      setShowShemaAction(false);
+      return;
+    }
+
+    setShowShemaAction(true);
+  };
 
   return (
     <Screen>
@@ -270,7 +291,7 @@ export default function HomeScreen() {
         <Ionicons name="chevron-forward" size={13} color="rgba(255,255,255,0.4)" />
       </Pressable>
 
-      <DeadlineCard daily={daily} now={now} onPress={() => setShowShemaAction(true)} />
+      {isShemaAvailable ? <DeadlineCard daily={daily} now={now} onPress={handleShemaPress} /> : null}
       <EventCard />
       <PrayerNowCard prayer={currentPrayer} timeZone={daily.timeZone} />
       <DayTimeline daily={daily} now={now} />
@@ -343,6 +364,13 @@ export default function HomeScreen() {
 
       <PrayerActionModal
         activityType="shema_morning"
+        canRecord={() => {
+          const recordable = isShemaRecordableNow(daily);
+          if (!recordable) {
+            setShowShemaAction(false);
+          }
+          return recordable;
+        }}
         city={city}
         confirmButtonTitle="Начал читать Шма"
         details={[
@@ -363,7 +391,9 @@ export default function HomeScreen() {
         subtitle={`До ${daily.times.shemaGra.time}`}
         timezone={daily.timeZone}
         title="Утреннее Шма"
-        visible={showShemaAction}
+        unavailableMessage="Время утреннего Шма на сегодня уже прошло."
+        unavailableTitle="Сейчас недоступно"
+        visible={showShemaAction && isShemaAvailable}
       />
     </Screen>
   );
