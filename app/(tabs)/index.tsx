@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link, useRouter } from 'expo-router';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
+import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
 import { Avatar } from '@/components/ui/Avatar';
 import { Logo, OmerPill } from '@/components/ui/BrandHeader';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
@@ -46,7 +47,7 @@ function pluralDays(count: number) {
   return 'дней';
 }
 
-function DeadlineCard({ daily, now }: { daily: DailyZmanim; now: Date }) {
+function DeadlineCard({ daily, now, onPress }: { daily: DailyZmanim; now: Date; onPress?: () => void }) {
   const progress = progressBetween(daily.times.sunrise.at, daily.times.shemaGra.at, now);
   const isBefore = now.getTime() < daily.times.sunrise.at.getTime();
   const isDone = now.getTime() > daily.times.shemaGra.at.getTime();
@@ -57,7 +58,7 @@ function DeadlineCard({ daily, now }: { daily: DailyZmanim; now: Date }) {
       : formatDurationRu(daily.times.shemaGra.at.getTime() - now.getTime());
   const subtitle = isDone ? 'на сегодня' : isBefore ? 'до восхода' : `осталось · ${Math.round(progress * 100)}%`;
 
-  return (
+  const card = (
     <GlassCard style={styles.deadlineCard}>
       <View style={[styles.progressTint, { width: `${Math.round(progress * 100)}%` }]} />
       <View style={styles.deadlineTop}>
@@ -81,6 +82,20 @@ function DeadlineCard({ daily, now }: { daily: DailyZmanim; now: Date }) {
         <Text style={styles.tinyMuted}>{daily.times.shemaGra.time} дедлайн</Text>
       </View>
     </GlassCard>
+  );
+
+  if (!onPress) {
+    return card;
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => pressed && styles.cardPressed}
+    >
+      {card}
+    </Pressable>
   );
 }
 
@@ -200,10 +215,23 @@ function BirthdayRow({ item, isLast }: { item: HomeBirthdayItem; isLast?: boolea
 
 export default function HomeScreen() {
   const now = useNow();
+  const [showShemaAction, setShowShemaAction] = useState(false);
   const city = useSettingsStore((state) => state.city);
   const location = useMemo(() => getHebcalLocation(city), [city]);
   const daily = useMemo(() => getDailyZmanim({ city, date: now }), [city, now]);
   const hdate = useMemo(() => getHebrewDate(now, location), [location, now]);
+  const hebrewDateLabel = useMemo(() => getHebrewDateLabel(hdate), [hdate]);
+  const hebrewDatePayload = useMemo(
+    () => ({
+      day: hdate.getDate(),
+      hebrew: hdate.renderGematriya(),
+      label: hebrewDateLabel,
+      month: hdate.getMonth(),
+      monthName: hdate.getMonthName(),
+      year: hdate.getFullYear(),
+    }),
+    [hdate, hebrewDateLabel],
+  );
   const parsha = useMemo<WeeklyParsha | null>(() => getWeeklyParsha(hdate, location.getIsrael()), [hdate, location]);
   const holiday = useMemo<UpcomingHoliday | null>(() => getUpcomingHoliday(hdate, location.getIsrael()), [hdate, location]);
   const candle = useMemo<CandleLightingInfo | null>(() => getUpcomingCandleLighting(now, location), [location, now]);
@@ -232,7 +260,7 @@ export default function HomeScreen() {
       </View>
 
       <View>
-        <Text style={styles.dateTitle}>{getHebrewDateLabel(hdate)}</Text>
+        <Text style={styles.dateTitle}>{hebrewDateLabel}</Text>
         <Text style={styles.dateSubtitle}>{formatRuDate(now, location.getTzid())}</Text>
       </View>
 
@@ -242,7 +270,7 @@ export default function HomeScreen() {
         <Ionicons name="chevron-forward" size={13} color="rgba(255,255,255,0.4)" />
       </Pressable>
 
-      <DeadlineCard daily={daily} now={now} />
+      <DeadlineCard daily={daily} now={now} onPress={() => setShowShemaAction(true)} />
       <EventCard />
       <PrayerNowCard prayer={currentPrayer} timeZone={daily.timeZone} />
       <DayTimeline daily={daily} now={now} />
@@ -312,6 +340,31 @@ export default function HomeScreen() {
           ))}
         </GlassCard>
       </View>
+
+      <PrayerActionModal
+        activityType="shema_morning"
+        city={city}
+        confirmButtonTitle="Начал читать Шма"
+        details={[
+          { label: 'Дедлайн', value: daily.times.shemaGra.time },
+          { label: 'Окно', value: `${daily.times.sunrise.time} - ${daily.times.shemaGra.time}` },
+          { label: 'Город', value: city },
+          { label: 'Часовой пояс', value: daily.timeZone },
+          { label: 'Еврейская дата', value: hebrewDateLabel },
+        ]}
+        hebrewDate={hebrewDatePayload}
+        metadata={{
+          deadline: daily.times.shemaGra.at.toISOString(),
+          source: 'home_shema_card',
+          sunrise: daily.times.sunrise.at.toISOString(),
+          zmanType: 'shemaGra',
+        }}
+        onClose={() => setShowShemaAction(false)}
+        subtitle={`До ${daily.times.shemaGra.time}`}
+        timezone={daily.timeZone}
+        title="Утреннее Шма"
+        visible={showShemaAction}
+      />
     </Screen>
   );
 }
@@ -353,6 +406,10 @@ const styles = StyleSheet.create({
   },
   deadlineCard: {
     position: 'relative',
+  },
+  cardPressed: {
+    opacity: 0.86,
+    transform: [{ scale: 0.99 }],
   },
   progressTint: {
     position: 'absolute',
