@@ -65,6 +65,20 @@ function formatActivityDate(value: string): string {
   }).format(date);
 }
 
+function formatGregorianShortDate(value: string): string {
+  const date = parseDateParts(value);
+
+  if (!date || Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+}
+
 function formatTime(value: string, timezone: string): string {
   const options: Intl.DateTimeFormatOptions = {
     hour: '2-digit',
@@ -143,7 +157,9 @@ function groupActivities(items: PrayerActivityLog[]): ActivityGroup[] {
 }
 
 function ActivityCard({ item }: { item: PrayerActivityLog }) {
+  const gregorianDateLabel = formatGregorianShortDate(item.activityDate);
   const hebrewDateLabel = getHebrewDateLabel(item);
+  const dateLabel = hebrewDateLabel ? `${gregorianDateLabel} · ${hebrewDateLabel}` : gregorianDateLabel;
   const placeLabel = getPlaceLabel(item);
 
   return (
@@ -158,12 +174,12 @@ function ActivityCard({ item }: { item: PrayerActivityLog }) {
         </View>
       </View>
 
-      {hebrewDateLabel || placeLabel ? (
+      {dateLabel || placeLabel ? (
         <View style={styles.metaBlock}>
-          {hebrewDateLabel ? (
+          {dateLabel ? (
             <View style={styles.metaRow}>
               <Ionicons name="calendar-outline" size={15} color={colors.textDim} />
-              <Text style={styles.metaText}>{hebrewDateLabel}</Text>
+              <Text style={styles.metaText}>{dateLabel}</Text>
             </View>
           ) : null}
           {placeLabel ? (
