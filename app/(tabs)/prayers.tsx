@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
@@ -10,22 +10,25 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { useNow } from '@/hooks/useNow';
-import { formatRuDate, formatRuTime, progressBetween } from '@/lib/dates';
+import { formatDurationRu, formatRuDate, formatRuTime, progressBetween } from '@/lib/dates';
 import { getHebrewDate, getHebrewDateLabel } from '@/lib/hebcal';
+import { formatLocalDateKey, hasRecordedActivity, prayerActivityTypeFromPrayerId } from '@/lib/prayerTracker';
 import { getDailyZmanim, getHebcalLocation, getPrayerWindows } from '@/lib/zmanim';
 import type { PrayerWindow } from '@/lib/zmanim';
+import { useAuthStore } from '@/store/useAuthStore';
+import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
 
 function PrayerCard({
   accent,
   active,
+  alreadyRecorded = false,
   icon,
   progress = 0,
   recordable = false,
   state = 'done',
   status,
-  subtitle,
   onPress,
   timeZone,
   title,
@@ -34,49 +37,73 @@ function PrayerCard({
 }: {
   accent: string;
   active?: boolean;
+  alreadyRecorded?: boolean;
   icon: string;
   progress?: number;
   recordable?: boolean;
   state?: 'done' | 'upcoming';
   status?: string;
-  subtitle: string;
   onPress?: () => void;
   timeZone: string;
   title: string;
   windowEnd: Date;
   windowStart: Date;
 }) {
+  const recordedActive = Boolean(active && alreadyRecorded);
+  const progressValue = active ? progress : state === 'done' ? 1 : 0;
+  const stateLabel = state === 'done' ? 'завершена' : 'ожидает';
+  const badgeLabel = active ? (recordedActive ? 'Помолился' : 'ИДЁТ') : stateLabel;
+  const overlineLabel = active ? 'СЕЙЧАС' : state === 'done' ? 'ПРОШЛА' : 'ДАЛЬШЕ';
+  const sideValue = recordedActive
+    ? 'Помолился'
+    : active
+      ? formatDurationRu(windowEnd.getTime() - Date.now())
+      : state === 'done'
+        ? 'завершена'
+        : formatRuTime(windowStart, timeZone);
+  const sideLabel = recordedActive
+    ? 'на сегодня'
+    : active
+      ? `осталось · ${Math.round(progress * 100)}%`
+      : state === 'done'
+        ? 'на сегодня'
+        : 'начало';
+  const timeLine = active
+    ? `до ${formatRuTime(windowEnd, timeZone)}`
+    : `${formatRuTime(windowStart, timeZone)} - ${formatRuTime(windowEnd, timeZone)}`;
+  const progressColor = recordedActive ? colors.success : active ? colors.gold : state === 'done' ? colors.success : accent;
+
   const card = (
-    <GlassCard style={[active && styles.activePrayer, !recordable && styles.unavailablePrayer]}>
+    <GlassCard style={[styles.prayerCard, active && styles.activePrayer, !recordable && styles.unavailablePrayer]}>
+      <View style={[styles.prayerTint, { width: `${Math.round(progressValue * 100)}%`, backgroundColor: `${progressColor}14` }]} />
       <View style={styles.prayerTop}>
-        <View style={[styles.prayerIcon, { borderColor: `${accent}55`, backgroundColor: `${accent}1F` }]}>
-          <Text style={styles.prayerEmoji}>{icon}</Text>
-        </View>
-        <View style={styles.flex}>
-          <View style={styles.nameRow}>
-            <Text style={styles.prayerName}>{title}</Text>
-            {active ? <Text style={styles.nowBadge}>СЕЙЧАС</Text> : null}
-            {status ? <Text style={styles.prayerHebrew}>{status}</Text> : null}
+        <View style={styles.prayerLeft}>
+          <View style={[styles.emojiBox, { borderColor: `${accent}55`, backgroundColor: `${accent}26` }]}>
+            <Text style={styles.emoji}>{icon}</Text>
           </View>
-          <Text style={[styles.prayerSubtitle, active && { color: accent }]}>{subtitle}</Text>
-        </View>
-        {!active ? (
-          <View style={styles.doneRow}>
-            <Text style={styles.doneText}>{state === 'done' ? 'завершена' : 'ожидает'}</Text>
-            <Ionicons name={state === 'done' ? 'checkmark-circle-outline' : 'time-outline'} size={18} color="rgba(255,255,255,0.35)" />
+          <View style={styles.flex}>
+            <View style={styles.rowGap}>
+              <Text style={styles.overline}>{overlineLabel} · {title.toUpperCase()}</Text>
+              <Text style={[styles.statusBadge, active && styles.activeStatusBadge, recordedActive && styles.recordedBadge]}>
+                {badgeLabel}
+              </Text>
+            </View>
+            <View style={styles.prayerTitleRow}>
+              <Text style={styles.prayerTime}>{timeLine}</Text>
+              {status ? <Text style={styles.prayerHebrew}>{status}</Text> : null}
+            </View>
           </View>
-        ) : null}
+        </View>
+        <View style={styles.prayerRight}>
+          <Text style={[styles.prayerValue, recordedActive && styles.recordedValue, !active && styles.inactiveValue]}>{sideValue}</Text>
+          <Text style={styles.tinyMuted}>{sideLabel}</Text>
+        </View>
       </View>
-      {active ? (
-        <View>
-          <View style={styles.progressLabels}>
-            <Text style={styles.tinyMuted}>{formatRuTime(windowStart, timeZone)}</Text>
-            <Text style={styles.progressPercent}>{Math.round(progress * 100)}%</Text>
-            <Text style={styles.tinyMuted}>{formatRuTime(windowEnd, timeZone)}</Text>
-          </View>
-          <ProgressBar value={progress} color={colors.orange} height={4} />
-        </View>
-      ) : null}
+      <ProgressBar value={progressValue} color={progressColor} />
+      <View style={styles.progressLegend}>
+        <Text style={styles.tinyMuted}>{formatRuTime(windowStart, timeZone)} начало</Text>
+        <Text style={styles.tinyMuted}>{formatRuTime(windowEnd, timeZone)} окончание</Text>
+      </View>
     </GlassCard>
   );
 
@@ -103,6 +130,11 @@ function isPrayerRecordableNow(prayer: PrayerWindow) {
 export default function PrayersScreen() {
   const now = useNow();
   const [selectedPrayerId, setSelectedPrayerId] = useState<PrayerWindow['id'] | null>(null);
+  const requestedPrayerActivityForUserRef = useRef<string | null>(null);
+  const authUser = useAuthStore((state) => state.user);
+  const prayerActivityItems = usePrayerTrackerStore((state) => state.items);
+  const prayerActivityLoading = usePrayerTrackerStore((state) => state.loading);
+  const loadMyActivity = usePrayerTrackerStore((state) => state.loadMyActivity);
   const city = useSettingsStore((state) => state.city);
   const location = useMemo(() => getHebcalLocation(city), [city]);
   const daily = useMemo(() => getDailyZmanim({ city, date: now }), [city, now]);
@@ -124,6 +156,17 @@ export default function PrayersScreen() {
     () => prayers.find((prayer) => prayer.id === selectedPrayerId) ?? null,
     [prayers, selectedPrayerId],
   );
+  const activityDate = useMemo(() => formatLocalDateKey(now, daily.timeZone), [daily.timeZone, now]);
+  const selectedPrayerAlreadyRecorded = Boolean(
+    authUser
+    && selectedPrayer
+    && hasRecordedActivity(
+      prayerActivityItems,
+      prayerActivityTypeFromPrayerId(selectedPrayer.id),
+      activityDate,
+      authUser.id,
+    ),
+  );
   const dayProgress = progressBetween(daily.times.alot.at, daily.times.tzeit.at, now);
   const nextZmanId = daily.items.find((item) => now.getTime() < item.at.getTime())?.id;
   const overview = [
@@ -132,6 +175,25 @@ export default function PrayersScreen() {
     { e: '🌇', l: 'Закат', t: daily.times.sunset.time },
     { e: '🌃', l: 'Ночь', t: daily.times.tzeit.time },
   ];
+
+  useEffect(() => {
+    if (!authUser) {
+      requestedPrayerActivityForUserRef.current = null;
+      return;
+    }
+
+    if (prayerActivityItems.some((item) => item.userId === authUser.id)) {
+      requestedPrayerActivityForUserRef.current = authUser.id;
+      return;
+    }
+
+    if (requestedPrayerActivityForUserRef.current === authUser.id || prayerActivityLoading) {
+      return;
+    }
+
+    requestedPrayerActivityForUserRef.current = authUser.id;
+    void loadMyActivity({ limit: 100 }).catch(() => undefined);
+  }, [authUser, loadMyActivity, prayerActivityItems, prayerActivityLoading]);
 
   useEffect(() => {
     if (selectedPrayer && !selectedPrayer.active) {
@@ -170,7 +232,7 @@ export default function PrayersScreen() {
       </View>
 
       <GlassCard>
-        <Text style={styles.overline}>ШКАЛА ДНЯ</Text>
+        <Text style={[styles.overline, styles.scaleOverline]}>ШКАЛА ДНЯ</Text>
         <View style={styles.scaleWrap}>
           <View style={styles.scaleBar}>
             <View style={[styles.scalePart, { flex: 2, backgroundColor: 'rgba(255,190,40,0.55)' }]}>
@@ -201,18 +263,27 @@ export default function PrayersScreen() {
 
       {prayers.map((prayer) => {
         const recordable = prayer.active;
+        const alreadyRecorded = Boolean(
+          authUser
+          && hasRecordedActivity(
+            prayerActivityItems,
+            prayerActivityTypeFromPrayerId(prayer.id),
+            activityDate,
+            authUser.id,
+          ),
+        );
 
         return (
           <PrayerCard
             key={prayer.id}
             accent={prayer.accent}
             active={prayer.active}
+            alreadyRecorded={alreadyRecorded}
             icon={prayer.icon}
             progress={prayer.progress}
             recordable={recordable}
             state={now.getTime() > prayer.end.getTime() ? 'done' : 'upcoming'}
             status={prayer.hebrew}
-            subtitle={prayer.subtitle}
             onPress={recordable ? () => handlePrayerPress(prayer) : undefined}
             timeZone={daily.timeZone}
             title={prayer.title}
@@ -246,7 +317,8 @@ export default function PrayersScreen() {
 
       {selectedPrayer?.active ? (
         <PrayerActionModal
-          activityType={selectedPrayer.id}
+          activityType={prayerActivityTypeFromPrayerId(selectedPrayer.id)}
+          alreadyRecorded={selectedPrayerAlreadyRecorded}
           canRecord={() => {
             const recordable = isPrayerRecordableNow(selectedPrayer);
             if (!recordable) {
@@ -255,6 +327,7 @@ export default function PrayersScreen() {
             return recordable;
           }}
           city={city}
+          closeOnSuccess={false}
           confirmButtonTitle="Начал молиться"
           details={[
             {
@@ -329,6 +402,9 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.8,
+    includeFontPadding: false,
+  },
+  scaleOverline: {
     marginBottom: 22,
   },
   scaleWrap: {
@@ -398,91 +474,126 @@ const styles = StyleSheet.create({
     color: colors.textGhost,
     fontSize: 9,
   },
+  prayerCard: {
+    position: 'relative',
+  },
+  prayerTint: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+  },
   prayerTop: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     gap: 12,
+    marginBottom: 10,
   },
-  prayerIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+  prayerLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minWidth: 0,
+  },
+  emojiBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
   },
-  prayerEmoji: {
-    fontSize: 22,
+  emoji: {
+    fontSize: 14,
   },
   flex: {
     flex: 1,
     minWidth: 0,
   },
-  nameRow: {
+  rowGap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  statusBadge: {
+    overflow: 'hidden',
+    borderRadius: 5,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    color: colors.textDim,
+    fontSize: 9,
+    fontWeight: '700',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    includeFontPadding: false,
+  },
+  activeStatusBadge: {
+    backgroundColor: 'rgba(246,164,0,0.20)',
+    color: colors.gold,
+  },
+  recordedBadge: {
+    backgroundColor: 'rgba(76,175,80,0.16)',
+    color: colors.success,
+  },
+  prayerTitleRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: 6,
     flexWrap: 'wrap',
+    marginTop: 2,
   },
-  prayerName: {
+  prayerTime: {
     color: colors.text,
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: -0.3,
   },
   prayerHebrew: {
     color: colors.textGhost,
     fontSize: 12,
     fontStyle: 'italic',
   },
-  prayerSubtitle: {
-    color: colors.textDim,
-    fontSize: 13,
-    marginTop: 2,
+  prayerRight: {
+    alignItems: 'flex-end',
   },
-  doneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+  prayerValue: {
+    color: colors.gold,
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
-  doneText: {
-    color: colors.textDim,
-    fontSize: 13,
+  inactiveValue: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    letterSpacing: 0,
+  },
+  recordedValue: {
+    color: colors.success,
+    fontSize: 16,
+    letterSpacing: 0,
   },
   activePrayer: {
-    borderColor: 'rgba(240,100,42,0.30)',
-    backgroundColor: 'rgba(240,100,42,0.08)',
+    borderColor: 'rgba(246,164,0,0.30)',
+    backgroundColor: 'rgba(246,164,0,0.06)',
   },
   unavailablePrayer: {
-    opacity: 0.66,
+    opacity: 0.76,
   },
   cardPressed: {
     opacity: 0.86,
     transform: [{ scale: 0.99 }],
   },
-  nowBadge: {
-    overflow: 'hidden',
-    borderRadius: 5,
-    backgroundColor: 'rgba(240,100,42,0.25)',
-    color: colors.orange,
-    fontSize: 10,
-    fontWeight: '700',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  progressLabels: {
+  progressLegend: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 12,
-    marginBottom: 6,
+    marginTop: 5,
   },
   tinyMuted: {
     color: colors.textGhost,
-    fontSize: 11,
-  },
-  progressPercent: {
-    color: colors.orange,
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 10,
+    fontWeight: '500',
   },
   zmanRow: {
     minHeight: 44,
