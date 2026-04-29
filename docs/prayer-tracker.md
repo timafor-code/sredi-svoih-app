@@ -17,7 +17,7 @@ The app now records Prayer Tracker activity from:
 - the morning Shema deadline card on Home
 - the Omer counting modal when Omer is available
 
-Home and the Prayers screen now share the same active prayer record UX through `PrayerActionModal`. If the signed-in user already recorded the current active prayer for today's local activity date, the modal shows the disabled state `Помолился` instead of recording again, and the active prayer card reflects that state.
+Home and the Prayers screen now share the same prayer window card and active prayer record UX through `PrayerActionModal`. If the signed-in user already recorded the current active prayer for today's local activity date, the modal shows the disabled state `Помолился` instead of recording again, and the active prayer card reflects that state.
 
 ## Time Gates
 
