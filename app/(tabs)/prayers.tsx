@@ -20,11 +20,18 @@ import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
 
+const mutedPrayerProgressColor = '#737782';
+
+function getPrayerPastVerb(prayerId: PrayerWindow['id']): 'прошел' | 'прошла' {
+  return prayerId === 'mincha' ? 'прошла' : 'прошел';
+}
+
 function PrayerCard({
   accent,
   active,
   alreadyRecorded = false,
   icon,
+  prayerId,
   progress = 0,
   recordable = false,
   state = 'done',
@@ -39,6 +46,7 @@ function PrayerCard({
   active?: boolean;
   alreadyRecorded?: boolean;
   icon: string;
+  prayerId: PrayerWindow['id'];
   progress?: number;
   recordable?: boolean;
   state?: 'done' | 'upcoming';
@@ -49,60 +57,70 @@ function PrayerCard({
   windowEnd: Date;
   windowStart: Date;
 }) {
-  const recordedActive = Boolean(active && alreadyRecorded);
-  const progressValue = active ? progress : state === 'done' ? 1 : 0;
-  const stateLabel = state === 'done' ? 'завершена' : 'ожидает';
-  const badgeLabel = active ? (recordedActive ? 'Помолился' : 'ИДЁТ') : stateLabel;
-  const overlineLabel = active ? 'СЕЙЧАС' : state === 'done' ? 'ПРОШЛА' : 'ДАЛЬШЕ';
-  const sideValue = recordedActive
-    ? 'Помолился'
-    : active
-      ? formatDurationRu(windowEnd.getTime() - Date.now())
-      : state === 'done'
-        ? 'завершена'
-        : formatRuTime(windowStart, timeZone);
-  const sideLabel = recordedActive
-    ? 'на сегодня'
-    : active
-      ? `осталось · ${Math.round(progress * 100)}%`
-      : state === 'done'
-        ? 'на сегодня'
-        : 'начало';
+  const inactive = !active;
+  const done = inactive && state === 'done';
+  const upcoming = inactive && state === 'upcoming';
+  const progressValue = active ? progress : done ? 1 : 0;
+  const badgeLabel = active ? (alreadyRecorded ? 'Помолился' : 'ИДЁТ') : alreadyRecorded ? 'Помолился' : null;
+  const overlineLabel = active ? 'СЕЙЧАС' : done ? getPrayerPastVerb(prayerId).toUpperCase() : 'ДАЛЬШЕ';
+  const sideValue = active
+    ? formatDurationRu(windowEnd.getTime() - Date.now())
+    : done
+      ? formatRuTime(windowEnd, timeZone)
+      : formatRuTime(windowStart, timeZone);
+  const sideLabel = active ? `осталось · ${Math.round(progress * 100)}%` : done ? 'окончание' : 'начало';
   const timeLine = active
     ? `до ${formatRuTime(windowEnd, timeZone)}`
     : `${formatRuTime(windowStart, timeZone)} - ${formatRuTime(windowEnd, timeZone)}`;
-  const progressColor = recordedActive ? colors.success : active ? colors.gold : state === 'done' ? colors.success : accent;
+  const progressColor = active ? colors.gold : done ? mutedPrayerProgressColor : accent;
+  const tintColor = active ? colors.gold : done ? mutedPrayerProgressColor : accent;
+  const emojiBoxStyle = active
+    ? { borderColor: `${accent}55`, backgroundColor: `${accent}26` }
+    : {
+        borderColor: done ? 'rgba(255,255,255,0.08)' : `${accent}33`,
+        backgroundColor: done ? 'rgba(255,255,255,0.04)' : `${accent}12`,
+      };
 
   const card = (
-    <GlassCard style={[styles.prayerCard, active && styles.activePrayer, !recordable && styles.unavailablePrayer]}>
-      <View style={[styles.prayerTint, { width: `${Math.round(progressValue * 100)}%`, backgroundColor: `${progressColor}14` }]} />
+    <GlassCard
+      style={[
+        styles.prayerCard,
+        active && styles.activePrayer,
+        done && styles.passedPrayer,
+        upcoming && styles.upcomingPrayer,
+        done && alreadyRecorded && styles.recordedPassedPrayer,
+      ]}
+    >
+      <View style={[styles.prayerTint, { width: `${Math.round(progressValue * 100)}%`, backgroundColor: `${tintColor}14` }]} />
       <View style={styles.prayerTop}>
         <View style={styles.prayerLeft}>
-          <View style={[styles.emojiBox, { borderColor: `${accent}55`, backgroundColor: `${accent}26` }]}>
-            <Text style={styles.emoji}>{icon}</Text>
+          <View style={[styles.emojiBox, emojiBoxStyle]}>
+            <Text style={[styles.emoji, inactive && styles.inactiveEmoji]}>{icon}</Text>
           </View>
           <View style={styles.flex}>
             <View style={styles.rowGap}>
-              <Text style={styles.overline}>{overlineLabel} · {title.toUpperCase()}</Text>
-              <Text style={[styles.statusBadge, active && styles.activeStatusBadge, recordedActive && styles.recordedBadge]}>
-                {badgeLabel}
-              </Text>
+              <Text style={[styles.overline, inactive && styles.inactiveOverline]}>{overlineLabel} · {title.toUpperCase()}</Text>
+              {badgeLabel ? (
+                <Text style={[styles.statusBadge, active && !alreadyRecorded && styles.activeStatusBadge, alreadyRecorded && styles.recordedBadge]}>
+                  {badgeLabel}
+                </Text>
+              ) : null}
             </View>
             <View style={styles.prayerTitleRow}>
-              <Text style={styles.prayerTime}>{timeLine}</Text>
-              {status ? <Text style={styles.prayerHebrew}>{status}</Text> : null}
+              <Text style={[styles.prayerTime, inactive && styles.inactivePrayerTime, done && styles.passedPrayerTime]}>{timeLine}</Text>
+              {status ? <Text style={[styles.prayerHebrew, inactive && styles.inactivePrayerHebrew]}>{status}</Text> : null}
             </View>
           </View>
         </View>
         <View style={styles.prayerRight}>
-          <Text style={[styles.prayerValue, recordedActive && styles.recordedValue, !active && styles.inactiveValue]}>{sideValue}</Text>
-          <Text style={styles.tinyMuted}>{sideLabel}</Text>
+          <Text style={[styles.prayerValue, inactive && styles.inactiveValue, done && styles.passedValue]}>{sideValue}</Text>
+          <Text style={[styles.tinyMuted, inactive && styles.inactiveTinyMuted]}>{sideLabel}</Text>
         </View>
       </View>
       <ProgressBar value={progressValue} color={progressColor} />
       <View style={styles.progressLegend}>
-        <Text style={styles.tinyMuted}>{formatRuTime(windowStart, timeZone)} начало</Text>
-        <Text style={styles.tinyMuted}>{formatRuTime(windowEnd, timeZone)} окончание</Text>
+        <Text style={[styles.tinyMuted, inactive && styles.inactiveTinyMuted]}>{formatRuTime(windowStart, timeZone)} начало</Text>
+        <Text style={[styles.tinyMuted, inactive && styles.inactiveTinyMuted]}>{formatRuTime(windowEnd, timeZone)} окончание</Text>
       </View>
     </GlassCard>
   );
@@ -280,6 +298,7 @@ export default function PrayersScreen() {
             active={prayer.active}
             alreadyRecorded={alreadyRecorded}
             icon={prayer.icon}
+            prayerId={prayer.id}
             progress={prayer.progress}
             recordable={recordable}
             state={now.getTime() > prayer.end.getTime() ? 'done' : 'upcoming'}
@@ -508,6 +527,9 @@ const styles = StyleSheet.create({
   emoji: {
     fontSize: 14,
   },
+  inactiveEmoji: {
+    opacity: 0.56,
+  },
   flex: {
     flex: 1,
     minWidth: 0,
@@ -535,7 +557,12 @@ const styles = StyleSheet.create({
   },
   recordedBadge: {
     backgroundColor: 'rgba(76,175,80,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(76,175,80,0.26)',
     color: colors.success,
+  },
+  inactiveOverline: {
+    color: colors.textGhost,
   },
   prayerTitleRow: {
     flexDirection: 'row',
@@ -550,10 +577,19 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.3,
   },
+  inactivePrayerTime: {
+    color: colors.textMuted,
+  },
+  passedPrayerTime: {
+    color: colors.textFaint,
+  },
   prayerHebrew: {
     color: colors.textGhost,
     fontSize: 12,
     fontStyle: 'italic',
+  },
+  inactivePrayerHebrew: {
+    color: colors.textDim,
   },
   prayerRight: {
     alignItems: 'flex-end',
@@ -565,21 +601,27 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   inactiveValue: {
-    color: colors.textSecondary,
+    color: colors.textFaint,
     fontSize: 14,
     letterSpacing: 0,
   },
-  recordedValue: {
-    color: colors.success,
-    fontSize: 16,
-    letterSpacing: 0,
+  passedValue: {
+    color: colors.textGhost,
   },
   activePrayer: {
     borderColor: 'rgba(246,164,0,0.30)',
     backgroundColor: 'rgba(246,164,0,0.06)',
   },
-  unavailablePrayer: {
-    opacity: 0.76,
+  passedPrayer: {
+    borderColor: 'rgba(255,255,255,0.055)',
+    backgroundColor: 'rgba(255,255,255,0.025)',
+  },
+  upcomingPrayer: {
+    borderColor: 'rgba(255,255,255,0.075)',
+    backgroundColor: 'rgba(255,255,255,0.035)',
+  },
+  recordedPassedPrayer: {
+    borderColor: 'rgba(76,175,80,0.18)',
   },
   cardPressed: {
     opacity: 0.86,
@@ -594,6 +636,9 @@ const styles = StyleSheet.create({
     color: colors.textGhost,
     fontSize: 10,
     fontWeight: '500',
+  },
+  inactiveTinyMuted: {
+    color: 'rgba(255,255,255,0.28)',
   },
   zmanRow: {
     minHeight: 44,
