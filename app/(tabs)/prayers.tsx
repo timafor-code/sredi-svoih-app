@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
@@ -22,6 +22,7 @@ function PrayerCard({
   active,
   icon,
   progress = 0,
+  recordable = false,
   state = 'done',
   status,
   subtitle,
@@ -35,6 +36,7 @@ function PrayerCard({
   active?: boolean;
   icon: string;
   progress?: number;
+  recordable?: boolean;
   state?: 'done' | 'upcoming';
   status?: string;
   subtitle: string;
@@ -45,7 +47,7 @@ function PrayerCard({
   windowStart: Date;
 }) {
   const card = (
-    <GlassCard style={active && styles.activePrayer}>
+    <GlassCard style={[active && styles.activePrayer, !recordable && styles.unavailablePrayer]}>
       <View style={styles.prayerTop}>
         <View style={[styles.prayerIcon, { borderColor: `${accent}55`, backgroundColor: `${accent}1F` }]}>
           <Text style={styles.prayerEmoji}>{icon}</Text>
@@ -78,7 +80,7 @@ function PrayerCard({
     </GlassCard>
   );
 
-  if (!onPress) {
+  if (!onPress || !recordable) {
     return card;
   }
 
@@ -93,9 +95,14 @@ function PrayerCard({
   );
 }
 
+function isPrayerRecordableNow(prayer: PrayerWindow) {
+  const nowMs = Date.now();
+  return nowMs >= prayer.start.getTime() && nowMs <= prayer.end.getTime();
+}
+
 export default function PrayersScreen() {
   const now = useNow();
-  const [selectedPrayer, setSelectedPrayer] = useState<PrayerWindow | null>(null);
+  const [selectedPrayerId, setSelectedPrayerId] = useState<PrayerWindow['id'] | null>(null);
   const city = useSettingsStore((state) => state.city);
   const location = useMemo(() => getHebcalLocation(city), [city]);
   const daily = useMemo(() => getDailyZmanim({ city, date: now }), [city, now]);
@@ -113,6 +120,10 @@ export default function PrayersScreen() {
     [hdate, hebrewDateLabel],
   );
   const prayers = useMemo(() => getPrayerWindows(daily, now), [daily, now]);
+  const selectedPrayer = useMemo(
+    () => prayers.find((prayer) => prayer.id === selectedPrayerId) ?? null,
+    [prayers, selectedPrayerId],
+  );
   const dayProgress = progressBetween(daily.times.alot.at, daily.times.tzeit.at, now);
   const nextZmanId = daily.items.find((item) => now.getTime() < item.at.getTime())?.id;
   const overview = [
@@ -121,6 +132,21 @@ export default function PrayersScreen() {
     { e: '🌇', l: 'Закат', t: daily.times.sunset.time },
     { e: '🌃', l: 'Ночь', t: daily.times.tzeit.time },
   ];
+
+  useEffect(() => {
+    if (selectedPrayer && !selectedPrayer.active) {
+      setSelectedPrayerId(null);
+    }
+  }, [selectedPrayer]);
+
+  const handlePrayerPress = (prayer: PrayerWindow) => {
+    if (!isPrayerRecordableNow(prayer)) {
+      Alert.alert('Сейчас недоступно', 'Эту молитву можно отметить только в её текущее время.');
+      return;
+    }
+
+    setSelectedPrayerId(prayer.id);
+  };
 
   return (
     <Screen>
@@ -173,23 +199,28 @@ export default function PrayersScreen() {
         </View>
       </GlassCard>
 
-      {prayers.map((prayer) => (
-        <PrayerCard
-          key={prayer.id}
-          accent={prayer.accent}
-          active={prayer.active}
-          icon={prayer.icon}
-          progress={prayer.progress}
-          state={now.getTime() > prayer.end.getTime() ? 'done' : 'upcoming'}
-          status={prayer.hebrew}
-          subtitle={prayer.subtitle}
-          onPress={() => setSelectedPrayer(prayer)}
-          timeZone={daily.timeZone}
-          title={prayer.title}
-          windowEnd={prayer.end}
-          windowStart={prayer.start}
-        />
-      ))}
+      {prayers.map((prayer) => {
+        const recordable = prayer.active;
+
+        return (
+          <PrayerCard
+            key={prayer.id}
+            accent={prayer.accent}
+            active={prayer.active}
+            icon={prayer.icon}
+            progress={prayer.progress}
+            recordable={recordable}
+            state={now.getTime() > prayer.end.getTime() ? 'done' : 'upcoming'}
+            status={prayer.hebrew}
+            subtitle={prayer.subtitle}
+            onPress={recordable ? () => handlePrayerPress(prayer) : undefined}
+            timeZone={daily.timeZone}
+            title={prayer.title}
+            windowEnd={prayer.end}
+            windowStart={prayer.start}
+          />
+        );
+      })}
 
       <View>
         <SectionTitle title="ЗМАНИМ · ТАБЛИЦА" action="Подробнее о зманим" />
@@ -213,9 +244,16 @@ export default function PrayersScreen() {
         <Text style={styles.infoText}>Зманим рассчитаны через Hebcal для города {city}, часовой пояс {daily.timeZone}.</Text>
       </Pressable>
 
-      {selectedPrayer ? (
+      {selectedPrayer?.active ? (
         <PrayerActionModal
           activityType={selectedPrayer.id}
+          canRecord={() => {
+            const recordable = isPrayerRecordableNow(selectedPrayer);
+            if (!recordable) {
+              setSelectedPrayerId(null);
+            }
+            return recordable;
+          }}
           city={city}
           confirmButtonTitle="Начал молиться"
           details={[
@@ -235,10 +273,12 @@ export default function PrayersScreen() {
             windowEnd: selectedPrayer.end.toISOString(),
             windowStart: selectedPrayer.start.toISOString(),
           }}
-          onClose={() => setSelectedPrayer(null)}
+          onClose={() => setSelectedPrayerId(null)}
           subtitle={selectedPrayer.hebrew}
           timezone={daily.timeZone}
           title={selectedPrayer.title}
+          unavailableMessage="Эту молитву можно отметить только в её текущее время."
+          unavailableTitle="Сейчас недоступно"
           visible
         />
       ) : null}
@@ -411,6 +451,9 @@ const styles = StyleSheet.create({
   activePrayer: {
     borderColor: 'rgba(240,100,42,0.30)',
     backgroundColor: 'rgba(240,100,42,0.08)',
+  },
+  unavailablePrayer: {
+    opacity: 0.66,
   },
   cardPressed: {
     opacity: 0.86,

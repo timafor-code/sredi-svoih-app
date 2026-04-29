@@ -31,6 +31,7 @@ export type PrayerActionDetail = {
 
 type PrayerActionModalProps = {
   activityType: PrayerActivityType;
+  canRecord?: () => boolean;
   city?: string | null;
   closeOnSuccess?: boolean;
   completedAt?: Date | string | null;
@@ -46,6 +47,8 @@ type PrayerActionModalProps = {
   subtitle?: string;
   timezone?: string;
   title: string;
+  unavailableMessage?: string;
+  unavailableTitle?: string;
   visible: boolean;
 };
 
@@ -94,6 +97,7 @@ function showRecordError(error: unknown) {
 
 export function PrayerActionModal({
   activityType,
+  canRecord,
   city,
   closeOnSuccess = true,
   completedAt,
@@ -109,6 +113,8 @@ export function PrayerActionModal({
   subtitle,
   timezone,
   title,
+  unavailableMessage = 'Это действие сейчас недоступно.',
+  unavailableTitle = 'Сейчас недоступно',
   visible,
 }: PrayerActionModalProps) {
   const authUser = useAuthStore((state) => state.user);
@@ -127,6 +133,11 @@ export function PrayerActionModal({
 
   const handleConfirm = async () => {
     if (busy) {
+      return;
+    }
+
+    if (canRecord && !canRecord()) {
+      Alert.alert(unavailableTitle, unavailableMessage);
       return;
     }
 
