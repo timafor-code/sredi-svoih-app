@@ -10,6 +10,7 @@
     "web": "expo start --web",
     "import:events:dry": "node ./scripts/importWebsiteEvents.mjs --dry-run",
     "import:events": "node ./scripts/importWebsiteEvents.mjs",
+    "import:events:review": "node ./scripts/importWebsiteEvents.mjs --review",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
