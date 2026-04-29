@@ -18,9 +18,11 @@ import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStor
 import { colors } from '@/theme/colors';
 
 const myRegistrationsHref = '/profile/my-registrations' as Href;
+const prayerTrackerHref = '/profile/prayer-tracker' as Href;
 
 const menuItems = [
   { href: '/profile/prayers-settings', icon: '📍', label: 'Настройки молитв и календаря', sub: 'Город, нусах, язык сидура, напоминания' },
+  { href: prayerTrackerHref, icon: '🙏', label: 'Молитвенный трекер', sub: 'Личная история молитв, Шма и Омера' },
   { href: myRegistrationsHref, icon: '📅', label: 'Мои записи', sub: 'Ваши регистрации на события' },
   { href: '/profile/contacts-settings', icon: '👥', label: 'Контакты и дни рождения', sub: 'Синхронизация, еврейская дата, напоминания' },
   { href: '/profile/notifications', icon: '🔔', label: 'Уведомления', sub: 'Настройте, что и когда вам напоминать' },
