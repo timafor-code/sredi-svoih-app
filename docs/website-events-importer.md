@@ -159,10 +159,10 @@ cd F:\2026\SS-App\code\sredi-svoih-app; npm run import:events -- --apply --assum
 Повторный apply не создаёт дубли. События связываются по стабильному ключу
 `source_type = 'website_scrape'` + `source_external_id` (slug из URL события).
 
-### Нет service-role key
+### Нет service role key
 
 Importer использует прямое PostgreSQL-подключение (`DATABASE_URL`), не Supabase JS client.
-Service-role ключ не используется нигде.
+Service role ключ не используется нигде.
 
 ### Нет публикации с сомнительной датой
 
@@ -239,7 +239,7 @@ Apply summary: run_id=...
 ## Что НЕ делает этот инструмент
 
 - Не импортируется в React Native клиент (`app/`, `src/`)
-- Не использует Supabase JS client или service-role key
+- Не использует Supabase JS client или service role key
 - Не создаёт published-события без уверенной даты
 - Не перетирает `events.manual_override = true`
 - Не затрагивает Auth / invite / membership flow

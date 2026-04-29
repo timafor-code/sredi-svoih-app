@@ -29,7 +29,7 @@ The admin event RPCs use the normal authenticated Supabase client session and
 check that the current user has an active `admin` or `event_manager` role in the
 relevant community through `has_community_role(...)`.
 
-The React Native client must not use a service-role key, must not call the
+The React Native client must not use a service role key, must not call the
 Supabase admin API, and must not freely write to `events` for admin workflows.
 
 ## RPCs

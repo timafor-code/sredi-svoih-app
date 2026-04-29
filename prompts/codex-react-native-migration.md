@@ -160,7 +160,7 @@ src/
     useEventsStore.ts
 
   data/
-    mockEvents.ts
+    events fixture file
     mockContacts.ts
     mockZmanim.ts
     mockOmer.ts
@@ -644,7 +644,7 @@ RLS:
 
 Mock data:
 До реального backend использовать mock-файлы:
-- mockEvents.ts
+- events fixture file
 - mockContacts.ts
 - mockZmanim.ts
 - mockOmer.ts
