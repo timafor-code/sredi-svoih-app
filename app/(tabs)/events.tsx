@@ -6,13 +6,15 @@ import {
   Image,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
-import { HeaderButton, Logo, OmerPill } from '@/components/ui/BrandHeader';
+import { Logo, OmerPill } from '@/components/ui/BrandHeader';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { SegmentControl } from '@/components/ui/SegmentControl';
@@ -25,12 +27,166 @@ import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStor
 import { colors } from '@/theme/colors';
 import type { EventItem, EventRegistration } from '@/types/event';
 
-const filters = ['Все', 'Курсы', 'Праздники'] as const;
+const eventFilters = [
+  { id: 'all', title: 'Все' },
+  { id: 'members_only', title: 'Для участников' },
+  { id: 'lectures', title: 'Лекции' },
+  { id: 'tours', title: 'Экскурсии' },
+  { id: 'holidays', title: 'Праздники' },
+  { id: 'children', title: 'Детские' },
+  { id: 'community', title: 'Общинные' },
+  { id: 'paid', title: 'Платные' },
+  { id: 'free', title: 'Бесплатные' },
+] as const;
 
-function eventMatchesFilter(event: EventItem, filter: (typeof filters)[number]) {
-  if (filter === 'Все') return true;
-  if (filter === 'Курсы') return event.category === 'Курс';
-  return event.category === 'Праздник';
+const timeFilters = ['Ближайшие', 'Прошедшие'] as const;
+
+type EventFilterId = (typeof eventFilters)[number]['id'];
+type EventTimeFilter = (typeof timeFilters)[number];
+
+function normalizeSearchQuery(value: string): string {
+  return value.trim().toLocaleLowerCase('ru-RU');
+}
+
+function normalizeFilterValue(value: string | null | undefined): string {
+  return (value ?? '').trim().toLowerCase();
+}
+
+function eventMatchesSearch(event: EventItem, query: string): boolean {
+  if (!query) {
+    return true;
+  }
+
+  return [
+    event.title,
+    event.subtitle,
+    event.shortDescription,
+    event.description,
+    event.locationName,
+    event.address,
+  ].some((value) => (value ?? '').toLocaleLowerCase('ru-RU').includes(query));
+}
+
+function eventMatchesFilter(event: EventItem, filter: EventFilterId): boolean {
+  const category = normalizeFilterValue(event.rawCategory);
+  const audience = normalizeFilterValue(event.audience);
+  const priceAmount = event.priceAmount ?? 0;
+
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'members_only':
+      return event.visibility === 'members_only';
+    case 'lectures':
+      return category === 'lecture' || category === 'class' || event.category === 'Курс';
+    case 'tours':
+      return category === 'tour';
+    case 'holidays':
+      return category === 'holiday' || category === 'shabbat' || event.category === 'Праздник';
+    case 'children':
+      return (
+        category === 'children'
+        || audience === 'children'
+        || audience === 'family'
+        || event.category === 'Для детей'
+      );
+    case 'community':
+      return category === 'community';
+    case 'paid':
+      return priceAmount > 0 || event.registrationMode === 'internal_paid';
+    case 'free':
+      return priceAmount <= 0 && event.registrationMode !== 'internal_paid';
+    default:
+      return true;
+  }
+}
+
+function parseEventTime(value: string | null | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const time = new Date(value).getTime();
+
+  return Number.isNaN(time) ? null : time;
+}
+
+function getEventBoundaryTime(event: EventItem): number | null {
+  return parseEventTime(event.endsAt) ?? parseEventTime(event.startsAt);
+}
+
+function eventMatchesTimeFilter(event: EventItem, filter: EventTimeFilter, now: number): boolean {
+  const eventTime = getEventBoundaryTime(event);
+
+  if (eventTime === null) {
+    return false;
+  }
+
+  return filter === 'Ближайшие' ? eventTime >= now : eventTime < now;
+}
+
+function getEventStartSortTime(event: EventItem): number {
+  return parseEventTime(event.startsAt) ?? 0;
+}
+
+function sortEventsByTime(events: EventItem[], filter: EventTimeFilter): EventItem[] {
+  return [...events].sort((first, second) => {
+    const firstTime = getEventStartSortTime(first);
+    const secondTime = getEventStartSortTime(second);
+
+    if (firstTime === secondTime) {
+      return first.title.localeCompare(second.title, 'ru');
+    }
+
+    return filter === 'Ближайшие'
+      ? firstTime - secondTime
+      : secondTime - firstTime;
+  });
+}
+
+function markFirstEventFeatured(events: EventItem[]): EventItem[] {
+  return events.map((event, index) => ({
+    ...event,
+    featured: index === 0,
+  }));
+}
+
+type EventFilterChipProps = {
+  active: boolean;
+  onPress: () => void;
+  title: string;
+};
+
+function EventFilterChip({ active, onPress, title }: EventFilterChipProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.filterChip,
+        active && styles.filterChipActive,
+        pressed && styles.pressed,
+      ]}
+    >
+      <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+        {title}
+      </Text>
+    </Pressable>
+  );
+}
+
+type EmptyStateProps = {
+  text: string;
+};
+
+function EmptyState({ text }: EmptyStateProps) {
+  return (
+    <GlassCard>
+      <View style={styles.emptyState}>
+        <Ionicons name="calendar-clear-outline" size={22} color={colors.textDim} />
+        <Text style={styles.stateText}>{text}</Text>
+      </View>
+    </GlassCard>
+  );
 }
 
 type EventCardProps = {
@@ -210,7 +366,9 @@ function EventCard({
 
 export default function EventsScreen() {
   const router = useRouter();
-  const [filter, setFilter] = useState<(typeof filters)[number]>('Все');
+  const [filter, setFilter] = useState<EventFilterId>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [timeFilter, setTimeFilter] = useState<EventTimeFilter>('Ближайшие');
   const [refreshing, setRefreshing] = useState(false);
   const {
     events,
@@ -237,12 +395,21 @@ export default function EventsScreen() {
     void loadSession().catch(() => undefined);
   }, [loadSession]);
 
-  const items = useMemo(() => events.filter((event) => eventMatchesFilter(event, filter)), [events, filter]);
-  const memberEventsHint = !authUser
-    ? 'Войдите и примите приглашение, чтобы видеть события для участников общины.'
-    : membership?.status !== 'active'
-      ? 'Примите приглашение, чтобы видеть события для участников общины.'
-      : null;
+  const normalizedSearch = useMemo(() => normalizeSearchQuery(searchQuery), [searchQuery]);
+  const items = useMemo(() => {
+    const now = Date.now();
+
+    return markFirstEventFeatured(
+      sortEventsByTime(
+        events.filter((event) => (
+          eventMatchesTimeFilter(event, timeFilter, now)
+          && eventMatchesFilter(event, filter)
+          && eventMatchesSearch(event, normalizedSearch)
+        )),
+        timeFilter,
+      ),
+    );
+  }, [events, filter, normalizedSearch, timeFilter]);
 
   const registrationByEventId = useMemo(() => {
     const registrationMap = new Map<string, EventRegistration>();
@@ -275,12 +442,31 @@ export default function EventsScreen() {
     }
   }, [loadEvents, loadSession]);
 
-  const emptyStateText = !authUser
-    ? 'Войдите и примите приглашение, чтобы видеть события для участников общины.'
-    : 'Событий пока нет';
+  const emptyStateText = useMemo(() => {
+    if (filter === 'members_only' && (!authUser || membership?.status !== 'active')) {
+      return 'Войдите и примите приглашение, чтобы видеть события для участников общины.';
+    }
+
+    if (events.length === 0) {
+      return 'Событий пока нет. Когда появятся новые встречи, они будут здесь.';
+    }
+
+    if (normalizedSearch) {
+      return 'По вашему запросу ничего не найдено.';
+    }
+
+    if (filter === 'all') {
+      return timeFilter === 'Ближайшие'
+        ? 'Ближайших событий пока нет.'
+        : 'Прошедших событий пока нет.';
+    }
+
+    return 'Для выбранного фильтра пока нет событий.';
+  }, [authUser, events.length, filter, membership?.status, normalizedSearch, timeFilter]);
 
   return (
     <Screen
+      keyboardShouldPersistTaps="handled"
       refreshControl={(
         <RefreshControl
           refreshing={refreshing}
@@ -300,26 +486,53 @@ export default function EventsScreen() {
           <Text style={styles.title}>События</Text>
           <Text style={styles.subtitle}>Афиша мероприятий общины</Text>
         </View>
-        <HeaderButton icon="search" />
       </View>
 
-      <SegmentControl items={filters} value={filter} onChange={setFilter} />
+      <View style={styles.searchBox}>
+        <Ionicons name="search" size={18} color={colors.textDim} />
+        <TextInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Поиск по событиям"
+          placeholderTextColor={colors.textGhost}
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={styles.searchInput}
+        />
+        {searchQuery ? (
+          <Pressable
+            onPress={() => setSearchQuery('')}
+            style={({ pressed }) => [styles.clearSearchButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="close-circle" size={18} color={colors.textDim} />
+          </Pressable>
+        ) : null}
+      </View>
 
-      {memberEventsHint ? (
-        <GlassCard style={styles.memberHint}>
-          <View style={styles.memberHintRow}>
-            <Ionicons name="lock-closed-outline" size={15} color={colors.orange} />
-            <Text style={styles.memberHintText}>{memberEventsHint}</Text>
-          </View>
-        </GlassCard>
-      ) : null}
+      <SegmentControl items={timeFilters} value={timeFilter} onChange={setTimeFilter} />
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterScroll}
+        contentContainerStyle={styles.filterScrollContent}
+      >
+        {eventFilters.map((item) => (
+          <EventFilterChip
+            key={item.id}
+            title={item.title}
+            active={filter === item.id}
+            onPress={() => setFilter(item.id)}
+          />
+        ))}
+      </ScrollView>
 
       {loading && !refreshing ? <Text style={styles.stateText}>Загружаем события…</Text> : null}
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
       {!loading && !error && items.length === 0 ? (
-        <Text style={styles.stateText}>{emptyStateText}</Text>
+        <EmptyState text={emptyStateText} />
       ) : null}
 
       {items.map((event) => (
@@ -367,6 +580,68 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     fontSize: 13,
     marginTop: 2,
+  },
+  searchBox: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.glass.w08,
+    backgroundColor: colors.glass.w07,
+    paddingHorizontal: 12,
+  },
+  searchInput: {
+    flex: 1,
+    minHeight: 42,
+    color: colors.text,
+    fontSize: 14,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+  },
+  clearSearchButton: {
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 15,
+  },
+  filterScroll: {
+    marginHorizontal: -16,
+  },
+  filterScrollContent: {
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 2,
+  },
+  filterChip: {
+    minHeight: 34,
+    justifyContent: 'center',
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: colors.glass.w12,
+    backgroundColor: colors.glass.w07,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+  },
+  filterChipActive: {
+    borderColor: colors.accent.orangeBorder,
+    backgroundColor: colors.accent.orangeBg,
+  },
+  filterChipText: {
+    color: colors.textFaint,
+    fontSize: 13,
+    fontWeight: '600',
+    includeFontPadding: false,
+  },
+  filterChipTextActive: {
+    color: colors.text,
+  },
+  emptyState: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 2,
   },
   stateText: {
     color: colors.textDim,
@@ -472,21 +747,6 @@ const styles = StyleSheet.create({
   badgePaid: {
     borderColor: colors.accent.goldBorder,
     backgroundColor: colors.accent.goldBg,
-  },
-  memberHint: {
-    borderColor: colors.accent.orangeBorder,
-    backgroundColor: 'rgba(240,122,42,0.08)',
-  },
-  memberHintRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  memberHintText: {
-    flex: 1,
-    color: colors.textDim,
-    fontSize: 12,
-    lineHeight: 17,
   },
   siteText: {
     position: 'absolute',
