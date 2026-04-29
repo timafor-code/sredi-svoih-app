@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Link, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -165,38 +165,6 @@ function PrayerNowCard({ prayer, timeZone }: { prayer: PrayerWindow; timeZone: s
   );
 }
 
-function DayTimeline({ daily, now }: { daily: DailyZmanim; now: Date }) {
-  const marker = progressBetween(daily.times.alot.at, daily.times.tzeit.at, now);
-  const labels = [daily.times.alot, daily.times.sunrise, daily.times.chatzot, daily.times.sunset, daily.times.tzeit];
-
-  return (
-    <GlassCard>
-      <View style={styles.timelineHeader}>
-        <Text style={styles.sectionInline}>МОЛИТВЫ СЕГОДНЯ</Text>
-        <Text style={styles.timeBadge}>{formatRuTime(now, daily.timeZone)}</Text>
-        <Link href="/prayers" asChild>
-          <Pressable>
-            <Text style={styles.linkText}>Все зманим →</Text>
-          </Pressable>
-        </Link>
-      </View>
-      <View style={styles.timelineTrack}>
-        <View style={[styles.timelineSegment, { flex: 3.5, backgroundColor: 'rgba(255,200,50,0.5)' }]} />
-        <View style={[styles.timelineSegment, { flex: 3.5, backgroundColor: 'rgba(240,100,42,0.7)' }]} />
-        <View style={[styles.timelineSegment, { flex: 3, backgroundColor: 'rgba(80,100,200,0.4)' }]} />
-        <View style={[styles.timelineMarker, { left: `${Math.round(marker * 100)}%` }]} />
-      </View>
-      <View style={styles.progressLegend}>
-        {labels.map((item) => (
-          <Text key={item.time} style={styles.tinyMuted}>
-            {item.time}
-          </Text>
-        ))}
-      </View>
-    </GlassCard>
-  );
-}
-
 function BirthdayRow({ item, isLast }: { item: HomeBirthdayItem; isLast?: boolean }) {
   const router = useRouter();
 
@@ -294,7 +262,6 @@ export default function HomeScreen() {
       {isShemaAvailable ? <DeadlineCard daily={daily} now={now} onPress={handleShemaPress} /> : null}
       <EventCard />
       <PrayerNowCard prayer={currentPrayer} timeZone={daily.timeZone} />
-      <DayTimeline daily={daily} now={now} />
 
       <GlassCard>
         <View style={styles.rowBetween}>
@@ -621,54 +588,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     includeFontPadding: false,
-  },
-  timelineHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 12,
-  },
-  sectionInline: {
-    color: colors.textFaint,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  timeBadge: {
-    overflow: 'hidden',
-    borderRadius: 8,
-    backgroundColor: colors.glass.w12,
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: '700',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  linkText: {
-    color: colors.orange,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  timelineTrack: {
-    height: 8,
-    borderRadius: 4,
-    overflow: 'hidden',
-    flexDirection: 'row',
-    position: 'relative',
-    marginBottom: 11,
-  },
-  timelineSegment: {
-    height: 8,
-  },
-  timelineMarker: {
-    position: 'absolute',
-    top: -4,
-    left: '50%',
-    width: 3,
-    height: 16,
-    borderRadius: 2,
-    backgroundColor: '#ff4444',
   },
   rowBetween: {
     flexDirection: 'row',
