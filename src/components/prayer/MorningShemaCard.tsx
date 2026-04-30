@@ -70,7 +70,6 @@ export function MorningShemaCard({
   const activityDate = useMemo(() => formatLocalDateKey(now, daily.timeZone), [daily.timeZone, now]);
   const progress = progressBetween(daily.times.sunrise.at, daily.times.shemaGra.at, now);
   const urgency = getMorningShemaUrgency(progress);
-  const urgencyColor = getUrgencyColor(urgency);
   const isBeforeSunrise = now.getTime() < daily.times.sunrise.at.getTime();
   const alreadyRecorded = Boolean(
     authUser
@@ -80,6 +79,9 @@ export function MorningShemaCard({
       authUser.id,
     ),
   );
+  const displayUrgency = alreadyRecorded ? 'calm' : urgency;
+  const urgencyColor = getUrgencyColor(displayUrgency);
+  const showDangerPulse = displayUrgency === 'danger' && isAvailable;
   const value = isBeforeSunrise
     ? `через ${formatDurationRu(daily.times.sunrise.at.getTime() - now.getTime())}`
     : formatDurationRu(daily.times.shemaGra.at.getTime() - now.getTime());
@@ -100,7 +102,7 @@ export function MorningShemaCard({
   }, [isAvailable, showAction]);
 
   useEffect(() => {
-    if (urgency !== 'danger' || !isAvailable) {
+    if (!showDangerPulse) {
       pulse.stopAnimation();
       pulse.setValue(0);
       return undefined;
@@ -126,7 +128,7 @@ export function MorningShemaCard({
     animation.start();
 
     return () => animation.stop();
-  }, [isAvailable, pulse, urgency]);
+  }, [pulse, showDangerPulse]);
 
   const handlePress = () => {
     if (!isMorningShemaRecordableNow(daily)) {
@@ -145,7 +147,7 @@ export function MorningShemaCard({
   return (
     <>
       <View style={styles.shell}>
-        {urgency === 'danger' ? (
+        {showDangerPulse ? (
           <Animated.View
             pointerEvents="none"
             style={[
@@ -165,9 +167,9 @@ export function MorningShemaCard({
           <GlassCard
             style={[
               styles.card,
-              urgency === 'calm' && styles.calmCard,
-              urgency === 'warning' && styles.warningCard,
-              urgency === 'danger' && styles.dangerCard,
+              displayUrgency === 'calm' && styles.calmCard,
+              displayUrgency === 'warning' && styles.warningCard,
+              displayUrgency === 'danger' && styles.dangerCard,
             ]}
           >
             <View style={[styles.progressTint, { width: `${Math.round(progress * 100)}%`, backgroundColor: `${urgencyColor}14` }]} />
