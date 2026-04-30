@@ -1,5 +1,11 @@
 import type { Session, User } from '@supabase/supabase-js';
 
+import type {
+  HebrewBirthDateProfile,
+  ProfileMaritalStatus,
+  ProfileTribeStatus,
+  ProfileVisibility,
+} from '@/types/profile';
 import { supabase } from './supabaseClient';
 
 const DEV_AUTH_PASSWORD = 'DEV-SREDI-2026-PASSWORD';
@@ -18,7 +24,13 @@ export type Profile = {
   email: string | null;
   avatar_url: string | null;
   birth_date: string | null;
-  hebrew_birth_date: unknown | null;
+  hebrew_birth_date: HebrewBirthDateProfile | null;
+  tribe_status: ProfileTribeStatus | null;
+  marital_status: ProfileMaritalStatus | null;
+  about: string | null;
+  profile_visibility: ProfileVisibility;
+  birthday_visibility: ProfileVisibility;
+  phone_visibility: ProfileVisibility;
   nusach: string | null;
   onboarding_completed: boolean;
   updated_at: string | null;
@@ -43,6 +55,12 @@ const PROFILE_FIELDS = `
   avatar_url,
   birth_date,
   hebrew_birth_date,
+  tribe_status,
+  marital_status,
+  about,
+  profile_visibility,
+  birthday_visibility,
+  phone_visibility,
   nusach,
   onboarding_completed,
   updated_at
