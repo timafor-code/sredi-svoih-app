@@ -69,6 +69,21 @@ function getSuccessMessage(activityType: PrayerActivityType): string {
   }
 }
 
+function getDefaultRecordedLabel(activityType: PrayerActivityType): string {
+  switch (activityType) {
+    case 'shema_morning':
+    case 'shema_evening':
+      return 'Прочитал';
+    case 'omer_count':
+      return 'Посчитал';
+    case 'shacharit':
+    case 'mincha':
+    case 'maariv':
+    default:
+      return 'Помолился';
+  }
+}
+
 function isPrayerTrackerAuthError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? '');
   const lowerMessage = message.toLowerCase();
@@ -100,7 +115,7 @@ function showRecordError(error: unknown) {
 export function PrayerActionModal({
   activityType,
   alreadyRecorded = false,
-  alreadyRecordedLabel = 'Помолился',
+  alreadyRecordedLabel,
   canRecord,
   city,
   closeOnSuccess = true,
@@ -125,6 +140,7 @@ export function PrayerActionModal({
   const recordActivity = usePrayerTrackerStore((state) => state.recordActivity);
   const recording = usePrayerTrackerStore((state) => state.recording);
   const busy = loading || recording;
+  const recordedLabel = alreadyRecordedLabel ?? getDefaultRecordedLabel(activityType);
   const visibleDetails = useMemo(
     () =>
       (details ?? []).filter(
@@ -240,7 +256,7 @@ export function PrayerActionModal({
             </Pressable>
             {alreadyRecorded ? (
               <View style={[styles.recordedButton, styles.confirmPressable]}>
-                <Text style={styles.recordedText}>{alreadyRecordedLabel}</Text>
+                <Text style={styles.recordedText}>{recordedLabel}</Text>
               </View>
             ) : (
               <PrimaryButton
