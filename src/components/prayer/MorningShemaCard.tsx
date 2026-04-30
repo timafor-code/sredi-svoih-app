@@ -21,8 +21,37 @@ type MorningShemaCardProps = {
   source?: string;
 };
 
+type MorningShemaUrgency = 'calm' | 'warning' | 'danger';
+
+const SHEMA_WARNING_PROGRESS = 0.71;
+const SHEMA_DANGER_PROGRESS = 0.91;
+
 function isMorningShemaRecordableNow(daily: DailyZmanim) {
   return Date.now() < daily.times.shemaGra.at.getTime();
+}
+
+function getMorningShemaUrgency(progress: number): MorningShemaUrgency {
+  if (progress >= SHEMA_DANGER_PROGRESS) {
+    return 'danger';
+  }
+
+  if (progress >= SHEMA_WARNING_PROGRESS) {
+    return 'warning';
+  }
+
+  return 'calm';
+}
+
+function getUrgencyColor(urgency: MorningShemaUrgency) {
+  switch (urgency) {
+    case 'danger':
+      return colors.danger;
+    case 'warning':
+      return colors.warning;
+    case 'calm':
+    default:
+      return colors.success;
+  }
 }
 
 export function MorningShemaCard({
@@ -39,6 +68,8 @@ export function MorningShemaCard({
   const isAvailable = now.getTime() < daily.times.shemaGra.at.getTime();
   const activityDate = useMemo(() => formatLocalDateKey(now, daily.timeZone), [daily.timeZone, now]);
   const progress = progressBetween(daily.times.sunrise.at, daily.times.shemaGra.at, now);
+  const urgency = getMorningShemaUrgency(progress);
+  const urgencyColor = getUrgencyColor(urgency);
   const isBeforeSunrise = now.getTime() < daily.times.sunrise.at.getTime();
   const alreadyRecorded = Boolean(
     authUser
@@ -80,11 +111,18 @@ export function MorningShemaCard({
         onPress={handlePress}
         style={({ pressed }) => pressed && styles.cardPressed}
       >
-        <GlassCard style={styles.card}>
-          <View style={[styles.progressTint, { width: `${Math.round(progress * 100)}%` }]} />
+        <GlassCard
+          style={[
+            styles.card,
+            urgency === 'calm' && styles.calmCard,
+            urgency === 'warning' && styles.warningCard,
+            urgency === 'danger' && styles.dangerCard,
+          ]}
+        >
+          <View style={[styles.progressTint, { width: `${Math.round(progress * 100)}%`, backgroundColor: `${urgencyColor}14` }]} />
           <View style={styles.top}>
             <View style={styles.left}>
-              <View style={styles.emojiBox}>
+              <View style={[styles.emojiBox, { borderColor: `${urgencyColor}55`, backgroundColor: `${urgencyColor}26` }]}>
                 <Text style={styles.emoji}>🙏</Text>
               </View>
               <View style={styles.flex}>
@@ -96,11 +134,11 @@ export function MorningShemaCard({
               </View>
             </View>
             <View style={styles.right}>
-              <Text style={styles.value}>{value}</Text>
+              <Text style={[styles.value, { color: urgencyColor }]}>{value}</Text>
               <Text style={styles.tinyMuted}>{subtitle}</Text>
             </View>
           </View>
-          <ProgressBar value={progress} color={colors.success} />
+          <ProgressBar value={progress} color={urgencyColor} />
           <View style={styles.progressLegend}>
             <Text style={styles.tinyMuted}>{daily.times.sunrise.time} восход</Text>
             <Text style={styles.tinyMuted}>{daily.times.shemaGra.time} дедлайн</Text>
@@ -134,6 +172,7 @@ export function MorningShemaCard({
           deadline: daily.times.shemaGra.at.toISOString(),
           source,
           sunrise: daily.times.sunrise.at.toISOString(),
+          urgency,
           zmanType: 'shemaGra',
         }}
         onClose={() => setShowAction(false)}
@@ -152,6 +191,17 @@ const styles = StyleSheet.create({
   card: {
     position: 'relative',
   },
+  calmCard: {
+    borderColor: 'rgba(76,175,80,0.22)',
+  },
+  warningCard: {
+    borderColor: 'rgba(255,159,10,0.38)',
+    backgroundColor: 'rgba(255,159,10,0.055)',
+  },
+  dangerCard: {
+    borderColor: 'rgba(255,85,85,0.45)',
+    backgroundColor: 'rgba(255,85,85,0.065)',
+  },
   cardPressed: {
     opacity: 0.86,
     transform: [{ scale: 0.99 }],
@@ -161,7 +211,6 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     left: 0,
-    backgroundColor: 'rgba(76,175,80,0.08)',
   },
   top: {
     flexDirection: 'row',
@@ -187,8 +236,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(76,175,80,0.30)',
-    backgroundColor: 'rgba(76,175,80,0.15)',
   },
   emoji: {
     fontSize: 14,
@@ -231,7 +278,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   value: {
-    color: colors.success,
     fontSize: 20,
     fontWeight: '800',
     letterSpacing: -0.5,
