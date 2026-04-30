@@ -19,6 +19,7 @@ import { colors } from '@/theme/colors';
 
 const myRegistrationsHref = '/profile/my-registrations' as Href;
 const prayerTrackerHref = '/profile/prayer-tracker' as Href;
+const editProfileHref = '/profile/edit' as Href;
 
 const menuItems = [
   { href: '/profile/prayers-settings', icon: '📍', label: 'Настройки молитв и календаря', sub: 'Город, нусах, язык сидура, напоминания' },
@@ -171,6 +172,14 @@ export default function ProfileScreen() {
     router.push(myRegistrationsHref);
   }, [authUser, router]);
 
+  const handleOpenEditProfile = useCallback(() => {
+    if (!authUser) {
+      return;
+    }
+
+    router.push(editProfileHref);
+  }, [authUser, router]);
+
   return (
     <Screen contentContainerStyle={styles.content}>
       <View style={styles.header}>
@@ -219,6 +228,14 @@ export default function ProfileScreen() {
               <Text style={styles.infoText}>{profile.city}</Text>
             </View>
           ) : null}
+
+          <Pressable
+            onPress={handleOpenEditProfile}
+            style={({ pressed }) => [styles.editProfileButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="create-outline" size={17} color={colors.orange} />
+            <Text style={styles.editProfileText}>Редактировать профиль</Text>
+          </Pressable>
 
           <Pressable
             disabled={isSigningOut}
@@ -412,6 +429,25 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     fontSize: 13,
     lineHeight: 18,
+  },
+  editProfileButton: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(240,122,42,0.25)',
+    backgroundColor: 'rgba(240,122,42,0.10)',
+    marginTop: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  editProfileText: {
+    color: colors.orange,
+    fontSize: 14,
+    fontWeight: '700',
   },
   signOutButton: {
     minHeight: 42,
