@@ -30,12 +30,19 @@ export function OmerPill() {
 }
 
 type HeaderButtonProps = {
+  accessibilityLabel?: string;
   icon: keyof typeof Ionicons.glyphMap;
+  onPress?: () => void;
 };
 
-export function HeaderButton({ icon }: HeaderButtonProps) {
+export function HeaderButton({ accessibilityLabel, icon, onPress }: HeaderButtonProps) {
   return (
-    <Pressable style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}>
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
+    >
       <Ionicons name={icon} size={18} color="rgba(255,255,255,0.62)" />
     </Pressable>
   );
