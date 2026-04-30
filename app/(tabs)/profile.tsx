@@ -214,7 +214,7 @@ export default function ProfileScreen() {
       ) : (
         <GlassCard>
           <View style={styles.accountHeader}>
-            <Avatar initials={getInitials(displayName)} size={58} />
+            <Avatar initials={getInitials(displayName)} size={58} uri={profile?.avatar_url} />
             <View style={styles.flex}>
               <Text style={styles.cardTitle}>Аккаунт</Text>
               <Text style={styles.accountName}>{profileName ?? accountEmail}</Text>
