@@ -1,16 +1,33 @@
 export const PROFILE_TRIBE_STATUSES = ['kohen', 'levi', 'israel'] as const;
 export const PROFILE_MARITAL_STATUSES = ['single', 'married', 'divorced', 'widowed', 'other'] as const;
 export const PROFILE_VISIBILITIES = ['rabbi_only', 'members', 'public'] as const;
+export const PROFILE_BIRTH_TIME_CONTEXTS = ['before_sunset', 'after_sunset', 'unknown'] as const;
 
 export type ProfileTribeStatus = (typeof PROFILE_TRIBE_STATUSES)[number];
 export type ProfileMaritalStatus = (typeof PROFILE_MARITAL_STATUSES)[number];
 export type ProfileVisibility = (typeof PROFILE_VISIBILITIES)[number];
+export type ProfileBirthTimeContext = (typeof PROFILE_BIRTH_TIME_CONTEXTS)[number];
+
+export const PROFILE_BIRTH_TIME_CONTEXT_LABELS: Record<ProfileBirthTimeContext, string> = {
+  before_sunset: 'До захода солнца / днём',
+  after_sunset: 'После захода солнца / вечером',
+  unknown: 'Не знаю',
+};
+
+export type HebrewBirthDateSource = {
+  gregorianBirthDate: string;
+  birthTimeContext: ProfileBirthTimeContext;
+  effectiveGregorianDateForHebrew: string;
+  uncertainty: boolean;
+  note?: string;
+};
 
 export type HebrewBirthDateProfile = {
   labelRu: string;
   day: number;
   monthNameRu: string;
   year: number;
+  source: HebrewBirthDateSource;
 };
 
 export type ProfileNotificationPreferences = {
@@ -51,4 +68,8 @@ export function isProfileMaritalStatus(value: unknown): value is ProfileMaritalS
 
 export function isProfileVisibility(value: unknown): value is ProfileVisibility {
   return PROFILE_VISIBILITIES.includes(value as ProfileVisibility);
+}
+
+export function isProfileBirthTimeContext(value: unknown): value is ProfileBirthTimeContext {
+  return PROFILE_BIRTH_TIME_CONTEXTS.includes(value as ProfileBirthTimeContext);
 }
