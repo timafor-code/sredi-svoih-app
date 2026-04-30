@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { formatDurationRu, progressBetween } from '@/lib/dates';
+import { formatLocalDateKey, hasRecordedMorningShema } from '@/lib/prayerTracker';
 import type { DailyZmanim } from '@/lib/zmanim';
+import { useAuthStore } from '@/store/useAuthStore';
+import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
 import { colors } from '@/theme/colors';
 import type { HebrewDatePayload } from '@/types/prayerTracker';
 
@@ -31,9 +34,20 @@ export function MorningShemaCard({
   source = 'morning_shema_card',
 }: MorningShemaCardProps) {
   const [showAction, setShowAction] = useState(false);
+  const authUser = useAuthStore((state) => state.user);
+  const prayerActivityItems = usePrayerTrackerStore((state) => state.items);
   const isAvailable = now.getTime() < daily.times.shemaGra.at.getTime();
+  const activityDate = useMemo(() => formatLocalDateKey(now, daily.timeZone), [daily.timeZone, now]);
   const progress = progressBetween(daily.times.sunrise.at, daily.times.shemaGra.at, now);
   const isBeforeSunrise = now.getTime() < daily.times.sunrise.at.getTime();
+  const alreadyRecorded = Boolean(
+    authUser
+    && hasRecordedMorningShema(
+      prayerActivityItems,
+      activityDate,
+      authUser.id,
+    ),
+  );
   const value = isBeforeSunrise
     ? `через ${formatDurationRu(daily.times.sunrise.at.getTime() - now.getTime())}`
     : formatDurationRu(daily.times.shemaGra.at.getTime() - now.getTime());
@@ -73,8 +87,11 @@ export function MorningShemaCard({
               <View style={styles.emojiBox}>
                 <Text style={styles.emoji}>🙏</Text>
               </View>
-              <View>
-                <Text style={styles.overline}>УТРЕННЕЕ ШМА ДО</Text>
+              <View style={styles.flex}>
+                <View style={styles.titleRow}>
+                  <Text style={styles.overline}>УТРЕННЕЕ ШМА ДО</Text>
+                  {alreadyRecorded ? <Text style={styles.recordedBadge}>Прочитал</Text> : null}
+                </View>
                 <Text style={styles.deadlineTime}>{daily.times.shemaGra.time}</Text>
               </View>
             </View>
@@ -93,6 +110,8 @@ export function MorningShemaCard({
 
       <PrayerActionModal
         activityType="shema_morning"
+        alreadyRecorded={alreadyRecorded}
+        alreadyRecordedLabel="Прочитал"
         canRecord={() => {
           const recordable = isMorningShemaRecordableNow(daily);
           if (!recordable) {
@@ -101,6 +120,7 @@ export function MorningShemaCard({
           return recordable;
         }}
         city={city}
+        closeOnSuccess={false}
         confirmButtonTitle="Начал читать Шма"
         details={[
           { label: 'Дедлайн', value: daily.times.shemaGra.time },
@@ -155,6 +175,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    minWidth: 0,
   },
   right: {
     alignItems: 'flex-end',
@@ -172,11 +193,34 @@ const styles = StyleSheet.create({
   emoji: {
     fontSize: 14,
   },
+  flex: {
+    flex: 1,
+    minWidth: 0,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
   overline: {
     color: colors.textDim,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.8,
+    includeFontPadding: false,
+  },
+  recordedBadge: {
+    overflow: 'hidden',
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(76,175,80,0.26)',
+    backgroundColor: 'rgba(76,175,80,0.16)',
+    color: colors.success,
+    fontSize: 9,
+    fontWeight: '700',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     includeFontPadding: false,
   },
   deadlineTime: {

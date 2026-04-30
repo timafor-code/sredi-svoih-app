@@ -1,6 +1,8 @@
 import type { PrayerWindow } from '@/lib/zmanim';
 import type { PrayerActivityLog, PrayerActivityType } from '@/types/prayerTracker';
 
+export const MORNING_SHEMA_ACTIVITY_TYPE = 'shema_morning' satisfies PrayerActivityType;
+
 export function formatLocalDateKey(date: Date | string, timeZone: string): string {
   const value = date instanceof Date ? date : new Date(date);
   const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -29,6 +31,14 @@ export function hasRecordedActivity(
       && item.activityDate === activityDate
       && (!userId || item.userId === userId),
   );
+}
+
+export function hasRecordedMorningShema(
+  items: PrayerActivityLog[],
+  activityDate: string,
+  userId?: string | null,
+): boolean {
+  return hasRecordedActivity(items, MORNING_SHEMA_ACTIVITY_TYPE, activityDate, userId);
 }
 
 export function prayerActivityTypeFromPrayerId(prayerId: PrayerWindow['id']): PrayerActivityType {
