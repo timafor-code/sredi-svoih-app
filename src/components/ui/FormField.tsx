@@ -3,6 +3,7 @@ import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { colors } from '@/theme/colors';
 
 type FormFieldProps = {
+  editable?: boolean;
   keyboardType?: 'default' | 'email-address' | 'phone-pad';
   label: string;
   multiline?: boolean;
@@ -12,6 +13,7 @@ type FormFieldProps = {
 };
 
 export function FormField({
+  editable = true,
   keyboardType = 'default',
   label,
   multiline,
@@ -23,13 +25,14 @@ export function FormField({
     <View style={styles.container}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
+        editable={editable}
         keyboardType={keyboardType}
         multiline={multiline}
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor="rgba(255,255,255,0.3)"
         selectionColor={colors.orange}
-        style={[styles.input, multiline && styles.multiline]}
+        style={[styles.input, multiline && styles.multiline, !editable && styles.disabledInput]}
         textAlignVertical={multiline ? 'top' : 'center'}
         value={value}
       />
@@ -63,5 +66,8 @@ const styles = StyleSheet.create({
   multiline: {
     minHeight: 90,
     lineHeight: 22,
+  },
+  disabledInput: {
+    opacity: 0.6,
   },
 });

@@ -8,6 +8,7 @@ import {
   signOut as signOutService,
   upsertProfile,
   type Profile,
+  type ProfileUpsert,
 } from '@/services/authService';
 import {
   acceptInvite as acceptInviteService,
@@ -24,6 +25,7 @@ type AuthState = {
   error: string | null;
   loadSession: () => Promise<void>;
   loadProfile: () => Promise<void>;
+  updateProfile: (input: ProfileUpsert) => Promise<Profile>;
   loadMembership: () => Promise<void>;
   acceptInvite: (code: string) => Promise<void>;
   signIn: (email: string) => Promise<void>;
@@ -116,6 +118,22 @@ export const useAuthStore = create<AuthState>((set) => ({
       const profile = await loadProfileService();
 
       set({ profile, loading: false, error: null });
+    } catch (error) {
+      const message = friendlyAuthError(error);
+
+      set({ loading: false, error: message });
+      throw new Error(message);
+    }
+  },
+
+  updateProfile: async (input: ProfileUpsert) => {
+    set({ loading: true, error: null });
+
+    try {
+      const profile = await upsertProfile(input);
+
+      set({ profile, loading: false, error: null });
+      return profile;
     } catch (error) {
       const message = friendlyAuthError(error);
 

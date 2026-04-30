@@ -58,6 +58,10 @@ function cleanPayload<T extends Record<string, unknown>>(payload: T): T {
   ) as T;
 }
 
+function hasOwnField<T extends object>(value: T, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
 async function getCurrentUser(): Promise<User | null> {
   const session = await getSession();
 
@@ -181,8 +185,10 @@ export async function loadProfile(): Promise<Profile | null> {
 
 export async function upsertProfile(profile: ProfileUpsert = {}): Promise<Profile> {
   const user = await requireCurrentUser();
-  const email = profile.email ?? user.email ?? null;
-  const displayName = profile.display_name ?? profile.full_name ?? email?.split('@')[0] ?? null;
+  const email = hasOwnField(profile, 'email') ? profile.email ?? null : user.email ?? null;
+  const displayName = hasOwnField(profile, 'display_name')
+    ? profile.display_name
+    : profile.full_name ?? email?.split('@')[0] ?? null;
   const payload = cleanPayload({
     ...profile,
     id: user.id,
