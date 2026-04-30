@@ -2,6 +2,7 @@ import type { Session, User } from '@supabase/supabase-js';
 
 import type {
   HebrewBirthDateProfile,
+  ProfileNotificationPreferences,
   ProfileMaritalStatus,
   ProfileTribeStatus,
   ProfileVisibility,
@@ -31,6 +32,7 @@ export type Profile = {
   profile_visibility: ProfileVisibility;
   birthday_visibility: ProfileVisibility;
   phone_visibility: ProfileVisibility;
+  notification_preferences: ProfileNotificationPreferences | null;
   nusach: string | null;
   onboarding_completed: boolean;
   updated_at: string | null;
@@ -61,6 +63,7 @@ const PROFILE_FIELDS = `
   profile_visibility,
   birthday_visibility,
   phone_visibility,
+  notification_preferences,
   nusach,
   onboarding_completed,
   updated_at

@@ -13,9 +13,33 @@ export type HebrewBirthDateProfile = {
   year: number;
 };
 
+export type ProfileNotificationPreferences = {
+  prayers: boolean;
+  shabbat: boolean;
+  holidays: boolean;
+  candles: boolean;
+  events: boolean;
+  birthdays: boolean;
+  weekly: boolean;
+  news: boolean;
+  quietHoursEnabled?: boolean;
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
+};
+
 export const DEFAULT_PROFILE_VISIBILITY: ProfileVisibility = 'members';
 export const DEFAULT_BIRTHDAY_VISIBILITY: ProfileVisibility = 'members';
 export const DEFAULT_PHONE_VISIBILITY: ProfileVisibility = 'rabbi_only';
+export const DEFAULT_NOTIFICATION_PREFERENCES: ProfileNotificationPreferences = {
+  prayers: true,
+  shabbat: true,
+  holidays: true,
+  candles: true,
+  events: true,
+  birthdays: true,
+  weekly: true,
+  news: false,
+};
 
 export function isProfileTribeStatus(value: unknown): value is ProfileTribeStatus {
   return PROFILE_TRIBE_STATUSES.includes(value as ProfileTribeStatus);
