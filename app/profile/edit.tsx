@@ -1,7 +1,8 @@
 import { Stack, useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { Avatar } from '@/components/ui/Avatar';
@@ -11,6 +12,7 @@ import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { SubHeader } from '@/components/ui/SubHeader';
 import { buildHebrewBirthDateProfile } from '@/lib/profileDates';
+import { uploadProfileAvatar } from '@/services/avatarService';
 import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
 import {
@@ -155,6 +157,22 @@ function buildFullName(firstName: string, lastName: string): string | null {
     .join(' ') || null;
 }
 
+function getAvatarUploadErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : 'Не удалось загрузить фото.';
+
+  if (message === 'Auth required') {
+    return 'Чтобы загрузить фото, войдите в приложение.';
+  }
+
+  return message;
+}
+
+function addAvatarCacheBuster(url: string): string {
+  const separator = url.includes('?') ? '&' : '?';
+
+  return `${url}${separator}v=${Date.now()}`;
+}
+
 function getInitials(name: string): string {
   return name
     .split(' ')
@@ -229,6 +247,8 @@ export default function EditProfileScreen() {
   const [privacyProfile, setPrivacyProfile] = useState<ProfileVisibility>(DEFAULT_PROFILE_VISIBILITY);
   const [localError, setLocalError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [localAvatarUrl, setLocalAvatarUrl] = useState<string | null>(null);
 
   const fullName = useMemo(() => buildFullName(firstName, lastName), [firstName, lastName]);
   const avatarName = fullName ?? email.trim() ?? user?.email ?? 'СС';
@@ -249,6 +269,7 @@ export default function EditProfileScreen() {
     return birthDateError ? 'Проверьте гражданскую дату' : 'Будет рассчитано позже';
   }, [birthDateError, hebrewBirthDate]);
   const aboutTooLong = about.length > ABOUT_MAX_LENGTH;
+  const displayAvatarUrl = localAvatarUrl ?? profile?.avatar_url ?? null;
 
   useEffect(() => {
     if (user) {
@@ -291,6 +312,10 @@ export default function EditProfileScreen() {
     user?.email,
   ]);
 
+  useEffect(() => {
+    setLocalAvatarUrl(null);
+  }, [profile?.avatar_url]);
+
   const handleReloadProfile = useCallback(() => {
     setLocalError(null);
     void loadSession().catch((error) => {
@@ -298,9 +323,61 @@ export default function EditProfileScreen() {
     });
   }, [loadSession]);
 
-  const handlePhotoPlaceholder = useCallback(() => {
-    Alert.alert('Фото профиля', 'Загрузка фото будет добавлена следующим этапом.');
-  }, []);
+  const handlePickAvatar = useCallback(async () => {
+    setLocalError(null);
+
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permission.granted) {
+        Alert.alert(
+          'Нет доступа к фото',
+          'Разрешите доступ к фотографиям в настройках устройства, чтобы выбрать аватар.',
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: true,
+        allowsMultipleSelection: false,
+        aspect: [1, 1],
+        base64: true,
+        mediaTypes: ['images'],
+        preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+        quality: 0.85,
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      const asset = result.assets[0];
+
+      if (!asset?.uri) {
+        return;
+      }
+
+      setIsUploadingAvatar(true);
+
+      const publicUrl = await uploadProfileAvatar({
+        base64: asset.base64,
+        fileName: asset.fileName,
+        mimeType: asset.mimeType,
+        uri: asset.uri,
+      });
+      const avatarUrl = addAvatarCacheBuster(publicUrl);
+
+      await updateProfile({ avatar_url: avatarUrl });
+      setLocalAvatarUrl(avatarUrl);
+    } catch (error) {
+      const message = getAvatarUploadErrorMessage(error);
+
+      setLocalError(message);
+      Alert.alert('Не удалось загрузить фото', message);
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  }, [updateProfile]);
 
   const handleDeletePlaceholder = useCallback(() => {
     Alert.alert('Удаление аккаунта', 'Удаление аккаунта будет добавлено следующим этапом.');
@@ -423,14 +500,27 @@ export default function EditProfileScreen() {
 
         <View style={styles.avatarRow}>
           <View style={styles.avatarWrap}>
-            <Avatar initials={getInitials(avatarName)} size={80} />
-            <Pressable onPress={handlePhotoPlaceholder} style={styles.cameraBadge}>
-              <Text style={styles.cameraText}>📷</Text>
+            <Avatar initials={getInitials(avatarName)} size={80} uri={displayAvatarUrl} />
+            <Pressable
+              disabled={isSaving || isUploadingAvatar}
+              onPress={handlePickAvatar}
+              style={[
+                styles.cameraBadge,
+                (isSaving || isUploadingAvatar) && styles.cameraBadgeDisabled,
+              ]}
+            >
+              {isUploadingAvatar ? (
+                <ActivityIndicator color={colors.text} size="small" />
+              ) : (
+                <Text style={styles.cameraText}>📷</Text>
+              )}
             </Pressable>
           </View>
           <View style={styles.flex}>
             <Text style={styles.photoTitle}>Фото профиля</Text>
-            <Text style={styles.photoText}>Видно участникам общины{'\n'}Рекомендуем 400×400 px</Text>
+            <Text style={styles.photoText}>
+              {isUploadingAvatar ? 'Загружаем фото...' : 'Видно участникам общины\nРекомендуем 400×400 px'}
+            </Text>
           </View>
         </View>
 
@@ -512,8 +602,8 @@ export default function EditProfileScreen() {
         {localError ? <Text style={styles.errorText}>{localError}</Text> : null}
 
         <PrimaryButton
-          disabled={isSaving}
-          title={isSaving ? 'Сохраняем...' : 'Сохранить изменения'}
+          disabled={isSaving || isUploadingAvatar}
+          title={isUploadingAvatar ? 'Загружаем фото...' : isSaving ? 'Сохраняем...' : 'Сохранить изменения'}
           buttonStyle={styles.saveButton}
           onPress={handleSave}
         />
@@ -552,6 +642,9 @@ const styles = StyleSheet.create({
   },
   cameraText: {
     fontSize: 13,
+  },
+  cameraBadgeDisabled: {
+    opacity: 0.65,
   },
   flex: {
     flex: 1,
