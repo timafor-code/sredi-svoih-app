@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
+import { MorningShemaCard } from '@/components/prayer/MorningShemaCard';
 import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
 import { PrayerWindowCard } from '@/components/prayer/PrayerWindowCard';
 import { HeaderButton, Logo } from '@/components/ui/BrandHeader';
@@ -158,6 +159,15 @@ export default function PrayersScreen() {
           ))}
         </View>
       </GlassCard>
+
+      <MorningShemaCard
+        city={city}
+        daily={daily}
+        hebrewDate={hebrewDatePayload}
+        hebrewDateLabel={hebrewDateLabel}
+        now={now}
+        source="prayers_screen_shema_card"
+      />
 
       {prayers.map((prayer) => {
         const recordable = prayer.active;
