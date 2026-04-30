@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
@@ -63,6 +63,7 @@ export function MorningShemaCard({
   source = 'morning_shema_card',
 }: MorningShemaCardProps) {
   const [showAction, setShowAction] = useState(false);
+  const pulse = useRef(new Animated.Value(0)).current;
   const authUser = useAuthStore((state) => state.user);
   const prayerActivityItems = usePrayerTrackerStore((state) => state.items);
   const isAvailable = now.getTime() < daily.times.shemaGra.at.getTime();
@@ -83,12 +84,49 @@ export function MorningShemaCard({
     ? `через ${formatDurationRu(daily.times.sunrise.at.getTime() - now.getTime())}`
     : formatDurationRu(daily.times.shemaGra.at.getTime() - now.getTime());
   const subtitle = isBeforeSunrise ? 'до восхода' : `осталось · ${Math.round(progress * 100)}%`;
+  const pulseOpacity = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.12, 0.42],
+  });
+  const pulseScale = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.985, 1.025],
+  });
 
   useEffect(() => {
     if (!isAvailable && showAction) {
       setShowAction(false);
     }
   }, [isAvailable, showAction]);
+
+  useEffect(() => {
+    if (urgency !== 'danger' || !isAvailable) {
+      pulse.stopAnimation();
+      pulse.setValue(0);
+      return undefined;
+    }
+
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          duration: 1500,
+          easing: Easing.inOut(Easing.sin),
+          toValue: 1,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          duration: 1500,
+          easing: Easing.inOut(Easing.sin),
+          toValue: 0,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    animation.start();
+
+    return () => animation.stop();
+  }, [isAvailable, pulse, urgency]);
 
   const handlePress = () => {
     if (!isMorningShemaRecordableNow(daily)) {
@@ -106,45 +144,59 @@ export function MorningShemaCard({
 
   return (
     <>
-      <Pressable
-        accessibilityRole="button"
-        onPress={handlePress}
-        style={({ pressed }) => pressed && styles.cardPressed}
-      >
-        <GlassCard
-          style={[
-            styles.card,
-            urgency === 'calm' && styles.calmCard,
-            urgency === 'warning' && styles.warningCard,
-            urgency === 'danger' && styles.dangerCard,
-          ]}
+      <View style={styles.shell}>
+        {urgency === 'danger' ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.redGlow,
+              {
+                opacity: pulseOpacity,
+                transform: [{ scale: pulseScale }],
+              },
+            ]}
+          />
+        ) : null}
+        <Pressable
+          accessibilityRole="button"
+          onPress={handlePress}
+          style={({ pressed }) => pressed && styles.cardPressed}
         >
-          <View style={[styles.progressTint, { width: `${Math.round(progress * 100)}%`, backgroundColor: `${urgencyColor}14` }]} />
-          <View style={styles.top}>
-            <View style={styles.left}>
-              <View style={[styles.emojiBox, { borderColor: `${urgencyColor}55`, backgroundColor: `${urgencyColor}26` }]}>
-                <Text style={styles.emoji}>🙏</Text>
-              </View>
-              <View style={styles.flex}>
-                <View style={styles.titleRow}>
-                  <Text style={styles.overline}>УТРЕННЕЕ ШМА ДО</Text>
-                  {alreadyRecorded ? <Text style={styles.recordedBadge}>Прочитал</Text> : null}
+          <GlassCard
+            style={[
+              styles.card,
+              urgency === 'calm' && styles.calmCard,
+              urgency === 'warning' && styles.warningCard,
+              urgency === 'danger' && styles.dangerCard,
+            ]}
+          >
+            <View style={[styles.progressTint, { width: `${Math.round(progress * 100)}%`, backgroundColor: `${urgencyColor}14` }]} />
+            <View style={styles.top}>
+              <View style={styles.left}>
+                <View style={[styles.emojiBox, { borderColor: `${urgencyColor}55`, backgroundColor: `${urgencyColor}26` }]}>
+                  <Text style={styles.emoji}>🙏</Text>
                 </View>
-                <Text style={styles.deadlineTime}>{daily.times.shemaGra.time}</Text>
+                <View style={styles.flex}>
+                  <View style={styles.titleRow}>
+                    <Text style={styles.overline}>УТРЕННЕЕ ШМА ДО</Text>
+                    {alreadyRecorded ? <Text style={styles.recordedBadge}>Прочитал</Text> : null}
+                  </View>
+                  <Text style={styles.deadlineTime}>{daily.times.shemaGra.time}</Text>
+                </View>
+              </View>
+              <View style={styles.right}>
+                <Text style={[styles.value, { color: urgencyColor }]}>{value}</Text>
+                <Text style={styles.tinyMuted}>{subtitle}</Text>
               </View>
             </View>
-            <View style={styles.right}>
-              <Text style={[styles.value, { color: urgencyColor }]}>{value}</Text>
-              <Text style={styles.tinyMuted}>{subtitle}</Text>
+            <ProgressBar value={progress} color={urgencyColor} />
+            <View style={styles.progressLegend}>
+              <Text style={styles.tinyMuted}>{daily.times.sunrise.time} восход</Text>
+              <Text style={styles.tinyMuted}>{daily.times.shemaGra.time} дедлайн</Text>
             </View>
-          </View>
-          <ProgressBar value={progress} color={urgencyColor} />
-          <View style={styles.progressLegend}>
-            <Text style={styles.tinyMuted}>{daily.times.sunrise.time} восход</Text>
-            <Text style={styles.tinyMuted}>{daily.times.shemaGra.time} дедлайн</Text>
-          </View>
-        </GlassCard>
-      </Pressable>
+          </GlassCard>
+        </Pressable>
+      </View>
 
       <PrayerActionModal
         activityType="shema_morning"
@@ -188,6 +240,23 @@ export function MorningShemaCard({
 }
 
 const styles = StyleSheet.create({
+  shell: {
+    position: 'relative',
+  },
+  redGlow: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    bottom: -8,
+    left: -8,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,85,85,0.35)',
+    shadowColor: colors.danger,
+    shadowOpacity: 0.65,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 10,
+  },
   card: {
     position: 'relative',
   },
