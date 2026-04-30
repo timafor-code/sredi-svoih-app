@@ -4,8 +4,9 @@ import { colors } from '@/theme/colors';
 
 type FormFieldProps = {
   editable?: boolean;
-  keyboardType?: 'default' | 'email-address' | 'phone-pad';
+  keyboardType?: 'default' | 'email-address' | 'number-pad' | 'phone-pad';
   label: string;
+  maxLength?: number;
   multiline?: boolean;
   onChangeText: (text: string) => void;
   placeholder?: string;
@@ -16,6 +17,7 @@ export function FormField({
   editable = true,
   keyboardType = 'default',
   label,
+  maxLength,
   multiline,
   onChangeText,
   placeholder,
@@ -27,6 +29,7 @@ export function FormField({
       <TextInput
         editable={editable}
         keyboardType={keyboardType}
+        maxLength={maxLength}
         multiline={multiline}
         onChangeText={onChangeText}
         placeholder={placeholder}

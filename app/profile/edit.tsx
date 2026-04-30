@@ -11,7 +11,12 @@ import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { SubHeader } from '@/components/ui/SubHeader';
-import { buildHebrewBirthDateProfile } from '@/lib/profileDates';
+import {
+  buildHebrewBirthDateProfile,
+  formatBirthDateInput,
+  formatIsoDateForUi,
+  parseBirthDateInput,
+} from '@/lib/profileDates';
 import { uploadProfileAvatar } from '@/services/avatarService';
 import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
@@ -19,9 +24,12 @@ import {
   DEFAULT_BIRTHDAY_VISIBILITY,
   DEFAULT_PHONE_VISIBILITY,
   DEFAULT_PROFILE_VISIBILITY,
+  PROFILE_BIRTH_TIME_CONTEXT_LABELS,
+  isProfileBirthTimeContext,
   isProfileMaritalStatus,
   isProfileTribeStatus,
   isProfileVisibility,
+  type ProfileBirthTimeContext,
   type ProfileMaritalStatus,
   type ProfileTribeStatus,
   type ProfileVisibility,
@@ -55,88 +63,11 @@ const privacyOptions: readonly SelectOption<ProfileVisibility>[] = [
   { label: 'Публично', value: 'public' },
 ] as const;
 
-type BirthDateParseResult = {
-  date: Date | null;
-  error: string | null;
-  iso: string | null;
-};
-
-function pad2(value: number): string {
-  return String(value).padStart(2, '0');
-}
-
-function formatIsoDateForUi(value: string | null | undefined): string {
-  const match = value?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-
-  if (!match) {
-    return '';
-  }
-
-  return `${match[3]}.${match[2]}.${match[1]}`;
-}
-
-function formatDatePartsToIso(year: number, month: number, day: number): string {
-  return `${year}-${pad2(month)}-${pad2(day)}`;
-}
-
-function isRealDate(year: number, month: number, day: number): boolean {
-  const date = new Date(Date.UTC(year, month - 1, day));
-
-  return (
-    date.getUTCFullYear() === year
-    && date.getUTCMonth() === month - 1
-    && date.getUTCDate() === day
-  );
-}
-
-function parseBirthDateInput(value: string): BirthDateParseResult {
-  const text = value.trim();
-
-  if (!text) {
-    return { date: null, error: null, iso: null };
-  }
-
-  const ruMatch = text.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-
-  if (!ruMatch && !isoMatch) {
-    return {
-      date: null,
-      error: 'Введите дату рождения в формате ДД.ММ.ГГГГ.',
-      iso: null,
-    };
-  }
-
-  const day = Number(ruMatch?.[1] ?? isoMatch?.[3]);
-  const month = Number(ruMatch?.[2] ?? isoMatch?.[2]);
-  const year = Number(ruMatch?.[3] ?? isoMatch?.[1]);
-
-  if (year < 1900 || !isRealDate(year, month, day)) {
-    return {
-      date: null,
-      error: 'Проверьте дату рождения.',
-      iso: null,
-    };
-  }
-
-  const date = new Date(year, month - 1, day);
-  const today = new Date();
-  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-
-  if (date.getTime() > todayDate.getTime()) {
-    return {
-      date: null,
-      error: 'Дата рождения не может быть в будущем.',
-      iso: null,
-    };
-  }
-
-  return {
-    date,
-    error: null,
-    iso: formatDatePartsToIso(year, month, day),
-  };
-}
+const birthTimeContextOptions: readonly SelectOption<ProfileBirthTimeContext>[] = [
+  { label: PROFILE_BIRTH_TIME_CONTEXT_LABELS.before_sunset, value: 'before_sunset' },
+  { label: PROFILE_BIRTH_TIME_CONTEXT_LABELS.after_sunset, value: 'after_sunset' },
+  { label: PROFILE_BIRTH_TIME_CONTEXT_LABELS.unknown, value: 'unknown' },
+] as const;
 
 function trimOrNull(value: string): string | null {
   const trimmed = value.trim();
@@ -236,6 +167,7 @@ export default function EditProfileScreen() {
   const [lastName, setLastName] = useState('');
   const [hebrewName, setHebrewName] = useState('');
   const [dob, setDob] = useState('');
+  const [birthTimeContext, setBirthTimeContext] = useState<ProfileBirthTimeContext>('unknown');
   const [tribe, setTribe] = useState<ProfileTribeStatus | null>(null);
   const [marital, setMarital] = useState<ProfileMaritalStatus | null>(null);
   const [phone, setPhone] = useState('');
@@ -253,14 +185,15 @@ export default function EditProfileScreen() {
   const fullName = useMemo(() => buildFullName(firstName, lastName), [firstName, lastName]);
   const avatarName = fullName ?? email.trim() ?? user?.email ?? 'СС';
   const birthDateResult = useMemo(() => parseBirthDateInput(dob), [dob]);
-  const birthDateError = dob.trim() ? birthDateResult.error : null;
+  const birthDateHelper = dob.trim() && !birthDateResult.isComplete ? birthDateResult.error : null;
+  const birthDateError = dob.trim() && birthDateResult.isComplete ? birthDateResult.error : null;
   const hebrewBirthDate = useMemo(() => {
     if (!birthDateResult.date) {
       return null;
     }
 
-    return buildHebrewBirthDateProfile(birthDateResult.date);
-  }, [birthDateResult.date]);
+    return buildHebrewBirthDateProfile(birthDateResult.date, birthTimeContext);
+  }, [birthDateResult.date, birthTimeContext]);
   const hebrewDateLabel = useMemo(() => {
     if (hebrewBirthDate) {
       return hebrewBirthDate.labelRu;
@@ -268,6 +201,17 @@ export default function EditProfileScreen() {
 
     return birthDateError ? 'Проверьте гражданскую дату' : 'Будет рассчитано позже';
   }, [birthDateError, hebrewBirthDate]);
+  const hebrewDateNotice = useMemo(() => {
+    if (birthTimeContext === 'after_sunset') {
+      return 'Рассчитано как дата после захода солнца.';
+    }
+
+    if (birthTimeContext === 'unknown') {
+      return 'Если вы родились после захода солнца, еврейская дата может быть следующей.';
+    }
+
+    return null;
+  }, [birthTimeContext]);
   const aboutTooLong = about.length > ABOUT_MAX_LENGTH;
   const displayAvatarUrl = localAvatarUrl ?? profile?.avatar_url ?? null;
 
@@ -286,6 +230,9 @@ export default function EditProfileScreen() {
     setLastName(profile?.last_name ?? '');
     setHebrewName(profile?.hebrew_name ?? '');
     setDob(formatIsoDateForUi(profile?.birth_date));
+    setBirthTimeContext(
+      isProfileBirthTimeContext(profile?.birth_time_context) ? profile.birth_time_context : 'unknown',
+    );
     setPhone(profile?.phone ?? '');
     setEmail(profile?.email ?? user?.email ?? '');
     setCity(profile?.city ?? '');
@@ -298,6 +245,7 @@ export default function EditProfileScreen() {
   }, [
     profile?.about,
     profile?.birth_date,
+    profile?.birth_time_context,
     profile?.birthday_visibility,
     profile?.city,
     profile?.email,
@@ -322,6 +270,15 @@ export default function EditProfileScreen() {
       setLocalError(error instanceof Error ? error.message : 'Не удалось загрузить профиль.');
     });
   }, [loadSession]);
+
+  const handleDobChange = useCallback((value: string) => {
+    const formatted = formatBirthDateInput(value);
+    const wasDeletingSeparator = value.length < dob.length
+      && dob.endsWith('.')
+      && value.replace(/\D/g, '') === dob.replace(/\D/g, '');
+
+    setDob(wasDeletingSeparator ? formatted.replace(/\.$/, '') : formatted);
+  }, [dob]);
 
   const handlePickAvatar = useCallback(async () => {
     setLocalError(null);
@@ -413,6 +370,7 @@ export default function EditProfileScreen() {
       await updateProfile({
         about: trimOrNull(about),
         birth_date: birthDateResult.iso,
+        birth_time_context: birthTimeContext,
         birthday_visibility: privacyBirthday,
         city: trimOrNull(city),
         display_name: nextFullName,
@@ -443,6 +401,7 @@ export default function EditProfileScreen() {
     aboutTooLong,
     birthDateResult.error,
     birthDateResult.iso,
+    birthTimeContext,
     city,
     email,
     firstName,
@@ -545,13 +504,39 @@ export default function EditProfileScreen() {
 
         <View style={styles.section}>
           <SectionTitle title="ДАТА РОЖДЕНИЯ" />
-          <FormField label="Гражданская дата" value={dob} onChangeText={setDob} placeholder="ДД.ММ.ГГГГ" />
+          <FormField
+            label="Гражданская дата"
+            value={dob}
+            onChangeText={handleDobChange}
+            placeholder="ДД.ММ.ГГГГ"
+            keyboardType="number-pad"
+            maxLength={10}
+          />
+          {birthDateHelper ? <Text style={styles.helper}>{birthDateHelper}</Text> : null}
           {birthDateError ? <Text style={styles.fieldError}>{birthDateError}</Text> : null}
+          <Text style={styles.sectionHint}>
+            Для еврейской даты важно, родились ли вы после захода солнца.
+          </Text>
+          <SelectPill
+            options={birthTimeContextOptions}
+            value={birthTimeContext}
+            onChange={setBirthTimeContext}
+          />
           <View style={styles.hebrewDate}>
             <Text style={styles.tipEmoji}>✡️</Text>
             <View style={styles.flex}>
               <Text style={styles.goldOverline}>ЕВРЕЙСКАЯ ДАТА</Text>
               <Text style={styles.goldTitle}>{hebrewDateLabel}</Text>
+              {hebrewDateNotice ? (
+                <Text
+                  style={[
+                    styles.goldHint,
+                    birthTimeContext === 'unknown' && styles.goldWarning,
+                  ]}
+                >
+                  {hebrewDateNotice}
+                </Text>
+              ) : null}
             </View>
           </View>
         </View>
@@ -695,6 +680,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
   },
+  sectionHint: {
+    color: colors.textDim,
+    fontSize: 12,
+    lineHeight: 18,
+  },
   hebrewDate: {
     minHeight: 58,
     flexDirection: 'row',
@@ -705,6 +695,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,200,50,0.15)',
     backgroundColor: 'rgba(255,200,50,0.07)',
     paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   goldOverline: {
     color: colors.accent.goldTextDim,
@@ -717,6 +708,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     marginTop: 2,
+  },
+  goldHint: {
+    color: colors.accent.goldTextDim,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 4,
+  },
+  goldWarning: {
+    color: colors.warning,
   },
   helper: {
     color: colors.textGhost,
