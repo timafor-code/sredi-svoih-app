@@ -10,14 +10,48 @@ import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { SubHeader } from '@/components/ui/SubHeader';
-import { getHebrewDateLabel } from '@/lib/hebcal';
+import { buildHebrewBirthDateProfile } from '@/lib/profileDates';
 import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
+import {
+  DEFAULT_BIRTHDAY_VISIBILITY,
+  DEFAULT_PHONE_VISIBILITY,
+  DEFAULT_PROFILE_VISIBILITY,
+  isProfileMaritalStatus,
+  isProfileTribeStatus,
+  isProfileVisibility,
+  type ProfileMaritalStatus,
+  type ProfileTribeStatus,
+  type ProfileVisibility,
+} from '@/types/profile';
 
 const profileHref = '/profile' as Href;
-const tribes = ['Коэн', 'Леви', 'Исраэль'] as const;
-const maritalOptions = ['Холост', 'Женат', 'Замужем', 'Разведён/а', 'Вдов/а'] as const;
-const privacyOptions = ['Только раввин', 'Все участники', 'Публично'] as const;
+const ABOUT_MAX_LENGTH = 200;
+
+type SelectOption<T extends string> = {
+  label: string;
+  value: T;
+};
+
+const tribeOptions: readonly SelectOption<ProfileTribeStatus>[] = [
+  { label: 'Коэн', value: 'kohen' },
+  { label: 'Леви', value: 'levi' },
+  { label: 'Исраэль', value: 'israel' },
+] as const;
+
+const maritalOptions: readonly SelectOption<ProfileMaritalStatus>[] = [
+  { label: 'Холост/не замужем', value: 'single' },
+  { label: 'Женат/замужем', value: 'married' },
+  { label: 'Разведён/а', value: 'divorced' },
+  { label: 'Вдовец/вдова', value: 'widowed' },
+  { label: 'Другое', value: 'other' },
+] as const;
+
+const privacyOptions: readonly SelectOption<ProfileVisibility>[] = [
+  { label: 'Только раввин', value: 'rabbi_only' },
+  { label: 'Все участники', value: 'members' },
+  { label: 'Публично', value: 'public' },
+] as const;
 
 type BirthDateParseResult = {
   date: Date | null;
@@ -107,6 +141,13 @@ function trimOrNull(value: string): string | null {
   return trimmed ? trimmed : null;
 }
 
+function normalizeVisibility(
+  value: ProfileVisibility | null | undefined,
+  fallback: ProfileVisibility,
+): ProfileVisibility {
+  return isProfileVisibility(value) ? value : fallback;
+}
+
 function buildFullName(firstName: string, lastName: string): string | null {
   return [firstName, lastName]
     .map((part) => part.trim())
@@ -131,18 +172,18 @@ function SelectPill<T extends string>({
 }: {
   disabled?: boolean;
   onChange: (value: T) => void;
-  options: readonly T[];
-  value: T;
+  options: readonly SelectOption<T>[];
+  value: T | null;
 }) {
   return (
     <View style={styles.pillWrap}>
       {options.map((option) => {
-        const active = option === value;
+        const active = option.value === value;
         return (
           <Pressable
             disabled={disabled}
-            key={option}
-            onPress={() => onChange(option)}
+            key={option.value}
+            onPress={() => onChange(option.value)}
             style={[
               styles.selectPill,
               active && styles.selectPillActive,
@@ -156,7 +197,7 @@ function SelectPill<T extends string>({
                 disabled && styles.selectPillTextDisabled,
               ]}
             >
-              {option}
+              {option.label}
             </Text>
           </Pressable>
         );
@@ -177,15 +218,15 @@ export default function EditProfileScreen() {
   const [lastName, setLastName] = useState('');
   const [hebrewName, setHebrewName] = useState('');
   const [dob, setDob] = useState('');
-  const [tribe, setTribe] = useState<(typeof tribes)[number]>('Исраэль');
-  const [marital, setMarital] = useState<(typeof maritalOptions)[number]>('Холост');
+  const [tribe, setTribe] = useState<ProfileTribeStatus | null>(null);
+  const [marital, setMarital] = useState<ProfileMaritalStatus | null>(null);
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [city, setCity] = useState('');
   const [about, setAbout] = useState('');
-  const [privacyBirthday, setPrivacyBirthday] = useState<(typeof privacyOptions)[number]>('Все участники');
-  const [privacyPhone, setPrivacyPhone] = useState<(typeof privacyOptions)[number]>('Только раввин');
-  const [privacyProfile, setPrivacyProfile] = useState<(typeof privacyOptions)[number]>('Все участники');
+  const [privacyBirthday, setPrivacyBirthday] = useState<ProfileVisibility>(DEFAULT_BIRTHDAY_VISIBILITY);
+  const [privacyPhone, setPrivacyPhone] = useState<ProfileVisibility>(DEFAULT_PHONE_VISIBILITY);
+  const [privacyProfile, setPrivacyProfile] = useState<ProfileVisibility>(DEFAULT_PROFILE_VISIBILITY);
   const [localError, setLocalError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -193,13 +234,21 @@ export default function EditProfileScreen() {
   const avatarName = fullName ?? email.trim() ?? user?.email ?? 'СС';
   const birthDateResult = useMemo(() => parseBirthDateInput(dob), [dob]);
   const birthDateError = dob.trim() ? birthDateResult.error : null;
+  const hebrewBirthDate = useMemo(() => {
+    if (!birthDateResult.date) {
+      return null;
+    }
+
+    return buildHebrewBirthDateProfile(birthDateResult.date);
+  }, [birthDateResult.date]);
   const hebrewDateLabel = useMemo(() => {
-    if (birthDateResult.date) {
-      return getHebrewDateLabel(birthDateResult.date);
+    if (hebrewBirthDate) {
+      return hebrewBirthDate.labelRu;
     }
 
     return birthDateError ? 'Проверьте гражданскую дату' : 'Будет рассчитано позже';
-  }, [birthDateError, birthDateResult.date]);
+  }, [birthDateError, hebrewBirthDate]);
+  const aboutTooLong = about.length > ABOUT_MAX_LENGTH;
 
   useEffect(() => {
     if (user) {
@@ -219,14 +268,26 @@ export default function EditProfileScreen() {
     setPhone(profile?.phone ?? '');
     setEmail(profile?.email ?? user?.email ?? '');
     setCity(profile?.city ?? '');
+    setTribe(isProfileTribeStatus(profile?.tribe_status) ? profile.tribe_status : null);
+    setMarital(isProfileMaritalStatus(profile?.marital_status) ? profile.marital_status : null);
+    setAbout(profile?.about ?? '');
+    setPrivacyProfile(normalizeVisibility(profile?.profile_visibility, DEFAULT_PROFILE_VISIBILITY));
+    setPrivacyBirthday(normalizeVisibility(profile?.birthday_visibility, DEFAULT_BIRTHDAY_VISIBILITY));
+    setPrivacyPhone(normalizeVisibility(profile?.phone_visibility, DEFAULT_PHONE_VISIBILITY));
   }, [
+    profile?.about,
     profile?.birth_date,
+    profile?.birthday_visibility,
     profile?.city,
     profile?.email,
     profile?.first_name,
     profile?.hebrew_name,
     profile?.last_name,
+    profile?.marital_status,
     profile?.phone,
+    profile?.phone_visibility,
+    profile?.profile_visibility,
+    profile?.tribe_status,
     user?.email,
   ]);
 
@@ -259,21 +320,36 @@ export default function EditProfileScreen() {
       return;
     }
 
+    if (aboutTooLong) {
+      const message = `О себе: максимум ${ABOUT_MAX_LENGTH} символов. Сейчас ${about.length}.`;
+
+      setLocalError(message);
+      Alert.alert('Проверьте текст', message);
+      return;
+    }
+
     const nextFullName = buildFullName(firstName, lastName);
 
     setIsSaving(true);
 
     try {
       await updateProfile({
+        about: trimOrNull(about),
         birth_date: birthDateResult.iso,
+        birthday_visibility: privacyBirthday,
         city: trimOrNull(city),
         display_name: nextFullName,
         email: trimOrNull(email),
         first_name: trimOrNull(firstName),
         full_name: nextFullName,
+        hebrew_birth_date: hebrewBirthDate,
         hebrew_name: trimOrNull(hebrewName),
         last_name: trimOrNull(lastName),
+        marital_status: marital,
         phone: trimOrNull(phone),
+        phone_visibility: privacyPhone,
+        profile_visibility: privacyProfile,
+        tribe_status: tribe,
       });
 
       Alert.alert('Сохранено', 'Профиль обновлён.');
@@ -286,15 +362,23 @@ export default function EditProfileScreen() {
       setIsSaving(false);
     }
   }, [
+    about,
+    aboutTooLong,
     birthDateResult.error,
     birthDateResult.iso,
     city,
     email,
     firstName,
+    hebrewBirthDate,
     hebrewName,
     lastName,
+    marital,
     phone,
+    privacyBirthday,
+    privacyPhone,
+    privacyProfile,
     profile,
+    tribe,
     updateProfile,
     user,
   ]);
@@ -384,14 +468,12 @@ export default function EditProfileScreen() {
 
         <View style={styles.section}>
           <SectionTitle title="ПРОИСХОЖДЕНИЕ" />
-          <SelectPill disabled options={tribes} value={tribe} onChange={setTribe} />
-          <Text style={styles.helper}>Раздел будет сохранён после добавления колонок профиля.</Text>
+          <SelectPill options={tribeOptions} value={tribe} onChange={setTribe} />
         </View>
 
         <View style={styles.section}>
           <SectionTitle title="СЕМЕЙНОЕ ПОЛОЖЕНИЕ" />
-          <SelectPill disabled options={maritalOptions} value={marital} onChange={setMarital} />
-          <Text style={styles.helper}>Раздел будет сохранён после добавления колонок профиля.</Text>
+          <SelectPill options={maritalOptions} value={marital} onChange={setMarital} />
         </View>
 
         <View style={styles.section}>
@@ -404,26 +486,26 @@ export default function EditProfileScreen() {
         <View style={styles.section}>
           <SectionTitle title="О СЕБЕ" />
           <FormField
-            editable={false}
             label="Несколько слов о себе"
             value={about}
             onChangeText={setAbout}
-            placeholder="Будет добавлено позже"
+            placeholder="Расскажите коротко о себе"
             multiline
           />
-          <Text style={styles.counter}>{about.length} / 200</Text>
+          <Text style={[styles.counter, aboutTooLong && styles.counterError]}>
+            {about.length} / {ABOUT_MAX_LENGTH}
+          </Text>
         </View>
 
         <View style={styles.section}>
           <SectionTitle title="ПРИВАТНОСТЬ" />
           <GlassCard>
             <Text style={styles.privacyLabel}>Профиль виден</Text>
-            <SelectPill disabled options={privacyOptions} value={privacyProfile} onChange={setPrivacyProfile} />
+            <SelectPill options={privacyOptions} value={privacyProfile} onChange={setPrivacyProfile} />
             <Text style={styles.privacyLabel}>День рождения виден</Text>
-            <SelectPill disabled options={privacyOptions} value={privacyBirthday} onChange={setPrivacyBirthday} />
+            <SelectPill options={privacyOptions} value={privacyBirthday} onChange={setPrivacyBirthday} />
             <Text style={styles.privacyLabel}>Телефон виден</Text>
-            <SelectPill disabled options={privacyOptions} value={privacyPhone} onChange={setPrivacyPhone} />
-            <Text style={styles.helper}>Настройки приватности будут сохранены после добавления колонок профиля.</Text>
+            <SelectPill options={privacyOptions} value={privacyPhone} onChange={setPrivacyPhone} />
           </GlassCard>
         </View>
 
@@ -598,6 +680,9 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.25)',
     fontSize: 11,
     textAlign: 'right',
+  },
+  counterError: {
+    color: colors.danger,
   },
   privacyLabel: {
     color: colors.textMuted,
