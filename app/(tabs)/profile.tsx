@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
+import type { ComponentProps } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -19,20 +20,136 @@ import { colors } from '@/theme/colors';
 
 const myRegistrationsHref = '/profile/my-registrations' as Href;
 const prayerTrackerHref = '/profile/prayer-tracker' as Href;
+const notificationsHref = '/profile/notifications' as Href;
+const prayersSettingsHref = '/profile/prayers-settings' as Href;
 const editProfileHref = '/profile/edit' as Href;
 const securityHref = '/profile/security' as Href;
 
-const menuItems = [
-  { href: securityHref, icon: '🔐', label: 'Аккаунт и безопасность', sub: 'Email, сессия и будущие настройки входа' },
-  { href: '/profile/prayers-settings', icon: '📍', label: 'Настройки молитв и календаря', sub: 'Город, нусах, язык сидура, напоминания' },
-  { href: prayerTrackerHref, icon: '🙏', label: 'Молитвенный трекер', sub: 'Личная история молитв, Шма и Омера' },
-  { href: myRegistrationsHref, icon: '📅', label: 'Мои записи', sub: 'Ваши регистрации на события' },
-  { href: '/profile/contacts-settings', icon: '👥', label: 'Контакты и дни рождения', sub: 'Синхронизация, еврейская дата, напоминания' },
-  { href: '/profile/notifications', icon: '🔔', label: 'Уведомления', sub: 'Настройте, что и когда вам напоминать' },
-  { href: '/profile/siddur', icon: '📖', label: 'Сидур', sub: 'Нусах, язык, шрифт и другие настройки' },
-  { href: '/profile/support', icon: '❤️', label: 'Поддержать общину', sub: 'Ваш вклад в развитие общины' },
-  { href: '/profile/about', icon: 'ℹ️', label: 'О приложении', sub: 'Версия, поддержка, политика конфиденциальности' },
-] as const;
+type IoniconName = ComponentProps<typeof Ionicons>['name'];
+
+type QuickActionItem = {
+  href: Href;
+  icon: IoniconName;
+  lockedSubtitle: string;
+  subtitle: string;
+  title: string;
+};
+
+type MenuItem = {
+  href: Href;
+  icon: string;
+  label: string;
+  sub: string;
+};
+
+const quickActions: QuickActionItem[] = [
+  {
+    href: myRegistrationsHref,
+    icon: 'calendar-outline',
+    title: 'Мои записи',
+    subtitle: 'Активные регистрации',
+    lockedSubtitle: 'Войдите для доступа',
+  },
+  {
+    href: prayerTrackerHref,
+    icon: 'checkmark-done-outline',
+    title: 'Молитвенный трекер',
+    subtitle: 'Личная практика',
+    lockedSubtitle: 'Войдите для истории',
+  },
+  {
+    href: notificationsHref,
+    icon: 'notifications-outline',
+    title: 'Уведомления',
+    subtitle: 'Напоминания и события',
+    lockedSubtitle: 'Войдите для настроек',
+  },
+  {
+    href: prayersSettingsHref,
+    icon: 'sparkles-outline',
+    title: 'Молитвы и календарь',
+    subtitle: 'Город, нусах, язык',
+    lockedSubtitle: 'Войдите для настроек',
+  },
+];
+
+const menuSections: { title: string; items: MenuItem[] }[] = [
+  {
+    title: 'Личное',
+    items: [
+      {
+        href: editProfileHref,
+        icon: '👤',
+        label: 'Редактировать профиль',
+        sub: 'Имя, город, аватар и публичные данные',
+      },
+      {
+        href: securityHref,
+        icon: '🔐',
+        label: 'Аккаунт и безопасность',
+        sub: 'Email, сессия и будущие настройки входа',
+      },
+      {
+        href: notificationsHref,
+        icon: '🔔',
+        label: 'Уведомления',
+        sub: 'Настройте, что и когда вам напоминать',
+      },
+    ],
+  },
+  {
+    title: 'Практика',
+    items: [
+      {
+        href: prayersSettingsHref,
+        icon: '📍',
+        label: 'Молитвы и календарь',
+        sub: 'Город, нусах, язык сидура, напоминания',
+      },
+      {
+        href: prayerTrackerHref,
+        icon: '🙏',
+        label: 'Молитвенный трекер',
+        sub: 'Личная история молитв, Шма и Омера',
+      },
+      {
+        href: '/profile/siddur' as Href,
+        icon: '📖',
+        label: 'Сидур',
+        sub: 'Нусах, язык, шрифт и другие настройки',
+      },
+    ],
+  },
+  {
+    title: 'Община',
+    items: [
+      {
+        href: myRegistrationsHref,
+        icon: '📅',
+        label: 'Мои записи',
+        sub: 'Ваши регистрации на события',
+      },
+      {
+        href: '/profile/contacts-settings' as Href,
+        icon: '👥',
+        label: 'Контакты и дни рождения',
+        sub: 'Синхронизация, еврейская дата, напоминания',
+      },
+      {
+        href: '/profile/support' as Href,
+        icon: '❤️',
+        label: 'Поддержать общину',
+        sub: 'Ваш вклад в развитие общины',
+      },
+      {
+        href: '/profile/about' as Href,
+        icon: 'ℹ️',
+        label: 'О приложении',
+        sub: 'Версия, поддержка, политика конфиденциальности',
+      },
+    ],
+  },
+];
 
 const roleTitles: Record<CommunityMembershipRole, string> = {
   member: 'Участник',
@@ -100,8 +217,10 @@ export default function ProfileScreen() {
   }, [profile?.display_name, profile?.first_name, profile?.full_name, profile?.last_name]);
 
   const accountEmail = profile?.email ?? authUser?.email ?? '';
-  const displayName = profileName ?? accountEmail.split('@')[0] ?? 'Гость';
+  const displayName = profileName ?? (accountEmail ? accountEmail.split('@')[0] : 'Гость');
   const isActiveMember = membership?.status === 'active';
+  const membershipStatusLabel = isActiveMember ? 'Участник общины' : 'Доступ не активирован';
+  const membershipRoleLabel = isActiveMember ? roleTitles[membership.role] : null;
   const isSigningIn = pendingAction === 'signIn' || (!authUser && loading);
   const isAcceptingInvite = pendingAction === 'invite';
   const isSigningOut = pendingAction === 'signOut';
@@ -166,14 +285,6 @@ export default function ProfileScreen() {
     }
   }, [loadEvents, resetEventPrivateState, signOut]);
 
-  const handleOpenMyRegistrations = useCallback(() => {
-    if (!authUser) {
-      return;
-    }
-
-    router.push(myRegistrationsHref);
-  }, [authUser, router]);
-
   const handleOpenEditProfile = useCallback(() => {
     if (!authUser) {
       return;
@@ -185,6 +296,14 @@ export default function ProfileScreen() {
   const handleOpenSecurity = useCallback(() => {
     router.push(securityHref);
   }, [router]);
+
+  const handleOpenQuickAction = useCallback((href: Href) => {
+    if (!authUser) {
+      return;
+    }
+
+    router.push(href);
+  }, [authUser, router]);
 
   return (
     <Screen contentContainerStyle={styles.content}>
@@ -199,14 +318,23 @@ export default function ProfileScreen() {
 
       <View style={styles.titleBlock}>
         <Text style={styles.title}>Профиль</Text>
-        <Text style={styles.subtitle}>Ваш доступ к событиям, записям и функциям общины.</Text>
+        <Text style={styles.subtitle}>
+          Личный кабинет для профиля, записей, молитвенной практики и настроек общины.
+        </Text>
       </View>
 
       {!authUser ? (
         <GlassCard>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Вход</Text>
-            <Text style={styles.cardText}>Для локального MVP используется временный вход. Apple Sign-In будет позже.</Text>
+          <View style={styles.signedOutHeader}>
+            <View style={styles.signedOutIcon}>
+              <Ionicons name="person-circle-outline" size={30} color={colors.orange} />
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.cardTitle}>Войдите в профиль</Text>
+              <Text style={styles.cardText}>
+                Вход нужен, чтобы открыть личный кабинет, мои записи, аватар и настройки уведомлений.
+              </Text>
+            </View>
           </View>
 
           <View style={styles.form}>
@@ -222,68 +350,124 @@ export default function ProfileScreen() {
           </View>
         </GlassCard>
       ) : (
-        <GlassCard>
+        <GlassCard style={styles.heroCard}>
           <View style={styles.accountHeader}>
-            <Avatar initials={getInitials(displayName)} size={58} uri={profile?.avatar_url} />
+            <Avatar initials={getInitials(displayName)} size={64} uri={profile?.avatar_url} />
             <View style={styles.flex}>
-              <Text style={styles.cardTitle}>Аккаунт</Text>
-              <Text style={styles.accountName}>{profileName ?? accountEmail}</Text>
-              {profileName && accountEmail ? <Text style={styles.accountEmail}>{accountEmail}</Text> : null}
+              <Text numberOfLines={1} style={styles.accountName}>{displayName}</Text>
+              <Text numberOfLines={1} style={styles.accountEmail}>
+                {accountEmail || 'Email не указан'}
+              </Text>
+              {profile?.city ? (
+                <View style={styles.accountMetaLine}>
+                  <Ionicons name="location-outline" size={14} color={colors.textDim} />
+                  <Text numberOfLines={1} style={styles.accountMetaText}>{profile.city}</Text>
+                </View>
+              ) : null}
             </View>
+            <Pressable
+              accessibilityLabel="Аккаунт и безопасность"
+              onPress={handleOpenSecurity}
+              style={({ pressed }) => [styles.securityIconButton, pressed && styles.pressed]}
+            >
+              <Ionicons name="settings-outline" size={18} color={colors.textSecondary} />
+            </Pressable>
           </View>
 
-          {profile?.city ? (
-            <View style={styles.infoRow}>
-              <Ionicons name="location-outline" size={15} color={colors.textDim} />
-              <Text style={styles.infoText}>{profile.city}</Text>
+          <View style={styles.heroStatusRow}>
+            <View style={[styles.statusPill, isActiveMember ? styles.statusPillActive : styles.statusPillLocked]}>
+              <Ionicons
+                name={isActiveMember ? 'checkmark-circle' : 'lock-closed-outline'}
+                size={13}
+                color={isActiveMember ? colors.success : colors.orange}
+              />
+              <Text style={[styles.statusPillText, isActiveMember ? styles.statusPillTextActive : styles.statusPillTextLocked]}>
+                {membershipStatusLabel}
+              </Text>
             </View>
-          ) : null}
+            {membershipRoleLabel ? (
+              <View style={styles.rolePill}>
+                <Ionicons name="shield-checkmark-outline" size={13} color={colors.textMuted} />
+                <Text style={styles.rolePillText}>{membershipRoleLabel}</Text>
+              </View>
+            ) : null}
+          </View>
 
-          <Pressable
-            onPress={handleOpenEditProfile}
-            style={({ pressed }) => [styles.editProfileButton, pressed && styles.pressed]}
-          >
-            <Ionicons name="create-outline" size={17} color={colors.orange} />
-            <Text style={styles.editProfileText}>Редактировать профиль</Text>
-          </Pressable>
-
-          <Pressable
-            disabled={isSigningOut}
-            onPress={handleSignOut}
-            style={({ pressed }) => [
-              styles.signOutButton,
-              isSigningOut && styles.buttonDisabled,
-              pressed && !isSigningOut && styles.signOutPressed,
-            ]}
-          >
-            <Ionicons name="log-out-outline" size={17} color={colors.danger} />
-            <Text style={styles.signOutText}>{isSigningOut ? 'Выходим...' : 'Выйти'}</Text>
-          </Pressable>
+          <View style={styles.heroActions}>
+            <Pressable
+              onPress={handleOpenEditProfile}
+              style={({ pressed }) => [styles.editProfileButton, pressed && styles.pressed]}
+            >
+              <Ionicons name="create-outline" size={17} color={colors.orange} />
+              <Text style={styles.editProfileText}>Редактировать</Text>
+            </Pressable>
+            <Pressable
+              disabled={isSigningOut}
+              onPress={handleSignOut}
+              style={({ pressed }) => [
+                styles.signOutLink,
+                isSigningOut && styles.buttonDisabled,
+                pressed && !isSigningOut && styles.pressed,
+              ]}
+            >
+              <Ionicons name="log-out-outline" size={16} color={colors.textGhost} />
+              <Text style={styles.signOutLinkText}>{isSigningOut ? 'Выходим...' : 'Выйти'}</Text>
+            </Pressable>
+          </View>
 
           {signOutError ? <Text style={styles.errorText}>{signOutError}</Text> : null}
         </GlassCard>
       )}
 
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Быстрые действия</Text>
+        <View style={styles.quickActionsGrid}>
+          {quickActions.map((item) => {
+            const disabled = !authUser;
+            const isRegistrations = item.href === myRegistrationsHref;
+            const subtitle = disabled
+              ? item.lockedSubtitle
+              : isRegistrations
+                ? `Активных записей: ${activeRegistrationsCount}`
+                : item.subtitle;
+
+            return (
+              <Pressable
+                key={item.title}
+                disabled={disabled}
+                onPress={() => handleOpenQuickAction(item.href)}
+                style={({ pressed }) => [
+                  styles.quickActionCard,
+                  disabled && styles.quickActionCardDisabled,
+                  pressed && !disabled && styles.quickActionCardPressed,
+                ]}
+              >
+                <View style={[styles.quickActionIcon, disabled && styles.quickActionIconDisabled]}>
+                  <Ionicons name={disabled ? 'lock-closed-outline' : item.icon} size={20} color={disabled ? colors.textDim : colors.orange} />
+                </View>
+                <Text numberOfLines={2} style={styles.quickActionTitle}>{item.title}</Text>
+                <Text numberOfLines={2} style={styles.quickActionSubtitle}>{subtitle}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
       {authUser ? (
         <GlassCard style={isActiveMember ? styles.memberCardActive : undefined}>
-          <View style={styles.cardHeader}>
-            <View style={styles.cardTitleRow}>
-              <Text style={styles.cardTitle}>Община</Text>
-              {isActiveMember ? (
-                <View style={styles.activeBadge}>
-                  <Text style={styles.activeBadgeText}>active</Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
-
           {!isActiveMember ? (
             <View style={styles.form}>
-              <View style={styles.statusLine}>
-                <Ionicons name="lock-closed-outline" size={18} color={colors.orange} />
-                <Text style={styles.statusText}>Доступ к общине не активирован</Text>
+              <View style={styles.communityHeader}>
+                <View style={styles.communityIconLocked}>
+                  <Ionicons name="people-outline" size={20} color={colors.orange} />
+                </View>
+                <View style={styles.flex}>
+                  <Text style={styles.cardTitle}>Присоединиться к общине</Text>
+                  <Text style={styles.cardText}>
+                    Введите invite-код, чтобы открыть события и функции для участников.
+                  </Text>
+                </View>
               </View>
-              <Text style={styles.cardText}>Введите invite-код, чтобы открыть события и функции для участников.</Text>
               <FormField
                 label="Invite-код"
                 value={inviteCode}
@@ -300,68 +484,58 @@ export default function ProfileScreen() {
             </View>
           ) : (
             <View style={styles.memberInfo}>
-              <View style={styles.statusLine}>
-                <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-                <Text style={styles.statusText}>Вы участник общины</Text>
+              <View style={styles.communityHeader}>
+                <View style={styles.communityIconActive}>
+                  <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+                </View>
+                <View style={styles.flex}>
+                  <Text style={styles.cardTitle}>Община Среди Своих</Text>
+                  <Text style={styles.cardText}>Ваш доступ активирован.</Text>
+                </View>
               </View>
-              <View style={styles.infoRow}>
-                <Ionicons name="people-outline" size={15} color={colors.textDim} />
-                <Text style={styles.infoText}>Среди Своих</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Ionicons name="shield-checkmark-outline" size={15} color={colors.textDim} />
-                <Text style={styles.infoText}>Роль: {roleTitles[membership.role]}</Text>
+              <View style={styles.communityDetails}>
+                <View style={styles.infoRow}>
+                  <Ionicons name="people-outline" size={15} color={colors.textDim} />
+                  <Text style={styles.infoText}>Статус: Участник общины</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Ionicons name="shield-checkmark-outline" size={15} color={colors.textDim} />
+                  <Text style={styles.infoText}>Роль: {roleTitles[membership.role]}</Text>
+                </View>
               </View>
             </View>
           )}
         </GlassCard>
       ) : null}
 
-      <GlassCard style={[styles.bookingCard, !authUser && styles.bookingCardDisabled]}>
-        <Pressable
-          disabled={!authUser}
-          onPress={handleOpenMyRegistrations}
-          style={({ pressed }) => [styles.bookingPressable, pressed && styles.pressed]}
-        >
-          <View style={styles.bookingIcon}>
-            <Ionicons name="calendar-outline" size={20} color={authUser ? colors.orange : colors.textDim} />
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Все разделы</Text>
+        {menuSections.map((section) => (
+          <View key={section.title} style={styles.menuSection}>
+            <Text style={styles.menuSectionTitle}>{section.title}</Text>
+            <IOSGroup>
+              {section.items.map((item, index) => (
+                <Link key={item.label} href={item.href} asChild>
+                  <ListRow
+                    icon={item.icon}
+                    title={item.label}
+                    subtitle={item.sub}
+                    isLast={index === section.items.length - 1}
+                    onPress={() => undefined}
+                  />
+                </Link>
+              ))}
+            </IOSGroup>
           </View>
-          <View style={styles.flex}>
-            <Text style={styles.bookingTitle}>Мои записи</Text>
-            <Text style={styles.bookingSubtitle}>
-              {authUser
-                ? `Активных записей: ${activeRegistrationsCount}`
-                : 'Войдите, чтобы увидеть свои записи'}
-            </Text>
-          </View>
-          {authUser ? (
-            <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.3)" />
-          ) : (
-            <Ionicons name="lock-closed-outline" size={18} color={colors.textDim} />
-          )}
-        </Pressable>
-      </GlassCard>
-
-      <IOSGroup>
-        {menuItems.map((item, index) => (
-          <Link key={item.label} href={item.href} asChild>
-            <ListRow
-              icon={item.icon}
-              title={item.label}
-              subtitle={item.sub}
-              isLast={index === menuItems.length - 1}
-              onPress={() => undefined}
-            />
-          </Link>
         ))}
-      </IOSGroup>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   content: {
-    gap: 16,
+    gap: 18,
   },
   header: {
     flexDirection: 'row',
@@ -383,15 +557,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-  cardHeader: {
-    gap: 6,
-    marginBottom: 14,
-  },
-  cardTitleRow: {
+  signedOutHeader: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 16,
+  },
+  signedOutIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.accent.orangeBorder,
+    backgroundColor: colors.accent.orangeBg,
+  },
+  heroCard: {
+    borderColor: colors.borderStrong,
   },
   cardTitle: {
     color: colors.text,
@@ -402,6 +585,7 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     fontSize: 13,
     lineHeight: 18,
+    marginTop: 4,
   },
   form: {
     gap: 12,
@@ -409,15 +593,13 @@ const styles = StyleSheet.create({
   accountHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    marginBottom: 14,
+    gap: 13,
   },
   accountName: {
     color: colors.text,
-    fontSize: 18,
-    fontWeight: '700',
-    lineHeight: 23,
-    marginTop: 3,
+    fontSize: 19,
+    fontWeight: '800',
+    lineHeight: 24,
   },
   accountEmail: {
     color: colors.textDim,
@@ -425,9 +607,226 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 2,
   },
+  accountMetaLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 5,
+  },
+  accountMetaText: {
+    flex: 1,
+    color: colors.textDim,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  securityIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.glass.w10,
+    backgroundColor: colors.glass.w07,
+  },
   flex: {
     flex: 1,
     minWidth: 0,
+  },
+  heroStatusRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 16,
+  },
+  statusPill: {
+    minHeight: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 9,
+  },
+  statusPillActive: {
+    borderColor: colors.accent.greenBorder,
+    backgroundColor: colors.accent.greenBg,
+  },
+  statusPillLocked: {
+    borderColor: colors.accent.orangeBorder,
+    backgroundColor: colors.accent.orangeBg,
+  },
+  statusPillText: {
+    fontSize: 12,
+    fontWeight: '800',
+    includeFontPadding: false,
+  },
+  statusPillTextActive: {
+    color: colors.success,
+  },
+  statusPillTextLocked: {
+    color: colors.orange,
+  },
+  rolePill: {
+    minHeight: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.glass.w10,
+    backgroundColor: colors.glass.w06,
+    paddingHorizontal: 9,
+  },
+  rolePillText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    includeFontPadding: false,
+  },
+  heroActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 16,
+  },
+  editProfileButton: {
+    minHeight: 40,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.accent.orangeBorder,
+    backgroundColor: colors.accent.orangeBg,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  editProfileText: {
+    color: colors.orange,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  signOutLink: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.glass.w08,
+    backgroundColor: colors.glass.w04,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  signOutLinkText: {
+    color: colors.textGhost,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  buttonDisabled: {
+    opacity: 0.55,
+  },
+  section: {
+    gap: 10,
+  },
+  sectionTitle: {
+    color: colors.textGhost,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0,
+    marginLeft: 4,
+    textTransform: 'uppercase',
+  },
+  quickActionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  quickActionCard: {
+    width: '48%',
+    minHeight: 128,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.glass.w06,
+    padding: 13,
+  },
+  quickActionCardPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.98 }],
+  },
+  quickActionCardDisabled: {
+    opacity: 0.64,
+  },
+  quickActionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.accent.orangeBorder,
+    backgroundColor: colors.accent.orangeBg,
+    marginBottom: 12,
+  },
+  quickActionIconDisabled: {
+    borderColor: colors.glass.w10,
+    backgroundColor: colors.glass.w06,
+  },
+  quickActionTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '800',
+    lineHeight: 18,
+  },
+  quickActionSubtitle: {
+    color: colors.textDim,
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 5,
+  },
+  communityHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  communityIconLocked: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.accent.orangeBorder,
+    backgroundColor: colors.accent.orangeBg,
+  },
+  communityIconActive: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.accent.greenBorder,
+    backgroundColor: colors.accent.greenBg,
+  },
+  memberCardActive: {
+    borderColor: colors.accent.greenBorder,
+  },
+  memberInfo: {
+    gap: 14,
+  },
+  communityDetails: {
+    gap: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.glass.w08,
+    backgroundColor: colors.glass.w04,
+    padding: 12,
   },
   infoRow: {
     flexDirection: 'row',
@@ -440,82 +839,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-  editProfileButton: {
-    minHeight: 42,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(240,122,42,0.25)',
-    backgroundColor: 'rgba(240,122,42,0.10)',
-    marginTop: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  editProfileText: {
-    color: colors.orange,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  signOutButton: {
-    minHeight: 42,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.accent.redBorder,
-    backgroundColor: colors.accent.redBg,
-    marginTop: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  signOutPressed: {
-    opacity: 0.78,
-  },
-  buttonDisabled: {
-    opacity: 0.55,
-  },
-  signOutText: {
-    color: colors.danger,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  memberCardActive: {
-    borderColor: colors.accent.greenBorder,
-  },
-  activeBadge: {
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.accent.greenBorder,
-    backgroundColor: colors.accent.greenBg,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  activeBadgeText: {
-    color: colors.success,
-    fontSize: 11,
-    fontWeight: '700',
-    includeFontPadding: false,
-  },
-  statusLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  statusText: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 20,
-  },
-  memberInfo: {
-    gap: 11,
-  },
   helperText: {
     color: colors.textGhost,
     fontSize: 12,
@@ -526,38 +849,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
   },
-  bookingCard: {
-    borderColor: 'rgba(240,122,42,0.20)',
-    backgroundColor: 'rgba(240,122,42,0.06)',
+  menuSection: {
+    gap: 8,
   },
-  bookingCardDisabled: {
-    opacity: 0.72,
-  },
-  bookingPressable: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  bookingIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(240,122,42,0.25)',
-    backgroundColor: 'rgba(240,122,42,0.15)',
-  },
-  bookingTitle: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  bookingSubtitle: {
-    color: colors.textDim,
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 3,
+  menuSectionTitle: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '800',
+    marginLeft: 4,
   },
   pressed: {
     opacity: 0.78,
