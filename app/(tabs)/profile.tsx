@@ -20,8 +20,10 @@ import { colors } from '@/theme/colors';
 const myRegistrationsHref = '/profile/my-registrations' as Href;
 const prayerTrackerHref = '/profile/prayer-tracker' as Href;
 const editProfileHref = '/profile/edit' as Href;
+const securityHref = '/profile/security' as Href;
 
 const menuItems = [
+  { href: securityHref, icon: '🔐', label: 'Аккаунт и безопасность', sub: 'Email, сессия и будущие настройки входа' },
   { href: '/profile/prayers-settings', icon: '📍', label: 'Настройки молитв и календаря', sub: 'Город, нусах, язык сидура, напоминания' },
   { href: prayerTrackerHref, icon: '🙏', label: 'Молитвенный трекер', sub: 'Личная история молитв, Шма и Омера' },
   { href: myRegistrationsHref, icon: '📅', label: 'Мои записи', sub: 'Ваши регистрации на события' },
@@ -180,11 +182,19 @@ export default function ProfileScreen() {
     router.push(editProfileHref);
   }, [authUser, router]);
 
+  const handleOpenSecurity = useCallback(() => {
+    router.push(securityHref);
+  }, [router]);
+
   return (
     <Screen contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Logo />
-        <HeaderButton icon="settings-outline" />
+        <HeaderButton
+          accessibilityLabel="Аккаунт и безопасность"
+          icon="settings-outline"
+          onPress={handleOpenSecurity}
+        />
       </View>
 
       <View style={styles.titleBlock}>
