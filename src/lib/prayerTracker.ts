@@ -2,6 +2,7 @@ import type { PrayerWindow } from '@/lib/zmanim';
 import type { PrayerActivityLog, PrayerActivityType } from '@/types/prayerTracker';
 
 export const MORNING_SHEMA_ACTIVITY_TYPE = 'shema_morning' satisfies PrayerActivityType;
+export const OMER_COUNT_ACTIVITY_TYPE = 'omer_count' satisfies PrayerActivityType;
 
 export function formatLocalDateKey(date: Date | string, timeZone: string): string {
   const value = date instanceof Date ? date : new Date(date);
@@ -39,6 +40,14 @@ export function hasRecordedMorningShema(
   userId?: string | null,
 ): boolean {
   return hasRecordedActivity(items, MORNING_SHEMA_ACTIVITY_TYPE, activityDate, userId);
+}
+
+export function hasRecordedOmerCount(
+  items: PrayerActivityLog[],
+  activityDate: string,
+  userId?: string | null,
+): boolean {
+  return hasRecordedActivity(items, OMER_COUNT_ACTIVITY_TYPE, activityDate, userId);
 }
 
 export function prayerActivityTypeFromPrayerId(prayerId: PrayerWindow['id']): PrayerActivityType {
