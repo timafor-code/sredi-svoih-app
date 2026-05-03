@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
-import { listImportItemsNeedingReview } from "../services/adminImportReviewService";
+import {
+  getImportItem,
+  listImportItemsNeedingReview,
+} from "../services/adminImportReviewService";
 import type { AdminBadgeTone } from "../types/admin";
 import type {
   AdminImportDateQuality,
   AdminImportItemStatus,
   AdminImportReviewItem,
+  JsonObject,
   JsonValue,
 } from "../types/importReview";
 
@@ -46,6 +50,11 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
   const [dateQualityFilter, setDateQualityFilter] = useState<DateQualityFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [limit, setLimit] = useState<ReviewLimit>(50);
+  const [detailItemId, setDetailItemId] = useState<string | null>(null);
+  const [detailItem, setDetailItem] = useState<AdminImportReviewItem | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailReloadSignal, setDetailReloadSignal] = useState(0);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -68,6 +77,76 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
   useEffect(() => {
     void loadItems();
   }, [loadItems, refreshSignal]);
+
+  useEffect(() => {
+    if (!detailItemId) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    setDetailLoading(true);
+    setDetailError(null);
+    setDetailItem(null);
+
+    getImportItem(detailItemId)
+      .then((nextItem) => {
+        if (!isCancelled) {
+          setDetailItem(nextItem);
+        }
+      })
+      .catch((nextError) => {
+        if (!isCancelled) {
+          setDetailError(
+            nextError instanceof Error
+              ? nextError.message
+              : "Не удалось загрузить import item через admin_get_import_item.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setDetailLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [detailItemId, detailReloadSignal]);
+
+  const handleOpenDetail = useCallback((itemId: string) => {
+    setDetailItemId(itemId);
+    setDetailReloadSignal((current) => current + 1);
+  }, []);
+
+  const handleCloseDetail = useCallback(() => {
+    setDetailItemId(null);
+    setDetailItem(null);
+    setDetailError(null);
+  }, []);
+
+  const handleRetryDetail = useCallback(() => {
+    setDetailReloadSignal((current) => current + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!detailItemId) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        handleCloseDetail();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [detailItemId, handleCloseDetail]);
 
   const filteredItems = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("ru");
@@ -110,6 +189,14 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
 
   const hasActiveFilters =
     query.trim().length > 0 || dateQualityFilter !== "all" || statusFilter !== "all";
+
+  const selectedListItem = useMemo(() => {
+    if (!detailItemId) {
+      return null;
+    }
+
+    return items.find((item) => item.id === detailItemId) ?? null;
+  }, [detailItemId, items]);
 
   return (
     <div className="page-stack page-stack--import">
@@ -247,14 +334,31 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
             ) : null}
           </ImportReviewState>
         ) : (
-          <ImportReviewList items={filteredItems} />
+          <ImportReviewList items={filteredItems} onOpenDetail={handleOpenDetail} />
         )}
       </GlassCard>
+
+      {detailItemId ? (
+        <ImportItemDetailDrawer
+          error={detailError}
+          fallbackItem={selectedListItem}
+          item={detailItem}
+          loading={detailLoading}
+          onClose={handleCloseDetail}
+          onRetry={handleRetryDetail}
+        />
+      ) : null}
     </div>
   );
 }
 
-function ImportReviewList({ items }: { items: AdminImportReviewItem[] }) {
+function ImportReviewList({
+  items,
+  onOpenDetail,
+}: {
+  items: AdminImportReviewItem[];
+  onOpenDetail: (itemId: string) => void;
+}) {
   return (
     <div className="import-review-list" aria-label="Import items needing review">
       {items.map((item) => (
@@ -270,9 +374,14 @@ function ImportReviewList({ items }: { items: AdminImportReviewItem[] }) {
               </div>
               <h3>{item.parsedTitle || "Без названия"}</h3>
             </div>
-            <div className="import-review-item__created">
-              <span>created_at</span>
-              <strong>{formatDateTime(item.createdAt)}</strong>
+            <div className="import-review-item__actions">
+              <div className="import-review-item__created">
+                <span>created_at</span>
+                <strong>{formatDateTime(item.createdAt)}</strong>
+              </div>
+              <Button onClick={() => onOpenDetail(item.id)} size="sm" variant="secondary">
+                Подробнее
+              </Button>
             </div>
           </div>
 
@@ -328,6 +437,216 @@ function ImportReviewList({ items }: { items: AdminImportReviewItem[] }) {
         </article>
       ))}
     </div>
+  );
+}
+
+function ImportItemDetailDrawer({
+  error,
+  fallbackItem,
+  item,
+  loading,
+  onClose,
+  onRetry,
+}: {
+  error: string | null;
+  fallbackItem: AdminImportReviewItem | null;
+  item: AdminImportReviewItem | null;
+  loading: boolean;
+  onClose: () => void;
+  onRetry: () => void;
+}) {
+  const titleId = useId();
+  const displayItem = item ?? fallbackItem;
+  const fallbackRawDetails = displayItem ? getRawPayloadDetails(displayItem.rawPayload) : null;
+  const title =
+    item?.parsedTitle ||
+    fallbackRawDetails?.title ||
+    fallbackItem?.parsedTitle ||
+    "Import item";
+
+  return (
+    <div
+      className="import-detail-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <aside
+        aria-labelledby={titleId}
+        aria-modal="true"
+        className="import-detail-drawer"
+        role="dialog"
+      >
+        <div className="import-detail-drawer__head">
+          <div className="import-detail-drawer__title">
+            <div className="badge-row">
+              <Badge tone="red">read-only</Badge>
+              <Badge tone="glass">admin_get_import_item</Badge>
+            </div>
+            <h2 id={titleId}>{title}</h2>
+            <p>Полные данные загружаются через RPC `admin_get_import_item`.</p>
+          </div>
+          <Button onClick={onClose} variant="secondary">
+            Закрыть
+          </Button>
+        </div>
+
+        <div className="import-detail-drawer__body">
+          {loading ? (
+            <ImportReviewState
+              description="Вызываем admin_get_import_item и ждём полные данные import item."
+              title="Загрузка detail"
+            />
+          ) : error ? (
+            <ImportReviewState description={error} title="Не удалось загрузить detail">
+              <Button onClick={onRetry} variant="primary">
+                Повторить
+              </Button>
+            </ImportReviewState>
+          ) : item ? (
+            <ImportItemDetailContent item={item} />
+          ) : (
+            <ImportReviewState
+              description="RPC не вернул данные для выбранного import item."
+              title="Detail пуст"
+            />
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function ImportItemDetailContent({ item }: { item: AdminImportReviewItem }) {
+  const review = item.importReview;
+  const rawDetails = getRawPayloadDetails(item.rawPayload);
+  const needsReview = review?.needsReview ?? review?.reviewNeeded ?? null;
+
+  return (
+    <>
+      <section className="import-detail-section">
+        <h3>Основное</h3>
+        <div className="import-detail-grid">
+          <ImportReviewField
+            label="Title"
+            value={rawDetails.title ?? item.parsedTitle ?? "Не указано"}
+          />
+          <ImportReviewField label="Parsed title" value={item.parsedTitle || "Не указано"} />
+          <ImportReviewField label="Status" value={item.status ?? "unknown"} />
+          <ImportReviewField
+            label="dateConfidence"
+            value={review?.dateConfidence ?? "Не указано"}
+          />
+          <ImportReviewField label="dateStatus" value={review?.dateStatus ?? "Не указано"} />
+          <ImportReviewField label="needsReview" value={formatBooleanValue(needsReview)} />
+          <ImportReviewField label="Reason" value={review?.reason ?? "Не указано"} wide />
+          <ImportReviewField label="Notes" value={review?.notes ?? "Не указано"} wide />
+        </div>
+      </section>
+
+      <section className="import-detail-section">
+        <h3>Дата и место</h3>
+        <div className="import-detail-grid">
+          <ImportReviewField label="rawDateText" value={review?.rawDateText ?? "Не указано"} />
+          <ImportReviewField label="rawTimeText" value={review?.rawTimeText ?? "Не указано"} />
+          <ImportReviewField
+            label="suggestedStartsAt"
+            value={formatDateTimeDetail(review?.suggestedStartsAt ?? null)}
+          />
+          <ImportReviewField
+            label="parsedStartsAt"
+            value={formatDateTimeDetail(item.parsedStartsAt)}
+          />
+          <ImportReviewField
+            label="parsedLocation"
+            value={item.parsedLocation || "Не указано"}
+            wide
+          />
+        </div>
+      </section>
+
+      <section className="import-detail-section">
+        <h3>Источник</h3>
+        <div className="import-detail-grid">
+          <ImportReviewField label="sourceName" value={item.sourceName || "Не указано"} />
+          <ImportReviewField label="externalId" value={item.externalId || "Не указано"} />
+          <ImportReviewField label="createdAt" value={formatDateTimeDetail(item.createdAt)} />
+          {item.linkedEventId ? (
+            <ImportReviewField label="linkedEventId" value={item.linkedEventId} />
+          ) : null}
+          <ImportReviewField label="sourceUrl" wide>
+            {item.sourceUrl ? (
+              <a
+                className="import-review-link"
+                href={item.sourceUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {item.sourceUrl}
+              </a>
+            ) : (
+              "Не указано"
+            )}
+          </ImportReviewField>
+        </div>
+      </section>
+
+      <section className="import-detail-section">
+        <h3>Raw payload fields</h3>
+        {rawDetails.imageUrl ? (
+          <figure className="import-detail-image">
+            <img
+              alt={item.parsedTitle || "Import item image"}
+              loading="lazy"
+              src={rawDetails.imageUrl}
+            />
+            <figcaption>
+              <a
+                className="import-review-link"
+                href={rawDetails.imageUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {rawDetails.imageUrl}
+              </a>
+            </figcaption>
+          </figure>
+        ) : null}
+        <div className="import-detail-grid">
+          <ImportReviewField label="registrationUrl" wide>
+            {rawDetails.registrationUrl ? (
+              <a
+                className="import-review-link"
+                href={rawDetails.registrationUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {rawDetails.registrationUrl}
+              </a>
+            ) : (
+              "Не указано"
+            )}
+          </ImportReviewField>
+          <ImportReviewField
+            label="Description"
+            value={rawDetails.description ?? "Не указано"}
+            wide
+          />
+          <ImportReviewField
+            label="Short description"
+            value={rawDetails.shortDescription ?? "Не указано"}
+            wide
+          />
+        </div>
+      </section>
+
+      <details className="import-detail-json" open>
+        <summary>rawPayload JSON</summary>
+        <pre>{formatRawPayloadFull(item.rawPayload)}</pre>
+      </details>
+    </>
   );
 }
 
@@ -390,6 +709,101 @@ function getReviewNotes(item: AdminImportReviewItem): string {
   return notes || "Не указано";
 }
 
+function isJsonObject(value: JsonValue | null | undefined): value is JsonObject {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function getRawPayloadDetails(rawPayload: JsonValue): {
+  description: string | null;
+  imageUrl: string | null;
+  registrationUrl: string | null;
+  shortDescription: string | null;
+  title: string | null;
+} {
+  return {
+    description: readRawPayloadString(rawPayload, [
+      ["description"],
+      ["detail", "description"],
+      ["parsed", "description"],
+      ["card", "description"],
+    ]),
+    imageUrl: readRawPayloadString(rawPayload, [
+      ["imageUrl"],
+      ["image_url"],
+      ["detail", "imageUrl"],
+      ["detail", "image_url"],
+      ["parsed", "imageUrl"],
+      ["parsed", "image_url"],
+      ["card", "imageUrl"],
+      ["card", "image_url"],
+    ]),
+    registrationUrl: readRawPayloadString(rawPayload, [
+      ["registrationUrl"],
+      ["registration_url"],
+      ["detail", "registrationUrl"],
+      ["detail", "registration_url"],
+      ["parsed", "registrationUrl"],
+      ["parsed", "registration_url"],
+      ["card", "registrationUrl"],
+      ["card", "registration_url"],
+    ]),
+    shortDescription: readRawPayloadString(rawPayload, [
+      ["shortDescription"],
+      ["short_description"],
+      ["detail", "shortDescription"],
+      ["detail", "short_description"],
+      ["parsed", "shortDescription"],
+      ["parsed", "short_description"],
+      ["card", "shortDescription"],
+      ["card", "short_description"],
+    ]),
+    title: readRawPayloadString(rawPayload, [
+      ["title"],
+      ["detail", "title"],
+      ["parsed", "title"],
+      ["card", "title"],
+    ]),
+  };
+}
+
+function readRawPayloadString(rawPayload: JsonValue, paths: string[][]): string | null {
+  for (const path of paths) {
+    const value = readJsonPath(rawPayload, path);
+
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+
+    if (typeof value === "number" || typeof value === "boolean") {
+      return String(value);
+    }
+  }
+
+  return null;
+}
+
+function readJsonPath(rawPayload: JsonValue, path: string[]): JsonValue | undefined {
+  let current: JsonValue | undefined = rawPayload;
+
+  for (const segment of path) {
+    if (!isJsonObject(current)) {
+      return undefined;
+    }
+
+    current = current[segment];
+  }
+
+  return current;
+}
+
+function formatBooleanValue(value: boolean | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "Не указано";
+  }
+
+  return value ? "true" : "false";
+}
+
 function formatDateTime(value: string | null): string {
   if (!value) {
     return "Не указано";
@@ -407,10 +821,24 @@ function formatDateTime(value: string | null): string {
   }).format(date);
 }
 
+function formatDateTimeDetail(value: string | null | undefined): string {
+  if (!value) {
+    return "Не указано";
+  }
+
+  const formatted = formatDateTime(value);
+
+  return formatted === value ? value : `${formatted} (${value})`;
+}
+
 function formatRawPayloadPreview(value: JsonValue): string {
+  const serialized = formatRawPayloadFull(value);
+  return serialized.length > 1400 ? `${serialized.slice(0, 1400)}\n...` : serialized;
+}
+
+function formatRawPayloadFull(value: JsonValue): string {
   try {
-    const serialized = JSON.stringify(value, null, 2);
-    return serialized.length > 1400 ? `${serialized.slice(0, 1400)}\n...` : serialized;
+    return JSON.stringify(value, null, 2);
   } catch {
     return "Не удалось отобразить raw_payload.";
   }
