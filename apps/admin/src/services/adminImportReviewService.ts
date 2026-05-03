@@ -1,5 +1,6 @@
 import { requireSupabaseClient } from "./supabaseClient";
 import type {
+  AdminImportAdminReview,
   AdminImportReview,
   AdminImportReviewItem,
   AdminImportReviewRow,
@@ -106,6 +107,25 @@ function normalizeImportReview(rawPayload: JsonValue): AdminImportReview | null 
   };
 }
 
+function normalizeAdminReview(rawPayload: JsonValue): AdminImportAdminReview | null {
+  if (!isJsonObject(rawPayload)) {
+    return null;
+  }
+
+  const review = rawPayload.adminReview;
+
+  if (!isJsonObject(review)) {
+    return null;
+  }
+
+  return {
+    ...review,
+    ignoredAt: nullableString(review.ignoredAt),
+    ignoredBy: nullableString(review.ignoredBy),
+    ignoreReason: nullableString(review.ignoreReason),
+  };
+}
+
 function normalizeImportItemRow(row: AdminImportReviewRow): AdminImportReviewItem {
   const rawPayload = row.raw_payload ?? {};
 
@@ -123,6 +143,7 @@ function normalizeImportItemRow(row: AdminImportReviewRow): AdminImportReviewIte
     createdAt: row.created_at,
     linkedEventId: row.linked_event_id,
     importReview: normalizeImportReview(rawPayload),
+    adminReview: normalizeAdminReview(rawPayload),
     sourceName: row.source_name,
     communityId: row.community_id,
   };
@@ -222,6 +243,35 @@ export async function getImportItem(importItemId: string): Promise<AdminImportRe
       formatImportReviewRpcError(error, {
         fallbackAction: "Не удалось загрузить import item",
         rpcName: "admin_get_import_item",
+      }),
+    );
+  }
+
+  return normalizeSingleImportItem(data as AdminImportReviewRow | AdminImportReviewRow[] | null);
+}
+
+export async function ignoreImportItem(
+  importItemId: string,
+  reason?: string,
+): Promise<AdminImportReviewItem> {
+  const normalizedId = importItemId.trim();
+  const normalizedReason = reason?.trim();
+
+  if (!normalizedId) {
+    throw new Error("Не удалось игнорировать import item: пустой id.");
+  }
+
+  const supabase = requireSupabaseClient();
+  const { data, error } = await supabase.rpc("admin_ignore_import_item", {
+    import_item_id: normalizedId,
+    reason: normalizedReason && normalizedReason.length > 0 ? normalizedReason : null,
+  });
+
+  if (error) {
+    throw new Error(
+      formatImportReviewRpcError(error, {
+        fallbackAction: "Не удалось игнорировать import item",
+        rpcName: "admin_ignore_import_item",
       }),
     );
   }

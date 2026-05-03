@@ -5,6 +5,7 @@ import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
 import {
   getImportItem,
+  ignoreImportItem,
   listImportItemsNeedingReview,
 } from "../services/adminImportReviewService";
 import type { AdminBadgeTone } from "../types/admin";
@@ -46,6 +47,7 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
   const [items, setItems] = useState<AdminImportReviewItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [dateQualityFilter, setDateQualityFilter] = useState<DateQualityFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -56,19 +58,22 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailReloadSignal, setDetailReloadSignal] = useState(0);
 
-  const loadItems = useCallback(async () => {
+  const loadItems = useCallback(async (): Promise<boolean> => {
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
 
     try {
       const nextItems = await listImportItemsNeedingReview(limit);
       setItems(nextItems);
+      return true;
     } catch (nextError) {
       setError(
         nextError instanceof Error
           ? nextError.message
           : "Не удалось загрузить import items из Supabase.",
       );
+      return false;
     } finally {
       setLoading(false);
     }
@@ -116,6 +121,7 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
   }, [detailItemId, detailReloadSignal]);
 
   const handleOpenDetail = useCallback((itemId: string) => {
+    setSuccessMessage(null);
     setDetailItemId(itemId);
     setDetailReloadSignal((current) => current + 1);
   }, []);
@@ -129,6 +135,22 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
   const handleRetryDetail = useCallback(() => {
     setDetailReloadSignal((current) => current + 1);
   }, []);
+
+  const handleImportItemIgnored = useCallback(
+    async (ignoredItem: AdminImportReviewItem) => {
+      const ignoredTitle = getImportItemTitle(ignoredItem);
+
+      handleCloseDetail();
+      const reloaded = await loadItems();
+
+      setSuccessMessage(
+        reloaded
+          ? `Import item «${ignoredTitle}» проигнорирован и скрыт из очереди проверки.`
+          : `Import item «${ignoredTitle}» проигнорирован. Очередь не обновилась, попробуйте «Обновить очередь».`,
+      );
+    },
+    [handleCloseDetail, loadItems],
+  );
 
   useEffect(() => {
     if (!detailItemId) {
@@ -201,11 +223,11 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
   return (
     <div className="page-stack page-stack--import">
       <section className="page-header">
-        <Badge tone="red">read-only</Badge>
+        <Badge tone="gold">review queue</Badge>
         <h1>Импорт с сайта</h1>
         <p>
-          Проверка импорта. Публикация и игнорирование будут добавлены отдельным PR. Запуск
-          импорта из админки будет добавлен отдельным backend PR.
+          Проверка импорта. Игнорирование доступно из detail через отдельный RPC; публикация,
+          редактирование и запуск импорта остаются вне этой страницы.
         </p>
       </section>
 
@@ -215,12 +237,19 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
           <h2>Очередь ручной проверки</h2>
           <p>
             Список читается через RPC `admin_list_import_items_needing_review` с текущей
-            Supabase-сессией. Действий publish, ignore и edit на этой странице нет.
+            Supabase-сессией. В detail можно скрыть item из очереди через
+            `admin_ignore_import_item`; действий publish, edit и create на этой странице нет.
             Сейчас для локальной проверки запустите importer из PowerShell, затем нажмите
             «Обновить очередь».
           </p>
         </div>
       </GlassCard>
+
+      {successMessage ? (
+        <div className="import-review-status import-review-status--success" role="status">
+          {successMessage}
+        </div>
+      ) : null}
 
       <GlassCard className="events-toolbar import-review-toolbar">
         <div className="events-toolbar__top">
@@ -228,7 +257,7 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
             <h2>Фильтры</h2>
             <p>Поиск работает по названию, ссылке источника, месту и заметкам парсера.</p>
           </div>
-          <Button disabled={loading} onClick={loadItems}>
+          <Button disabled={loading} onClick={() => void loadItems()}>
             {loading ? "Обновляем..." : "Обновить очередь"}
           </Button>
         </div>
@@ -308,7 +337,7 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
           />
         ) : error ? (
           <ImportReviewState description={error} title="Не удалось загрузить импорт">
-            <Button onClick={loadItems} variant="primary">
+            <Button onClick={() => void loadItems()} variant="primary">
               Повторить
             </Button>
           </ImportReviewState>
@@ -345,6 +374,7 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
           item={detailItem}
           loading={detailLoading}
           onClose={handleCloseDetail}
+          onIgnored={handleImportItemIgnored}
           onRetry={handleRetryDetail}
         />
       ) : null}
@@ -446,6 +476,7 @@ function ImportItemDetailDrawer({
   item,
   loading,
   onClose,
+  onIgnored,
   onRetry,
 }: {
   error: string | null;
@@ -453,22 +484,68 @@ function ImportItemDetailDrawer({
   item: AdminImportReviewItem | null;
   loading: boolean;
   onClose: () => void;
+  onIgnored: (item: AdminImportReviewItem) => Promise<void> | void;
   onRetry: () => void;
 }) {
   const titleId = useId();
+  const reasonId = useId();
+  const [isConfirmingIgnore, setIsConfirmingIgnore] = useState(false);
+  const [ignoreReason, setIgnoreReason] = useState("");
+  const [ignoreLoading, setIgnoreLoading] = useState(false);
+  const [ignoreError, setIgnoreError] = useState<string | null>(null);
   const displayItem = item ?? fallbackItem;
-  const fallbackRawDetails = displayItem ? getRawPayloadDetails(displayItem.rawPayload) : null;
-  const title =
-    item?.parsedTitle ||
-    fallbackRawDetails?.title ||
-    fallbackItem?.parsedTitle ||
-    "Import item";
+  const title = displayItem ? getImportItemTitle(displayItem) : "Import item";
+  const isAdminIgnored = displayItem ? isAdminIgnoredImportItem(displayItem) : false;
+  const isSafeIgnoredByImporter =
+    displayItem?.status === "ignored" && !isAdminIgnored;
+
+  useEffect(() => {
+    setIsConfirmingIgnore(false);
+    setIgnoreReason("");
+    setIgnoreError(null);
+    setIgnoreLoading(false);
+  }, [item?.id]);
+
+  const handleStartIgnore = useCallback(() => {
+    setIsConfirmingIgnore(true);
+    setIgnoreError(null);
+  }, []);
+
+  const handleCancelIgnore = useCallback(() => {
+    setIsConfirmingIgnore(false);
+    setIgnoreReason("");
+    setIgnoreError(null);
+  }, []);
+
+  const handleConfirmIgnore = useCallback(async () => {
+    if (!item || ignoreLoading) {
+      return;
+    }
+
+    setIgnoreLoading(true);
+    setIgnoreError(null);
+
+    try {
+      const ignoredItem = await ignoreImportItem(item.id, ignoreReason);
+
+      setIsConfirmingIgnore(false);
+      setIgnoreReason("");
+      await onIgnored(ignoredItem);
+    } catch (nextError) {
+      setIgnoreError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Не удалось игнорировать import item через admin_ignore_import_item.",
+      );
+      setIgnoreLoading(false);
+    }
+  }, [ignoreLoading, ignoreReason, item, onIgnored]);
 
   return (
     <div
       className="import-detail-backdrop"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
+        if (event.target === event.currentTarget && !ignoreLoading) {
           onClose();
         }
       }}
@@ -482,13 +559,17 @@ function ImportItemDetailDrawer({
         <div className="import-detail-drawer__head">
           <div className="import-detail-drawer__title">
             <div className="badge-row">
-              <Badge tone="red">read-only</Badge>
+              <Badge tone="red">read-only detail</Badge>
               <Badge tone="glass">admin_get_import_item</Badge>
+              {isAdminIgnored ? <Badge tone="muted">admin ignored</Badge> : null}
+              {isSafeIgnoredByImporter ? (
+                <Badge tone="gold">safe ignored by importer</Badge>
+              ) : null}
             </div>
             <h2 id={titleId}>{title}</h2>
             <p>Полные данные загружаются через RPC `admin_get_import_item`.</p>
           </div>
-          <Button onClick={onClose} variant="secondary">
+          <Button disabled={ignoreLoading} onClick={onClose} variant="secondary">
             Закрыть
           </Button>
         </div>
@@ -506,7 +587,21 @@ function ImportItemDetailDrawer({
               </Button>
             </ImportReviewState>
           ) : item ? (
-            <ImportItemDetailContent item={item} />
+            <>
+              <ImportItemDetailActions
+                ignoreError={ignoreError}
+                ignoreLoading={ignoreLoading}
+                ignoreReason={ignoreReason}
+                isConfirmingIgnore={isConfirmingIgnore}
+                item={item}
+                onCancelIgnore={handleCancelIgnore}
+                onConfirmIgnore={handleConfirmIgnore}
+                onIgnoreReasonChange={setIgnoreReason}
+                onStartIgnore={handleStartIgnore}
+                reasonId={reasonId}
+              />
+              <ImportItemDetailContent item={item} />
+            </>
           ) : (
             <ImportReviewState
               description="RPC не вернул данные для выбранного import item."
@@ -516,6 +611,140 @@ function ImportItemDetailDrawer({
         </div>
       </aside>
     </div>
+  );
+}
+
+function ImportItemDetailActions({
+  ignoreError,
+  ignoreLoading,
+  ignoreReason,
+  isConfirmingIgnore,
+  item,
+  onCancelIgnore,
+  onConfirmIgnore,
+  onIgnoreReasonChange,
+  onStartIgnore,
+  reasonId,
+}: {
+  ignoreError: string | null;
+  ignoreLoading: boolean;
+  ignoreReason: string;
+  isConfirmingIgnore: boolean;
+  item: AdminImportReviewItem;
+  onCancelIgnore: () => void;
+  onConfirmIgnore: () => void;
+  onIgnoreReasonChange: (reason: string) => void;
+  onStartIgnore: () => void;
+  reasonId: string;
+}) {
+  const adminReview = getAdminReviewMetadata(item);
+  const isAdminIgnored = Boolean(adminReview.ignoredAt);
+  const isSafeIgnoredByImporter = item.status === "ignored" && !isAdminIgnored;
+  const title = getImportItemTitle(item);
+
+  if (isAdminIgnored) {
+    return (
+      <section className="import-detail-actions import-detail-actions--ignored">
+        <div className="import-detail-actions__head">
+          <div>
+            <h3>Элемент уже проигнорирован</h3>
+            <p>Эти данные пришли из `raw_payload.adminReview`.</p>
+          </div>
+          <Badge tone="muted">ignored</Badge>
+        </div>
+        <div className="import-detail-grid">
+          <ImportReviewField
+            label="adminReview.ignoredAt"
+            value={formatDateTimeDetail(adminReview.ignoredAt)}
+          />
+          <ImportReviewField
+            label="adminReview.ignoredBy"
+            value={adminReview.ignoredBy ?? "Не указано"}
+          />
+          <ImportReviewField
+            label="adminReview.ignoreReason"
+            value={adminReview.ignoreReason ?? "Не указано"}
+            wide
+          />
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="import-detail-actions">
+      <div className="import-detail-actions__head">
+        <div>
+          <h3>Действия</h3>
+          <p>Можно скрыть item из очереди проверки без создания события.</p>
+          {isSafeIgnoredByImporter ? (
+            <div className="badge-row">
+              <Badge tone="gold">safe ignored by importer</Badge>
+              <Badge tone="glass">требует проверки</Badge>
+            </div>
+          ) : null}
+        </div>
+        <Button
+          disabled={ignoreLoading}
+          onClick={onStartIgnore}
+          variant={isConfirmingIgnore ? "ghost" : "secondary"}
+        >
+          Игнорировать
+        </Button>
+      </div>
+
+      {isConfirmingIgnore ? (
+        <div className="import-ignore-confirm">
+          <div className="import-ignore-confirm__summary">
+            <strong>{title}</strong>
+            <span>
+              sourceUrl:{" "}
+              {item.sourceUrl ? (
+                <a
+                  className="import-review-link"
+                  href={item.sourceUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  {item.sourceUrl}
+                </a>
+              ) : (
+                "Не указано"
+              )}
+            </span>
+            <p>
+              Элемент будет скрыт из очереди проверки. Событие в events создано не будет.
+            </p>
+          </div>
+
+          <label className="import-ignore-field" htmlFor={reasonId}>
+            <span>Причина</span>
+            <textarea
+              disabled={ignoreLoading}
+              id={reasonId}
+              onChange={(event) => onIgnoreReasonChange(event.target.value)}
+              placeholder="Дубликат / не событие / устарело / не нужно публиковать"
+              value={ignoreReason}
+            />
+          </label>
+
+          {ignoreError ? (
+            <div className="form-error" role="alert">
+              {ignoreError}
+            </div>
+          ) : null}
+
+          <div className="import-ignore-actions">
+            <Button disabled={ignoreLoading} onClick={onCancelIgnore} variant="secondary">
+              Отмена
+            </Button>
+            <Button disabled={ignoreLoading} onClick={onConfirmIgnore} variant="primary">
+              {ignoreLoading ? "Игнорируем..." : "Игнорировать"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -694,6 +923,28 @@ function ImportReviewState({
       {children ? <div className="events-state__actions">{children}</div> : null}
     </div>
   );
+}
+
+function getImportItemTitle(item: AdminImportReviewItem): string {
+  const rawDetails = getRawPayloadDetails(item.rawPayload);
+
+  return rawDetails.title || item.parsedTitle || "Без названия";
+}
+
+function getAdminReviewMetadata(item: AdminImportReviewItem): {
+  ignoredAt: string | null;
+  ignoredBy: string | null;
+  ignoreReason: string | null;
+} {
+  return {
+    ignoredAt: readRawPayloadString(item.rawPayload, [["adminReview", "ignoredAt"]]),
+    ignoredBy: readRawPayloadString(item.rawPayload, [["adminReview", "ignoredBy"]]),
+    ignoreReason: readRawPayloadString(item.rawPayload, [["adminReview", "ignoreReason"]]),
+  };
+}
+
+function isAdminIgnoredImportItem(item: AdminImportReviewItem): boolean {
+  return Boolean(getAdminReviewMetadata(item).ignoredAt);
 }
 
 function getDateQuality(item: AdminImportReviewItem): string | null {

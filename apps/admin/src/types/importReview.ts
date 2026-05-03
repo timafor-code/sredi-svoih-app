@@ -49,6 +49,13 @@ export type AdminImportReview = {
   draftSkipReason?: string | null;
 };
 
+export type AdminImportAdminReview = {
+  [key: string]: unknown;
+  ignoredAt?: string | null;
+  ignoredBy?: string | null;
+  ignoreReason?: string | null;
+};
+
 export type AdminImportReviewItem = {
   id: string;
   sourceId: string;
@@ -63,6 +70,7 @@ export type AdminImportReviewItem = {
   createdAt: string;
   linkedEventId: string | null;
   importReview: AdminImportReview | null;
+  adminReview: AdminImportAdminReview | null;
   sourceName: string | null;
   communityId: string | null;
 };
