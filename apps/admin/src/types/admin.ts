@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 
-export type AdminRole = "admin" | "event_manager" | "member";
+import type { AdminRole } from "./auth";
+
+export type { AdminRole } from "./auth";
 
 export type AdminSection =
   | "overview"
