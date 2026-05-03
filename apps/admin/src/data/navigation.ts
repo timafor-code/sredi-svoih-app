@@ -23,7 +23,6 @@ export const navigationGroups: NavigationGroup[] = [
         label: "Импорт с сайта",
         icon: "⟳",
         roles: ["admin", "event_manager"],
-        badge: "3",
       },
       {
         section: "registrations",
