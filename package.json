@@ -11,7 +11,11 @@
     "import:events:dry": "node ./scripts/importWebsiteEvents.mjs --dry-run",
     "import:events": "node ./scripts/importWebsiteEvents.mjs",
     "import:events:review": "node ./scripts/importWebsiteEvents.mjs --review",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "admin:dev": "npm --prefix apps/admin run dev",
+    "admin:build": "npm --prefix apps/admin run build",
+    "admin:typecheck": "npm --prefix apps/admin run typecheck",
+    "admin:preview": "npm --prefix apps/admin run preview"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
