@@ -1,36 +1,51 @@
 import type { ReactNode } from "react";
 
 import { getSectionTitle } from "../../data/navigation";
-import type { AdminRole, AdminSection } from "../../types/admin";
+import type { AdminMembership, AdminProfile, AdminRole } from "../../types/auth";
+import type { AdminSection } from "../../types/admin";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 
 type AdminLayoutProps = {
   activeSection: AdminSection;
   children: ReactNode;
+  membership: AdminMembership | null;
+  profile: AdminProfile | null;
   role: AdminRole;
-  onRoleChange: (role: AdminRole) => void;
   onSectionChange: (section: AdminSection) => void;
+  onSignOut: () => void;
+  sessionEmail: string | null;
 };
 
 export function AdminLayout({
   activeSection,
   children,
+  membership,
+  profile,
   role,
-  onRoleChange,
   onSectionChange,
+  onSignOut,
+  sessionEmail,
 }: AdminLayoutProps) {
-  const sectionTitle = role === "member" ? "Нет доступа" : getSectionTitle(activeSection);
+  const sectionTitle = getSectionTitle(activeSection);
 
   return (
     <div className="admin-layout">
-      <Sidebar activeSection={activeSection} onSectionChange={onSectionChange} role={role} />
+      <Sidebar
+        activeSection={activeSection}
+        membership={membership}
+        onSectionChange={onSectionChange}
+        profile={profile}
+        role={role}
+      />
       <div className="admin-layout__main">
         <Topbar
           onImportClick={() => onSectionChange("import")}
-          onRoleChange={onRoleChange}
+          onSignOut={onSignOut}
+          profile={profile}
           role={role}
           sectionTitle={sectionTitle}
+          sessionEmail={sessionEmail}
         />
         <main className="admin-layout__content">{children}</main>
       </div>

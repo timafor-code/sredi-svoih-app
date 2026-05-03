@@ -1,18 +1,27 @@
-import { adminRoles } from "../../data/navigation";
-import type { AdminRole } from "../../types/admin";
+import type { AdminProfile, AdminRole } from "../../types/auth";
 import { Button } from "../ui/Button";
 
 type TopbarProps = {
   sectionTitle: string;
+  profile: AdminProfile | null;
   role: AdminRole;
   onImportClick: () => void;
-  onRoleChange: (role: AdminRole) => void;
+  onSignOut: () => void;
+  sessionEmail: string | null;
 };
 
-export function Topbar({ sectionTitle, role, onImportClick, onRoleChange }: TopbarProps) {
+export function Topbar({
+  sectionTitle,
+  profile,
+  role,
+  onImportClick,
+  onSignOut,
+  sessionEmail,
+}: TopbarProps) {
   const handleCreateEvent = () => {
     window.alert("Будет добавлено позже");
   };
+  const userLabel = getProfileLabel(profile, sessionEmail);
 
   return (
     <header className="topbar">
@@ -34,21 +43,27 @@ export function Topbar({ sectionTitle, role, onImportClick, onRoleChange }: Topb
         <Button onClick={onImportClick} variant="secondary">
           Проверить импорт
         </Button>
-        <label className="role-select">
-          <span>Роль</span>
-          <select
-            aria-label="Роль прототипа"
-            onChange={(event) => onRoleChange(event.target.value as AdminRole)}
-            value={role}
-          >
-            {adminRoles.map((adminRole) => (
-              <option key={adminRole} value={adminRole}>
-                {adminRole}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="topbar__user" title={userLabel}>
+          <strong>{userLabel}</strong>
+          <span>{role}</span>
+        </div>
+        <Button onClick={onSignOut} variant="ghost">
+          Выйти
+        </Button>
       </div>
     </header>
+  );
+}
+
+function getProfileLabel(profile: AdminProfile | null, sessionEmail: string | null): string {
+  const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim();
+
+  return (
+    profile?.display_name ??
+    profile?.full_name ??
+    (fullName || null) ??
+    profile?.email ??
+    sessionEmail ??
+    "Пользователь"
   );
 }

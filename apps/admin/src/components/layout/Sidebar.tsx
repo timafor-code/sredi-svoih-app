@@ -1,15 +1,19 @@
 import { getVisibleNavigationGroups } from "../../data/navigation";
-import type { AdminRole, AdminSection } from "../../types/admin";
+import type { AdminMembership, AdminProfile, AdminRole } from "../../types/auth";
+import type { AdminSection } from "../../types/admin";
 import { Badge } from "../ui/Badge";
 
 type SidebarProps = {
   activeSection: AdminSection;
+  membership: AdminMembership | null;
+  profile: AdminProfile | null;
   role: AdminRole;
   onSectionChange: (section: AdminSection) => void;
 };
 
-export function Sidebar({ activeSection, role, onSectionChange }: SidebarProps) {
+export function Sidebar({ activeSection, membership, profile, role, onSectionChange }: SidebarProps) {
   const groups = getVisibleNavigationGroups(role);
+  const userInitials = getUserInitials(profile);
 
   return (
     <aside className="sidebar" aria-label="Навигация Admin Center">
@@ -62,17 +66,34 @@ export function Sidebar({ activeSection, role, onSectionChange }: SidebarProps) 
 
       <div className="sidebar__footer">
         <span>Община</span>
-        <strong>Москва</strong>
+        <strong className="sidebar__community" title={membership?.community_id ?? undefined}>
+          {membership?.community_id ?? "Не выбрана"}
+        </strong>
         <div className="sidebar__user">
           <div className="sidebar__avatar" aria-hidden="true">
-            AD
+            {userInitials}
           </div>
           <div>
             <strong>{role}</strong>
-            <span>UI simulation</span>
+            <span>{membership?.status ?? "нет active membership"}</span>
           </div>
         </div>
       </div>
     </aside>
   );
+}
+
+function getUserInitials(profile: AdminProfile | null): string {
+  const name =
+    profile?.display_name ??
+    profile?.full_name ??
+    [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim();
+  const source = name || profile?.email || "AD";
+  const parts = source.trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+
+  return source.slice(0, 2).toUpperCase();
 }

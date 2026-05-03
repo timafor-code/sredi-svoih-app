@@ -1,12 +1,17 @@
 import { useEffect, useState } from "react";
 
 import { AdminLayout } from "./components/layout/AdminLayout";
+import { AdminAuthProvider } from "./context/AdminAuthContext";
 import { canRoleOpenSection, isFutureSection } from "./data/navigation";
-import type { AdminRole, AdminSection } from "./types/admin";
+import { useAdminAuth } from "./store/useAdminAuth";
+import type { AdminRole } from "./types/auth";
+import type { AdminSection } from "./types/admin";
+import { ConfigMissingPage } from "./pages/ConfigMissingPage";
 import { EventsPage } from "./pages/EventsPage";
 import { FuturePage } from "./pages/FuturePage";
 import { ImportReviewPage } from "./pages/ImportReviewPage";
 import { InvitesPage } from "./pages/InvitesPage";
+import { LoginPage } from "./pages/LoginPage";
 import { MembersPage } from "./pages/MembersPage";
 import { NoAccessPage } from "./pages/NoAccessPage";
 import { OverviewPage } from "./pages/OverviewPage";
@@ -14,8 +19,17 @@ import { RegistrationsPage } from "./pages/RegistrationsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 export default function App() {
+  return (
+    <AdminAuthProvider>
+      <AdminApp />
+    </AdminAuthProvider>
+  );
+}
+
+function AdminApp() {
+  const auth = useAdminAuth();
   const [activeSection, setActiveSection] = useState<AdminSection>("overview");
-  const [role, setRole] = useState<AdminRole>("admin");
+  const role = auth.role ?? "member";
 
   useEffect(() => {
     if (role !== "member" && !canRoleOpenSection(role, activeSection)) {
@@ -23,17 +37,44 @@ export default function App() {
     }
   }, [activeSection, role]);
 
+  if (auth.configMissing) {
+    return <ConfigMissingPage />;
+  }
+
+  if (auth.loading && !auth.session) {
+    return <AuthStatusScreen />;
+  }
+
+  if (!auth.isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  if (!auth.canAccessAdmin) {
+    return <NoAccessPage />;
+  }
+
   const page = renderPage(activeSection, role);
 
   return (
     <AdminLayout
       activeSection={activeSection}
-      onRoleChange={setRole}
+      membership={auth.membership}
       onSectionChange={setActiveSection}
+      onSignOut={auth.signOut}
+      profile={auth.profile}
       role={role}
+      sessionEmail={auth.session?.user.email ?? null}
     >
       {page}
     </AdminLayout>
+  );
+}
+
+function AuthStatusScreen() {
+  return (
+    <main className="auth-screen">
+      <div className="auth-loading">Загружаем доступ...</div>
+    </main>
   );
 }
 
