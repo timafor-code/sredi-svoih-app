@@ -1,0 +1,4165 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Среди Своих — Admin Events Center</title>
+<style>
+/* =========================================
+   DESIGN TOKENS
+   ========================================= */
+:root {
+  --bg:           #0D0D1A;
+  --surface:      #16162A;
+  --elevated:     #1E1E35;
+  --card:         #252540;
+  --glass:        rgba(255,255,255,0.06);
+  --glass-border: rgba(255,255,255,0.10);
+  --glass-hover:  rgba(255,255,255,0.09);
+
+  --red:    #E52C36;
+  --red-dim: rgba(229,44,54,0.18);
+  --gold:   #F6A400;
+  --gold-dim: rgba(246,164,0,0.18);
+  --blue:   #6B7FD4;
+  --blue-dim: rgba(107,127,212,0.18);
+  --green:  #35C759;
+  --green-dim: rgba(53,199,89,0.18);
+  --orange: #FFB340;
+  --orange-dim: rgba(255,179,64,0.18);
+  --purple: #A78BFA;
+  --purple-dim: rgba(167,139,250,0.18);
+
+  --text:    #FFFFFF;
+  --text-2:  rgba(255,255,255,0.68);
+  --text-3:  rgba(255,255,255,0.42);
+  --text-4:  rgba(255,255,255,0.24);
+
+  --sidebar-w: 240px;
+  --topbar-h: 60px;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+
+  --font: 'Inter', 'SF Pro Display', 'SF Pro Text', 'Segoe UI', Arial, sans-serif;
+}
+
+/* =========================================
+   RESET & BASE
+   ========================================= */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+button { font-family: var(--font); cursor: pointer; border: none; outline: none; }
+input, select, textarea { font-family: var(--font); outline: none; }
+a { text-decoration: none; color: inherit; }
+ul { list-style: none; }
+
+/* =========================================
+   SCROLLBAR
+   ========================================= */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+
+/* =========================================
+   LAYOUT
+   ========================================= */
+#app { display: flex; height: 100vh; overflow: hidden; }
+
+/* SIDEBAR */
+#sidebar {
+  width: var(--sidebar-w);
+  min-width: var(--sidebar-w);
+  background: var(--surface);
+  border-right: 1px solid var(--glass-border);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow-y: auto;
+  transition: width 0.2s;
+  z-index: 10;
+}
+
+.sidebar-logo {
+  padding: 20px 16px 16px;
+  border-bottom: 1px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sidebar-logo-mark {
+  width: 36px; height: 36px;
+  background: var(--red);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 800; color: white; letter-spacing: -1px;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+.sidebar-logo-mark::after {
+  content: '';
+  position: absolute;
+  top: -6px; left: -6px;
+  width: 24px; height: 24px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 50%;
+}
+.sidebar-logo-text { line-height: 1.2; }
+.sidebar-logo-text strong { display: block; font-size: 13px; font-weight: 700; color: var(--text); }
+.sidebar-logo-text span { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; }
+
+.sidebar-nav { flex: 1; padding: 8px 0; }
+.nav-section-label {
+  font-size: 10px; font-weight: 600; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.8px;
+  padding: 12px 16px 4px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 16px;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.15s;
+  color: var(--text-2);
+  font-size: 13.5px;
+  font-weight: 500;
+  position: relative;
+}
+.nav-item:hover { background: var(--glass); color: var(--text); }
+.nav-item.active {
+  background: rgba(229,44,54,0.12);
+  color: var(--text);
+}
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 4px; bottom: 4px;
+  width: 3px;
+  background: var(--red);
+  border-radius: 0 2px 2px 0;
+}
+.nav-item .nav-icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+.nav-badge {
+  margin-left: auto;
+  background: var(--red);
+  color: white;
+  font-size: 10px; font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.sidebar-footer {
+  border-top: 1px solid var(--glass-border);
+  padding: 12px 16px;
+}
+.sidebar-community {
+  font-size: 11px; color: var(--text-3);
+  margin-bottom: 6px;
+}
+.sidebar-community strong { color: var(--text-2); display: block; font-size: 12px; }
+.sidebar-user {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 0;
+}
+.sidebar-avatar {
+  width: 28px; height: 28px;
+  background: linear-gradient(135deg, #6B7FD4, #A78BFA);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: white;
+  flex-shrink: 0;
+}
+.sidebar-user-info { flex: 1; min-width: 0; }
+.sidebar-user-info strong { display: block; font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-user-info span { font-size: 10px; color: var(--text-3); }
+.sidebar-logout {
+  background: none; color: var(--text-3);
+  font-size: 11px; padding: 4px 0;
+  width: 100%;
+  text-align: left;
+  border-top: 1px solid var(--glass-border);
+  margin-top: 6px;
+  padding-top: 8px;
+  transition: color 0.15s;
+}
+.sidebar-logout:hover { color: var(--red); }
+
+/* MAIN */
+#main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+/* TOPBAR */
+#topbar {
+  height: var(--topbar-h);
+  background: var(--surface);
+  border-bottom: 1px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  flex-shrink: 0;
+  z-index: 5;
+}
+.breadcrumb { display: flex; align-items: center; gap: 6px; color: var(--text-3); font-size: 13px; }
+.breadcrumb .bc-current { color: var(--text); font-weight: 600; }
+.breadcrumb .bc-sep { color: var(--text-4); }
+
+.topbar-search {
+  flex: 1; max-width: 280px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 12px;
+  height: 34px;
+}
+.topbar-search input {
+  background: none; border: none; color: var(--text);
+  font-size: 13px; width: 100%;
+}
+.topbar-search input::placeholder { color: var(--text-3); }
+.topbar-search .search-icon { color: var(--text-3); font-size: 14px; }
+
+.topbar-spacer { flex: 1; }
+
+.topbar-role {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: 4px 4px 4px 10px;
+  font-size: 12px; color: var(--text-2);
+}
+.topbar-role select {
+  background: var(--elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 3px 8px;
+}
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 600;
+  transition: all 0.15s;
+  cursor: pointer;
+}
+.btn-primary {
+  background: var(--red);
+  color: white;
+}
+.btn-primary:hover { background: #cc2530; }
+.btn-secondary {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  color: var(--text);
+}
+.btn-secondary:hover { background: var(--glass-hover); }
+.btn-ghost {
+  background: none;
+  color: var(--text-2);
+  border: 1px solid transparent;
+}
+.btn-ghost:hover { background: var(--glass); border-color: var(--glass-border); color: var(--text); }
+.btn-gold {
+  background: var(--gold);
+  color: #1a1000;
+}
+.btn-gold:hover { background: #e09500; }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn-xs { padding: 3px 8px; font-size: 11px; border-radius: 6px; }
+.btn-danger { background: var(--red-dim); color: var(--red); border: 1px solid rgba(229,44,54,0.25); }
+.btn-danger:hover { background: var(--red); color: white; }
+
+.topbar-avatar {
+  width: 32px; height: 32px;
+  background: linear-gradient(135deg, #6B7FD4, #A78BFA);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: white;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* CONTENT */
+#content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  background: var(--bg);
+}
+
+/* =========================================
+   COMPONENTS
+   ========================================= */
+
+/* Glass Card */
+.glass-card {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+.glass-card.elevated {
+  background: var(--elevated);
+  border-color: var(--glass-border);
+}
+
+/* Section Header */
+.section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+.section-title { font-size: 22px; font-weight: 700; color: var(--text); }
+.section-sub { font-size: 13px; color: var(--text-3); margin-top: 2px; }
+.section-actions { display: flex; gap: 8px; align-items: center; }
+
+/* KPI Cards */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.kpi-card {
+  background: var(--elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.kpi-card:hover { border-color: rgba(255,255,255,0.2); background: var(--card); transform: translateY(-1px); }
+.kpi-label { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.kpi-value { font-size: 28px; font-weight: 700; line-height: 1; margin-bottom: 4px; }
+.kpi-meta { font-size: 11px; color: var(--text-3); }
+.kpi-card.kpi-red .kpi-value { color: var(--red); }
+.kpi-card.kpi-gold .kpi-value { color: var(--gold); }
+.kpi-card.kpi-green .kpi-value { color: var(--green); }
+.kpi-card.kpi-blue .kpi-value { color: var(--blue); }
+.kpi-card.kpi-orange .kpi-value { color: var(--orange); }
+
+/* Badge */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px; font-weight: 600;
+  white-space: nowrap;
+}
+.badge-red { background: var(--red-dim); color: var(--red); }
+.badge-gold { background: var(--gold-dim); color: var(--gold); }
+.badge-green { background: var(--green-dim); color: var(--green); }
+.badge-blue { background: var(--blue-dim); color: var(--blue); }
+.badge-orange { background: var(--orange-dim); color: var(--orange); }
+.badge-purple { background: var(--purple-dim); color: var(--purple); }
+.badge-muted { background: rgba(255,255,255,0.08); color: var(--text-3); }
+.badge-glass { background: var(--glass); border: 1px solid var(--glass-border); color: var(--text-2); }
+
+/* Table */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.data-table thead th {
+  text-align: left;
+  font-size: 11px; font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--glass-border);
+  white-space: nowrap;
+}
+.data-table tbody tr {
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.12s;
+  cursor: pointer;
+}
+.data-table tbody tr:hover { background: var(--glass); }
+.data-table tbody td { padding: 10px 12px; font-size: 13px; color: var(--text); vertical-align: middle; }
+.data-table tbody td.muted { color: var(--text-3); }
+.table-wrap {
+  background: var(--elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* Avatar */
+.avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: white;
+  flex-shrink: 0;
+}
+.av-red { background: linear-gradient(135deg, #E52C36, #FF6B6B); }
+.av-gold { background: linear-gradient(135deg, #F6A400, #FFD060); }
+.av-blue { background: linear-gradient(135deg, #6B7FD4, #A78BFA); }
+.av-green { background: linear-gradient(135deg, #35C759, #4ADE80); }
+.av-orange { background: linear-gradient(135deg, #FFB340, #FF8C00); }
+.av-purple { background: linear-gradient(135deg, #A78BFA, #818CF8); }
+
+/* Search */
+.search-bar {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: 0 12px;
+  height: 38px;
+  transition: border-color 0.15s;
+}
+.search-bar:focus-within { border-color: rgba(255,255,255,0.25); }
+.search-bar input { background: none; border: none; color: var(--text); font-size: 13px; flex: 1; }
+.search-bar input::placeholder { color: var(--text-3); }
+.search-bar .icon { color: var(--text-3); }
+
+/* Filter chips */
+.filter-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+.chip {
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 12px; font-weight: 500;
+  cursor: pointer;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  color: var(--text-2);
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+.chip:hover { background: var(--glass-hover); color: var(--text); }
+.chip.active { background: rgba(229,44,54,0.15); border-color: rgba(229,44,54,0.4); color: var(--red); }
+
+/* Tabs */
+.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--glass-border); margin-bottom: 20px; }
+.tab {
+  padding: 10px 16px;
+  font-size: 13px; font-weight: 500;
+  color: var(--text-3);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all 0.15s;
+  display: flex; align-items: center; gap: 6px;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--red); }
+.tab .tab-count {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  font-size: 10px; font-weight: 600;
+  padding: 1px 6px;
+  color: var(--text-3);
+}
+.tab.active .tab-count { background: var(--red-dim); border-color: rgba(229,44,54,0.3); color: var(--red); }
+
+/* Toast */
+#toast-container {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  z-index: 9999;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.toast {
+  background: var(--card);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: var(--text);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  animation: toastIn 0.25s ease;
+  min-width: 260px; max-width: 360px;
+}
+.toast.success .toast-icon { color: var(--green); }
+.toast.error .toast-icon { color: var(--red); }
+.toast.warning .toast-icon { color: var(--gold); }
+.toast.info .toast-icon { color: var(--blue); }
+.toast-icon { font-size: 16px; flex-shrink: 0; }
+.toast-msg { flex: 1; }
+@keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+
+/* Modal */
+#modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.2s;
+}
+#modal-overlay.open { opacity: 1; pointer-events: all; }
+.modal {
+  background: var(--elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  min-width: 400px; max-width: 560px; width: 100%;
+  max-height: 90vh; overflow-y: auto;
+  transform: scale(0.96);
+  transition: transform 0.2s;
+}
+#modal-overlay.open .modal { transform: scale(1); }
+.modal-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
+.modal-title { font-size: 18px; font-weight: 700; }
+.modal-close { background: var(--glass); border: 1px solid var(--glass-border); color: var(--text-2); width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer; }
+.modal-close:hover { color: var(--text); }
+
+/* Form */
+.form-field { margin-bottom: 14px; }
+.form-label { display: block; font-size: 11px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+.form-input {
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 13px;
+  transition: border-color 0.15s;
+}
+.form-input:focus { border-color: rgba(255,255,255,0.3); }
+.form-input.error { border-color: var(--red); }
+.form-error { color: var(--red); font-size: 11px; margin-top: 4px; }
+.form-select {
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 13px;
+}
+.form-select option { background: var(--card); }
+.form-textarea {
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 13px;
+  resize: vertical;
+  min-height: 80px;
+}
+.form-textarea:focus { border-color: rgba(255,255,255,0.3); }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+/* Warning / Info boxes */
+.warn-box {
+  background: var(--gold-dim);
+  border: 1px solid rgba(246,164,0,0.3);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 12px; color: var(--gold);
+  display: flex; gap: 8px; align-items: flex-start;
+  margin-bottom: 12px;
+}
+.warn-box.error { background: var(--red-dim); border-color: rgba(229,44,54,0.3); color: var(--red); }
+.warn-box.info { background: var(--blue-dim); border-color: rgba(107,127,212,0.3); color: var(--blue); }
+.warn-box.success { background: var(--green-dim); border-color: rgba(53,199,89,0.3); color: var(--green); }
+
+/* Accordion */
+.accordion-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px; color: var(--text-2);
+  transition: background 0.12s;
+}
+.accordion-header:hover { background: var(--glass-hover); }
+.accordion-body {
+  padding: 12px 14px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--glass-border);
+  border-top: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  font-size: 12px; color: var(--text-3);
+  font-family: 'Courier New', monospace;
+  line-height: 1.6;
+  display: none;
+}
+.accordion-body.open { display: block; }
+
+/* Event poster placeholder */
+.poster-placeholder {
+  border-radius: var(--radius);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: rgba(255,255,255,0.3);
+  font-size: 12px;
+  position: relative;
+  overflow: hidden;
+}
+.poster-placeholder.grad-1 { background: linear-gradient(135deg, #1a0a2e 0%, #2d1b4e 50%, #1a0a2e 100%); }
+.poster-placeholder.grad-2 { background: linear-gradient(135deg, #0a1a2e 0%, #1b3a4e 50%, #0a1a2e 100%); }
+.poster-placeholder.grad-3 { background: linear-gradient(135deg, #2e0a0a 0%, #4e1b1b 50%, #2e0a0a 100%); }
+.poster-placeholder.grad-4 { background: linear-gradient(135deg, #0a2e0a 0%, #1b4e2d 50%, #0a2e0a 100%); }
+.poster-placeholder.grad-5 { background: linear-gradient(135deg, #1a1a0a 0%, #3a3a1b 50%, #1a1a0a 100%); }
+.poster-icon { font-size: 24px; margin-bottom: 6px; opacity: 0.5; }
+
+/* Skeleton */
+.skeleton {
+  background: linear-gradient(90deg, var(--glass) 25%, rgba(255,255,255,0.1) 50%, var(--glass) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+/* No access */
+.no-access {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; text-align: center; padding: 40px;
+}
+.no-access-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
+.no-access h2 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+.no-access p { color: var(--text-3); font-size: 14px; }
+
+/* Toggle */
+.toggle {
+  width: 38px; height: 22px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 11px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.toggle.on { background: var(--green); border-color: var(--green); }
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+.toggle.on::after { transform: translateX(16px); }
+
+/* Attention items */
+.attention-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: background 0.12s;
+  font-size: 13px;
+}
+.attention-item:hover { background: var(--glass-hover); }
+.attention-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.attention-dot.red { background: var(--red); box-shadow: 0 0 6px var(--red); }
+.attention-dot.gold { background: var(--gold); box-shadow: 0 0 6px var(--gold); }
+.attention-dot.orange { background: var(--orange); }
+.attention-chevron { margin-left: auto; color: var(--text-4); font-size: 12px; }
+
+/* Page sections */
+.page { display: none; }
+.page.active { display: block; }
+
+/* Actions row */
+.actions-row { display: flex; gap: 6px; align-items: center; }
+
+/* Detail panel */
+.detail-panel {
+  background: var(--surface);
+  border-left: 1px solid var(--glass-border);
+  width: 380px;
+  min-width: 380px;
+  height: 100%;
+  overflow-y: auto;
+  padding: 20px;
+  flex-shrink: 0;
+}
+
+/* Two col layout */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.two-col-380 { display: grid; grid-template-columns: 1fr 380px; gap: 0; height: 100%; overflow: hidden; }
+
+/* Import card */
+.import-card {
+  background: var(--elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  gap: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-bottom: 10px;
+}
+.import-card:hover { border-color: rgba(255,255,255,0.2); }
+.import-card.error-item { border-color: rgba(229,44,54,0.25); }
+.import-poster {
+  width: 64px; height: 64px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.import-body { flex: 1; min-width: 0; }
+.import-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.import-date-raw { font-size: 12px; color: var(--text-3); margin-bottom: 6px; }
+.import-badges { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 6px; }
+.import-reason { font-size: 11px; color: var(--text-3); font-style: italic; }
+.import-actions { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
+
+/* Registrations layout */
+.reg-layout { display: grid; grid-template-columns: 280px 1fr; gap: 0; height: 100%; overflow: hidden; }
+.reg-list-panel { border-right: 1px solid var(--glass-border); padding: 16px; overflow-y: auto; }
+.reg-main { padding: 16px; overflow-y: auto; }
+.event-selector-item {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  margin-bottom: 4px;
+  transition: background 0.12s;
+}
+.event-selector-item:hover { background: var(--glass); }
+.event-selector-item.active { background: rgba(229,44,54,0.12); }
+.event-selector-item .es-name { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 2px; }
+.event-selector-item .es-date { font-size: 11px; color: var(--text-3); }
+.event-selector-item .es-count { font-size: 11px; color: var(--text-2); margin-top: 3px; }
+
+/* Member detail panel */
+.member-profile {
+  text-align: center;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--glass-border);
+  margin-bottom: 16px;
+}
+.member-avatar-lg {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 700; color: white;
+  margin: 0 auto 10px;
+}
+.member-name { font-size: 17px; font-weight: 700; }
+.member-email { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+
+/* Quick action cards */
+.quick-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+.quick-action {
+  background: var(--elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 14px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.quick-action:hover { background: var(--card); border-color: rgba(255,255,255,0.2); transform: translateY(-1px); }
+.qa-icon { font-size: 22px; margin-bottom: 6px; }
+.qa-label { font-size: 12px; font-weight: 500; color: var(--text-2); }
+
+/* Settings section */
+.settings-section { margin-bottom: 24px; }
+.settings-section-title { font-size: 13px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--glass-border); }
+
+/* Invite code */
+.invite-code {
+  font-family: 'Courier New', monospace;
+  font-size: 15px; font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 2px;
+}
+
+/* Role-aware sections */
+.admin-only { }
+
+/* Future / disabled */
+.future-feature {
+  opacity: 0.45;
+  pointer-events: none;
+  position: relative;
+}
+.future-feature::after {
+  content: 'Скоро';
+  position: absolute;
+  top: 4px; right: 4px;
+  font-size: 9px; font-weight: 700;
+  background: var(--blue-dim);
+  color: var(--blue);
+  padding: 1px 5px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+/* Divider */
+.divider { height: 1px; background: var(--glass-border); margin: 16px 0; }
+
+/* Stats row */
+.stats-row { display: flex; gap: 16px; flex-wrap: wrap; }
+.stat-item { }
+.stat-num { font-size: 18px; font-weight: 700; }
+.stat-lbl { font-size: 11px; color: var(--text-3); }
+
+/* Overflow menu simulation */
+.action-dots {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  background: none;
+  color: var(--text-3);
+  font-size: 16px;
+  transition: all 0.12s;
+}
+.action-dots:hover { background: var(--glass); color: var(--text); }
+
+/* Form section blocks */
+.form-block {
+  background: var(--elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.form-block-title {
+  font-size: 13px; font-weight: 700;
+  color: var(--text);
+  margin-bottom: 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+.form-block-icon { font-size: 16px; }
+
+/* Source URL display */
+.source-url-display {
+  font-size: 11px; color: var(--text-3);
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-family: 'Courier New', monospace;
+  word-break: break-all;
+}
+
+/* Role badge in members */
+.role-badge { }
+
+/* Status dot */
+.status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+.dot-green { background: var(--green); box-shadow: 0 0 4px var(--green); }
+.dot-gold { background: var(--gold); }
+.dot-red { background: var(--red); }
+.dot-muted { background: var(--text-3); }
+
+/* Toolbar strip */
+.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+
+/* Members split layout */
+.members-layout { display: grid; grid-template-columns: 1fr 320px; gap: 0; height: 100%; overflow: hidden; }
+.members-main { overflow-y: auto; padding: 0; }
+.members-panel { border-left: 1px solid var(--glass-border); overflow-y: auto; padding: 16px; }
+
+/* back btn */
+.back-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-bottom: 16px;
+  background: none; border: none;
+  transition: color 0.12s;
+}
+.back-btn:hover { color: var(--text); }
+
+/* Import review two-col */
+.import-review-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+/* Source data section */
+.source-data { background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); border-radius: var(--radius); padding: 16px; }
+.source-data-row { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.source-data-row:last-child { margin-bottom: 0; }
+.source-data-key { font-size: 10px; font-weight: 600; color: var(--text-4); text-transform: uppercase; letter-spacing: 0.5px; }
+.source-data-val { font-size: 13px; color: var(--text-2); }
+
+/* Summary capacity bar */
+.capacity-bar-wrap { margin: 8px 0; }
+.capacity-bar-bg { height: 4px; background: var(--glass); border-radius: 2px; overflow: hidden; }
+.capacity-bar-fill { height: 100%; background: var(--green); border-radius: 2px; transition: width 0.4s; }
+.capacity-bar-fill.warn { background: var(--orange); }
+.capacity-bar-fill.full { background: var(--red); }
+
+/* Import list page toggle */
+.page-toggle { display: flex; background: var(--elevated); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); padding: 2px; gap: 0; margin-bottom: 16px; width: fit-content; }
+.page-toggle-btn { padding: 5px 14px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; background: none; color: var(--text-3); border: none; transition: all 0.12s; }
+.page-toggle-btn.active { background: var(--glass); color: var(--text); }
+
+/* =========================================
+   PARTICIPATION OPTIONS CONSTRUCTOR
+   ========================================= */
+.participation-constructor { margin-top: 12px; }
+.participation-layout { display: grid; grid-template-columns: 1fr 320px; gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .participation-layout { grid-template-columns: 1fr; } }
+.participation-settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.participation-setting-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); font-size: 12px; color: var(--text-2); }
+.participation-setting-item label { cursor: pointer; flex: 1; }
+.option-card { background: var(--card); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); margin-bottom: 8px; overflow: hidden; transition: border-color 0.15s; }
+.option-card:hover { border-color: rgba(255,255,255,0.18); }
+.option-card.hidden-option { opacity: 0.5; }
+.option-card.editing { border-color: rgba(107,127,212,0.5); }
+.option-card-header { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.option-drag-handle { color: var(--text-4); font-size: 14px; cursor: grab; flex-shrink: 0; user-select: none; }
+.option-type-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; background: var(--glass); border: 1px solid var(--glass-border); color: var(--text-3); white-space: nowrap; flex-shrink: 0; }
+.option-type-badge.type-package  { background: var(--gold-dim); border-color: rgba(246,164,0,0.3); color: var(--gold); }
+.option-type-badge.type-meal     { background: var(--green-dim); border-color: rgba(53,199,89,0.3); color: var(--green); }
+.option-type-badge.type-donation { background: var(--red-dim); border-color: rgba(229,44,54,0.3); color: var(--red); }
+.option-type-badge.type-other    { background: var(--blue-dim); border-color: rgba(107,127,212,0.3); color: var(--blue); }
+.option-title-block { flex: 1; min-width: 0; }
+.option-title-text { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.option-desc-text  { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.option-price { font-size: 14px; font-weight: 700; color: var(--gold); flex-shrink: 0; margin-left: 4px; }
+.option-actions-mini { display: flex; gap: 2px; flex-shrink: 0; margin-left: 4px; }
+.opt-btn { width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer; background: none; color: var(--text-3); border: none; transition: all 0.12s; }
+.opt-btn:hover { background: var(--glass); color: var(--text); }
+.opt-btn.danger:hover { background: var(--red-dim); color: var(--red); }
+.option-edit-form { padding: 12px; border-top: 1px solid var(--glass-border); background: rgba(255,255,255,0.02); display: none; }
+.option-edit-form.open { display: block; }
+.option-edit-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.option-edit-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.option-edit-label { font-size: 10px; font-weight: 600; color: var(--text-4); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px; }
+.option-edit-input  { width: 100%; background: var(--elevated); border: 1px solid var(--glass-border); border-radius: 6px; padding: 5px 8px; color: var(--text); font-size: 12px; font-family: var(--font); }
+.option-edit-input:focus  { border-color: rgba(255,255,255,0.25); outline: none; }
+.option-edit-select { width: 100%; background: var(--elevated); border: 1px solid var(--glass-border); border-radius: 6px; padding: 5px 8px; color: var(--text); font-size: 12px; font-family: var(--font); }
+.option-edit-toggle-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); padding: 4px 0; }
+.option-edit-actions { display: flex; gap: 6px; margin-top: 8px; justify-content: flex-end; }
+.preview-panel { background: var(--elevated); border: 1px solid var(--glass-border); border-radius: var(--radius); overflow: hidden; position: sticky; top: 0; }
+.preview-panel-header { padding: 10px 14px; border-bottom: 1px solid var(--glass-border); font-size: 10px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; }
+.preview-panel-body { padding: 14px; }
+.preview-intro { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+.preview-option { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--glass-border); cursor: pointer; }
+.preview-option:last-of-type { border-bottom: none; }
+.preview-option-input { width: 15px; height: 15px; flex-shrink: 0; margin-top: 2px; accent-color: var(--red); cursor: pointer; }
+.preview-option-body { flex: 1; min-width: 0; }
+.preview-option-title { font-size: 13px; font-weight: 500; color: var(--text); }
+.preview-option-desc  { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+.preview-option-price { font-size: 13px; font-weight: 700; color: var(--gold); flex-shrink: 0; }
+.stepper { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.stepper-btn { width: 22px; height: 22px; border-radius: 50%; background: var(--glass); border: 1px solid var(--glass-border); color: var(--text); font-size: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; line-height: 1; transition: all 0.12s; }
+.stepper-btn:hover { background: var(--elevated); }
+.stepper-val { font-size: 13px; font-weight: 600; min-width: 20px; text-align: center; }
+.preview-total { margin-top: 12px; padding: 10px 12px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center; }
+.preview-total-label { font-size: 12px; color: var(--text-3); }
+.preview-total-amount { font-size: 18px; font-weight: 700; color: var(--gold); }
+.preview-footer { font-size: 11px; color: var(--text-3); margin-top: 8px; text-align: center; font-style: italic; }
+.reg-options-list { margin-top: 4px; }
+.reg-option-row { font-size: 11px; color: var(--text-3); display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
+.reg-option-row .roi-name { color: var(--text-2); }
+.reg-option-row .roi-amount { color: var(--gold); font-weight: 600; white-space: nowrap; }
+.reg-total-row { font-size: 12px; font-weight: 700; color: var(--gold); border-top: 1px solid var(--glass-border); margin-top: 4px; padding-top: 4px; display: flex; justify-content: space-between; }
+.payment-future { font-size: 10px; color: var(--blue); background: var(--blue-dim); border: 1px solid rgba(107,127,212,0.25); border-radius: 4px; padding: 1px 5px; display: inline-block; margin-top: 3px; }
+
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- SIDEBAR -->
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-mark">С</div>
+      <div class="sidebar-logo-text">
+        <strong>Среди Своих</strong>
+        <span>Admin Center</span>
+      </div>
+    </div>
+    <div class="sidebar-nav">
+      <ul id="nav-list">
+        <li class="nav-item active" data-page="overview">
+          <span class="nav-icon">⬡</span> Обзор
+        </li>
+        <li class="nav-item" data-page="events">
+          <span class="nav-icon">◈</span> События
+        </li>
+        <li class="nav-item" data-page="import">
+          <span class="nav-icon">⟳</span> Импорт с сайта
+          <span class="nav-badge">4</span>
+        </li>
+        <li class="nav-item" data-page="registrations">
+          <span class="nav-icon">✓</span> Регистрации
+          <span class="nav-badge">5</span>
+        </li>
+        <li class="nav-item admin-only" data-page="members">
+          <span class="nav-icon">◎</span> Участники
+        </li>
+        <li class="nav-item admin-only" data-page="invites">
+          <span class="nav-icon">◇</span> Приглашения
+        </li>
+        <li class="nav-item" data-page="settings">
+          <span class="nav-icon">⚙</span> Настройки
+        </li>
+        <div class="nav-section-label" style="margin-top:8px;">Скоро</div>
+        <li class="nav-item" data-page="future-contacts" style="opacity:0.45;">
+          <span class="nav-icon">◎</span> Контакты общины
+          <span style="font-size:9px;color:var(--blue);background:var(--blue-dim);border:1px solid rgba(107,127,212,0.25);border-radius:4px;padding:1px 5px;margin-left:auto;">Soon</span>
+        </li>
+        <li class="nav-item" data-page="future-notifications" style="opacity:0.45;">
+          <span class="nav-icon">◌</span> Уведомления
+          <span style="font-size:9px;color:var(--blue);background:var(--blue-dim);border:1px solid rgba(107,127,212,0.25);border-radius:4px;padding:1px 5px;margin-left:auto;">Soon</span>
+        </li>
+        <li class="nav-item" data-page="future-media" style="opacity:0.45;">
+          <span class="nav-icon">◻</span> Медиа
+          <span style="font-size:9px;color:var(--blue);background:var(--blue-dim);border:1px solid rgba(107,127,212,0.25);border-radius:4px;padding:1px 5px;margin-left:auto;">Soon</span>
+        </li>
+        <li class="nav-item" data-page="future-prayers" style="opacity:0.45;">
+          <span class="nav-icon">✦</span> Расписание молитв
+          <span style="font-size:9px;color:var(--blue);background:var(--blue-dim);border:1px solid rgba(107,127,212,0.25);border-radius:4px;padding:1px 5px;margin-left:auto;">Soon</span>
+        </li>
+        <li class="nav-item" data-page="future-reports" style="opacity:0.45;">
+          <span class="nav-icon">◈</span> Отчёты
+          <span style="font-size:9px;color:var(--blue);background:var(--blue-dim);border:1px solid rgba(107,127,212,0.25);border-radius:4px;padding:1px 5px;margin-left:auto;">Soon</span>
+        </li>
+        <li class="nav-item" data-page="future-log" style="opacity:0.45;">
+          <span class="nav-icon">⊞</span> Журнал действий
+          <span style="font-size:9px;color:var(--blue);background:var(--blue-dim);border:1px solid rgba(107,127,212,0.25);border-radius:4px;padding:1px 5px;margin-left:auto;">Soon</span>
+        </li>
+      </ul>
+    </div>
+    <div class="sidebar-footer">
+      <div class="sidebar-community">
+        <strong>Среди Своих</strong>
+        Текущая община
+      </div>
+      <div class="sidebar-user">
+        <div class="sidebar-avatar">МО</div>
+        <div class="sidebar-user-info">
+          <strong>Менеджер общины</strong>
+          <span id="sidebar-role-label">event_manager</span>
+        </div>
+      </div>
+      <button class="sidebar-logout">⏻ Выйти</button>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <div id="main">
+    <!-- TOPBAR -->
+    <div id="topbar">
+      <div class="breadcrumb" id="breadcrumb">
+        <span>Среди Своих</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-current" id="bc-current">Обзор</span>
+      </div>
+      <div class="topbar-search">
+        <span class="search-icon">🔍</span>
+        <input type="text" placeholder="Поиск..." id="global-search">
+      </div>
+      <div class="topbar-spacer"></div>
+      <button class="btn btn-secondary btn-sm" onclick="showPage('import')">⟳ Проверить импорт</button>
+      <button class="btn btn-primary btn-sm" onclick="currentEditingEventId=null;showPage('event-create')">＋ Создать событие</button>
+      <div class="topbar-role">
+        <span>Роль:</span>
+        <select id="role-switcher" onchange="switchRole(this.value)">
+          <option value="event_manager">event_manager</option>
+          <option value="admin">admin</option>
+          <option value="member">member</option>
+        </select>
+      </div>
+      <div class="topbar-avatar" title="Менеджер общины">МО</div>
+    </div>
+
+    <!-- CONTENT -->
+    <div id="content">
+
+      <!-- ============================
+           PAGE: OVERVIEW
+           ============================ -->
+      <div class="page active" id="page-overview">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Центр управления</div>
+            <div class="section-sub">3 мая 2026 · event_manager</div>
+          </div>
+        </div>
+
+        <!-- KPI -->
+        <div class="kpi-grid">
+          <div class="kpi-card kpi-green" onclick="showPage('events')">
+            <div class="kpi-label">Опубликовано</div>
+            <div class="kpi-value">12</div>
+            <div class="kpi-meta">событий</div>
+          </div>
+          <div class="kpi-card kpi-gold" onclick="showPage('events')">
+            <div class="kpi-label">Черновики</div>
+            <div class="kpi-value">4</div>
+            <div class="kpi-meta">не опубликованы</div>
+          </div>
+          <div class="kpi-card kpi-orange" onclick="showPage('import')">
+            <div class="kpi-label">Требуют проверки</div>
+            <div class="kpi-value">7</div>
+            <div class="kpi-meta">из импорта</div>
+          </div>
+          <div class="kpi-card kpi-red" onclick="showPage('registrations')">
+            <div class="kpi-label">Заявки pending</div>
+            <div class="kpi-value">5</div>
+            <div class="kpi-meta">ждут подтверждения</div>
+          </div>
+          <div class="kpi-card kpi-blue" onclick="showPage('events')">
+            <div class="kpi-label">Ближайшее событие</div>
+            <div class="kpi-value" style="font-size:18px;margin-top:4px;">6 мая</div>
+            <div class="kpi-meta">19:00 · История Храма</div>
+          </div>
+        </div>
+
+        <!-- Quick actions -->
+        <div class="quick-actions">
+          <div class="quick-action" onclick="showPage('event-create')">
+            <div class="qa-icon">✦</div>
+            <div class="qa-label">Создать событие</div>
+          </div>
+          <div class="quick-action" onclick="showPage('import')">
+            <div class="qa-icon">⟳</div>
+            <div class="qa-label">Проверить импорт</div>
+          </div>
+          <div class="quick-action" onclick="showPage('registrations')">
+            <div class="qa-icon">◈</div>
+            <div class="qa-label">Открыть регистрации</div>
+          </div>
+          <div class="quick-action" onclick="showPage('invites')">
+            <div class="qa-icon">◇</div>
+            <div class="qa-label">Создать приглашение</div>
+          </div>
+        </div>
+
+        <!-- Two cols: attention + upcoming -->
+        <div class="two-col">
+          <!-- Attention -->
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Требует внимания</div>
+            <div class="attention-item" onclick="showPage('import')">
+              <div class="attention-dot gold"></div>
+              <span>3 события без полной даты</span>
+              <span class="attention-chevron">›</span>
+            </div>
+            <div class="attention-item" onclick="showPage('events')">
+              <div class="attention-dot orange"></div>
+              <span>2 события без картинки</span>
+              <span class="attention-chevron">›</span>
+            </div>
+            <div class="attention-item" onclick="showPage('registrations')">
+              <div class="attention-dot red"></div>
+              <span>5 заявок ждут подтверждения</span>
+              <span class="attention-chevron">›</span>
+            </div>
+            <div class="attention-item" onclick="showPage('import')">
+              <div class="attention-dot red"></div>
+              <span>1 импорт с ошибкой</span>
+              <span class="attention-chevron">›</span>
+            </div>
+          </div>
+
+          <!-- Upcoming events -->
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Ближайшие события</div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr>
+                  <th>Название</th>
+                  <th>Дата</th>
+                  <th>Статус</th>
+                  <th></th>
+                </tr></thead>
+                <tbody>
+                  <tr onclick="openEventDetail(0)">
+                    <td><div style="font-weight:500;">История Иерусалимского Храма</div></td>
+                    <td class="muted">6 мая, 19:00</td>
+                    <td><span class="badge badge-green">● Опубликовано</span></td>
+                    <td><button class="btn btn-ghost btn-xs">Открыть</button></td>
+                  </tr>
+                  <tr onclick="openEventDetail(2)">
+                    <td><div style="font-weight:500;">Рабби Шимон. Лаг ба-Омер</div></td>
+                    <td class="muted">18 мая, 20:00</td>
+                    <td><span class="badge badge-green">● Опубликовано</span></td>
+                    <td><button class="btn btn-ghost btn-xs">Открыть</button></td>
+                  </tr>
+                  <tr onclick="openEventDetail(3)">
+                    <td><div style="font-weight:500;">Детская воскресная школа</div></td>
+                    <td class="muted">11 мая, 10:30</td>
+                    <td><span class="badge badge-green">● Опубликовано</span></td>
+                    <td><button class="btn btn-ghost btn-xs">Открыть</button></td>
+                  </tr>
+                  <tr onclick="openEventDetail(1)">
+                    <td><div style="font-weight:500;">Москва дипломатическая</div></td>
+                    <td class="muted">3 мая, 15:00</td>
+                    <td><span class="badge badge-gold">◌ Черновик</span></td>
+                    <td><button class="btn btn-ghost btn-xs">Открыть</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================
+           PAGE: EVENTS LIST
+           ============================ -->
+      <div class="page" id="page-events">
+        <div class="section-header">
+          <div>
+            <div class="section-title">События</div>
+            <div class="section-sub" id="events-count-label">Всего: 5 событий</div>
+          </div>
+          <div class="section-actions">
+            <button class="btn btn-secondary btn-sm">↓ Экспорт</button>
+            <button class="btn btn-primary btn-sm" onclick="currentEditingEventId=null;showPage('event-create')">＋ Создать событие</button>
+          </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+          <div class="search-bar" style="flex:1;max-width:300px;">
+            <span class="icon">🔍</span>
+            <input type="text" placeholder="Поиск событий..." id="events-search" oninput="filterEvents()">
+          </div>
+          <div class="page-toggle">
+            <button class="page-toggle-btn active" id="toggle-upcoming" onclick="setTimeFilter('upcoming',this)">Ближайшие</button>
+            <button class="page-toggle-btn" id="toggle-past" onclick="setTimeFilter('past',this)">Прошедшие</button>
+          </div>
+        </div>
+
+        <div class="filter-chips" id="events-filter-chips">
+          <div class="chip active" onclick="filterByStatus('all',this)">Все</div>
+          <div class="chip" onclick="filterByStatus('published',this)">Опубликованные</div>
+          <div class="chip" onclick="filterByStatus('draft',this)">Черновики</div>
+          <div class="chip" onclick="filterByStatus('hidden',this)">Скрытые</div>
+          <div class="chip" onclick="filterByStatus('public',this)">Public</div>
+          <div class="chip" onclick="filterByStatus('members_only',this)">Для участников</div>
+          <div class="chip" onclick="filterByStatus('no_image',this)">Без картинки</div>
+          <div class="chip" onclick="filterByStatus('paid_options',this)">₽ С вариантами оплаты</div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data-table" id="events-table">
+            <thead><tr>
+              <th>Название</th>
+              <th>Дата и время</th>
+              <th>Категория</th>
+              <th>Статус</th>
+              <th>Видимость</th>
+              <th>Регистрация</th>
+              <th>Записей</th>
+              <th>Источник</th>
+              <th>Действия</th>
+            </tr></thead>
+            <tbody id="events-tbody">
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ============================
+           PAGE: EVENT DETAIL / EDIT
+           ============================ -->
+      <div class="page" id="page-event-detail">
+        <button class="back-btn" onclick="showPage('events')">‹ Назад к событиям</button>
+        <div id="event-detail-content"></div>
+      </div>
+
+      <!-- ============================
+           PAGE: EVENT CREATE
+           ============================ -->
+      <div class="page" id="page-event-create">
+        <button class="back-btn" id="event-create-back-btn" onclick="showPage('events')">‹ Назад</button>
+        <div class="section-header" style="margin-bottom:20px;">
+          <div>
+            <div class="section-title" id="event-form-title">Создать событие</div>
+          </div>
+          <div class="section-actions">
+            <button class="btn btn-secondary btn-sm" onclick="saveEventDraft()">Сохранить черновик</button>
+            <button class="btn btn-primary btn-sm" onclick="publishEvent()">Опубликовать</button>
+          </div>
+        </div>
+
+        <!-- Block 1 -->
+        <div class="form-block">
+          <div class="form-block-title"><span class="form-block-icon">✦</span> Основное</div>
+          <div class="form-field">
+            <label class="form-label">Название события *</label>
+            <input type="text" class="form-input" id="ef-title" placeholder="Введите название...">
+            <div class="form-error" id="ef-title-err" style="display:none;">Укажите название события</div>
+          </div>
+          <div class="form-field">
+            <label class="form-label">Подзаголовок</label>
+            <input type="text" class="form-input" id="ef-subtitle" placeholder="Подзаголовок или уточнение...">
+          </div>
+          <div class="form-field">
+            <label class="form-label">Короткое описание</label>
+            <textarea class="form-textarea" id="ef-short-desc" placeholder="1–2 предложения для анонса..." style="min-height:60px;"></textarea>
+          </div>
+          <div class="form-field">
+            <label class="form-label">Полное описание</label>
+            <textarea class="form-textarea" id="ef-desc" placeholder="Подробное описание события..."></textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label class="form-label">Категория</label>
+              <select class="form-select" id="ef-category">
+                <option value="">— Выбрать —</option>
+                <option value="shabbat">Шаббат</option>
+                <option value="lecture">Лекция</option>
+                <option value="tour">Экскурсия</option>
+                <option value="holiday">Праздник</option>
+                <option value="children">Детское</option>
+                <option value="course">Курс</option>
+                <option value="community">Общинное</option>
+                <option value="other">Другое</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-label">Аудитория</label>
+              <select class="form-select" id="ef-audience">
+                <option value="all">Все</option>
+                <option value="men">Мужчины</option>
+                <option value="women">Женщины</option>
+                <option value="children">Дети</option>
+                <option value="families">Семьи</option>
+                <option value="youth">Молодёжь</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Block 2 -->
+        <div class="form-block">
+          <div class="form-block-title"><span class="form-block-icon">◷</span> Дата и время</div>
+          <div class="form-row">
+            <div class="form-field">
+              <label class="form-label">Дата начала *</label>
+              <input type="date" class="form-input" id="ef-date" style="color-scheme:dark;">
+              <div class="form-error" id="ef-date-err" style="display:none;">Укажите дату события</div>
+            </div>
+            <div class="form-field">
+              <label class="form-label">Время начала</label>
+              <input type="time" class="form-input" id="ef-time" style="color-scheme:dark;">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label class="form-label">Дата окончания</label>
+              <input type="date" class="form-input" id="ef-date-end" style="color-scheme:dark;">
+            </div>
+            <div class="form-field">
+              <label class="form-label">Время окончания</label>
+              <input type="time" class="form-input" id="ef-time-end" style="color-scheme:dark;">
+            </div>
+          </div>
+          <div class="form-field" style="max-width:200px;">
+            <label class="form-label">Часовой пояс</label>
+            <select class="form-select" id="ef-tz">
+              <option value="Europe/Moscow">Москва (UTC+3)</option>
+              <option value="Europe/Jerusalem">Иерусалим (UTC+3)</option>
+              <option value="America/New_York">Нью-Йорк (UTC-4)</option>
+              <option value="Europe/Berlin">Берлин (UTC+2)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Block 3 -->
+        <div class="form-block">
+          <div class="form-block-title"><span class="form-block-icon">◎</span> Место</div>
+          <div class="form-row">
+            <div class="form-field">
+              <label class="form-label">Название места</label>
+              <input type="text" class="form-input" id="ef-location-name" placeholder="Клуб, зал, синагога...">
+            </div>
+            <div class="form-field">
+              <label class="form-label">Адрес</label>
+              <input type="text" class="form-input" id="ef-address" placeholder="Улица, город...">
+            </div>
+          </div>
+          <div class="form-field future-feature">
+            <label class="form-label">Координаты (GPS)</label>
+            <input type="text" class="form-input" placeholder="55.7558, 37.6176" disabled>
+          </div>
+        </div>
+
+        <!-- Block 4 -->
+        <div class="form-block">
+          <div class="form-block-title"><span class="form-block-icon">◻</span> Афиша</div>
+          <div class="form-row">
+            <div class="form-field">
+              <label class="form-label">URL изображения</label>
+              <input type="text" class="form-input" id="ef-image" placeholder="https://..." oninput="updateImagePreview()">
+              <div class="form-error" style="display:block;color:var(--text-3);font-size:11px;margin-top:4px;">В прототипе внешние изображения не отображаются</div>
+            </div>
+            <div>
+              <label class="form-label">Превью</label>
+              <div class="poster-placeholder grad-1" style="height:100px;width:160px;" id="ef-preview">
+                <div class="poster-icon">🖼</div>
+                <div>Картинка не загружена</div>
+              </div>
+            </div>
+          </div>
+          <div class="future-feature" style="margin-top:8px;">
+            <button class="btn btn-secondary btn-sm" disabled>↑ Загрузить файл</button>
+            <span style="font-size:11px;color:var(--text-3);margin-left:8px;">Загрузка изображения будет добавлена позже</span>
+          </div>
+        </div>
+
+        <!-- Block 5 -->
+        <div class="form-block">
+          <div class="form-block-title"><span class="form-block-icon">◉</span> Видимость и публикация</div>
+          <div class="form-row">
+            <div class="form-field">
+              <label class="form-label">Статус</label>
+              <select class="form-select" id="ef-status" onchange="updateStatusHint()">
+                <option value="draft">Черновик</option>
+                <option value="published">Опубликовано</option>
+                <option value="cancelled">Отменено</option>
+                <option value="archived">В архиве</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-label">Видимость</label>
+              <select class="form-select" id="ef-visibility" onchange="updateStatusHint()">
+                <option value="public">Публично</option>
+                <option value="members_only">Только участники</option>
+                <option value="hidden">Скрыто</option>
+              </select>
+            </div>
+          </div>
+          <div class="warn-box info" id="ef-status-hint">
+            <span>ℹ</span>
+            <span>Черновик / Скрыто — не видны пользователям</span>
+          </div>
+        </div>
+
+        <!-- Block 6 -->
+        <div class="form-block">
+          <div class="form-block-title"><span class="form-block-icon">◈</span> Регистрация</div>
+          <div class="form-field">
+            <label class="form-label">Режим регистрации</label>
+            <select class="form-select" id="ef-reg-mode" onchange="updateRegFields()">
+              <option value="none">Регистрация не требуется</option>
+              <option value="external_link">Внешняя ссылка</option>
+              <option value="internal_free">Внутренняя (бесплатная)</option>
+              <option value="internal_paid">Внутренняя (платная)</option>
+            </select>
+          </div>
+          <div id="ef-reg-none" class="warn-box info"><span>ℹ</span> Регистрация не требуется. Участники просто приходят.</div>
+          <div id="ef-reg-external" style="display:none;">
+            <div class="form-field">
+              <label class="form-label">Ссылка для записи *</label>
+              <input type="text" class="form-input" id="ef-reg-url" placeholder="https://...">
+              <div class="form-error" id="ef-reg-url-err" style="display:none;">Укажите ссылку для записи</div>
+            </div>
+          </div>
+          <div id="ef-reg-internal" style="display:none;">
+            <div class="form-row-3">
+              <div class="form-field">
+                <label class="form-label">Вместимость</label>
+                <input type="number" class="form-input" id="ef-capacity" placeholder="50">
+              </div>
+              <div class="form-field">
+                <label class="form-label">Лист ожидания</label>
+                <div style="padding:8px 0;display:flex;align-items:center;gap:8px;">
+                  <div class="toggle" id="ef-waitlist-toggle" onclick="this.classList.toggle('on')"></div>
+                  <span style="font-size:12px;color:var(--text-3);">Включён</span>
+                </div>
+              </div>
+              <div class="form-field">
+                <label class="form-label">Подтверждение</label>
+                <div style="padding:8px 0;display:flex;align-items:center;gap:8px;">
+                  <div class="toggle" id="ef-approval-toggle" onclick="this.classList.toggle('on')"></div>
+                  <span style="font-size:12px;color:var(--text-3);">Требуется</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="ef-reg-paid" style="display:none;">
+            <div class="warn-box error" style="margin-bottom:14px;"><span>⚠</span> Платёжный шлюз пока не подключён. В прототипе настраиваются только варианты участия и расчёт суммы.</div>
+
+            <!-- PARTICIPATION OPTIONS CONSTRUCTOR -->
+            <div class="participation-constructor" id="participation-constructor">
+              <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:4px;">Варианты участия и оплаты</div>
+              <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;">Настройте, что пользователь сможет выбрать при записи на событие.</div>
+
+              <div class="participation-layout">
+                <!-- LEFT: constructor -->
+                <div>
+                  <!-- Global settings -->
+                  <div class="participation-settings-grid">
+                    <div class="participation-setting-item">
+                      <div class="toggle on" id="po-enabled-toggle" onclick="togglePoEnabled()"></div>
+                      <label onclick="togglePoEnabled()">Использовать варианты участия</label>
+                    </div>
+                    <div class="participation-setting-item">
+                      <div class="toggle on" id="po-approval-toggle" onclick="this.classList.toggle('on');syncPreview()"></div>
+                      <label>Требуется подтверждение</label>
+                    </div>
+                    <div class="participation-setting-item">
+                      <div class="toggle" id="po-comment-toggle" onclick="this.classList.toggle('on');syncPreview()"></div>
+                      <label>Разрешить комментарий</label>
+                    </div>
+                    <div class="participation-setting-item" style="grid-column:1/-1;">
+                      <span style="flex-shrink:0;color:var(--text-3);font-size:11px;">Выбор:</span>
+                      <select class="option-edit-select" id="po-selection-mode" onchange="syncPreview()" style="flex:1;max-width:200px;">
+                        <option value="single">Только один вариант</option>
+                        <option value="multiple" selected>Можно выбрать несколько</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <!-- Intro/footer text -->
+                  <div class="option-edit-grid" style="margin-bottom:12px;">
+                    <div>
+                      <div class="option-edit-label">Текст над вариантами</div>
+                      <input type="text" class="option-edit-input" id="po-intro-text" value="Выберите формат участия" oninput="syncPreview()">
+                    </div>
+                    <div>
+                      <div class="option-edit-label">Текст под вариантами</div>
+                      <input type="text" class="option-edit-input" id="po-footer-text" value="Если нужна помощь с оплатой, свяжитесь с администратором" oninput="syncPreview()">
+                    </div>
+                  </div>
+
+                  <!-- Options list -->
+                  <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Варианты</div>
+                  <div id="po-options-list"></div>
+
+                  <button class="btn btn-secondary btn-sm" style="width:100%;justify-content:center;margin-top:4px;" onclick="openAddOptionModal()">＋ Добавить вариант</button>
+                </div>
+
+                <!-- RIGHT: user preview -->
+                <div>
+                  <div class="preview-panel" id="po-preview-panel">
+                    <div class="preview-panel-header">
+                      <span>◎</span> Предпросмотр для пользователя
+                    </div>
+                    <div class="preview-panel-body" id="po-preview-body">
+                      <!-- rendered by JS -->
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Block 7 -->
+        <div class="form-block">
+          <div class="accordion-header" onclick="toggleAccordion('block7-body',this)">
+            <span>⚙ Служебное</span>
+            <span id="block7-arrow">▸</span>
+          </div>
+          <div class="accordion-body" id="block7-body">
+            <div class="form-row" style="margin-top:10px;">
+              <div class="form-field">
+                <label class="form-label">source_type</label>
+                <input type="text" class="form-input" id="ef-source-type" placeholder="manual / import / ...">
+              </div>
+              <div class="form-field">
+                <label class="form-label">source_url</label>
+                <input type="text" class="form-input" id="ef-source-url" placeholder="https://...">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-field">
+                <label class="form-label">source_external_id</label>
+                <input type="text" class="form-input" id="ef-source-ext-id" placeholder="">
+              </div>
+              <div class="form-field">
+                <label class="form-label">manual_override</label>
+                <div style="padding:8px 0;display:flex;align-items:center;gap:8px;">
+                  <div class="toggle" id="ef-manual-toggle" onclick="this.classList.toggle('on')"></div>
+                  <span style="font-size:12px;color:var(--text-3);">Ручная правка</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Form actions -->
+        <div style="display:flex;gap:10px;margin-top:8px;margin-bottom:40px;">
+          <button class="btn btn-ghost" onclick="showPage('events')">‹ Назад</button>
+          <div style="flex:1;"></div>
+          <button class="btn btn-ghost btn-sm" onclick="toast('Предпросмотр пока недоступен','info')">Предпросмотр</button>
+          <button class="btn btn-secondary btn-sm" onclick="saveEventDraft()">Сохранить черновик</button>
+          <button class="btn btn-primary btn-sm" onclick="publishEvent()">Опубликовать</button>
+        </div>
+      </div>
+
+      <!-- ============================
+           PAGE: IMPORT
+           ============================ -->
+      <div class="page" id="page-import">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Импорт с сайта</div>
+            <div class="section-sub">Проверка автоматически импортированных событий</div>
+          </div>
+        </div>
+
+        <div class="tabs" id="import-tabs">
+          <div class="tab active" onclick="filterImport('needs_review',this)">Требуют проверки <span class="tab-count">3</span></div>
+          <div class="tab" onclick="filterImport('new',this)">Новые <span class="tab-count">4</span></div>
+          <div class="tab" onclick="filterImport('linked',this)">Связанные <span class="tab-count">1</span></div>
+          <div class="tab" onclick="filterImport('ignored',this)">Игнорированные <span class="tab-count">0</span></div>
+          <div class="tab" onclick="filterImport('error',this)">Ошибки <span class="tab-count">1</span></div>
+          <div class="tab" onclick="filterImport('all',this)">Все <span class="tab-count">4</span></div>
+        </div>
+
+        <div class="filter-chips" style="margin-bottom:12px;">
+          <div class="chip active">Все</div>
+          <div class="chip">confident</div>
+          <div class="chip">partial</div>
+          <div class="chip">recurring_rule</div>
+          <div class="chip">none</div>
+          <div class="chip">Без картинки</div>
+        </div>
+
+        <div id="import-list"></div>
+      </div>
+
+      <!-- ============================
+           PAGE: IMPORT REVIEW
+           ============================ -->
+      <div class="page" id="page-import-review">
+        <button class="back-btn" onclick="showPage('import')">‹ Назад к импорту</button>
+        <div id="import-review-content"></div>
+      </div>
+
+      <!-- ============================
+           PAGE: REGISTRATIONS
+           ============================ -->
+      <div class="page" id="page-registrations">
+        <div style="padding-bottom:8px;" class="section-header">
+          <div>
+            <div class="section-title">Регистрации</div>
+            <div class="section-sub">Управление заявками на события</div>
+          </div>
+          <div class="section-actions">
+            <button class="btn btn-secondary btn-sm" onclick="toast('CSV экспортирован в прототипе','info')">↓ Экспорт CSV</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:280px 1fr 340px;height:calc(100vh - 180px);overflow:hidden;" id="reg-outer-layout">
+          <!-- Event selector -->
+          <div class="reg-list-panel">
+            <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">События</div>
+            <div class="search-bar" style="margin-bottom:10px;height:32px;">
+              <span class="icon" style="font-size:12px;">🔍</span>
+              <input type="text" placeholder="Найти событие..." style="font-size:12px;">
+            </div>
+            <div id="reg-event-list"></div>
+          </div>
+
+          <!-- Registrations main -->
+          <div class="reg-main">
+            <div id="reg-event-summary" style="margin-bottom:14px;"></div>
+
+            <div class="filter-chips" id="reg-filter-chips">
+              <div class="chip active" onclick="filterReg('all',this)">Все</div>
+              <div class="chip" onclick="filterReg('pending',this)">Pending</div>
+              <div class="chip" onclick="filterReg('confirmed',this)">Confirmed</div>
+              <div class="chip" onclick="filterReg('waitlisted',this)">В ожидании</div>
+              <div class="chip" onclick="filterReg('cancelled',this)">Отменены</div>
+              <div class="chip" onclick="filterReg('attended',this)">Пришли</div>
+            </div>
+
+            <div class="table-wrap">
+              <table class="data-table" id="reg-table">
+                <thead><tr>
+                  <th>Участник</th>
+                  <th>Email</th>
+                  <th>Статус</th>
+                  <th>Варианты / Мест</th>
+                  <th>Сумма</th>
+                  <th>Оплата</th>
+                  <th>Дата</th>
+                  <th>Действия</th>
+                </tr></thead>
+                <tbody id="reg-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Registration detail panel -->
+          <div style="border-left:1px solid var(--glass-border);overflow-y:auto;padding:16px;" id="reg-detail-panel">
+            <div style="text-align:center;color:var(--text-3);padding:40px 0;font-size:12px;">
+              Выберите заявку<br>для просмотра деталей
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================
+           PAGE: MEMBERS
+           ============================ -->
+      <div class="page" id="page-members">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Участники</div>
+            <div class="section-sub">Управление членами общины</div>
+          </div>
+        </div>
+        <div class="members-layout" style="height:calc(100vh - 180px);">
+          <div class="members-main" id="members-main-panel">
+            <div class="toolbar">
+              <div class="search-bar" style="flex:1;max-width:300px;">
+                <span class="icon">🔍</span>
+                <input type="text" placeholder="Поиск участников...">
+              </div>
+            </div>
+            <div class="filter-chips">
+              <div class="chip active" onclick="filterMembers('all',this)">Все</div>
+              <div class="chip" onclick="filterMembers('active',this)">Активные</div>
+              <div class="chip" onclick="filterMembers('suspended',this)">Приостановлены</div>
+              <div class="chip" onclick="filterMembers('member',this)">member</div>
+              <div class="chip" onclick="filterMembers('event_manager',this)">event_manager</div>
+              <div class="chip" onclick="filterMembers('admin',this)">admin</div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr>
+                  <th>Участник</th>
+                  <th>Email</th>
+                  <th>Роль</th>
+                  <th>Статус</th>
+                  <th>Вступил</th>
+                  <th>Записей</th>
+                  <th>Действия</th>
+                </tr></thead>
+                <tbody id="members-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="members-panel" id="members-detail-panel">
+            <div style="text-align:center;color:var(--text-3);padding:40px 0;font-size:13px;">
+              Выберите участника для просмотра профиля
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================
+           PAGE: INVITES
+           ============================ -->
+      <div class="page" id="page-invites">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Приглашения</div>
+            <div class="section-sub">Invite-коды для вступления в общину</div>
+          </div>
+          <div class="section-actions">
+            <button class="btn btn-primary btn-sm" onclick="openCreateInviteModal()">＋ Создать приглашение</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr>
+              <th>Код</th>
+              <th>Роль</th>
+              <th>Использований</th>
+              <th>Действует до</th>
+              <th>Статус</th>
+              <th>Создан</th>
+              <th>Действия</th>
+            </tr></thead>
+            <tbody id="invites-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ============================
+           PAGE: SETTINGS
+           ============================ -->
+      <div class="page" id="page-settings">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Настройки</div>
+            <div class="section-sub">Конфигурация общины</div>
+          </div>
+          <div class="section-actions">
+            <button class="btn btn-primary btn-sm" onclick="toast('Настройки сохранены','success')">Сохранить настройки</button>
+          </div>
+        </div>
+
+        <div style="max-width:720px;">
+          <div class="settings-section">
+            <div class="settings-section-title">Об общине</div>
+            <div class="form-row">
+              <div class="form-field">
+                <label class="form-label">Название общины</label>
+                <input type="text" class="form-input" value="Среди Своих">
+              </div>
+              <div class="form-field">
+                <label class="form-label">Город</label>
+                <input type="text" class="form-input" value="Москва">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-field">
+                <label class="form-label">Страна</label>
+                <input type="text" class="form-input" value="Россия">
+              </div>
+              <div class="form-field">
+                <label class="form-label">Часовой пояс</label>
+                <select class="form-select">
+                  <option>Europe/Moscow (UTC+3)</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-field">
+              <label class="form-label">Веб-сайт</label>
+              <input type="text" class="form-input" value="https://sredi-svoikh.ru">
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">Контакты</div>
+            <div class="form-row">
+              <div class="form-field">
+                <label class="form-label">Телефон для записи</label>
+                <input type="text" class="form-input" placeholder="+7 ...">
+              </div>
+              <div class="form-field">
+                <label class="form-label">WhatsApp / Telegram</label>
+                <input type="text" class="form-input" placeholder="@username или номер">
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">Значения по умолчанию для событий</div>
+            <div class="form-row">
+              <div class="form-field">
+                <label class="form-label">Место по умолчанию</label>
+                <input type="text" class="form-input" placeholder="Клуб Среди Своих">
+              </div>
+              <div class="form-field">
+                <label class="form-label">Адрес по умолчанию</label>
+                <input type="text" class="form-input" placeholder="Улица, город">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-field">
+                <label class="form-label">Видимость по умолчанию</label>
+                <select class="form-select">
+                  <option>members_only</option>
+                  <option>public</option>
+                  <option>hidden</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label class="form-label">Регистрация по умолчанию</label>
+                <select class="form-select">
+                  <option>internal_free</option>
+                  <option>external_link</option>
+                  <option>none</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section future-feature">
+            <div class="settings-section-title">Логотип общины</div>
+            <div class="form-field">
+              <label class="form-label">URL логотипа</label>
+              <input type="text" class="form-input" placeholder="https://..." disabled>
+            </div>
+            <button class="btn btn-secondary btn-sm" disabled>↑ Загрузить логотип</button>
+          </div>
+
+          <div style="margin-bottom:40px;">
+            <button class="btn btn-primary" onclick="toast('Настройки сохранены','success')">Сохранить настройки</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================
+           PAGE: NO ACCESS
+           ============================ -->
+      <div class="page" id="page-no-access">
+        <div class="no-access">
+          <div class="no-access-icon">⊘</div>
+          <h2>Нет доступа</h2>
+          <p>Этот раздел доступен только администраторам<br>и менеджерам событий.</p>
+          <div style="margin-top:20px;">
+            <button class="btn btn-secondary" onclick="showPage('overview')">На главную</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- FUTURE PAGES -->
+      <div class="page" id="page-future-contacts"><div class="no-access" style="align-items:flex-start;text-align:left;max-width:480px;margin:0 auto;padding-top:60px;"><div style="font-size:36px;margin-bottom:12px;">◎</div><h2>Контакты общины</h2><p style="margin-top:8px;">Раздел будет добавлен позже.</p><div class="glass-card elevated" style="margin-top:20px;text-align:left;"><div style="font-size:12px;color:var(--text-3);line-height:2;">· Раввин и администратор<br>· Координатор событий<br>· WhatsApp / Telegram<br>· Телефон и адрес общины</div></div></div></div>
+      <div class="page" id="page-future-notifications"><div class="no-access" style="align-items:flex-start;text-align:left;max-width:480px;margin:0 auto;padding-top:60px;"><div style="font-size:36px;margin-bottom:12px;">◌</div><h2>Уведомления</h2><p style="margin-top:8px;">Раздел будет добавлен позже.</p><div class="glass-card elevated" style="margin-top:20px;text-align:left;"><div style="font-size:12px;color:var(--text-3);line-height:2;">· Объявления участникам<br>· Push-уведомления<br>· Рассылки по записавшимся<br>· Напоминания о событиях</div></div></div></div>
+      <div class="page" id="page-future-media"><div class="no-access" style="align-items:flex-start;text-align:left;max-width:480px;margin:0 auto;padding-top:60px;"><div style="font-size:36px;margin-bottom:12px;">◻</div><h2>Медиа</h2><p style="margin-top:8px;">Раздел будет добавлен позже.</p><div class="glass-card elevated" style="margin-top:20px;text-align:left;"><div style="font-size:12px;color:var(--text-3);line-height:2;">· Афиши событий<br>· Логотип общины<br>· Загрузка изображений<br>· Медиатека</div></div></div></div>
+      <div class="page" id="page-future-prayers"><div class="no-access" style="align-items:flex-start;text-align:left;max-width:480px;margin:0 auto;padding-top:60px;"><div style="font-size:36px;margin-bottom:12px;">✦</div><h2>Расписание молитв</h2><p style="margin-top:8px;">Раздел будет добавлен позже.</p><div class="glass-card elevated" style="margin-top:20px;text-align:left;"><div style="font-size:12px;color:var(--text-3);line-height:2;">· Расписание миньянов<br>· Шаббат и праздники<br>· Особые дни<br>· Зманим по городу</div></div></div></div>
+      <div class="page" id="page-future-reports"><div class="no-access" style="align-items:flex-start;text-align:left;max-width:480px;margin:0 auto;padding-top:60px;"><div style="font-size:36px;margin-bottom:12px;">◈</div><h2>Отчёты</h2><p style="margin-top:8px;">Раздел будет добавлен позже.</p><div class="glass-card elevated" style="margin-top:20px;text-align:left;"><div style="font-size:12px;color:var(--text-3);line-height:2;">· Посещаемость событий<br>· Регистрации по периодам<br>· Рост участников<br>· Сборы по вариантам участия</div></div></div></div>
+      <div class="page" id="page-future-log"><div class="no-access" style="align-items:flex-start;text-align:left;max-width:480px;margin:0 auto;padding-top:60px;"><div style="font-size:36px;margin-bottom:12px;">⊞</div><h2>Журнал действий</h2><p style="margin-top:8px;">Раздел будет добавлен позже.</p><div class="glass-card elevated" style="margin-top:20px;text-align:left;"><div style="font-size:12px;color:var(--text-3);line-height:2;">· Кто создал событие<br>· Кто изменил дату<br>· Кто подтвердил регистрацию<br>· Кто изменил роль участника</div></div></div></div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- MODAL OVERLAY -->
+<div id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" id="modal-box">
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div id="toast-container"></div>
+
+<script>
+// =============================================
+// MOCK DATA
+// =============================================
+
+const mockEvents = [
+  {
+    id: 'e1',
+    title: 'История Иерусалимского Храма',
+    subtitle: 'Лекция профессора Карпова',
+    shortDesc: 'Увлекательная лекция о двух Иерусалимских Храмах — их архитектуре, ритуалах и значении для еврейского народа.',
+    desc: 'Профессор Карпов расскажет об истории Первого и Второго Храмов, их разрушении и символическом значении в еврейской традиции.',
+    category: 'lecture',
+    status: 'published',
+    visibility: 'public',
+    registrationMode: 'external_link',
+    registrationUrl: 'https://sredi-svoikh.ru/events/temple',
+    date: '2026-05-06',
+    time: '19:00',
+    registrations: 24,
+    source: 'import',
+    hasImage: true,
+    gradClass: 'grad-1',
+    audience: 'all'
+  },
+  {
+    id: 'e2',
+    title: 'Москва дипломатическая',
+    subtitle: 'Историческая экскурсия',
+    shortDesc: 'Экскурсия по дипломатическим объектам и еврейским кварталам исторической Москвы.',
+    desc: 'Маршрут пройдёт через ключевые исторические точки, связанные с дипломатией и еврейской общиной Москвы.',
+    category: 'tour',
+    status: 'draft',
+    visibility: 'hidden',
+    registrationMode: 'external_link',
+    registrationUrl: '',
+    date: '2026-05-03',
+    time: '15:00',
+    registrations: 0,
+    source: 'manual',
+    hasImage: false,
+    gradClass: 'grad-2',
+    audience: 'all'
+  },
+  {
+    id: 'e3',
+    title: 'Рабби Шимон бар Йохай. Лаг ба-Омер',
+    subtitle: 'Праздничный вечер',
+    shortDesc: 'Вечер, посвящённый памяти великого мудреца и тайнам Кабалы в праздник Лаг ба-Омер.',
+    desc: 'Присоединяйтесь к праздничному вечеру, посвящённому памяти рабби Шимона бар Йохая. Лекция, пение, угощение.',
+    category: 'holiday',
+    status: 'published',
+    visibility: 'members_only',
+    registrationMode: 'internal_free',
+    capacity: 50,
+    registrations: 36,
+    waitlistEnabled: true,
+    requiresApproval: false,
+    date: '2026-05-18',
+    time: '20:00',
+    source: 'manual',
+    hasImage: true,
+    gradClass: 'grad-3',
+    audience: 'all'
+  },
+  {
+    id: 'e4',
+    title: 'Детская воскресная школа',
+    subtitle: 'Еженедельные занятия',
+    shortDesc: 'Регулярные занятия для детей 6–12 лет: иврит, еврейская история, праздники.',
+    desc: 'Каждое воскресенье с 10:30 до 16:00. Программа включает иврит, еврейские традиции, праздники и творческие мастерские.',
+    category: 'children',
+    status: 'published',
+    visibility: 'members_only',
+    registrationMode: 'internal_free',
+    capacity: 30,
+    registrations: 22,
+    waitlistEnabled: false,
+    requiresApproval: true,
+    date: '2026-05-11',
+    time: '10:30',
+    source: 'manual',
+    hasImage: false,
+    gradClass: 'grad-4',
+    audience: 'children'
+  },
+  {
+    id: 'e5',
+    title: 'Шаббат среди своих',
+    subtitle: 'Пятничный вечер',
+    shortDesc: 'Совместная встреча Шаббата с Кабалат Шаббат, трапезой и нетворкингом.',
+    desc: 'Приглашаем всех членов общины встретить Шаббат вместе. Кабалат Шаббат, совместная трапеза, живое общение.',
+    category: 'shabbat',
+    status: 'draft',
+    visibility: 'hidden',
+    registrationMode: 'internal_paid',
+    date: '2026-05-15',
+    time: '19:30',
+    registrations: 2,
+    source: 'manual',
+    hasImage: false,
+    gradClass: 'grad-5',
+    audience: 'all',
+    participationSettings: {
+      enabled: true,
+      selectionMode: 'multiple',
+      allowQuantity: false,
+      requiresApproval: true,
+      allowComment: true,
+      introText: 'Выберите формат участия',
+      footerText: 'Если нужна помощь с оплатой, свяжитесь с администратором'
+    },
+    participationOptions: [
+      { id: 'shabbat_full', title: 'Весь Шаббат в общине', description: 'Вечерняя и дневная трапеза', price: 3000, currencyLabel: '₽', type: 'package', active: true, allowQuantity: true, minQuantity: 1, maxQuantity: 10, isDonation: false, countsTowardCapacity: true, group: 'shabbat_meals', conflictsWith: ['shabbat_evening','shabbat_day'], sortOrder: 1 },
+      { id: 'shabbat_evening', title: 'Вечерняя трапеза', description: 'Пятничная вечерняя трапеза', price: 2500, currencyLabel: '₽', type: 'meal', active: true, allowQuantity: true, minQuantity: 1, maxQuantity: 10, isDonation: false, countsTowardCapacity: true, group: 'shabbat_meals', sortOrder: 2 },
+      { id: 'shabbat_day', title: 'Дневная трапеза', description: 'Субботняя дневная трапеза', price: 1500, currencyLabel: '₽', type: 'meal', active: true, allowQuantity: true, minQuantity: 1, maxQuantity: 10, isDonation: false, countsTowardCapacity: true, group: 'shabbat_meals', sortOrder: 3 },
+      { id: 'shabbat_donation', title: 'Подарить Шаббат нуждающемуся', description: 'Благотворительный взнос за участие другого человека', price: 3000, currencyLabel: '₽', type: 'donation', active: true, allowQuantity: true, minQuantity: 1, maxQuantity: 10, isDonation: true, countsTowardCapacity: false, group: 'donation', sortOrder: 4 }
+    ]
+  },
+  {
+    id: 'e6',
+    title: 'Песах в общине',
+    subtitle: 'Пасхальные трапезы',
+    shortDesc: 'Праздничные седеры и трапезы Песаха для всей семьи.',
+    desc: 'Приглашаем всех отметить Песах вместе с общиной. Первый и второй седеры, праздничные трапезы, программа для детей.',
+    category: 'holiday',
+    status: 'draft',
+    visibility: 'members_only',
+    registrationMode: 'internal_paid',
+    date: '2026-04-13',
+    time: '19:00',
+    registrations: 3,
+    source: 'manual',
+    hasImage: false,
+    gradClass: 'grad-3',
+    audience: 'all',
+    participationSettings: {
+      enabled: true,
+      selectionMode: 'multiple',
+      allowQuantity: true,
+      requiresApproval: true,
+      allowComment: true,
+      introText: 'Выберите трапезы для вашей семьи',
+      footerText: 'По вопросам оплаты обращайтесь к администратору'
+    },
+    participationOptions: [
+      { id: 'pesach_all', title: 'Все 4 трапезы', description: 'Пакет: оба седера + две дневные трапезы', price: 12000, currencyLabel: '₽', type: 'package', active: true, allowQuantity: true, minQuantity: 1, maxQuantity: 10, isDonation: false, countsTowardCapacity: true, group: 'pesach_meals', conflictsWith: ['pesach_seder1','pesach_seder2','pesach_day1','pesach_day2'], sortOrder: 1 },
+      { id: 'pesach_seder1', title: 'Первый седер', description: '13 апреля, вечер', price: 4000, currencyLabel: '₽', type: 'meal', active: true, allowQuantity: true, minQuantity: 1, maxQuantity: 10, isDonation: false, countsTowardCapacity: true, group: 'pesach_seders', sortOrder: 2 },
+      { id: 'pesach_seder2', title: 'Второй седер', description: '14 апреля, вечер', price: 4000, currencyLabel: '₽', type: 'meal', active: true, allowQuantity: true, minQuantity: 1, maxQuantity: 10, isDonation: false, countsTowardCapacity: true, group: 'pesach_seders', sortOrder: 3 },
+      { id: 'pesach_day1', title: 'Праздничная дневная трапеза', description: '14 апреля, день', price: 2500, currencyLabel: '₽', type: 'meal', active: true, allowQuantity: true, minQuantity: 1, maxQuantity: 10, isDonation: false, countsTowardCapacity: true, group: 'pesach_day', sortOrder: 4 },
+      { id: 'pesach_children', title: 'Детское участие', description: 'Для детей до 12 лет', price: 1500, currencyLabel: '₽', type: 'children', active: true, allowQuantity: true, minQuantity: 1, maxQuantity: 10, isDonation: false, countsTowardCapacity: true, group: 'children', sortOrder: 5 },
+      { id: 'pesach_matza', title: 'Пожертвование на мацу для нуждающихся', description: 'Маот Хитин — традиционная благотворительность перед Песахом', price: 3000, currencyLabel: '₽', type: 'donation', active: true, allowQuantity: true, minQuantity: 1, maxQuantity: 50, isDonation: true, countsTowardCapacity: false, group: 'donation', sortOrder: 6 }
+    ]
+  }
+];
+
+const mockImportItems = [
+  {
+    id: 'i1',
+    parsedTitle: 'История Иерусалимского Храма',
+    shortDesc: 'Лекция о двух Иерусалимских Храмах',
+    rawDateText: '6 мая, среда, начало в 19:00',
+    dateConfidence: 'partial',
+    dateStatus: 'needs_review',
+    reason: 'Найдены день и месяц, но не найден год',
+    status: 'new',
+    sourceUrl: 'sredi-svoikh.ru/events/temple-history',
+    registrationUrl: 'sredi-svoikh.ru/register/temple',
+    createdAt: '2026-05-01',
+    gradClass: 'grad-1'
+  },
+  {
+    id: 'i2',
+    parsedTitle: 'Детская воскресная школа',
+    shortDesc: 'Регулярные занятия для детей 6–12 лет',
+    rawDateText: 'каждое воскресенье с 10:30 до 16:00',
+    dateConfidence: 'recurring_rule',
+    dateStatus: 'needs_review',
+    reason: 'Повторяющееся событие без конкретной даты',
+    status: 'new',
+    sourceUrl: 'sredi-svoikh.ru/events/school',
+    registrationUrl: '',
+    createdAt: '2026-05-01',
+    gradClass: 'grad-4'
+  },
+  {
+    id: 'i3',
+    parsedTitle: 'Шаббат',
+    shortDesc: 'Совместная встреча Шаббата',
+    rawDateText: 'время уточняется',
+    dateConfidence: 'none',
+    dateStatus: 'needs_review',
+    reason: 'Дата не найдена',
+    status: 'error',
+    sourceUrl: 'sredi-svoikh.ru/events/shabbat',
+    registrationUrl: '',
+    createdAt: '2026-05-01',
+    gradClass: 'grad-5'
+  },
+  {
+    id: 'i4',
+    parsedTitle: 'Москва Иосифа. День рождения Бродского',
+    shortDesc: 'Поэтический вечер памяти великого поэта',
+    rawDateText: '24 мая 2026, 15:00',
+    dateConfidence: 'confident',
+    dateStatus: 'ready',
+    reason: '',
+    status: 'new',
+    sourceUrl: 'sredi-svoikh.ru/events/brodsky',
+    registrationUrl: 'sredi-svoikh.ru/register/brodsky',
+    createdAt: '2026-05-02',
+    gradClass: 'grad-2'
+  }
+];
+
+const mockRegistrations = {
+  'e3': [
+    { id: 'r1', name: 'Давид Коэн', email: 'david@example.com', phone: '+7 916 123-45-67', status: 'confirmed', seats: 1, comment: '', date: '2026-05-02', avClass: 'av-red', initials: 'ДК' },
+    { id: 'r2', name: 'Рахель Леви', email: 'rakhel@example.com', phone: '+7 903 234-56-78', status: 'confirmed', seats: 2, comment: 'Аллергия на орехи', date: '2026-05-02', avClass: 'av-gold', initials: 'РЛ' },
+    { id: 'r3', name: 'Моше Берг', email: 'moshe@example.com', phone: '+7 926 345-67-89', status: 'pending', seats: 1, comment: '', date: '2026-05-03', avClass: 'av-blue', initials: 'МБ' },
+    { id: 'r4', name: 'Сара Кац', email: 'sara@example.com', phone: '+7 985 456-78-90', status: 'pending', seats: 3, comment: 'Три человека семьей', date: '2026-05-03', avClass: 'av-green', initials: 'СК' },
+    { id: 'r5', name: 'Ицхак Розен', email: 'itzhak@example.com', phone: '+7 999 567-89-01', status: 'waitlisted', seats: 1, comment: '', date: '2026-05-03', avClass: 'av-orange', initials: 'ИР' },
+    { id: 'r6', name: 'Мириам Шапиро', email: 'miriam@example.com', phone: '+7 911 678-90-12', status: 'cancelled', seats: 1, comment: 'Не смогу прийти', date: '2026-05-01', avClass: 'av-purple', initials: 'МШ' },
+  ],
+  'e4': [
+    { id: 'r7', name: 'Анна Золотова', email: 'anna@example.com', phone: '+7 916 789-01-23', status: 'confirmed', seats: 1, comment: 'Ребёнок 8 лет', date: '2026-04-28', avClass: 'av-red', initials: 'АЗ' },
+    { id: 'r8', name: 'Борис Фельдман', email: 'boris@example.com', phone: '+7 903 890-12-34', status: 'confirmed', seats: 2, comment: '2 детей, 7 и 9 лет', date: '2026-04-29', avClass: 'av-blue', initials: 'БФ' },
+    { id: 'r9', name: 'Виктория Прин', email: 'vika@example.com', phone: '+7 926 901-23-45', status: 'pending', seats: 1, comment: '', date: '2026-05-03', avClass: 'av-purple', initials: 'ВП' },
+  ],
+  'e1': [
+    { id: 'r10', name: 'Лев Штейн', email: 'lev@example.com', phone: '+7 985 012-34-56', status: 'attended', seats: 1, comment: '', date: '2026-04-20', avClass: 'av-gold', initials: 'ЛШ' },
+  ],
+  'e5': [
+    {
+      id: 'r11', name: 'Давид Коэн', email: 'david@example.com', phone: '+7 916 123-45-67',
+      status: 'confirmed', seats: 1, comment: 'Беру ещё одного гостя', date: '2026-05-10',
+      avClass: 'av-red', initials: 'ДК',
+      selectedOptions: [
+        { optionId: 'shabbat_evening', title: 'Вечерняя трапеза', quantity: 2, unitPrice: 2500, total: 5000, countsTowardCapacity: true, seats: 2 },
+        { optionId: 'shabbat_donation', title: 'Подарить Шаббат нуждающемуся', quantity: 1, unitPrice: 3000, total: 3000, countsTowardCapacity: false, seats: 0 }
+      ],
+      totalAmount: 8000, totalQuantity: 3, calculatedSeats: 2, currencyLabel: '₽', paymentStatus: 'future'
+    },
+    {
+      id: 'r12', name: 'Рахель Леви', email: 'rakhel@example.com', phone: '+7 903 234-56-78',
+      status: 'pending', seats: 1, comment: '', date: '2026-05-11',
+      avClass: 'av-gold', initials: 'РЛ',
+      selectedOptions: [
+        { optionId: 'shabbat_full', title: 'Весь Шаббат в общине', quantity: 2, unitPrice: 3000, total: 6000, countsTowardCapacity: true, seats: 2 }
+      ],
+      totalAmount: 6000, totalQuantity: 2, calculatedSeats: 2, currencyLabel: '₽', paymentStatus: 'pending'
+    }
+  ],
+  'e6': [
+    {
+      id: 'r13', name: 'Моше Берг', email: 'moshe@example.com', phone: '+7 926 345-67-89',
+      status: 'confirmed', seats: 1, comment: 'Семья 4 человека', date: '2026-03-20',
+      avClass: 'av-blue', initials: 'МБ',
+      selectedOptions: [
+        { optionId: 'pesach_seder1', title: 'Первый седер', quantity: 4, unitPrice: 4000, total: 16000, countsTowardCapacity: true, seats: 4 },
+        { optionId: 'pesach_children', title: 'Детское участие', quantity: 2, unitPrice: 1500, total: 3000, countsTowardCapacity: true, seats: 2 },
+        { optionId: 'pesach_matza', title: 'Пожертвование на мацу', quantity: 1, unitPrice: 3000, total: 3000, countsTowardCapacity: false, seats: 0 }
+      ],
+      totalAmount: 22000, totalQuantity: 7, calculatedSeats: 6, currencyLabel: '₽', paymentStatus: 'manual_confirmed'
+    },
+    {
+      id: 'r14', name: 'Сара Кац', email: 'sara@example.com', phone: '+7 985 456-78-90',
+      status: 'pending', seats: 1, comment: '', date: '2026-03-25',
+      avClass: 'av-green', initials: 'СК',
+      selectedOptions: [
+        { optionId: 'pesach_all', title: 'Все 4 трапезы', quantity: 2, unitPrice: 12000, total: 24000, countsTowardCapacity: true, seats: 2 }
+      ],
+      totalAmount: 24000, totalQuantity: 2, calculatedSeats: 2, currencyLabel: '₽', paymentStatus: 'pending'
+    },
+    {
+      id: 'r15', name: 'Ицхак Розен', email: 'itzhak@example.com', phone: '+7 999 567-89-01',
+      status: 'waitlisted', seats: 1, comment: 'Хочу только седер', date: '2026-03-28',
+      avClass: 'av-orange', initials: 'ИР',
+      selectedOptions: [
+        { optionId: 'pesach_seder2', title: 'Второй седер', quantity: 1, unitPrice: 4000, total: 4000, countsTowardCapacity: true, seats: 1 }
+      ],
+      totalAmount: 4000, totalQuantity: 1, calculatedSeats: 1, currencyLabel: '₽', paymentStatus: 'future'
+    }
+  ]
+};
+
+const mockMembers = [
+  { id: 'm1', name: 'Давид Коэн', email: 'david@example.com', phone: '+7 916 123-45-67', role: 'admin', status: 'active', joinedAt: '2024-01-15', registrations: 8, avClass: 'av-red', initials: 'ДК' },
+  { id: 'm2', name: 'Рахель Леви', email: 'rakhel@example.com', phone: '+7 903 234-56-78', role: 'event_manager', status: 'active', joinedAt: '2024-02-20', registrations: 12, avClass: 'av-gold', initials: 'РЛ' },
+  { id: 'm3', name: 'Моше Берг', email: 'moshe@example.com', phone: '+7 926 345-67-89', role: 'member', status: 'active', joinedAt: '2024-03-10', registrations: 5, avClass: 'av-blue', initials: 'МБ' },
+  { id: 'm4', name: 'Сара Кац', email: 'sara@example.com', phone: '+7 985 456-78-90', role: 'member', status: 'active', joinedAt: '2024-04-01', registrations: 3, avClass: 'av-green', initials: 'СК' },
+  { id: 'm5', name: 'Ицхак Розен', email: 'itzhak@example.com', phone: '+7 999 567-89-01', role: 'member', status: 'suspended', joinedAt: '2024-05-15', registrations: 1, avClass: 'av-orange', initials: 'ИР' },
+  { id: 'm6', name: 'Мириам Шапиро', email: 'miriam@example.com', phone: '+7 911 678-90-12', role: 'member', status: 'active', joinedAt: '2024-06-01', registrations: 7, avClass: 'av-purple', initials: 'МШ' },
+];
+
+const mockInvites = [
+  { id: 'inv1', code: 'DEV-SREDI-2026', role: 'member', maxUses: 10, usedCount: 3, expiresAt: '2026-12-31', status: 'active', createdBy: 'Давид Коэн', acceptedBy: ['Моше Берг', 'Сара Кац', 'Ицхак Розен'] },
+  { id: 'inv2', code: 'TOUR-MAY-2026', role: 'member', maxUses: 5, usedCount: 5, expiresAt: '2026-05-31', status: 'used', createdBy: 'Рахель Леви', acceptedBy: [] },
+  { id: 'inv3', code: 'MEMBER-FAMILY-2026', role: 'event_manager', maxUses: 2, usedCount: 0, expiresAt: '2026-06-30', status: 'active', createdBy: 'Давид Коэн', acceptedBy: [] },
+];
+
+// =============================================
+// PARTICIPATION OPTIONS STATE
+// =============================================
+
+// Working copy of participationOptions for the current event being edited
+let poOptions = [];
+let poSettings = {
+  enabled: true,
+  selectionMode: 'multiple',
+  allowQuantity: false,
+  requiresApproval: true,
+  allowComment: false,
+  introText: 'Выберите формат участия',
+  footerText: 'Если нужна помощь с оплатой, свяжитесь с администратором'
+};
+// preview selections: { optionId -> quantity (0 = unchecked) }
+let poPreviewSelections = {};
+
+const PO_TYPE_LABELS = {
+  participation: 'Участие', meal: 'Трапеза', package: 'Пакет',
+  donation: 'Пожертвование', children: 'Детский', family: 'Семейный', other: 'Другое'
+};
+
+function initParticipationOptions(event) {
+  // Deep-copy from event mock data
+  poOptions = event.participationOptions
+    ? JSON.parse(JSON.stringify(event.participationOptions))
+    : [];
+  poSettings = event.participationSettings
+    ? JSON.parse(JSON.stringify(event.participationSettings))
+    : { enabled: true, selectionMode: 'multiple', allowQuantity: false, requiresApproval: true, allowComment: false, introText: 'Выберите формат участия', footerText: 'Если нужна помощь с оплатой, свяжитесь с администратором' };
+  poPreviewSelections = {};
+  // Apply settings to DOM controls (may not be in DOM yet — called after showPage)
+  requestAnimationFrame(() => {
+    const enabledToggle = document.getElementById('po-enabled-toggle');
+    if (enabledToggle) { enabledToggle.className = 'toggle' + (poSettings.enabled ? ' on' : ''); }
+    const approvalToggle = document.getElementById('po-approval-toggle');
+    if (approvalToggle) { approvalToggle.className = 'toggle' + (poSettings.requiresApproval ? ' on' : ''); }
+    const commentToggle = document.getElementById('po-comment-toggle');
+    if (commentToggle) { commentToggle.className = 'toggle' + (poSettings.allowComment ? ' on' : ''); }
+    const selMode = document.getElementById('po-selection-mode');
+    if (selMode) selMode.value = poSettings.selectionMode;
+    const introInput = document.getElementById('po-intro-text');
+    if (introInput) introInput.value = poSettings.introText;
+    const footerInput = document.getElementById('po-footer-text');
+    if (footerInput) footerInput.value = poSettings.footerText;
+    renderPoOptions();
+    syncPreview();
+  });
+}
+
+function togglePoEnabled() {
+  poSettings.enabled = !poSettings.enabled;
+  const t = document.getElementById('po-enabled-toggle');
+  if (t) t.className = 'toggle' + (poSettings.enabled ? ' on' : '');
+  syncPreview();
+}
+
+function renderPoOptions() {
+  const container = document.getElementById('po-options-list');
+  if (!container) return;
+
+  if (poOptions.length === 0) {
+    container.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text-3);font-size:12px;border:1px dashed var(--glass-border);border-radius:var(--radius-sm);margin-bottom:8px;">Нет вариантов. Нажмите «+ Добавить вариант»</div>`;
+    return;
+  }
+
+  container.innerHTML = poOptions.map((opt, idx) => {
+    const typeClass = 'type-' + (opt.type || 'other');
+    const typeLabel = PO_TYPE_LABELS[opt.type] || opt.type;
+    return `
+    <div class="option-card ${opt.active ? '' : 'hidden-option'}" id="opt-card-${opt.id}">
+      <div class="option-card-header">
+        <span class="option-drag-handle" title="Перетащить">⠿</span>
+        <span class="option-type-badge ${typeClass}">${typeLabel}</span>
+        <div class="option-title-block">
+          <div class="option-title-text">${opt.title}</div>
+          ${opt.description ? `<div class="option-desc-text">${opt.description}</div>` : ''}
+        </div>
+        <span class="option-price">${opt.price.toLocaleString('ru')} ${opt.currencyLabel}</span>
+        <div class="option-actions-mini">
+          <button class="opt-btn" title="Редактировать" onclick="toggleOptionEdit('${opt.id}')">✎</button>
+          <button class="opt-btn" title="${opt.active ? 'Скрыть' : 'Показать'}" onclick="toggleOptionActive('${opt.id}')">${opt.active ? '◎' : '◉'}</button>
+          <button class="opt-btn" title="Дублировать" onclick="duplicateOption('${opt.id}')">◫</button>
+          ${idx > 0 ? `<button class="opt-btn" title="Переместить выше" onclick="moveOption('${opt.id}',-1)">↑</button>` : ''}
+          ${idx < poOptions.length - 1 ? `<button class="opt-btn" title="Переместить ниже" onclick="moveOption('${opt.id}',1)">↓</button>` : ''}
+          <button class="opt-btn danger" title="Удалить" onclick="deleteOption('${opt.id}')">✕</button>
+        </div>
+      </div>
+      <div class="option-edit-form" id="opt-edit-${opt.id}">
+        <div class="option-edit-grid">
+          <div>
+            <div class="option-edit-label">Название *</div>
+            <input type="text" class="option-edit-input" id="oe-title-${opt.id}" value="${opt.title}" oninput="liveUpdateOption('${opt.id}','title',this.value)">
+            <div style="font-size:10px;color:var(--red);display:none;" id="oe-title-err-${opt.id}">Обязательное поле</div>
+          </div>
+          <div>
+            <div class="option-edit-label">Описание</div>
+            <input type="text" class="option-edit-input" id="oe-desc-${opt.id}" value="${opt.description || ''}" oninput="liveUpdateOption('${opt.id}','description',this.value)">
+          </div>
+        </div>
+        <div class="option-edit-grid-3">
+          <div>
+            <div class="option-edit-label">Цена *</div>
+            <input type="number" class="option-edit-input" id="oe-price-${opt.id}" value="${opt.price}" min="0" oninput="liveUpdateOption('${opt.id}','price',parseFloat(this.value)||0)">
+            <div style="font-size:10px;color:var(--red);display:none;" id="oe-price-err-${opt.id}">Укажите цену</div>
+          </div>
+          <div>
+            <div class="option-edit-label">Валюта</div>
+            <select class="option-edit-select" id="oe-currency-${opt.id}" onchange="liveUpdateOption('${opt.id}','currencyLabel',this.value)">
+              <option value="₽" ${opt.currencyLabel==='₽'?'selected':''}>₽ RUB</option>
+              <option value="$" ${opt.currencyLabel==='$'?'selected':''}>$ USD</option>
+              <option value="€" ${opt.currencyLabel==='€'?'selected':''}>€ EUR</option>
+              <option value="₪" ${opt.currencyLabel==='₪'?'selected':''}>₪ ILS</option>
+            </select>
+          </div>
+          <div>
+            <div class="option-edit-label">Тип</div>
+            <select class="option-edit-select" id="oe-type-${opt.id}" onchange="liveUpdateOption('${opt.id}','type',this.value)">
+              <option value="participation" ${opt.type==='participation'?'selected':''}>Участие</option>
+              <option value="meal" ${opt.type==='meal'?'selected':''}>Трапеза</option>
+              <option value="package" ${opt.type==='package'?'selected':''}>Пакет</option>
+              <option value="donation" ${opt.type==='donation'?'selected':''}>Пожертвование</option>
+              <option value="children" ${opt.type==='children'?'selected':''}>Детский</option>
+              <option value="family" ${opt.type==='family'?'selected':''}>Семейный</option>
+              <option value="other" ${opt.type==='other'?'selected':''}>Другое</option>
+            </select>
+          </div>
+        </div>
+        <div class="option-edit-grid">
+          <div>
+            <div class="option-edit-label">Лимит мест (необязательно)</div>
+            <input type="number" class="option-edit-input" id="oe-limit-${opt.id}" value="${opt.seatLimit || ''}" min="1" placeholder="Без лимита" oninput="liveUpdateOption('${opt.id}','seatLimit',parseInt(this.value)||null)">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px;padding-top:14px;">
+            <div class="option-edit-toggle-row">
+              <div class="toggle ${opt.isDonation?'on':''}" onclick="this.classList.toggle('on');liveUpdateOption('${opt.id}','isDonation',this.classList.contains('on'))"></div>
+              <span>Благотворительный</span>
+            </div>
+            <div class="option-edit-toggle-row">
+              <div class="toggle ${opt.countsTowardCapacity!==false?'on':''}" onclick="this.classList.toggle('on');liveUpdateOption('${opt.id}','countsTowardCapacity',this.classList.contains('on'));syncPreview()"></div>
+              <span>Занимает место</span>
+            </div>
+          </div>
+        </div>
+        <div class="option-edit-toggle-row" style="margin-bottom:6px;">
+          <div class="toggle ${opt.allowQuantity?'on':''}" id="oe-aq-${opt.id}" onclick="this.classList.toggle('on');liveUpdateOption('${opt.id}','allowQuantity',this.classList.contains('on'));renderPoOptions();syncPreview()"></div>
+          <span>Разрешить выбирать количество</span>
+        </div>
+        ${opt.allowQuantity ? `
+        <div class="option-edit-grid">
+          <div>
+            <div class="option-edit-label">Мин. количество</div>
+            <input type="number" class="option-edit-input" value="${opt.minQuantity||1}" min="1" oninput="liveUpdateOption('${opt.id}','minQuantity',parseInt(this.value)||1)">
+          </div>
+          <div>
+            <div class="option-edit-label">Макс. количество</div>
+            <input type="number" class="option-edit-input" value="${opt.maxQuantity||10}" min="1" oninput="liveUpdateOption('${opt.id}','maxQuantity',parseInt(this.value)||10)">
+          </div>
+        </div>` : ''}
+        <div class="option-edit-actions">
+          <button class="btn btn-ghost btn-xs" onclick="toggleOptionEdit('${opt.id}')">Готово</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  syncPreview();
+}
+
+function toggleOptionEdit(id) {
+  const form = document.getElementById('opt-edit-' + id);
+  const card = document.getElementById('opt-card-' + id);
+  if (!form) return;
+  const isOpen = form.classList.contains('open');
+  // Close all others
+  document.querySelectorAll('.option-edit-form.open').forEach(f => {
+    f.classList.remove('open');
+    f.closest('.option-card') && f.closest('.option-card').classList.remove('editing');
+  });
+  if (!isOpen) {
+    form.classList.add('open');
+    card && card.classList.add('editing');
+  }
+}
+
+function liveUpdateOption(id, field, value) {
+  const opt = poOptions.find(o => o.id === id);
+  if (!opt) return;
+  opt[field] = value;
+  // Live-refresh price in header without full re-render
+  if (field === 'price' || field === 'currencyLabel' || field === 'title' || field === 'description' || field === 'type') {
+    const card = document.getElementById('opt-card-' + id);
+    if (card) {
+      const priceEl = card.querySelector('.option-price');
+      if (priceEl) priceEl.textContent = opt.price.toLocaleString('ru') + ' ' + opt.currencyLabel;
+      const titleEl = card.querySelector('.option-title-text');
+      if (titleEl) titleEl.textContent = opt.title;
+      const descEl = card.querySelector('.option-desc-text');
+      if (descEl) descEl.textContent = opt.description || '';
+      const typeEl = card.querySelector('.option-type-badge');
+      if (typeEl) { typeEl.textContent = PO_TYPE_LABELS[opt.type] || opt.type; typeEl.className = 'option-type-badge type-' + (opt.type || 'other'); }
+    }
+  }
+  syncPreview();
+}
+
+function toggleOptionActive(id) {
+  const opt = poOptions.find(o => o.id === id);
+  if (!opt) return;
+  opt.active = !opt.active;
+  renderPoOptions();
+}
+
+function duplicateOption(id) {
+  const opt = poOptions.find(o => o.id === id);
+  if (!opt) return;
+  const copy = JSON.parse(JSON.stringify(opt));
+  copy.id = 'opt_' + Date.now();
+  copy.title = opt.title + ' (копия)';
+  copy.sortOrder = poOptions.length + 1;
+  const idx = poOptions.findIndex(o => o.id === id);
+  poOptions.splice(idx + 1, 0, copy);
+  renderPoOptions();
+  toast('Вариант продублирован', 'success');
+}
+
+function deleteOption(id) {
+  poOptions = poOptions.filter(o => o.id !== id);
+  delete poPreviewSelections[id];
+  renderPoOptions();
+  syncPreview();
+  toast('Вариант удалён', 'info');
+}
+
+function moveOption(id, dir) {
+  const idx = poOptions.findIndex(o => o.id === id);
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= poOptions.length) return;
+  const tmp = poOptions[idx];
+  poOptions[idx] = poOptions[newIdx];
+  poOptions[newIdx] = tmp;
+  renderPoOptions();
+}
+
+function openAddOptionModal() {
+  showModal(`
+    <div class="modal-header">
+      <div class="modal-title">Новый вариант участия</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="option-edit-grid">
+      <div class="form-field">
+        <label class="form-label">Название *</label>
+        <input type="text" class="form-input" id="new-opt-title" placeholder="Название варианта...">
+        <div class="form-error" id="new-opt-title-err" style="display:none;">Обязательное поле</div>
+      </div>
+      <div class="form-field">
+        <label class="form-label">Описание</label>
+        <input type="text" class="form-input" id="new-opt-desc" placeholder="Краткое описание...">
+      </div>
+    </div>
+    <div class="form-row-3">
+      <div class="form-field">
+        <label class="form-label">Цена *</label>
+        <input type="number" class="form-input" id="new-opt-price" min="0" placeholder="0">
+        <div class="form-error" id="new-opt-price-err" style="display:none;">Укажите цену ≥ 0</div>
+      </div>
+      <div class="form-field">
+        <label class="form-label">Валюта</label>
+        <select class="form-select" id="new-opt-currency">
+          <option value="₽">₽ RUB</option>
+          <option value="$">$ USD</option>
+          <option value="€">€ EUR</option>
+          <option value="₪">₪ ILS</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label class="form-label">Тип</label>
+        <select class="form-select" id="new-opt-type">
+          <option value="participation">Участие</option>
+          <option value="meal">Трапеза</option>
+          <option value="package">Пакет</option>
+          <option value="donation">Пожертвование</option>
+          <option value="children">Детский</option>
+          <option value="family">Семейный</option>
+          <option value="other">Другое</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field">
+        <label class="form-label">Лимит мест (необязательно)</label>
+        <input type="number" class="form-input" id="new-opt-limit" min="1" placeholder="Без лимита">
+      </div>
+      <div class="form-field" style="padding-top:20px;">
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;">
+          <div class="toggle" id="new-opt-qty-toggle" onclick="this.classList.toggle('on');document.getElementById('new-opt-qty-fields').style.display=this.classList.contains('on')?'':'none'"></div>
+          <span>Разрешить количество</span>
+        </div>
+      </div>
+    </div>
+    <div id="new-opt-qty-fields" style="display:none;" class="form-row">
+      <div class="form-field">
+        <label class="form-label">Мин. количество</label>
+        <input type="number" class="form-input" id="new-opt-min" value="1" min="1">
+      </div>
+      <div class="form-field">
+        <label class="form-label">Макс. количество</label>
+        <input type="number" class="form-input" id="new-opt-max" value="10" min="1">
+        <div class="form-error" id="new-opt-max-err" style="display:none;">Макс ≥ Мин</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:16px;">
+      <div class="toggle" id="new-opt-donation-toggle" onclick="this.classList.toggle('on')"></div>
+      <span>Благотворительный вариант</span>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Отмена</button>
+      <button class="btn btn-primary btn-sm" onclick="addNewOption()">Добавить</button>
+    </div>
+  `);
+}
+
+function addNewOption() {
+  const title = (document.getElementById('new-opt-title').value || '').trim();
+  const priceRaw = document.getElementById('new-opt-price').value;
+  const price = parseFloat(priceRaw);
+  const allowQty = document.getElementById('new-opt-qty-toggle').classList.contains('on');
+  const minQ = parseInt(document.getElementById('new-opt-min').value) || 1;
+  const maxQ = parseInt(document.getElementById('new-opt-max').value) || 10;
+
+  let valid = true;
+  if (!title) {
+    document.getElementById('new-opt-title-err').style.display = 'block';
+    document.getElementById('new-opt-title').classList.add('error');
+    valid = false;
+  } else {
+    document.getElementById('new-opt-title-err').style.display = 'none';
+    document.getElementById('new-opt-title').classList.remove('error');
+  }
+  if (priceRaw === '' || isNaN(price) || price < 0) {
+    document.getElementById('new-opt-price-err').style.display = 'block';
+    document.getElementById('new-opt-price').classList.add('error');
+    valid = false;
+  } else {
+    document.getElementById('new-opt-price-err').style.display = 'none';
+    document.getElementById('new-opt-price').classList.remove('error');
+  }
+  if (allowQty && maxQ < minQ) {
+    document.getElementById('new-opt-max-err').style.display = 'block';
+    valid = false;
+  } else if (document.getElementById('new-opt-max-err')) {
+    document.getElementById('new-opt-max-err').style.display = 'none';
+  }
+  if (!valid) return;
+
+  const newOpt = {
+    id: 'opt_' + Date.now(),
+    title,
+    description: document.getElementById('new-opt-desc').value.trim(),
+    price,
+    currencyLabel: document.getElementById('new-opt-currency').value,
+    type: document.getElementById('new-opt-type').value,
+    active: true,
+    allowQuantity: allowQty,
+    minQuantity: minQ,
+    maxQuantity: maxQ,
+    isDonation: document.getElementById('new-opt-donation-toggle').classList.contains('on'),
+    seatLimit: parseInt(document.getElementById('new-opt-limit').value) || null,
+    sortOrder: poOptions.length + 1
+  };
+  poOptions.push(newOpt);
+  closeModal();
+  renderPoOptions();
+  syncPreview();
+  toast('Вариант участия добавлен', 'success');
+}
+
+function syncPreview() {
+  const body = document.getElementById('po-preview-body');
+  if (!body) return;
+
+  const introInput = document.getElementById('po-intro-text');
+  const footerInput = document.getElementById('po-footer-text');
+  const selModeEl = document.getElementById('po-selection-mode');
+  const intro = introInput ? introInput.value : poSettings.introText;
+  const footer = footerInput ? footerInput.value : poSettings.footerText;
+  const mode = selModeEl ? selModeEl.value : poSettings.selectionMode;
+  const activeOpts = poOptions.filter(o => o.active);
+
+  if (activeOpts.length === 0) {
+    body.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text-3);font-size:12px;">Нет активных вариантов</div>`;
+    return;
+  }
+
+  const inputType = mode === 'single' ? 'radio' : 'checkbox';
+  const groupName = 'po_preview_group';
+
+  // Compute conflict set — which options are blocked by current selection
+  const blockedIds = new Set();
+  activeOpts.forEach(opt => {
+    const qty = poPreviewSelections[opt.id] || 0;
+    if (qty > 0 && opt.conflictsWith) {
+      opt.conflictsWith.forEach(cid => blockedIds.add(cid));
+    }
+  });
+
+  const optionsHtml = activeOpts.map(opt => {
+    const sel = poPreviewSelections[opt.id] || 0;
+    const checked = sel > 0 ? 'checked' : '';
+    const isBlocked = blockedIds.has(opt.id) && sel === 0;
+    const atMax = opt.allowQuantity && sel >= (opt.maxQuantity || 99);
+    const atMin = opt.allowQuantity && sel <= (opt.minQuantity || 1);
+
+    return `
+    <div class="preview-option${isBlocked ? '" style="opacity:0.4;pointer-events:none;' : '"'}" onclick="previewToggleOption('${opt.id}','${mode}')">
+      <input type="${inputType}" class="preview-option-input" name="${groupName}" id="prev-opt-${opt.id}" ${checked} onclick="event.stopPropagation();previewToggleOption('${opt.id}','${mode}')">
+      <div class="preview-option-body">
+        <div class="preview-option-title">${opt.title}</div>
+        ${opt.description ? `<div class="preview-option-desc">${opt.description}</div>` : ''}
+        ${opt.isDonation ? `<div class="preview-option-desc" style="color:var(--red);font-size:10px;">♡ Благотворительный взнос</div>` : ''}
+        ${!opt.countsTowardCapacity ? `<div class="preview-option-desc" style="color:var(--blue);font-size:10px;">Не занимает место</div>` : ''}
+        ${opt.allowQuantity && sel > 0 ? `
+        <div class="stepper" onclick="event.stopPropagation()">
+          <button class="stepper-btn" style="${atMin ? 'opacity:0.4;' : ''}" onclick="previewChangeQty('${opt.id}','${mode}',-1)">−</button>
+          <span class="stepper-val">${sel}</span>
+          <button class="stepper-btn" style="${atMax ? 'opacity:0.4;cursor:not-allowed;' : ''}" onclick="${atMax ? '' : `previewChangeQty('${opt.id}','${mode}',1)`}">+</button>
+        </div>` : ''}
+      </div>
+      <div class="preview-option-price">${opt.price.toLocaleString('ru')} ${opt.currencyLabel}</div>
+    </div>`;
+  }).join('');
+
+  // Compute totals
+  let total = 0, totalQty = 0, totalSeats = 0;
+  let currency = '₽';
+  activeOpts.forEach(opt => {
+    const qty = poPreviewSelections[opt.id] || 0;
+    if (qty > 0) {
+      total += opt.price * qty;
+      totalQty += qty;
+      if (opt.countsTowardCapacity !== false) totalSeats += qty;
+      currency = opt.currencyLabel || '₽';
+    }
+  });
+
+  // Conflict warning
+  let conflictWarning = '';
+  activeOpts.forEach(opt => {
+    const qty = poPreviewSelections[opt.id] || 0;
+    if (qty > 0 && opt.conflictsWith && opt.conflictsWith.length > 0) {
+      const conflictNames = opt.conflictsWith.map(cid => {
+        const co = poOptions.find(o => o.id === cid);
+        return co ? co.title : cid;
+      }).join(', ');
+      conflictWarning = `<div class="warn-box" style="font-size:11px;margin-bottom:8px;"><span>⚠</span> Пакет заменяет отдельные варианты: ${conflictNames}</div>`;
+    }
+  });
+
+  body.innerHTML = `
+    <div style="background:var(--bg);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px;">
+      <div style="font-size:9px;color:var(--text-4);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Мобильное приложение · Запись</div>
+      <div class="preview-intro">${intro}</div>
+      ${conflictWarning}
+      ${optionsHtml}
+      <div class="preview-total">
+        <span class="preview-total-label">Итого</span>
+        <span class="preview-total-amount">${total.toLocaleString('ru')} ${currency}</span>
+      </div>
+      ${totalQty > 0 ? `
+      <div style="display:flex;gap:14px;margin-top:8px;font-size:11px;color:var(--text-3);">
+        <span>Позиций: <strong style="color:var(--text-2);">${totalQty}</strong></span>
+        <span>Мест: <strong style="color:var(--green);">${totalSeats}</strong></span>
+      </div>` : ''}
+    </div>
+    ${footer ? `<div class="preview-footer">${footer}</div>` : ''}
+  `;
+}
+
+function previewToggleOption(id, mode) {
+  if (mode === 'single') {
+    // Deselect all, select only this
+    const allOpts = poOptions.filter(o => o.active).map(o => o.id);
+    allOpts.forEach(oid => { poPreviewSelections[oid] = 0; });
+    const opt = poOptions.find(o => o.id === id);
+    poPreviewSelections[id] = (opt && opt.allowQuantity) ? (opt.minQuantity || 1) : 1;
+  } else {
+    const cur = poPreviewSelections[id] || 0;
+    if (cur > 0) {
+      poPreviewSelections[id] = 0;
+    } else {
+      const opt = poOptions.find(o => o.id === id);
+      poPreviewSelections[id] = (opt && opt.allowQuantity) ? (opt.minQuantity || 1) : 1;
+    }
+  }
+  syncPreview();
+}
+
+function previewChangeQty(id, mode, delta) {
+  const opt = poOptions.find(o => o.id === id);
+  if (!opt) return;
+  const cur = poPreviewSelections[id] || (opt.minQuantity || 1);
+  const newQty = cur + delta;
+  // Going below min → deselect
+  if (newQty < (opt.minQuantity || 1)) {
+    poPreviewSelections[id] = 0;
+  } else {
+    poPreviewSelections[id] = Math.min(newQty, opt.maxQuantity || 99);
+  }
+  syncPreview();
+}
+
+// =============================================
+// STATE
+// =============================================
+let currentPage = 'overview';
+let currentEditingEventId = null; // track which event is being edited
+let currentRole = 'event_manager';
+let currentRegEventId = 'e3';
+let currentRegFilter = 'all';
+let eventsStatusFilter = 'all';
+let eventsSearchText = '';
+let currentMemberId = null;
+let importFilter = 'needs_review';
+let importItems = JSON.parse(JSON.stringify(mockImportItems));
+let registrations = JSON.parse(JSON.stringify(mockRegistrations));
+let members = JSON.parse(JSON.stringify(mockMembers));
+let invites = JSON.parse(JSON.stringify(mockInvites));
+
+// =============================================
+// NAVIGATION
+// =============================================
+const pageNames = {
+  overview: 'Обзор',
+  events: 'События',
+  'event-create': 'Создать событие',
+  'event-detail': 'Событие',
+  import: 'Импорт с сайта',
+  'import-review': 'Проверка импорта',
+  registrations: 'Регистрации',
+  members: 'Участники',
+  invites: 'Приглашения',
+  settings: 'Настройки',
+  'no-access': 'Нет доступа',
+  'future-contacts': 'Контакты общины',
+  'future-notifications': 'Уведомления',
+  'future-media': 'Медиа',
+  'future-prayers': 'Расписание молитв',
+  'future-reports': 'Отчёты',
+  'future-log': 'Журнал действий'
+};
+
+const adminOnlyPages = ['members', 'invites'];
+const memberBlockedPages = ['overview','events','event-create','import','registrations','members','invites','settings'];
+
+function showPage(pageId) {
+  // Role guard
+  if (currentRole === 'member') {
+    pageId = 'no-access';
+  } else if (currentRole === 'event_manager' && adminOnlyPages.includes(pageId)) {
+    toast('Недостаточно прав для доступа к этому разделу','error');
+    return;
+  }
+  // Hide all
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+
+  // Show target
+  const page = document.getElementById('page-' + pageId);
+  if (page) page.classList.add('active');
+
+  currentPage = pageId;
+
+  // Update nav
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.remove('active');
+    if (el.dataset.page === pageId) el.classList.add('active');
+  });
+
+  // Breadcrumb
+  document.getElementById('bc-current').textContent = pageNames[pageId] || pageId;
+
+  // Init pages
+  if (pageId === 'events') renderEventsTable();
+  if (pageId === 'event-create') {
+    // reset if creating new
+    if (!currentEditingEventId) resetEventForm();
+  }
+  if (pageId === 'import') renderImportList();
+  if (pageId === 'registrations') renderRegistrations();
+  if (pageId === 'members') renderMembers();
+  if (pageId === 'invites') renderInvites();
+  // Future pages are passthrough — just show the page
+}
+
+// =============================================
+// ROLE SWITCHER
+// =============================================
+function switchRole(role) {
+  currentRole = role;
+  document.getElementById('sidebar-role-label').textContent = role;
+
+  // Show/hide admin-only sidebar items
+  document.querySelectorAll('.admin-only').forEach(el => {
+    el.style.display = (role === 'admin') ? '' : 'none';
+  });
+
+  if (role === 'member') {
+    showPage('no-access');
+  } else {
+    if (currentPage === 'no-access' || currentPage === 'members' || currentPage === 'invites') {
+      showPage('overview');
+    } else {
+      showPage(currentPage);
+    }
+  }
+  toast('Роль переключена: ' + role, 'info');
+}
+
+// =============================================
+// EVENTS
+// =============================================
+function getStatusBadge(status) {
+  const map = {
+    published: '<span class="badge badge-green">● Опубликовано</span>',
+    draft:     '<span class="badge badge-gold">◌ Черновик</span>',
+    hidden:    '<span class="badge badge-muted">◌ Скрыто</span>',
+    cancelled: '<span class="badge badge-red">✕ Отменено</span>',
+    archived:  '<span class="badge badge-muted">⊞ Архив</span>',
+  };
+  return map[status] || `<span class="badge badge-muted">${status}</span>`;
+}
+
+function getVisibilityBadge(v) {
+  const map = {
+    public:       '<span class="badge badge-blue">◉ Публично</span>',
+    members_only: '<span class="badge badge-purple">◉ Участники</span>',
+    hidden:       '<span class="badge badge-muted">◎ Скрыто</span>',
+  };
+  return map[v] || `<span class="badge badge-muted">${v}</span>`;
+}
+
+function getRegModeBadge(m, event) {
+  if (m === 'internal_paid') {
+    const hasOpts = event && event.participationOptions && event.participationOptions.filter(o=>o.active).length > 0;
+    return hasOpts
+      ? '<span class="badge badge-gold">₽ Варианты</span>'
+      : '<span class="badge badge-gold">₽ Платная</span>';
+  }
+  const map = {
+    none:          '<span class="badge badge-muted">—</span>',
+    external_link: '<span class="badge badge-blue">↗ Внешняя</span>',
+    internal_free: '<span class="badge badge-green">✓ Внутр.</span>',
+  };
+  return map[m] || `<span class="badge badge-muted">${m}</span>`;
+}
+
+function getCategoryLabel(c) {
+  const map = {
+    lecture: 'Лекция', tour: 'Экскурсия', holiday: 'Праздник',
+    children: 'Детское', shabbat: 'Шаббат', course: 'Курс',
+    community: 'Общинное', other: 'Другое'
+  };
+  return map[c] || c;
+}
+
+function renderEventsTable() {
+  const search = eventsSearchText.toLowerCase();
+  const filtered = mockEvents.filter(e => {
+    const matchSearch = !search || e.title.toLowerCase().includes(search) || e.subtitle.toLowerCase().includes(search);
+    let matchFilter = true;
+    if (eventsStatusFilter === 'published') matchFilter = e.status === 'published';
+    else if (eventsStatusFilter === 'draft') matchFilter = e.status === 'draft';
+    else if (eventsStatusFilter === 'hidden') matchFilter = e.visibility === 'hidden';
+    else if (eventsStatusFilter === 'public') matchFilter = e.visibility === 'public';
+    else if (eventsStatusFilter === 'members_only') matchFilter = e.visibility === 'members_only';
+    else if (eventsStatusFilter === 'no_image') matchFilter = !e.hasImage;
+    else if (eventsStatusFilter === 'paid_options') matchFilter = e.registrationMode === 'internal_paid' && e.participationOptions && e.participationOptions.some(o=>o.active);
+    return matchSearch && matchFilter;
+  });
+
+  document.getElementById('events-count-label').textContent = `Показано: ${filtered.length} из ${mockEvents.length}`;
+
+  const tbody = document.getElementById('events-tbody');
+  tbody.innerHTML = '';
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text-3);">Нет событий по выбранным фильтрам</td></tr>`;
+    return;
+  }
+
+  filtered.forEach((e, idx) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div class="poster-placeholder ${e.gradClass}" style="width:36px;height:36px;border-radius:6px;flex-shrink:0;">
+            ${!e.hasImage ? '<span style="font-size:10px;opacity:0.5;">🖼</span>' : ''}
+          </div>
+          <div>
+            <div style="font-weight:600;">${e.title}</div>
+            <div style="font-size:11px;color:var(--text-3);">${e.subtitle}</div>
+          </div>
+        </div>
+      </td>
+      <td class="muted">${e.date} ${e.time}</td>
+      <td><span class="badge badge-glass">${getCategoryLabel(e.category)}</span></td>
+      <td>${getStatusBadge(e.status)}</td>
+      <td>${getVisibilityBadge(e.visibility)}</td>
+      <td>${getRegModeBadge(e.registrationMode, e)}</td>
+      <td>${e.registrations || 0}${e.capacity ? ' / ' + e.capacity : ''}</td>
+      <td class="muted"><span style="font-size:11px;">${e.source === 'import' ? '⟳ Импорт' : '✦ Вручную'}</span></td>
+      <td>
+        <div class="actions-row">
+          <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();openEventDetail(${mockEvents.indexOf(e)})">Открыть</button>
+          <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();editEvent(${mockEvents.indexOf(e)})">Редактировать</button>
+          <button class="action-dots" onclick="event.stopPropagation();showEventMenu(${mockEvents.indexOf(e)},this)">···</button>
+        </div>
+      </td>
+    `;
+    tr.addEventListener('click', () => openEventDetail(mockEvents.indexOf(e)));
+    tbody.appendChild(tr);
+  });
+}
+
+function filterEvents() {
+  eventsSearchText = document.getElementById('events-search').value;
+  renderEventsTable();
+}
+
+function filterByStatus(status, el) {
+  eventsStatusFilter = status;
+  document.querySelectorAll('#events-filter-chips .chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderEventsTable();
+}
+
+function setTimeFilter(val, el) {
+  document.querySelectorAll('.page-toggle-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  toast('Фильтр: ' + (val === 'upcoming' ? 'Ближайшие' : 'Прошедшие'), 'info');
+}
+
+function showEventMenu(idx, btn) {
+  const e = mockEvents[idx];
+  const actions = [
+    { label: 'Дублировать', fn: () => toast('Событие продублировано', 'success') },
+    { label: e.status === 'published' ? 'Скрыть' : 'Опубликовать', fn: () => { e.status = e.status === 'published' ? 'draft' : 'published'; renderEventsTable(); toast(e.status === 'published' ? 'Событие опубликовано' : 'Событие скрыто', 'success'); }},
+    { label: 'Архивировать', fn: () => { e.status = 'archived'; renderEventsTable(); toast('Событие архивировано', 'info'); }},
+  ];
+
+  const content = actions.map(a =>
+    `<div style="padding:8px 12px;cursor:pointer;border-radius:6px;font-size:13px;color:var(--text-2);" onmouseover="this.style.background='var(--glass)'" onmouseout="this.style.background=''" onclick="closeModal();(${a.fn.toString()})()">${a.label}</div>`
+  ).join('');
+
+  showModal(`<div style="min-width:200px;">${content}</div>`);
+}
+
+function openEventDetail(idx) {
+  const e = mockEvents[idx];
+  showPage('event-detail');
+
+  const regs = registrations[e.id] || [];
+  const confirmed = regs.filter(r => r.status === 'confirmed').length;
+  const pending = regs.filter(r => r.status === 'pending').length;
+
+  const fillPct = e.capacity ? Math.round((confirmed / e.capacity) * 100) : 0;
+  const fillClass = fillPct >= 100 ? 'full' : fillPct >= 80 ? 'warn' : '';
+
+  document.getElementById('event-detail-content').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 320px;gap:20px;">
+      <div>
+        <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:20px;">
+          <div class="poster-placeholder ${e.gradClass}" style="width:80px;height:80px;border-radius:10px;flex-shrink:0;">
+            ${!e.hasImage ? '<span style="font-size:22px;opacity:0.4;">🖼</span>' : ''}
+          </div>
+          <div>
+            <div style="font-size:22px;font-weight:700;margin-bottom:4px;">${e.title}</div>
+            <div style="font-size:14px;color:var(--text-3);margin-bottom:8px;">${e.subtitle}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              ${getStatusBadge(e.status)}
+              ${getVisibilityBadge(e.visibility)}
+              <span class="badge badge-glass">${getCategoryLabel(e.category)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="glass-card elevated" style="margin-bottom:16px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+            <div>
+              <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Дата и время</div>
+              <div style="font-weight:600;">${e.date}</div>
+              <div style="color:var(--gold);font-weight:700;">${e.time}</div>
+            </div>
+            <div>
+              <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Регистрация</div>
+              <div>${getRegModeBadge(e.registrationMode, e)}</div>
+              ${e.registrationUrl ? `<div style="font-size:11px;color:var(--text-3);margin-top:3px;">${e.registrationUrl.substring(0,30)}...</div>` : ''}
+            </div>
+            <div>
+              <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Источник</div>
+              <div style="font-size:13px;">${e.source === 'import' ? '⟳ Импорт с сайта' : '✦ Создано вручную'}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="glass-card elevated" style="margin-bottom:16px;">
+          <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Описание</div>
+          <div style="font-size:13px;color:var(--text-2);line-height:1.6;">${e.desc}</div>
+        </div>
+
+        ${!e.hasImage ? '<div class="warn-box"><span>⚠</span> Афиша не загружена. Добавьте изображение для публикации.</div>' : ''}
+
+        <div style="display:flex;gap:10px;margin-top:16px;">
+          <button class="btn btn-primary btn-sm" onclick="editEvent(${idx})">✎ Редактировать</button>
+          ${e.status !== 'published' ? `<button class="btn btn-gold btn-sm" onclick="quickPublish(${idx})">▶ Опубликовать</button>` : `<button class="btn btn-secondary btn-sm" onclick="quickHide(${idx})">◎ Скрыть</button>`}
+          <button class="btn btn-ghost btn-sm" onclick="toast('Событие продублировано','success')">◫ Дублировать</button>
+        </div>
+      </div>
+
+      <!-- Right: registrations summary -->
+      <div>
+        <div class="glass-card elevated" style="margin-bottom:12px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Регистрации</div>
+          ${e.capacity ? `
+          <div class="capacity-bar-wrap">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-3);margin-bottom:4px;">
+              <span>${confirmed} подтверждено</span>
+              <span>${e.capacity} мест</span>
+            </div>
+            <div class="capacity-bar-bg">
+              <div class="capacity-bar-fill ${fillClass}" style="width:${fillPct}%"></div>
+            </div>
+          </div>` : ''}
+          <div class="stats-row" style="margin-top:12px;">
+            <div class="stat-item"><div class="stat-num" style="color:var(--green);">${confirmed}</div><div class="stat-lbl">Подтверждено</div></div>
+            <div class="stat-item"><div class="stat-num" style="color:var(--orange);">${pending}</div><div class="stat-lbl">Ожидают</div></div>
+            <div class="stat-item"><div class="stat-num" style="color:var(--text-2);">${regs.filter(r=>r.status==='waitlisted').length}</div><div class="stat-lbl">Лист ожид.</div></div>
+          </div>
+          ${regs.length > 0 ? `<button class="btn btn-ghost btn-xs" style="margin-top:10px;width:100%;" onclick="goToRegForEvent('${e.id}')">Управлять регистрациями →</button>` : '<div style="font-size:12px;color:var(--text-3);margin-top:8px;">Нет регистраций</div>'}
+        </div>
+
+        <div class="glass-card elevated">
+          <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Последние записи</div>
+          ${regs.slice(0,4).map(r => `
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--glass-border);">
+              <div class="avatar av-blue" style="width:26px;height:26px;font-size:10px;">${r.initials}</div>
+              <div style="flex:1;">
+                <div style="font-size:12px;font-weight:500;">${r.name}</div>
+              </div>
+              ${getRegStatusBadge(r.status)}
+            </div>
+          `).join('') || '<div style="font-size:12px;color:var(--text-3);">Пока нет заявок</div>'}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function quickPublish(idx) {
+  mockEvents[idx].status = 'published';
+  openEventDetail(idx);
+  toast('Событие опубликовано', 'success');
+}
+
+function quickHide(idx) {
+  mockEvents[idx].status = 'draft';
+  mockEvents[idx].visibility = 'hidden';
+  openEventDetail(idx);
+  toast('Событие скрыто', 'info');
+}
+
+function editEvent(idx) {
+  const e = mockEvents[idx];
+  currentEditingEventId = e.id;
+  document.getElementById('event-form-title').textContent = 'Редактировать: ' + e.title;
+  document.getElementById('event-create-back-btn').onclick = () => showPage('events');
+  document.getElementById('ef-title').value = e.title || '';
+  document.getElementById('ef-subtitle').value = e.subtitle || '';
+  document.getElementById('ef-short-desc').value = e.shortDesc || '';
+  document.getElementById('ef-desc').value = e.desc || '';
+  document.getElementById('ef-date').value = e.date || '';
+  document.getElementById('ef-time').value = e.time || '';
+  if (e.dateEnd) document.getElementById('ef-date-end').value = e.dateEnd;
+  if (e.timeEnd) document.getElementById('ef-time-end').value = e.timeEnd;
+  document.getElementById('ef-status').value = e.status || 'draft';
+  document.getElementById('ef-visibility').value = e.visibility || 'hidden';
+  document.getElementById('ef-reg-mode').value = e.registrationMode || 'none';
+  document.getElementById('ef-category').value = e.category || '';
+  document.getElementById('ef-audience').value = e.audience || 'all';
+  document.getElementById('ef-location-name').value = e.locationName || '';
+  document.getElementById('ef-address').value = e.address || '';
+  if (e.registrationUrl) document.getElementById('ef-reg-url').value = e.registrationUrl;
+  if (e.capacity) document.getElementById('ef-capacity').value = e.capacity;
+  if (e.waitlistEnabled) document.getElementById('ef-waitlist-toggle').classList.toggle('on', e.waitlistEnabled);
+  if (e.requiresApproval) document.getElementById('ef-approval-toggle').classList.toggle('on', e.requiresApproval);
+  if (e.imageUrl) document.getElementById('ef-image').value = e.imageUrl;
+  // Source fields
+  if (e.sourceType) document.getElementById('ef-source-type').value = e.sourceType || '';
+  if (e.sourceUrl) document.getElementById('ef-source-url').value = e.sourceUrl || '';
+  if (e.sourceExternalId) document.getElementById('ef-source-ext-id').value = e.sourceExternalId || '';
+  if (e.manualOverride) document.getElementById('ef-manual-toggle').classList.toggle('on', !!e.manualOverride);
+
+  updateRegFields();
+  updateStatusHint();
+  showPage('event-create');
+  // Init participation options if paid
+  if (e.registrationMode === 'internal_paid') {
+    initParticipationOptions(e);
+  }
+}
+
+function resetEventForm() {
+  currentEditingEventId = null;
+  document.getElementById('event-form-title').textContent = 'Создать событие';
+  document.getElementById('event-create-back-btn').onclick = () => showPage('events');
+  ['ef-title','ef-subtitle','ef-short-desc','ef-desc','ef-date','ef-time','ef-date-end','ef-time-end',
+   'ef-location-name','ef-address','ef-image','ef-reg-url','ef-capacity','ef-source-type','ef-source-url','ef-source-ext-id'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const statusEl = document.getElementById('ef-status'); if (statusEl) statusEl.value = 'draft';
+  const visEl = document.getElementById('ef-visibility'); if (visEl) visEl.value = 'hidden';
+  const regEl = document.getElementById('ef-reg-mode'); if (regEl) regEl.value = 'none';
+  const catEl = document.getElementById('ef-category'); if (catEl) catEl.value = '';
+  const audEl = document.getElementById('ef-audience'); if (audEl) audEl.value = 'all';
+  ['ef-waitlist-toggle','ef-approval-toggle','ef-manual-toggle'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.classList.remove('on');
+  });
+  ['ef-title-err','ef-date-err','ef-reg-url-err'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  poOptions = []; poSettings = { enabled: true, selectionMode: 'multiple', allowQuantity: false, requiresApproval: true, allowComment: false, introText: 'Выберите формат участия', footerText: '' };
+  poPreviewSelections = {};
+  updateRegFields();
+  updateStatusHint();
+}
+function goToRegForEvent(eventId) {
+  currentRegEventId = eventId;
+  showPage('registrations');
+}
+
+// =============================================
+// EVENT FORM
+// =============================================
+function collectFormData(status) {
+  const regMode = document.getElementById('ef-reg-mode').value;
+  const data = {
+    title: document.getElementById('ef-title').value.trim(),
+    subtitle: document.getElementById('ef-subtitle').value.trim(),
+    shortDesc: document.getElementById('ef-short-desc').value.trim(),
+    desc: document.getElementById('ef-desc').value.trim(),
+    date: document.getElementById('ef-date').value,
+    time: document.getElementById('ef-time').value,
+    dateEnd: document.getElementById('ef-date-end').value,
+    timeEnd: document.getElementById('ef-time-end').value,
+    category: document.getElementById('ef-category').value,
+    audience: document.getElementById('ef-audience').value,
+    locationName: document.getElementById('ef-location-name').value.trim(),
+    address: document.getElementById('ef-address').value.trim(),
+    imageUrl: document.getElementById('ef-image').value.trim(),
+    hasImage: !!document.getElementById('ef-image').value.trim(),
+    status: status || document.getElementById('ef-status').value,
+    visibility: document.getElementById('ef-visibility').value,
+    registrationMode: regMode,
+    registrationUrl: document.getElementById('ef-reg-url').value.trim(),
+    capacity: parseInt(document.getElementById('ef-capacity').value) || null,
+    waitlistEnabled: document.getElementById('ef-waitlist-toggle').classList.contains('on'),
+    requiresApproval: document.getElementById('ef-approval-toggle').classList.contains('on'),
+    source: 'manual',
+    gradClass: 'grad-1',
+  };
+  if (regMode === 'internal_paid') {
+    data.participationOptions = JSON.parse(JSON.stringify(poOptions));
+    const selModeEl = document.getElementById('po-selection-mode');
+    const introEl = document.getElementById('po-intro-text');
+    const footerEl = document.getElementById('po-footer-text');
+    data.participationSettings = {
+      enabled: document.getElementById('po-enabled-toggle').classList.contains('on'),
+      selectionMode: selModeEl ? selModeEl.value : 'multiple',
+      requiresApproval: document.getElementById('po-approval-toggle').classList.contains('on'),
+      allowComment: document.getElementById('po-comment-toggle').classList.contains('on'),
+      introText: introEl ? introEl.value : 'Выберите формат участия',
+      footerText: footerEl ? footerEl.value : ''
+    };
+  }
+  return data;
+}
+
+function saveCollectedData(data) {
+  if (currentEditingEventId) {
+    const idx = mockEvents.findIndex(e => e.id === currentEditingEventId);
+    if (idx !== -1) {
+      Object.assign(mockEvents[idx], data);
+    }
+  } else {
+    // New event
+    const newEvent = Object.assign({ id: 'e_' + Date.now(), registrations: 0 }, data);
+    mockEvents.push(newEvent);
+    currentEditingEventId = newEvent.id;
+  }
+}
+
+function saveEventDraft() {
+  const title = document.getElementById('ef-title').value.trim();
+  if (!title) {
+    document.getElementById('ef-title-err').style.display = 'block';
+    document.getElementById('ef-title').classList.add('error');
+    document.getElementById('ef-title').focus();
+    return;
+  }
+  document.getElementById('ef-title-err').style.display = 'none';
+  document.getElementById('ef-title').classList.remove('error');
+
+  // Validate participation options if paid mode
+  const regMode = document.getElementById('ef-reg-mode').value;
+  if (regMode === 'internal_paid') {
+    const activeOpts = poOptions.filter(o => o.active);
+    if (activeOpts.length === 0) {
+      toast('Добавьте хотя бы один вариант участия или выберите другой режим регистрации.', 'error');
+      return;
+    }
+  }
+  const data = collectFormData('draft');
+  saveCollectedData(data);
+  toast('Черновик сохранён', 'success');
+}
+
+function publishEvent() {
+  const title = document.getElementById('ef-title').value.trim();
+  const date = document.getElementById('ef-date').value;
+  const regMode = document.getElementById('ef-reg-mode').value;
+  const regUrl = document.getElementById('ef-reg-url').value.trim();
+
+  let valid = true;
+  if (!title) {
+    document.getElementById('ef-title-err').style.display = 'block';
+    document.getElementById('ef-title').classList.add('error');
+    valid = false;
+  } else {
+    document.getElementById('ef-title-err').style.display = 'none';
+    document.getElementById('ef-title').classList.remove('error');
+  }
+  if (!date) {
+    document.getElementById('ef-date-err').style.display = 'block';
+    document.getElementById('ef-date').classList.add('error');
+    valid = false;
+  } else {
+    document.getElementById('ef-date-err').style.display = 'none';
+    document.getElementById('ef-date').classList.remove('error');
+  }
+  if (regMode === 'external_link' && !regUrl) {
+    document.getElementById('ef-reg-url-err').style.display = 'block';
+    document.getElementById('ef-reg-url').classList.add('error');
+    valid = false;
+  } else {
+    document.getElementById('ef-reg-url-err').style.display = 'none';
+    if (document.getElementById('ef-reg-url')) document.getElementById('ef-reg-url').classList.remove('error');
+  }
+  if (regMode === 'internal_paid') {
+    const activeOpts = poOptions.filter(o => o.active);
+    if (activeOpts.length === 0) {
+      toast('Добавьте хотя бы один вариант участия или выберите другой режим регистрации.', 'error');
+      valid = false;
+    }
+  }
+
+  if (!valid) {
+    toast('Исправьте ошибки в форме', 'error');
+    return;
+  }
+
+  const data = collectFormData('published');
+  saveCollectedData(data);
+  toast('Событие опубликовано', 'success');
+  setTimeout(() => { currentEditingEventId = null; showPage('events'); }, 800);
+}
+
+function updateRegFields() {
+  const mode = document.getElementById('ef-reg-mode').value;
+  document.getElementById('ef-reg-none').style.display = mode === 'none' ? '' : 'none';
+  document.getElementById('ef-reg-external').style.display = mode === 'external_link' ? '' : 'none';
+  document.getElementById('ef-reg-internal').style.display = mode === 'internal_free' ? '' : 'none';
+  document.getElementById('ef-reg-paid').style.display = mode === 'internal_paid' ? '' : 'none';
+  if (mode === 'internal_paid') {
+    // find current event being edited if any, else use empty
+    const titleVal = document.getElementById('ef-title').value;
+    const matchedEvent = mockEvents.find(e => e.title === titleVal);
+    if (matchedEvent && matchedEvent.participationOptions) {
+      initParticipationOptions(matchedEvent);
+    } else {
+      initParticipationOptions({});
+    }
+  }
+}
+
+function updateStatusHint() {
+  const status = document.getElementById('ef-status').value;
+  const visibility = document.getElementById('ef-visibility').value;
+  const hint = document.getElementById('ef-status-hint');
+  if (status === 'draft' || visibility === 'hidden') {
+    hint.innerHTML = '<span>ℹ</span> Черновик / Скрыто — не видны пользователям';
+    hint.className = 'warn-box';
+  } else if (status === 'published' && visibility === 'public') {
+    hint.innerHTML = '<span>✓</span> Опубликовано / Публично — видно всем';
+    hint.className = 'warn-box success';
+  } else if (status === 'published' && visibility === 'members_only') {
+    hint.innerHTML = '<span>◉</span> Опубликовано / Участники — видно только активным участникам';
+    hint.className = 'warn-box info';
+  } else {
+    hint.innerHTML = '<span>ℹ</span> Проверьте статус и видимость перед публикацией';
+    hint.className = 'warn-box';
+  }
+}
+
+function updateImagePreview() {
+  const url = document.getElementById('ef-image').value;
+  const prev = document.getElementById('ef-preview');
+  prev.innerHTML = `<div class="poster-icon">🖼</div><div>Картинка не загружена</div>`;
+}
+
+// =============================================
+// IMPORT
+// =============================================
+function getConfidenceBadge(c) {
+  const map = {
+    confident:      '<span class="badge badge-green">✓ confident</span>',
+    partial:        '<span class="badge badge-gold">⚠ partial</span>',
+    recurring_rule: '<span class="badge badge-blue">⟳ recurring</span>',
+    none:           '<span class="badge badge-red">✕ no date</span>',
+  };
+  return map[c] || `<span class="badge badge-muted">${c}</span>`;
+}
+
+function getDateStatusBadge(s) {
+  const map = {
+    needs_review: '<span class="badge badge-gold">◌ Требует проверки</span>',
+    ready:        '<span class="badge badge-green">✓ Готово</span>',
+    error:        '<span class="badge badge-red">✕ Ошибка</span>',
+  };
+  return map[s] || `<span class="badge badge-muted">${s}</span>`;
+}
+
+function renderImportList() {
+  const container = document.getElementById('import-list');
+  const filtered = importItems.filter(item => {
+    if (importFilter === 'all') return item.status !== '__deleted';
+    if (importFilter === 'needs_review') return item.dateStatus === 'needs_review' && item.status !== 'ignored';
+    if (importFilter === 'error') return item.status === 'error';
+    if (importFilter === 'ignored') return item.status === 'ignored';
+    if (importFilter === 'linked') return item.status === 'linked';
+    return item.status === importFilter || item.dateStatus === importFilter;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-3);"><div style="font-size:32px;margin-bottom:12px;">◎</div><div>Нет элементов в этой категории</div></div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map(item => `
+    <div class="import-card ${item.status === 'error' ? 'error-item' : ''}" onclick="openImportReview('${item.id}')">
+      <div class="poster-placeholder ${item.gradClass} import-poster"></div>
+      <div class="import-body">
+        <div class="import-title">${item.parsedTitle}</div>
+        <div class="import-date-raw">📅 ${item.rawDateText}</div>
+        <div class="import-badges">
+          ${getConfidenceBadge(item.dateConfidence)}
+          ${getDateStatusBadge(item.dateStatus)}
+          ${item.status === 'error' ? '<span class="badge badge-red">✕ Ошибка</span>' : ''}
+        </div>
+        ${item.reason ? `<div class="import-reason">${item.reason}</div>` : ''}
+        <div class="source-url-display" style="margin-top:6px;">${item.sourceUrl}</div>
+        <div class="import-actions" onclick="event.stopPropagation()">
+          <button class="btn btn-secondary btn-xs" onclick="openImportReview('${item.id}')">Проверить</button>
+          <button class="btn btn-primary btn-xs" onclick="openImportReview('${item.id}')">Создать событие</button>
+          <button class="btn btn-danger btn-xs" onclick="ignoreImportItem('${item.id}')">Игнорировать</button>
+          <button class="btn btn-ghost btn-xs" onclick="alert('В production откроется страница источника: ${item.sourceUrl}')">Источник ↗</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterImport(filter, el) {
+  importFilter = filter;
+  document.querySelectorAll('#import-tabs .tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderImportList();
+}
+
+function ignoreImportItem(id) {
+  const item = importItems.find(i => i.id === id);
+  if (item) {
+    item.status = 'ignored';
+    renderImportList();
+    toast('Элемент проигнорирован', 'info');
+  }
+}
+
+function openImportReview(id) {
+  const item = importItems.find(i => i.id === id);
+  if (!item) return;
+  showPage('import-review');
+
+  let warningBox = '';
+  if (item.dateConfidence === 'partial') {
+    warningBox = `<div class="warn-box"><span>⚠</span> Найдены день и месяц, но не найден год. Укажите дату вручную.</div>`;
+  } else if (item.dateConfidence === 'recurring_rule') {
+    warningBox = `<div class="warn-box info"><span>ℹ</span> Это повторяющееся событие. Пока создайте конкретные даты вручную.</div>`;
+  } else if (item.dateConfidence === 'none') {
+    warningBox = `<div class="warn-box error"><span>✕</span> Дата не найдена. Укажите дату перед публикацией.</div>`;
+  }
+
+  // Prefill date from rawDateText if confident
+  const prefillDate = item.dateConfidence === 'confident' ? '2026-05-24' : '';
+  const prefillTime = item.dateConfidence === 'confident' ? '15:00' : '';
+
+  document.getElementById('import-review-content').innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+      <div>
+        <div style="font-size:20px;font-weight:700;">${item.parsedTitle}</div>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          ${getConfidenceBadge(item.dateConfidence)}
+          ${getDateStatusBadge(item.dateStatus)}
+          <span class="badge badge-glass">${item.createdAt}</span>
+        </div>
+      </div>
+    </div>
+
+    ${warningBox}
+
+    <div class="import-review-layout">
+      <!-- Left: source data -->
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Данные с сайта</div>
+        <div class="source-data">
+          <div class="poster-placeholder ${item.gradClass}" style="height:120px;margin-bottom:14px;border-radius:8px;">
+            <div class="poster-icon">🖼</div>
+            <div>Изображение с сайта</div>
+          </div>
+
+          <div class="source-data-row">
+            <div class="source-data-key">Заголовок</div>
+            <div class="source-data-val">${item.parsedTitle}</div>
+          </div>
+          <div class="source-data-row">
+            <div class="source-data-key">Описание</div>
+            <div class="source-data-val">${item.shortDesc}</div>
+          </div>
+          <div class="source-data-row">
+            <div class="source-data-key">Дата (raw)</div>
+            <div class="source-data-val" style="color:var(--gold);">${item.rawDateText}</div>
+          </div>
+          ${item.reason ? `<div class="source-data-row">
+            <div class="source-data-key">Причина флага</div>
+            <div class="source-data-val" style="color:var(--orange);">${item.reason}</div>
+          </div>` : ''}
+          <div class="source-data-row">
+            <div class="source-data-key">URL источника</div>
+            <div class="source-url-display">${item.sourceUrl}</div>
+          </div>
+          ${item.registrationUrl ? `<div class="source-data-row">
+            <div class="source-data-key">URL регистрации</div>
+            <div class="source-url-display">${item.registrationUrl}</div>
+          </div>` : ''}
+          <div class="source-data-row">
+            <div class="source-data-key">Создан</div>
+            <div class="source-data-val">${item.createdAt}</div>
+          </div>
+
+          <div style="margin-top:12px;">
+            <div class="accordion-header" onclick="toggleAccordion('raw-payload-body',this)">
+              <span>⚙ Технические данные (raw_payload)</span>
+              <span>▸</span>
+            </div>
+            <div class="accordion-body" id="raw-payload-body">
+{
+  "dateConfidence": "${item.dateConfidence}",
+  "dateStatus": "${item.dateStatus}",
+  "rawDateText": "${item.rawDateText}",
+  "reason": "${item.reason || ''}",
+  "parsedTitle": "${item.parsedTitle}",
+  "status": "${item.status}"
+}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: event form -->
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Будущее событие</div>
+
+        <div class="form-field">
+          <label class="form-label">Название *</label>
+          <input type="text" class="form-input" id="ir-title" value="${item.parsedTitle}">
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label class="form-label">Дата *</label>
+            <input type="date" class="form-input" id="ir-date" value="${prefillDate}" style="color-scheme:dark;">
+            <div class="form-error" id="ir-date-err" style="display:none;">Укажите дату</div>
+          </div>
+          <div class="form-field">
+            <label class="form-label">Время</label>
+            <input type="time" class="form-input" id="ir-time" value="${prefillTime}" style="color-scheme:dark;">
+          </div>
+        </div>
+        <div class="form-field">
+          <label class="form-label">Описание</label>
+          <textarea class="form-textarea" id="ir-desc">${item.shortDesc}</textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label class="form-label">Категория</label>
+            <select class="form-select" id="ir-category">
+              <option value="">— Выбрать —</option>
+              <option value="lecture">Лекция</option>
+              <option value="tour">Экскурсия</option>
+              <option value="holiday">Праздник</option>
+              <option value="children">Детское</option>
+              <option value="shabbat">Шаббат</option>
+              <option value="other">Другое</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label class="form-label">Видимость</label>
+            <select class="form-select" id="ir-visibility">
+              <option value="members_only">Только участники</option>
+              <option value="public">Публично</option>
+              <option value="hidden">Скрыто</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-field">
+          <label class="form-label">Регистрация</label>
+          <select class="form-select" id="ir-reg-mode" onchange="toggleIrPaidConstructor()">
+            <option value="${item.registrationUrl ? 'external_link' : 'none'}">${item.registrationUrl ? 'Внешняя ссылка' : 'Не требуется'}</option>
+            <option value="internal_free">Внутренняя</option>
+            <option value="external_link">Внешняя ссылка</option>
+            <option value="internal_paid">Внутренняя (платная)</option>
+            <option value="none">Не требуется</option>
+          </select>
+        </div>
+        ${item.registrationUrl ? `<div class="form-field">
+          <label class="form-label">Ссылка регистрации</label>
+          <div class="source-url-display">${item.registrationUrl}</div>
+        </div>` : ''}
+
+        <!-- Participation constructor for import review (mirrors event form) -->
+        <div id="ir-paid-constructor" style="display:none;">
+          <div class="warn-box error" style="margin-bottom:10px;"><span>⚠</span> Платёжный шлюз пока не подключён. Настройте варианты участия.</div>
+          <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:10px;">Варианты участия и оплаты</div>
+          <div id="ir-po-options-list" style="margin-bottom:8px;"><div style="text-align:center;padding:16px;color:var(--text-3);font-size:12px;border:1px dashed var(--glass-border);border-radius:var(--radius-sm);">Нет вариантов</div></div>
+          <button class="btn btn-secondary btn-sm" style="width:100%;justify-content:center;" onclick="openAddOptionModal()">＋ Добавить вариант</button>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;">
+          <button class="btn btn-secondary btn-sm" onclick="saveImportAsDraft('${item.id}')">Сохранить черновик</button>
+          <button class="btn btn-primary btn-sm" onclick="publishImportItem('${item.id}')">Опубликовать</button>
+          <button class="btn btn-danger btn-sm" onclick="ignoreImportItem('${item.id}');showPage('import')">Игнорировать</button>
+          <button class="btn btn-ghost btn-sm" onclick="alert('В production откроется страница источника: ${item.sourceUrl}')">Источник ↗</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function toggleIrPaidConstructor() {
+  const mode = document.getElementById('ir-reg-mode');
+  const constructor = document.getElementById('ir-paid-constructor');
+  if (!mode || !constructor) return;
+  if (mode.value === 'internal_paid') {
+    constructor.style.display = '';
+    initParticipationOptions({});
+  } else {
+    constructor.style.display = 'none';
+  }
+}
+
+function saveImportAsDraft(id) {
+  const item = importItems.find(i => i.id === id);
+  if (item) {
+    item.status = 'linked';
+    toast('Сохранено как черновик', 'success');
+  }
+}
+
+function publishImportItem(id) {
+  const dateVal = document.getElementById('ir-date');
+  if (!dateVal || !dateVal.value) {
+    if (document.getElementById('ir-date-err')) document.getElementById('ir-date-err').style.display = 'block';
+    if (dateVal) dateVal.classList.add('error');
+    toast('Укажите дату перед публикацией', 'error');
+    return;
+  }
+  if (document.getElementById('ir-date-err')) document.getElementById('ir-date-err').style.display = 'none';
+  const item = importItems.find(i => i.id === id);
+  if (item) {
+    item.status = 'linked';
+    item.dateStatus = 'ready';
+  }
+  toast('Событие опубликовано', 'success');
+  setTimeout(() => showPage('events'), 800);
+}
+
+// =============================================
+// REGISTRATIONS
+// =============================================
+function getPaymentStatusBadge(ps) {
+  const map = {
+    future:           '<span class="badge badge-muted" style="font-size:10px;">⏳ Оплата позже</span>',
+    pending:          '<span class="badge badge-gold" style="font-size:10px;">◌ Ожидает оплаты</span>',
+    paid:             '<span class="badge badge-green" style="font-size:10px;">✓ Оплачено</span>',
+    external:         '<span class="badge badge-blue" style="font-size:10px;">↗ Внешняя оплата</span>',
+    manual_confirmed: '<span class="badge badge-purple" style="font-size:10px;">★ Подтверждено вручную</span>',
+    failed:           '<span class="badge badge-red" style="font-size:10px;">✕ Ошибка оплаты</span>',
+  };
+  return ps ? (map[ps] || `<span class="badge badge-muted" style="font-size:10px;">${ps}</span>`) : '';
+}
+
+function openRegDetail(eventId, regId) {
+  const event = mockEvents.find(e => e.id === eventId);
+  const regs = registrations[eventId] || [];
+  const r = regs.find(x => x.id === regId);
+  if (!r) return;
+
+  const panel = document.getElementById('reg-detail-panel');
+  const hasOpts = r.selectedOptions && r.selectedOptions.length > 0;
+
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+      <div class="avatar ${r.avClass}" style="width:36px;height:36px;font-size:14px;">${r.initials}</div>
+      <div>
+        <div style="font-size:15px;font-weight:700;">${r.name}</div>
+        <div style="font-size:11px;color:var(--text-3);">${r.email}</div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:4px;">${r.phone}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+      ${getRegStatusBadge(r.status)}
+      ${getPaymentStatusBadge(r.paymentStatus)}
+    </div>
+    ${r.comment ? `<div class="warn-box info" style="font-size:11px;margin-bottom:10px;"><span>💬</span> ${r.comment}</div>` : ''}
+    <div class="divider"></div>
+    ${event ? `<div style="font-size:11px;color:var(--text-3);margin-bottom:4px;">Событие</div><div style="font-size:13px;font-weight:500;margin-bottom:10px;">${event.title}</div><div class="divider"></div>` : ''}
+    ${hasOpts ? `
+      <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Выбранные варианты участия</div>
+      ${r.selectedOptions.map((so, i) => `
+        <div style="background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:6px;">
+          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:3px;">${i+1}. ${so.title}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px;font-size:11px;color:var(--text-3);">
+            <span>Количество:</span><span style="color:var(--text-2);font-weight:600;">${so.quantity}</span>
+            <span>Цена за ед.:</span><span style="color:var(--text-2);">${so.unitPrice.toLocaleString('ru')} ${r.currencyLabel}</span>
+            <span>Сумма:</span><span style="color:var(--gold);font-weight:700;">${so.total.toLocaleString('ru')} ${r.currencyLabel}</span>
+            <span>Мест:</span><span style="color:${so.countsTowardCapacity ? 'var(--green)' : 'var(--text-3)'};">${so.seats} ${so.countsTowardCapacity ? '' : '(не занимает)'}</span>
+          </div>
+        </div>
+      `).join('')}
+      <div class="preview-total" style="margin-bottom:8px;">
+        <span class="preview-total-label">Итого к оплате</span>
+        <span class="preview-total-amount">${r.totalAmount.toLocaleString('ru')} ${r.currencyLabel}</span>
+      </div>
+      <div style="display:flex;gap:12px;font-size:12px;color:var(--text-3);margin-bottom:12px;">
+        <span>Позиций: <strong style="color:var(--text-2);">${r.totalQuantity}</strong></span>
+        <span>Мест: <strong style="color:var(--green);">${r.calculatedSeats}</strong></span>
+      </div>
+      <div class="divider"></div>
+    ` : ''}
+    <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Действия</div>
+    <div style="display:flex;flex-direction:column;gap:6px;">
+      ${r.status === 'pending' ? `
+        <button class="btn btn-sm" style="background:var(--green-dim);color:var(--green);border:1px solid rgba(53,199,89,0.25);" onclick="changeRegStatus('${eventId}','${r.id}','confirmed');openRegDetail('${eventId}','${r.id}')">✓ Подтвердить</button>
+        <button class="btn btn-danger btn-sm" onclick="changeRegStatus('${eventId}','${r.id}','rejected');openRegDetail('${eventId}','${r.id}')">✕ Отклонить</button>
+      ` : ''}
+      ${r.status === 'confirmed' ? `
+        <button class="btn btn-secondary btn-sm" onclick="changeRegStatus('${eventId}','${r.id}','attended');openRegDetail('${eventId}','${r.id}')">★ Пришёл</button>
+        <button class="btn btn-ghost btn-sm" onclick="changeRegStatus('${eventId}','${r.id}','noshow');openRegDetail('${eventId}','${r.id}')">◎ No-show</button>
+      ` : ''}
+      ${r.status === 'waitlisted' ? `
+        <button class="btn btn-secondary btn-sm" onclick="changeRegStatus('${eventId}','${r.id}','confirmed');openRegDetail('${eventId}','${r.id}')">↑ Подтвердить из очереди</button>
+      ` : ''}
+      ${!['cancelled','rejected'].includes(r.status) ? `
+        <button class="btn btn-ghost btn-sm" style="color:var(--text-3);" onclick="changeRegStatus('${eventId}','${r.id}','cancelled');openRegDetail('${eventId}','${r.id}')">✕ Отменить запись</button>
+      ` : ''}
+    </div>
+  `;
+}
+
+function getRegStatusBadge(s) {
+  const map = {
+    confirmed:  '<span class="badge badge-green">✓ Подтверждено</span>',
+    pending:    '<span class="badge badge-gold">◌ Pending</span>',
+    waitlisted: '<span class="badge badge-blue">⏳ Ожидание</span>',
+    cancelled:  '<span class="badge badge-muted">✕ Отменено</span>',
+    rejected:   '<span class="badge badge-red">✕ Отклонено</span>',
+    attended:   '<span class="badge badge-purple">★ Пришёл</span>',
+    noshow:     '<span class="badge badge-muted">◎ No-show</span>',
+  };
+  return map[s] || `<span class="badge badge-muted">${s}</span>`;
+}
+
+function renderRegistrations() {
+  // Render event list
+  const eventListEl = document.getElementById('reg-event-list');
+  const eventsWithRegs = mockEvents.filter(e => registrations[e.id] && registrations[e.id].length > 0);
+  eventListEl.innerHTML = eventsWithRegs.map(e => {
+    const regs = registrations[e.id] || [];
+    const confirmed = regs.filter(r => r.status === 'confirmed').length;
+    const pending = regs.filter(r => r.status === 'pending').length;
+    return `<div class="event-selector-item ${currentRegEventId === e.id ? 'active' : ''}" onclick="selectRegEvent('${e.id}')">
+      <div class="es-name">${e.title}</div>
+      <div class="es-date">${e.date} ${e.time}</div>
+      <div class="es-count">
+        <span style="color:var(--green);">${confirmed} ✓</span>
+        ${pending > 0 ? `<span style="color:var(--orange);margin-left:6px;">${pending} ◌</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  renderRegTable();
+}
+
+function selectRegEvent(eventId) {
+  currentRegEventId = eventId;
+  currentRegFilter = 'all';
+  document.querySelectorAll('#reg-filter-chips .chip').forEach(c => c.classList.remove('active'));
+  document.querySelector('#reg-filter-chips .chip').classList.add('active');
+  renderRegistrations();
+}
+
+function renderRegTable() {
+  const event = mockEvents.find(e => e.id === currentRegEventId);
+  const regs = registrations[currentRegEventId] || [];
+  const filtered = currentRegFilter === 'all' ? regs : regs.filter(r => r.status === currentRegFilter);
+
+  const confirmed = regs.filter(r => r.status === 'confirmed').reduce((s, r) => s + r.seats, 0);
+  const pending = regs.filter(r => r.status === 'pending').length;
+  const waitlisted = regs.filter(r => r.status === 'waitlisted').length;
+
+  const summaryEl = document.getElementById('reg-event-summary');
+  if (event) {
+    const fillPct = event.capacity ? Math.round((confirmed / event.capacity) * 100) : 0;
+    const fillClass = fillPct >= 100 ? 'full' : fillPct >= 80 ? 'warn' : '';
+    summaryEl.innerHTML = `
+      <div class="glass-card elevated">
+        <div style="display:flex;align-items:flex-start;gap:16px;">
+          <div>
+            <div style="font-size:16px;font-weight:700;">${event.title}</div>
+            <div style="font-size:12px;color:var(--text-3);">${event.date} ${event.time}</div>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:16px;flex-wrap:wrap;">
+            <div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--green);">${confirmed}</div><div style="font-size:10px;color:var(--text-3);">Подтв.</div></div>
+            <div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--orange);">${pending}</div><div style="font-size:10px;color:var(--text-3);">Pending</div></div>
+            <div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--blue);">${waitlisted}</div><div style="font-size:10px;color:var(--text-3);">Ожидание</div></div>
+            ${event.capacity ? `<div style="text-align:center;"><div style="font-size:18px;font-weight:700;">${event.capacity}</div><div style="font-size:10px;color:var(--text-3);">Мест</div></div>` : ''}
+          </div>
+        </div>
+        ${event.capacity ? `<div class="capacity-bar-wrap"><div class="capacity-bar-bg"><div class="capacity-bar-fill ${fillClass}" style="width:${Math.min(fillPct,100)}%"></div></div></div>` : ''}
+      </div>
+    `;
+  }
+
+  const tbody = document.getElementById('reg-tbody');
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-3);">Нет регистраций</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(r => {
+    const hasOpts = r.selectedOptions && r.selectedOptions.length > 0;
+    const optSummary = hasOpts
+      ? r.selectedOptions.map(so => `<div style="font-size:10px;color:var(--text-3);">${so.title} ×${so.quantity}</div>`).join('')
+      : '';
+    const seatsDisplay = r.calculatedSeats != null ? r.calculatedSeats : r.seats;
+    const amountDisplay = r.totalAmount ? `${r.totalAmount.toLocaleString('ru')} ${r.currencyLabel}` : '—';
+    return `
+    <tr onclick="openRegDetail('${currentRegEventId}','${r.id}')" style="cursor:pointer;">
+      <td>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="avatar ${r.avClass}" style="width:28px;height:28px;font-size:11px;">${r.initials}</div>
+          <div>
+            <div style="font-weight:500;">${r.name}</div>
+            ${optSummary}
+          </div>
+        </div>
+      </td>
+      <td class="muted" style="font-size:12px;">${r.email}</td>
+      <td>${getRegStatusBadge(r.status)}</td>
+      <td style="font-size:12px;">${hasOpts ? `<span style="color:var(--text-2);">${r.totalQuantity} поз. / ${r.calculatedSeats} мест</span>` : r.seats}</td>
+      <td style="font-weight:600;color:var(--gold);font-size:13px;">${amountDisplay}</td>
+      <td>${getPaymentStatusBadge(r.paymentStatus)}</td>
+      <td class="muted" style="font-size:12px;">${r.date}</td>
+      <td>
+        <div class="actions-row" style="flex-wrap:wrap;gap:4px;" onclick="event.stopPropagation()">
+          ${r.status === 'pending' ? `
+            <button class="btn btn-xs" style="background:var(--green-dim);color:var(--green);border:1px solid rgba(53,199,89,0.25);" onclick="changeRegStatus('${currentRegEventId}','${r.id}','confirmed')">✓</button>
+            <button class="btn btn-xs" style="background:var(--red-dim);color:var(--red);border:1px solid rgba(229,44,54,0.25);" onclick="changeRegStatus('${currentRegEventId}','${r.id}','rejected')">✕</button>
+          ` : ''}
+          ${r.status === 'confirmed' ? `
+            <button class="btn btn-ghost btn-xs" onclick="changeRegStatus('${currentRegEventId}','${r.id}','attended')">★</button>
+          ` : ''}
+          ${r.status === 'waitlisted' ? `
+            <button class="btn btn-ghost btn-xs" onclick="changeRegStatus('${currentRegEventId}','${r.id}','confirmed')">↑</button>
+          ` : ''}
+          <button class="action-dots" onclick="changeRegStatus('${currentRegEventId}','${r.id}','cancelled')">✕</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function changeRegStatus(eventId, regId, newStatus) {
+  const regs = registrations[eventId];
+  if (!regs) return;
+  const reg = regs.find(r => r.id === regId);
+  if (reg) {
+    reg.status = newStatus;
+    const labels = { confirmed:'Заявка подтверждена', rejected:'Заявка отклонена', attended:'Отмечен как пришедший', noshow:'Отмечен как No-show', cancelled:'Запись отменена', waitlisted:'Переведён в лист ожидания' };
+    toast(labels[newStatus] || 'Статус обновлён', newStatus === 'confirmed' || newStatus === 'attended' ? 'success' : 'info');
+    renderRegTable();
+  }
+}
+
+function filterReg(filter, el) {
+  currentRegFilter = filter;
+  document.querySelectorAll('#reg-filter-chips .chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderRegTable();
+}
+
+// =============================================
+// MEMBERS
+// =============================================
+function renderMembers(filter) {
+  const tbody = document.getElementById('members-tbody');
+  let filtered = members;
+  if (filter && filter !== 'all') {
+    filtered = members.filter(m => m.status === filter || m.role === filter);
+  }
+
+  tbody.innerHTML = filtered.map(m => `
+    <tr onclick="openMemberDetail('${m.id}')">
+      <td>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="avatar ${m.avClass}">${m.initials}</div>
+          <span style="font-weight:500;">${m.name}</span>
+        </div>
+      </td>
+      <td class="muted">${m.email}</td>
+      <td>${getRoleBadge(m.role)}</td>
+      <td>${getMemberStatusBadge(m.status)}</td>
+      <td class="muted">${m.joinedAt}</td>
+      <td>${m.registrations}</td>
+      <td>
+        <div class="actions-row">
+          <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();openMemberDetail('${m.id}')">Открыть</button>
+          <button class="action-dots" onclick="event.stopPropagation();showMemberMenu('${m.id}',this)">···</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function filterMembers(filter, el) {
+  document.querySelectorAll('.members-layout .filter-chips .chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderMembers(filter);
+}
+
+function getRoleBadge(role) {
+  const map = {
+    admin: '<span class="badge badge-red">admin</span>',
+    event_manager: '<span class="badge badge-gold">event_manager</span>',
+    member: '<span class="badge badge-muted">member</span>',
+  };
+  return map[role] || `<span class="badge badge-muted">${role}</span>`;
+}
+
+function getMemberStatusBadge(status) {
+  const map = {
+    active:    '<span class="badge badge-green"><span class="status-dot dot-green"></span>Активен</span>',
+    suspended: '<span class="badge badge-red"><span class="status-dot dot-red"></span>Приостановлен</span>',
+    left:      '<span class="badge badge-muted">Вышел</span>',
+  };
+  return map[status] || `<span class="badge badge-muted">${status}</span>`;
+}
+
+function openMemberDetail(id) {
+  currentMemberId = id;
+  const m = members.find(m => m.id === id);
+  if (!m) return;
+
+  const panel = document.getElementById('members-detail-panel');
+  panel.innerHTML = `
+    <div class="member-profile">
+      <div class="member-avatar-lg ${m.avClass}">${m.initials}</div>
+      <div class="member-name">${m.name}</div>
+      <div class="member-email">${m.email}</div>
+      <div style="margin-top:6px;display:flex;gap:6px;justify-content:center;">
+        ${getRoleBadge(m.role)}
+        ${getMemberStatusBadge(m.status)}
+      </div>
+    </div>
+
+    <div class="source-data-row"><div class="source-data-key">Телефон</div><div class="source-data-val">${m.phone}</div></div>
+    <div class="source-data-row"><div class="source-data-key">Дата вступления</div><div class="source-data-val">${m.joinedAt}</div></div>
+    <div class="source-data-row"><div class="source-data-key">Регистраций</div><div class="source-data-val">${m.registrations}</div></div>
+
+    <div class="divider"></div>
+
+    <div style="font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:8px;">Изменить роль</div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
+      ${['member','event_manager','admin'].map(role => `
+        <button class="btn btn-sm ${m.role === role ? 'btn-secondary' : 'btn-ghost'} " onclick="changeMemberRole('${m.id}','${role}')" style="${m.role === role ? 'border-color:rgba(255,255,255,0.25);' : ''}">
+          ${m.role === role ? '◉ ' : '◎ '} ${role}
+        </button>
+      `).join('')}
+    </div>
+
+    <div class="divider"></div>
+
+    <div style="display:flex;flex-direction:column;gap:6px;">
+      ${m.status === 'active'
+        ? `<button class="btn btn-danger btn-sm" onclick="changeMemberStatus('${m.id}','suspended')">⊘ Приостановить</button>`
+        : `<button class="btn btn-sm" style="background:var(--green-dim);color:var(--green);" onclick="changeMemberStatus('${m.id}','active')">✓ Восстановить</button>`
+      }
+    </div>
+  `;
+}
+
+function changeMemberRole(id, role) {
+  const m = members.find(m => m.id === id);
+  if (m) {
+    m.role = role;
+    renderMembers();
+    openMemberDetail(id);
+    toast(`Роль изменена на ${role}`, 'success');
+  }
+}
+
+function changeMemberStatus(id, status) {
+  const m = members.find(m => m.id === id);
+  if (m) {
+    m.status = status;
+    renderMembers();
+    openMemberDetail(id);
+    toast(status === 'suspended' ? 'Участник приостановлен' : 'Участник восстановлен', status === 'suspended' ? 'error' : 'success');
+  }
+}
+
+function showMemberMenu(id, btn) {
+  const m = members.find(m => m.id === id);
+  if (!m) return;
+  openMemberDetail(id);
+}
+
+// =============================================
+// INVITES
+// =============================================
+function renderInvites() {
+  const tbody = document.getElementById('invites-tbody');
+  tbody.innerHTML = invites.map(inv => `
+    <tr>
+      <td><span class="invite-code">${inv.code}</span></td>
+      <td>${getRoleBadge(inv.role)}</td>
+      <td>${inv.usedCount} / ${inv.maxUses}</td>
+      <td class="muted">${inv.expiresAt}</td>
+      <td>${getInviteStatusBadge(inv.status)}</td>
+      <td class="muted">${inv.createdBy}</td>
+      <td>
+        <div class="actions-row">
+          ${inv.status === 'active' ? `
+            <button class="btn btn-ghost btn-xs" onclick="copyInvite('${inv.code}')">◫ Скопировать</button>
+            <button class="btn btn-danger btn-xs" onclick="revokeInvite('${inv.id}')">⊗ Отозвать</button>
+          ` : '<span style="color:var(--text-3);font-size:12px;">—</span>'}
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function getInviteStatusBadge(s) {
+  const map = {
+    active:  '<span class="badge badge-green">● Активен</span>',
+    used:    '<span class="badge badge-muted">✓ Использован</span>',
+    expired: '<span class="badge badge-orange">⏱ Истёк</span>',
+    revoked: '<span class="badge badge-red">⊗ Отозван</span>',
+  };
+  return map[s] || `<span class="badge badge-muted">${s}</span>`;
+}
+
+function copyInvite(code) {
+  toast('Код скопирован: ' + code, 'success');
+}
+
+function revokeInvite(id) {
+  const inv = invites.find(i => i.id === id);
+  if (inv) {
+    inv.status = 'revoked';
+    renderInvites();
+    toast('Приглашение отозвано', 'info');
+  }
+}
+
+function openCreateInviteModal() {
+  showModal(`
+    <div class="modal-header">
+      <div class="modal-title">Создать приглашение</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="form-field">
+      <label class="form-label">Роль</label>
+      <select class="form-select" id="inv-role">
+        <option value="member">member</option>
+        <option value="event_manager">event_manager</option>
+        <option value="admin">admin</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-field">
+        <label class="form-label">Макс. использований</label>
+        <input type="number" class="form-input" id="inv-max" value="5" min="1">
+      </div>
+      <div class="form-field">
+        <label class="form-label">Действует до</label>
+        <input type="date" class="form-input" id="inv-expires" style="color-scheme:dark;" value="2026-12-31">
+      </div>
+    </div>
+    <div class="form-field">
+      <label class="form-label">Email (необязательно)</label>
+      <input type="email" class="form-input" id="inv-email" placeholder="user@example.com">
+    </div>
+    <div class="form-field">
+      <label class="form-label">Телефон (необязательно)</label>
+      <input type="text" class="form-input" id="inv-phone" placeholder="+7 ...">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Отмена</button>
+      <div style="flex:1;"></div>
+      <button class="btn btn-primary btn-sm" onclick="createInvite()">Создать приглашение</button>
+    </div>
+  `);
+}
+
+function createInvite() {
+  const role = document.getElementById('inv-role').value;
+  const maxUses = parseInt(document.getElementById('inv-max').value) || 5;
+  const expiresAt = document.getElementById('inv-expires').value;
+
+  const code = 'INV-' + Math.random().toString(36).toUpperCase().substr(2, 8);
+  invites.unshift({
+    id: 'inv' + Date.now(),
+    code,
+    role,
+    maxUses,
+    usedCount: 0,
+    expiresAt,
+    status: 'active',
+    createdBy: 'Менеджер общины',
+    acceptedBy: []
+  });
+  closeModal();
+  renderInvites();
+  toast('Приглашение создано: ' + code, 'success');
+}
+
+// =============================================
+// MODAL
+// =============================================
+function showModal(html) {
+  document.getElementById('modal-content').innerHTML = html;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal(e) {
+  if (!e || e.target === document.getElementById('modal-overlay')) {
+    document.getElementById('modal-overlay').classList.remove('open');
+  }
+}
+
+// =============================================
+// TOAST
+// =============================================
+function toast(message, type = 'success') {
+  const icons = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
+  const container = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span class="toast-icon">${icons[type] || 'ℹ'}</span><span class="toast-msg">${message}</span>`;
+  container.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateX(20px)'; el.style.transition = 'all 0.3s'; setTimeout(() => el.remove(), 300); }, 3000);
+}
+
+// =============================================
+// ACCORDION
+// =============================================
+function toggleAccordion(bodyId, header) {
+  const body = document.getElementById(bodyId);
+  if (!body) return;
+  body.classList.toggle('open');
+  const arrow = header.querySelector('span:last-child');
+  if (arrow) arrow.textContent = body.classList.contains('open') ? '▾' : '▸';
+}
+
+// =============================================
+// INIT
+// =============================================
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const page = item.dataset.page;
+    if (page) showPage(page);
+  });
+});
+
+// Init role visibility
+switchRole('event_manager');
+document.getElementById('role-switcher').value = 'event_manager';
+
+// Initial render
+showPage('overview');
+
+// Sidebar logout
+document.querySelector('.sidebar-logout').addEventListener('click', () => {
+  toast('В production здесь будет выход из системы', 'info');
+});
+
+// Global search (stub)
+document.getElementById('global-search').addEventListener('input', e => {
+  if (e.target.value.length > 2) {
+    toast('Глобальный поиск: ' + e.target.value, 'info');
+  }
+});
+
+</script>
+</body>
+</html>
