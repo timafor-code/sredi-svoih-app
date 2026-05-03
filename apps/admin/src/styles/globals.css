@@ -38,8 +38,10 @@
 html,
 body,
 #root {
+  width: 100%;
+  height: 100%;
   min-width: 320px;
-  min-height: 100vh;
+  min-height: 100%;
   margin: 0;
 }
 
@@ -75,25 +77,33 @@ a {
 .admin-layout {
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .admin-layout__main {
   display: flex;
   min-width: 0;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
   flex-direction: column;
 }
 
 .admin-layout__content {
-  flex: 1;
-  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 24px;
 }
 
 .sidebar {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
   flex-direction: column;
   border-right: 1px solid var(--glass-border);
   background: rgba(21, 21, 34, 0.94);
@@ -102,6 +112,7 @@ a {
 
 .sidebar__brand {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 10px;
   min-height: 70px;
@@ -144,8 +155,10 @@ a {
 }
 
 .sidebar__nav {
-  flex: 1;
-  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 8px 0 12px;
 }
 
@@ -261,6 +274,7 @@ a {
 
 .sidebar__footer {
   display: grid;
+  flex: 0 0 auto;
   gap: 8px;
   padding: 14px 16px;
   border-top: 1px solid var(--glass-border);
@@ -291,6 +305,7 @@ a {
 
 .topbar {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 12px;
   min-height: var(--topbar-height);
@@ -389,6 +404,107 @@ a {
   font-weight: 800;
   line-height: 1.2;
   text-transform: uppercase;
+}
+
+.import-workflow-backdrop {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(8, 8, 17, 0.74);
+  backdrop-filter: blur(12px);
+}
+
+.import-workflow-dialog {
+  display: grid;
+  width: min(100%, 680px);
+  max-height: min(760px, calc(100vh - 48px));
+  gap: 16px;
+  overflow: auto;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 18px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.import-workflow-dialog__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.import-workflow-dialog__head span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.import-workflow-dialog__head h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.import-workflow-status {
+  display: grid;
+  gap: 8px;
+  border-left: 3px solid var(--gold);
+  padding: 12px 14px;
+  background: rgba(242, 184, 75, 0.08);
+}
+
+.import-workflow-status strong {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.import-workflow-status p,
+.import-workflow-helper,
+.import-workflow-feedback {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.import-workflow-commands {
+  margin: 0;
+  overflow-x: auto;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text);
+  white-space: pre;
+}
+
+.import-workflow-commands code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.import-workflow-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.import-workflow-feedback {
+  color: var(--green);
+}
+
+.import-workflow-feedback--error {
+  color: #ff9ca2;
 }
 
 .role-select {
@@ -1412,23 +1528,25 @@ a {
 }
 
 @media (max-width: 960px) {
-  body {
-    overflow: auto;
-  }
-
   .admin-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .sidebar {
-    min-height: auto;
+    height: auto;
+    max-height: 40vh;
+    min-height: 0;
     border-right: 0;
     border-bottom: 1px solid var(--glass-border);
   }
 
   .sidebar__nav {
     display: flex;
+    flex: 0 1 auto;
+    min-height: 0;
     overflow-x: auto;
+    overflow-y: hidden;
     padding: 8px 12px 14px;
   }
 
@@ -1441,7 +1559,8 @@ a {
   }
 
   .admin-layout__main {
-    min-height: auto;
+    height: 100%;
+    min-height: 0;
   }
 
   .topbar__breadcrumbs {
@@ -1475,6 +1594,21 @@ a {
 
   .topbar__actions {
     justify-content: stretch;
+  }
+
+  .import-workflow-backdrop {
+    padding: 14px;
+  }
+
+  .import-workflow-dialog {
+    max-height: calc(100vh - 28px);
+    padding: 14px;
+  }
+
+  .import-workflow-dialog__head,
+  .import-workflow-dialog__actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .topbar__actions .button,

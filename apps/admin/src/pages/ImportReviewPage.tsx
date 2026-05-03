@@ -34,7 +34,11 @@ const STATUS_FILTERS: Array<{ value: StatusFilter; label: string }> = [
 
 const REVIEW_LIMITS: ReviewLimit[] = [50, 100];
 
-export function ImportReviewPage() {
+type ImportReviewPageProps = {
+  refreshSignal?: number;
+};
+
+export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
   const [items, setItems] = useState<AdminImportReviewItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +67,7 @@ export function ImportReviewPage() {
 
   useEffect(() => {
     void loadItems();
-  }, [loadItems]);
+  }, [loadItems, refreshSignal]);
 
   const filteredItems = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("ru");
@@ -112,7 +116,10 @@ export function ImportReviewPage() {
       <section className="page-header">
         <Badge tone="red">read-only</Badge>
         <h1>Импорт с сайта</h1>
-        <p>Проверка импорта. Публикация и игнорирование будут добавлены отдельным PR.</p>
+        <p>
+          Проверка импорта. Публикация и игнорирование будут добавлены отдельным PR. Запуск
+          импорта из админки будет добавлен отдельным backend PR.
+        </p>
       </section>
 
       <GlassCard className="import-notice">
@@ -122,6 +129,8 @@ export function ImportReviewPage() {
           <p>
             Список читается через RPC `admin_list_import_items_needing_review` с текущей
             Supabase-сессией. Действий publish, ignore и edit на этой странице нет.
+            Сейчас для локальной проверки запустите importer из PowerShell, затем нажмите
+            «Обновить очередь».
           </p>
         </div>
       </GlassCard>
@@ -133,7 +142,7 @@ export function ImportReviewPage() {
             <p>Поиск работает по названию, ссылке источника, месту и заметкам парсера.</p>
           </div>
           <Button disabled={loading} onClick={loadItems}>
-            {loading ? "Обновляем..." : "Обновить"}
+            {loading ? "Обновляем..." : "Обновить очередь"}
           </Button>
         </div>
 
