@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { AdminLayout } from "./components/layout/AdminLayout";
 import { AdminAuthProvider } from "./context/AdminAuthContext";
@@ -29,7 +29,12 @@ export default function App() {
 function AdminApp() {
   const auth = useAdminAuth();
   const [activeSection, setActiveSection] = useState<AdminSection>("overview");
+  const [importReviewRefreshSignal, setImportReviewRefreshSignal] = useState(0);
   const role = auth.role ?? "member";
+
+  const handleImportReviewRefresh = useCallback(() => {
+    setImportReviewRefreshSignal((current) => current + 1);
+  }, []);
 
   useEffect(() => {
     if (role !== "member" && !canRoleOpenSection(role, activeSection)) {
@@ -53,12 +58,13 @@ function AdminApp() {
     return <NoAccessPage />;
   }
 
-  const page = renderPage(activeSection, role);
+  const page = renderPage(activeSection, role, importReviewRefreshSignal);
 
   return (
     <AdminLayout
       activeSection={activeSection}
       membership={auth.membership}
+      onImportReviewRefresh={handleImportReviewRefresh}
       onSectionChange={setActiveSection}
       onSignOut={auth.signOut}
       profile={auth.profile}
@@ -78,7 +84,11 @@ function AuthStatusScreen() {
   );
 }
 
-function renderPage(activeSection: AdminSection, role: AdminRole) {
+function renderPage(
+  activeSection: AdminSection,
+  role: AdminRole,
+  importReviewRefreshSignal: number,
+) {
   if (role === "member" || !canRoleOpenSection(role, activeSection)) {
     return <NoAccessPage />;
   }
@@ -93,7 +103,7 @@ function renderPage(activeSection: AdminSection, role: AdminRole) {
     case "events":
       return <EventsPage />;
     case "import":
-      return <ImportReviewPage />;
+      return <ImportReviewPage refreshSignal={importReviewRefreshSignal} />;
     case "registrations":
       return <RegistrationsPage />;
     case "members":

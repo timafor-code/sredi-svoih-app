@@ -12,6 +12,7 @@ type AdminLayoutProps = {
   membership: AdminMembership | null;
   profile: AdminProfile | null;
   role: AdminRole;
+  onImportReviewRefresh: () => void;
   onSectionChange: (section: AdminSection) => void;
   onSignOut: () => void;
   sessionEmail: string | null;
@@ -21,6 +22,7 @@ export function AdminLayout({
   activeSection,
   children,
   membership,
+  onImportReviewRefresh,
   profile,
   role,
   onSectionChange,
@@ -40,7 +42,9 @@ export function AdminLayout({
       />
       <div className="admin-layout__main">
         <Topbar
-          onImportClick={() => onSectionChange("import")}
+          isImportSection={activeSection === "import"}
+          onOpenImportReview={() => onSectionChange("import")}
+          onRefreshImportReview={onImportReviewRefresh}
           onSignOut={onSignOut}
           profile={profile}
           role={role}
