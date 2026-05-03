@@ -1,8 +1,16 @@
 # Среди Своих Admin Center
 
-`apps/admin` - будущая web-админка проекта «Среди Своих». Сейчас это только технический bootstrap/shell на Vite, React и TypeScript.
+`apps/admin` содержит web-админку проекта «Среди Своих» на Vite, React и TypeScript.
 
-Source of truth для UX/UI будущей реализации: `docs/prototype/admin-events-center.html`.
+Текущий PR добавляет только production-ready visual shell и state-based навигацию: sidebar, topbar, симуляцию ролей и страницы-заглушки разделов. Все данные статичны и нужны только для визуальной проверки каркаса.
+
+Source of truth для полного UX остаётся `docs/prototype/admin-events-center.html`.
+
+## Что будет позже
+
+Supabase, Auth, RLS и RPC будут подключены отдельными PR. В этом shell нет бизнес-логики событий, реальных данных, оплаты, backend-интеграций или управления импортом.
+
+В браузере нельзя использовать серверные ключи повышенных прав и серверные административные методы Supabase.
 
 ## Локальный запуск
 
@@ -19,10 +27,8 @@ npm run admin:typecheck
 npm run admin:build
 ```
 
-## Границы текущего bootstrap
+Общая проверка TypeScript проекта:
 
-Production-интеграция с Supabase будет добавляться отдельными PR.
-
-В браузере запрещено использовать серверные ключи повышенных прав и серверные административные методы Supabase.
-
-Будущая реализация должна работать через Supabase Auth, RLS и RPC.
+```bash
+npm run typecheck
+```

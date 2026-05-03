@@ -1,38 +1,44 @@
-const futureSections = [
-  "Обзор",
-  "События",
-  "Импорт с сайта",
-  "Регистрации",
-  "Участники",
-  "Приглашения",
-  "Настройки",
-];
+import { nextSteps, overviewKpis } from "../data/mockAdmin";
+import { Badge } from "../components/ui/Badge";
+import { GlassCard } from "../components/ui/GlassCard";
 
 export function OverviewPage() {
   return (
-    <div className="overview">
-      <div className="overview__eyebrow">Bootstrap web-admin</div>
+    <div className="page-stack">
+      <section className="page-header">
+        <Badge tone="red">visual shell</Badge>
+        <h1>Обзор</h1>
+        <p>Каркас web-админки перенесён из утверждённого прототипа в React-компоненты.</p>
+      </section>
 
-      <header className="overview__header">
-        <h1>Среди Своих · Admin Center</h1>
-        <p>
-          Web-админка будет реализована по прототипу{" "}
-          <span>docs/prototype/admin-events-center.html</span>
-        </p>
-      </header>
+      <section className="kpi-grid" aria-label="Показатели">
+        {overviewKpis.map((kpi) => (
+          <GlassCard className={`kpi-card kpi-card--${kpi.tone}`} key={kpi.label} elevated>
+            <span>{kpi.label}</span>
+            <strong>{kpi.value}</strong>
+            <p>{kpi.meta}</p>
+          </GlassCard>
+        ))}
+      </section>
 
-      <div className="overview__reference" aria-label="Путь к HTML-прототипу">
-        <span>Открыть HTML-прототип</span>
-        <code>docs/prototype/admin-events-center.html</code>
-      </div>
+      <section className="content-grid content-grid--wide-left">
+        <GlassCard>
+          <div className="section-title">
+            <h2>Следующие шаги</h2>
+            <Badge tone="gold">roadmap</Badge>
+          </div>
+          <ul className="soft-list">
+            {nextSteps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ul>
+        </GlassCard>
 
-      <section className="overview__sections" aria-labelledby="future-sections-title">
-        <h2 id="future-sections-title">Будущие разделы</h2>
-        <ul>
-          {futureSections.map((section) => (
-            <li key={section}>{section}</li>
-          ))}
-        </ul>
+        <GlassCard className="reference-card">
+          <span>Full UX source of truth</span>
+          <strong>HTML-прототип</strong>
+          <code>docs/prototype/admin-events-center.html</code>
+        </GlassCard>
       </section>
     </div>
   );
