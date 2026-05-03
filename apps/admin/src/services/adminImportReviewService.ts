@@ -17,6 +17,11 @@ type SupabaseRpcError = {
 const DEFAULT_REVIEW_LIMIT = 50;
 const MAX_REVIEW_LIMIT = 100;
 
+type ImportReviewRpcErrorOptions = {
+  fallbackAction: string;
+  rpcName: string;
+};
+
 function isJsonObject(value: JsonValue | null | undefined): value is JsonObject {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -123,7 +128,22 @@ function normalizeImportItemRow(row: AdminImportReviewRow): AdminImportReviewIte
   };
 }
 
-function formatImportReviewRpcError(error: SupabaseRpcError): string {
+function normalizeSingleImportItem(
+  data: AdminImportReviewRow | AdminImportReviewRow[] | null,
+): AdminImportReviewItem {
+  const row = Array.isArray(data) ? data[0] : data;
+
+  if (!row) {
+    throw new Error("Import item не найден или RPC вернул пустой результат.");
+  }
+
+  return normalizeImportItemRow(row);
+}
+
+function formatImportReviewRpcError(
+  error: SupabaseRpcError,
+  { fallbackAction, rpcName }: ImportReviewRpcErrorOptions,
+): string {
   const details = [error.message, error.details, error.hint].filter(Boolean).join(" ");
   const searchable = `${error.code ?? ""} ${details}`.toLowerCase();
 
@@ -135,7 +155,17 @@ function formatImportReviewRpcError(error: SupabaseRpcError): string {
     searchable.includes("42501") ||
     searchable.includes("28000")
   ) {
-    return `Нет доступа к списку import items для текущей сессии. Проверьте роль admin/event_manager и backend role check. ${
+    return `Нет доступа к ${rpcName} для текущей сессии. Проверьте роль admin/event_manager и backend role check. ${
+      details || "Supabase не вернул подробности."
+    }`;
+  }
+
+  if (
+    searchable.includes("p0002") ||
+    searchable.includes("not found") ||
+    searchable.includes("не найден")
+  ) {
+    return `Import item не найден или недоступен для текущей роли. ${
       details || "Supabase не вернул подробности."
     }`;
   }
@@ -144,12 +174,12 @@ function formatImportReviewRpcError(error: SupabaseRpcError): string {
     searchable.includes("could not find the function") ||
     searchable.includes("schema cache")
   ) {
-    return `RPC admin_list_import_items_needing_review недоступен или не найден: ${
+    return `RPC ${rpcName} недоступен или не найден: ${
       details || "Supabase не вернул подробности."
     }`;
   }
 
-  return `Не удалось загрузить import items needing review: ${
+  return `${fallbackAction}: ${
     details || "неизвестная ошибка Supabase."
   }`;
 }
@@ -164,8 +194,37 @@ export async function listImportItemsNeedingReview(
   });
 
   if (error) {
-    throw new Error(formatImportReviewRpcError(error));
+    throw new Error(
+      formatImportReviewRpcError(error, {
+        fallbackAction: "Не удалось загрузить import items needing review",
+        rpcName: "admin_list_import_items_needing_review",
+      }),
+    );
   }
 
   return ((data ?? []) as AdminImportReviewRow[]).map(normalizeImportItemRow);
+}
+
+export async function getImportItem(importItemId: string): Promise<AdminImportReviewItem> {
+  const normalizedId = importItemId.trim();
+
+  if (!normalizedId) {
+    throw new Error("Не удалось загрузить import item: пустой id.");
+  }
+
+  const supabase = requireSupabaseClient();
+  const { data, error } = await supabase.rpc("admin_get_import_item", {
+    import_item_id: normalizedId,
+  });
+
+  if (error) {
+    throw new Error(
+      formatImportReviewRpcError(error, {
+        fallbackAction: "Не удалось загрузить import item",
+        rpcName: "admin_get_import_item",
+      }),
+    );
+  }
+
+  return normalizeSingleImportItem(data as AdminImportReviewRow | AdminImportReviewRow[] | null);
 }
