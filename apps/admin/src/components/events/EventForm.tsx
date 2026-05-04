@@ -69,6 +69,7 @@ type EventFormProps = {
   notice?: ReactNode;
   onCancel: () => void;
   onRegistrationModeChange?: (mode: string) => void;
+  registrationModeSlot?: ReactNode;
   onSubmit: (input: AdminEventMutationInput) => Promise<boolean>;
   submitLabel?: string;
   submitError?: string | null;
@@ -119,6 +120,7 @@ export function EventForm({
   notice = null,
   onCancel,
   onRegistrationModeChange,
+  registrationModeSlot = null,
   onSubmit,
   submitLabel,
   submitError = null,
@@ -423,6 +425,8 @@ export function EventForm({
             Варианты участия и оплаты можно добавить после создания события.
           </div>
         ) : null}
+
+        {registrationModeSlot}
       </section>
 
       {errors.form ? (

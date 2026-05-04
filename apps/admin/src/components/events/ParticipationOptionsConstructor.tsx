@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { Button } from "../ui/Button";
 import {
@@ -618,14 +619,17 @@ export function ParticipationOptionsConstructor({
         </div>
       </footer>
 
-      {modalState.kind !== "closed" ? (
-        <OptionModal
-          onChange={updateModalForm}
-          onClose={closeModal}
-          onSubmit={submitModal}
-          state={modalState}
-        />
-      ) : null}
+      {modalState.kind !== "closed"
+        ? createPortal(
+            <OptionModal
+              onChange={updateModalForm}
+              onClose={closeModal}
+              onSubmit={submitModal}
+              state={modalState}
+            />,
+            document.body,
+          )
+        : null}
     </section>
   );
 }
@@ -835,6 +839,18 @@ type OptionModalProps = {
 
 function OptionModal({ onChange, onClose, onSubmit, state }: OptionModalProps) {
   const { form, errors } = state;
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   const isEdit = state.kind === "edit";
   const title = isEdit ? "Редактировать вариант участия" : "Новый вариант участия";
   const submitLabel = isEdit ? "Сохранить" : "Добавить";
