@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { EventForm } from "../components/events/EventForm";
+import { ParticipationOptionsConstructor } from "../components/events/ParticipationOptionsConstructor";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
@@ -83,6 +84,16 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
           submitting={submitting}
         />
       </GlassCard>
+
+      {currentEvent.registrationMode === "internal_paid" ? (
+        <GlassCard className="event-create-card" elevated>
+          <ParticipationOptionsConstructor
+            defaultPriceCurrency={currentEvent.priceCurrency}
+            eventCapacity={currentEvent.capacity}
+            eventId={currentEvent.id}
+          />
+        </GlassCard>
+      ) : null}
     </div>
   );
 }

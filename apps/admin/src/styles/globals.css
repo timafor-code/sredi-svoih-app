@@ -1522,6 +1522,169 @@ a {
   font-size: 13px;
 }
 
+.participation-constructor {
+  display: grid;
+  gap: 16px;
+}
+
+.participation-constructor__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.participation-constructor__head h2 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.participation-constructor__head p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.participation-constructor__head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.participation-constructor__preview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.participation-constructor__preview > div {
+  display: grid;
+  gap: 4px;
+}
+
+.participation-constructor__preview span {
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.participation-constructor__preview strong {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.participation-constructor__preview-warning {
+  grid-column: 1 / -1;
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.participation-constructor__empty {
+  margin: 0;
+  padding: 16px;
+  border: 1px dashed var(--glass-border);
+  border-radius: var(--radius);
+  color: var(--text-soft);
+  font-size: 13px;
+  text-align: center;
+}
+
+.participation-constructor__list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.participation-option-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.participation-option-card--inactive {
+  opacity: 0.6;
+}
+
+.participation-option-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.participation-option-card__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.participation-option-card__title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+
+.participation-option-card__title em {
+  font-style: normal;
+  color: var(--text-soft);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.participation-option-card__index {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.participation-option-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.participation-constructor__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.participation-constructor__saved {
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.participation-constructor__dirty {
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .import-notice {
   display: flex;
   align-items: flex-start;
