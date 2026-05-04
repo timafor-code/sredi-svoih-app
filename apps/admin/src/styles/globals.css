@@ -3204,3 +3204,62 @@ a {
     flex-direction: column;
   }
 }
+
+.event-form-participation-slot {
+  grid-column: 1 / -1;
+  margin-top: 14px;
+}
+
+.participation-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.68);
+  backdrop-filter: blur(6px);
+}
+
+.participation-modal {
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  background: var(--surface-strong);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
+
+.participation-modal__body {
+  max-height: none;
+  overflow: visible;
+}
+
+.participation-modal__footer {
+  position: sticky;
+  bottom: 0;
+  margin: 18px -20px -20px;
+  padding: 14px 20px 20px;
+  border-top: 1px solid var(--glass-border);
+  background: linear-gradient(
+    180deg,
+    rgba(29, 29, 48, 0.88),
+    var(--surface-strong)
+  );
+}
+
+.participation-modal {
+  width: min(760px, calc(100vw - 48px));
+  max-height: none;
+  overflow: visible;
+}
+
+.participation-modal__footer {
+  position: static;
+  margin: 18px 0 0;
+  padding: 14px 10px 10px;
+  border-top: 1px solid var(--glass-border);
+  background: transparent;
+}

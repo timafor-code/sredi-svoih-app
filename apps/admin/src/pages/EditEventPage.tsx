@@ -53,6 +53,8 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
     }
   };
 
+  const showParticipationOptions = draftRegistrationMode === "internal_paid";
+
   return (
     <div className="page-stack page-stack--event-create">
       <section className="page-header">
@@ -85,21 +87,23 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
           mode="edit"
           onCancel={onBackToList}
           onRegistrationModeChange={setDraftRegistrationMode}
+          registrationModeSlot={
+            showParticipationOptions ? (
+              <div className="event-form-participation-slot">
+                <ParticipationOptionsConstructor
+                  defaultPriceCurrency={currentEvent.priceCurrency}
+                  eventCapacity={currentEvent.capacity}
+                  eventId={currentEvent.id}
+                />
+              </div>
+            ) : null
+          }
           onSubmit={handleSubmit}
           submitError={submitError}
           submitting={submitting}
         />
       </GlassCard>
 
-      {draftRegistrationMode === "internal_paid" ? (
-        <GlassCard className="event-create-card" elevated>
-          <ParticipationOptionsConstructor
-            defaultPriceCurrency={currentEvent.priceCurrency}
-            eventCapacity={currentEvent.capacity}
-            eventId={currentEvent.id}
-          />
-        </GlassCard>
-      ) : null}
     </div>
   );
 }
