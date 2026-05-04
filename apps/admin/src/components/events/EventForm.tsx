@@ -412,10 +412,9 @@ export function EventForm({
           />
         </div>
 
-        {form.registrationMode === "internal_paid" ? (
+        {form.registrationMode === "internal_paid" && mode === "create" ? (
           <div className="event-form-notice">
-            Варианты участия и расчёт суммы будут добавлены отдельным PR. Сейчас можно
-            сохранить событие с режимом internal_paid без вариантов.
+            Варианты участия и оплаты можно добавить после создания события.
           </div>
         ) : null}
       </section>
