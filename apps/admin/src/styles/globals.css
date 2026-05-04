@@ -600,6 +600,11 @@ a {
   color: #1d1506;
 }
 
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -1026,15 +1031,19 @@ a {
 }
 
 .data-table--events {
-  min-width: 1360px;
+  min-width: 1280px;
 }
 
 .data-table--events .data-table__row {
   grid-template-columns:
-    48px minmax(210px, 1.35fr) minmax(156px, 0.82fr) minmax(152px, 0.8fr)
+    minmax(360px, 1.65fr) minmax(156px, 0.82fr) minmax(152px, 0.8fr)
     minmax(150px, 0.74fr) minmax(118px, 0.58fr) minmax(132px, 0.66fr)
-    minmax(94px, 0.48fr) minmax(112px, 0.56fr) minmax(142px, 0.7fr)
-    minmax(124px, 0.62fr);
+    minmax(94px, 0.48fr) minmax(112px, 0.56fr) minmax(142px, 0.7fr);
+}
+
+.data-table--events .data-table__row--event-main {
+  border-bottom: 0;
+  padding-bottom: 8px;
 }
 
 .event-thumb {
@@ -1064,6 +1073,20 @@ a {
   display: grid;
   min-width: 0;
   gap: 4px;
+}
+
+.event-table__identity {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  min-width: 0;
+  align-items: start;
+  gap: 10px;
+}
+
+.event-table__identity-body {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
 }
 
 .event-table__cell-stack small,
@@ -1115,16 +1138,206 @@ a {
   outline-offset: 3px;
 }
 
-.event-table__actions {
+.event-actions-row {
+  grid-column: 1 / -1;
+  border-bottom: 1px solid var(--glass-border);
+  padding: 0 16px 12px;
+}
+
+.event-actions-row:last-child {
+  border-bottom: 0;
+}
+
+.event-actions-bar {
   display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
   min-width: 0;
   align-items: center;
+  gap: 8px;
+}
+
+.event-actions-bar .button--sm {
+  min-height: 28px;
+  border-radius: 6px;
+  padding: 0 9px;
+  font-size: 11px;
 }
 
 .badge-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.events-action-feedback {
+  border: 1px solid rgba(53, 199, 89, 0.26);
+  border-left: 3px solid var(--green);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: rgba(53, 199, 89, 0.1);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.event-status-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 0 9px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease;
+  white-space: nowrap;
+}
+
+.event-status-action:hover {
+  background: var(--glass-strong);
+  color: var(--text);
+}
+
+.event-status-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.event-status-action--publish {
+  border-color: rgba(242, 184, 75, 0.3);
+  color: var(--gold);
+}
+
+.event-status-action--hide,
+.event-status-action--draft {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.event-status-action--cancel,
+.event-status-action--archive {
+  border-color: rgba(229, 44, 54, 0.26);
+  color: #ff9ca2;
+}
+
+.event-action-dialog-backdrop {
+  position: fixed;
+  z-index: 45;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(8, 8, 17, 0.74);
+  backdrop-filter: blur(12px);
+}
+
+.event-action-dialog {
+  display: grid;
+  width: min(100%, 640px);
+  max-height: min(720px, calc(100vh - 48px));
+  gap: 16px;
+  overflow: auto;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 18px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.event-action-dialog__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.event-action-dialog__head > div {
+  display: grid;
+  gap: 8px;
+}
+
+.event-action-dialog__head h2,
+.event-action-dialog__event strong,
+.event-action-state p,
+.event-action-dialog__notice p {
+  margin: 0;
+}
+
+.event-action-dialog__head h2 {
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.event-action-dialog__event {
+  display: grid;
+  gap: 6px;
+}
+
+.event-action-dialog__event span,
+.event-action-state > span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.event-action-dialog__event strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.event-action-dialog__states {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.event-action-state {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 9px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.event-action-state--next {
+  border-left: 3px solid var(--gold);
+  background: rgba(242, 184, 75, 0.08);
+}
+
+.event-action-state p,
+.event-action-dialog__notice p {
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.event-action-dialog__notice {
+  border-left: 3px solid var(--gold);
+  padding: 11px 13px;
+  background: rgba(242, 184, 75, 0.08);
+}
+
+.event-action-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .event-create-card {
@@ -2143,7 +2356,17 @@ a {
     padding: 0;
   }
 
+  .event-action-dialog-backdrop {
+    padding: 0;
+  }
+
   .import-detail-drawer {
+    width: 100%;
+    max-height: 100%;
+    border-radius: 0;
+  }
+
+  .event-action-dialog {
     width: 100%;
     max-height: 100%;
     border-radius: 0;
@@ -2181,6 +2404,8 @@ a {
 
   .events-toolbar__top,
   .events-toolbar__actions,
+  .event-action-dialog__head,
+  .event-action-dialog__actions,
   .events-summary,
   .event-create-success,
   .import-review-item__head,
@@ -2190,6 +2415,7 @@ a {
   }
 
   .events-filters,
+  .event-action-dialog__states,
   .event-form-grid--two,
   .event-form-grid--time {
     grid-template-columns: 1fr;
@@ -2200,6 +2426,7 @@ a {
   }
 
   .event-create-actions,
+  .event-action-dialog__actions .button,
   .event-create-success .button {
     width: 100%;
   }

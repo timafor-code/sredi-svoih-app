@@ -105,4 +105,4 @@ export type CreateAdminEventInput = AdminEventMutationInput & {
   communityId: string;
 };
 
-export type UpdateAdminEventInput = AdminEventMutationInput;
+export type UpdateAdminEventInput = Partial<AdminEventMutationInput>;
