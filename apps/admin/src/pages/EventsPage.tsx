@@ -1,20 +1,50 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
-import { listAdminEvents } from "../services/adminEventsService";
+import { listAdminEvents, updateAdminEvent } from "../services/adminEventsService";
 import type { AdminBadgeTone } from "../types/admin";
 import type {
   AdminEvent,
   AdminEventRegistrationMode,
   AdminEventStatus,
   AdminEventVisibility,
+  UpdateAdminEventInput,
 } from "../types/events";
 
 type StatusFilter = "all" | AdminEventStatus;
 type VisibilityFilter = "all" | AdminEventVisibility;
 type RegistrationModeFilter = "all" | AdminEventRegistrationMode;
+type EventStatusActionId = "publish" | "hide" | "draft" | "cancel" | "archive";
+type ActionButtonVariant = "primary" | "secondary" | "ghost" | "gold";
+
+type EventStatusAction = {
+  id: EventStatusActionId;
+  label: string;
+  loadingLabel: string;
+  confirmLabel: string;
+  variant: ActionButtonVariant;
+};
+
+type PendingEventAction = {
+  action: EventStatusAction;
+  event: AdminEvent;
+};
+
+type EventStatusActionPlan = PendingEventAction & {
+  nextStatus: string;
+  nextVisibility: string;
+  payload: UpdateAdminEventInput;
+  summary: string;
+};
 
 type EventsPageProps = {
   onCreateEvent: () => void;
@@ -45,6 +75,44 @@ const REGISTRATION_MODE_FILTERS: Array<{ value: RegistrationModeFilter; label: s
   { value: "internal_paid", label: "internal_paid" },
 ];
 
+const EVENT_STATUS_ACTIONS: EventStatusAction[] = [
+  {
+    id: "publish",
+    label: "Опубликовать",
+    loadingLabel: "Публикуем...",
+    confirmLabel: "Опубликовать",
+    variant: "gold",
+  },
+  {
+    id: "hide",
+    label: "Скрыть",
+    loadingLabel: "Скрываем...",
+    confirmLabel: "Скрыть",
+    variant: "secondary",
+  },
+  {
+    id: "draft",
+    label: "Вернуть в черновик",
+    loadingLabel: "Возвращаем...",
+    confirmLabel: "Вернуть в черновик",
+    variant: "secondary",
+  },
+  {
+    id: "cancel",
+    label: "Отменить",
+    loadingLabel: "Отменяем...",
+    confirmLabel: "Отменить событие",
+    variant: "primary",
+  },
+  {
+    id: "archive",
+    label: "В архив",
+    loadingLabel: "Архивируем...",
+    confirmLabel: "Перенести в архив",
+    variant: "primary",
+  },
+];
+
 export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: EventsPageProps) {
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,6 +123,10 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
   const [registrationModeFilter, setRegistrationModeFilter] =
     useState<RegistrationModeFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [pendingAction, setPendingAction] = useState<PendingEventAction | null>(null);
+  const [actionInFlight, setActionInFlight] = useState<PendingEventAction | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
   const loadEvents = useCallback(async () => {
     setLoading(true);
@@ -63,12 +135,14 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
     try {
       const nextEvents = await listAdminEvents();
       setEvents(nextEvents);
+      return true;
     } catch (nextError) {
       setError(
         nextError instanceof Error
           ? nextError.message
           : "Не удалось загрузить события из Supabase.",
       );
+      return false;
     } finally {
       setLoading(false);
     }
@@ -145,6 +219,54 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
     visibilityFilter !== "all" ||
     registrationModeFilter !== "all" ||
     categoryFilter !== "all";
+
+  const requestStatusAction = useCallback((event: AdminEvent, action: EventStatusAction) => {
+    setPendingAction({ action, event });
+    setActionError(null);
+    setActionSuccess(null);
+  }, []);
+
+  const cancelStatusAction = useCallback(() => {
+    if (!actionInFlight) {
+      setPendingAction(null);
+      setActionError(null);
+    }
+  }, [actionInFlight]);
+
+  const confirmStatusAction = useCallback(async () => {
+    if (!pendingAction || actionInFlight) {
+      return;
+    }
+
+    const plan = buildEventStatusActionPlan(pendingAction.event, pendingAction.action);
+    setActionInFlight(pendingAction);
+    setActionError(null);
+    setActionSuccess(null);
+
+    try {
+      await updateAdminEvent(pendingAction.event.id, plan.payload);
+      const listReloaded = await loadEvents();
+
+      setPendingAction(null);
+      setActionSuccess(
+        listReloaded
+          ? `Событие «${pendingAction.event.title}» обновлено через admin_update_event.`
+          : `Событие «${pendingAction.event.title}» обновлено, но список не удалось перезагрузить.`,
+      );
+    } catch (nextError) {
+      setActionError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Не удалось обновить событие через admin_update_event.",
+      );
+    } finally {
+      setActionInFlight(null);
+    }
+  }, [actionInFlight, loadEvents, pendingAction]);
+
+  const pendingActionPlan = pendingAction
+    ? buildEventStatusActionPlan(pendingAction.event, pendingAction.action)
+    : null;
 
   return (
     <div className="page-stack page-stack--events">
@@ -247,6 +369,12 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
         </div>
       </GlassCard>
 
+      {actionSuccess ? (
+        <div className="events-action-feedback" role="status">
+          {actionSuccess}
+        </div>
+      ) : null}
+
       <GlassCard className="table-panel" elevated>
         <div className="table-panel__header">
           <h2>Список событий</h2>
@@ -293,26 +421,44 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
             ) : null}
           </EventsState>
         ) : (
-          <EventsTable events={filteredEvents} onEditEvent={onEditEvent} />
+          <EventsTable
+            actionInFlight={actionInFlight}
+            events={filteredEvents}
+            onEditEvent={onEditEvent}
+            onRequestStatusAction={requestStatusAction}
+          />
         )}
       </GlassCard>
+
+      {pendingActionPlan ? (
+        <EventStatusActionDialog
+          error={actionError}
+          isLoading={Boolean(actionInFlight)}
+          onCancel={cancelStatusAction}
+          onConfirm={confirmStatusAction}
+          plan={pendingActionPlan}
+        />
+      ) : null}
     </div>
   );
 }
 
 function EventsTable({
+  actionInFlight,
   events,
   onEditEvent,
+  onRequestStatusAction,
 }: {
+  actionInFlight: PendingEventAction | null;
   events: AdminEvent[];
   onEditEvent: (event: AdminEvent) => void;
+  onRequestStatusAction: (event: AdminEvent, action: EventStatusAction) => void;
 }) {
   return (
     <div className="events-table-scroll">
       <div className="data-table data-table--events" role="table" aria-label="События">
         <div className="data-table__row data-table__row--head" role="row">
-          <span role="columnheader">Афиша</span>
-          <span role="columnheader">Название</span>
+          <span role="columnheader">Афиша / Название</span>
           <span role="columnheader">Дата/время</span>
           <span role="columnheader">Место</span>
           <span role="columnheader">Статусы</span>
@@ -321,62 +467,319 @@ function EventsTable({
           <span role="columnheader">Capacity</span>
           <span role="columnheader">Source</span>
           <span role="columnheader">Updated</span>
-          <span role="columnheader">Действия</span>
         </div>
 
-        {events.map((event) => (
-          <div className="data-table__row" key={event.id} role="row">
-            <EventThumb event={event} />
-            <div className="event-table__cell-stack event-table__title" role="cell">
-              <button
-                className="event-table__title-button"
-                onClick={() => onEditEvent(event)}
-                type="button"
-              >
-                {event.title}
-              </button>
-              {event.subtitle ? <span>{event.subtitle}</span> : null}
-            </div>
-            <span role="cell">{formatEventDateRange(event)}</span>
-            <div className="event-table__cell-stack" role="cell">
-              <span>{event.locationName || event.address || "Не указано"}</span>
-              {event.locationName && event.address ? <small>{event.address}</small> : null}
-            </div>
-            <span className="badge-row" role="cell">
-              <Badge tone={getStatusTone(event.status)}>{event.status}</Badge>
-              <Badge tone={getVisibilityTone(event.visibility)}>{event.visibility}</Badge>
-            </span>
-            <span role="cell">{event.category || "Не указана"}</span>
-            <span role="cell">
-              <Badge tone={getRegistrationModeTone(event.registrationMode)}>
-                {event.registrationMode}
-              </Badge>
-            </span>
-            <div className="event-table__cell-stack" role="cell">
-              <span>{formatCapacity(event.capacity)}</span>
-              {event.waitlistEnabled ? <small>waitlist</small> : null}
-              {event.requiresApproval ? <small>approval</small> : null}
-            </div>
-            <div className="event-table__cell-stack" role="cell">
-              <span>{event.sourceType}</span>
-              {event.sourceExternalId ? <small>{event.sourceExternalId}</small> : null}
-            </div>
-            <span role="cell">{formatDateTime(event.updatedAt, null)}</span>
-            <div className="event-table__actions" role="cell">
-              <Button onClick={() => onEditEvent(event)} size="sm">
-                Редактировать
-              </Button>
-            </div>
-          </div>
-        ))}
+        {events.map((event) => {
+          const activeActionId =
+            actionInFlight?.event.id === event.id ? actionInFlight.action.id : null;
+          const isActionDisabled = Boolean(actionInFlight);
+          const secondaryText = event.subtitle ?? event.shortDescription;
+          const visibleStatusActions = getVisibleEventStatusActions(event);
+
+          return (
+            <Fragment key={event.id}>
+              <div className="data-table__row data-table__row--event-main" role="row">
+                <div className="event-table__identity" role="cell">
+                  <EventThumb event={event} />
+                  <div className="event-table__identity-body">
+                    <div className="event-table__cell-stack event-table__title">
+                      <button
+                        className="event-table__title-button"
+                        onClick={() => onEditEvent(event)}
+                        type="button"
+                      >
+                        {event.title}
+                      </button>
+                      {secondaryText ? <span>{secondaryText}</span> : null}
+                    </div>
+                  </div>
+                </div>
+                <span role="cell">{formatEventDateRange(event)}</span>
+                <div className="event-table__cell-stack" role="cell">
+                  <span>{event.locationName || event.address || "Не указано"}</span>
+                  {event.locationName && event.address ? <small>{event.address}</small> : null}
+                </div>
+                <span className="badge-row" role="cell">
+                  <Badge tone={getStatusTone(event.status)}>{event.status}</Badge>
+                  <Badge tone={getVisibilityTone(event.visibility)}>{event.visibility}</Badge>
+                </span>
+                <span role="cell">{event.category || "Не указана"}</span>
+                <span role="cell">
+                  <Badge tone={getRegistrationModeTone(event.registrationMode)}>
+                    {event.registrationMode}
+                  </Badge>
+                </span>
+                <div className="event-table__cell-stack" role="cell">
+                  <span>{formatCapacity(event.capacity)}</span>
+                  {event.waitlistEnabled ? <small>waitlist</small> : null}
+                  {event.requiresApproval ? <small>approval</small> : null}
+                </div>
+                <div className="event-table__cell-stack" role="cell">
+                  <span>{event.sourceType}</span>
+                  {event.sourceExternalId ? <small>{event.sourceExternalId}</small> : null}
+                </div>
+                <span role="cell">{formatDateTime(event.updatedAt, null)}</span>
+              </div>
+              <div className="event-actions-row" role="row">
+                <div
+                  className="event-actions-bar"
+                  role="cell"
+                  aria-label={`Быстрые действия: ${event.title}`}
+                >
+                  <Button onClick={() => onEditEvent(event)} size="sm" type="button">
+                    Редактировать
+                  </Button>
+                  {visibleStatusActions.map((action) => (
+                    <button
+                      className={`event-status-action event-status-action--${action.id}`}
+                      disabled={isActionDisabled}
+                      key={action.id}
+                      onClick={() => onRequestStatusAction(event, action)}
+                      type="button"
+                    >
+                      {activeActionId === action.id ? action.loadingLabel : action.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </Fragment>
+          );
+        })}
       </div>
     </div>
   );
 }
 
+function EventStatusActionDialog({
+  error,
+  isLoading,
+  onCancel,
+  onConfirm,
+  plan,
+}: {
+  error: string | null;
+  isLoading: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  plan: EventStatusActionPlan;
+}) {
+  return (
+    <div
+      className="event-action-dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !isLoading) {
+          onCancel();
+        }
+      }}
+    >
+      <section
+        aria-labelledby="event-action-dialog-title"
+        aria-modal="true"
+        className="event-action-dialog"
+        role="dialog"
+      >
+        <div className="event-action-dialog__head">
+          <div>
+            <Badge tone={getStatusTone(plan.nextStatus)}>{plan.action.label}</Badge>
+            <h2 id="event-action-dialog-title">Подтвердить действие</h2>
+          </div>
+          <Button disabled={isLoading} onClick={onCancel} variant="ghost">
+            Закрыть
+          </Button>
+        </div>
+
+        <div className="event-action-dialog__event">
+          <span>Событие</span>
+          <strong>{plan.event.title}</strong>
+        </div>
+
+        <div className="event-action-dialog__states">
+          <div className="event-action-state">
+            <span>Сейчас</span>
+            <div className="badge-row">
+              <Badge tone={getStatusTone(plan.event.status)}>{plan.event.status}</Badge>
+              <Badge tone={getVisibilityTone(plan.event.visibility)}>
+                {plan.event.visibility}
+              </Badge>
+            </div>
+            <p>{getMobileVisibilityNotice(plan.event.status, plan.event.visibility)}</p>
+          </div>
+
+          <div className="event-action-state event-action-state--next">
+            <span>Будет</span>
+            <div className="badge-row">
+              <Badge tone={getStatusTone(plan.nextStatus)}>{plan.nextStatus}</Badge>
+              <Badge tone={getVisibilityTone(plan.nextVisibility)}>
+                {plan.nextVisibility}
+              </Badge>
+            </div>
+            <p>{getMobileVisibilityNotice(plan.nextStatus, plan.nextVisibility)}</p>
+          </div>
+        </div>
+
+        <div className="event-action-dialog__notice">
+          <p>{plan.summary}</p>
+        </div>
+
+        {error ? (
+          <div className="form-error" role="alert">
+            {error}
+          </div>
+        ) : null}
+
+        <div className="event-action-dialog__actions">
+          <Button disabled={isLoading} onClick={onCancel} variant="secondary">
+            Отмена
+          </Button>
+          <Button disabled={isLoading} onClick={onConfirm} variant={plan.action.variant}>
+            {isLoading ? plan.action.loadingLabel : plan.action.confirmLabel}
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function buildEventStatusActionPlan(
+  event: AdminEvent,
+  action: EventStatusAction,
+): EventStatusActionPlan {
+  if (action.id === "publish") {
+    const nextVisibility = getPublishedVisibility(event.visibility);
+
+    return {
+      action,
+      event,
+      nextStatus: "published",
+      nextVisibility,
+      payload: {
+        status: "published",
+        visibility: nextVisibility,
+      },
+      summary:
+        event.visibility === "hidden"
+          ? "Сейчас событие hidden, поэтому публикация поставит visibility=public. Если нужно members_only, сначала измените visibility в edit flow."
+          : "Публикация сохранит текущую visibility, потому что она уже не hidden.",
+    };
+  }
+
+  if (action.id === "hide") {
+    return {
+      action,
+      event,
+      nextStatus: event.status,
+      nextVisibility: "hidden",
+      payload: {
+        visibility: "hidden",
+      },
+      summary: "Меняется только visibility. Status останется без изменений.",
+    };
+  }
+
+  if (action.id === "draft") {
+    return {
+      action,
+      event,
+      nextStatus: "draft",
+      nextVisibility: "hidden",
+      payload: {
+        status: "draft",
+        visibility: "hidden",
+      },
+      summary:
+        event.status === "published"
+          ? "Опубликованное событие вернётся в черновик и станет hidden."
+          : "Событие станет черновиком и будет скрыто из мобильного приложения.",
+    };
+  }
+
+  if (action.id === "cancel") {
+    return {
+      action,
+      event,
+      nextStatus: "cancelled",
+      nextVisibility: event.visibility,
+      payload: {
+        status: "cancelled",
+      },
+      summary:
+        "Регистрации не отменяются автоматически. Уведомления и обработка регистраций будут добавлены отдельным PR.",
+    };
+  }
+
+  return {
+    action,
+    event,
+    nextStatus: "archived",
+    nextVisibility: "hidden",
+    payload: {
+      status: "archived",
+      visibility: "hidden",
+    },
+    summary:
+      "Событие будет отправлено в архив и скрыто. Регистрации, уведомления и payment changes здесь не меняются.",
+  };
+}
+
+function getPublishedVisibility(currentVisibility: string): AdminEventVisibility {
+  return currentVisibility === "public" || currentVisibility === "members_only"
+    ? currentVisibility
+    : "public";
+}
+
+function getVisibleEventStatusActions(event: AdminEvent): EventStatusAction[] {
+  return EVENT_STATUS_ACTIONS.filter((action) => {
+    if (action.id === "publish") {
+      return event.status === "draft";
+    }
+
+    if (action.id === "hide") {
+      return event.visibility !== "hidden";
+    }
+
+    if (action.id === "draft") {
+      return event.status !== "draft";
+    }
+
+    if (action.id === "cancel") {
+      return event.status === "draft" || event.status === "published";
+    }
+
+    return event.status !== "archived";
+  });
+}
+
+function getMobileVisibilityNotice(status: string, visibility: string): string {
+  if (status === "draft") {
+    return "Черновик не отображается в мобильном приложении.";
+  }
+
+  if (status === "cancelled") {
+    return "Отменённое событие не должно быть доступно для новых регистраций и не должно показываться как активное.";
+  }
+
+  if (visibility === "hidden") {
+    return "Hidden не отображается в мобильном приложении.";
+  }
+
+  if (status === "archived") {
+    return "Архивное событие не отображается как активное в мобильном приложении.";
+  }
+
+  if (status === "published" && visibility === "public") {
+    return "Опубликованное public-событие будет видно всем пользователям.";
+  }
+
+  if (status === "published" && visibility === "members_only") {
+    return "Members only будет видно только участникам общины.";
+  }
+
+  return "Событие не станет published/public, поэтому не должно отображаться как публичное активное событие.";
+}
+
 function EventThumb({ event }: { event: AdminEvent }) {
   return (
-    <div className="event-thumb" role="cell">
+    <div className="event-thumb" aria-hidden="true">
       <span>{event.title.trim().slice(0, 1).toLocaleUpperCase("ru") || "С"}</span>
       {event.imageUrl ? (
         <img

@@ -173,8 +173,12 @@ export async function updateAdminEvent(
   return normalizeSingleAdminEvent(data as Partial<AdminEventRow> | Partial<AdminEventRow>[] | null);
 }
 
-function buildAdminEventMutationPayload(input: AdminEventMutationInput) {
-  return {
+type AdminEventMutationPayload = Record<string, string | number | boolean | null>;
+
+function buildAdminEventMutationPayload(
+  input: Partial<AdminEventMutationInput>,
+): AdminEventMutationPayload {
+  const payload = {
     title: input.title,
     subtitle: input.subtitle,
     shortDescription: input.shortDescription,
@@ -196,5 +200,9 @@ function buildAdminEventMutationPayload(input: AdminEventMutationInput) {
     requiresApproval: input.requiresApproval,
     priceAmount: input.priceAmount,
     priceCurrency: input.priceCurrency,
-  };
+  } satisfies Record<string, string | number | boolean | null | undefined>;
+
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined),
+  ) as AdminEventMutationPayload;
 }
