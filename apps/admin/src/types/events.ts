@@ -76,3 +76,28 @@ export type AdminEvent = {
   updatedAt: string;
   publishedAt: string | null;
 };
+
+export type CreateAdminEventInput = {
+  communityId: string;
+  title: string;
+  subtitle: string | null;
+  shortDescription: string | null;
+  description: string | null;
+  startsAt: string;
+  endsAt: string | null;
+  timezone: string;
+  locationName: string | null;
+  address: string | null;
+  imageUrl: string | null;
+  category: string;
+  audience: string | null;
+  visibility: AdminEventVisibility;
+  status: AdminEventStatus;
+  registrationMode: AdminEventRegistrationMode;
+  registrationUrl: string | null;
+  capacity: number | null;
+  waitlistEnabled: boolean;
+  requiresApproval: boolean;
+  priceAmount: number | null;
+  priceCurrency: string;
+};

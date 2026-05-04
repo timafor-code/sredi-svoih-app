@@ -7,6 +7,7 @@ import { useAdminAuth } from "./store/useAdminAuth";
 import type { AdminRole } from "./types/auth";
 import type { AdminSection } from "./types/admin";
 import { ConfigMissingPage } from "./pages/ConfigMissingPage";
+import { CreateEventPage } from "./pages/CreateEventPage";
 import { EventsPage } from "./pages/EventsPage";
 import { FuturePage } from "./pages/FuturePage";
 import { ImportReviewPage } from "./pages/ImportReviewPage";
@@ -29,8 +30,28 @@ export default function App() {
 function AdminApp() {
   const auth = useAdminAuth();
   const [activeSection, setActiveSection] = useState<AdminSection>("overview");
+  const [isCreatingEvent, setIsCreatingEvent] = useState(false);
+  const [eventsRefreshSignal, setEventsRefreshSignal] = useState(0);
   const [importReviewRefreshSignal, setImportReviewRefreshSignal] = useState(0);
   const role = auth.role ?? "member";
+
+  const handleSectionChange = useCallback((section: AdminSection) => {
+    setActiveSection(section);
+    setIsCreatingEvent(false);
+  }, []);
+
+  const handleCreateEvent = useCallback(() => {
+    setActiveSection("events");
+    setIsCreatingEvent(true);
+  }, []);
+
+  const handleEventCreated = useCallback(() => {
+    setEventsRefreshSignal((current) => current + 1);
+  }, []);
+
+  const handleBackToEventsList = useCallback(() => {
+    setIsCreatingEvent(false);
+  }, []);
 
   const handleImportReviewRefresh = useCallback(() => {
     setImportReviewRefreshSignal((current) => current + 1);
@@ -58,14 +79,24 @@ function AdminApp() {
     return <NoAccessPage />;
   }
 
-  const page = renderPage(activeSection, role, importReviewRefreshSignal);
+  const page = renderPage(
+    activeSection,
+    role,
+    isCreatingEvent,
+    eventsRefreshSignal,
+    importReviewRefreshSignal,
+    handleCreateEvent,
+    handleEventCreated,
+    handleBackToEventsList,
+  );
 
   return (
     <AdminLayout
       activeSection={activeSection}
       membership={auth.membership}
+      onCreateEvent={handleCreateEvent}
       onImportReviewRefresh={handleImportReviewRefresh}
-      onSectionChange={setActiveSection}
+      onSectionChange={handleSectionChange}
       onSignOut={auth.signOut}
       profile={auth.profile}
       role={role}
@@ -87,7 +118,12 @@ function AuthStatusScreen() {
 function renderPage(
   activeSection: AdminSection,
   role: AdminRole,
+  isCreatingEvent: boolean,
+  eventsRefreshSignal: number,
   importReviewRefreshSignal: number,
+  onCreateEvent: () => void,
+  onEventCreated: () => void,
+  onBackToEventsList: () => void,
 ) {
   if (role === "member" || !canRoleOpenSection(role, activeSection)) {
     return <NoAccessPage />;
@@ -101,7 +137,11 @@ function renderPage(
     case "overview":
       return <OverviewPage />;
     case "events":
-      return <EventsPage />;
+      return isCreatingEvent ? (
+        <CreateEventPage onBackToList={onBackToEventsList} onCreated={onEventCreated} />
+      ) : (
+        <EventsPage onCreateEvent={onCreateEvent} refreshSignal={eventsRefreshSignal} />
+      );
     case "import":
       return <ImportReviewPage refreshSignal={importReviewRefreshSignal} />;
     case "registrations":

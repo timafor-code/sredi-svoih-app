@@ -16,6 +16,11 @@ type StatusFilter = "all" | AdminEventStatus;
 type VisibilityFilter = "all" | AdminEventVisibility;
 type RegistrationModeFilter = "all" | AdminEventRegistrationMode;
 
+type EventsPageProps = {
+  onCreateEvent: () => void;
+  refreshSignal: number;
+};
+
 const STATUS_FILTERS: Array<{ value: StatusFilter; label: string }> = [
   { value: "all", label: "Все" },
   { value: "draft", label: "draft" },
@@ -39,7 +44,7 @@ const REGISTRATION_MODE_FILTERS: Array<{ value: RegistrationModeFilter; label: s
   { value: "internal_paid", label: "internal_paid" },
 ];
 
-export function EventsPage() {
+export function EventsPage({ onCreateEvent, refreshSignal }: EventsPageProps) {
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +75,7 @@ export function EventsPage() {
 
   useEffect(() => {
     void loadEvents();
-  }, [loadEvents]);
+  }, [loadEvents, refreshSignal]);
 
   const categoryOptions = useMemo(
     () =>
@@ -143,9 +148,9 @@ export function EventsPage() {
   return (
     <div className="page-stack page-stack--events">
       <section className="page-header">
-        <Badge tone="green">read-only</Badge>
+        <Badge tone="green">Supabase</Badge>
         <h1>События</h1>
-        <p>Просмотр событий. Создание и редактирование будут добавлены отдельным PR.</p>
+        <p>Просмотр событий и ручное создание через RPC admin_create_event.</p>
       </section>
 
       <GlassCard className="events-toolbar">
@@ -154,9 +159,14 @@ export function EventsPage() {
             <h2>Фильтры</h2>
             <p>Список читается из `public.events` с текущей сессией и действующими RLS.</p>
           </div>
-          <Button disabled={loading} onClick={loadEvents}>
-            {loading ? "Обновляем..." : "Обновить"}
-          </Button>
+          <div className="events-toolbar__actions">
+            <Button onClick={onCreateEvent} variant="primary">
+              Создать событие
+            </Button>
+            <Button disabled={loading} onClick={loadEvents}>
+              {loading ? "Обновляем..." : "Обновить"}
+            </Button>
+          </div>
         </div>
 
         <div className="events-filters" aria-label="Фильтры событий">

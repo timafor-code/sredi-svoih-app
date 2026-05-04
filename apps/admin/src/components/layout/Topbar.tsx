@@ -16,6 +16,7 @@ type TopbarProps = {
   profile: AdminProfile | null;
   role: AdminRole;
   isImportSection: boolean;
+  onCreateEvent: () => void;
   onOpenImportReview: () => void;
   onRefreshImportReview: () => void;
   onSignOut: () => void;
@@ -27,6 +28,7 @@ export function Topbar({
   profile,
   role,
   isImportSection,
+  onCreateEvent,
   onOpenImportReview,
   onRefreshImportReview,
   onSignOut,
@@ -69,10 +71,6 @@ export function Topbar({
       window.clearTimeout(timeoutId);
     };
   }, [copyState]);
-
-  const handleCreateEvent = () => {
-    window.alert("Будет добавлено позже");
-  };
 
   const handleCopyCommands = async () => {
     try {
@@ -117,7 +115,7 @@ export function Topbar({
       </label>
 
       <div className="topbar__actions">
-        <Button onClick={handleCreateEvent} variant="primary">
+        <Button onClick={onCreateEvent} variant="primary">
           Создать событие
         </Button>
         <Button onClick={openImportWorkflow} variant="secondary">
