@@ -1,6 +1,10 @@
 import { requireSupabaseClient } from "./supabaseClient";
+import { normalizeAdminEventRow } from "./adminEventsService";
+import type { AdminEventRow } from "../types/events";
 import type {
   AdminImportAdminReview,
+  AdminPublishImportItemPayload,
+  AdminPublishImportItemResult,
   AdminImportReview,
   AdminImportReviewItem,
   AdminImportReviewRow,
@@ -161,6 +165,73 @@ function normalizeSingleImportItem(
   return normalizeImportItemRow(row);
 }
 
+function getSingleRpcResult(data: unknown): unknown {
+  return Array.isArray(data) ? data[0] : data;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isAdminEventResult(value: unknown): value is Partial<AdminEventRow> {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return "title" in value || "starts_at" in value || "manual_override" in value;
+}
+
+function isImportItemResult(value: unknown): value is AdminImportReviewRow {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return "source_id" in value && "raw_payload" in value;
+}
+
+function normalizePublishImportItemResult(data: unknown): AdminPublishImportItemResult {
+  const row = getSingleRpcResult(data);
+
+  if (isAdminEventResult(row)) {
+    const event = normalizeAdminEventRow(row);
+
+    return {
+      event,
+      importItem: null,
+      linkedEventId: event.id || null,
+      raw: data,
+    };
+  }
+
+  if (isImportItemResult(row)) {
+    const importItem = normalizeImportItemRow(row);
+
+    return {
+      event: null,
+      importItem,
+      linkedEventId: importItem.linkedEventId,
+      raw: data,
+    };
+  }
+
+  if (isRecord(row)) {
+    const linkedEventId =
+      nullableString(row.linkedEventId) ??
+      nullableString(row.linked_event_id) ??
+      nullableString(row.eventId) ??
+      nullableString(row.event_id);
+
+    return {
+      event: null,
+      importItem: null,
+      linkedEventId,
+      raw: data,
+    };
+  }
+
+  throw new Error("admin_publish_import_item вернул пустой или неподдерживаемый результат.");
+}
+
 function formatImportReviewRpcError(
   error: SupabaseRpcError,
   { fallbackAction, rpcName }: ImportReviewRpcErrorOptions,
@@ -277,4 +348,39 @@ export async function ignoreImportItem(
   }
 
   return normalizeSingleImportItem(data as AdminImportReviewRow | AdminImportReviewRow[] | null);
+}
+
+export async function publishImportItemAsDraft(
+  importItemId: string,
+  payload: AdminPublishImportItemPayload,
+): Promise<AdminPublishImportItemResult> {
+  const normalizedId = importItemId.trim();
+
+  if (!normalizedId) {
+    throw new Error("Не удалось создать событие из import item: пустой id.");
+  }
+
+  const safePayload = {
+    ...payload,
+    status: "draft",
+    visibility: "hidden",
+    manualOverride: true,
+  } satisfies AdminPublishImportItemPayload;
+
+  const supabase = requireSupabaseClient();
+  const { data, error } = await supabase.rpc("admin_publish_import_item", {
+    import_item_id: normalizedId,
+    payload: safePayload,
+  });
+
+  if (error) {
+    throw new Error(
+      formatImportReviewRpcError(error, {
+        fallbackAction: "Не удалось создать событие-черновик из import item",
+        rpcName: "admin_publish_import_item",
+      }),
+    );
+  }
+
+  return normalizePublishImportItemResult(data);
 }

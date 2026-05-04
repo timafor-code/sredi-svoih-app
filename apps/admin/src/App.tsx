@@ -54,6 +54,10 @@ function AdminApp() {
     setEventsRefreshSignal((current) => current + 1);
   }, []);
 
+  const handleImportEventCreated = useCallback(() => {
+    setEventsRefreshSignal((current) => current + 1);
+  }, []);
+
   const handleEditEvent = useCallback((event: AdminEvent) => {
     setActiveSection("events");
     setIsCreatingEvent(false);
@@ -66,6 +70,12 @@ function AdminApp() {
   }, []);
 
   const handleBackToEventsList = useCallback(() => {
+    setIsCreatingEvent(false);
+    setEditingEvent(null);
+  }, []);
+
+  const handleOpenEventsList = useCallback(() => {
+    setActiveSection("events");
     setIsCreatingEvent(false);
     setEditingEvent(null);
   }, []);
@@ -108,6 +118,8 @@ function AdminApp() {
     handleEditEvent,
     handleEventSaved,
     handleBackToEventsList,
+    handleImportEventCreated,
+    handleOpenEventsList,
   );
 
   return (
@@ -147,6 +159,8 @@ function renderPage(
   onEditEvent: (event: AdminEvent) => void,
   onEventSaved: (event: AdminEvent) => void,
   onBackToEventsList: () => void,
+  onImportEventCreated: (event: AdminEvent) => void,
+  onOpenEventsList: () => void,
 ) {
   if (role === "member" || !canRoleOpenSection(role, activeSection)) {
     return <NoAccessPage />;
@@ -184,7 +198,14 @@ function renderPage(
         />
       );
     case "import":
-      return <ImportReviewPage refreshSignal={importReviewRefreshSignal} />;
+      return (
+        <ImportReviewPage
+          onEventCreated={onImportEventCreated}
+          onOpenEvent={onEditEvent}
+          onOpenEventsList={onOpenEventsList}
+          refreshSignal={importReviewRefreshSignal}
+        />
+      );
     case "registrations":
       return <RegistrationsPage />;
     case "members":

@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent, type InputHTMLAttributes } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type InputHTMLAttributes,
+  type ReactNode,
+} from "react";
 
 import { Button } from "../ui/Button";
 import type {
@@ -53,13 +60,18 @@ type FormErrorKey = StringFormField | "waitlistEnabled" | "requiresApproval" | "
 type FormErrors = Partial<Record<FormErrorKey, string>>;
 
 type EventFormProps = {
+  cancelLabel?: string;
   disabled?: boolean;
   disabledMessage?: string | null;
+  forceDraftHidden?: boolean;
   initialEvent?: AdminEvent | null;
   mode: EventFormMode;
+  notice?: ReactNode;
   onCancel: () => void;
   onSubmit: (input: AdminEventMutationInput) => Promise<boolean>;
+  submitLabel?: string;
   submitError?: string | null;
+  submittingLabel?: string;
   submitting: boolean;
 };
 
@@ -97,17 +109,22 @@ const registrationModeOptions = ADMIN_EVENT_REGISTRATION_MODES.map((value) => ({
 }));
 
 export function EventForm({
+  cancelLabel,
   disabled = false,
   disabledMessage = null,
+  forceDraftHidden = false,
   initialEvent = null,
   mode,
+  notice = null,
   onCancel,
   onSubmit,
+  submitLabel,
   submitError = null,
+  submittingLabel,
   submitting,
 }: EventFormProps) {
   const [form, setForm] = useState<EventFormState>(() =>
-    initialEvent ? buildFormFromEvent(initialEvent) : defaultForm,
+    buildInitialForm(initialEvent, forceDraftHidden),
   );
   const [errors, setErrors] = useState<FormErrors>({});
   const [isDirty, setIsDirty] = useState(false);
@@ -118,7 +135,7 @@ export function EventForm({
     const nextEventId = initialEvent?.id ?? null;
     const isDifferentEvent = nextEventId !== previousEventIdRef.current;
 
-    setForm(initialEvent ? buildFormFromEvent(initialEvent) : defaultForm);
+    setForm(buildInitialForm(initialEvent, forceDraftHidden));
     setErrors({});
     setIsDirty(false);
 
@@ -127,28 +144,36 @@ export function EventForm({
     }
 
     previousEventIdRef.current = nextEventId;
-  }, [initialEvent, mode]);
+  }, [forceDraftHidden, initialEvent, mode]);
 
-  const submitLabel =
-    mode === "create" && form.status === "draft" && form.visibility === "hidden"
-      ? "Сохранить черновик"
+  const effectiveStatus = forceDraftHidden ? "draft" : form.status;
+  const effectiveVisibility = forceDraftHidden ? "hidden" : form.visibility;
+  const resolvedSubmitLabel =
+    submitLabel ??
+    (mode === "create" && effectiveStatus === "draft" && effectiveVisibility === "hidden"
+      ? "Сохранить как черновик"
       : mode === "create"
         ? "Создать событие"
-        : "Сохранить изменения";
-  const submittingLabel = mode === "create" ? "Сохраняем..." : "Обновляем...";
-  const cancelLabel = mode === "create" ? "К списку" : "Назад к списку";
+        : "Сохранить изменения");
+  const resolvedSubmittingLabel =
+    submittingLabel ?? (mode === "create" ? "Сохраняем..." : "Обновляем...");
+  const resolvedCancelLabel = cancelLabel ?? (mode === "create" ? "К списку" : "Назад к списку");
   const isSavedEditState = mode === "edit" && hasSuccessfulEditSave && !isDirty;
   const submitButtonLabel = submitting
-    ? submittingLabel
+    ? resolvedSubmittingLabel
     : isSavedEditState
       ? "Изменения сохранены"
-      : submitLabel;
+      : resolvedSubmitLabel;
   const isSubmitDisabled = disabled || submitting || isSavedEditState;
 
   const updateField = <Field extends keyof EventFormState>(
     field: Field,
     value: EventFormState[Field],
   ) => {
+    if (forceDraftHidden && (field === "status" || field === "visibility")) {
+      return;
+    }
+
     setForm((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: undefined, form: undefined }));
 
@@ -166,7 +191,10 @@ export function EventForm({
       return;
     }
 
-    const validation = validateForm(form);
+    const formForValidation = forceDraftHidden
+      ? { ...form, status: "draft", visibility: "hidden" }
+      : form;
+    const validation = validateForm(formForValidation);
     setErrors(validation.errors);
 
     if (!validation.input) {
@@ -194,6 +222,8 @@ export function EventForm({
           {submitError}
         </div>
       ) : null}
+
+      {notice}
 
       <section className="event-form-section">
         <div className="event-form-section__head">
@@ -310,17 +340,19 @@ export function EventForm({
         <div className="event-form-grid event-form-grid--two">
           <SelectField
             error={errors.status}
+            disabled={forceDraftHidden}
             label="Status"
             onChange={(value) => updateField("status", value)}
             options={statusOptions}
-            value={form.status}
+            value={effectiveStatus}
           />
           <SelectField
             error={errors.visibility}
+            disabled={forceDraftHidden}
             label="Visibility"
             onChange={(value) => updateField("visibility", value)}
             options={visibilityOptions}
-            value={form.visibility}
+            value={effectiveVisibility}
           />
         </div>
       </section>
@@ -396,7 +428,7 @@ export function EventForm({
 
       <div className="event-create-actions">
         <Button disabled={submitting} onClick={onCancel} variant="ghost">
-          {cancelLabel}
+          {resolvedCancelLabel}
         </Button>
         <Button disabled={isSubmitDisabled} type="submit" variant="primary">
           {submitButtonLabel}
@@ -450,12 +482,14 @@ function TextAreaField({
 }
 
 function SelectField({
+  disabled = false,
   error,
   label,
   onChange,
   options,
   value,
 }: {
+  disabled?: boolean;
   error?: string;
   label: string;
   onChange: (value: string) => void;
@@ -467,6 +501,7 @@ function SelectField({
       <span>{label}</span>
       <select
         aria-invalid={Boolean(error)}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -500,6 +535,21 @@ function CheckboxField({
       <span>{label}</span>
     </label>
   );
+}
+
+function buildInitialForm(
+  event: AdminEvent | null,
+  forceDraftHidden: boolean,
+): EventFormState {
+  const nextForm = event ? buildFormFromEvent(event) : defaultForm;
+
+  return forceDraftHidden
+    ? {
+        ...nextForm,
+        status: "draft",
+        visibility: "hidden",
+      }
+    : nextForm;
 }
 
 function buildFormFromEvent(event: AdminEvent): EventFormState {

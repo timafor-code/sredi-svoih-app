@@ -1,3 +1,5 @@
+import type { AdminEvent, AdminEventMutationInput } from "./events";
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 export type JsonObject = { [key: string]: JsonValue };
@@ -73,4 +75,16 @@ export type AdminImportReviewItem = {
   adminReview: AdminImportAdminReview | null;
   sourceName: string | null;
   communityId: string | null;
+};
+
+export type AdminPublishImportItemPayload = AdminEventMutationInput & {
+  manualOverride?: boolean;
+  sourceUrl?: string | null;
+};
+
+export type AdminPublishImportItemResult = {
+  event: AdminEvent | null;
+  importItem: AdminImportReviewItem | null;
+  linkedEventId: string | null;
+  raw: unknown;
 };
