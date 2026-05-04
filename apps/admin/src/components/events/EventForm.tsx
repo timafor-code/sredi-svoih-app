@@ -68,6 +68,7 @@ type EventFormProps = {
   mode: EventFormMode;
   notice?: ReactNode;
   onCancel: () => void;
+  onRegistrationModeChange?: (mode: string) => void;
   onSubmit: (input: AdminEventMutationInput) => Promise<boolean>;
   submitLabel?: string;
   submitError?: string | null;
@@ -117,6 +118,7 @@ export function EventForm({
   mode,
   notice = null,
   onCancel,
+  onRegistrationModeChange,
   onSubmit,
   submitLabel,
   submitError = null,
@@ -176,6 +178,10 @@ export function EventForm({
 
     setForm((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: undefined, form: undefined }));
+
+    if (field === "registrationMode" && typeof value === "string") {
+      onRegistrationModeChange?.(value);
+    }
 
     if (mode === "edit") {
       setIsDirty(true);

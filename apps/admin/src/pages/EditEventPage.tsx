@@ -19,12 +19,16 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
   const [savedEvent, setSavedEvent] = useState<AdminEvent | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [draftRegistrationMode, setDraftRegistrationMode] = useState<string>(
+    event.registrationMode,
+  );
 
   useEffect(() => {
     setCurrentEvent(event);
     setSavedEvent(null);
     setSubmitError(null);
-  }, [event.id]);
+    setDraftRegistrationMode(event.registrationMode);
+  }, [event.id, event.registrationMode]);
 
   const handleSubmit = async (input: AdminEventMutationInput) => {
     setSubmitError(null);
@@ -33,6 +37,7 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
     try {
       const nextEvent = await updateAdminEvent(currentEvent.id, input);
       setCurrentEvent(nextEvent);
+      setDraftRegistrationMode(nextEvent.registrationMode);
       setSavedEvent(nextEvent);
       onSaved(nextEvent);
       return true;
@@ -79,13 +84,14 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
           initialEvent={currentEvent}
           mode="edit"
           onCancel={onBackToList}
+          onRegistrationModeChange={setDraftRegistrationMode}
           onSubmit={handleSubmit}
           submitError={submitError}
           submitting={submitting}
         />
       </GlassCard>
 
-      {currentEvent.registrationMode === "internal_paid" ? (
+      {draftRegistrationMode === "internal_paid" ? (
         <GlassCard className="event-create-card" elevated>
           <ParticipationOptionsConstructor
             defaultPriceCurrency={currentEvent.priceCurrency}
