@@ -1,5 +1,5 @@
 import { requireSupabaseClient } from "./supabaseClient";
-import type { AdminEvent, AdminEventRow } from "../types/events";
+import type { AdminEvent, AdminEventRow, CreateAdminEventInput } from "../types/events";
 
 type SupabaseSelectError = {
   message?: string;
@@ -101,6 +101,18 @@ function normalizeAdminEventRow(row: Partial<AdminEventRow>): AdminEvent {
   };
 }
 
+function normalizeSingleAdminEvent(
+  data: Partial<AdminEventRow> | Partial<AdminEventRow>[] | null,
+): AdminEvent {
+  const row = Array.isArray(data) ? data[0] : data;
+
+  if (!row) {
+    throw new Error("Admin event RPC returned an empty result.");
+  }
+
+  return normalizeAdminEventRow(row);
+}
+
 function formatSupabaseError(action: string, error: SupabaseSelectError): string {
   const details = [error.message, error.details, error.hint].filter(Boolean).join(" ");
   return `${action} failed: ${details || "Unknown Supabase error"}`;
@@ -119,4 +131,40 @@ export async function listAdminEvents(): Promise<AdminEvent[]> {
   }
 
   return ((data ?? []) as AdminEventRow[]).map(normalizeAdminEventRow);
+}
+
+export async function createAdminEvent(input: CreateAdminEventInput): Promise<AdminEvent> {
+  const supabase = requireSupabaseClient();
+  const payload = {
+    communityId: input.communityId,
+    title: input.title,
+    subtitle: input.subtitle,
+    shortDescription: input.shortDescription,
+    description: input.description,
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+    timezone: input.timezone,
+    locationName: input.locationName,
+    address: input.address,
+    imageUrl: input.imageUrl,
+    category: input.category,
+    audience: input.audience,
+    visibility: input.visibility,
+    status: input.status,
+    registrationMode: input.registrationMode,
+    registrationUrl: input.registrationUrl,
+    capacity: input.capacity,
+    waitlistEnabled: input.waitlistEnabled,
+    requiresApproval: input.requiresApproval,
+    priceAmount: input.priceAmount,
+    priceCurrency: input.priceCurrency,
+  };
+
+  const { data, error } = await supabase.rpc("admin_create_event", { payload });
+
+  if (error) {
+    throw new Error(formatSupabaseError("Create admin event", error));
+  }
+
+  return normalizeSingleAdminEvent(data as Partial<AdminEventRow> | Partial<AdminEventRow>[] | null);
 }

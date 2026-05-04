@@ -1,0 +1,718 @@
+import { useState, type FormEvent, type InputHTMLAttributes } from "react";
+
+import { Badge } from "../components/ui/Badge";
+import { Button } from "../components/ui/Button";
+import { GlassCard } from "../components/ui/GlassCard";
+import { createAdminEvent } from "../services/adminEventsService";
+import { useAdminAuth } from "../store/useAdminAuth";
+import type { AdminEvent, CreateAdminEventInput } from "../types/events";
+import {
+  ADMIN_EVENT_REGISTRATION_MODES,
+  ADMIN_EVENT_STATUSES,
+  ADMIN_EVENT_VISIBILITIES,
+  type AdminEventRegistrationMode,
+  type AdminEventStatus,
+  type AdminEventVisibility,
+} from "../types/events";
+
+const DEFAULT_TIMEZONE = "Europe/Moscow";
+const DEFAULT_PRICE_CURRENCY = "RUB";
+
+type CreateEventPageProps = {
+  onBackToList: () => void;
+  onCreated: (event: AdminEvent) => void;
+};
+
+type CreateEventForm = {
+  title: string;
+  subtitle: string;
+  shortDescription: string;
+  description: string;
+  category: string;
+  audience: string;
+  startDate: string;
+  startTime: string;
+  endDate: string;
+  endTime: string;
+  timezone: string;
+  locationName: string;
+  address: string;
+  imageUrl: string;
+  status: AdminEventStatus;
+  visibility: AdminEventVisibility;
+  registrationMode: AdminEventRegistrationMode;
+  registrationUrl: string;
+  capacity: string;
+  waitlistEnabled: boolean;
+  requiresApproval: boolean;
+  priceAmount: string;
+  priceCurrency: string;
+};
+
+type StringFormField = {
+  [Field in keyof CreateEventForm]: CreateEventForm[Field] extends string ? Field : never;
+}[keyof CreateEventForm];
+
+type FormErrorKey = StringFormField | "waitlistEnabled" | "requiresApproval" | "form";
+type FormErrors = Partial<Record<FormErrorKey, string>>;
+
+const defaultForm: CreateEventForm = {
+  title: "",
+  subtitle: "",
+  shortDescription: "",
+  description: "",
+  category: "",
+  audience: "",
+  startDate: "",
+  startTime: "",
+  endDate: "",
+  endTime: "",
+  timezone: DEFAULT_TIMEZONE,
+  locationName: "",
+  address: "",
+  imageUrl: "",
+  status: "draft",
+  visibility: "hidden",
+  registrationMode: "none",
+  registrationUrl: "",
+  capacity: "",
+  waitlistEnabled: false,
+  requiresApproval: false,
+  priceAmount: "",
+  priceCurrency: DEFAULT_PRICE_CURRENCY,
+};
+
+const statusOptions = ADMIN_EVENT_STATUSES.map((value) => ({ label: value, value }));
+const visibilityOptions = ADMIN_EVENT_VISIBILITIES.map((value) => ({ label: value, value }));
+const registrationModeOptions = ADMIN_EVENT_REGISTRATION_MODES.map((value) => ({
+  label: value,
+  value,
+}));
+
+export function CreateEventPage({ onBackToList, onCreated }: CreateEventPageProps) {
+  const auth = useAdminAuth();
+  const communityId = auth.membership?.community_id ?? null;
+  const [form, setForm] = useState<CreateEventForm>(defaultForm);
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [createdEvent, setCreatedEvent] = useState<AdminEvent | null>(null);
+
+  const submitLabel =
+    form.status === "draft" && form.visibility === "hidden"
+      ? "Сохранить черновик"
+      : "Создать событие";
+
+  const updateField = <Field extends keyof CreateEventForm>(
+    field: Field,
+    value: CreateEventForm[Field],
+  ) => {
+    setForm((current) => ({ ...current, [field]: value }));
+    setErrors((current) => ({ ...current, [field]: undefined, form: undefined }));
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitError(null);
+
+    const validation = validateForm(form, communityId);
+    setErrors(validation.errors);
+
+    if (!validation.input) {
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      const nextEvent = await createAdminEvent(validation.input);
+      setCreatedEvent(nextEvent);
+      onCreated(nextEvent);
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : "Не удалось создать событие через admin_create_event.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (createdEvent) {
+    return (
+      <div className="page-stack page-stack--event-create">
+        <section className="page-header">
+          <Badge tone="green">created</Badge>
+          <h1>Событие создано</h1>
+          <p>
+            Запись создана через RPC admin_create_event. Вернитесь к списку, чтобы увидеть
+            обновлённую таблицу событий.
+          </p>
+        </section>
+
+        <GlassCard className="event-create-success" elevated>
+          <div>
+            <span>Новое событие</span>
+            <h2>{createdEvent.title}</h2>
+            <p>
+              {createdEvent.status} / {createdEvent.visibility}
+            </p>
+          </div>
+          <Button onClick={onBackToList} variant="primary">
+            Вернуться к списку
+          </Button>
+        </GlassCard>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page-stack page-stack--event-create">
+      <section className="page-header">
+        <Badge tone="gold">manual create</Badge>
+        <h1>Создать событие</h1>
+        <p>
+          Ручное создание события в текущей общине. Сохранение идёт через
+          admin_create_event с текущей пользовательской сессией Supabase.
+        </p>
+      </section>
+
+      <GlassCard className="event-create-card" elevated>
+        <form className="event-create-form" noValidate onSubmit={handleSubmit}>
+          {!communityId ? (
+            <div className="form-error" role="alert">
+              Не удалось определить communityId текущей активной membership.
+            </div>
+          ) : null}
+
+          {submitError ? (
+            <div className="form-error" role="alert">
+              {submitError}
+            </div>
+          ) : null}
+
+          <section className="event-form-section">
+            <div className="event-form-section__head">
+              <h2>Основное</h2>
+            </div>
+            <div className="event-form-grid event-form-grid--two">
+              <TextField
+                error={errors.title}
+                label="Название *"
+                onChange={(value) => updateField("title", value)}
+                value={form.title}
+              />
+              <TextField
+                error={errors.category}
+                label="Категория *"
+                onChange={(value) => updateField("category", value)}
+                placeholder="Например: лекция, праздник, встреча"
+                value={form.category}
+              />
+              <TextField
+                label="Подзаголовок"
+                onChange={(value) => updateField("subtitle", value)}
+                value={form.subtitle}
+              />
+              <TextField
+                label="Аудитория"
+                onChange={(value) => updateField("audience", value)}
+                placeholder="Для кого это событие"
+                value={form.audience}
+              />
+              <TextAreaField
+                label="Краткое описание"
+                onChange={(value) => updateField("shortDescription", value)}
+                value={form.shortDescription}
+              />
+              <TextAreaField
+                label="Описание"
+                onChange={(value) => updateField("description", value)}
+                value={form.description}
+              />
+            </div>
+          </section>
+
+          <section className="event-form-section">
+            <div className="event-form-section__head">
+              <h2>Дата и время</h2>
+            </div>
+            <div className="event-form-grid event-form-grid--time">
+              <TextField
+                error={errors.startDate}
+                label="Дата начала *"
+                onChange={(value) => updateField("startDate", value)}
+                type="date"
+                value={form.startDate}
+              />
+              <TextField
+                error={errors.startTime}
+                label="Время начала *"
+                onChange={(value) => updateField("startTime", value)}
+                type="time"
+                value={form.startTime}
+              />
+              <TextField
+                error={errors.endDate}
+                label="Дата окончания"
+                onChange={(value) => updateField("endDate", value)}
+                type="date"
+                value={form.endDate}
+              />
+              <TextField
+                error={errors.endTime}
+                label="Время окончания"
+                onChange={(value) => updateField("endTime", value)}
+                type="time"
+                value={form.endTime}
+              />
+              <TextField
+                error={errors.timezone}
+                label="Timezone"
+                onChange={(value) => updateField("timezone", value)}
+                value={form.timezone}
+              />
+            </div>
+          </section>
+
+          <section className="event-form-section">
+            <div className="event-form-section__head">
+              <h2>Место и афиша</h2>
+            </div>
+            <div className="event-form-grid event-form-grid--two">
+              <TextField
+                label="Название места"
+                onChange={(value) => updateField("locationName", value)}
+                value={form.locationName}
+              />
+              <TextField
+                label="Адрес"
+                onChange={(value) => updateField("address", value)}
+                value={form.address}
+              />
+              <TextField
+                label="Image URL"
+                onChange={(value) => updateField("imageUrl", value)}
+                placeholder="https://..."
+                value={form.imageUrl}
+              />
+            </div>
+          </section>
+
+          <section className="event-form-section">
+            <div className="event-form-section__head">
+              <h2>Видимость и статус</h2>
+            </div>
+            <div className="event-form-grid event-form-grid--two">
+              <SelectField
+                error={errors.status}
+                label="Status"
+                onChange={(value) => updateField("status", value as AdminEventStatus)}
+                options={statusOptions}
+                value={form.status}
+              />
+              <SelectField
+                label="Visibility"
+                onChange={(value) =>
+                  updateField("visibility", value as AdminEventVisibility)
+                }
+                options={visibilityOptions}
+                value={form.visibility}
+              />
+            </div>
+          </section>
+
+          <section className="event-form-section">
+            <div className="event-form-section__head">
+              <h2>Регистрация</h2>
+            </div>
+            <div className="event-form-grid event-form-grid--two">
+              <SelectField
+                error={errors.registrationMode}
+                label="Registration mode *"
+                onChange={(value) =>
+                  updateField("registrationMode", value as AdminEventRegistrationMode)
+                }
+                options={registrationModeOptions}
+                value={form.registrationMode}
+              />
+              <TextField
+                error={errors.registrationUrl}
+                label="Registration URL"
+                onChange={(value) => updateField("registrationUrl", value)}
+                placeholder="https://..."
+                value={form.registrationUrl}
+              />
+              <TextField
+                error={errors.capacity}
+                label="Capacity"
+                min={1}
+                onChange={(value) => updateField("capacity", value)}
+                type="number"
+                value={form.capacity}
+              />
+              <TextField
+                error={errors.priceAmount}
+                label="Price amount"
+                min={0}
+                onChange={(value) => updateField("priceAmount", value)}
+                type="number"
+                value={form.priceAmount}
+              />
+              <TextField
+                label="Price currency"
+                onChange={(value) => updateField("priceCurrency", value)}
+                value={form.priceCurrency}
+              />
+            </div>
+
+            <div className="event-form-checks">
+              <CheckboxField
+                checked={form.waitlistEnabled}
+                label="Waitlist enabled"
+                onChange={(value) => updateField("waitlistEnabled", value)}
+              />
+              <CheckboxField
+                checked={form.requiresApproval}
+                label="Requires approval"
+                onChange={(value) => updateField("requiresApproval", value)}
+              />
+            </div>
+
+            {form.registrationMode === "internal_paid" ? (
+              <div className="event-form-notice">
+                Варианты участия и расчёт суммы будут добавлены отдельным PR. Сейчас можно
+                создать событие с режимом internal_paid без вариантов.
+              </div>
+            ) : null}
+          </section>
+
+          {errors.form ? (
+            <div className="form-error" role="alert">
+              {errors.form}
+            </div>
+          ) : null}
+
+          <div className="event-create-actions">
+            <Button disabled={submitting} onClick={onBackToList} variant="ghost">
+              К списку
+            </Button>
+            <Button disabled={!communityId || submitting} type="submit" variant="primary">
+              {submitting ? "Сохраняем..." : submitLabel}
+            </Button>
+          </div>
+        </form>
+      </GlassCard>
+    </div>
+  );
+}
+
+function TextField({
+  error,
+  label,
+  onChange,
+  value,
+  ...props
+}: {
+  error?: string;
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
+} & Pick<InputHTMLAttributes<HTMLInputElement>, "min" | "placeholder" | "type">) {
+  return (
+    <label className="event-form-field">
+      <span>{label}</span>
+      <input
+        aria-invalid={Boolean(error)}
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
+        {...props}
+      />
+      {error ? <small>{error}</small> : null}
+    </label>
+  );
+}
+
+function TextAreaField({
+  label,
+  onChange,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <label className="event-form-field event-form-field--wide">
+      <span>{label}</span>
+      <textarea onChange={(event) => onChange(event.target.value)} value={value} />
+    </label>
+  );
+}
+
+function SelectField({
+  error,
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  error?: string;
+  label: string;
+  onChange: (value: string) => void;
+  options: Array<{ label: string; value: string }>;
+  value: string;
+}) {
+  return (
+    <label className="event-form-field">
+      <span>{label}</span>
+      <select
+        aria-invalid={Boolean(error)}
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {error ? <small>{error}</small> : null}
+    </label>
+  );
+}
+
+function CheckboxField({
+  checked,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  label: string;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className="event-form-check">
+      <input
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        type="checkbox"
+      />
+      <span>{label}</span>
+    </label>
+  );
+}
+
+function validateForm(
+  form: CreateEventForm,
+  communityId: string | null,
+): { errors: FormErrors; input: CreateAdminEventInput | null } {
+  const errors: FormErrors = {};
+  const title = cleanString(form.title);
+  const category = cleanString(form.category);
+  const timezone = cleanString(form.timezone) ?? DEFAULT_TIMEZONE;
+  const registrationMode = form.registrationMode;
+
+  if (!communityId) {
+    errors.form = "Не удалось определить communityId текущей общины.";
+  }
+
+  if (!title) {
+    errors.title = "Укажите название события.";
+  }
+
+  if (!category) {
+    errors.category = "Укажите категорию события.";
+  }
+
+  if (!form.startDate) {
+    errors.startDate = "Укажите дату начала.";
+  }
+
+  if (!form.startTime) {
+    errors.startTime = "Укажите время начала.";
+  }
+
+  if (!registrationMode) {
+    errors.registrationMode = "Укажите режим регистрации.";
+  }
+
+  if (registrationMode === "external_link" && !cleanString(form.registrationUrl)) {
+    errors.registrationUrl = "Для external_link нужна ссылка регистрации.";
+  }
+
+  let startsAt: string | null = null;
+  if (form.startDate && form.startTime) {
+    try {
+      startsAt = buildZonedIso(form.startDate, form.startTime, timezone);
+    } catch {
+      errors.startDate = "Дата и время начала должны быть валидными.";
+      errors.timezone = "Проверьте timezone.";
+    }
+  }
+
+  if (form.status === "published" && !startsAt) {
+    errors.status = "Для published нужно валидное время начала.";
+  }
+
+  let endsAt: string | null = null;
+  if (form.endDate || form.endTime) {
+    if (!form.endDate) {
+      errors.endDate = "Укажите дату окончания или очистите время окончания.";
+    }
+
+    if (!form.endTime) {
+      errors.endTime = "Укажите время окончания или очистите дату окончания.";
+    }
+
+    if (form.endDate && form.endTime) {
+      try {
+        endsAt = buildZonedIso(form.endDate, form.endTime, timezone);
+      } catch {
+        errors.endDate = "Дата и время окончания должны быть валидными.";
+      }
+    }
+  }
+
+  if (startsAt && endsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
+    errors.endDate = "Окончание должно быть позже начала.";
+  }
+
+  const capacity = parseIntegerField(form.capacity, false);
+  if (capacity.error) {
+    errors.capacity = "Capacity должен быть положительным целым числом.";
+  }
+
+  const priceAmount = parseIntegerField(form.priceAmount, true);
+  if (priceAmount.error) {
+    errors.priceAmount = "Price amount должен быть нулём или положительным целым числом.";
+  }
+
+  if (Object.keys(errors).length > 0 || !communityId || !startsAt || !title || !category) {
+    return { errors, input: null };
+  }
+
+  return {
+    errors,
+    input: {
+      communityId,
+      title,
+      subtitle: cleanString(form.subtitle),
+      shortDescription: cleanString(form.shortDescription),
+      description: cleanString(form.description),
+      startsAt,
+      endsAt,
+      timezone,
+      locationName: cleanString(form.locationName),
+      address: cleanString(form.address),
+      imageUrl: cleanString(form.imageUrl),
+      category,
+      audience: cleanString(form.audience),
+      visibility: form.visibility,
+      status: form.status,
+      registrationMode,
+      registrationUrl: cleanString(form.registrationUrl),
+      capacity: capacity.value,
+      waitlistEnabled: form.waitlistEnabled,
+      requiresApproval: form.requiresApproval,
+      priceAmount: priceAmount.value,
+      priceCurrency: cleanString(form.priceCurrency)?.toUpperCase() ?? DEFAULT_PRICE_CURRENCY,
+    },
+  };
+}
+
+function cleanString(value: string): string | null {
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function parseIntegerField(
+  value: string,
+  allowZero: boolean,
+): { error: boolean; value: number | null } {
+  const normalized = value.trim();
+
+  if (!normalized) {
+    return { error: false, value: null };
+  }
+
+  if (!/^\d+$/.test(normalized)) {
+    return { error: true, value: null };
+  }
+
+  const parsed = Number(normalized);
+  const isAllowed = Number.isSafeInteger(parsed) && (allowZero ? parsed >= 0 : parsed > 0);
+
+  return isAllowed ? { error: false, value: parsed } : { error: true, value: null };
+}
+
+function buildZonedIso(dateValue: string, timeValue: string, timezone: string): string {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue);
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(timeValue);
+
+  if (!dateMatch || !timeMatch) {
+    throw new Error("Invalid date or time.");
+  }
+
+  const year = Number(dateMatch[1]);
+  const month = Number(dateMatch[2]);
+  const day = Number(dateMatch[3]);
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+
+  if (hour > 23 || minute > 59) {
+    throw new Error("Invalid time.");
+  }
+
+  const utcTimestamp = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+  const utcDate = new Date(utcTimestamp);
+
+  if (
+    utcDate.getUTCFullYear() !== year ||
+    utcDate.getUTCMonth() !== month - 1 ||
+    utcDate.getUTCDate() !== day
+  ) {
+    throw new Error("Invalid date.");
+  }
+
+  const zoneOffset = getTimezoneOffsetMinutes(timezone, utcDate);
+  const zonedDate = new Date(utcTimestamp - zoneOffset * 60_000);
+  const refinedOffset = getTimezoneOffsetMinutes(timezone, zonedDate);
+  const refinedDate = new Date(utcTimestamp - refinedOffset * 60_000);
+
+  if (Number.isNaN(refinedDate.getTime())) {
+    throw new Error("Invalid timezone.");
+  }
+
+  return refinedDate.toISOString();
+}
+
+function getTimezoneOffsetMinutes(timezone: string, date: Date): number {
+  const formatter = getFormatter(timezone);
+  const parts = formatter.formatToParts(date);
+  const values = new Map(parts.map((part) => [part.type, part.value]));
+  const year = Number(values.get("year"));
+  const month = Number(values.get("month"));
+  const day = Number(values.get("day"));
+  const hour = Number(values.get("hour"));
+  const minute = Number(values.get("minute"));
+  const second = Number(values.get("second"));
+  const asUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+
+  return (asUtc - date.getTime()) / 60_000;
+}
+
+function getFormatter(timezone: string): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    hourCycle: "h23",
+    minute: "2-digit",
+    month: "2-digit",
+    second: "2-digit",
+    timeZone: timezone,
+    year: "numeric",
+  });
+}
