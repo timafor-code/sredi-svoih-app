@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 
+import { EventForm } from "../components/events/EventForm";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
@@ -7,11 +8,14 @@ import {
   getImportItem,
   ignoreImportItem,
   listImportItemsNeedingReview,
+  publishImportItemAsDraft,
 } from "../services/adminImportReviewService";
 import type { AdminBadgeTone } from "../types/admin";
+import type { AdminEvent, AdminEventMutationInput } from "../types/events";
 import type {
   AdminImportDateQuality,
   AdminImportItemStatus,
+  AdminPublishImportItemResult,
   AdminImportReviewItem,
   JsonObject,
   JsonValue,
@@ -40,10 +44,18 @@ const STATUS_FILTERS: Array<{ value: StatusFilter; label: string }> = [
 const REVIEW_LIMITS: ReviewLimit[] = [50, 100];
 
 type ImportReviewPageProps = {
+  onEventCreated?: (event: AdminEvent) => void;
+  onOpenEvent?: (event: AdminEvent) => void;
+  onOpenEventsList?: () => void;
   refreshSignal?: number;
 };
 
-export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
+export function ImportReviewPage({
+  onEventCreated,
+  onOpenEvent,
+  onOpenEventsList,
+  refreshSignal = 0,
+}: ImportReviewPageProps) {
   const [items, setItems] = useState<AdminImportReviewItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -152,6 +164,41 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
     [handleCloseDetail, loadItems],
   );
 
+  const handleImportDraftCreated = useCallback(
+    async (
+      sourceItem: AdminImportReviewItem,
+      result: AdminPublishImportItemResult,
+    ) => {
+      const linkedEventId = result.event?.id ?? result.linkedEventId;
+      const eventTitle = result.event?.title ?? getImportItemTitle(sourceItem);
+
+      if (result.event) {
+        onEventCreated?.(result.event);
+      }
+
+      if (linkedEventId) {
+        setDetailItem((current) =>
+          current && current.id === sourceItem.id
+            ? {
+                ...current,
+                linkedEventId,
+                status: "linked",
+              }
+            : current,
+        );
+      }
+
+      const reloaded = await loadItems();
+
+      setSuccessMessage(
+        reloaded
+          ? `Событие «${eventTitle}» создано как draft/hidden через admin_publish_import_item. Import item обновлён в очереди.`
+          : `Событие «${eventTitle}» создано как draft/hidden. Очередь не обновилась, попробуйте «Обновить очередь».`,
+      );
+    },
+    [loadItems, onEventCreated],
+  );
+
   useEffect(() => {
     if (!detailItemId) {
       return;
@@ -226,8 +273,9 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
         <Badge tone="gold">review queue</Badge>
         <h1>Импорт с сайта</h1>
         <p>
-          Проверка импорта. Игнорирование доступно из detail через отдельный RPC; публикация,
-          редактирование и запуск импорта остаются вне этой страницы.
+          Проверка импорта. Из detail можно проигнорировать item или создать
+          событие-черновик через отдельные RPC; публикация и запуск импорта остаются
+          вне этой страницы.
         </p>
       </section>
 
@@ -238,9 +286,8 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
           <p>
             Список читается через RPC `admin_list_import_items_needing_review` с текущей
             Supabase-сессией. В detail можно скрыть item из очереди через
-            `admin_ignore_import_item`; действий publish, edit и create на этой странице нет.
-            Сейчас для локальной проверки запустите importer из PowerShell, затем нажмите
-            «Обновить очередь».
+            `admin_ignore_import_item` или создать скрытый черновик через
+            `admin_publish_import_item`. Созданное событие не публикуется автоматически.
           </p>
         </div>
       </GlassCard>
@@ -374,7 +421,10 @@ export function ImportReviewPage({ refreshSignal = 0 }: ImportReviewPageProps) {
           item={detailItem}
           loading={detailLoading}
           onClose={handleCloseDetail}
+          onDraftCreated={handleImportDraftCreated}
           onIgnored={handleImportItemIgnored}
+          onOpenEvent={onOpenEvent}
+          onOpenEventsList={onOpenEventsList}
           onRetry={handleRetryDetail}
         />
       ) : null}
@@ -476,7 +526,10 @@ function ImportItemDetailDrawer({
   item,
   loading,
   onClose,
+  onDraftCreated,
   onIgnored,
+  onOpenEvent,
+  onOpenEventsList,
   onRetry,
 }: {
   error: string | null;
@@ -484,7 +537,13 @@ function ImportItemDetailDrawer({
   item: AdminImportReviewItem | null;
   loading: boolean;
   onClose: () => void;
+  onDraftCreated: (
+    item: AdminImportReviewItem,
+    result: AdminPublishImportItemResult,
+  ) => Promise<void> | void;
   onIgnored: (item: AdminImportReviewItem) => Promise<void> | void;
+  onOpenEvent?: (event: AdminEvent) => void;
+  onOpenEventsList?: () => void;
   onRetry: () => void;
 }) {
   const titleId = useId();
@@ -493,6 +552,10 @@ function ImportItemDetailDrawer({
   const [ignoreReason, setIgnoreReason] = useState("");
   const [ignoreLoading, setIgnoreLoading] = useState(false);
   const [ignoreError, setIgnoreError] = useState<string | null>(null);
+  const [isCreatingDraft, setIsCreatingDraft] = useState(false);
+  const [draftSubmitting, setDraftSubmitting] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [draftResult, setDraftResult] = useState<AdminPublishImportItemResult | null>(null);
   const displayItem = item ?? fallbackItem;
   const title = displayItem ? getImportItemTitle(displayItem) : "Import item";
   const isAdminIgnored = displayItem ? isAdminIgnoredImportItem(displayItem) : false;
@@ -504,11 +567,17 @@ function ImportItemDetailDrawer({
     setIgnoreReason("");
     setIgnoreError(null);
     setIgnoreLoading(false);
+    setIsCreatingDraft(false);
+    setDraftSubmitting(false);
+    setDraftError(null);
+    setDraftResult(null);
   }, [item?.id]);
 
   const handleStartIgnore = useCallback(() => {
     setIsConfirmingIgnore(true);
     setIgnoreError(null);
+    setIsCreatingDraft(false);
+    setDraftError(null);
   }, []);
 
   const handleCancelIgnore = useCallback(() => {
@@ -516,6 +585,56 @@ function ImportItemDetailDrawer({
     setIgnoreReason("");
     setIgnoreError(null);
   }, []);
+
+  const handleStartCreateDraft = useCallback(() => {
+    setIsConfirmingIgnore(false);
+    setIgnoreError(null);
+    setDraftError(null);
+    setDraftResult(null);
+    setIsCreatingDraft(true);
+  }, []);
+
+  const handleCancelCreateDraft = useCallback(() => {
+    if (!draftSubmitting) {
+      setIsCreatingDraft(false);
+      setDraftError(null);
+    }
+  }, [draftSubmitting]);
+
+  const handleSubmitCreateDraft = useCallback(
+    async (input: AdminEventMutationInput) => {
+      if (!item || draftSubmitting) {
+        return false;
+      }
+
+      setDraftSubmitting(true);
+      setDraftError(null);
+
+      try {
+        const result = await publishImportItemAsDraft(item.id, {
+          ...input,
+          status: "draft",
+          visibility: "hidden",
+          manualOverride: true,
+        });
+
+        setDraftResult(result);
+        setIsCreatingDraft(false);
+        await onDraftCreated(item, result);
+        return true;
+      } catch (nextError) {
+        setDraftError(
+          nextError instanceof Error
+            ? nextError.message
+            : "Не удалось создать событие-черновик через admin_publish_import_item.",
+        );
+        return false;
+      } finally {
+        setDraftSubmitting(false);
+      }
+    },
+    [draftSubmitting, item, onDraftCreated],
+  );
 
   const handleConfirmIgnore = useCallback(async () => {
     if (!item || ignoreLoading) {
@@ -545,7 +664,7 @@ function ImportItemDetailDrawer({
     <div
       className="import-detail-backdrop"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !ignoreLoading) {
+        if (event.target === event.currentTarget && !ignoreLoading && !draftSubmitting) {
           onClose();
         }
       }}
@@ -559,7 +678,7 @@ function ImportItemDetailDrawer({
         <div className="import-detail-drawer__head">
           <div className="import-detail-drawer__title">
             <div className="badge-row">
-              <Badge tone="red">read-only detail</Badge>
+              <Badge tone="gold">review detail</Badge>
               <Badge tone="glass">admin_get_import_item</Badge>
               {isAdminIgnored ? <Badge tone="muted">admin ignored</Badge> : null}
               {isSafeIgnoredByImporter ? (
@@ -569,7 +688,7 @@ function ImportItemDetailDrawer({
             <h2 id={titleId}>{title}</h2>
             <p>Полные данные загружаются через RPC `admin_get_import_item`.</p>
           </div>
-          <Button disabled={ignoreLoading} onClick={onClose} variant="secondary">
+          <Button disabled={ignoreLoading || draftSubmitting} onClick={onClose} variant="secondary">
             Закрыть
           </Button>
         </div>
@@ -589,17 +708,37 @@ function ImportItemDetailDrawer({
           ) : item ? (
             <>
               <ImportItemDetailActions
+                draftSubmitting={draftSubmitting}
                 ignoreError={ignoreError}
                 ignoreLoading={ignoreLoading}
                 ignoreReason={ignoreReason}
+                isCreatingDraft={isCreatingDraft}
                 isConfirmingIgnore={isConfirmingIgnore}
                 item={item}
                 onCancelIgnore={handleCancelIgnore}
+                onOpenEventsList={onOpenEventsList}
                 onConfirmIgnore={handleConfirmIgnore}
                 onIgnoreReasonChange={setIgnoreReason}
+                onStartCreateDraft={handleStartCreateDraft}
                 onStartIgnore={handleStartIgnore}
                 reasonId={reasonId}
               />
+              {draftResult ? (
+                <ImportDraftCreatedState
+                  onOpenEvent={onOpenEvent}
+                  onOpenEventsList={onOpenEventsList}
+                  result={draftResult}
+                />
+              ) : null}
+              {isCreatingDraft && !draftResult ? (
+                <ImportToEventDraftForm
+                  item={item}
+                  onCancel={handleCancelCreateDraft}
+                  onSubmit={handleSubmitCreateDraft}
+                  submitError={draftError}
+                  submitting={draftSubmitting}
+                />
+              ) : null}
               <ImportItemDetailContent item={item} />
             </>
           ) : (
@@ -615,31 +754,40 @@ function ImportItemDetailDrawer({
 }
 
 function ImportItemDetailActions({
+  draftSubmitting,
   ignoreError,
   ignoreLoading,
   ignoreReason,
+  isCreatingDraft,
   isConfirmingIgnore,
   item,
   onCancelIgnore,
   onConfirmIgnore,
   onIgnoreReasonChange,
+  onOpenEventsList,
+  onStartCreateDraft,
   onStartIgnore,
   reasonId,
 }: {
+  draftSubmitting: boolean;
   ignoreError: string | null;
   ignoreLoading: boolean;
   ignoreReason: string;
+  isCreatingDraft: boolean;
   isConfirmingIgnore: boolean;
   item: AdminImportReviewItem;
   onCancelIgnore: () => void;
   onConfirmIgnore: () => void;
   onIgnoreReasonChange: (reason: string) => void;
+  onOpenEventsList?: () => void;
+  onStartCreateDraft: () => void;
   onStartIgnore: () => void;
   reasonId: string;
 }) {
   const adminReview = getAdminReviewMetadata(item);
   const isAdminIgnored = Boolean(adminReview.ignoredAt);
   const isSafeIgnoredByImporter = item.status === "ignored" && !isAdminIgnored;
+  const linkedEventId = item.linkedEventId ?? item.importReview?.draftEventId ?? null;
   const title = getImportItemTitle(item);
 
   if (isAdminIgnored) {
@@ -671,12 +819,43 @@ function ImportItemDetailActions({
     );
   }
 
+  if (linkedEventId || item.status === "linked") {
+    return (
+      <section className="import-detail-actions import-detail-actions--linked">
+        <div className="import-detail-actions__head">
+          <div>
+            <h3>Событие уже создано</h3>
+            <p>Import item уже связан с записью в events. Повторное создание недоступно.</p>
+          </div>
+          <Badge tone="green">linked</Badge>
+        </div>
+        <div className="import-detail-grid">
+          <ImportReviewField
+            label="linkedEventId"
+            value={linkedEventId ?? "linked_event_id не вернулся"}
+            wide
+          />
+        </div>
+        {onOpenEventsList ? (
+          <div className="import-ignore-actions">
+            <Button onClick={onOpenEventsList} variant="secondary">
+              Открыть список событий
+            </Button>
+          </div>
+        ) : null}
+      </section>
+    );
+  }
+
   return (
     <section className="import-detail-actions">
       <div className="import-detail-actions__head">
         <div>
           <h3>Действия</h3>
-          <p>Можно скрыть item из очереди проверки без создания события.</p>
+          <p>
+            Можно создать событие как скрытый черновик или скрыть item из очереди
+            проверки без создания события.
+          </p>
           {isSafeIgnoredByImporter ? (
             <div className="badge-row">
               <Badge tone="gold">safe ignored by importer</Badge>
@@ -684,13 +863,22 @@ function ImportItemDetailActions({
             </div>
           ) : null}
         </div>
-        <Button
-          disabled={ignoreLoading}
-          onClick={onStartIgnore}
-          variant={isConfirmingIgnore ? "ghost" : "secondary"}
-        >
-          Игнорировать
-        </Button>
+        <div className="import-detail-actions__buttons">
+          <Button
+            disabled={ignoreLoading || draftSubmitting}
+            onClick={onStartCreateDraft}
+            variant="primary"
+          >
+            {isCreatingDraft ? "Форма открыта" : "Создать событие"}
+          </Button>
+          <Button
+            disabled={ignoreLoading || draftSubmitting}
+            onClick={onStartIgnore}
+            variant={isConfirmingIgnore ? "ghost" : "secondary"}
+          >
+            Игнорировать
+          </Button>
+        </div>
       </div>
 
       {isConfirmingIgnore ? (
@@ -745,6 +933,140 @@ function ImportItemDetailActions({
         </div>
       ) : null}
     </section>
+  );
+}
+
+type ImportDraftPrefill = {
+  event: AdminEvent;
+  hasStartsAt: boolean;
+  paidHint: boolean;
+  registrationUrlSource: "rawPayload" | "sourceUrl" | null;
+};
+
+function ImportDraftCreatedState({
+  onOpenEvent,
+  onOpenEventsList,
+  result,
+}: {
+  onOpenEvent?: (event: AdminEvent) => void;
+  onOpenEventsList?: () => void;
+  result: AdminPublishImportItemResult;
+}) {
+  const event = result.event;
+  const linkedEventId = event?.id ?? result.linkedEventId;
+
+  return (
+    <section className="import-draft-success">
+      <div className="import-draft-success__head">
+        <div>
+          <h3>Событие создано как черновик</h3>
+          <p>
+            Перед публикацией проверьте дату, описание, регистрацию и видимость.
+          </p>
+        </div>
+        <div className="badge-row">
+          <Badge tone="gold">{event?.status ?? "draft"}</Badge>
+          <Badge tone="muted">{event?.visibility ?? "hidden"}</Badge>
+        </div>
+      </div>
+
+      <div className="import-detail-grid">
+        {event ? <ImportReviewField label="title" value={event.title} /> : null}
+        <ImportReviewField label="linkedEventId" value={linkedEventId ?? "Не указано"} />
+      </div>
+
+      <div className="import-ignore-actions">
+        {event && onOpenEvent ? (
+          <Button onClick={() => onOpenEvent(event)} variant="primary">
+            Открыть событие
+          </Button>
+        ) : null}
+        {onOpenEventsList ? (
+          <Button onClick={onOpenEventsList} variant={event && onOpenEvent ? "secondary" : "primary"}>
+            Открыть список событий
+          </Button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function ImportToEventDraftForm({
+  item,
+  onCancel,
+  onSubmit,
+  submitError,
+  submitting,
+}: {
+  item: AdminImportReviewItem;
+  onCancel: () => void;
+  onSubmit: (input: AdminEventMutationInput) => Promise<boolean>;
+  submitError: string | null;
+  submitting: boolean;
+}) {
+  const prefill = useMemo(() => buildImportDraftPrefill(item), [item]);
+
+  return (
+    <section className="import-draft-form-panel">
+      <div className="import-draft-form-panel__head">
+        <div>
+          <Badge tone="gold">draft / hidden</Badge>
+          <h3>Создать событие из импорта</h3>
+        </div>
+      </div>
+
+      <EventForm
+        cancelLabel="Вернуться к detail"
+        forceDraftHidden
+        initialEvent={prefill.event}
+        mode="create"
+        notice={<ImportDraftFormNotice prefill={prefill} />}
+        onCancel={onCancel}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        submitLabel="Сохранить как черновик"
+        submitting={submitting}
+        submittingLabel="Создаём черновик..."
+      />
+    </section>
+  );
+}
+
+function ImportDraftFormNotice({ prefill }: { prefill: ImportDraftPrefill }) {
+  return (
+    <div className="import-draft-notices">
+      <div className="import-draft-notice">
+        <strong>Событие будет создано как черновик и скрыто от пользователей.</strong>
+        <p>
+          Перед публикацией проверьте дату, описание, регистрацию и видимость.
+          Варианты участия и расчёт суммы будут добавлены отдельным PR.
+        </p>
+      </div>
+
+      {!prefill.hasStartsAt ? (
+        <div className="import-draft-notice import-draft-notice--warning">
+          <strong>Дата не распознана.</strong>
+          <p>Заполните дату и время начала вручную перед сохранением черновика.</p>
+        </div>
+      ) : null}
+
+      {prefill.registrationUrlSource === "sourceUrl" ? (
+        <div className="import-draft-notice import-draft-notice--info">
+          <strong>Registration URL взят из sourceUrl import item.</strong>
+          <p>Проверьте, что эта ссылка действительно ведёт на внешнюю регистрацию.</p>
+        </div>
+      ) : null}
+
+      {prefill.paidHint ? (
+        <div className="import-draft-notice import-draft-notice--warning">
+          <strong>Похоже на платное событие.</strong>
+          <p>
+            Internal paid не выбирается автоматически. Сейчас можно создать черновик
+            без вариантов участия.
+          </p>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -870,11 +1192,6 @@ function ImportItemDetailContent({ item }: { item: AdminImportReviewItem }) {
           />
         </div>
       </section>
-
-      <details className="import-detail-json" open>
-        <summary>rawPayload JSON</summary>
-        <pre>{formatRawPayloadFull(item.rawPayload)}</pre>
-      </details>
     </>
   );
 }
@@ -931,6 +1248,114 @@ function getImportItemTitle(item: AdminImportReviewItem): string {
   return rawDetails.title || item.parsedTitle || "Без названия";
 }
 
+function buildImportDraftPrefill(item: AdminImportReviewItem): ImportDraftPrefill {
+  const rawDetails = getRawPayloadDetails(item.rawPayload);
+  const title = cleanString(item.parsedTitle) ?? rawDetails.title ?? "Без названия";
+  const startsAt =
+    normalizeDateCandidate(item.importReview?.suggestedStartsAt) ??
+    normalizeDateCandidate(item.parsedStartsAt);
+  const registrationUrl = rawDetails.registrationUrl ?? item.sourceUrl;
+  const registrationUrlSource = rawDetails.registrationUrl
+    ? "rawPayload"
+    : item.sourceUrl
+      ? "sourceUrl"
+      : null;
+  const event: AdminEvent = {
+    id: `import-draft-${item.id}`,
+    communityId: item.communityId ?? "",
+    title,
+    subtitle: rawDetails.subtitle,
+    description: rawDetails.description,
+    shortDescription: rawDetails.shortDescription,
+    startsAt,
+    endsAt: rawDetails.endsAt,
+    timezone: rawDetails.timezone ?? "Europe/Moscow",
+    locationName: cleanString(item.parsedLocation) ?? rawDetails.location,
+    address: rawDetails.address,
+    imageUrl: rawDetails.imageUrl,
+    category: inferImportCategory(title),
+    audience: null,
+    visibility: "hidden",
+    status: "draft",
+    sourceType: "website_scrape",
+    sourceUrl: item.sourceUrl,
+    sourceExternalId: item.externalId,
+    manualOverride: true,
+    registrationMode: registrationUrl ? "external_link" : "none",
+    registrationUrl,
+    capacity: null,
+    waitlistEnabled: false,
+    requiresApproval: false,
+    priceAmount: null,
+    priceCurrency: "RUB",
+    createdAt: item.createdAt,
+    updatedAt: item.createdAt,
+    publishedAt: null,
+  };
+
+  return {
+    event,
+    hasStartsAt: Boolean(startsAt),
+    paidHint: hasPaidImportHint(item, rawDetails),
+    registrationUrlSource,
+  };
+}
+
+function inferImportCategory(title: string): string {
+  const normalizedTitle = title.toLocaleLowerCase("ru");
+
+  if (/шаб+ат/.test(normalizedTitle)) {
+    return "shabbat";
+  }
+
+  if (/лекци|урок|курс/.test(normalizedTitle)) {
+    return "lecture";
+  }
+
+  if (/экскурс/.test(normalizedTitle)) {
+    return "tour";
+  }
+
+  return "community";
+}
+
+function hasPaidImportHint(
+  item: AdminImportReviewItem,
+  rawDetails: ReturnType<typeof getRawPayloadDetails>,
+): boolean {
+  const searchableText = [
+    rawDetails.title,
+    item.parsedTitle,
+    rawDetails.subtitle,
+    rawDetails.shortDescription,
+    rawDetails.description,
+    item.importReview?.notes,
+    item.importReview?.reason,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLocaleLowerCase("ru");
+
+  return /платн|стоимост|руб|₽|билет|оплат|donat|donation/.test(searchableText);
+}
+
+function cleanString(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
+function normalizeDateCandidate(value: string | null | undefined): string | null {
+  const normalized = cleanString(value);
+
+  if (!normalized) {
+    return null;
+  }
+
+  const date = new Date(normalized);
+
+  return Number.isNaN(date.getTime()) ? null : normalized;
+}
+
 function getAdminReviewMetadata(item: AdminImportReviewItem): {
   ignoredAt: string | null;
   ignoredBy: string | null;
@@ -965,28 +1390,86 @@ function isJsonObject(value: JsonValue | null | undefined): value is JsonObject 
 }
 
 function getRawPayloadDetails(rawPayload: JsonValue): {
+  address: string | null;
   description: string | null;
+  endsAt: string | null;
   imageUrl: string | null;
+  location: string | null;
   registrationUrl: string | null;
   shortDescription: string | null;
+  subtitle: string | null;
+  timezone: string | null;
   title: string | null;
 } {
+  const subtitle = readRawPayloadString(rawPayload, [
+    ["subtitle"],
+    ["subTitle"],
+    ["detail", "subtitle"],
+    ["detail", "subTitle"],
+    ["parsed", "subtitle"],
+    ["parsed", "subTitle"],
+    ["card", "subtitle"],
+    ["card", "subTitle"],
+  ]);
+
   return {
+    address: readRawPayloadString(rawPayload, [
+      ["address"],
+      ["detail", "address"],
+      ["parsed", "address"],
+      ["card", "address"],
+    ]),
     description: readRawPayloadString(rawPayload, [
       ["description"],
+      ["text"],
       ["detail", "description"],
+      ["detail", "text"],
       ["parsed", "description"],
+      ["parsed", "text"],
       ["card", "description"],
+      ["card", "text"],
+    ]),
+    endsAt: readRawPayloadString(rawPayload, [
+      ["endsAt"],
+      ["ends_at"],
+      ["endAt"],
+      ["end_at"],
+      ["detail", "endsAt"],
+      ["detail", "ends_at"],
+      ["parsed", "endsAt"],
+      ["parsed", "ends_at"],
     ]),
     imageUrl: readRawPayloadString(rawPayload, [
       ["imageUrl"],
       ["image_url"],
+      ["image"],
       ["detail", "imageUrl"],
       ["detail", "image_url"],
+      ["detail", "image"],
       ["parsed", "imageUrl"],
       ["parsed", "image_url"],
+      ["parsed", "image"],
       ["card", "imageUrl"],
       ["card", "image_url"],
+      ["card", "image"],
+    ]),
+    location: readRawPayloadString(rawPayload, [
+      ["location"],
+      ["locationName"],
+      ["location_name"],
+      ["place"],
+      ["venue"],
+      ["detail", "location"],
+      ["detail", "locationName"],
+      ["detail", "location_name"],
+      ["detail", "place"],
+      ["detail", "venue"],
+      ["parsed", "location"],
+      ["parsed", "locationName"],
+      ["parsed", "location_name"],
+      ["card", "location"],
+      ["card", "locationName"],
+      ["card", "location_name"],
     ]),
     registrationUrl: readRawPayloadString(rawPayload, [
       ["registrationUrl"],
@@ -998,15 +1481,29 @@ function getRawPayloadDetails(rawPayload: JsonValue): {
       ["card", "registrationUrl"],
       ["card", "registration_url"],
     ]),
-    shortDescription: readRawPayloadString(rawPayload, [
-      ["shortDescription"],
-      ["short_description"],
-      ["detail", "shortDescription"],
-      ["detail", "short_description"],
-      ["parsed", "shortDescription"],
-      ["parsed", "short_description"],
-      ["card", "shortDescription"],
-      ["card", "short_description"],
+    shortDescription:
+      readRawPayloadString(rawPayload, [
+        ["shortDescription"],
+        ["short_description"],
+        ["excerpt"],
+        ["detail", "shortDescription"],
+        ["detail", "short_description"],
+        ["detail", "excerpt"],
+        ["parsed", "shortDescription"],
+        ["parsed", "short_description"],
+        ["parsed", "excerpt"],
+        ["card", "shortDescription"],
+        ["card", "short_description"],
+        ["card", "excerpt"],
+      ]) ?? subtitle,
+    subtitle,
+    timezone: readRawPayloadString(rawPayload, [
+      ["timezone"],
+      ["timeZone"],
+      ["detail", "timezone"],
+      ["detail", "timeZone"],
+      ["parsed", "timezone"],
+      ["parsed", "timeZone"],
     ]),
     title: readRawPayloadString(rawPayload, [
       ["title"],

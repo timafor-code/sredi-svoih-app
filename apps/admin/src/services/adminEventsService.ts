@@ -72,7 +72,7 @@ function nullableNumber(value: unknown): number | null {
   return null;
 }
 
-function normalizeAdminEventRow(row: Partial<AdminEventRow>): AdminEvent {
+export function normalizeAdminEventRow(row: Partial<AdminEventRow>): AdminEvent {
   return {
     id: requiredString(row.id, ""),
     communityId: requiredString(row.community_id, ""),
