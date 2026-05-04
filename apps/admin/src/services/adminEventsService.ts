@@ -1,5 +1,11 @@
 import { requireSupabaseClient } from "./supabaseClient";
-import type { AdminEvent, AdminEventRow, CreateAdminEventInput } from "../types/events";
+import type {
+  AdminEvent,
+  AdminEventMutationInput,
+  AdminEventRow,
+  CreateAdminEventInput,
+  UpdateAdminEventInput,
+} from "../types/events";
 
 type SupabaseSelectError = {
   message?: string;
@@ -137,6 +143,38 @@ export async function createAdminEvent(input: CreateAdminEventInput): Promise<Ad
   const supabase = requireSupabaseClient();
   const payload = {
     communityId: input.communityId,
+    ...buildAdminEventMutationPayload(input),
+  };
+
+  const { data, error } = await supabase.rpc("admin_create_event", { payload });
+
+  if (error) {
+    throw new Error(formatSupabaseError("Create admin event", error));
+  }
+
+  return normalizeSingleAdminEvent(data as Partial<AdminEventRow> | Partial<AdminEventRow>[] | null);
+}
+
+export async function updateAdminEvent(
+  eventId: string,
+  input: UpdateAdminEventInput,
+): Promise<AdminEvent> {
+  const supabase = requireSupabaseClient();
+  const payload = buildAdminEventMutationPayload(input);
+  const { data, error } = await supabase.rpc("admin_update_event", {
+    event_id: eventId,
+    payload,
+  });
+
+  if (error) {
+    throw new Error(formatSupabaseError("Update admin event", error));
+  }
+
+  return normalizeSingleAdminEvent(data as Partial<AdminEventRow> | Partial<AdminEventRow>[] | null);
+}
+
+function buildAdminEventMutationPayload(input: AdminEventMutationInput) {
+  return {
     title: input.title,
     subtitle: input.subtitle,
     shortDescription: input.shortDescription,
@@ -159,12 +197,4 @@ export async function createAdminEvent(input: CreateAdminEventInput): Promise<Ad
     priceAmount: input.priceAmount,
     priceCurrency: input.priceCurrency,
   };
-
-  const { data, error } = await supabase.rpc("admin_create_event", { payload });
-
-  if (error) {
-    throw new Error(formatSupabaseError("Create admin event", error));
-  }
-
-  return normalizeSingleAdminEvent(data as Partial<AdminEventRow> | Partial<AdminEventRow>[] | null);
 }

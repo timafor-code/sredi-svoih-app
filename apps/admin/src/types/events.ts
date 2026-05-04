@@ -77,8 +77,7 @@ export type AdminEvent = {
   publishedAt: string | null;
 };
 
-export type CreateAdminEventInput = {
-  communityId: string;
+export type AdminEventMutationInput = {
   title: string;
   subtitle: string | null;
   shortDescription: string | null;
@@ -101,3 +100,9 @@ export type CreateAdminEventInput = {
   priceAmount: number | null;
   priceCurrency: string;
 };
+
+export type CreateAdminEventInput = AdminEventMutationInput & {
+  communityId: string;
+};
+
+export type UpdateAdminEventInput = AdminEventMutationInput;

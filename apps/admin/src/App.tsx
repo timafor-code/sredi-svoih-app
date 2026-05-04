@@ -6,8 +6,10 @@ import { canRoleOpenSection, isFutureSection } from "./data/navigation";
 import { useAdminAuth } from "./store/useAdminAuth";
 import type { AdminRole } from "./types/auth";
 import type { AdminSection } from "./types/admin";
+import type { AdminEvent } from "./types/events";
 import { ConfigMissingPage } from "./pages/ConfigMissingPage";
 import { CreateEventPage } from "./pages/CreateEventPage";
+import { EditEventPage } from "./pages/EditEventPage";
 import { EventsPage } from "./pages/EventsPage";
 import { FuturePage } from "./pages/FuturePage";
 import { ImportReviewPage } from "./pages/ImportReviewPage";
@@ -31,6 +33,7 @@ function AdminApp() {
   const auth = useAdminAuth();
   const [activeSection, setActiveSection] = useState<AdminSection>("overview");
   const [isCreatingEvent, setIsCreatingEvent] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<AdminEvent | null>(null);
   const [eventsRefreshSignal, setEventsRefreshSignal] = useState(0);
   const [importReviewRefreshSignal, setImportReviewRefreshSignal] = useState(0);
   const role = auth.role ?? "member";
@@ -38,19 +41,33 @@ function AdminApp() {
   const handleSectionChange = useCallback((section: AdminSection) => {
     setActiveSection(section);
     setIsCreatingEvent(false);
+    setEditingEvent(null);
   }, []);
 
   const handleCreateEvent = useCallback(() => {
     setActiveSection("events");
     setIsCreatingEvent(true);
+    setEditingEvent(null);
   }, []);
 
   const handleEventCreated = useCallback(() => {
     setEventsRefreshSignal((current) => current + 1);
   }, []);
 
+  const handleEditEvent = useCallback((event: AdminEvent) => {
+    setActiveSection("events");
+    setIsCreatingEvent(false);
+    setEditingEvent(event);
+  }, []);
+
+  const handleEventSaved = useCallback((event: AdminEvent) => {
+    setEditingEvent(event);
+    setEventsRefreshSignal((current) => current + 1);
+  }, []);
+
   const handleBackToEventsList = useCallback(() => {
     setIsCreatingEvent(false);
+    setEditingEvent(null);
   }, []);
 
   const handleImportReviewRefresh = useCallback(() => {
@@ -83,10 +100,13 @@ function AdminApp() {
     activeSection,
     role,
     isCreatingEvent,
+    editingEvent,
     eventsRefreshSignal,
     importReviewRefreshSignal,
     handleCreateEvent,
     handleEventCreated,
+    handleEditEvent,
+    handleEventSaved,
     handleBackToEventsList,
   );
 
@@ -119,10 +139,13 @@ function renderPage(
   activeSection: AdminSection,
   role: AdminRole,
   isCreatingEvent: boolean,
+  editingEvent: AdminEvent | null,
   eventsRefreshSignal: number,
   importReviewRefreshSignal: number,
   onCreateEvent: () => void,
   onEventCreated: () => void,
+  onEditEvent: (event: AdminEvent) => void,
+  onEventSaved: (event: AdminEvent) => void,
   onBackToEventsList: () => void,
 ) {
   if (role === "member" || !canRoleOpenSection(role, activeSection)) {
@@ -137,10 +160,28 @@ function renderPage(
     case "overview":
       return <OverviewPage />;
     case "events":
-      return isCreatingEvent ? (
-        <CreateEventPage onBackToList={onBackToEventsList} onCreated={onEventCreated} />
-      ) : (
-        <EventsPage onCreateEvent={onCreateEvent} refreshSignal={eventsRefreshSignal} />
+      if (isCreatingEvent) {
+        return (
+          <CreateEventPage onBackToList={onBackToEventsList} onCreated={onEventCreated} />
+        );
+      }
+
+      if (editingEvent) {
+        return (
+          <EditEventPage
+            event={editingEvent}
+            onBackToList={onBackToEventsList}
+            onSaved={onEventSaved}
+          />
+        );
+      }
+
+      return (
+        <EventsPage
+          onCreateEvent={onCreateEvent}
+          onEditEvent={onEditEvent}
+          refreshSignal={eventsRefreshSignal}
+        />
       );
     case "import":
       return <ImportReviewPage refreshSignal={importReviewRefreshSignal} />;
