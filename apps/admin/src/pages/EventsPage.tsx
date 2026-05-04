@@ -18,6 +18,7 @@ type RegistrationModeFilter = "all" | AdminEventRegistrationMode;
 
 type EventsPageProps = {
   onCreateEvent: () => void;
+  onEditEvent: (event: AdminEvent) => void;
   refreshSignal: number;
 };
 
@@ -44,7 +45,7 @@ const REGISTRATION_MODE_FILTERS: Array<{ value: RegistrationModeFilter; label: s
   { value: "internal_paid", label: "internal_paid" },
 ];
 
-export function EventsPage({ onCreateEvent, refreshSignal }: EventsPageProps) {
+export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: EventsPageProps) {
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -150,7 +151,10 @@ export function EventsPage({ onCreateEvent, refreshSignal }: EventsPageProps) {
       <section className="page-header">
         <Badge tone="green">Supabase</Badge>
         <h1>События</h1>
-        <p>Просмотр событий и ручное создание через RPC admin_create_event.</p>
+        <p>
+          Просмотр событий, ручное создание через admin_create_event и редактирование
+          через admin_update_event.
+        </p>
       </section>
 
       <GlassCard className="events-toolbar">
@@ -289,14 +293,20 @@ export function EventsPage({ onCreateEvent, refreshSignal }: EventsPageProps) {
             ) : null}
           </EventsState>
         ) : (
-          <EventsTable events={filteredEvents} />
+          <EventsTable events={filteredEvents} onEditEvent={onEditEvent} />
         )}
       </GlassCard>
     </div>
   );
 }
 
-function EventsTable({ events }: { events: AdminEvent[] }) {
+function EventsTable({
+  events,
+  onEditEvent,
+}: {
+  events: AdminEvent[];
+  onEditEvent: (event: AdminEvent) => void;
+}) {
   return (
     <div className="events-table-scroll">
       <div className="data-table data-table--events" role="table" aria-label="События">
@@ -311,13 +321,20 @@ function EventsTable({ events }: { events: AdminEvent[] }) {
           <span role="columnheader">Capacity</span>
           <span role="columnheader">Source</span>
           <span role="columnheader">Updated</span>
+          <span role="columnheader">Действия</span>
         </div>
 
         {events.map((event) => (
           <div className="data-table__row" key={event.id} role="row">
             <EventThumb event={event} />
             <div className="event-table__cell-stack event-table__title" role="cell">
-              <strong>{event.title}</strong>
+              <button
+                className="event-table__title-button"
+                onClick={() => onEditEvent(event)}
+                type="button"
+              >
+                {event.title}
+              </button>
               {event.subtitle ? <span>{event.subtitle}</span> : null}
             </div>
             <span role="cell">{formatEventDateRange(event)}</span>
@@ -345,6 +362,11 @@ function EventsTable({ events }: { events: AdminEvent[] }) {
               {event.sourceExternalId ? <small>{event.sourceExternalId}</small> : null}
             </div>
             <span role="cell">{formatDateTime(event.updatedAt, null)}</span>
+            <div className="event-table__actions" role="cell">
+              <Button onClick={() => onEditEvent(event)} size="sm">
+                Редактировать
+              </Button>
+            </div>
           </div>
         ))}
       </div>
