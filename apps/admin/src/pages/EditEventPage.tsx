@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { EventForm } from "../components/events/EventForm";
 import { EventOccurrencesConstructor } from "../components/events/EventOccurrencesConstructor";
@@ -7,7 +7,9 @@ import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
 import { updateAdminEvent } from "../services/adminEventsService";
+import { listAdminEventCategories } from "../services/eventCategoriesService";
 import type { AdminEvent, AdminEventMutationInput } from "../types/events";
+import type { AdminEventCategory } from "../types/eventCategories";
 
 type EditEventPageProps = {
   event: AdminEvent;
@@ -20,6 +22,41 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
   const [savedEvent, setSavedEvent] = useState<AdminEvent | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const communityId = currentEvent.communityId;
+  const [categories, setCategories] = useState<AdminEventCategory[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [categoriesError, setCategoriesError] = useState<string | null>(null);
+
+  const loadCategories = useCallback(async () => {
+    if (!communityId) {
+      setCategories([]);
+      setCategoriesLoading(false);
+      setCategoriesError(null);
+      return;
+    }
+
+    setCategoriesLoading(true);
+    setCategoriesError(null);
+
+    try {
+      const nextCategories = await listAdminEventCategories(communityId);
+      setCategories(nextCategories);
+    } catch (error) {
+      setCategories([]);
+      setCategoriesError(
+        error instanceof Error
+          ? error.message
+          : "?? ??????? ????????? ????????? ???????.",
+      );
+    } finally {
+      setCategoriesLoading(false);
+    }
+  }, [communityId]);
+
+  useEffect(() => {
+    void loadCategories();
+  }, [loadCategories]);
+
 
   useEffect(() => {
     setCurrentEvent(event);
@@ -79,6 +116,9 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
         <EventForm
           initialEvent={currentEvent}
           mode="edit"
+          categories={categories}
+          categoriesError={categoriesError}
+          categoriesLoading={categoriesLoading}
           onCancel={onBackToList}
           registrationModeSlot={({
             registrationMode,

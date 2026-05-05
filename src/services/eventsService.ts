@@ -8,6 +8,7 @@ import type {
 
 export type CommunityEventRow = {
   id: string;
+  community_id: string;
 
   title: string;
   subtitle: string | null;
@@ -48,6 +49,7 @@ export type CommunityEventRow = {
 
 export const EVENT_FIELDS = `
   id,
+  community_id,
   title,
   subtitle,
   short_description,
@@ -79,6 +81,7 @@ export const EVENT_FIELDS = `
 export function normalizeEventRow(row: CommunityEventRow): Event {
   return {
     id: row.id,
+    communityId: row.community_id,
     title: row.title,
     subtitle: row.subtitle,
     shortDescription: row.short_description,

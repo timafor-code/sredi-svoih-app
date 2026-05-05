@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -22,6 +23,7 @@ import {
   ADMIN_EVENT_STATUSES,
   ADMIN_EVENT_VISIBILITIES,
 } from "../../types/events";
+import type { AdminEventCategory } from "../../types/eventCategories";
 
 const DEFAULT_TIMEZONE = "Europe/Moscow";
 const DEFAULT_PRICE_CURRENCY = "RUB";
@@ -70,6 +72,9 @@ type FormErrors = Partial<Record<FormErrorKey, string>>;
 
 type EventFormProps = {
   cancelLabel?: string;
+  categories?: AdminEventCategory[];
+  categoriesLoading?: boolean;
+  categoriesError?: string | null;
   disabled?: boolean;
   disabledMessage?: string | null;
   forceDraftHidden?: boolean;
@@ -135,6 +140,9 @@ const registrationModeOptions = ADMIN_EVENT_REGISTRATION_MODES.map((value) => ({
 
 export function EventForm({
   cancelLabel,
+  categories = [],
+  categoriesLoading = false,
+  categoriesError = null,
   disabled = false,
   disabledMessage = null,
   forceDraftHidden = false,
@@ -193,6 +201,48 @@ export function EventForm({
       ? "Изменения сохранены"
       : resolvedSubmitLabel;
   const isSubmitDisabled = disabled || submitting || isSavedEditState;
+
+  const currentCategorySlug = form.category.trim();
+
+  const categoryOptions = useMemo(() => {
+    const sortedCategories = [...categories].sort((left, right) => (
+      left.sortOrder === right.sortOrder
+        ? left.title.localeCompare(right.title, "ru")
+        : left.sortOrder - right.sortOrder
+    ));
+
+    const options = sortedCategories
+      .filter((category) => category.isActive || category.slug === currentCategorySlug)
+      .map((category) => ({
+        label: `${category.icon} ${category.title}${category.isActive ? "" : " (\u0430\u0440\u0445\u0438\u0432)"} - ${category.slug}`,
+        value: category.slug,
+      }));
+
+    if (currentCategorySlug && !options.some((option) => option.value === currentCategorySlug)) {
+      options.push({
+        label: `${currentCategorySlug} (\u0442\u0435\u043a\u0443\u0449\u0430\u044f \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u0430)`,
+        value: currentCategorySlug,
+      });
+    }
+
+    return options;
+  }, [categories, currentCategorySlug]);
+
+  const currentCategory = categories.find((category) => category.slug === currentCategorySlug) ?? null;
+  const currentCategoryInactive = Boolean(currentCategory && !currentCategory.isActive);
+
+  useEffect(() => {
+    if (mode !== "create" || form.category || categoryOptions.length === 0) {
+      return;
+    }
+
+    const defaultCategory =
+      categoryOptions.find((option) => option.value === "community") ?? categoryOptions[0];
+
+    setForm((current) => (
+      current.category ? current : { ...current, category: defaultCategory.value }
+    ));
+  }, [categoryOptions, form.category, mode]);
 
   const updateField = <Field extends keyof EventFormState>(
     field: Field,
@@ -286,13 +336,35 @@ export function EventForm({
               value={form.eventKind}
             />
           ) : null}
-          <TextField
+          <SelectField
+            disabled={categoriesLoading || categoryOptions.length === 0}
             error={errors.category}
-            label="Категория *"
+            label={"\u041a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f *"}
             onChange={(value) => updateField("category", value)}
-            placeholder="Например: лекция, праздник, встреча"
+            options={
+              categoryOptions.length > 0
+                ? categoryOptions
+                : [
+                    {
+                      label: categoriesLoading
+                        ? "\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043c \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438..."
+                        : "\u041a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b",
+                      value: "",
+                    },
+                  ]
+            }
             value={form.category}
           />
+          {categoriesError ? (
+            <div className="event-form-notice event-form-field--wide" role="alert">
+              {categoriesError}
+            </div>
+          ) : null}
+          {currentCategoryInactive ? (
+            <div className="event-form-notice event-form-field--wide">
+              {"\u041a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f \u0430\u0440\u0445\u0438\u0432\u0438\u0440\u043e\u0432\u0430\u043d\u0430. \u0414\u043b\u044f \u043d\u043e\u0432\u044b\u0445 \u0441\u043e\u0431\u044b\u0442\u0438\u0439 \u0432\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0430\u043a\u0442\u0438\u0432\u043d\u0443\u044e \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044e."}
+            </div>
+          ) : null}
           <TextField
             label="Подзаголовок"
             onChange={(value) => updateField("subtitle", value)}

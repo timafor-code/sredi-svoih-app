@@ -7,6 +7,7 @@ export type { AdminRole } from "./auth";
 export type AdminSection =
   | "overview"
   | "events"
+  | "categories"
   | "import"
   | "registrations"
   | "members"

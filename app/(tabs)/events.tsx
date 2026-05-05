@@ -27,22 +27,30 @@ import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStor
 import { colors } from '@/theme/colors';
 import type { EventItem, EventRegistration } from '@/types/event';
 
-const eventFilters = [
+const SPECIAL_FILTERS = [
   { id: 'all', title: 'Все' },
   { id: 'members_only', title: 'Для участников' },
-  { id: 'lectures', title: 'Лекции' },
-  { id: 'tours', title: 'Экскурсии' },
-  { id: 'holidays', title: 'Праздники' },
-  { id: 'children', title: 'Детские' },
-  { id: 'community', title: 'Общинные' },
   { id: 'paid', title: 'Платные' },
   { id: 'free', title: 'Бесплатные' },
 ] as const;
 
+const CATEGORY_FILTER_PREFIX = 'category:';
+
 const timeFilters = ['Ближайшие', 'Прошедшие'] as const;
 
-type EventFilterId = (typeof eventFilters)[number]['id'];
+type SpecialFilterId = (typeof SPECIAL_FILTERS)[number]['id'];
+type EventFilterId = SpecialFilterId | `${typeof CATEGORY_FILTER_PREFIX}${string}`;
 type EventTimeFilter = (typeof timeFilters)[number];
+
+type EventFilterOption = { id: EventFilterId; title: string };
+
+function isCategoryFilter(filter: EventFilterId): filter is `${typeof CATEGORY_FILTER_PREFIX}${string}` {
+  return filter.startsWith(CATEGORY_FILTER_PREFIX);
+}
+
+function categoryFilterSlug(filter: EventFilterId): string | null {
+  return isCategoryFilter(filter) ? filter.slice(CATEGORY_FILTER_PREFIX.length) : null;
+}
 
 function normalizeSearchQuery(value: string): string {
   return value.trim().toLocaleLowerCase('ru-RU');
@@ -68,30 +76,18 @@ function eventMatchesSearch(event: EventItem, query: string): boolean {
 }
 
 function eventMatchesFilter(event: EventItem, filter: EventFilterId): boolean {
-  const category = normalizeFilterValue(event.rawCategory);
-  const audience = normalizeFilterValue(event.audience);
   const priceAmount = event.priceAmount ?? 0;
+  const slug = categoryFilterSlug(filter);
+
+  if (slug !== null) {
+    return normalizeFilterValue(event.rawCategory) === slug;
+  }
 
   switch (filter) {
     case 'all':
       return true;
     case 'members_only':
       return event.visibility === 'members_only';
-    case 'lectures':
-      return category === 'lecture' || category === 'class' || event.category === 'Курс';
-    case 'tours':
-      return category === 'tour';
-    case 'holidays':
-      return category === 'holiday' || category === 'shabbat' || event.category === 'Праздник';
-    case 'children':
-      return (
-        category === 'children'
-        || audience === 'children'
-        || audience === 'family'
-        || event.category === 'Для детей'
-      );
-    case 'community':
-      return category === 'community';
     case 'paid':
       return priceAmount > 0 || event.registrationMode === 'internal_paid';
     case 'free':
@@ -372,6 +368,7 @@ export default function EventsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const {
     events,
+    categories,
     myRegistrations,
     loading,
     error,
@@ -394,6 +391,32 @@ export default function EventsScreen() {
   useEffect(() => {
     void loadSession().catch(() => undefined);
   }, [loadSession]);
+
+  const eventFilters = useMemo<EventFilterOption[]>(() => {
+    const categoryChips: EventFilterOption[] = [...categories]
+      .filter((category) => category.isActive)
+      .sort((first, second) => {
+        if (first.sortOrder !== second.sortOrder) {
+          return first.sortOrder - second.sortOrder;
+        }
+        return first.title.localeCompare(second.title, 'ru');
+      })
+      .map((category) => ({
+        id: `${CATEGORY_FILTER_PREFIX}${category.slug}` as EventFilterId,
+        title: category.title,
+      }));
+
+    return [
+      ...SPECIAL_FILTERS.map((option) => ({ id: option.id as EventFilterId, title: option.title })),
+      ...categoryChips,
+    ];
+  }, [categories]);
+
+  useEffect(() => {
+    if (!eventFilters.some((option) => option.id === filter)) {
+      setFilter('all');
+    }
+  }, [eventFilters, filter]);
 
   const normalizedSearch = useMemo(() => normalizeSearchQuery(searchQuery), [searchQuery]);
   const items = useMemo(() => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 
 import { EventForm } from "../components/events/EventForm";
+import { listAdminEventCategories } from "../services/eventCategoriesService";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
@@ -12,6 +13,7 @@ import {
 } from "../services/adminImportReviewService";
 import type { AdminBadgeTone } from "../types/admin";
 import type { AdminEvent, AdminEventMutationInput } from "../types/events";
+import type { AdminEventCategory } from "../types/eventCategories";
 import type {
   AdminImportDateQuality,
   AdminImportItemStatus,
@@ -1005,6 +1007,40 @@ function ImportToEventDraftForm({
   submitting: boolean;
 }) {
   const prefill = useMemo(() => buildImportDraftPrefill(item), [item]);
+  const communityId = item.communityId ?? "";
+  const [categories, setCategories] = useState<AdminEventCategory[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [categoriesError, setCategoriesError] = useState<string | null>(null);
+
+  const loadCategories = useCallback(async () => {
+    if (!communityId) {
+      setCategories([]);
+      setCategoriesLoading(false);
+      setCategoriesError(null);
+      return;
+    }
+
+    setCategoriesLoading(true);
+    setCategoriesError(null);
+
+    try {
+      const nextCategories = await listAdminEventCategories(communityId);
+      setCategories(nextCategories);
+    } catch (error) {
+      setCategories([]);
+      setCategoriesError(
+        error instanceof Error
+          ? error.message
+          : "?? ??????? ????????? ????????? ???????.",
+      );
+    } finally {
+      setCategoriesLoading(false);
+    }
+  }, [communityId]);
+
+  useEffect(() => {
+    void loadCategories();
+  }, [loadCategories]);
 
   return (
     <section className="import-draft-form-panel">
@@ -1016,6 +1052,9 @@ function ImportToEventDraftForm({
       </div>
 
       <EventForm
+        categories={categories}
+        categoriesError={categoriesError}
+        categoriesLoading={categoriesLoading}
         cancelLabel="Вернуться к detail"
         forceDraftHidden
         initialEvent={prefill.event}
