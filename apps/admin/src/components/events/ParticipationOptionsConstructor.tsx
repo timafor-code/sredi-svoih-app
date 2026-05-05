@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "../ui/Button";
@@ -317,21 +317,18 @@ export function ParticipationOptionsConstructor({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [isDirty, setIsDirty] = useState(false);
   const [modalState, setModalState] = useState<ModalState>({ kind: "closed" });
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("multiple");
   const [previewQuantities, setPreviewQuantities] = useState<Record<string, number>>(
     {},
   );
+  const saveInFlightRef = useRef(false);
 
-  const loadOptions = (markClean: boolean) => {
+  const loadOptions = () => {
     setLoading(true);
     setLoadError(null);
     setSaveError(null);
     setSavedAt(null);
-    if (markClean) {
-      setIsDirty(false);
-    }
 
     let cancelled = false;
     listAdminEventParticipationOptions(eventId)
@@ -358,7 +355,7 @@ export function ParticipationOptionsConstructor({
   };
 
   useEffect(() => {
-    return loadOptions(true);
+    return loadOptions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
@@ -383,29 +380,78 @@ export function ParticipationOptionsConstructor({
     });
   }, [drafts, selectionMode]);
 
-  const markDirty = () => {
-    setIsDirty(true);
+  const persistDrafts = async (nextDrafts: DraftOption[]) => {
+    setSaveError(null);
     setSavedAt(null);
+
+    const validations = nextDrafts.map((draft, index) => ({
+      result: validateDraft(draft, index),
+    }));
+
+    const failed = validations.filter((entry) => !entry.result.ok);
+    if (failed.length > 0) {
+      setSaveError(
+        "В одном из вариантов есть ошибки. Откройте вариант и исправьте поля.",
+      );
+      return;
+    }
+
+    const inputs = validations.map((entry) => {
+      if (!entry.result.ok) {
+        throw new Error("unreachable");
+      }
+      return entry.result.input;
+    });
+
+    saveInFlightRef.current = true;
+    setSaving(true);
+    try {
+      const saved = await replaceAdminEventParticipationOptions(eventId, inputs);
+      setDrafts(saved.map(buildDraftFromOption));
+      setSaveError(null);
+      setSavedAt(new Date().toISOString());
+    } catch (error) {
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : "Не удалось сохранить варианты участия.",
+      );
+    } finally {
+      saveInFlightRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  const applyAndPersist = (updater: (current: DraftOption[]) => DraftOption[]) => {
+    if (loading || saveInFlightRef.current) {
+      return;
+    }
+
+    const nextDrafts = updater(drafts);
+    if (nextDrafts === drafts) {
+      return;
+    }
+
+    setDrafts(nextDrafts);
+    void persistDrafts(nextDrafts);
   };
 
   const handleToggleActive = (draftId: string) => {
-    setDrafts((current) =>
+    applyAndPersist((current) =>
       current.map((draft) =>
         draft.draftId === draftId ? { ...draft, isActive: !draft.isActive } : draft,
       ),
     );
-    markDirty();
   };
 
   const handleDelete = (draftId: string) => {
-    setDrafts((current) =>
+    applyAndPersist((current) =>
       withSequentialSortOrder(current.filter((draft) => draft.draftId !== draftId)),
     );
-    markDirty();
   };
 
   const handleDuplicate = (draftId: string) => {
-    setDrafts((current) => {
+    applyAndPersist((current) => {
       const index = current.findIndex((draft) => draft.draftId === draftId);
       if (index < 0) {
         return current;
@@ -422,11 +468,10 @@ export function ParticipationOptionsConstructor({
       next.splice(index + 1, 0, copy);
       return withSequentialSortOrder(next);
     });
-    markDirty();
   };
 
   const handleMove = (draftId: string, direction: -1 | 1) => {
-    setDrafts((current) => {
+    applyAndPersist((current) => {
       const index = current.findIndex((draft) => draft.draftId === draftId);
       const nextIndex = index + direction;
       if (index < 0 || nextIndex < 0 || nextIndex >= current.length) {
@@ -437,7 +482,6 @@ export function ParticipationOptionsConstructor({
       [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
       return withSequentialSortOrder(next);
     });
-    markDirty();
   };
 
   const handlePreviewToggle = (draftId: string, checked: boolean) => {
@@ -488,6 +532,7 @@ export function ParticipationOptionsConstructor({
   };
 
   const openAddModal = () => {
+    if (loading || saveInFlightRef.current) return;
     setModalState({
       kind: "add",
       form: buildEmptyDraft(drafts.length, fallbackCurrency),
@@ -496,6 +541,7 @@ export function ParticipationOptionsConstructor({
   };
 
   const openEditModal = (draftId: string) => {
+    if (loading || saveInFlightRef.current) return;
     const target = drafts.find((draft) => draft.draftId === draftId);
     if (!target) return;
     setModalState({
@@ -518,6 +564,7 @@ export function ParticipationOptionsConstructor({
   };
 
   const submitModal = () => {
+    if (saveInFlightRef.current) return;
     if (modalState.kind === "closed") return;
     const fallbackIndex =
       modalState.kind === "edit"
@@ -530,63 +577,19 @@ export function ParticipationOptionsConstructor({
     }
 
     if (modalState.kind === "add") {
-      setDrafts((current) => [...current, modalState.form]);
+      const nextDrafts = [...drafts, modalState.form];
+      setDrafts(nextDrafts);
+      void persistDrafts(nextDrafts);
     } else {
       const targetId = modalState.draftId;
-      setDrafts((current) =>
-        current.map((draft) =>
-          draft.draftId === targetId ? { ...modalState.form, draftId: targetId } : draft,
-        ),
+      const nextDrafts = drafts.map((draft) =>
+        draft.draftId === targetId ? { ...modalState.form, draftId: targetId } : draft,
       );
+      setDrafts(nextDrafts);
+      void persistDrafts(nextDrafts);
     }
 
-    markDirty();
     closeModal();
-  };
-
-  const handleReset = () => {
-    loadOptions(true);
-  };
-
-  const handleSave = async () => {
-    setSaveError(null);
-    setSavedAt(null);
-
-    const validations = drafts.map((draft, index) => ({
-      draft,
-      result: validateDraft(draft, index),
-    }));
-
-    const failed = validations.filter((entry) => !entry.result.ok);
-    if (failed.length > 0) {
-      setSaveError(
-        "В одном из вариантов есть ошибки. Откройте вариант и исправьте поля.",
-      );
-      return;
-    }
-
-    const inputs = validations.map((entry) => {
-      if (!entry.result.ok) {
-        throw new Error("unreachable");
-      }
-      return entry.result.input;
-    });
-
-    setSaving(true);
-    try {
-      const saved = await replaceAdminEventParticipationOptions(eventId, inputs);
-      setDrafts(saved.map(buildDraftFromOption));
-      setIsDirty(false);
-      setSavedAt(new Date().toISOString());
-    } catch (error) {
-      setSaveError(
-        error instanceof Error
-          ? error.message
-          : "Не удалось сохранить варианты участия.",
-      );
-    } finally {
-      setSaving(false);
-    }
   };
 
   const capacitySummary = useMemo(() => {
@@ -636,12 +639,6 @@ export function ParticipationOptionsConstructor({
       {loadError ? (
         <div className="form-error" role="alert">
           {loadError}
-        </div>
-      ) : null}
-
-      {saveError ? (
-        <div className="form-error" role="alert">
-          {saveError}
         </div>
       ) : null}
 
@@ -696,6 +693,7 @@ export function ParticipationOptionsConstructor({
             <ul className="participation-option-rows">
               {drafts.map((draft, index) => (
                 <OptionRow
+                  disabled={saving}
                   draft={draft}
                   index={index}
                   key={draft.draftId}
@@ -713,7 +711,7 @@ export function ParticipationOptionsConstructor({
 
           <button
             className="participation-add-option-btn"
-            disabled={loading}
+            disabled={loading || saving}
             onClick={openAddModal}
             type="button"
           >
@@ -745,32 +743,24 @@ export function ParticipationOptionsConstructor({
       </div>
 
       <footer className="participation-constructor__footer">
-        <div className="participation-constructor__footer-status">
-          {savedAt ? (
+        <div
+          aria-live="polite"
+          className="participation-constructor__footer-status"
+          role={saveError ? "alert" : "status"}
+        >
+          {saving ? (
+            <span className="participation-constructor__saving">
+              Сохраняем...
+            </span>
+          ) : saveError ? (
+            <span className="participation-constructor__error">
+              Ошибка сохранения: {saveError}
+            </span>
+          ) : savedAt ? (
             <span className="participation-constructor__saved">
               Сохранено в {new Date(savedAt).toLocaleTimeString("ru-RU")}
             </span>
-          ) : isDirty ? (
-            <span className="participation-constructor__dirty">
-              Есть несохранённые изменения
-            </span>
           ) : null}
-        </div>
-        <div className="participation-constructor__footer-actions">
-          <Button
-            disabled={loading || saving || !isDirty}
-            onClick={handleReset}
-            variant="ghost"
-          >
-            Сбросить изменения
-          </Button>
-          <Button
-            disabled={loading || saving || !isDirty}
-            onClick={handleSave}
-            variant="primary"
-          >
-            {saving ? "Сохраняем..." : "Сохранить варианты"}
-          </Button>
         </div>
       </footer>
 
@@ -780,6 +770,7 @@ export function ParticipationOptionsConstructor({
               onChange={updateModalForm}
               onClose={closeModal}
               onSubmit={submitModal}
+              saving={saving}
               state={modalState}
             />,
             document.body,
@@ -790,6 +781,7 @@ export function ParticipationOptionsConstructor({
 }
 
 type OptionRowProps = {
+  disabled: boolean;
   draft: DraftOption;
   index: number;
   total: number;
@@ -802,6 +794,7 @@ type OptionRowProps = {
 };
 
 function OptionRow({
+  disabled,
   draft,
   index,
   onDelete,
@@ -848,6 +841,7 @@ function OptionRow({
         <button
           aria-label="Редактировать вариант"
           className="participation-option-row__action"
+          disabled={disabled}
           onClick={onEdit}
           title="Редактировать"
           type="button"
@@ -857,6 +851,7 @@ function OptionRow({
         <button
           aria-label={draft.isActive ? "Скрыть вариант" : "Показать вариант"}
           className="participation-option-row__action"
+          disabled={disabled}
           onClick={onToggleActive}
           title={draft.isActive ? "Скрыть" : "Показать"}
           type="button"
@@ -866,6 +861,7 @@ function OptionRow({
         <button
           aria-label="Дублировать вариант"
           className="participation-option-row__action"
+          disabled={disabled}
           onClick={onDuplicate}
           title="Дублировать"
           type="button"
@@ -875,7 +871,7 @@ function OptionRow({
         <button
           aria-label="Переместить вариант выше"
           className="participation-option-row__action"
-          disabled={index === 0}
+          disabled={disabled || index === 0}
           onClick={onMoveUp}
           title="Переместить выше"
           type="button"
@@ -885,7 +881,7 @@ function OptionRow({
         <button
           aria-label="Переместить вариант ниже"
           className="participation-option-row__action"
-          disabled={index === total - 1}
+          disabled={disabled || index === total - 1}
           onClick={onMoveDown}
           title="Переместить ниже"
           type="button"
@@ -895,6 +891,7 @@ function OptionRow({
         <button
           aria-label="Удалить вариант"
           className="participation-option-row__action participation-option-row__action--danger"
+          disabled={disabled}
           onClick={onDelete}
           title="Удалить"
           type="button"
@@ -1079,10 +1076,11 @@ type OptionModalProps = {
   onChange: (updater: (form: DraftOption) => DraftOption) => void;
   onClose: () => void;
   onSubmit: () => void;
+  saving: boolean;
   state: Exclude<ModalState, { kind: "closed" }>;
 };
 
-function OptionModal({ onChange, onClose, onSubmit, state }: OptionModalProps) {
+function OptionModal({ onChange, onClose, onSubmit, saving, state }: OptionModalProps) {
   const { form, errors } = state;
 
   useEffect(() => {
@@ -1351,7 +1349,7 @@ function OptionModal({ onChange, onClose, onSubmit, state }: OptionModalProps) {
           <Button onClick={onClose} variant="ghost">
             Отмена
           </Button>
-          <Button onClick={onSubmit} variant="primary">
+          <Button disabled={saving} onClick={onSubmit} variant="primary">
             {submitLabel}
           </Button>
         </footer>

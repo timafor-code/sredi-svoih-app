@@ -2133,7 +2133,7 @@ a {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
   border-top: 1px solid var(--glass-border);
   padding-top: 14px;
@@ -2143,22 +2143,23 @@ a {
   min-width: 0;
 }
 
-.participation-constructor__footer-actions {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.participation-constructor__saved,
+.participation-constructor__saving,
+.participation-constructor__error {
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .participation-constructor__saved {
   color: var(--green);
-  font-size: 12px;
-  font-weight: 700;
 }
 
-.participation-constructor__dirty {
+.participation-constructor__saving {
   color: var(--gold);
-  font-size: 12px;
-  font-weight: 700;
+}
+
+.participation-constructor__error {
+  color: var(--red);
 }
 
 .participation-modal-overlay {
