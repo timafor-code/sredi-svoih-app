@@ -10,12 +10,14 @@ import {
 import { Button } from "../ui/Button";
 import type {
   AdminEvent,
+  AdminEventKind,
   AdminEventMutationInput,
   AdminEventRegistrationMode,
   AdminEventStatus,
   AdminEventVisibility,
 } from "../../types/events";
 import {
+  ADMIN_EVENT_KINDS,
   ADMIN_EVENT_REGISTRATION_MODES,
   ADMIN_EVENT_STATUSES,
   ADMIN_EVENT_VISIBILITIES,
@@ -34,6 +36,7 @@ type RegistrationModeSlotContext = {
 
 type EventFormState = {
   title: string;
+  eventKind: string;
   subtitle: string;
   shortDescription: string;
   description: string;
@@ -76,6 +79,7 @@ type EventFormProps = {
   onCancel: () => void;
   onRegistrationModeChange?: (mode: string) => void;
   registrationModeSlot?: ReactNode | ((context: RegistrationModeSlotContext) => ReactNode);
+  showEventKind?: boolean;
   onSubmit: (input: AdminEventMutationInput) => Promise<boolean>;
   submitLabel?: string;
   submitError?: string | null;
@@ -85,6 +89,7 @@ type EventFormProps = {
 
 const defaultForm: EventFormState = {
   title: "",
+  eventKind: "single",
   subtitle: "",
   shortDescription: "",
   description: "",
@@ -111,6 +116,18 @@ const defaultForm: EventFormState = {
 
 const statusOptions = ADMIN_EVENT_STATUSES.map((value) => ({ label: value, value }));
 const visibilityOptions = ADMIN_EVENT_VISIBILITIES.map((value) => ({ label: value, value }));
+const eventKindLabels: Record<AdminEventKind, string> = {
+  single: "Разовое событие",
+  course: "Курс / серия занятий",
+  sunday_school: "Воскресная школа",
+  shabbat: "Шабат",
+  holiday: "Праздник",
+  announcement: "Новость / объявление",
+};
+const eventKindOptions = ADMIN_EVENT_KINDS.map((value) => ({
+  label: eventKindLabels[value],
+  value,
+}));
 const registrationModeOptions = ADMIN_EVENT_REGISTRATION_MODES.map((value) => ({
   label: value,
   value,
@@ -127,6 +144,7 @@ export function EventForm({
   onCancel,
   onRegistrationModeChange,
   registrationModeSlot = null,
+  showEventKind = true,
   onSubmit,
   submitLabel,
   submitError = null,
@@ -259,6 +277,15 @@ export function EventForm({
             onChange={(value) => updateField("title", value)}
             value={form.title}
           />
+          {showEventKind ? (
+            <SelectField
+              error={errors.eventKind}
+              label="Тип события"
+              onChange={(value) => updateField("eventKind", value)}
+              options={eventKindOptions}
+              value={form.eventKind}
+            />
+          ) : null}
           <TextField
             error={errors.category}
             label="Категория *"
@@ -583,6 +610,7 @@ function buildFormFromEvent(event: AdminEvent): EventFormState {
 
   return {
     title: event.title,
+    eventKind: isAdminEventKind(event.eventKind) ? event.eventKind : "single",
     subtitle: event.subtitle ?? "",
     shortDescription: event.shortDescription ?? "",
     description: event.description ?? "",
@@ -613,6 +641,7 @@ function validateForm(
 ): { errors: FormErrors; input: AdminEventMutationInput | null } {
   const errors: FormErrors = {};
   const title = cleanString(form.title);
+  const eventKind = isAdminEventKind(form.eventKind) ? form.eventKind : null;
   const category = cleanString(form.category);
   const timezone = cleanString(form.timezone) ?? DEFAULT_TIMEZONE;
   const status = isAdminEventStatus(form.status) ? form.status : null;
@@ -623,6 +652,10 @@ function validateForm(
 
   if (!title) {
     errors.title = "Укажите название события.";
+  }
+
+  if (!eventKind) {
+    errors.eventKind = "Выберите корректный тип события.";
   }
 
   if (!category) {
@@ -704,6 +737,7 @@ function validateForm(
     Object.keys(errors).length > 0 ||
     !startsAt ||
     !title ||
+    !eventKind ||
     !category ||
     !status ||
     !visibility ||
@@ -716,6 +750,7 @@ function validateForm(
     errors,
     input: {
       title,
+      eventKind,
       subtitle: cleanString(form.subtitle),
       shortDescription: cleanString(form.shortDescription),
       description: cleanString(form.description),
@@ -894,6 +929,10 @@ function isAdminEventStatus(value: string): value is AdminEventStatus {
 
 function isAdminEventVisibility(value: string): value is AdminEventVisibility {
   return (ADMIN_EVENT_VISIBILITIES as readonly string[]).includes(value);
+}
+
+function isAdminEventKind(value: string): value is AdminEventKind {
+  return (ADMIN_EVENT_KINDS as readonly string[]).includes(value);
 }
 
 function isAdminEventRegistrationMode(value: string): value is AdminEventRegistrationMode {

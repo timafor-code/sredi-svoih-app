@@ -1023,6 +1023,7 @@ function ImportToEventDraftForm({
         notice={<ImportDraftFormNotice prefill={prefill} />}
         onCancel={onCancel}
         onSubmit={onSubmit}
+        showEventKind={false}
         submitError={submitError}
         submitLabel="Сохранить как черновик"
         submitting={submitting}
@@ -1263,6 +1264,7 @@ function buildImportDraftPrefill(item: AdminImportReviewItem): ImportDraftPrefil
   const event: AdminEvent = {
     id: `import-draft-${item.id}`,
     communityId: item.communityId ?? "",
+    eventKind: "single",
     title,
     subtitle: rawDetails.subtitle,
     description: rawDetails.description,

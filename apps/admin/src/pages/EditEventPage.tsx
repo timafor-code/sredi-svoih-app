@@ -25,7 +25,7 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
     setCurrentEvent(event);
     setSavedEvent(null);
     setSubmitError(null);
-  }, [event.id, event.registrationMode]);
+  }, [event.eventKind, event.id, event.registrationMode]);
 
   const handleSubmit = async (input: AdminEventMutationInput) => {
     setSubmitError(null);
@@ -106,6 +106,7 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
       <GlassCard className="event-occurrences-card" elevated>
         <EventOccurrencesConstructor
           defaultTimezone={currentEvent.timezone}
+          eventKind={currentEvent.eventKind}
           eventCapacity={currentEvent.capacity}
           eventId={currentEvent.id}
         />

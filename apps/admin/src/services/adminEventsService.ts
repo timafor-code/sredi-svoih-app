@@ -16,6 +16,7 @@ type SupabaseSelectError = {
 const ADMIN_EVENT_FIELDS = `
   id,
   community_id,
+  event_kind,
   title,
   subtitle,
   description,
@@ -76,6 +77,7 @@ export function normalizeAdminEventRow(row: Partial<AdminEventRow>): AdminEvent 
   return {
     id: requiredString(row.id, ""),
     communityId: requiredString(row.community_id, ""),
+    eventKind: requiredString(row.event_kind, "single"),
     title: requiredString(row.title, "Без названия"),
     subtitle: nullableString(row.subtitle),
     description: nullableString(row.description),
@@ -180,6 +182,7 @@ function buildAdminEventMutationPayload(
 ): AdminEventMutationPayload {
   const payload = {
     title: input.title,
+    eventKind: input.eventKind,
     subtitle: input.subtitle,
     shortDescription: input.shortDescription,
     description: input.description,
