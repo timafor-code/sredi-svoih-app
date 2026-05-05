@@ -94,6 +94,11 @@ export function CreateEventPage({ onBackToList, onCreated }: CreateEventPageProp
           disabled={!communityId}
           disabledMessage={communityId ? null : COMMUNITY_ID_ERROR}
           mode="create"
+          notice={
+            <div className="event-form-notice">
+              Даты и сеансы можно настроить после создания события.
+            </div>
+          }
           onCancel={onBackToList}
           onSubmit={handleSubmit}
           submitError={submitError}
