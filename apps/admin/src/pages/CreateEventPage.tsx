@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { EventForm } from "../components/events/EventForm";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
 import { createAdminEvent } from "../services/adminEventsService";
+import { listAdminEventCategories } from "../services/eventCategoriesService";
 import { useAdminAuth } from "../store/useAdminAuth";
 import type { AdminEvent, AdminEventMutationInput } from "../types/events";
+import type { AdminEventCategory } from "../types/eventCategories";
 
 type CreateEventPageProps = {
   onBackToList: () => void;
@@ -22,6 +24,40 @@ export function CreateEventPage({ onBackToList, onCreated }: CreateEventPageProp
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [createdEvent, setCreatedEvent] = useState<AdminEvent | null>(null);
+  const [categories, setCategories] = useState<AdminEventCategory[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [categoriesError, setCategoriesError] = useState<string | null>(null);
+
+  const loadCategories = useCallback(async () => {
+    if (!communityId) {
+      setCategories([]);
+      setCategoriesLoading(false);
+      setCategoriesError(null);
+      return;
+    }
+
+    setCategoriesLoading(true);
+    setCategoriesError(null);
+
+    try {
+      const nextCategories = await listAdminEventCategories(communityId);
+      setCategories(nextCategories);
+    } catch (error) {
+      setCategories([]);
+      setCategoriesError(
+        error instanceof Error
+          ? error.message
+          : "?? ??????? ????????? ????????? ???????.",
+      );
+    } finally {
+      setCategoriesLoading(false);
+    }
+  }, [communityId]);
+
+  useEffect(() => {
+    void loadCategories();
+  }, [loadCategories]);
+
 
   const handleSubmit = async (input: AdminEventMutationInput) => {
     setSubmitError(null);
@@ -93,6 +129,9 @@ export function CreateEventPage({ onBackToList, onCreated }: CreateEventPageProp
         <EventForm
           disabled={!communityId}
           disabledMessage={communityId ? null : COMMUNITY_ID_ERROR}
+          categories={categories}
+          categoriesError={categoriesError}
+          categoriesLoading={categoriesLoading}
           mode="create"
           notice={
             <div className="event-form-notice">

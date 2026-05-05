@@ -1,5 +1,3 @@
-export type EventCategory = 'Курс' | 'Клуб' | 'Для детей' | 'Праздник';
-
 export type EventRegistrationMode =
   | 'none'
   | 'external_link'
@@ -27,6 +25,7 @@ export const ACTIVE_EVENT_REGISTRATION_STATUSES: EventRegistrationStatus[] = [
 
 export interface Event {
   id: string;
+  communityId: string;
   title: string;
   subtitle: string | null;
   shortDescription: string | null;
@@ -75,9 +74,10 @@ export interface EventRegistration {
 
 export interface EventItem {
   id: string;
+  communityId: string;
   title: string;
   date?: string;
-  category: EventCategory;
+  category: string;
   tagColor: string;
   imageIcon: string;
   featured?: boolean;

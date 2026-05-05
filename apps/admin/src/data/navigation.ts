@@ -19,6 +19,12 @@ export const navigationGroups: NavigationGroup[] = [
         roles: ["admin", "event_manager"],
       },
       {
+        section: "categories",
+        label: "Категории",
+        icon: "◉",
+        roles: ["admin", "event_manager"],
+      },
+      {
         section: "import",
         label: "Импорт с сайта",
         icon: "⟳",

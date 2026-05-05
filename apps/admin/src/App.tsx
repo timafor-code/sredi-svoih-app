@@ -7,6 +7,7 @@ import { useAdminAuth } from "./store/useAdminAuth";
 import type { AdminRole } from "./types/auth";
 import type { AdminSection } from "./types/admin";
 import type { AdminEvent } from "./types/events";
+import { CategoriesPage } from "./pages/CategoriesPage";
 import { ConfigMissingPage } from "./pages/ConfigMissingPage";
 import { CreateEventPage } from "./pages/CreateEventPage";
 import { EditEventPage } from "./pages/EditEventPage";
@@ -197,6 +198,8 @@ function renderPage(
           refreshSignal={eventsRefreshSignal}
         />
       );
+    case "categories":
+      return <CategoriesPage />;
     case "import":
       return (
         <ImportReviewPage

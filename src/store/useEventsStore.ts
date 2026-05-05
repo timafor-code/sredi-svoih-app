@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { listEventCategories } from '@/services/eventCategoriesService';
 import { getEventById, listPublishedEvents } from '@/services/eventsService';
 import {
   cancelRegistration as cancelRegistrationService,
@@ -13,6 +14,7 @@ import {
   type EventItem,
   type EventRegistration,
 } from '@/types/event';
+import type { EventCategory } from '@/types/eventCategory';
 
 type LoadEventOptions = {
   forceRefresh?: boolean;
@@ -20,6 +22,7 @@ type LoadEventOptions = {
 
 type EventsState = {
   events: EventItem[];
+  categories: EventCategory[];
   selectedEvent: EventItem | null;
   myRegistrations: EventRegistration[];
   loading: boolean;
@@ -37,6 +40,12 @@ type EventsState = {
 };
 
 const activeRegistrationStatuses = new Set(ACTIVE_EVENT_REGISTRATION_STATUSES);
+
+const FALLBACK_CATEGORY = {
+  title: 'Событие',
+  tagColor: '#7B68EE',
+  imageIcon: '•',
+};
 
 export function isActiveEventRegistration(
   registration: EventRegistration | null | undefined,
@@ -61,51 +70,61 @@ function formatEventDate(value: string | null | undefined): string | undefined {
   }).format(date);
 }
 
-function mapCategory(category: string | null): Pick<EventItem, 'category' | 'tagColor' | 'imageIcon'> {
-  switch (category) {
-    case 'lecture':
-    case 'class':
-      return {
-        category: 'Курс',
-        tagColor: '#4A90D9',
-        imageIcon: '📚',
-      };
-
-    case 'holiday':
-    case 'shabbat':
-      return {
-        category: 'Праздник',
-        tagColor: '#F07A2A',
-        imageIcon: '🕯️',
-      };
-
-    case 'children':
-      return {
-        category: 'Для детей',
-        tagColor: '#E84393',
-        imageIcon: '🎨',
-      };
-
-    default:
-      return {
-        category: 'Клуб',
-        tagColor: '#7B68EE',
-        imageIcon: '✡️',
-      };
-  }
+function categoryKey(communityId: string, slug: string): string {
+  return `${communityId}::${slug}`;
 }
 
-function mapEvent(event: Event, index = 1): EventItem {
-  const category = mapCategory(event.category);
+function buildCategoryIndex(categories: EventCategory[]): Map<string, EventCategory> {
+  const index = new Map<string, EventCategory>();
+
+  categories.forEach((category) => {
+    index.set(categoryKey(category.communityId, category.slug), category);
+  });
+
+  return index;
+}
+
+function resolveCategoryDisplay(
+  event: Event,
+  index: Map<string, EventCategory>,
+): Pick<EventItem, 'category' | 'tagColor' | 'imageIcon'> {
+  const slug = event.category;
+
+  if (slug) {
+    const match = index.get(categoryKey(event.communityId, slug));
+
+    if (match) {
+      return {
+        category: match.title,
+        tagColor: match.color,
+        imageIcon: match.icon,
+      };
+    }
+  }
+
+  return {
+    category: slug ?? FALLBACK_CATEGORY.title,
+    tagColor: FALLBACK_CATEGORY.tagColor,
+    imageIcon: FALLBACK_CATEGORY.imageIcon,
+  };
+}
+
+function mapEvent(
+  event: Event,
+  index: Map<string, EventCategory>,
+  position = 1,
+): EventItem {
+  const display = resolveCategoryDisplay(event, index);
 
   return {
     id: event.id,
+    communityId: event.communityId,
     title: event.title,
     subtitle: event.subtitle ?? undefined,
     shortDescription: event.shortDescription,
     description: event.description,
     date: formatEventDate(event.startsAt),
-    featured: index === 0,
+    featured: position === 0,
     startsAt: event.startsAt,
     endsAt: event.endsAt,
     timezone: event.timezone,
@@ -128,7 +147,7 @@ function mapEvent(event: Event, index = 1): EventItem {
     priceAmount: event.priceAmount,
     priceCurrency: event.priceCurrency,
     publishedAt: event.publishedAt,
-    ...category,
+    ...display,
   };
 }
 
@@ -183,6 +202,7 @@ function findRegistrationForEvent(
 function findLoadedEvent(
   events: EventItem[],
   registrations: EventRegistration[],
+  categoryIndex: Map<string, EventCategory>,
   eventId: string,
 ): EventItem | null {
   const listedEvent = events.find((event) => event.id === eventId);
@@ -193,11 +213,12 @@ function findLoadedEvent(
 
   const registrationEvent = registrations.find((registration) => registration.event?.id === eventId)?.event;
 
-  return registrationEvent ? mapEvent(registrationEvent) : null;
+  return registrationEvent ? mapEvent(registrationEvent, categoryIndex) : null;
 }
 
 export const useEventsStore = create<EventsState>((set, get) => ({
   events: [],
+  categories: [],
   selectedEvent: null,
   myRegistrations: [],
   loading: false,
@@ -210,10 +231,15 @@ export const useEventsStore = create<EventsState>((set, get) => ({
     set({ loading: true, error: null });
 
     try {
-      const events = await listPublishedEvents();
+      const [events, categories] = await Promise.all([
+        listPublishedEvents(),
+        listEventCategories().catch(() => [] as EventCategory[]),
+      ]);
+      const categoryIndex = buildCategoryIndex(categories);
 
       set({
-        events: events.map(mapEvent),
+        events: events.map((event, index) => mapEvent(event, categoryIndex, index)),
+        categories,
         loading: false,
         error: null,
       });
@@ -233,10 +259,11 @@ export const useEventsStore = create<EventsState>((set, get) => ({
   },
 
   loadEventById: async (eventId: string, options: LoadEventOptions = {}) => {
+    const categoryIndex = buildCategoryIndex(get().categories);
     const currentSelectedEvent = get().selectedEvent?.id === eventId ? get().selectedEvent : null;
     const cachedEvent = options.forceRefresh
       ? null
-      : currentSelectedEvent ?? findLoadedEvent(get().events, get().myRegistrations, eventId);
+      : currentSelectedEvent ?? findLoadedEvent(get().events, get().myRegistrations, categoryIndex, eventId);
 
     if (cachedEvent) {
       set({
@@ -266,7 +293,7 @@ export const useEventsStore = create<EventsState>((set, get) => ({
         return null;
       }
 
-      const eventItem = mapEvent(event);
+      const eventItem = mapEvent(event, categoryIndex);
 
       set({
         selectedEvent: eventItem,
