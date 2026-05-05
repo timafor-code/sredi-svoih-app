@@ -119,6 +119,7 @@ function mapEvent(
   return {
     id: event.id,
     communityId: event.communityId,
+    eventKind: event.eventKind,
     title: event.title,
     subtitle: event.subtitle ?? undefined,
     shortDescription: event.shortDescription,

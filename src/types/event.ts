@@ -4,6 +4,14 @@ export type EventRegistrationMode =
   | 'internal_free'
   | 'internal_paid';
 
+export type EventKind =
+  | 'single'
+  | 'course'
+  | 'sunday_school'
+  | 'shabbat'
+  | 'holiday'
+  | 'announcement';
+
 export type EventVisibility = 'public' | 'members_only' | 'hidden';
 
 export type EventStatus = 'draft' | 'published' | 'cancelled' | 'archived';
@@ -26,6 +34,7 @@ export const ACTIVE_EVENT_REGISTRATION_STATUSES: EventRegistrationStatus[] = [
 export interface Event {
   id: string;
   communityId: string;
+  eventKind: EventKind | string | null;
   title: string;
   subtitle: string | null;
   shortDescription: string | null;
@@ -75,6 +84,7 @@ export interface EventRegistration {
 export interface EventItem {
   id: string;
   communityId: string;
+  eventKind?: EventKind | string | null;
   title: string;
   date?: string;
   category: string;

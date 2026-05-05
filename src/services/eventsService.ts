@@ -1,6 +1,7 @@
 import { supabase } from './supabaseClient';
 import type {
   Event,
+  EventKind,
   EventRegistrationMode,
   EventStatus,
   EventVisibility,
@@ -9,6 +10,7 @@ import type {
 export type CommunityEventRow = {
   id: string;
   community_id: string;
+  event_kind: EventKind | string | null;
 
   title: string;
   subtitle: string | null;
@@ -50,6 +52,7 @@ export type CommunityEventRow = {
 export const EVENT_FIELDS = `
   id,
   community_id,
+  event_kind,
   title,
   subtitle,
   short_description,
@@ -82,6 +85,7 @@ export function normalizeEventRow(row: CommunityEventRow): Event {
   return {
     id: row.id,
     communityId: row.community_id,
+    eventKind: row.event_kind,
     title: row.title,
     subtitle: row.subtitle,
     shortDescription: row.short_description,

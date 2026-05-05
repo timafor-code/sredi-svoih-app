@@ -138,6 +138,19 @@ function getActiveRegistration(registration: EventRegistration | null): EventReg
   return isActiveEventRegistration(registration) ? registration : null;
 }
 
+function getPaidRegistrationButtonTitle(event: EventItem): string {
+  switch (event.eventKind) {
+    case 'shabbat':
+    case 'single':
+      return 'Выбрать участие';
+    case 'course':
+    case 'sunday_school':
+    case 'holiday':
+    default:
+      return 'Выбрать дату и участие';
+  }
+}
+
 type ChipProps = {
   children: string;
   tone?: 'default' | 'warning' | 'danger' | 'success';
@@ -177,6 +190,7 @@ type RegistrationBlockProps = {
   event: EventItem;
   hasSession: boolean;
   onCancel: (registration: EventRegistration) => void;
+  onOpenPaidRegistration: (event: EventItem) => void;
   onRegister: (event: EventItem, registration: EventRegistration | null) => void;
   registration: EventRegistration | null;
   registering: boolean;
@@ -187,6 +201,7 @@ function RegistrationBlock({
   event,
   hasSession,
   onCancel,
+  onOpenPaidRegistration,
   onRegister,
   registration,
   registering,
@@ -216,12 +231,12 @@ function RegistrationBlock({
       <GlassCard>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Регистрация</Text>
-          <Chip tone="warning">Оплата позже</Chip>
+          <Chip tone="warning">Платное участие</Chip>
         </View>
-        <Text style={styles.sectionText}>Оплата будет доступна позже. Сейчас запись на платные события не открыта.</Text>
+        <Text style={styles.sectionText}>Выберите дату и вариант участия. Оплату и финальную запись подключим следующим этапом.</Text>
         <PrimaryButton
-          title="Оплата будет доступна позже"
-          disabled
+          title={getPaidRegistrationButtonTitle(event)}
+          onPress={() => onOpenPaidRegistration(event)}
           buttonStyle={styles.registrationButton}
         />
       </GlassCard>
@@ -388,6 +403,26 @@ export default function EventDetailScreen() {
     void loadEventById(eventId, { forceRefresh: true }).catch(() => undefined);
   }, [eventId, loadEventById]);
 
+  const handleOpenPaidRegistration = useCallback((targetEvent: EventItem) => {
+    switch (targetEvent.eventKind) {
+      case 'shabbat':
+      case 'single':
+        router.push({
+          pathname: '/events/paid-options',
+          params: { eventId: targetEvent.id },
+        });
+        return;
+      case 'course':
+      case 'sunday_school':
+      case 'holiday':
+      default:
+        router.push({
+          pathname: '/events/paid-occurrences',
+          params: { eventId: targetEvent.id },
+        });
+    }
+  }, [router]);
+
   const conditionRows = useMemo(() => {
     if (!event) {
       return [];
@@ -533,6 +568,7 @@ export default function EventDetailScreen() {
               cancelling={cancellingRegistrationId === registration?.id}
               onRegister={handleRegistrationAction}
               onCancel={handleCancelRegistration}
+              onOpenPaidRegistration={handleOpenPaidRegistration}
             />
           </>
         ) : null}
