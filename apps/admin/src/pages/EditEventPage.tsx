@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { EventForm } from "../components/events/EventForm";
+import { EventOccurrencesConstructor } from "../components/events/EventOccurrencesConstructor";
 import { ParticipationOptionsConstructor } from "../components/events/ParticipationOptionsConstructor";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -99,6 +100,14 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
           onSubmit={handleSubmit}
           submitError={submitError}
           submitting={submitting}
+        />
+      </GlassCard>
+
+      <GlassCard className="event-occurrences-card" elevated>
+        <EventOccurrencesConstructor
+          defaultTimezone={currentEvent.timezone}
+          eventCapacity={currentEvent.capacity}
+          eventId={currentEvent.id}
         />
       </GlassCard>
 
