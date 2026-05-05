@@ -1,5 +1,5 @@
 import { Stack, useRouter } from 'expo-router';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
@@ -7,6 +7,11 @@ import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { useNow } from '@/hooks/useNow';
 import { getHebrewDate, getHebrewDateLabel, getOmerInfo } from '@/lib/hebcal';
+import {
+  formatLocalDateKey,
+  hasRecordedOmerCount,
+  OMER_COUNT_ACTIVITY_TYPE,
+} from '@/lib/prayerTracker';
 import { getDailyZmanim, getHebcalLocation } from '@/lib/zmanim';
 import { useAuthStore } from '@/store/useAuthStore';
 import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
@@ -31,8 +36,12 @@ function isPrayerTrackerAuthError(error: unknown): boolean {
 export default function OmerModal() {
   const router = useRouter();
   const now = useNow();
+  const [loadingTodayActivity, setLoadingTodayActivity] = useState(false);
   const city = useSettingsStore((state) => state.city);
   const authUser = useAuthStore((state) => state.user);
+  const authUserId = authUser?.id ?? null;
+  const prayerActivityItems = usePrayerTrackerStore((state) => state.items);
+  const loadMyActivity = usePrayerTrackerStore((state) => state.loadMyActivity);
   const recordActivity = usePrayerTrackerStore((state) => state.recordActivity);
   const recording = usePrayerTrackerStore((state) => state.recording);
   const location = useMemo(() => getHebcalLocation(city), [city]);
@@ -40,10 +49,49 @@ export default function OmerModal() {
   const hdate = useMemo(() => getHebrewDate(now, location), [location, now]);
   const hebrewDateLabel = useMemo(() => getHebrewDateLabel(hdate), [hdate]);
   const omer = useMemo(() => getOmerInfo(now, location), [location, now]);
+  const activityDate = useMemo(() => formatLocalDateKey(now, daily.timeZone), [daily.timeZone, now]);
+  const alreadyRecorded = Boolean(
+    authUserId
+    && hasRecordedOmerCount(prayerActivityItems, activityDate, authUserId),
+  );
+  const countButtonDisabled = Boolean(omer) && (recording || loadingTodayActivity || alreadyRecorded);
+  const countButtonTitle = recording
+    ? 'Записываем...'
+    : alreadyRecorded
+      ? 'Посчитано'
+      : omer
+        ? 'Я посчитал сегодня'
+        : 'Закрыть';
+
+  useEffect(() => {
+    if (!authUserId) {
+      setLoadingTodayActivity(false);
+      return undefined;
+    }
+
+    let isMounted = true;
+
+    setLoadingTodayActivity(true);
+    void loadMyActivity({ fromDate: activityDate, toDate: activityDate, limit: 20 })
+      .catch(() => undefined)
+      .finally(() => {
+        if (isMounted) {
+          setLoadingTodayActivity(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activityDate, authUserId, loadMyActivity]);
 
   const handleCountToday = async () => {
     if (!omer) {
       router.back();
+      return;
+    }
+
+    if (recording || loadingTodayActivity || alreadyRecorded) {
       return;
     }
 
@@ -54,7 +102,8 @@ export default function OmerModal() {
 
     try {
       await recordActivity({
-        activityType: 'omer_count',
+        activityDate,
+        activityType: OMER_COUNT_ACTIVITY_TYPE,
         city,
         hebrewDate: {
           day: hdate.getDate(),
@@ -68,7 +117,10 @@ export default function OmerModal() {
           year: hdate.getFullYear(),
         },
         metadata: {
+          countingHe: omer.countingHe,
+          countingRu: omer.countingRu,
           dayHe: omer.dayHe,
+          meaningRu: omer.meaningRu,
           omerDay: omer.day,
           sefirahHe: omer.sefirahHe,
           sefirahRu: omer.sefirahRu,
@@ -79,7 +131,7 @@ export default function OmerModal() {
       });
 
       Alert.alert('Записано', 'Счёт Омера сохранён.', [
-        { text: 'OK', onPress: () => router.back() },
+        { text: 'OK' },
       ]);
     } catch (error) {
       if (isPrayerTrackerAuthError(error)) {
@@ -127,9 +179,15 @@ export default function OmerModal() {
           <Text style={styles.body}>{omer?.countingRu ?? 'Сегодня Омер не считают.'}</Text>
         </GlassCard>
 
+        {alreadyRecorded ? (
+          <View style={styles.recordedBadge}>
+            <Text style={styles.recordedBadgeText}>Сегодня уже посчитано</Text>
+          </View>
+        ) : null}
+
         <PrimaryButton
-          disabled={recording}
-          title={recording ? 'Записываем...' : omer ? 'Я посчитал сегодня' : 'Закрыть'}
+          disabled={countButtonDisabled}
+          title={countButtonTitle}
           onPress={handleCountToday}
         />
       </Screen>
@@ -207,5 +265,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     marginBottom: 10,
+  },
+  recordedBadge: {
+    alignSelf: 'flex-start',
+    overflow: 'hidden',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(76,175,80,0.26)',
+    backgroundColor: 'rgba(76,175,80,0.14)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  recordedBadgeText: {
+    color: colors.success,
+    fontSize: 12,
+    fontWeight: '800',
   },
 });
