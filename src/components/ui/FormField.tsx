@@ -10,6 +10,7 @@ type FormFieldProps = {
   multiline?: boolean;
   onChangeText: (text: string) => void;
   placeholder?: string;
+  secureTextEntry?: boolean;
   value: string;
 };
 
@@ -21,6 +22,7 @@ export function FormField({
   multiline,
   onChangeText,
   placeholder,
+  secureTextEntry,
   value,
 }: FormFieldProps) {
   return (
@@ -34,6 +36,7 @@ export function FormField({
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor="rgba(255,255,255,0.3)"
+        secureTextEntry={secureTextEntry}
         selectionColor={colors.orange}
         style={[styles.input, multiline && styles.multiline, !editable && styles.disabledInput]}
         textAlignVertical={multiline ? 'top' : 'center'}

@@ -159,6 +159,8 @@ const roleTitles: Record<CommunityMembershipRole, string> = {
 
 type PendingAction = 'signIn' | 'invite' | 'signOut' | null;
 
+const SIGN_IN_ERROR_MESSAGE = 'Не удалось войти. Проверьте email и пароль.';
+
 function getInitials(name: string): string {
   return name
     .split(' ')
@@ -171,6 +173,7 @@ function getInitials(name: string): string {
 export default function ProfileScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -242,17 +245,26 @@ export default function ProfileScreen() {
 
   const handleSignIn = useCallback(async () => {
     setLocalError(null);
+
+    const normalizedEmail = email.trim();
+
+    if (!normalizedEmail || !password) {
+      setLocalError(SIGN_IN_ERROR_MESSAGE);
+      return;
+    }
+
     setPendingAction('signIn');
 
     try {
-      await signIn(email);
+      await signIn(normalizedEmail, password);
       await syncSignedInState();
+      setPassword('');
     } catch {
-      setLocalError('Не удалось войти. Проверьте email и попробуйте ещё раз.');
+      setLocalError(SIGN_IN_ERROR_MESSAGE);
     } finally {
       setPendingAction(null);
     }
-  }, [email, signIn, syncSignedInState]);
+  }, [email, password, signIn, syncSignedInState]);
 
   const handleAcceptInvite = useCallback(async () => {
     setLocalError(null);
@@ -278,6 +290,7 @@ export default function ProfileScreen() {
       resetEventPrivateState();
       await loadEvents();
       setInviteCode('');
+      setPassword('');
     } catch {
       setLocalError('Не удалось выйти. Попробуйте ещё раз.');
     } finally {
@@ -344,6 +357,13 @@ export default function ProfileScreen() {
               onChangeText={setEmail}
               keyboardType="email-address"
               placeholder="name@example.com"
+            />
+            <FormField
+              label="Пароль"
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Пароль"
+              secureTextEntry
             />
             <PrimaryButton title={isSigningIn ? 'Входим...' : 'Войти'} disabled={isSigningIn} onPress={handleSignIn} />
             {signInError ? <Text style={styles.errorText}>{signInError}</Text> : null}

@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import {
   getSession,
   loadProfile as loadProfileService,
-  signInDev,
+  signIn as signInService,
   signOut as signOutService,
   upsertProfile,
   type Profile,
@@ -28,7 +28,7 @@ type AuthState = {
   updateProfile: (input: ProfileUpsert) => Promise<Profile>;
   loadMembership: () => Promise<void>;
   acceptInvite: (code: string) => Promise<void>;
-  signIn: (email: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -40,7 +40,7 @@ function friendlyAuthError(error: unknown): string {
   }
 
   if (message.includes('Invalid login credentials')) {
-    return 'Не удалось войти. Для локального MVP используйте email, созданный через этот dev-вход.';
+    return 'Не удалось войти. Проверьте email и пароль.';
   }
 
   if (message.includes('User already registered')) {
@@ -173,11 +173,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  signIn: async (email: string) => {
+  signIn: async (email: string, password: string) => {
     set({ loading: true, error: null });
 
     try {
-      const session = await signInDev(email);
+      const session = await signInService(email, password);
       const [profile, membership] = await Promise.all([
         loadProfileOrCreate(),
         loadMyMembership(),
