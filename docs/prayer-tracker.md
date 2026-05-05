@@ -21,6 +21,10 @@ Home and the Prayers screen now share the same prayer window card and active pra
 
 Home and the Prayers screen also share `MorningShemaCard`. It records `activity_type = shema_morning`, reads the recorded state from `prayer_activity_logs`, shows the `Прочитал` badge on the card, and reopens the modal in the disabled `Прочитал` state for the same local activity date.
 
+### Omer Modal
+
+The Omer modal records `activity_type = omer_count`. On open, it reads the current local `activity_date` from `prayer_activity_logs` for the selected city/timezone. If a row already exists for the signed-in user, the button is disabled with `Посчитано` and the modal shows `Сегодня уже посчитано`. DB uniqueness remains `user_id + activity_date + activity_type`.
+
 ## Time Gates
 
 Prayer cards can be recorded only during their active window. Past and future prayers remain visible on the Prayers screen, but they are not available for recording.
