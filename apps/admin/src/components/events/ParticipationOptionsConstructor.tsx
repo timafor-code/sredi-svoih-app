@@ -58,6 +58,8 @@ type ParticipationOptionsConstructorProps = {
   eventId: string;
   eventCapacity: number | null;
   defaultPriceCurrency?: string | null;
+  requiresApproval?: boolean;
+  onRequiresApprovalChange?: (value: boolean) => void;
 };
 
 type DraftOption = {
@@ -81,6 +83,8 @@ type DraftOption = {
 };
 
 type DraftErrors = Partial<Record<keyof DraftOption, string>>;
+
+type SelectionMode = "single" | "multiple";
 
 type ModalState =
   | { kind: "closed" }
@@ -139,7 +143,7 @@ function buildEmptyDraft(index: number, currency: string): DraftOption {
     seatLimit: "",
     allowQuantity: false,
     minQuantity: "1",
-    maxQuantity: "1",
+    maxQuantity: "10",
     isDonation: false,
     countsTowardCapacity: true,
     groupKey: "",
@@ -159,6 +163,36 @@ function parseInteger(value: string): number | null {
   }
   const parsed = Number(trimmed);
   return Number.isSafeInteger(parsed) ? parsed : Number.NaN;
+}
+
+function parsePriceAmount(value: string): number {
+  const parsed = parseInteger(value);
+  return parsed === null || Number.isNaN(parsed) || parsed < 0 ? 0 : parsed;
+}
+
+function quantityBounds(draft: DraftOption): { min: number; max: number } {
+  if (!draft.allowQuantity) {
+    return { min: 1, max: 1 };
+  }
+
+  const minParsed = parseInteger(draft.minQuantity);
+  const min = minParsed === null || Number.isNaN(minParsed) ? 1 : Math.max(1, minParsed);
+  const maxParsed = parseInteger(draft.maxQuantity);
+  const max = maxParsed === null || Number.isNaN(maxParsed) ? min : Math.max(min, maxParsed);
+
+  return { min, max };
+}
+
+function clampQuantity(draft: DraftOption, quantity: number): number {
+  const { min, max } = quantityBounds(draft);
+  if (quantity <= 0) {
+    return 0;
+  }
+  return Math.min(max, Math.max(min, quantity));
+}
+
+function withSequentialSortOrder(drafts: DraftOption[]): DraftOption[] {
+  return drafts.map((draft, index) => ({ ...draft, sortOrder: String(index) }));
 }
 
 type DraftValidation =
@@ -269,6 +303,8 @@ export function ParticipationOptionsConstructor({
   eventId,
   eventCapacity,
   defaultPriceCurrency,
+  requiresApproval = false,
+  onRequiresApprovalChange,
 }: ParticipationOptionsConstructorProps) {
   const fallbackCurrency =
     defaultPriceCurrency && defaultPriceCurrency.trim()
@@ -283,6 +319,10 @@ export function ParticipationOptionsConstructor({
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [modalState, setModalState] = useState<ModalState>({ kind: "closed" });
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>("multiple");
+  const [previewQuantities, setPreviewQuantities] = useState<Record<string, number>>(
+    {},
+  );
 
   const loadOptions = (markClean: boolean) => {
     setLoading(true);
@@ -322,6 +362,27 @@ export function ParticipationOptionsConstructor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
+  useEffect(() => {
+    setPreviewQuantities((current) => {
+      const activeDrafts = drafts.filter((draft) => draft.isActive);
+      const next: Record<string, number> = {};
+
+      for (const draft of activeDrafts) {
+        const quantity = clampQuantity(draft, current[draft.draftId] ?? 0);
+        if (quantity > 0) {
+          next[draft.draftId] = quantity;
+        }
+      }
+
+      if (selectionMode === "single") {
+        const firstSelectedId = Object.keys(next)[0];
+        return firstSelectedId ? { [firstSelectedId]: next[firstSelectedId] } : {};
+      }
+
+      return next;
+    });
+  }, [drafts, selectionMode]);
+
   const markDirty = () => {
     setIsDirty(true);
     setSavedAt(null);
@@ -337,8 +398,93 @@ export function ParticipationOptionsConstructor({
   };
 
   const handleDelete = (draftId: string) => {
-    setDrafts((current) => current.filter((draft) => draft.draftId !== draftId));
+    setDrafts((current) =>
+      withSequentialSortOrder(current.filter((draft) => draft.draftId !== draftId)),
+    );
     markDirty();
+  };
+
+  const handleDuplicate = (draftId: string) => {
+    setDrafts((current) => {
+      const index = current.findIndex((draft) => draft.draftId === draftId);
+      if (index < 0) {
+        return current;
+      }
+
+      const source = current[index];
+      const copy: DraftOption = {
+        ...source,
+        draftId: nextDraftId(),
+        remoteId: null,
+        title: `${source.title || "Вариант"} (копия)`,
+      };
+      const next = [...current];
+      next.splice(index + 1, 0, copy);
+      return withSequentialSortOrder(next);
+    });
+    markDirty();
+  };
+
+  const handleMove = (draftId: string, direction: -1 | 1) => {
+    setDrafts((current) => {
+      const index = current.findIndex((draft) => draft.draftId === draftId);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= current.length) {
+        return current;
+      }
+
+      const next = [...current];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return withSequentialSortOrder(next);
+    });
+    markDirty();
+  };
+
+  const handlePreviewToggle = (draftId: string, checked: boolean) => {
+    const target = drafts.find((draft) => draft.draftId === draftId);
+    if (!target) {
+      return;
+    }
+
+    const nextQuantity = checked ? quantityBounds(target).min : 0;
+
+    setPreviewQuantities((current) => {
+      if (selectionMode === "single") {
+        return nextQuantity > 0 ? { [draftId]: nextQuantity } : {};
+      }
+
+      const next = { ...current };
+      if (nextQuantity > 0) {
+        next[draftId] = nextQuantity;
+      } else {
+        delete next[draftId];
+      }
+      return next;
+    });
+  };
+
+  const handlePreviewStep = (draftId: string, delta: -1 | 1) => {
+    const target = drafts.find((draft) => draft.draftId === draftId);
+    if (!target) {
+      return;
+    }
+
+    setPreviewQuantities((current) => {
+      const currentQuantity = current[draftId] ?? quantityBounds(target).min;
+      const nextQuantity = clampQuantity(target, currentQuantity + delta);
+
+      if (selectionMode === "single") {
+        return nextQuantity > 0 ? { [draftId]: nextQuantity } : {};
+      }
+
+      const next = { ...current };
+      if (nextQuantity > 0) {
+        next[draftId] = nextQuantity;
+      } else {
+        delete next[draftId];
+      }
+      return next;
+    });
   };
 
   const openAddModal = () => {
@@ -443,42 +589,12 @@ export function ParticipationOptionsConstructor({
     }
   };
 
-  const summary = useMemo(() => {
-    let minSum = 0;
-    let maxSum = 0;
+  const capacitySummary = useMemo(() => {
     let totalSeatLimit = 0;
     let unlimitedSeats = 0;
-    let activeCount = 0;
-    let donationCount = 0;
-    let currency = fallbackCurrency;
 
     for (const draft of drafts) {
       if (!draft.isActive) continue;
-      activeCount += 1;
-
-      if (draft.priceCurrency.trim()) {
-        currency = draft.priceCurrency.trim().toUpperCase();
-      }
-
-      const priceParsed = parseInteger(draft.priceAmount);
-      const price =
-        priceParsed === null || Number.isNaN(priceParsed) || priceParsed < 0
-          ? 0
-          : priceParsed;
-
-      const minQty = draft.allowQuantity
-        ? Math.max(1, parseInteger(draft.minQuantity) ?? 1)
-        : 1;
-      const maxQty = draft.allowQuantity
-        ? Math.max(minQty, parseInteger(draft.maxQuantity) ?? 1)
-        : 1;
-
-      if (draft.isDonation) {
-        donationCount += 1;
-      } else {
-        minSum += price * minQty;
-        maxSum += price * maxQty;
-      }
 
       if (draft.countsTowardCapacity) {
         const seatLimitParsed = draft.seatLimit.trim()
@@ -497,21 +613,16 @@ export function ParticipationOptionsConstructor({
     }
 
     return {
-      activeCount,
-      donationCount,
-      minSum,
-      maxSum,
-      currency,
       totalSeatLimit,
       unlimitedSeats,
     };
-  }, [drafts, fallbackCurrency]);
+  }, [drafts]);
 
   const seatsExceedCapacity =
     typeof eventCapacity === "number" &&
     eventCapacity > 0 &&
-    summary.unlimitedSeats === 0 &&
-    summary.totalSeatLimit > eventCapacity;
+    capacitySummary.unlimitedSeats === 0 &&
+    capacitySummary.totalSeatLimit > eventCapacity;
 
   return (
     <section className="participation-constructor">
@@ -536,6 +647,41 @@ export function ParticipationOptionsConstructor({
 
       <div className="participation-constructor__layout">
         <div className="participation-constructor__main">
+          <div className="participation-settings-grid">
+            <div className="participation-setting-item">
+              <ToggleSwitch checked disabled label="Использовать варианты участия" />
+              <span>Использовать варианты участия</span>
+            </div>
+            <div className="participation-setting-item">
+              <ToggleSwitch
+                checked={requiresApproval}
+                disabled={!onRequiresApprovalChange}
+                label="Требуется подтверждение"
+                onChange={onRequiresApprovalChange}
+              />
+              <span>Требуется подтверждение</span>
+            </div>
+            <div className="participation-setting-item participation-setting-item--muted">
+              <ToggleSwitch checked={false} disabled label="Разрешить комментарий" />
+              <span>Разрешить комментарий</span>
+            </div>
+            <label className="participation-setting-item participation-setting-item--wide">
+              <span className="participation-setting-item__prefix">Выбор:</span>
+              <select
+                className="participation-setting-select"
+                onChange={(event) =>
+                  setSelectionMode(
+                    event.target.value === "single" ? "single" : "multiple",
+                  )
+                }
+                value={selectionMode}
+              >
+                <option value="single">Только один вариант</option>
+                <option value="multiple">Можно выбрать несколько</option>
+              </select>
+            </label>
+          </div>
+
           <div className="participation-constructor__list-label">Варианты</div>
 
           {loading ? (
@@ -544,17 +690,22 @@ export function ParticipationOptionsConstructor({
             </p>
           ) : drafts.length === 0 ? (
             <p className="participation-constructor__empty">
-              Нет вариантов. Нажмите «+ Добавить вариант», чтобы создать первый.
+              Нет вариантов. Нажмите «+ Добавить вариант»
             </p>
           ) : (
             <ul className="participation-option-rows">
-              {drafts.map((draft) => (
+              {drafts.map((draft, index) => (
                 <OptionRow
                   draft={draft}
+                  index={index}
                   key={draft.draftId}
+                  onDuplicate={() => handleDuplicate(draft.draftId)}
                   onDelete={() => handleDelete(draft.draftId)}
                   onEdit={() => openEditModal(draft.draftId)}
+                  onMoveDown={() => handleMove(draft.draftId, 1)}
+                  onMoveUp={() => handleMove(draft.draftId, -1)}
                   onToggleActive={() => handleToggleActive(draft.draftId)}
+                  total={drafts.length}
                 />
               ))}
             </ul>
@@ -579,11 +730,15 @@ export function ParticipationOptionsConstructor({
             <PreviewPanel
               capacityWarning={
                 seatsExceedCapacity && typeof eventCapacity === "number"
-                  ? `Сумма seat_limit (${summary.totalSeatLimit}) больше capacity события (${eventCapacity}).`
+                  ? `Лимиты вариантов больше вместимости события: ${capacitySummary.totalSeatLimit} из ${eventCapacity}.`
                   : null
               }
               drafts={drafts}
-              summary={summary}
+              fallbackCurrency={fallbackCurrency}
+              onPreviewStep={handlePreviewStep}
+              onPreviewToggle={handlePreviewToggle}
+              previewQuantities={previewQuantities}
+              selectionMode={selectionMode}
             />
           </div>
         </aside>
@@ -636,17 +791,28 @@ export function ParticipationOptionsConstructor({
 
 type OptionRowProps = {
   draft: DraftOption;
+  index: number;
+  total: number;
   onDelete: () => void;
+  onDuplicate: () => void;
   onEdit: () => void;
+  onMoveDown: () => void;
+  onMoveUp: () => void;
   onToggleActive: () => void;
 };
 
-function OptionRow({ draft, onDelete, onEdit, onToggleActive }: OptionRowProps) {
-  const priceParsed = parseInteger(draft.priceAmount);
-  const price =
-    priceParsed === null || Number.isNaN(priceParsed) || priceParsed < 0
-      ? 0
-      : priceParsed;
+function OptionRow({
+  draft,
+  index,
+  onDelete,
+  onDuplicate,
+  onEdit,
+  onMoveDown,
+  onMoveUp,
+  onToggleActive,
+  total,
+}: OptionRowProps) {
+  const price = parsePriceAmount(draft.priceAmount);
   const typeKey = isParticipationOptionType(draft.optionType)
     ? draft.optionType
     : "other";
@@ -655,7 +821,13 @@ function OptionRow({ draft, onDelete, onEdit, onToggleActive }: OptionRowProps) 
 
   return (
     <li
-      className={`participation-option-row${draft.isActive ? "" : " participation-option-row--inactive"}`}
+      className={[
+        "participation-option-row",
+        draft.isActive ? "" : "participation-option-row--inactive",
+        draft.isDonation ? "participation-option-row--donation" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       <span aria-hidden className="participation-option-row__handle">
         ⠿
@@ -692,6 +864,35 @@ function OptionRow({ draft, onDelete, onEdit, onToggleActive }: OptionRowProps) 
           {draft.isActive ? "◎" : "◉"}
         </button>
         <button
+          aria-label="Дублировать вариант"
+          className="participation-option-row__action"
+          onClick={onDuplicate}
+          title="Дублировать"
+          type="button"
+        >
+          ◫
+        </button>
+        <button
+          aria-label="Переместить вариант выше"
+          className="participation-option-row__action"
+          disabled={index === 0}
+          onClick={onMoveUp}
+          title="Переместить выше"
+          type="button"
+        >
+          ↑
+        </button>
+        <button
+          aria-label="Переместить вариант ниже"
+          className="participation-option-row__action"
+          disabled={index === total - 1}
+          onClick={onMoveDown}
+          title="Переместить ниже"
+          type="button"
+        >
+          ↓
+        </button>
+        <button
           aria-label="Удалить вариант"
           className="participation-option-row__action participation-option-row__action--danger"
           onClick={onDelete}
@@ -705,106 +906,131 @@ function OptionRow({ draft, onDelete, onEdit, onToggleActive }: OptionRowProps) 
   );
 }
 
-type SummaryShape = {
-  activeCount: number;
-  donationCount: number;
-  minSum: number;
-  maxSum: number;
-  currency: string;
-  totalSeatLimit: number;
-  unlimitedSeats: number;
-};
-
 type PreviewPanelProps = {
   capacityWarning: string | null;
   drafts: DraftOption[];
-  summary: SummaryShape;
+  fallbackCurrency: string;
+  onPreviewStep: (draftId: string, delta: -1 | 1) => void;
+  onPreviewToggle: (draftId: string, checked: boolean) => void;
+  previewQuantities: Record<string, number>;
+  selectionMode: SelectionMode;
 };
 
-function PreviewPanel({ capacityWarning, drafts, summary }: PreviewPanelProps) {
+function PreviewPanel({
+  capacityWarning,
+  drafts,
+  fallbackCurrency,
+  onPreviewStep,
+  onPreviewToggle,
+  previewQuantities,
+  selectionMode,
+}: PreviewPanelProps) {
   const activeDrafts = drafts.filter((draft) => draft.isActive);
-  const inactiveDrafts = drafts.filter((draft) => !draft.isActive);
 
-  if (activeDrafts.length === 0 && inactiveDrafts.length === 0) {
+  if (activeDrafts.length === 0) {
     return (
       <p className="participation-preview-panel__empty">Нет активных вариантов</p>
     );
   }
 
-  const totalLabel =
-    summary.minSum === summary.maxSum
-      ? formatPrice(summary.minSum, summary.currency)
-      : `${formatPrice(summary.minSum, summary.currency)} – ${formatPrice(
-          summary.maxSum,
-          summary.currency,
-        )}`;
+  const totals = activeDrafts.reduce(
+    (acc, draft) => {
+      const quantity = previewQuantities[draft.draftId] ?? 0;
+      if (quantity <= 0) {
+        return acc;
+      }
+
+      const currency = draft.priceCurrency.trim().toUpperCase() || acc.currency;
+      return {
+        amount: acc.amount + parsePriceAmount(draft.priceAmount) * quantity,
+        currency,
+        totalQuantity: acc.totalQuantity + quantity,
+        totalSeats: acc.totalSeats + (draft.countsTowardCapacity ? quantity : 0),
+      };
+    },
+    {
+      amount: 0,
+      currency: fallbackCurrency,
+      totalQuantity: 0,
+      totalSeats: 0,
+    },
+  );
 
   return (
-    <>
-      {activeDrafts.length === 0 ? (
-        <p className="participation-preview-panel__empty">Нет активных вариантов</p>
-      ) : (
-        <ul className="participation-preview-list">
-          {activeDrafts.map((draft) => (
-            <PreviewRow draft={draft} key={draft.draftId} />
-          ))}
-        </ul>
-      )}
-
-      {activeDrafts.length > 0 ? (
-        <div className="participation-preview-total">
-          <span>Итого</span>
-          <strong>{totalLabel}</strong>
-        </div>
-      ) : null}
-
-      {activeDrafts.length > 0 ? (
-        <div className="participation-preview-meta">
-          <span>
-            Мест:{" "}
-            <strong>
-              {summary.totalSeatLimit}
-              {summary.unlimitedSeats > 0
-                ? ` + ${summary.unlimitedSeats} без лимита`
-                : ""}
-            </strong>
-          </span>
-          {summary.donationCount > 0 ? (
-            <span>
-              Donation: <strong>{summary.donationCount}</strong>
-            </span>
-          ) : null}
-        </div>
-      ) : null}
+    <div className="participation-preview-card">
+      <div className="participation-preview-kicker">
+        Мобильное приложение · Запись
+      </div>
+      <div className="participation-preview-intro">Выберите формат участия</div>
 
       {capacityWarning ? (
         <div className="participation-preview-warning">{capacityWarning}</div>
       ) : null}
 
-      {inactiveDrafts.length > 0 ? (
-        <div className="participation-preview-inactive">
-          <div className="participation-preview-inactive__label">Скрытые</div>
-          <ul className="participation-preview-list participation-preview-list--inactive">
-            {inactiveDrafts.map((draft) => (
-              <PreviewRow draft={draft} key={draft.draftId} />
-            ))}
-          </ul>
+      <fieldset className="participation-preview-fieldset">
+        <legend className="visually-hidden">Варианты участия</legend>
+        <ul className="participation-preview-list">
+          {activeDrafts.map((draft) => (
+            <PreviewRow
+              draft={draft}
+              inputType={selectionMode === "single" ? "radio" : "checkbox"}
+              key={draft.draftId}
+              onStep={onPreviewStep}
+              onToggle={onPreviewToggle}
+              quantity={previewQuantities[draft.draftId] ?? 0}
+            />
+          ))}
+        </ul>
+      </fieldset>
+
+      <div className="participation-preview-total">
+        <span>Итого</span>
+        <strong>{formatPrice(totals.amount, totals.currency)}</strong>
+      </div>
+
+      {totals.totalQuantity > 0 ? (
+        <div className="participation-preview-meta">
+          <span>
+            Позиций: <strong>{totals.totalQuantity}</strong>
+          </span>
+          <span>
+            Мест: <strong>{totals.totalSeats}</strong>
+          </span>
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
 
-function PreviewRow({ draft }: { draft: DraftOption }) {
-  const priceParsed = parseInteger(draft.priceAmount);
-  const price =
-    priceParsed === null || Number.isNaN(priceParsed) || priceParsed < 0
-      ? 0
-      : priceParsed;
+function PreviewRow({
+  draft,
+  inputType,
+  onStep,
+  onToggle,
+  quantity,
+}: {
+  draft: DraftOption;
+  inputType: "checkbox" | "radio";
+  onStep: (draftId: string, delta: -1 | 1) => void;
+  onToggle: (draftId: string, checked: boolean) => void;
+  quantity: number;
+}) {
+  const price = parsePriceAmount(draft.priceAmount);
   const description = draft.description.trim();
+  const selected = quantity > 0;
+  const { min, max } = quantityBounds(draft);
 
   return (
-    <li className="participation-preview-row">
+    <li
+      className={`participation-preview-row${selected ? " participation-preview-row--selected" : ""}`}
+    >
+      <input
+        checked={selected}
+        className="participation-preview-row__input"
+        name="participation-preview-selection"
+        onChange={(event) => onToggle(draft.draftId, event.target.checked)}
+        type={inputType}
+      />
       <div className="participation-preview-row__body">
         <div className="participation-preview-row__title">
           {draft.title.trim() || "Без названия"}
@@ -820,6 +1046,25 @@ function PreviewRow({ draft }: { draft: DraftOption }) {
         {!draft.countsTowardCapacity ? (
           <div className="participation-preview-row__hint participation-preview-row__hint--info">
             Не занимает место
+          </div>
+        ) : null}
+        {draft.allowQuantity && selected ? (
+          <div className="participation-preview-stepper">
+            <button
+              disabled={quantity <= min}
+              onClick={() => onStep(draft.draftId, -1)}
+              type="button"
+            >
+              −
+            </button>
+            <span>{quantity}</span>
+            <button
+              disabled={quantity >= max}
+              onClick={() => onStep(draft.draftId, 1)}
+              type="button"
+            >
+              +
+            </button>
           </div>
         ) : null}
       </div>
@@ -987,7 +1232,11 @@ function OptionModal({ onChange, onClose, onSubmit, state }: OptionModalProps) {
                   ...current,
                   allowQuantity: value,
                   minQuantity: value ? current.minQuantity || "1" : "1",
-                  maxQuantity: value ? current.maxQuantity || "1" : "1",
+                  maxQuantity: value
+                    ? current.maxQuantity && current.maxQuantity !== "1"
+                      ? current.maxQuantity
+                      : "10"
+                    : "1",
                 }))
               }
             />
@@ -1032,27 +1281,29 @@ function OptionModal({ onChange, onClose, onSubmit, state }: OptionModalProps) {
                 onChange((current) => ({ ...current, isDonation: value }))
               }
             />
-            <ModalToggle
-              checked={form.countsTowardCapacity}
-              label="Занимает место"
-              onChange={(value) =>
-                onChange((current) => ({
-                  ...current,
-                  countsTowardCapacity: value,
-                }))
-              }
-            />
-            <ModalToggle
-              checked={form.isActive}
-              label="Активен"
-              onChange={(value) =>
-                onChange((current) => ({ ...current, isActive: value }))
-              }
-            />
           </div>
 
           <details className="participation-modal__advanced">
             <summary>Дополнительные параметры</summary>
+            <div className="participation-modal__toggles participation-modal__toggles--advanced">
+              <ModalToggle
+                checked={form.countsTowardCapacity}
+                label="Занимает место"
+                onChange={(value) =>
+                  onChange((current) => ({
+                    ...current,
+                    countsTowardCapacity: value,
+                  }))
+                }
+              />
+              <ModalToggle
+                checked={form.isActive}
+                label="Активен"
+                onChange={(value) =>
+                  onChange((current) => ({ ...current, isActive: value }))
+                }
+              />
+            </div>
             <div className="participation-modal__grid participation-modal__grid--two">
               <ModalField label="Group key">
                 <input
@@ -1106,6 +1357,29 @@ function OptionModal({ onChange, onClose, onSubmit, state }: OptionModalProps) {
         </footer>
       </div>
     </div>
+  );
+}
+
+function ToggleSwitch({
+  checked,
+  disabled = false,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  label: string;
+  onChange?: (value: boolean) => void;
+}) {
+  return (
+    <button
+      aria-label={label}
+      aria-pressed={checked}
+      className={`participation-setting-toggle${checked ? " participation-setting-toggle--on" : ""}`}
+      disabled={disabled}
+      onClick={() => onChange?.(!checked)}
+      type="button"
+    />
   );
 }
 
