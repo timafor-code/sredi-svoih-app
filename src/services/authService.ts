@@ -10,8 +10,6 @@ import type {
 } from '@/types/profile';
 import { supabase } from './supabaseClient';
 
-const DEV_AUTH_PASSWORD = 'DEV-SREDI-2026-PASSWORD';
-
 export type Profile = {
   id: string;
   community_id: string | null;
@@ -86,6 +84,16 @@ function hasOwnField<T extends object>(value: T, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
+function warnPasswordSignInError(error: { code?: string; message: string; status?: number }): void {
+  if (__DEV__) {
+    console.warn('Supabase password sign-in failed', {
+      message: error.message,
+      status: error.status,
+      code: error.code,
+    });
+  }
+}
+
 async function getCurrentUser(): Promise<User | null> {
   const session = await getSession();
 
@@ -112,71 +120,27 @@ export async function getSession(): Promise<Session | null> {
   return data.session;
 }
 
-export async function signInWithOtp(email: string) {
+export async function signIn(email: string, password: string): Promise<Session> {
   const normalizedEmail = normalizeEmail(email);
 
-  if (!normalizedEmail) {
-    throw new Error('Введите email для входа.');
-  }
-
-  const { data, error } = await supabase.auth.signInWithOtp({
-    email: normalizedEmail,
-    options: {
-      shouldCreateUser: true,
-    },
-  });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return data;
-}
-
-export async function signInDev(email: string): Promise<Session> {
-  const normalizedEmail = normalizeEmail(email);
-
-  if (!normalizedEmail) {
-    throw new Error('Введите email для входа.');
+  if (!normalizedEmail || !password) {
+    throw new Error('Не удалось войти. Проверьте email и пароль.');
   }
 
   const signInResult = await supabase.auth.signInWithPassword({
     email: normalizedEmail,
-    password: DEV_AUTH_PASSWORD,
+    password,
   });
 
   if (!signInResult.error && signInResult.data.session) {
     return signInResult.data.session;
   }
 
-  const signUpResult = await supabase.auth.signUp({
-    email: normalizedEmail,
-    password: DEV_AUTH_PASSWORD,
-    options: {
-      data: {
-        local_mvp: true,
-      },
-    },
-  });
-
-  if (signUpResult.error) {
-    throw new Error(signUpResult.error.message);
+  if (signInResult.error) {
+    warnPasswordSignInError(signInResult.error);
   }
 
-  if (signUpResult.data.session) {
-    return signUpResult.data.session;
-  }
-
-  const retryResult = await supabase.auth.signInWithPassword({
-    email: normalizedEmail,
-    password: DEV_AUTH_PASSWORD,
-  });
-
-  if (retryResult.error || !retryResult.data.session) {
-    throw new Error(retryResult.error?.message ?? 'Не удалось войти.');
-  }
-
-  return retryResult.data.session;
+  throw new Error(signInResult.error?.message ?? 'Не удалось войти. Проверьте email и пароль.');
 }
 
 export async function signOut(): Promise<void> {
