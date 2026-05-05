@@ -2440,6 +2440,204 @@ a {
   line-height: 1.5;
 }
 
+.event-occurrence-generator {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.event-occurrence-generator__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.event-occurrence-generator__head h3 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.event-occurrence-generator__head p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.event-occurrence-generator__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.event-occurrence-generator__field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.event-occurrence-generator__field span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.event-occurrence-generator__field input,
+.event-occurrence-generator__field select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 0 9px;
+  background: var(--elevated);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.event-occurrence-generator__checkbox-field {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 5px;
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.event-occurrence-generator__checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.event-occurrence-generator__checkbox-label input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--gold);
+}
+
+.event-occurrence-generator__checkbox-field small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.event-occurrence-generator__inline-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 94px;
+  gap: 6px;
+}
+
+.event-occurrence-generator__preview {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.event-occurrence-generator__preview-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--glass-border);
+  padding: 9px 10px;
+}
+
+.event-occurrence-generator__preview-head span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.event-occurrence-generator__preview-head strong {
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.event-occurrence-generator__error {
+  padding: 10px;
+  color: #ff9ca2;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.event-occurrence-generator__preview-list {
+  display: grid;
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.event-occurrence-generator__preview-item {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.6fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--glass-border);
+  padding: 9px 10px;
+}
+
+.event-occurrence-generator__preview-item:last-child {
+  border-bottom: 0;
+}
+
+.event-occurrence-generator__preview-item--skipped {
+  opacity: 0.58;
+}
+
+.event-occurrence-generator__preview-item div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.event-occurrence-generator__preview-item strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-occurrence-generator__preview-item span {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.event-occurrence-generator__preview-badge {
+  justify-self: end;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: var(--glass);
+  color: var(--text-soft) !important;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .event-occurrences-constructor__layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
@@ -2449,6 +2647,11 @@ a {
 
 .event-occurrences-constructor__main {
   min-width: 0;
+}
+
+.event-occurrence-list-stack {
+  display: grid;
+  gap: 10px;
 }
 
 .event-occurrences-constructor__empty {
@@ -2483,6 +2686,10 @@ a {
   border-color: rgba(255, 255, 255, 0.32);
   background: var(--glass);
   color: var(--text);
+}
+
+.event-occurrences-add-btn--below {
+  min-height: 40px;
 }
 
 .event-occurrence-rows {
@@ -2721,6 +2928,10 @@ a {
 }
 
 @media (max-width: 1100px) {
+  .event-occurrence-generator__grid {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+
   .event-occurrences-constructor__layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2731,6 +2942,15 @@ a {
 }
 
 @media (max-width: 860px) {
+  .event-occurrence-generator__grid,
+  .event-occurrence-generator__preview-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .event-occurrence-generator__preview-badge {
+    justify-self: start;
+  }
+
   .event-occurrence-row {
     grid-template-columns: minmax(0, 1fr) auto;
   }

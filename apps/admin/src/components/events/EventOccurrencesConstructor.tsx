@@ -22,8 +22,65 @@ const STATUS_LABELS: Record<AdminEventOccurrenceStatus, string> = {
   archived: "В архиве",
 };
 
+type GeneratorPreset = "weekly_shabbat" | "weekly_sunday_school" | "custom_weekly";
+type GeneratorCapacityMode = "inherit" | "custom";
+
+type OccurrenceGeneratorForm = {
+  preset: GeneratorPreset;
+  weeksAhead: string;
+  startDayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  registrationOpensDayOfWeek: number;
+  registrationOpensTime: string;
+  registrationClosesDayOfWeek: number;
+  registrationClosesTime: string;
+  registrationAlwaysOpen: boolean;
+  capacityMode: GeneratorCapacityMode;
+  customCapacity: string;
+  titleTemplate: string;
+};
+
+type GeneratorPreviewItem = {
+  capacityLabel: string;
+  draft: DraftOccurrence;
+  duplicate: boolean;
+  exists: boolean;
+  registrationWindowLabel: string;
+  startsAt: string;
+  startsAtLabel: string;
+  timeRangeLabel: string;
+};
+
+type GeneratorPreview = {
+  creatableCount: number;
+  error: string | null;
+  items: GeneratorPreviewItem[];
+};
+
+const GENERATOR_PRESET_OPTIONS: Array<{ label: string; value: GeneratorPreset }> = [
+  { label: "Шабат каждую неделю", value: "weekly_shabbat" },
+  { label: "Воскресная школа каждую неделю", value: "weekly_sunday_school" },
+  { label: "Своя еженедельная серия", value: "custom_weekly" },
+];
+
+const WEEKDAY_OPTIONS = [
+  { label: "Воскресенье", value: 0 },
+  { label: "Понедельник", value: 1 },
+  { label: "Вторник", value: 2 },
+  { label: "Среда", value: 3 },
+  { label: "Четверг", value: 4 },
+  { label: "Пятница", value: 5 },
+  { label: "Суббота", value: 6 },
+];
+
+const SHABBAT_START_DAY_OPTIONS = WEEKDAY_OPTIONS.filter((option) =>
+  option.value === 5 || option.value === 6
+);
+
 type EventOccurrencesConstructorProps = {
   defaultTimezone?: string | null;
+  eventKind?: string | null;
   eventCapacity: number | null;
   eventId: string;
 };
@@ -350,8 +407,332 @@ function buildInputList(drafts: DraftOccurrence[]): {
   };
 }
 
+function resolveDefaultGeneratorPreset(eventKind?: string | null): GeneratorPreset {
+  if (eventKind === "shabbat") {
+    return "weekly_shabbat";
+  }
+
+  if (eventKind === "sunday_school") {
+    return "weekly_sunday_school";
+  }
+
+  return "custom_weekly";
+}
+
+function buildDefaultGeneratorForm(preset: GeneratorPreset): OccurrenceGeneratorForm {
+  if (preset === "weekly_shabbat") {
+    return {
+      preset,
+      weeksAhead: "8",
+      startDayOfWeek: 5,
+      startTime: "19:00",
+      endTime: "22:00",
+      registrationOpensDayOfWeek: 0,
+      registrationOpensTime: "10:00",
+      registrationClosesDayOfWeek: 4,
+      registrationClosesTime: "16:00",
+      registrationAlwaysOpen: false,
+      capacityMode: "inherit",
+      customCapacity: "",
+      titleTemplate: "Шабат",
+    };
+  }
+
+  if (preset === "weekly_sunday_school") {
+    return {
+      preset,
+      weeksAhead: "8",
+      startDayOfWeek: 0,
+      startTime: "11:00",
+      endTime: "13:00",
+      registrationOpensDayOfWeek: 1,
+      registrationOpensTime: "10:00",
+      registrationClosesDayOfWeek: 5,
+      registrationClosesTime: "16:00",
+      registrationAlwaysOpen: false,
+      capacityMode: "inherit",
+      customCapacity: "",
+      titleTemplate: "Воскресная школа",
+    };
+  }
+
+  return {
+    preset,
+    weeksAhead: "8",
+    startDayOfWeek: 0,
+    startTime: "11:00",
+    endTime: "",
+    registrationOpensDayOfWeek: 1,
+    registrationOpensTime: "10:00",
+    registrationClosesDayOfWeek: 5,
+    registrationClosesTime: "16:00",
+    registrationAlwaysOpen: true,
+    capacityMode: "inherit",
+    customCapacity: "",
+    titleTemplate: "",
+  };
+}
+
+function isGeneratorPreset(value: string): value is GeneratorPreset {
+  return GENERATOR_PRESET_OPTIONS.some((option) => option.value === value);
+}
+
+function isGeneratorCapacityMode(value: string): value is GeneratorCapacityMode {
+  return value === "inherit" || value === "custom";
+}
+
+function buildGeneratorPreview(
+  form: OccurrenceGeneratorForm,
+  drafts: DraftOccurrence[],
+  timezone: string,
+  eventCapacity: number | null,
+): GeneratorPreview {
+  const weeksAhead = parseBoundedInteger(form.weeksAhead, 1, 52);
+  if (weeksAhead === null) {
+    return {
+      creatableCount: 0,
+      error: "Количество недель должно быть целым числом от 1 до 52.",
+      items: [],
+    };
+  }
+
+  if (!isDayOfWeek(form.startDayOfWeek)) {
+    return {
+      creatableCount: 0,
+      error: "Выберите корректный день события.",
+      items: [],
+    };
+  }
+
+  if (!isTimeValue(form.startTime)) {
+    return {
+      creatableCount: 0,
+      error: "Укажите корректное время начала.",
+      items: [],
+    };
+  }
+
+  if (form.endTime && !isTimeValue(form.endTime)) {
+    return {
+      creatableCount: 0,
+      error: "Укажите корректное время окончания или очистите поле.",
+      items: [],
+    };
+  }
+
+  if (
+    !form.registrationAlwaysOpen &&
+    ((form.registrationOpensTime && !isTimeValue(form.registrationOpensTime)) ||
+      (form.registrationClosesTime && !isTimeValue(form.registrationClosesTime)))
+  ) {
+    return {
+      creatableCount: 0,
+      error: "Проверьте время открытия и закрытия регистрации.",
+      items: [],
+    };
+  }
+
+  const customCapacity =
+    form.capacityMode === "custom"
+      ? parseBoundedInteger(form.customCapacity, 1, Number.MAX_SAFE_INTEGER)
+      : null;
+  if (form.capacityMode === "custom" && customCapacity === null) {
+    return {
+      creatableCount: 0,
+      error: "Укажите положительный целый лимит для создаваемых дат.",
+      items: [],
+    };
+  }
+
+  const existingStarts = new Set(
+    drafts
+      .map(buildDraftStartIso)
+      .filter((value): value is string => Boolean(value)),
+  );
+  const seenGeneratedStarts = new Set<string>();
+  let firstDate: Date;
+  try {
+    firstDate = getNextWeekdayDate(form.startDayOfWeek, form.startTime, timezone);
+  } catch {
+    return {
+      creatableCount: 0,
+      error: "Проверьте timezone события перед генерацией дат.",
+      items: [],
+    };
+  }
+  const items: GeneratorPreviewItem[] = [];
+
+  for (let index = 0; index < weeksAhead; index += 1) {
+    const occurrenceDate = addDays(firstDate, index * 7);
+    const startDate = formatDateInputValue(occurrenceDate);
+    const endDate =
+      form.endTime && isEndTimeNextDay(form.startTime, form.endTime)
+        ? formatDateInputValue(addDays(occurrenceDate, 1))
+        : startDate;
+    const registrationOpensDate =
+      !form.registrationAlwaysOpen &&
+      form.registrationOpensTime &&
+      isDayOfWeek(form.registrationOpensDayOfWeek)
+        ? formatDateInputValue(
+            getPreviousWeekdayDate(occurrenceDate, form.registrationOpensDayOfWeek),
+          )
+        : "";
+    const registrationClosesDate =
+      !form.registrationAlwaysOpen &&
+      form.registrationClosesTime &&
+      isDayOfWeek(form.registrationClosesDayOfWeek)
+        ? formatDateInputValue(
+            getPreviousWeekdayDate(occurrenceDate, form.registrationClosesDayOfWeek),
+          )
+        : "";
+    const draft: DraftOccurrence = {
+      draftId: "",
+      remoteId: null,
+      title: form.titleTemplate.trim(),
+      startDate,
+      startTime: form.startTime,
+      endDate: form.endTime ? endDate : "",
+      endTime: form.endTime,
+      timezone,
+      registrationOpensAt:
+        registrationOpensDate && form.registrationOpensTime
+          ? `${registrationOpensDate}T${form.registrationOpensTime}`
+          : "",
+      registrationClosesAt:
+        registrationClosesDate && form.registrationClosesTime
+          ? `${registrationClosesDate}T${form.registrationClosesTime}`
+          : "",
+      capacity:
+        form.capacityMode === "custom" && customCapacity !== null
+          ? String(customCapacity)
+          : "",
+      waitlistEnabled: false,
+      requiresApproval: false,
+      status: "active",
+      sortOrder: String(drafts.length + index),
+    };
+    const validation = validateDraft(draft, drafts.length + index);
+    if (!validation.ok) {
+      return {
+        creatableCount: 0,
+        error:
+          "Одна из сгенерированных дат не проходит валидацию. Проверьте время события и окно регистрации.",
+        items: [],
+      };
+    }
+
+    const startsAt = validation.input.startsAt;
+    const duplicate = seenGeneratedStarts.has(startsAt);
+    const exists = existingStarts.has(startsAt);
+    seenGeneratedStarts.add(startsAt);
+    items.push({
+      capacityLabel: formatGeneratorCapacity(draft, eventCapacity),
+      draft,
+      duplicate,
+      exists,
+      registrationWindowLabel: form.registrationAlwaysOpen
+        ? "Регистрация открыта всегда"
+        : formatRegistrationWindow(draft),
+      startsAt,
+      startsAtLabel: formatDraftDateTime(draft),
+      timeRangeLabel: formatDraftTimeRange(draft),
+    });
+  }
+
+  return {
+    creatableCount: items.filter((item) => !item.exists && !item.duplicate).length,
+    error: null,
+    items,
+  };
+}
+
+function parseBoundedInteger(
+  value: string,
+  min: number,
+  max: number,
+): number | null {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return null;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) && parsed >= min && parsed <= max
+    ? parsed
+    : null;
+}
+
+function isDayOfWeek(value: number): boolean {
+  return Number.isInteger(value) && value >= 0 && value <= 6;
+}
+
+function isTimeValue(value: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function isEndTimeNextDay(startTime: string, endTime: string): boolean {
+  return timeToMinutes(endTime) <= timeToMinutes(startTime);
+}
+
+function timeToMinutes(value: string): number {
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function getNextWeekdayDate(
+  dayOfWeek: number,
+  startTime: string,
+  timezone: string,
+): Date {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let candidate = addDays(today, (dayOfWeek - today.getDay() + 7) % 7);
+  const candidateIso = buildZonedIso(
+    formatDateInputValue(candidate),
+    startTime,
+    timezone,
+  );
+
+  if (new Date(candidateIso).getTime() <= now.getTime()) {
+    candidate = addDays(candidate, 7);
+  }
+
+  return candidate;
+}
+
+function getPreviousWeekdayDate(fromDate: Date, dayOfWeek: number): Date {
+  return addDays(fromDate, -((fromDate.getDay() - dayOfWeek + 7) % 7));
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function formatDateInputValue(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatGeneratorCapacity(
+  draft: DraftOccurrence,
+  eventCapacity: number | null,
+): string {
+  if (draft.capacity.trim()) {
+    return `Лимит: ${draft.capacity.trim()}`;
+  }
+
+  return eventCapacity === null
+    ? "Лимит: наследует событие (не задан)"
+    : `Лимит: наследует ${eventCapacity}`;
+}
+
 export function EventOccurrencesConstructor({
   defaultTimezone,
+  eventKind,
   eventCapacity,
   eventId,
 }: EventOccurrencesConstructorProps) {
@@ -367,6 +748,9 @@ export function EventOccurrencesConstructor({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [modalState, setModalState] = useState<ModalState>({ kind: "closed" });
+  const [generatorForm, setGeneratorForm] = useState<OccurrenceGeneratorForm>(() =>
+    buildDefaultGeneratorForm(resolveDefaultGeneratorPreset(eventKind)),
+  );
   const saveInFlightRef = useRef(false);
 
   useEffect(() => {
@@ -400,10 +784,18 @@ export function EventOccurrencesConstructor({
     };
   }, [eventId]);
 
+  useEffect(() => {
+    setGeneratorForm(buildDefaultGeneratorForm(resolveDefaultGeneratorPreset(eventKind)));
+  }, [eventId, eventKind]);
+
   const summary = useMemo(() => buildSummary(drafts, eventCapacity), [
     drafts,
     eventCapacity,
   ]);
+  const generatorPreview = useMemo(
+    () => buildGeneratorPreview(generatorForm, drafts, fallbackTimezone, eventCapacity),
+    [drafts, eventCapacity, fallbackTimezone, generatorForm],
+  );
 
   const persistDrafts = async (nextDrafts: DraftOccurrence[]) => {
     setSaveError(null);
@@ -546,6 +938,49 @@ export function EventOccurrencesConstructor({
     });
   };
 
+  const updateGeneratorField = <Field extends keyof OccurrenceGeneratorForm>(
+    field: Field,
+    value: OccurrenceGeneratorForm[Field],
+  ) => {
+    setGeneratorForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleGeneratorPresetChange = (value: string) => {
+    if (!isGeneratorPreset(value)) {
+      return;
+    }
+
+    setGeneratorForm((current) => ({
+      ...buildDefaultGeneratorForm(value),
+      capacityMode: current.capacityMode,
+      customCapacity: current.customCapacity,
+      weeksAhead: current.weeksAhead,
+    }));
+  };
+
+  const handleApplyGeneratedOccurrences = () => {
+    if (
+      loading ||
+      saveInFlightRef.current ||
+      generatorPreview.error ||
+      generatorPreview.creatableCount === 0
+    ) {
+      return;
+    }
+
+    const generatedDrafts = generatorPreview.items
+      .filter((item) => !item.exists && !item.duplicate)
+      .map((item) => ({ ...item.draft, draftId: nextDraftId() }));
+
+    if (generatedDrafts.length === 0) {
+      return;
+    }
+
+    const nextDrafts = withSequentialSortOrder([...drafts, ...generatedDrafts]);
+    setDrafts(nextDrafts);
+    void persistDrafts(nextDrafts);
+  };
+
   const disabled = loading || saving || Boolean(loadError);
 
   return (
@@ -573,6 +1008,16 @@ export function EventOccurrencesConstructor({
         </div>
       ) : null}
 
+      <OccurrenceGenerator
+        disabled={disabled}
+        eventCapacity={eventCapacity}
+        form={generatorForm}
+        onApply={handleApplyGeneratedOccurrences}
+        onFieldChange={updateGeneratorField}
+        onPresetChange={handleGeneratorPresetChange}
+        preview={generatorPreview}
+      />
+
       <div className="event-occurrences-constructor__layout">
         <div className="event-occurrences-constructor__main">
           {loading ? (
@@ -592,24 +1037,34 @@ export function EventOccurrencesConstructor({
               </button>
             </div>
           ) : (
-            <ul className="event-occurrence-rows">
-              {drafts.map((draft, index) => (
-                <OccurrenceRow
-                  disabled={disabled}
-                  draft={draft}
-                  index={index}
-                  key={draft.draftId}
-                  onDelete={() => handleDelete(draft.draftId)}
-                  onEdit={() => openEditModal(draft.draftId)}
-                  onMoveDown={() => handleMove(draft.draftId, 1)}
-                  onMoveUp={() => handleMove(draft.draftId, -1)}
-                  onStatusChange={(status) =>
-                    handleStatusChange(draft.draftId, status)
-                  }
-                  total={drafts.length}
-                />
-              ))}
-            </ul>
+            <div className="event-occurrence-list-stack">
+              <ul className="event-occurrence-rows">
+                {drafts.map((draft, index) => (
+                  <OccurrenceRow
+                    disabled={disabled}
+                    draft={draft}
+                    index={index}
+                    key={draft.draftId}
+                    onDelete={() => handleDelete(draft.draftId)}
+                    onEdit={() => openEditModal(draft.draftId)}
+                    onMoveDown={() => handleMove(draft.draftId, 1)}
+                    onMoveUp={() => handleMove(draft.draftId, -1)}
+                    onStatusChange={(status) =>
+                      handleStatusChange(draft.draftId, status)
+                    }
+                    total={drafts.length}
+                  />
+                ))}
+              </ul>
+              <button
+                className="event-occurrences-add-btn event-occurrences-add-btn--below"
+                disabled={disabled}
+                onClick={openAddModal}
+                type="button"
+              >
+                + Добавить ещё дату
+              </button>
+            </div>
           )}
         </div>
 
@@ -645,6 +1100,290 @@ export function EventOccurrencesConstructor({
           )
         : null}
     </section>
+  );
+}
+
+type OccurrenceGeneratorProps = {
+  disabled: boolean;
+  eventCapacity: number | null;
+  form: OccurrenceGeneratorForm;
+  onApply: () => void;
+  onFieldChange: <Field extends keyof OccurrenceGeneratorForm>(
+    field: Field,
+    value: OccurrenceGeneratorForm[Field],
+  ) => void;
+  onPresetChange: (value: string) => void;
+  preview: GeneratorPreview;
+};
+
+function OccurrenceGenerator({
+  disabled,
+  eventCapacity,
+  form,
+  onApply,
+  onFieldChange,
+  onPresetChange,
+  preview,
+}: OccurrenceGeneratorProps) {
+  const startDayOptions =
+    form.preset === "weekly_shabbat" ? SHABBAT_START_DAY_OPTIONS : WEEKDAY_OPTIONS;
+  const showAutomationHint =
+    form.preset === "weekly_shabbat" || form.preset === "weekly_sunday_school";
+  const applyDisabled = disabled || Boolean(preview.error) || preview.creatableCount === 0;
+  const registrationHint = form.registrationAlwaysOpen
+    ? "Подходит для курсов: все сгенерированные даты доступны для записи сразу."
+    : showAutomationHint
+      ? "Для Шабата и воскресной школы обычно используется окно регистрации."
+      : "Можно задать отдельное окно регистрации для каждой созданной даты.";
+
+  return (
+    <section className="event-occurrence-generator">
+      <header className="event-occurrence-generator__head">
+        <div>
+          <h3>Генератор дат</h3>
+          {showAutomationHint ? (
+            <p>
+              Это создаёт конкретные даты. Автоматический cron появится позже.
+            </p>
+          ) : null}
+        </div>
+        <Button disabled={applyDisabled} onClick={onApply} variant="gold">
+          Создать даты
+        </Button>
+      </header>
+
+      <div className="event-occurrence-generator__grid">
+        <GeneratorField label="Шаблон">
+          <select
+            disabled={disabled}
+            onChange={(event) => onPresetChange(event.target.value)}
+            value={form.preset}
+          >
+            {GENERATOR_PRESET_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </GeneratorField>
+
+        <GeneratorField label="Недель вперёд">
+          <input
+            disabled={disabled}
+            max={52}
+            min={1}
+            onChange={(event) => onFieldChange("weeksAhead", event.target.value)}
+            type="number"
+            value={form.weeksAhead}
+          />
+        </GeneratorField>
+
+        <GeneratorField label="День события">
+          <select
+            disabled={disabled}
+            onChange={(event) =>
+              onFieldChange("startDayOfWeek", Number(event.target.value))
+            }
+            value={form.startDayOfWeek}
+          >
+            {startDayOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </GeneratorField>
+
+        <GeneratorField label="Начало">
+          <input
+            disabled={disabled}
+            onChange={(event) => onFieldChange("startTime", event.target.value)}
+            type="time"
+            value={form.startTime}
+          />
+        </GeneratorField>
+
+        <GeneratorField label="Окончание">
+          <input
+            disabled={disabled}
+            onChange={(event) => onFieldChange("endTime", event.target.value)}
+            type="time"
+            value={form.endTime}
+          />
+        </GeneratorField>
+
+        <label className="event-occurrence-generator__checkbox-field">
+          <span className="event-occurrence-generator__checkbox-label">
+            <input
+              checked={form.registrationAlwaysOpen}
+              disabled={disabled}
+              onChange={(event) =>
+                onFieldChange("registrationAlwaysOpen", event.target.checked)
+              }
+              type="checkbox"
+            />
+            Регистрация открыта всегда
+          </span>
+          <small>{registrationHint}</small>
+        </label>
+
+        {!form.registrationAlwaysOpen ? (
+          <>
+            <GeneratorField label="Открыть регистрацию">
+              <div className="event-occurrence-generator__inline-fields">
+                <select
+                  disabled={disabled}
+                  onChange={(event) =>
+                    onFieldChange("registrationOpensDayOfWeek", Number(event.target.value))
+                  }
+                  value={form.registrationOpensDayOfWeek}
+                >
+                  {WEEKDAY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  disabled={disabled}
+                  onChange={(event) =>
+                    onFieldChange("registrationOpensTime", event.target.value)
+                  }
+                  type="time"
+                  value={form.registrationOpensTime}
+                />
+              </div>
+            </GeneratorField>
+
+            <GeneratorField label="Закрыть регистрацию">
+              <div className="event-occurrence-generator__inline-fields">
+                <select
+                  disabled={disabled}
+                  onChange={(event) =>
+                    onFieldChange("registrationClosesDayOfWeek", Number(event.target.value))
+                  }
+                  value={form.registrationClosesDayOfWeek}
+                >
+                  {WEEKDAY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  disabled={disabled}
+                  onChange={(event) =>
+                    onFieldChange("registrationClosesTime", event.target.value)
+                  }
+                  type="time"
+                  value={form.registrationClosesTime}
+                />
+              </div>
+            </GeneratorField>
+          </>
+        ) : null}
+
+        <GeneratorField label="Лимит">
+          <select
+            disabled={disabled}
+            onChange={(event) => {
+              if (isGeneratorCapacityMode(event.target.value)) {
+                onFieldChange("capacityMode", event.target.value);
+              }
+            }}
+            value={form.capacityMode}
+          >
+            <option value="inherit">
+              {eventCapacity === null
+                ? "Наследовать capacity события"
+                : `Наследовать ${eventCapacity}`}
+            </option>
+            <option value="custom">Свой лимит для дат</option>
+          </select>
+        </GeneratorField>
+
+        {form.capacityMode === "custom" ? (
+          <GeneratorField label="Свой лимит">
+            <input
+              disabled={disabled}
+              min={1}
+              onChange={(event) => onFieldChange("customCapacity", event.target.value)}
+              type="number"
+              value={form.customCapacity}
+            />
+          </GeneratorField>
+        ) : null}
+
+        <GeneratorField label="Подпись даты">
+          <input
+            disabled={disabled}
+            onChange={(event) => onFieldChange("titleTemplate", event.target.value)}
+            placeholder="Например, Шабат"
+            type="text"
+            value={form.titleTemplate}
+          />
+        </GeneratorField>
+      </div>
+
+      <div className="event-occurrence-generator__preview">
+        <div className="event-occurrence-generator__preview-head">
+          <span>Предпросмотр</span>
+          <strong>
+            {preview.error
+              ? "Проверьте настройки"
+              : `${preview.creatableCount} будет создано, ${
+                  preview.items.length - preview.creatableCount
+                } пропущено`}
+          </strong>
+        </div>
+
+        {preview.error ? (
+          <div className="event-occurrence-generator__error" role="alert">
+            {preview.error}
+          </div>
+        ) : (
+          <ul className="event-occurrence-generator__preview-list">
+            {preview.items.map((item) => (
+              <li
+                className={`event-occurrence-generator__preview-item${
+                  item.exists || item.duplicate
+                    ? " event-occurrence-generator__preview-item--skipped"
+                    : ""
+                }`}
+                key={`${item.startsAt}-${item.draft.sortOrder}`}
+              >
+                <div>
+                  <strong>{item.startsAtLabel}</strong>
+                  <span>{item.timeRangeLabel}</span>
+                </div>
+                <div>
+                  <span>{item.registrationWindowLabel}</span>
+                  <span>{item.capacityLabel}</span>
+                </div>
+                <span className="event-occurrence-generator__preview-badge">
+                  {item.exists ? "уже есть" : item.duplicate ? "дубль" : "новая"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function GeneratorField({
+  children,
+  label,
+}: {
+  children: ReactNode;
+  label: string;
+}) {
+  return (
+    <label className="event-occurrence-generator__field">
+      <span>{label}</span>
+      {children}
+    </label>
   );
 }
 

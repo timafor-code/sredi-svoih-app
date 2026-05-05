@@ -1,5 +1,13 @@
 export const ADMIN_EVENT_STATUSES = ["draft", "published", "cancelled", "archived"] as const;
 export const ADMIN_EVENT_VISIBILITIES = ["public", "members_only", "hidden"] as const;
+export const ADMIN_EVENT_KINDS = [
+  "single",
+  "course",
+  "sunday_school",
+  "shabbat",
+  "holiday",
+  "announcement",
+] as const;
 export const ADMIN_EVENT_REGISTRATION_MODES = [
   "none",
   "external_link",
@@ -9,11 +17,13 @@ export const ADMIN_EVENT_REGISTRATION_MODES = [
 
 export type AdminEventStatus = (typeof ADMIN_EVENT_STATUSES)[number];
 export type AdminEventVisibility = (typeof ADMIN_EVENT_VISIBILITIES)[number];
+export type AdminEventKind = (typeof ADMIN_EVENT_KINDS)[number];
 export type AdminEventRegistrationMode = (typeof ADMIN_EVENT_REGISTRATION_MODES)[number];
 
 export type AdminEventRow = {
   id: string;
   community_id: string;
+  event_kind: AdminEventKind | string;
   title: string;
   subtitle: string | null;
   description: string | null;
@@ -47,6 +57,7 @@ export type AdminEventRow = {
 export type AdminEvent = {
   id: string;
   communityId: string;
+  eventKind: AdminEventKind | string;
   title: string;
   subtitle: string | null;
   description: string | null;
@@ -79,6 +90,7 @@ export type AdminEvent = {
 
 export type AdminEventMutationInput = {
   title: string;
+  eventKind: AdminEventKind;
   subtitle: string | null;
   shortDescription: string | null;
   description: string | null;

@@ -28,11 +28,37 @@ capacity per occurrence.
 | Kind | Meaning |
 | --- | --- |
 | `single` | Existing one-date event behavior. |
-| `course` | One parent course with several dated sessions. |
-| `sunday_school` | One or more Sunday school dates. |
-| `shabbat` | Weekly Shabbat event model. |
-| `holiday` | Admin-created holiday event with optional registration window. |
-| `announcement` | News/announcement-style event, usually `registration_mode = 'none'`. |
+| `course` | One parent course with manually managed dated sessions. |
+| `sunday_school` | Sunday school parent event; web-admin can generate weekly concrete dates. |
+| `shabbat` | Shabbat parent event; web-admin can generate weekly concrete dates. |
+| `holiday` | Admin-created holiday event with manually managed dates and optional registration window. |
+| `announcement` | News/announcement-style event, usually `registration_mode = 'none'`; a separate UX may handle announcements later. |
+
+The admin create/edit form accepts `eventKind` / `event_kind` and stores it in
+`events.event_kind`. Missing create payloads default to `single`; update payloads
+only change `event_kind` when the payload includes `eventKind` or `event_kind`.
+
+## Web-admin occurrence generator
+
+The web-admin "Dates and sessions" constructor keeps the manual date list as the
+source of truth and adds a helper generator above it. The generator creates
+concrete `event_occurrences` only when an admin presses the button; it is not a
+cron job and it does not keep creating future dates automatically.
+
+Generator presets:
+
+- `weekly_shabbat`: weekly Shabbat dates, default Friday 19:00, registration
+  Sunday 10:00 through Thursday 16:00, title `Шабат`.
+- `weekly_sunday_school`: weekly Sunday school dates, default Sunday 11:00,
+  registration from the previous Monday, title `Воскресная школа`.
+- `custom_weekly`: custom weekly series with admin-selected weekday, time,
+  registration window, title, and capacity mode.
+
+Before saving, the UI previews generated starts, registration windows, capacity,
+and marks rows whose `starts_at` already exists in the current drafts. Applying
+the generator skips existing `starts_at` values, appends only new drafts,
+recalculates `sort_order`, and saves through
+`admin_replace_event_occurrences`.
 
 ## Access
 
@@ -75,9 +101,9 @@ counted separately for each occurrence in a future registration RPC.
 
 Parent event: `event_kind = 'sunday_school'`.
 
-It can have one occurrence or several Sunday occurrences. Automatic generation
-of the next Sunday is out of scope for this PR; the schema only stores concrete
-occurrences.
+It can have one occurrence, manually added Sunday occurrences, or dates created
+with the web-admin weekly generator. The database still stores concrete
+occurrences only.
 
 ### Shabbat
 
@@ -85,7 +111,8 @@ Parent event: `event_kind = 'shabbat'`.
 
 Each weekly Shabbat date is an occurrence. Future automation can create an
 occurrence, open registration on Sunday at 10:00, close it on Thursday at
-16:00, and set per-occurrence capacity.
+16:00, and set per-occurrence capacity. In this PR the admin generator creates
+those concrete dates by button click; scheduled automation is out of scope.
 
 ### Holiday
 
@@ -104,5 +131,5 @@ This PR does not introduce a separate news module.
 
 ## Out of scope
 
-This backend PR does not change mobile registration, does not add web-admin UI,
+This PR does not change mobile registration, does not add scheduled generation,
 does not add a payment gateway, and does not change `register_for_event`.
