@@ -19,15 +19,11 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
   const [savedEvent, setSavedEvent] = useState<AdminEvent | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [draftRegistrationMode, setDraftRegistrationMode] = useState<string>(
-    event.registrationMode,
-  );
 
   useEffect(() => {
     setCurrentEvent(event);
     setSavedEvent(null);
     setSubmitError(null);
-    setDraftRegistrationMode(event.registrationMode);
   }, [event.id, event.registrationMode]);
 
   const handleSubmit = async (input: AdminEventMutationInput) => {
@@ -37,7 +33,6 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
     try {
       const nextEvent = await updateAdminEvent(currentEvent.id, input);
       setCurrentEvent(nextEvent);
-      setDraftRegistrationMode(nextEvent.registrationMode);
       setSavedEvent(nextEvent);
       onSaved(nextEvent);
       return true;
@@ -52,8 +47,6 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
       setSubmitting(false);
     }
   };
-
-  const showParticipationOptions = draftRegistrationMode === "internal_paid";
 
   return (
     <div className="page-stack page-stack--event-create">
@@ -86,14 +79,19 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
           initialEvent={currentEvent}
           mode="edit"
           onCancel={onBackToList}
-          onRegistrationModeChange={setDraftRegistrationMode}
-          registrationModeSlot={
-            showParticipationOptions ? (
+          registrationModeSlot={({
+            registrationMode,
+            requiresApproval,
+            setRequiresApproval,
+          }) =>
+            registrationMode === "internal_paid" ? (
               <div className="event-form-participation-slot">
                 <ParticipationOptionsConstructor
                   defaultPriceCurrency={currentEvent.priceCurrency}
                   eventCapacity={currentEvent.capacity}
                   eventId={currentEvent.id}
+                  onRequiresApprovalChange={setRequiresApproval}
+                  requiresApproval={requiresApproval}
                 />
               </div>
             ) : null

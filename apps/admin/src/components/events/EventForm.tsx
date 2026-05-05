@@ -26,6 +26,12 @@ const DEFAULT_PRICE_CURRENCY = "RUB";
 
 type EventFormMode = "create" | "edit";
 
+type RegistrationModeSlotContext = {
+  registrationMode: string;
+  requiresApproval: boolean;
+  setRequiresApproval: (value: boolean) => void;
+};
+
 type EventFormState = {
   title: string;
   subtitle: string;
@@ -69,7 +75,7 @@ type EventFormProps = {
   notice?: ReactNode;
   onCancel: () => void;
   onRegistrationModeChange?: (mode: string) => void;
-  registrationModeSlot?: ReactNode;
+  registrationModeSlot?: ReactNode | ((context: RegistrationModeSlotContext) => ReactNode);
   onSubmit: (input: AdminEventMutationInput) => Promise<boolean>;
   submitLabel?: string;
   submitError?: string | null;
@@ -190,6 +196,15 @@ export function EventForm({
       setHasSuccessfulEditSave(false);
     }
   };
+
+  const renderedRegistrationModeSlot =
+    typeof registrationModeSlot === "function"
+      ? registrationModeSlot({
+          registrationMode: form.registrationMode,
+          requiresApproval: form.requiresApproval,
+          setRequiresApproval: (value) => updateField("requiresApproval", value),
+        })
+      : registrationModeSlot;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -422,11 +437,11 @@ export function EventForm({
 
         {form.registrationMode === "internal_paid" && mode === "create" ? (
           <div className="event-form-notice">
-            Варианты участия и оплаты можно добавить после создания события.
+            Варианты участия можно настроить после создания черновика события.
           </div>
         ) : null}
 
-        {registrationModeSlot}
+        {renderedRegistrationModeSlot}
       </section>
 
       {errors.form ? (
