@@ -30,6 +30,7 @@ type BlessingTextModalProps = {
 
 type DisplayBlock = {
   body: string;
+  kind?: BlessingContentBlock['kind'];
   key: string;
   titleRu?: string;
 };
@@ -57,6 +58,7 @@ function hasBlockBody(block: BlessingContentBlock): block is BlessingContentBloc
 function toDisplayBlock(block: BlessingContentBlock): DisplayBlock {
   return {
     body: block.bodyRu?.trim() ?? '',
+    kind: block.kind,
     key: block.key,
     titleRu: block.titleRu,
   };
@@ -177,9 +179,19 @@ export function BlessingTextModal({
             >
               {activeContent.kind === 'blocks' ? (
                 activeContent.blocks.map((block) => (
-                  <View key={block.key} style={styles.textBlock}>
+                  <View
+                    key={block.key}
+                    style={[styles.textBlock, block.kind === 'insert' && styles.insertBlock]}
+                  >
                     {block.titleRu ? (
-                      <Text style={styles.blockTitle}>{block.titleRu}</Text>
+                      <Text
+                        style={[
+                          styles.blockTitle,
+                          block.kind === 'insert' && styles.insertBlockTitle,
+                        ]}
+                      >
+                        {block.titleRu}
+                      </Text>
                     ) : null}
                     <Text
                       selectable
@@ -292,11 +304,21 @@ const styles = StyleSheet.create({
   textBlock: {
     gap: 8,
   },
+  insertBlock: {
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(255,200,50,0.54)',
+    backgroundColor: 'rgba(255,200,50,0.05)',
+    paddingLeft: 10,
+    paddingVertical: 8,
+  },
   blockTitle: {
     color: colors.goldAccent,
     fontSize: 13,
     fontWeight: '900',
     lineHeight: 18,
+  },
+  insertBlockTitle: {
+    color: colors.goldAccent,
   },
   bodyText: {
     color: colors.textSecondary,

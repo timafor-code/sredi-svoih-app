@@ -1,4 +1,5 @@
 import { blessingsCatalog } from '@/data/blessings/catalog';
+import { buildBlessingTextResult } from '@/lib/blessingTextBuilder';
 import type {
   Blessing,
   BlessingCondition,
@@ -259,7 +260,7 @@ export function getBlessingText(
 
   const contentBlocks = blessing.contentBlocks ?? [];
 
-  return {
+  return buildBlessingTextResult({
     blessing,
     calendarFlags: options.calendarFlags ?? [],
     language: options.language ?? 'ru',
@@ -267,7 +268,7 @@ export function getBlessingText(
     contentBlocks,
     needsVerification:
       blessing.needsVerification || contentBlocks.some((block) => block.needsVerification === true),
-  };
+  });
 }
 
 export function listBlessingsByCategory(category: string): Blessing[] {

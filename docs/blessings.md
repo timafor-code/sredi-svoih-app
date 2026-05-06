@@ -83,9 +83,19 @@ UI should not expand patterns directly. Use `src/services/blessingsCatalogServic
 - `chol_hamoed_pesach`
 - `chol_hamoed_sukkot`
 
-The calendar helper does not store or render insertion texts. Those texts belong in the local blessings catalog and will be connected in a later PR.
+The calendar helper does not store or render insertion texts. Those texts belong in the local blessings catalog and are assembled through local dynamic insert rules.
 
 Shabbat and Yom Tov are intentionally not included in MVP runtime flags. Blessings MVP also continues to avoid Supabase blessings tables, migrations, SQLite, remote sync, and RPC.
+
+## Dynamic inserts
+
+Dynamic inserts stay fully local. `resolveJewishCalendarFlags()` returns only calendar flags; it does not choose wording and does not render religious text.
+
+`getBlessingText()` applies `dynamicInsertRules` from the local blessing entry and returns a `BlessingTextResult` whose `contentBlocks` are already assembled for UI. `BlessingTextModal` and direct cards should render `textResult.contentBlocks` as-is instead of applying insert rules themselves.
+
+Current insert blocks are placeholders only and must keep `needsVerification: true`. Real Hanukkah, Purim, Rosh Chodesh, Chol hа-Moed Pesach, and Chol hа-Moed Sukkot texts should be added only after checking reliable sources.
+
+This insert infrastructure does not add Supabase blessing storage, migrations, SQLite, remote sync, manifest sync, or service-role access. Shabbat and Yom Tov runtime flags are still intentionally not included.
 
 ## Add a product
 
