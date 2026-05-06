@@ -1,5 +1,7 @@
 export type BlessingLanguage = 'he' | 'translit' | 'ru';
 
+export type BlessingTranslitNusach = 'sephard' | 'ashkenaz';
+
 export type Nusach = 'common' | 'chabad' | 'sephardi';
 
 export type DefaultPsak = 'chabad_alter_rebbe' | 'common' | 'other';
@@ -38,6 +40,7 @@ export interface BlessingContentBlock {
   bodyRu?: string;
   blessingSlug?: string;
   language?: BlessingLanguage;
+  translitNusach?: BlessingTranslitNusach;
   needsVerification?: boolean;
 }
 
