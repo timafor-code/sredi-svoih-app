@@ -41,6 +41,20 @@ UI should not expand patterns directly. Use `src/services/blessingsCatalogServic
 - `src/data/blessings/catalog.ts` - assembled local catalog.
 - `src/services/blessingsCatalogService.ts` - search, lookup, text, and pattern resolution API.
 
+## Календарные флаги
+
+`src/lib/jewishCalendarFlags.ts` is a local Hebcal-based helper for future Birkat Hamazon and Mein Shalosh insert handling. It returns only stable flag codes:
+
+- `hanukkah`
+- `purim`
+- `rosh_chodesh`
+- `chol_hamoed_pesach`
+- `chol_hamoed_sukkot`
+
+The calendar helper does not store or render insertion texts. Those texts belong in the local blessings catalog and will be connected in a later PR.
+
+Shabbat and Yom Tov are intentionally not included in MVP runtime flags. Blessings MVP also continues to avoid Supabase blessings tables, migrations, SQLite, remote sync, and RPC.
+
 ## Add a product
 
 1. Choose the correct item category file under `src/data/blessings/items/`.
