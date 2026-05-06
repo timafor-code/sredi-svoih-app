@@ -54,9 +54,13 @@ The main blessing language tabs stay the same: `Иврит`, `Транслит`,
 
 Inside `Транслит`, the UI now shows a secondary segmented control for `Сефард` and `Ашкеназ`.
 
-Existing `contentBlocks` with `language: 'translit'` and no `translitNusach` are treated as the Sephard fallback, so previously added transliteration continues to render without catalog churn.
+Core short blessings now have explicit `translit_sephard` and `translit_ashkenaz` blocks.
 
-Ashkenaz transliteration blocks will be added in separate small PRs after source review. Until then, missing Ashkenaz transliteration renders a soft placeholder.
+`translit_sephard` currently carries the previously existing transliteration as a temporary fallback.
+
+`translit_ashkenaz` is placeholder-only until it is manually filled and reviewed.
+
+No new religious text was authored by Codex in this PR.
 
 This PR does not add new blessing texts, change Supabase, add migrations, add SQLite, or introduce remote sync.
 

@@ -101,8 +101,9 @@ Expected result: the item scheme shows condition/dispute notes under `Услов
 - Open `Амоци`.
 - Select `Транслит`.
 - Confirm the `Сефард` / `Ашкеназ` segmented control is visible.
-- Confirm `Сефард` shows the existing transliteration.
-- Confirm `Ашкеназ` shows the soft placeholder if no Ashkenaz block exists.
+- Confirm `Сефард` shows the existing transliteration text.
+- Confirm `Ашкеназ` shows `Ашкеназская транслитерация будет добавлена после проверки.`
+- Repeat the same `Транслит` -> `Сефард` / `Ашкеназ` check for `Шеhаколь`, `hагафен`, and `Боре нефашот`.
 - Confirm `Иврит` and `Русский` do not show the nusach tabs.
 
 ## Mein Shalosh
