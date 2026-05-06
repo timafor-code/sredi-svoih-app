@@ -32,6 +32,12 @@ The card uses local `getBlessingText()` data only, keeps a single active languag
 
 This PR still does not add the shared `BlessingTextModal`, dynamic inserts, Supabase storage, migrations, SQLite, remote sync, or any source-text expansion. Those flows remain separate small PRs.
 
+## Full text modal
+
+The full-text-modal PR adds the shared controlled `BlessingTextModal` for `/prayers/blessings`. It opens local `getBlessingText()` results from quick access rows, the direct blessing card's "Открыть полный текст" button, and item scheme steps.
+
+The modal keeps the same local catalog boundary as the previous blessings MVP work: it shows only the selected language tab, scrolls inside a dark glass panel for future long texts, and displays verification placeholders when a language is not ready. Dynamic inserts for Birkat Hamazon and Mein Shalosh remain a separate PR and are not rendered or assembled here.
+
 ## Model
 
 The catalog uses a compact pattern-based model:

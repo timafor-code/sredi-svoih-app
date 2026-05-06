@@ -9,6 +9,7 @@ import { BlessingHomeGroup } from '@/components/blessings/BlessingHomeGroup';
 import { BlessingItemSchemeCard } from '@/components/blessings/BlessingItemSchemeCard';
 import { BlessingSearchBar } from '@/components/blessings/BlessingSearchBar';
 import { BlessingSearchResults } from '@/components/blessings/BlessingSearchResults';
+import { BlessingTextModal } from '@/components/blessings/BlessingTextModal';
 import { Screen } from '@/components/ui/Screen';
 import {
   getBlessingItemDetails,
@@ -25,6 +26,7 @@ import type {
   BlessingLanguage,
   BlessingResolvedStep,
   BlessingSearchResult,
+  BlessingTextResult,
 } from '@/types/blessing';
 
 const homeGroupLabels: Record<BlessingHomeGroupKey, string> = {
@@ -41,6 +43,8 @@ export default function BlessingsScreen() {
   const [selectedBlessingSlug, setSelectedBlessingSlug] = useState<string | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<BlessingLanguage>('ru');
   const [selectedItemDetails, setSelectedItemDetails] = useState<BlessingItemDetails | null>(null);
+  const [modalLanguage, setModalLanguage] = useState<BlessingLanguage>('ru');
+  const [modalTextResult, setModalTextResult] = useState<BlessingTextResult | null>(null);
   const homeBlessings = useMemo(() => listHomeBlessings(), []);
   const hasSearchQuery = searchQuery.trim().length > 0;
   const searchResults = useMemo(
@@ -61,8 +65,41 @@ export default function BlessingsScreen() {
     setSelectedBlessingSlug(null);
   };
 
+  const openBlessingText = (blessingSlug: string, initialLanguage?: BlessingLanguage) => {
+    const language = initialLanguage ?? modalLanguage;
+    const textResult = getBlessingText(blessingSlug, { language });
+
+    if (!textResult) {
+      Alert.alert('Текст недоступен', 'Текст для этого благословения пока недоступен');
+      return;
+    }
+
+    setModalLanguage(language);
+    setModalTextResult(textResult);
+  };
+
+  const closeBlessingText = () => {
+    setModalTextResult(null);
+  };
+
+  const handleModalLanguageChange = (language: BlessingLanguage) => {
+    setModalLanguage(language);
+
+    const blessingSlug = modalTextResult?.blessing.slug;
+
+    if (!blessingSlug) {
+      return;
+    }
+
+    const textResult = getBlessingText(blessingSlug, { language });
+
+    if (textResult) {
+      setModalTextResult(textResult);
+    }
+  };
+
   const handleHomeBlessingPress = (blessing: Blessing) => {
-    Alert.alert(blessing.titleRu, 'Текст благословения будет добавлен следующим PR');
+    openBlessingText(blessing.slug, 'ru');
   };
 
   const handleSearchResultPress = (result: BlessingSearchResult) => {
@@ -100,7 +137,7 @@ export default function BlessingsScreen() {
   };
 
   const handleStepPress = (step: BlessingResolvedStep) => {
-    Alert.alert(step.blessing.titleRu, 'Текст благословения будет добавлен следующим PR');
+    openBlessingText(step.blessingSlug, 'ru');
   };
 
   return (
@@ -162,6 +199,9 @@ export default function BlessingsScreen() {
           {selectedBlessingText ? (
             <BlessingDirectCard
               onLanguageChange={setSelectedLanguage}
+              onOpenText={() =>
+                openBlessingText(selectedBlessingText.blessing.slug, selectedLanguage)
+              }
               selectedLanguage={selectedLanguage}
               textResult={selectedBlessingText}
             />
@@ -181,6 +221,13 @@ export default function BlessingsScreen() {
           ))}
         </View>
       )}
+      <BlessingTextModal
+        onClose={closeBlessingText}
+        onLanguageChange={handleModalLanguageChange}
+        selectedLanguage={modalLanguage}
+        textResult={modalTextResult}
+        visible={modalTextResult !== null}
+      />
     </Screen>
   );
 }
