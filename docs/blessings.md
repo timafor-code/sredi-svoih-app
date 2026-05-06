@@ -115,6 +115,27 @@ Current insert blocks are placeholders only and must keep `needsVerification: tr
 
 This insert infrastructure does not add Supabase blessing storage, migrations, SQLite, remote sync, manifest sync, or service-role access. Shabbat and Yom Tov runtime flags are still intentionally not included.
 
+## Stabilization pass
+
+The original 9-PR `blessings4.txt` chain is complete and merged as PR #62-#70. This stabilization pass keeps the scope small: the catalog works locally, the `/prayers/blessings` screen resolves quick access rows, item schemes, direct blessing results, the shared modal, and placeholder dynamic inserts without adding a remote blessings backend.
+
+Search ranking is intentionally lightweight. `searchBlessings()` normalizes the query, then ranks exact matches above `startsWith`, `includes`, and reverse-contains matches. When scores tie, item results stay ahead of direct blessing entries so common product queries like "хлеб", "вода", "печенье", "вино", and "виноградный сок" open product schemes first.
+
+Complex products remain cautious. Items whose blessing depends on preparation, main ingredient, grain content, mixed-food rules, or food form should stay marked with `complexity: 'conditional'`, `needsVerification: true`, and reusable condition/dispute keys until they are reviewed.
+
+Real religious texts are still a separate source-verification task. Current long-text surfaces and calendar inserts use short placeholders only, and dynamic inserts should remain placeholders until reliable sources and nusach handling are checked.
+
+Direct blessing search results such as "Радуга", "Молния", "Гром", "Ашер яцар", and "Шеhехеяну" should open `BlessingTextModal` immediately after selection. `BlessingDirectCard` can remain as a contextual summary/full-text entry point while the modal flow is active.
+
+Possible next PRs:
+
+- Verified blessing texts.
+- Search typo tolerance.
+- Duplicate/alias review.
+- Favorites/recent blessings.
+- Source attribution screen.
+- Rabbinic review workflow.
+
 ## Add a product
 
 1. Choose the correct item category file under `src/data/blessings/items/`.
