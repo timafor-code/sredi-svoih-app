@@ -6,6 +6,10 @@ The blessings MVP uses a local offline-first catalog. Blessings are reference co
 
 For the MVP, blessings do not live in Supabase. This PR intentionally does not add migrations, database tables, RPC, manifest sync, remote sync, SQLite, or service-role access for blessings. Supabase remains responsible for existing app data such as events; the blessings foundation is a separate local layer.
 
+## Entry card
+
+This entry-card PR adds only the "Благословения" card to the "Молитвы" tab. The full `/prayers/blessings` screen, search UI, direct blessing cards, modal flows, and blessing text presentation will be handled in separate PRs.
+
 ## Model
 
 The catalog uses a compact pattern-based model:

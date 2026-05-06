@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { BlessingsEntryCard } from '@/components/blessings/BlessingsEntryCard';
 import { GlassCard } from '@/components/glass/GlassCard';
 import { MorningShemaCard } from '@/components/prayer/MorningShemaCard';
 import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
@@ -201,6 +202,8 @@ export default function PrayersScreen() {
           />
         );
       })}
+
+      <BlessingsEntryCard />
 
       <View>
         <SectionTitle title="ЗМАНИМ · ТАБЛИЦА" action="Подробнее о зманим" />
