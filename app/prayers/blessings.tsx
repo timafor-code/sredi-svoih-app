@@ -5,13 +5,24 @@ import { useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BlessingHomeGroup } from '@/components/blessings/BlessingHomeGroup';
+import { BlessingItemSchemeCard } from '@/components/blessings/BlessingItemSchemeCard';
 import { BlessingSearchBar } from '@/components/blessings/BlessingSearchBar';
-import { GlassCard } from '@/components/glass/GlassCard';
+import { BlessingSearchResults } from '@/components/blessings/BlessingSearchResults';
 import { Screen } from '@/components/ui/Screen';
-import { listHomeBlessings } from '@/services/blessingsCatalogService';
+import {
+  getBlessingItemDetails,
+  listHomeBlessings,
+  searchBlessings,
+} from '@/services/blessingsCatalogService';
 import { colors } from '@/theme/colors';
 import { radius } from '@/theme/radius';
-import type { Blessing, BlessingHomeGroup as BlessingHomeGroupKey } from '@/types/blessing';
+import type {
+  Blessing,
+  BlessingHomeGroup as BlessingHomeGroupKey,
+  BlessingItemDetails,
+  BlessingResolvedStep,
+  BlessingSearchResult,
+} from '@/types/blessing';
 
 const homeGroupLabels: Record<BlessingHomeGroupKey, string> = {
   before_food: 'До еды',
@@ -24,11 +35,46 @@ const homeGroupOrder: readonly BlessingHomeGroupKey[] = ['before_food', 'after_f
 export default function BlessingsScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedItemDetails, setSelectedItemDetails] = useState<BlessingItemDetails | null>(null);
   const homeBlessings = useMemo(() => listHomeBlessings(), []);
   const hasSearchQuery = searchQuery.trim().length > 0;
+  const searchResults = useMemo(
+    () => (hasSearchQuery ? searchBlessings(searchQuery) : []),
+    [hasSearchQuery, searchQuery],
+  );
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setSelectedItemDetails(null);
+  };
 
   const handleHomeBlessingPress = (blessing: Blessing) => {
     Alert.alert(blessing.titleRu, 'Текст благословения будет добавлен следующим PR');
+  };
+
+  const handleSearchResultPress = (result: BlessingSearchResult) => {
+    if (result.resultType === 'item') {
+      const details = getBlessingItemDetails(result.slug);
+
+      if (!details) {
+        Alert.alert(result.titleRu, 'Схема для этого продукта пока недоступна');
+        return;
+      }
+
+      setSelectedItemDetails(details);
+      return;
+    }
+
+    if (result.resultType === 'blessing') {
+      Alert.alert(result.titleRu, 'Карточка благословения будет добавлена следующим PR');
+      return;
+    }
+
+    Alert.alert(result.titleRu, 'Категории будут добавлены следующим PR');
+  };
+
+  const handleStepPress = (step: BlessingResolvedStep) => {
+    Alert.alert(step.blessing.titleRu, 'Текст благословения будет добавлен следующим PR');
   };
 
   return (
@@ -70,18 +116,23 @@ export default function BlessingsScreen() {
         </View>
       </View>
 
-      <BlessingSearchBar value={searchQuery} onChangeText={setSearchQuery} />
+      <BlessingSearchBar value={searchQuery} onChangeText={handleSearchChange} />
 
       {hasSearchQuery ? (
-        <GlassCard style={styles.searchPlaceholder}>
-          <View style={styles.placeholderIcon}>
-            <Ionicons name="search" size={22} color={colors.goldAccent} />
-          </View>
-          <Text style={styles.placeholderTitle}>Поиск будет добавлен следующим PR</Text>
-          <Text style={styles.placeholderText}>
-            Сейчас доступен быстрый переход к основным благословениям.
-          </Text>
-        </GlassCard>
+        <View style={styles.searchStack}>
+          <BlessingSearchResults
+            onResultPress={handleSearchResultPress}
+            query={searchQuery}
+            results={searchResults}
+            selectedItemSlug={selectedItemDetails?.item.slug}
+          />
+          {selectedItemDetails ? (
+            <BlessingItemSchemeCard
+              details={selectedItemDetails}
+              onStepPress={handleStepPress}
+            />
+          ) : null}
+        </View>
       ) : (
         <View style={styles.quickAccess}>
           <Text style={styles.quickAccessLabel}>Быстрый доступ · Нажмите, чтобы открыть текст</Text>
@@ -167,35 +218,13 @@ const styles = StyleSheet.create({
   quickAccess: {
     gap: 14,
   },
+  searchStack: {
+    gap: 14,
+  },
   quickAccessLabel: {
     color: colors.textDim,
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0,
-  },
-  searchPlaceholder: {
-    borderColor: 'rgba(255,200,50,0.16)',
-  },
-  placeholderIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,200,50,0.20)',
-    backgroundColor: colors.accent.goldBg,
-    marginBottom: 12,
-  },
-  placeholderTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  placeholderText: {
-    color: colors.textMuted,
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 6,
   },
 });
