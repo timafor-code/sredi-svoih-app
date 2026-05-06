@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { BlessingDirectCard } from '@/components/blessings/BlessingDirectCard';
 import { BlessingHomeGroup } from '@/components/blessings/BlessingHomeGroup';
 import { BlessingItemSchemeCard } from '@/components/blessings/BlessingItemSchemeCard';
 import { BlessingSearchBar } from '@/components/blessings/BlessingSearchBar';
@@ -11,6 +12,7 @@ import { BlessingSearchResults } from '@/components/blessings/BlessingSearchResu
 import { Screen } from '@/components/ui/Screen';
 import {
   getBlessingItemDetails,
+  getBlessingText,
   listHomeBlessings,
   searchBlessings,
 } from '@/services/blessingsCatalogService';
@@ -20,6 +22,7 @@ import type {
   Blessing,
   BlessingHomeGroup as BlessingHomeGroupKey,
   BlessingItemDetails,
+  BlessingLanguage,
   BlessingResolvedStep,
   BlessingSearchResult,
 } from '@/types/blessing';
@@ -35,6 +38,8 @@ const homeGroupOrder: readonly BlessingHomeGroupKey[] = ['before_food', 'after_f
 export default function BlessingsScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedBlessingSlug, setSelectedBlessingSlug] = useState<string | null>(null);
+  const [selectedLanguage, setSelectedLanguage] = useState<BlessingLanguage>('ru');
   const [selectedItemDetails, setSelectedItemDetails] = useState<BlessingItemDetails | null>(null);
   const homeBlessings = useMemo(() => listHomeBlessings(), []);
   const hasSearchQuery = searchQuery.trim().length > 0;
@@ -42,10 +47,18 @@ export default function BlessingsScreen() {
     () => (hasSearchQuery ? searchBlessings(searchQuery) : []),
     [hasSearchQuery, searchQuery],
   );
+  const selectedBlessingText = useMemo(
+    () =>
+      selectedBlessingSlug
+        ? getBlessingText(selectedBlessingSlug, { language: selectedLanguage })
+        : null,
+    [selectedBlessingSlug, selectedLanguage],
+  );
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
     setSelectedItemDetails(null);
+    setSelectedBlessingSlug(null);
   };
 
   const handleHomeBlessingPress = (blessing: Blessing) => {
@@ -54,6 +67,9 @@ export default function BlessingsScreen() {
 
   const handleSearchResultPress = (result: BlessingSearchResult) => {
     if (result.resultType === 'item') {
+      setSelectedBlessingSlug(null);
+      setSelectedItemDetails(null);
+
       const details = getBlessingItemDetails(result.slug);
 
       if (!details) {
@@ -66,7 +82,17 @@ export default function BlessingsScreen() {
     }
 
     if (result.resultType === 'blessing') {
-      Alert.alert(result.titleRu, 'Карточка благословения будет добавлена следующим PR');
+      const textResult = getBlessingText(result.slug, { language: selectedLanguage });
+
+      if (!textResult) {
+        setSelectedItemDetails(null);
+        setSelectedBlessingSlug(null);
+        Alert.alert(result.titleRu, 'Текст для этого благословения пока недоступен');
+        return;
+      }
+
+      setSelectedItemDetails(null);
+      setSelectedBlessingSlug(result.slug);
       return;
     }
 
@@ -124,12 +150,20 @@ export default function BlessingsScreen() {
             onResultPress={handleSearchResultPress}
             query={searchQuery}
             results={searchResults}
+            selectedBlessingSlug={selectedBlessingSlug}
             selectedItemSlug={selectedItemDetails?.item.slug}
           />
           {selectedItemDetails ? (
             <BlessingItemSchemeCard
               details={selectedItemDetails}
               onStepPress={handleStepPress}
+            />
+          ) : null}
+          {selectedBlessingText ? (
+            <BlessingDirectCard
+              onLanguageChange={setSelectedLanguage}
+              selectedLanguage={selectedLanguage}
+              textResult={selectedBlessingText}
             />
           ) : null}
         </View>
