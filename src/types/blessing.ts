@@ -14,7 +14,9 @@ export type BlessingHomeGroup = 'before_food' | 'after_food' | 'various';
 
 export type BlessingDisplayMode = 'direct_text' | 'full_text' | 'placeholder' | 'variants';
 
-export type BlessingContentBlockKind = 'placeholder' | 'variant' | 'note';
+export type BlessingContentBlockKind = 'placeholder' | 'variant' | 'note' | 'insert';
+
+export type BlessingInsertPlacement = 'before_block' | 'after_block' | 'replace_marker';
 
 export type JewishCalendarFlag =
   | 'hanukkah'
@@ -51,6 +53,17 @@ export interface BlessingInsert {
   needsVerification?: boolean;
 }
 
+export interface BlessingInsertRule {
+  key: string;
+  flag: JewishCalendarFlag;
+  titleRu: string;
+  placement: BlessingInsertPlacement;
+  targetBlockKey?: string;
+  marker?: string;
+  contentBlocks: readonly BlessingContentBlock[];
+  needsVerification: boolean;
+}
+
 export interface Blessing {
   slug: string;
   titleRu: string;
@@ -63,6 +76,7 @@ export interface Blessing {
   home?: BlessingHomeConfig;
   contentBlocks?: readonly BlessingContentBlock[];
   inserts?: readonly BlessingInsert[];
+  dynamicInsertRules?: readonly BlessingInsertRule[];
   sourceName?: string;
   sourceUrl?: string;
   needsVerification: boolean;

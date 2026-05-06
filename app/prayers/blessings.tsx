@@ -11,6 +11,7 @@ import { BlessingSearchBar } from '@/components/blessings/BlessingSearchBar';
 import { BlessingSearchResults } from '@/components/blessings/BlessingSearchResults';
 import { BlessingTextModal } from '@/components/blessings/BlessingTextModal';
 import { Screen } from '@/components/ui/Screen';
+import { resolveJewishCalendarFlags } from '@/lib/jewishCalendarFlags';
 import {
   getBlessingItemDetails,
   getBlessingText,
@@ -45,6 +46,7 @@ export default function BlessingsScreen() {
   const [selectedItemDetails, setSelectedItemDetails] = useState<BlessingItemDetails | null>(null);
   const [modalLanguage, setModalLanguage] = useState<BlessingLanguage>('ru');
   const [modalTextResult, setModalTextResult] = useState<BlessingTextResult | null>(null);
+  const calendarFlags = useMemo(() => resolveJewishCalendarFlags(new Date()), []);
   const homeBlessings = useMemo(() => listHomeBlessings(), []);
   const hasSearchQuery = searchQuery.trim().length > 0;
   const searchResults = useMemo(
@@ -54,9 +56,9 @@ export default function BlessingsScreen() {
   const selectedBlessingText = useMemo(
     () =>
       selectedBlessingSlug
-        ? getBlessingText(selectedBlessingSlug, { language: selectedLanguage })
+        ? getBlessingText(selectedBlessingSlug, { calendarFlags, language: selectedLanguage })
         : null,
-    [selectedBlessingSlug, selectedLanguage],
+    [calendarFlags, selectedBlessingSlug, selectedLanguage],
   );
 
   const handleSearchChange = (value: string) => {
@@ -67,7 +69,10 @@ export default function BlessingsScreen() {
 
   const openBlessingText = (blessingSlug: string, initialLanguage?: BlessingLanguage) => {
     const language = initialLanguage ?? modalLanguage;
-    const textResult = getBlessingText(blessingSlug, { language });
+    const textResult = getBlessingText(blessingSlug, {
+      calendarFlags: resolveJewishCalendarFlags(new Date()),
+      language,
+    });
 
     if (!textResult) {
       Alert.alert('Текст недоступен', 'Текст для этого благословения пока недоступен');
@@ -85,13 +90,15 @@ export default function BlessingsScreen() {
   const handleModalLanguageChange = (language: BlessingLanguage) => {
     setModalLanguage(language);
 
-    const blessingSlug = modalTextResult?.blessing.slug;
-
-    if (!blessingSlug) {
+    if (!modalTextResult) {
       return;
     }
 
-    const textResult = getBlessingText(blessingSlug, { language });
+    const blessingSlug = modalTextResult.blessing.slug;
+    const textResult = getBlessingText(blessingSlug, {
+      calendarFlags: modalTextResult.calendarFlags,
+      language,
+    });
 
     if (textResult) {
       setModalTextResult(textResult);
@@ -119,7 +126,10 @@ export default function BlessingsScreen() {
     }
 
     if (result.resultType === 'blessing') {
-      const textResult = getBlessingText(result.slug, { language: selectedLanguage });
+      const textResult = getBlessingText(result.slug, {
+        calendarFlags,
+        language: selectedLanguage,
+      });
 
       if (!textResult) {
         setSelectedItemDetails(null);
@@ -130,6 +140,7 @@ export default function BlessingsScreen() {
 
       setSelectedItemDetails(null);
       setSelectedBlessingSlug(result.slug);
+      openBlessingText(result.slug, selectedLanguage);
       return;
     }
 
