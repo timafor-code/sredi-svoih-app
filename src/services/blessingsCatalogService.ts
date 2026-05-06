@@ -158,6 +158,17 @@ function buildBlessingSearchResult(blessing: Blessing, query: string): BlessingS
   };
 }
 
+export function getResultTypePriority(result: BlessingSearchResult): number {
+  switch (result.resultType) {
+    case 'item':
+      return 0;
+    case 'blessing':
+      return 1;
+    case 'category':
+      return 2;
+  }
+}
+
 export function normalizeBlessingQuery(query: string): string {
   return query.trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
 }
@@ -203,7 +214,12 @@ export function searchBlessings(query: string): BlessingSearchResult[] {
     ...catalogBlessings.map((blessing) => buildBlessingSearchResult(blessing, normalizedQuery)),
   ]
     .filter(isDefined)
-    .sort((left, right) => right.score - left.score || left.titleRu.localeCompare(right.titleRu, 'ru'));
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        getResultTypePriority(left) - getResultTypePriority(right) ||
+        left.titleRu.localeCompare(right.titleRu, 'ru'),
+    );
 }
 
 export function getBlessingItemDetails(itemSlug: string): BlessingItemDetails | null {

@@ -12,7 +12,7 @@ export type DisputeSeverity = 'info' | 'ask_rav' | 'machloket';
 
 export type BlessingHomeGroup = 'before_food' | 'after_food' | 'various';
 
-export type BlessingDisplayMode = 'direct' | 'placeholder' | 'variants';
+export type BlessingDisplayMode = 'direct_text' | 'full_text' | 'placeholder' | 'variants';
 
 export type BlessingContentBlockKind = 'placeholder' | 'variant' | 'note';
 
