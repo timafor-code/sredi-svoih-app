@@ -62,6 +62,24 @@ seven_species_fruit -> bore_pri_haetz -> mein_shalosh_al_haetz
 
 UI should not expand patterns directly. Use `src/services/blessingsCatalogService.ts`.
 
+## Food catalog expansion
+
+This PR expands only the local food item catalog, aliases, reusable conditions, and reusable dispute notes for the blessings section.
+
+Products still use the pattern-based model:
+
+```text
+item -> pattern -> blessings
+```
+
+Items do not duplicate blessing steps. A product points to `patternKey`, and reusable patterns continue to own the blessing flow.
+
+Complex or composition-sensitive foods are marked with `complexity: 'conditional'`, `conditionKeys`, optional `disputeKeys`, and `needsVerification: true`. The catalog should stay cautious for cases that depend on the main ingredient, grain content, preparation, food form, or mixed-food rules.
+
+The UI does not hardcode these products. `/prayers/blessings` should discover them through `searchBlessings()`, and search matching uses the item's `aliases` for common Russian, English, and short Hebrew variants.
+
+Real psak decisions, long blessing texts, source links, and nusach-specific wording still require review before they are added.
+
 ## Files
 
 - `src/types/blessing.ts` - shared catalog types.
