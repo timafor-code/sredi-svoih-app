@@ -96,6 +96,15 @@ Expected result: the item scheme shows condition/dispute notes under `Услов
 - Confirm only one language tab is active at a time.
 - Confirm missing/placeholder content shows a soft `Текст требует проверки` message instead of a crash or blank modal.
 
+## Transliteration nusach split
+
+- Open `Амоци`.
+- Select `Транслит`.
+- Confirm the `Сефард` / `Ашкеназ` segmented control is visible.
+- Confirm `Сефард` shows the existing transliteration.
+- Confirm `Ашкеназ` shows the soft placeholder if no Ashkenaz block exists.
+- Confirm `Иврит` and `Русский` do not show the nusach tabs.
+
 ## Mein Shalosh
 
 - Tap quick access `Мейн Шалош` and confirm it opens the general `mein_shalosh` entry with three variants.

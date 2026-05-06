@@ -48,6 +48,18 @@ Holiday inserts remain a separate PR.
 
 Texts that keep `needsVerification: true` still require final rabbinic/source review before they are treated as approved.
 
+## Transliteration nusach split
+
+The main blessing language tabs stay the same: `Иврит`, `Транслит`, and `Русский`.
+
+Inside `Транслит`, the UI now shows a secondary segmented control for `Сефард` and `Ашкеназ`.
+
+Existing `contentBlocks` with `language: 'translit'` and no `translitNusach` are treated as the Sephard fallback, so previously added transliteration continues to render without catalog churn.
+
+Ashkenaz transliteration blocks will be added in separate small PRs after source review. Until then, missing Ashkenaz transliteration renders a soft placeholder.
+
+This PR does not add new blessing texts, change Supabase, add migrations, add SQLite, or introduce remote sync.
+
 ## Model
 
 The catalog uses a compact pattern-based model:

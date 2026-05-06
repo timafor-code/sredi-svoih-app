@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BlessingLanguageTabs } from '@/components/blessings/BlessingLanguageTabs';
+import { BlessingTranslitNusachTabs } from '@/components/blessings/BlessingTranslitNusachTabs';
 import { GlassCard } from '@/components/glass/GlassCard';
 import { colors } from '@/theme/colors';
 import { radius } from '@/theme/radius';
@@ -11,6 +12,7 @@ import type {
   BlessingContentBlock,
   BlessingLanguage,
   BlessingTextResult,
+  BlessingTranslitNusach,
 } from '@/types/blessing';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
@@ -18,7 +20,9 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 type BlessingDirectCardProps = {
   onLanguageChange: (language: BlessingLanguage) => void;
   onOpenText: () => void;
+  onTranslitNusachChange: (value: BlessingTranslitNusach) => void;
   selectedLanguage: BlessingLanguage;
+  selectedTranslitNusach: BlessingTranslitNusach;
   textResult: BlessingTextResult;
 };
 
@@ -41,8 +45,13 @@ type ActiveTextContent =
 
 const languagePlaceholders: Record<BlessingLanguage, string> = {
   he: 'Текст на иврите будет добавлен после проверки',
-  translit: 'Транслитерация будет добавлена после проверки',
+  translit: 'Сефардская транслитерация будет добавлена после проверки',
   ru: 'Текст требует проверки и будет добавлен позже',
+};
+
+const translitNusachPlaceholders: Record<BlessingTranslitNusach, string> = {
+  sephard: 'Сефардская транслитерация будет добавлена после проверки',
+  ashkenaz: 'Ашкеназская транслитерация будет добавлена после проверки',
 };
 
 function getBlessingIcon(blessing: Blessing): IoniconName {
@@ -75,12 +84,16 @@ function toDisplayBlock(block: BlessingContentBlock): DisplayBlock {
   };
 }
 
-function getActiveTextContent(textResult: BlessingTextResult): ActiveTextContent {
-  const { contentBlocks, language } = textResult;
-  const visibleBlocks =
-    language === 'ru'
-      ? contentBlocks.filter((block) => !block.language || block.language === 'ru')
-      : contentBlocks.filter((block) => block.language === language);
+function getActiveTextContent(
+  textResult: BlessingTextResult,
+  selectedLanguage: BlessingLanguage,
+  selectedTranslitNusach: BlessingTranslitNusach,
+): ActiveTextContent {
+  const visibleBlocks = getVisibleBlocks(
+    textResult.contentBlocks,
+    selectedLanguage,
+    selectedTranslitNusach,
+  );
 
   const blocks = visibleBlocks.filter(hasBlockBody).map(toDisplayBlock);
 
@@ -93,18 +106,69 @@ function getActiveTextContent(textResult: BlessingTextResult): ActiveTextContent
 
   return {
     kind: 'placeholder',
-    message: languagePlaceholders[language],
+    message: getPlaceholderMessage(selectedLanguage, selectedTranslitNusach),
   };
+}
+
+function getVisibleBlocks(
+  contentBlocks: readonly BlessingContentBlock[],
+  selectedLanguage: BlessingLanguage,
+  selectedTranslitNusach: BlessingTranslitNusach,
+): readonly BlessingContentBlock[] {
+  switch (selectedLanguage) {
+    case 'he':
+      return contentBlocks.filter((block) => block.language === 'he');
+    case 'ru':
+      return contentBlocks.filter((block) => !block.language || block.language === 'ru');
+    case 'translit':
+      return getVisibleTranslitBlocks(contentBlocks, selectedTranslitNusach);
+  }
+}
+
+function getVisibleTranslitBlocks(
+  contentBlocks: readonly BlessingContentBlock[],
+  selectedTranslitNusach: BlessingTranslitNusach,
+): readonly BlessingContentBlock[] {
+  const translitBlocks = contentBlocks.filter((block) => block.language === 'translit');
+
+  if (selectedTranslitNusach === 'sephard') {
+    const sephardBlocks = translitBlocks.filter(
+      (block) => block.translitNusach === 'sephard',
+    );
+
+    return sephardBlocks.length > 0
+      ? sephardBlocks
+      : translitBlocks.filter((block) => !block.translitNusach);
+  }
+
+  return translitBlocks.filter((block) => block.translitNusach === 'ashkenaz');
+}
+
+function getPlaceholderMessage(
+  selectedLanguage: BlessingLanguage,
+  selectedTranslitNusach: BlessingTranslitNusach,
+): string {
+  if (selectedLanguage === 'translit') {
+    return translitNusachPlaceholders[selectedTranslitNusach];
+  }
+
+  return languagePlaceholders[selectedLanguage];
 }
 
 export function BlessingDirectCard({
   onLanguageChange,
   onOpenText,
+  onTranslitNusachChange,
   selectedLanguage,
+  selectedTranslitNusach,
   textResult,
 }: BlessingDirectCardProps) {
   const { blessing } = textResult;
-  const activeContent = getActiveTextContent(textResult);
+  const activeContent = getActiveTextContent(
+    textResult,
+    selectedLanguage,
+    selectedTranslitNusach,
+  );
   const showVerificationNotice = blessing.needsVerification || textResult.needsVerification;
 
   return (
@@ -139,6 +203,13 @@ export function BlessingDirectCard({
       ) : null}
 
       <BlessingLanguageTabs value={selectedLanguage} onValueChange={onLanguageChange} />
+
+      {selectedLanguage === 'translit' ? (
+        <BlessingTranslitNusachTabs
+          value={selectedTranslitNusach}
+          onValueChange={onTranslitNusachChange}
+        />
+      ) : null}
 
       <View style={styles.textBox}>
         {activeContent.kind === 'blocks' ? (

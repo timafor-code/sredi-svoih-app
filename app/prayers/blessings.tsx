@@ -28,6 +28,7 @@ import type {
   BlessingResolvedStep,
   BlessingSearchResult,
   BlessingTextResult,
+  BlessingTranslitNusach,
 } from '@/types/blessing';
 
 const homeGroupLabels: Record<BlessingHomeGroupKey, string> = {
@@ -43,8 +44,12 @@ export default function BlessingsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBlessingSlug, setSelectedBlessingSlug] = useState<string | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<BlessingLanguage>('ru');
+  const [selectedTranslitNusach, setSelectedTranslitNusach] =
+    useState<BlessingTranslitNusach>('sephard');
   const [selectedItemDetails, setSelectedItemDetails] = useState<BlessingItemDetails | null>(null);
   const [modalLanguage, setModalLanguage] = useState<BlessingLanguage>('ru');
+  const [modalTranslitNusach, setModalTranslitNusach] =
+    useState<BlessingTranslitNusach>('sephard');
   const [modalTextResult, setModalTextResult] = useState<BlessingTextResult | null>(null);
   const calendarFlags = useMemo(() => resolveJewishCalendarFlags(new Date()), []);
   const homeBlessings = useMemo(() => listHomeBlessings(), []);
@@ -67,7 +72,11 @@ export default function BlessingsScreen() {
     setSelectedBlessingSlug(null);
   };
 
-  const openBlessingText = (blessingSlug: string, initialLanguage?: BlessingLanguage) => {
+  const openBlessingText = (
+    blessingSlug: string,
+    initialLanguage?: BlessingLanguage,
+    initialTranslitNusach: BlessingTranslitNusach = 'sephard',
+  ) => {
     const language = initialLanguage ?? modalLanguage;
     const textResult = getBlessingText(blessingSlug, {
       calendarFlags: resolveJewishCalendarFlags(new Date()),
@@ -80,6 +89,7 @@ export default function BlessingsScreen() {
     }
 
     setModalLanguage(language);
+    setModalTranslitNusach(initialTranslitNusach);
     setModalTextResult(textResult);
   };
 
@@ -103,6 +113,10 @@ export default function BlessingsScreen() {
     if (textResult) {
       setModalTextResult(textResult);
     }
+  };
+
+  const handleModalTranslitNusachChange = (value: BlessingTranslitNusach) => {
+    setModalTranslitNusach(value);
   };
 
   const handleHomeBlessingPress = (blessing: Blessing) => {
@@ -211,9 +225,15 @@ export default function BlessingsScreen() {
             <BlessingDirectCard
               onLanguageChange={setSelectedLanguage}
               onOpenText={() =>
-                openBlessingText(selectedBlessingText.blessing.slug, selectedLanguage)
+                openBlessingText(
+                  selectedBlessingText.blessing.slug,
+                  selectedLanguage,
+                  selectedTranslitNusach,
+                )
               }
+              onTranslitNusachChange={setSelectedTranslitNusach}
               selectedLanguage={selectedLanguage}
+              selectedTranslitNusach={selectedTranslitNusach}
               textResult={selectedBlessingText}
             />
           ) : null}
@@ -235,7 +255,9 @@ export default function BlessingsScreen() {
       <BlessingTextModal
         onClose={closeBlessingText}
         onLanguageChange={handleModalLanguageChange}
+        onTranslitNusachChange={handleModalTranslitNusachChange}
         selectedLanguage={modalLanguage}
+        selectedTranslitNusach={modalTranslitNusach}
         textResult={modalTextResult}
         visible={modalTextResult !== null}
       />
