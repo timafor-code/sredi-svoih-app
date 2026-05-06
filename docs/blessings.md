@@ -10,6 +10,12 @@ For the MVP, blessings do not live in Supabase. This PR intentionally does not a
 
 This entry-card PR adds only the "Благословения" card to the "Молитвы" tab. The full `/prayers/blessings` screen, search UI, direct blessing cards, modal flows, and blessing text presentation will be handled in separate PRs.
 
+## Start screen
+
+The start-screen PR adds the `/prayers/blessings` route with a dark glassmorphism landing screen for the blessings section. It includes a back button, title, subtitle, controlled search field, and quick access groups.
+
+Quick access content must come from `listHomeBlessings()` in `src/services/blessingsCatalogService.ts`; UI should only own group labels and layout. Search results, item schemes, direct blessing cards, dynamic inserts, and the blessing text modal remain separate PRs.
+
 ## Model
 
 The catalog uses a compact pattern-based model:
