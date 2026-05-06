@@ -140,6 +140,7 @@ export default function BlessingsScreen() {
 
       setSelectedItemDetails(null);
       setSelectedBlessingSlug(result.slug);
+      openBlessingText(result.slug, selectedLanguage);
       return;
     }
 
