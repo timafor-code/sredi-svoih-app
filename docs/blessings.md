@@ -24,6 +24,14 @@ When a product result is selected, the screen resolves details through `getBless
 
 This PR still does not add direct blessing cards, blessing text modals, full blessing text, dynamic inserts, Zustand state, Supabase storage, migrations, SQLite, or remote sync. Tapping a direct blessing or a scheme step intentionally shows a placeholder alert until those flows are added in later PRs.
 
+## Direct card
+
+The direct-card PR renders direct blessing search results on `/prayers/blessings` without leaving the screen. Selecting a direct blessing such as "Радуга", "Молния", "Гром", "Ашер яцар", or "Шеhехеяну" now shows a `BlessingDirectCard` below the search results instead of the old placeholder alert.
+
+The card uses local `getBlessingText()` data only, keeps a single active language tab visible at a time, and shows gentle placeholder copy when Hebrew, transliteration, or checked Russian text is not available yet. Verification notices stay soft because most catalog text is still pending source review.
+
+This PR still does not add the shared `BlessingTextModal`, dynamic inserts, Supabase storage, migrations, SQLite, remote sync, or any source-text expansion. Those flows remain separate small PRs.
+
 ## Model
 
 The catalog uses a compact pattern-based model:

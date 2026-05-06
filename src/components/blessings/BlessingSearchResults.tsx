@@ -12,6 +12,7 @@ type BlessingSearchResultsProps = {
   onResultPress: (result: BlessingSearchResult) => void;
   query: string;
   results: readonly BlessingSearchResult[];
+  selectedBlessingSlug?: string | null;
   selectedItemSlug?: string | null;
 };
 
@@ -40,6 +41,7 @@ export function BlessingSearchResults({
   onResultPress,
   query,
   results,
+  selectedBlessingSlug,
   selectedItemSlug,
 }: BlessingSearchResultsProps) {
   if (results.length === 0) {
@@ -65,7 +67,9 @@ export function BlessingSearchResults({
 
       <GlassCard padded={false} style={styles.resultsCard}>
         {results.map((result, index) => {
-          const isSelected = result.resultType === 'item' && selectedItemSlug === result.slug;
+          const isSelected =
+            (result.resultType === 'item' && selectedItemSlug === result.slug) ||
+            (result.resultType === 'blessing' && selectedBlessingSlug === result.slug);
 
           return (
             <Pressable
