@@ -16,6 +16,14 @@ The start-screen PR adds the `/prayers/blessings` route with a dark glassmorphis
 
 Quick access content must come from `listHomeBlessings()` in `src/services/blessingsCatalogService.ts`; UI should only own group labels and layout. Search results, item schemes, direct blessing cards, dynamic inserts, and the blessing text modal remain separate PRs.
 
+## Search and schemes
+
+The search-and-schemes PR connects the `/prayers/blessings` screen to the local `searchBlessings()` service. Non-empty search input now renders real local search results for products/situations and direct blessing entries.
+
+When a product result is selected, the screen resolves details through `getBlessingItemDetails()` and displays the local `item -> pattern -> steps` scheme. Conditional and complex products show "Есть условия" badges plus condition/dispute notes from the catalog.
+
+This PR still does not add direct blessing cards, blessing text modals, full blessing text, dynamic inserts, Zustand state, Supabase storage, migrations, SQLite, or remote sync. Tapping a direct blessing or a scheme step intentionally shows a placeholder alert until those flows are added in later PRs.
+
 ## Model
 
 The catalog uses a compact pattern-based model:
