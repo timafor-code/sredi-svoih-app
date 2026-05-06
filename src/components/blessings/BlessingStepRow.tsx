@@ -36,7 +36,7 @@ export function BlessingStepRow({ isLast = false, onPress, step }: BlessingStepR
 
       <View style={styles.action}>
         <Text numberOfLines={1} style={styles.actionText}>
-          Открыть позже
+          Открыть
         </Text>
         <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.28)" />
       </View>

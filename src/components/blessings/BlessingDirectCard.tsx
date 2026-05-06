@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BlessingLanguageTabs } from '@/components/blessings/BlessingLanguageTabs';
 import { GlassCard } from '@/components/glass/GlassCard';
@@ -17,6 +17,7 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 
 type BlessingDirectCardProps = {
   onLanguageChange: (language: BlessingLanguage) => void;
+  onOpenText: () => void;
   selectedLanguage: BlessingLanguage;
   textResult: BlessingTextResult;
 };
@@ -96,6 +97,7 @@ function getActiveTextContent(textResult: BlessingTextResult): ActiveTextContent
 
 export function BlessingDirectCard({
   onLanguageChange,
+  onOpenText,
   selectedLanguage,
   textResult,
 }: BlessingDirectCardProps) {
@@ -157,12 +159,17 @@ export function BlessingDirectCard({
         )}
       </View>
 
-      <View style={styles.nextPrPill}>
-        <Ionicons name="document-text-outline" size={16} color={colors.textDim} />
-        <Text numberOfLines={1} style={styles.nextPrText}>
-          Полный текст — следующим PR
+      <Pressable
+        accessibilityLabel="Открыть полный текст"
+        accessibilityRole="button"
+        onPress={onOpenText}
+        style={({ pressed }) => [styles.openButton, pressed && styles.pressed]}
+      >
+        <Ionicons name="document-text-outline" size={16} color={colors.goldAccent} />
+        <Text numberOfLines={1} style={styles.openButtonText}>
+          Открыть полный текст
         </Text>
-      </View>
+      </Pressable>
     </GlassCard>
   );
 }
@@ -262,7 +269,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 21,
   },
-  nextPrPill: {
+  openButton: {
     alignSelf: 'flex-start',
     maxWidth: '100%',
     flexDirection: 'row',
@@ -270,15 +277,18 @@ const styles = StyleSheet.create({
     gap: 7,
     borderRadius: radius.full,
     borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.glass.w05,
+    borderColor: 'rgba(255,200,50,0.26)',
+    backgroundColor: colors.accent.goldBg,
     paddingHorizontal: 11,
     paddingVertical: 8,
   },
-  nextPrText: {
+  openButtonText: {
     flexShrink: 1,
-    color: colors.textDim,
+    color: colors.goldAccent,
     fontSize: 11,
     fontWeight: '900',
+  },
+  pressed: {
+    opacity: 0.78,
   },
 });
