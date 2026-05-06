@@ -16,6 +16,13 @@ export type BlessingDisplayMode = 'direct_text' | 'full_text' | 'placeholder' | 
 
 export type BlessingContentBlockKind = 'placeholder' | 'variant' | 'note';
 
+export type JewishCalendarFlag =
+  | 'hanukkah'
+  | 'purim'
+  | 'rosh_chodesh'
+  | 'chol_hamoed_pesach'
+  | 'chol_hamoed_sukkot';
+
 export interface BlessingHomeConfig {
   enabled: boolean;
   group: BlessingHomeGroup;
@@ -155,12 +162,14 @@ export interface BlessingSearchResult {
 }
 
 export interface BlessingTextOptions {
+  calendarFlags?: readonly JewishCalendarFlag[];
   language?: BlessingLanguage;
   nusach?: Nusach;
 }
 
 export interface BlessingTextResult {
   blessing: Blessing;
+  calendarFlags: readonly JewishCalendarFlag[];
   language: BlessingLanguage;
   nusach: Nusach;
   contentBlocks: readonly BlessingContentBlock[];

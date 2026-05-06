@@ -261,6 +261,7 @@ export function getBlessingText(
 
   return {
     blessing,
+    calendarFlags: options.calendarFlags ?? [],
     language: options.language ?? 'ru',
     nusach: options.nusach ?? 'common',
     contentBlocks,
