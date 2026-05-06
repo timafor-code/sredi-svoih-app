@@ -38,6 +38,16 @@ The full-text-modal PR adds the shared controlled `BlessingTextModal` for `/pray
 
 The modal keeps the same local catalog boundary as the previous blessings MVP work: it shows only the selected language tab, scrolls inside a dark glass panel for future long texts, and displays verification placeholders when a language is not ready. Dynamic inserts for Birkat Hamazon and Mein Shalosh remain a separate PR and are not rendered or assembled here.
 
+## Core short blessing texts
+
+This PR adds short core blessing text blocks for basic before-food and after-food blessings in Hebrew, transliteration, and Russian.
+
+Long Birkat Hamazon and Mein Shalosh texts remain separate PRs.
+
+Holiday inserts remain a separate PR.
+
+Texts that keep `needsVerification: true` still require final rabbinic/source review before they are treated as approved.
+
 ## Model
 
 The catalog uses a compact pattern-based model:

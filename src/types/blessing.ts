@@ -14,7 +14,7 @@ export type BlessingHomeGroup = 'before_food' | 'after_food' | 'various';
 
 export type BlessingDisplayMode = 'direct_text' | 'full_text' | 'placeholder' | 'variants';
 
-export type BlessingContentBlockKind = 'placeholder' | 'variant' | 'note' | 'insert';
+export type BlessingContentBlockKind = 'placeholder' | 'variant' | 'note' | 'insert' | 'text';
 
 export type BlessingInsertPlacement = 'before_block' | 'after_block' | 'replace_marker';
 
