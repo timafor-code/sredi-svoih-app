@@ -396,6 +396,8 @@ const birkatHamazonChabadRuntimeMetadata: Partial<
   Record<BirkatHamazonChabadHebrewBlockKey, Partial<BlessingContentBlock>>
 > = {
   source_notice_he: { renderVariant: 'annotation' },
+  preface_tachanun_days_he: { prefaceMode: 'tachanun' },
+  preface_no_tachanun_days_he: { prefaceMode: 'no_tachanun' },
   al_hanisim_opening_he: {
     calendarFlags: ['hanukkah', 'purim'],
     renderVariant: 'insert',

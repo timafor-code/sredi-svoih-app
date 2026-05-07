@@ -115,13 +115,20 @@ function getVisibleBlocks(
   selectedLanguage: BlessingLanguage,
   selectedTranslitNusach: BlessingTranslitNusach,
 ): readonly BlessingContentBlock[] {
+  const previewBlocks = contentBlocks.filter(
+    (block) =>
+      block.renderVariant !== 'manual_collapsible' &&
+      !block.collapsibleGroupKey &&
+      !block.prefaceMode,
+  );
+
   switch (selectedLanguage) {
     case 'he':
-      return contentBlocks.filter((block) => block.language === 'he');
+      return previewBlocks.filter((block) => block.language === 'he');
     case 'ru':
-      return contentBlocks.filter((block) => !block.language || block.language === 'ru');
+      return previewBlocks.filter((block) => !block.language || block.language === 'ru');
     case 'translit':
-      return getVisibleTranslitBlocks(contentBlocks, selectedTranslitNusach);
+      return getVisibleTranslitBlocks(previewBlocks, selectedTranslitNusach);
   }
 }
 
