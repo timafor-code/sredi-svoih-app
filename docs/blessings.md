@@ -6,6 +6,44 @@ The blessings MVP uses a local offline-first catalog. Blessings are reference co
 
 For the MVP, blessings do not live in Supabase. This PR intentionally does not add migrations, database tables, RPC, manifest sync, remote sync, SQLite, or service-role access for blessings. Supabase remains responsible for existing app data such as events; the blessings foundation is a separate local layer.
 
+## Brachas.txt alignment
+
+The food catalog is being aligned to `Brachas.txt`, a local reference for Chabad custom / Alter Rebbe psak. The current source range covered by the catalog pass is the visible alphabetical block `А-П`.
+
+Disclaimer for the catalog:
+
+- The instructions concern foods that are in an edible state.
+- The foods are prepared and eaten in their usual way.
+- The foods are being eaten separately from other dishes unless the item explicitly says otherwise.
+- The order follows Chabad custom according to the tables of rabbis Ch. Pruss and Y. Green.
+
+The catalog should remain compact:
+
+```text
+item -> pattern -> blessings + conditions + notes/disputes
+```
+
+Most products should use a compact tuple:
+
+```ts
+['apricot', 'Абрикос', 'haetz_bore_nefashot', ['абрикос']]
+```
+
+Use tuple `options` only when the item has a condition, footnote, source reference, dispute, alternative scenario, or needs a cautious badge.
+
+## Source notes
+
+Source footnotes must not be folded into `titleRu`. Put them into reusable `noteKeys` and define the text in `src/data/blessings/notes.ts`.
+
+Use:
+
+- `noteKeys` for short source footnotes and ordinary clarifications.
+- `conditionKeys` when the user must know a condition before applying the result.
+- `disputeKeys` and `complexity: 'conditional' | 'complex'` when the case is composition-sensitive, disputed, or should not be shown as a simple automatic psak.
+- `sourceRefs` for compact references such as `Brachas.txt: Пицца 796`.
+
+UI may show product notes as small text near the item scheme. Conditional products should show a badge like `Есть условия`; complex or disputed cases should show `Спорный случай` or equivalent copy.
+
 ## Entry card
 
 This entry-card PR adds only the "Благословения" card to the "Молитвы" tab. The full `/prayers/blessings` screen, search UI, direct blessing cards, modal flows, and blessing text presentation will be handled in separate PRs.
@@ -73,6 +111,21 @@ item -> pattern -> blessings + conditions + disputes/notes
 ```
 
 Products stay short. A product points to a reusable pattern, and the pattern owns the ordered blessing steps.
+
+Canonical food patterns now include:
+
+- `hamotzi_meal`
+- `mezonot_al_hamichya`
+- `mezonot_bore_nefashot`
+- `haetz_bore_nefashot`
+- `seven_species_fruit`
+- `haadama_bore_nefashot`
+- `shehakol_bore_nefashot`
+- `hagafen_al_hagefen`
+- `drink_shehakol`
+- `conditional`
+- `complex`
+- `no_bracha`
 
 Example:
 
@@ -172,8 +225,11 @@ Possible next PRs:
 ```
 
 3. Reuse an existing pattern whenever possible.
-4. If the case is conditional, use `patternKey: 'conditional'`, set `complexity: 'conditional'`, and add `conditionKeys` or `disputeKeys`.
-5. Do not duplicate blessing steps inside the item.
+4. If the case has a source footnote, add `noteKeys` and define the note in `notes.ts`.
+5. If the case is conditional, use `patternKey: 'conditional'` or the most likely base pattern, set `complexity: 'conditional'`, and add `conditionKeys`, `noteKeys`, or `disputeKeys`.
+6. If the case has multiple real alternatives, use `patternKey: 'complex'`, `complexity: 'complex'`, and describe the alternatives through notes/conditions/disputes.
+7. If no blessing is said, use `patternKey: 'no_bracha'` and explain the reason through `conditionKeys` or `noteKeys`.
+8. Do not duplicate blessing steps inside the item.
 
 ## Add a direct blessing
 
@@ -191,7 +247,11 @@ Possible next PRs:
 
 ## Mein Shalosh rule
 
-Home quick access uses the general `mein_shalosh` slug because the user tapped "Мейн Шалош" directly and the product context is unknown.
+Home quick access uses the general `mein_shalosh` slug because the user tapped "Мейн Шалош" directly and the product context is unknown. In that case the UI should show all three variants:
+
+- `Аль hамихья`
+- `Аль hагефен`
+- `Аль hаэц`
 
 Product patterns must use concrete variants:
 
@@ -199,7 +259,7 @@ Product patterns must use concrete variants:
 - `wine_grape` -> `mein_shalosh_al_hagefen`
 - `seven_species_fruit` -> `mein_shalosh_al_haetz`
 
-The general `mein_shalosh` blessing should show all three variants with labels:
+When the user reaches Mein Shalosh from a concrete product, show only the concrete `blessingSlug` resolved from the product pattern:
 
 - Аль hамихья - after mezonot / baked goods
 - Аль hагефен - after wine / grape juice

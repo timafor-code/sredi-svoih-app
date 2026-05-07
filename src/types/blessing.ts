@@ -101,12 +101,23 @@ export interface BlessingPattern {
   steps: readonly string[];
   conditionKeys?: readonly string[];
   noteKeys?: readonly string[];
+  disputeKeys?: readonly string[];
+  sourceRefs?: readonly string[];
 }
 
 export interface BlessingCondition {
   key: string;
   titleRu: string;
   descriptionRu?: string;
+  sourceRefs?: readonly string[];
+  needsVerification: boolean;
+}
+
+export interface BlessingNote {
+  key: string;
+  titleRu: string;
+  descriptionRu?: string;
+  sourceRefs?: readonly string[];
   needsVerification: boolean;
 }
 
@@ -117,6 +128,7 @@ export interface BlessingDispute {
   severity: DisputeSeverity;
   sourceName?: string;
   sourceUrl?: string;
+  sourceRefs?: readonly string[];
   needsVerification: boolean;
 }
 
@@ -130,8 +142,10 @@ export interface BlessingItem {
   tags?: readonly string[];
   complexity?: BlessingComplexity;
   conditionKeys?: readonly string[];
+  noteKeys?: readonly string[];
   disputeKeys?: readonly string[];
   alternativeScenarioKeys?: readonly string[];
+  sourceRefs?: readonly string[];
   needsVerification?: boolean;
 }
 
@@ -157,6 +171,7 @@ export interface BlessingCatalog {
   blessings: readonly Blessing[];
   patterns: readonly BlessingPattern[];
   conditions: readonly BlessingCondition[];
+  notes: readonly BlessingNote[];
   disputes: readonly BlessingDispute[];
   items: readonly BlessingItemTuple[];
 }
@@ -173,6 +188,7 @@ export interface BlessingItemDetails {
   pattern: BlessingPattern;
   steps: readonly BlessingResolvedStep[];
   conditions: readonly BlessingCondition[];
+  notes: readonly BlessingNote[];
   disputes: readonly BlessingDispute[];
 }
 
