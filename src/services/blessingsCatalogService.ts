@@ -7,6 +7,7 @@ import type {
   BlessingHomeGroup,
   BlessingItem,
   BlessingItemDetails,
+  BlessingItemResolvedAnnotations,
   BlessingItemTuple,
   BlessingNote,
   BlessingNusachVariant,
@@ -76,6 +77,52 @@ function isDefined<T>(value: T | null | undefined): value is T {
 
 function uniqueKeys(...groups: Array<readonly string[] | undefined>): string[] {
   return Array.from(new Set(groups.flatMap((group) => group ?? [])));
+}
+
+function collectAnnotationSourceRefs(
+  conditions: readonly BlessingCondition[],
+  notes: readonly BlessingNote[],
+  disputes: readonly BlessingDispute[],
+  sourceRefs?: readonly string[],
+): string[] {
+  return uniqueKeys(
+    sourceRefs,
+    ...conditions.map((condition) => condition.sourceRefs),
+    ...notes.map((note) => note.sourceRefs),
+    ...disputes.map((dispute) => dispute.sourceRefs),
+  );
+}
+
+function resolveBlessingItemAnnotations({
+  conditionKeys,
+  disputeKeys,
+  noteKeys,
+  sourceRefs,
+}: {
+  conditionKeys?: readonly string[];
+  disputeKeys?: readonly string[];
+  noteKeys?: readonly string[];
+  sourceRefs?: readonly string[];
+}): BlessingItemResolvedAnnotations {
+  const conditions = uniqueKeys(conditionKeys)
+    .map((key) => conditionsByKey.get(key))
+    .filter(isDefined);
+  const notes = uniqueKeys(noteKeys)
+    .map((key) => notesByKey.get(key))
+    .filter(isDefined);
+  const disputes = uniqueKeys(disputeKeys)
+    .map((key) => disputesByKey.get(key))
+    .filter(isDefined);
+
+  return {
+    conditions,
+    notes,
+    disputes,
+    sourceRefs:
+      sourceRefs && sourceRefs.length > 0
+        ? uniqueKeys(sourceRefs)
+        : collectAnnotationSourceRefs(conditions, notes, disputes),
+  };
 }
 
 function resolvePatternByKey(patternKey: string): BlessingPattern | null {
@@ -250,17 +297,40 @@ export function getBlessingItemDetails(itemSlug: string): BlessingItemDetails | 
     return null;
   }
 
+  const patternAnnotations = resolveBlessingItemAnnotations({
+    conditionKeys: pattern.conditionKeys,
+    noteKeys: pattern.noteKeys,
+    disputeKeys: pattern.disputeKeys,
+    sourceRefs: pattern.sourceRefs,
+  });
+  const itemAnnotations = resolveBlessingItemAnnotations({
+    conditionKeys: item.conditionKeys,
+    noteKeys: item.noteKeys,
+    disputeKeys: item.disputeKeys,
+    sourceRefs: item.sourceRefs,
+  });
   const conditionKeys = uniqueKeys(pattern.conditionKeys, item.conditionKeys);
   const noteKeys = uniqueKeys(pattern.noteKeys, item.noteKeys);
   const disputeKeys = uniqueKeys(pattern.disputeKeys, item.disputeKeys);
+  const conditions = conditionKeys.map((key) => conditionsByKey.get(key)).filter(isDefined);
+  const notes = noteKeys.map((key) => notesByKey.get(key)).filter(isDefined);
+  const disputes = disputeKeys.map((key) => disputesByKey.get(key)).filter(isDefined);
 
   return {
     item,
     pattern,
     steps: resolveItemSteps(item),
-    conditions: conditionKeys.map((key) => conditionsByKey.get(key)).filter(isDefined),
-    notes: noteKeys.map((key) => notesByKey.get(key)).filter(isDefined),
-    disputes: disputeKeys.map((key) => disputesByKey.get(key)).filter(isDefined),
+    conditions,
+    notes,
+    disputes,
+    sourceRefs: collectAnnotationSourceRefs(
+      conditions,
+      notes,
+      disputes,
+      uniqueKeys(pattern.sourceRefs, item.sourceRefs),
+    ),
+    itemAnnotations,
+    patternAnnotations,
   };
 }
 

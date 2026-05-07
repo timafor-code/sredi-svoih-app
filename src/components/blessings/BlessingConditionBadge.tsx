@@ -3,119 +3,93 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '@/theme/colors';
 import { radius } from '@/theme/radius';
-import type { BlessingCondition, BlessingDispute, DisputeSeverity } from '@/types/blessing';
 
-type BlessingConditionBadgeProps =
-  | {
-      condition: BlessingCondition;
-      dispute?: never;
-      kind: 'condition';
-    }
-  | {
-      condition?: never;
-      dispute: BlessingDispute;
-      kind: 'dispute';
-    };
+type IoniconName = keyof typeof Ionicons.glyphMap;
 
-const severityLabels: Record<DisputeSeverity, string> = {
-  info: 'Инфо',
-  ask_rav: 'Уточнить',
-  machloket: 'Махлокет',
+type BlessingConditionBadgeTone = 'complex' | 'condition' | 'dispute';
+
+type BlessingConditionBadgeProps = {
+  iconName?: IoniconName;
+  label: string;
+  tone?: BlessingConditionBadgeTone;
 };
 
-export function BlessingConditionBadge(props: BlessingConditionBadgeProps) {
-  const isDispute = props.kind === 'dispute';
-  const title = isDispute ? props.dispute.titleRu : props.condition.titleRu;
-  const description = isDispute ? props.dispute.descriptionRu : props.condition.descriptionRu;
-  const severity = isDispute ? props.dispute.severity : null;
+function getIconName(tone: BlessingConditionBadgeTone): IoniconName {
+  switch (tone) {
+    case 'complex':
+      return 'layers-outline';
+    case 'dispute':
+      return 'help-circle-outline';
+    case 'condition':
+      return 'information-circle-outline';
+  }
+}
 
+function getIconColor(tone: BlessingConditionBadgeTone): string {
+  return tone === 'dispute' ? colors.orange : colors.goldAccent;
+}
+
+export function BlessingConditionBadge({
+  iconName,
+  label,
+  tone = 'condition',
+}: BlessingConditionBadgeProps) {
   return (
-    <View style={styles.badge}>
-      <View style={styles.iconBox}>
-        <Ionicons
-          name={isDispute ? 'alert-circle-outline' : 'information-circle-outline'}
-          size={18}
-          color={colors.goldAccent}
-        />
-      </View>
-      <View style={styles.textBlock}>
-        <View style={styles.titleRow}>
-          <Text numberOfLines={2} style={styles.title}>
-            {title}
-          </Text>
-          {severity ? (
-            <View style={styles.severityPill}>
-              <Text numberOfLines={1} style={styles.severityText}>
-                {severityLabels[severity]}
-              </Text>
-            </View>
-          ) : null}
-        </View>
-        {description ? (
-          <Text style={styles.description}>
-            {description}
-          </Text>
-        ) : null}
-      </View>
+    <View
+      style={[
+        styles.badge,
+        tone === 'complex' && styles.complexBadge,
+        tone === 'dispute' && styles.disputeBadge,
+      ]}
+    >
+      <Ionicons name={iconName ?? getIconName(tone)} size={13} color={getIconColor(tone)} />
+      <Text
+        numberOfLines={1}
+        style={[
+          styles.text,
+          tone === 'complex' && styles.complexText,
+          tone === 'dispute' && styles.disputeText,
+        ]}
+      >
+        {label}
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   badge: {
+    maxWidth: '100%',
     flexDirection: 'row',
-    gap: 10,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: 'rgba(255,159,10,0.28)',
-    backgroundColor: 'rgba(255,159,10,0.075)',
-    padding: 12,
-  },
-  iconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.full,
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,200,50,0.24)',
-    backgroundColor: colors.accent.goldBg,
-  },
-  textBlock: {
-    flex: 1,
-    minWidth: 0,
+    alignSelf: 'flex-start',
     gap: 5,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  title: {
-    flex: 1,
-    minWidth: 0,
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: '800',
-    lineHeight: 17,
-  },
-  severityPill: {
-    maxWidth: 92,
     borderRadius: radius.full,
     borderWidth: 1,
+    borderColor: 'rgba(255,200,50,0.28)',
+    backgroundColor: colors.accent.goldBg,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  complexBadge: {
+    borderColor: 'rgba(255,200,50,0.36)',
+    backgroundColor: colors.accent.goldBgStrong,
+  },
+  disputeBadge: {
     borderColor: 'rgba(240,122,42,0.34)',
     backgroundColor: colors.accent.orangeBg,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
   },
-  severityText: {
-    color: colors.orange,
+  text: {
+    flexShrink: 1,
+    color: colors.goldAccent,
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '900',
+    lineHeight: 13,
   },
-  description: {
-    color: colors.textMuted,
-    fontSize: 12,
-    lineHeight: 17,
+  complexText: {
+    color: colors.accent.goldText,
+  },
+  disputeText: {
+    color: colors.orange,
   },
 });
