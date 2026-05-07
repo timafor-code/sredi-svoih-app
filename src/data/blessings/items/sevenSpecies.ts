@@ -36,5 +36,5 @@ export const sevenSpeciesItems = [
     ['маслины', 'оливки', 'оливки маринованные', 'маслины соленые', 'olive', 'olives', 'זית'],
     { category: 'seven_species', sourceRefs: ['Brachas.txt: Маслины маринованные и соленые'] },
   ],
-  ['dates', 'Финики', 'seven_species_fruit', ['финики', 'финик', 'date', 'dates', 'תמרים'], { category: 'seven_species' }],
+  ['dates', 'Финики', 'seven_species_fruit', ['финики', 'финик', 'date', 'dates', 'תמרים'], { category: 'seven_species', sourceRefs: ['Brachas.txt: Финик'] }],
 ] as const satisfies readonly BlessingItemTuple[];

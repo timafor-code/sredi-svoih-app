@@ -8,7 +8,7 @@ For the MVP, blessings do not live in Supabase. This PR intentionally does not a
 
 ## Source Alignment
 
-The food catalog is being aligned to "Руководство по благословениям" Рабби Шнеур-Залман из Ляд, a local reference for Chabad custom / Alter Rebbe psak. The current source range covered by the catalog pass is the visible alphabetical block `А-П`.
+The food catalog is being aligned to "Руководство по благословениям" Рабби Шнеур-Залман из Ляд, a local reference for Chabad custom / Alter Rebbe psak. The current source range covered by the catalog pass is the visible alphabetical block `А-Я`.
 
 Disclaimer for the catalog:
 
@@ -201,6 +201,8 @@ The original 9-PR `blessings4.txt` chain is complete and merged as PR #62-#70. T
 Search ranking is intentionally lightweight. `searchBlessings()` normalizes the query, then ranks exact matches above `startsWith`, `includes`, and reverse-contains matches. When scores tie, item results stay ahead of direct blessing entries so common product queries like "хлеб", "вода", "печенье", "вино", and "виноградный сок" open product schemes first.
 
 Complex products remain cautious. Items whose blessing depends on preparation, main ingredient, grain content, mixed-food rules, or food form should stay marked with `complexity: 'conditional'`, `needsVerification: true`, and reusable condition/dispute keys until they are reviewed.
+
+The `Р-Я` catalog pass adds exact source-backed entries for the remaining alphabetical block and keeps cases such as salads, soups, vinegar, citron, chips, cholent, shakshuka, schnitzel, and spinach conditional when the source depends on composition or preparation.
 
 Real religious texts are still a separate source-verification task. Current long-text surfaces and calendar inserts use short placeholders only, and dynamic inserts should remain placeholders until reliable sources and nusach handling are checked.
 

@@ -1,14 +1,14 @@
 import type { BlessingItemTuple } from '@/types/blessing';
 
 export const grainItems = [
-  ['bread', 'Хлеб', 'hamotzi_meal', ['хлеб', 'хала', 'challah', 'bread', 'לחם'], { category: 'grains' }],
+  ['bread', 'Хлеб / хала', 'hamotzi_meal', ['хлеб', 'хала', 'challah', 'bread', 'לחם'], { category: 'grains', sourceRefs: ['Brachas.txt: Хлеб', 'Brachas.txt: Хала'] }],
   ['matzah', 'Маца', 'hamotzi_meal', ['маца', 'матца', 'matzah', 'מצה'], { category: 'grains', sourceRefs: ['Brachas.txt: Маца'] }],
   [
     'pasta',
     'Макароны',
     'mezonot_al_hamichya',
     ['макароны', 'паста', 'спагетти', 'макароны по-флотски', 'spaghetti', 'pasta'],
-    { category: 'grains', noteKeys: ['five_grain_flour'], disputeKeys: ['pasta_case'], sourceRefs: ['Brachas.txt: Макароны 770'] },
+    { category: 'grains', noteKeys: ['five_grain_flour'], disputeKeys: ['pasta_case'], sourceRefs: ['Brachas.txt: Макароны 770', 'Brachas.txt: Спагетти'] },
   ],
   [
     'five_grain_noodles',
@@ -78,6 +78,28 @@ export const grainItems = [
     'haadama_bore_nefashot',
     ['пшеница зерна', 'целая пшеница', 'wheat kernels', 'whole wheat kernels'],
     { category: 'grains', sourceRefs: ['Brachas.txt: Пшеница 800'] },
+  ],
+  [
+    'barley_kernels',
+    'Ячмень (зерна)',
+    'shehakol_bore_nefashot',
+    ['ячмень зерна', 'зерна ячменя', 'barley kernels'],
+    { category: 'grains', sourceRefs: ['Brachas.txt: Ячмень (зерна)'] },
+  ],
+  ['barley_bread', 'Ячменный хлеб', 'hamotzi_meal', ['ячменный хлеб', 'barley bread'], { category: 'grains', sourceRefs: ['Brachas.txt: Ячменный хлеб'] }],
+  [
+    'shalva_toasted_wheat',
+    'Шалва',
+    'haadama_bore_nefashot',
+    ['шалва', 'прожаренные зерна пшеницы', 'toasted wheat kernels'],
+    { category: 'grains', noteKeys: ['shalva_toasted_wheat'], sourceRefs: ['Brachas.txt: Шалва 833'] },
+  ],
+  [
+    'farfelach',
+    'Фарфалах',
+    'mezonot_al_hamichya',
+    ['фарфалах', 'farfelach', 'мелкие гренки'],
+    { category: 'grains', noteKeys: ['farfelach_description'], sourceRefs: ['Brachas.txt: Фарфалах 825'] },
   ],
   [
     'couscous',

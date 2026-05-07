@@ -1,9 +1,9 @@
 import type { BlessingItemTuple } from '@/types/blessing';
 
 export const fruitItems = [
-  ['apple', 'Яблоко', 'haetz_bore_nefashot', ['яблоко', 'apple'], { category: 'fruits' }],
+  ['apple', 'Яблоко', 'haetz_bore_nefashot', ['яблоко', 'apple'], { category: 'fruits', sourceRefs: ['Brachas.txt: Яблоко'] }],
   ['pear', 'Груша', 'haetz_bore_nefashot', ['груша', 'pear'], { category: 'fruits', sourceRefs: ['Brachas.txt: Груша'] }],
-  ['plum', 'Слива', 'haetz_bore_nefashot', ['слива', 'plum'], { category: 'fruits' }],
+  ['plum', 'Слива', 'haetz_bore_nefashot', ['слива', 'plum'], { category: 'fruits', sourceRefs: ['Brachas.txt: Слива'] }],
   ['peach', 'Персик', 'haetz_bore_nefashot', ['персик', 'peach'], { category: 'fruits', sourceRefs: ['Brachas.txt: Персик'] }],
   ['orange', 'Апельсин', 'haetz_bore_nefashot', ['апельсин', 'orange'], { category: 'fruits', sourceRefs: ['Brachas.txt: Апельсин'] }],
   [
@@ -17,9 +17,10 @@ export const fruitItems = [
     'cherry',
     'Вишня',
     'haetz_bore_nefashot',
-    ['вишня', 'черешня', 'вишневое варенье', 'cherry', 'cherries', 'דובדבן'],
+    ['вишня', 'вишневое варенье', 'cherry', 'cherries', 'דובדבן'],
     { category: 'fruits', sourceRefs: ['Brachas.txt: Вишня 735'] },
   ],
+  ['sweet_cherry', 'Черешня', 'haetz_bore_nefashot', ['черешня', 'sweet cherry'], { category: 'fruits', sourceRefs: ['Brachas.txt: Черешня'] }],
   [
     'mandarin',
     'Мандарин',
@@ -87,6 +88,31 @@ export const fruitItems = [
     { category: 'fruits', noteKeys: ['strawberry_haetz_valid_opinion'], sourceRefs: ['Brachas.txt: Клубника 753'] },
   ],
   ['raspberry', 'Малина', 'haadama_bore_nefashot', ['малина', 'raspberry', 'raspberries', 'פטל'], { category: 'fruits', sourceRefs: ['Brachas.txt: Малина'] }],
+  ['currant', 'Смородина', 'haetz_bore_nefashot', ['смородина', 'currant', 'blackcurrant', 'redcurrant'], { category: 'fruits', sourceRefs: ['Brachas.txt: Смородина'] }],
+  ['persimmon', 'Хурма', 'haetz_bore_nefashot', ['хурма', 'persimmon'], { category: 'fruits', sourceRefs: ['Brachas.txt: Хурма'] }],
+  ['prune', 'Чернослив', 'haetz_bore_nefashot', ['чернослив', 'prune', 'prunes'], { category: 'fruits', sourceRefs: ['Brachas.txt: Чернослив'] }],
+  [
+    'cactus_pear',
+    'Цабар',
+    'haetz_bore_nefashot',
+    ['цабар', 'кактусовый плод', 'cactus pear', 'prickly pear'],
+    { category: 'fruits', noteKeys: ['cactus_pear_description'], sourceRefs: ['Brachas.txt: Цабар 828'] },
+  ],
+  [
+    'citron',
+    'Цитрон / этрог',
+    'haetz_bore_nefashot',
+    ['цитрон', 'этрог', 'citron', 'etrog'],
+    {
+      category: 'fruits',
+      complexity: 'conditional',
+      conditionKeys: ['depends_on_local_custom', 'depends_on_recognizable_pieces'],
+      noteKeys: ['citron_forms'],
+      disputeKeys: ['citron_case'],
+      needsVerification: true,
+      sourceRefs: ['Brachas.txt: Цитрон 830-831'],
+    },
+  ],
   [
     'blueberry',
     'Голубика',
@@ -117,6 +143,7 @@ export const fruitItems = [
     ['орехи', 'орехи деревьев', 'грецкий орех', 'фундук', 'nuts', 'tree nuts'],
     { category: 'fruits', noteKeys: ['tree_nuts_only'], sourceRefs: ['Brachas.txt: Орехи 781'] },
   ],
+  ['pistachios', 'Фисташки', 'haetz_bore_nefashot', ['фисташки', 'фисташка', 'pistachios', 'pistachio'], { category: 'fruits', sourceRefs: ['Brachas.txt: Фисташки'] }],
   [
     'nuts_in_chocolate',
     'Орехи в шоколаде',
