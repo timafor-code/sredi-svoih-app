@@ -11,6 +11,7 @@
     "import:events:dry": "node ./scripts/importWebsiteEvents.mjs --dry-run",
     "import:events": "node ./scripts/importWebsiteEvents.mjs",
     "import:events:review": "node ./scripts/importWebsiteEvents.mjs --review",
+    "validate:blessings": "node ./scripts/validateBlessingsCatalog.mjs",
     "typecheck": "tsc --noEmit",
     "admin:dev": "npm --prefix apps/admin run dev",
     "admin:build": "npm --prefix apps/admin run build",
