@@ -37,6 +37,16 @@ function hasConditionBadge(result: BlessingSearchResult) {
   return result.complexity === 'conditional' || result.complexity === 'complex';
 }
 
+function getFuzzyHint(result: BlessingSearchResult) {
+  if (result.matchKind !== 'fuzzy') {
+    return null;
+  }
+
+  return result.matchedText
+    ? `Похоже на: ${result.matchedText}`
+    : 'Найдено по похожему запросу';
+}
+
 export function BlessingSearchResults({
   onResultPress,
   query,
@@ -70,6 +80,7 @@ export function BlessingSearchResults({
           const isSelected =
             (result.resultType === 'item' && selectedItemSlug === result.slug) ||
             (result.resultType === 'blessing' && selectedBlessingSlug === result.slug);
+          const fuzzyHint = getFuzzyHint(result);
 
           return (
             <Pressable
@@ -109,9 +120,11 @@ export function BlessingSearchResults({
                     </View>
                   ) : null}
                 </View>
-                <Text numberOfLines={1} style={styles.matchedText}>
-                  Найдено по: {result.matchedText}
-                </Text>
+                {fuzzyHint ? (
+                  <Text numberOfLines={1} style={styles.fuzzyHint}>
+                    {fuzzyHint}
+                  </Text>
+                ) : null}
               </View>
 
               <Ionicons name="chevron-forward" size={17} color="rgba(255,255,255,0.26)" />
@@ -217,7 +230,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '900',
   },
-  matchedText: {
+  fuzzyHint: {
     color: colors.textGhost,
     fontSize: 11,
     lineHeight: 15,

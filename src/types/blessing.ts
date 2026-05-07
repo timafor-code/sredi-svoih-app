@@ -202,13 +202,21 @@ export interface BlessingItemDetails {
   patternAnnotations: BlessingItemResolvedAnnotations;
 }
 
+export type BlessingSearchMatchKind =
+  | 'exact'
+  | 'starts_with'
+  | 'includes'
+  | 'reverse_contains'
+  | 'fuzzy';
+
 export interface BlessingSearchResult {
   resultType: BlessingSearchResultType;
   slug: string;
   titleRu: string;
   score: number;
   matchedOn: 'slug' | 'titleRu' | 'alias' | 'category';
-  matchedText: string;
+  matchKind?: BlessingSearchMatchKind;
+  matchedText?: string;
   category?: string;
   complexity?: BlessingComplexity;
   item?: BlessingItem;

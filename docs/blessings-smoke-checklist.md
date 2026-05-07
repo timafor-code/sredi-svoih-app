@@ -59,6 +59,14 @@ In `/prayers/blessings`, type each typo or spacing variant and confirm the first
 - `шеколь` -> blessing `shehakol`
 - `шеакол` -> blessing `shehakol`
 
+Confirm fuzzy hints are visible only for typo matches:
+
+- `хлею` -> `Хлеб` with fuzzy hint.
+- `маная каша` -> `Манная каша` with fuzzy hint.
+- `виногрдный сок` -> `Виноградный сок` with fuzzy hint.
+- `хлеб` -> `Хлеб` without fuzzy hint.
+- `шеакол` -> `Шеhаколь`; direct blessing opens as before.
+
 Confirm exact product queries still rank item results first:
 
 - `хлеб` -> item `bread`
