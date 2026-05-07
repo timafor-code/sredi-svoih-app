@@ -44,6 +44,16 @@ Use:
 
 UI may show product notes as small text near the item scheme. Conditional products should show a badge like `Есть условия`; complex or disputed cases should show `Спорный случай` or equivalent copy.
 
+## Catalog validation
+
+Run the local validation harness before opening a PR that changes the blessings catalog:
+
+```sh
+npm run validate:blessings
+```
+
+The validator imports the offline catalog and service, checks entity uniqueness, required fields, pattern/item references, condition/note/dispute keys, source references, alias integrity, and search smoke cases. Errors block the PR and must be fixed. Warnings do not fail the command, but they require review; alias collisions are intentionally warnings so shared terms can be checked manually.
+
 ## Entry card
 
 This entry-card PR adds only the "Благословения" card to the "Молитвы" tab. The full `/prayers/blessings` screen, search UI, direct blessing cards, modal flows, and blessing text presentation will be handled in separate PRs.

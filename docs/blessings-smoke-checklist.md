@@ -2,6 +2,8 @@
 
 Manual checklist for the local blessings MVP stabilization pass. This file is documentation only; do not add a Jest runner, new dependencies, Supabase storage, SQLite, migrations, or remote sync for these checks.
 
+Before opening a PR, run `npm run validate:blessings`. Errors block the PR; warnings require review before the manual smoke pass.
+
 ## Search ranking
 
 In `/prayers/blessings`, type each query and confirm the first result:
