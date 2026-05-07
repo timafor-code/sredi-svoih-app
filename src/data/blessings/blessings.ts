@@ -250,7 +250,7 @@ export const blessings = [
     descriptionRu: 'Благословение перед продуктами и напитками категории шеhаколь.',
     category: 'before_food',
     displayMode: 'placeholder',
-    aliases: ['шеhаколь', 'шехаколь', 'шеаколь', 'вода', 'чай', 'кофе', 'shehakol'],
+    aliases: ['шеhаколь', 'шехаколь', 'шеаколь', 'шеколь', 'шеакол', 'вода', 'чай', 'кофе', 'shehakol'],
     home: { enabled: true, group: 'before_food', order: 50 },
     contentBlocks: [
       {
