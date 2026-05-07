@@ -123,6 +123,8 @@ Ranking keeps the previous priority:
 
 The fuzzy layer is a bounded Levenshtein check with no dependencies. It only runs after stronger field matches fail, only for normalized strings of at least 4 characters, and allows distance 1 for short words or 2 for longer strings. This is enough for small typos such as `хлею`, `маная каша`, and `виногрдный сок`, while exact product aliases still outrank blessing aliases. On equal score, item results remain above direct blessing results so product queries like `хлеб`, `вода`, `вино`, and `печенье` open item schemes first.
 
+Search results include lightweight match metadata for the UI. Fuzzy results may show a small muted hint such as "Найдено по похожему запросу" or "Похоже на: <matchedText>"; exact, starts-with, includes, and reverse-contains results do not show an extra hint.
+
 ## Direct card
 
 The direct-card PR renders direct blessing search results on `/prayers/blessings` without leaving the screen. Selecting a direct blessing such as "Радуга", "Молния", "Гром", "Ашер яцар", or "Шеhехеяну" now shows a `BlessingDirectCard` below the search results instead of the old placeholder alert.

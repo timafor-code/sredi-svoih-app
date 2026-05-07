@@ -24,7 +24,14 @@ type MatchField = {
   value: string;
 };
 
-type MatchScore = Pick<BlessingSearchResult, 'matchedOn' | 'matchedText' | 'score'>;
+type MatchScore = {
+  matchedOn: BlessingSearchResult['matchedOn'];
+  matchedText: string;
+  matchKind: NonNullable<BlessingSearchResult['matchKind']>;
+  score: number;
+};
+
+type FieldMatch = Pick<MatchScore, 'matchKind' | 'score'>;
 
 type ResolvedBlessingTextSource = {
   contentBlocks: BlessingTextResult['contentBlocks'];
@@ -135,17 +142,18 @@ function getBestMatch(query: string, fields: readonly MatchField[]): MatchScore 
   let best: MatchScore | null = null;
 
   for (const field of fields) {
-    const score = getFieldScore(query, field.value);
+    const match = getFieldMatch(query, field.value);
 
-    if (score === null) {
+    if (!match) {
       continue;
     }
 
-    if (!best || score > best.score) {
+    if (!best || match.score > best.score) {
       best = {
         matchedOn: field.matchedOn,
         matchedText: field.value,
-        score,
+        matchKind: match.matchKind,
+        score: match.score,
       };
     }
   }
@@ -153,7 +161,7 @@ function getBestMatch(query: string, fields: readonly MatchField[]): MatchScore 
   return best;
 }
 
-function getFieldScore(query: string, value: string): number | null {
+function getFieldMatch(query: string, value: string): FieldMatch | null {
   const normalizedValue = normalizeBlessingQuery(value);
 
   if (!normalizedValue) {
@@ -161,25 +169,25 @@ function getFieldScore(query: string, value: string): number | null {
   }
 
   if (normalizedValue === query) {
-    return 100;
+    return { matchKind: 'exact', score: 100 };
   }
 
   if (normalizedValue.startsWith(query)) {
-    return 80;
+    return { matchKind: 'starts_with', score: 80 };
   }
 
   if (normalizedValue.includes(query)) {
-    return 60;
+    return { matchKind: 'includes', score: 60 };
   }
 
   const fuzzyScore = getFuzzyScore(query, normalizedValue);
 
   if (fuzzyScore !== null) {
-    return fuzzyScore;
+    return { matchKind: 'fuzzy', score: fuzzyScore };
   }
 
   if (query.includes(normalizedValue) && normalizedValue.length >= 3) {
-    return 40;
+    return { matchKind: 'reverse_contains', score: 40 };
   }
 
   return null;
