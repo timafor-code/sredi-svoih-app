@@ -47,6 +47,25 @@ In `/prayers/blessings`, type each query and confirm the first result:
 - `вода` -> item `water`; condition includes `drink_for_thirst_or_pleasure`.
 - `мейн шалош` -> blessing `mein_shalosh`; display mode is `variants`.
 
+## Search typo tolerance
+
+In `/prayers/blessings`, type each typo or spacing variant and confirm the first result:
+
+- `хлею` -> item `bread`
+- `маная каша` -> item `semolina_porridge`
+- `виногрдный сок` -> item `grape_juice`
+- `рахат лукум` -> item `rahat_lukum`
+- `мейн шалош` -> blessing `mein_shalosh`
+- `шеколь` -> blessing `shehakol`
+- `шеакол` -> blessing `shehakol`
+
+Confirm exact product queries still rank item results first:
+
+- `хлеб` -> item `bread`
+- `вода` -> item `water`
+- `вино` -> item `wine`
+- `печенье` -> item `cookies`
+
 ## Alias overlaps
 
 Check that known overlaps do not hide the expected first result:

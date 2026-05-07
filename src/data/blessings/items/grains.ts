@@ -55,7 +55,7 @@ export const grainItems = [
       category: 'grains',
       complexity: 'conditional',
       conditionKeys: ['depends_on_consistency', 'cooked_grain_case'],
-      noteKeys: ['five_grain_flour'],
+      noteKeys: ['five_grain_flour', 'semolina_porridge_consistency'],
       needsVerification: true,
       sourceRefs: ['Brachas.txt: Каша манная'],
     },

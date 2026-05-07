@@ -100,6 +100,29 @@ When a product result is selected, the screen resolves details through `getBless
 
 This PR still does not add direct blessing cards, blessing text modals, full blessing text, dynamic inserts, Zustand state, Supabase storage, migrations, SQLite, or remote sync. Tapping a direct blessing or a scheme step intentionally shows a placeholder alert until those flows are added in later PRs.
 
+## Search typo tolerance
+
+`searchBlessings()` remains the only search boundary for the UI. The UI should pass the user's text and render returned results; it should not duplicate normalization, fuzzy matching, or ranking.
+
+Search normalization is intentionally small and local:
+
+- trims leading/trailing whitespace;
+- lowercases Russian and English text;
+- maps `ё` to `е`;
+- treats hyphens and underscores as word separators, so `рахат-лукум`, `рахат лукум`, and slug-like input normalize consistently;
+- collapses repeated whitespace;
+- removes extra punctuation while preserving Russian, English, Hebrew letters, and numbers.
+
+Ranking keeps the previous priority:
+
+- exact alias/title/slug match: highest;
+- `startsWith`;
+- `includes`;
+- fuzzy typo match with a low score;
+- reverse-contains for longer field values.
+
+The fuzzy layer is a bounded Levenshtein check with no dependencies. It only runs after stronger field matches fail, only for normalized strings of at least 4 characters, and allows distance 1 for short words or 2 for longer strings. This is enough for small typos such as `хлею`, `маная каша`, and `виногрдный сок`, while exact product aliases still outrank blessing aliases. On equal score, item results remain above direct blessing results so product queries like `хлеб`, `вода`, `вино`, and `печенье` open item schemes first.
+
 ## Direct card
 
 The direct-card PR renders direct blessing search results on `/prayers/blessings` without leaving the screen. Selecting a direct blessing such as "Радуга", "Молния", "Гром", "Ашер яцар", or "Шеhехеяну" now shows a `BlessingDirectCard` below the search results instead of the old placeholder alert.

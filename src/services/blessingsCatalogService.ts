@@ -34,6 +34,8 @@ type ResolvedBlessingTextSource = {
 };
 
 const homeGroups: readonly BlessingHomeGroup[] = ['before_food', 'after_food', 'various'];
+const MIN_FUZZY_LENGTH = 4;
+const FUZZY_SCORE_BASE = 50;
 
 const catalogBlessings: readonly Blessing[] = blessingsCatalog.blessings;
 
@@ -170,11 +172,72 @@ function getFieldScore(query: string, value: string): number | null {
     return 60;
   }
 
+  const fuzzyScore = getFuzzyScore(query, normalizedValue);
+
+  if (fuzzyScore !== null) {
+    return fuzzyScore;
+  }
+
   if (query.includes(normalizedValue) && normalizedValue.length >= 3) {
     return 40;
   }
 
   return null;
+}
+
+function getFuzzyScore(query: string, normalizedValue: string): number | null {
+  if (query.length < MIN_FUZZY_LENGTH || normalizedValue.length < MIN_FUZZY_LENGTH) {
+    return null;
+  }
+
+  const maxDistance = getMaxFuzzyDistance(query, normalizedValue);
+
+  if (Math.abs(query.length - normalizedValue.length) > maxDistance) {
+    return null;
+  }
+
+  const distance = getBoundedLevenshteinDistance(query, normalizedValue, maxDistance);
+
+  return distance === null ? null : FUZZY_SCORE_BASE - distance;
+}
+
+function getMaxFuzzyDistance(left: string, right: string): number {
+  return Math.max(left.length, right.length) <= 5 ? 1 : 2;
+}
+
+function getBoundedLevenshteinDistance(
+  left: string,
+  right: string,
+  maxDistance: number,
+): number | null {
+  let previousRow = Array.from({ length: right.length + 1 }, (_, index) => index);
+
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const currentRow = [leftIndex];
+    let rowMinimum = currentRow[0];
+
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const substitutionCost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
+      const distance = Math.min(
+        previousRow[rightIndex] + 1,
+        currentRow[rightIndex - 1] + 1,
+        previousRow[rightIndex - 1] + substitutionCost,
+      );
+
+      currentRow[rightIndex] = distance;
+      rowMinimum = Math.min(rowMinimum, distance);
+    }
+
+    if (rowMinimum > maxDistance) {
+      return null;
+    }
+
+    previousRow = currentRow;
+  }
+
+  const distance = previousRow[right.length];
+
+  return distance <= maxDistance ? distance : null;
 }
 
 function buildItemSearchResult(item: BlessingItem, query: string): BlessingSearchResult | null {
@@ -232,7 +295,14 @@ export function getResultTypePriority(result: BlessingSearchResult): number {
 }
 
 export function normalizeBlessingQuery(query: string): string {
-  return query.trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
+  return query
+    .trim()
+    .toLowerCase()
+    .replace(/\u0451/g, '\u0435')
+    .replace(/[-_\u2010-\u2015]+/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function listHomeBlessings(): Record<BlessingHomeGroup, Blessing[]> {
@@ -270,7 +340,6 @@ export function searchBlessings(query: string): BlessingSearchResult[] {
     return [];
   }
 
-  // TODO: Add optional fuzzy scoring when the UX needs typo tolerance.
   return [
     ...expandedItems.map((item) => buildItemSearchResult(item, normalizedQuery)),
     ...catalogBlessings.map((blessing) => buildBlessingSearchResult(blessing, normalizedQuery)),
