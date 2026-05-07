@@ -8,6 +8,7 @@ import type {
   BlessingItem,
   BlessingItemDetails,
   BlessingItemTuple,
+  BlessingNote,
   BlessingNusachVariant,
   BlessingPattern,
   BlessingResolvedStep,
@@ -45,6 +46,10 @@ const patternsByKey = new Map<string, BlessingPattern>(
 
 const conditionsByKey = new Map<string, BlessingCondition>(
   blessingsCatalog.conditions.map((condition) => [condition.key, condition]),
+);
+
+const notesByKey = new Map<string, BlessingNote>(
+  blessingsCatalog.notes.map((note) => [note.key, note]),
 );
 
 const disputesByKey = new Map<string, BlessingDispute>(
@@ -246,13 +251,15 @@ export function getBlessingItemDetails(itemSlug: string): BlessingItemDetails | 
   }
 
   const conditionKeys = uniqueKeys(pattern.conditionKeys, item.conditionKeys);
-  const disputeKeys = uniqueKeys(pattern.noteKeys, item.disputeKeys);
+  const noteKeys = uniqueKeys(pattern.noteKeys, item.noteKeys);
+  const disputeKeys = uniqueKeys(pattern.disputeKeys, item.disputeKeys);
 
   return {
     item,
     pattern,
     steps: resolveItemSteps(item),
     conditions: conditionKeys.map((key) => conditionsByKey.get(key)).filter(isDefined),
+    notes: noteKeys.map((key) => notesByKey.get(key)).filter(isDefined),
     disputes: disputeKeys.map((key) => disputesByKey.get(key)).filter(isDefined),
   };
 }

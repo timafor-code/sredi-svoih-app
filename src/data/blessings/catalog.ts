@@ -2,6 +2,7 @@ import type { BlessingCatalog, BlessingItemTuple } from '@/types/blessing';
 import { blessings } from './blessings';
 import { blessingConditions } from './conditions';
 import { blessingDisputes } from './disputes';
+import { blessingNotes } from './notes';
 import { blessingPatterns } from './patterns';
 import { bakedGoodItems } from './items/bakedGoods';
 import { cerealItems } from './items/cereals';
@@ -32,6 +33,7 @@ export const blessingsCatalog = {
   blessings,
   patterns: blessingPatterns,
   conditions: blessingConditions,
+  notes: blessingNotes,
   disputes: blessingDisputes,
   items: blessingItems,
 } as const satisfies BlessingCatalog;

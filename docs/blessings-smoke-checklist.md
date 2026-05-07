@@ -28,6 +28,12 @@ In `/prayers/blessings`, type each query and confirm the first result:
 - `молоко` -> item `milk`
 - `сыр` -> item `cheese`
 - `шницель` -> item `schnitzel`
+- `абрикос` -> item `apricot`; first step `bore_pri_haetz`; note mentions урюк and абрикосовое повидло.
+- `ананас` -> item `pineapple`; first step `bore_pri_haadama`; note says hаэц said by mistake is valid.
+- `рис` -> item `rice`; first step `shehakol`; condition/dispute note keeps the case cautious.
+- `пицца` -> item `pizza`; item is `complex` with water-dough, juice/egg-dough, and meal-size scenarios.
+- `вода` -> item `water`; condition includes `drink_for_thirst_or_pleasure`.
+- `мейн шалош` -> blessing `mein_shalosh`; display mode is `variants`.
 
 ## Alias overlaps
 
@@ -109,6 +115,7 @@ Expected result: the item scheme shows condition/dispute notes under `Услов
 ## Mein Shalosh
 
 - Tap quick access `Мейн Шалош` and confirm it opens the general `mein_shalosh` entry with three variants.
+- Confirm the quick access version shows all three blocks: `Аль hамихья`, `Аль hагефен`, and `Аль hаэц`.
 - Search/tap `инжир`, `виноград`, `финики`, `оливки`, or `гранат`; confirm the after-blessing step is `mein_shalosh_al_haetz`.
 - Search/tap `вино` or `виноградный сок`; confirm the after-blessing step is `mein_shalosh_al_hagefen`.
 - Search/tap `печенье`, `торт`, or `крекер`; confirm the after-blessing step is `mein_shalosh_al_hamichya`.
