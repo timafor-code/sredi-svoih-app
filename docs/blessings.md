@@ -253,9 +253,41 @@ Dynamic inserts stay fully local. `resolveJewishCalendarFlags()` returns only ca
 
 `getBlessingText()` applies `dynamicInsertRules` from the local blessing entry and returns a `BlessingTextResult` whose `contentBlocks` are already assembled for UI. `BlessingTextModal` and direct cards should render `textResult.contentBlocks` as-is instead of applying insert rules themselves.
 
-Current insert blocks are placeholders only and must keep `needsVerification: true`. Real Hanukkah, Purim, Rosh Chodesh, Chol hа-Moed Pesach, and Chol hа-Moed Sukkot texts should be added only after checking reliable sources.
+Birkat hамазон Хабад now uses inline source blocks for the verified-source Hebrew map, so its Hanukkah, Purim, Rosh Chodesh, Chol hа-Moed Pesach, and Chol hа-Moed Sukkot insert blocks come from the local content blocks rather than placeholder insert rules. Other long texts may still use placeholder dynamic insert rules until their source text is added.
 
 This insert infrastructure does not add Supabase blessing storage, migrations, SQLite, remote sync, manifest sync, or service-role access. Shabbat and Yom Tov runtime flags are still intentionally not included.
+
+## Birkat hамазон Хабад Hebrew
+
+`src/data/blessings/longTexts/birkatHamazon.ts` now includes `birkatHamazonChabadHebrewBlocks`, copied from `habad-heb.md`. The blocks contain vocalized Hebrew from the Chabad.org PDF 92404 / Siddur Tehilat Hashem source map, plus Russian annotations for instructions. The Chabad variant carries:
+
+- `sourceName: Siddur Tehilat Hashem / Chabad.org PDF`
+- `sourceUrl: https://w2.chabad.org/media/pdf/92404.pdf`
+- `needsVerification: true`
+
+This PR adds Hebrew only. Russian translation of the main text, Sephardic transliteration, and Ashkenazic transliteration are not included. The Beit Sefaradi nusach remains a placeholder.
+
+Runtime Hebcal inserts are limited to:
+
+- Hanukkah: `al_hanisim_opening_he` + `al_hanisim_hanukkah_he`
+- Purim: `al_hanisim_opening_he` + `al_hanisim_purim_he`
+- Rosh Chodesh: `yaale_veyavo_he` with `רֹאשׁ הַחֹדֶשׁ`, Rosh Chodesh hАрахаман, and `מִגְדּוֹל`
+- Chol hа-Moed Pesach: `yaale_veyavo_he` with `חַג הַמַּצּוֹת` and `מִגְדּוֹל`
+- Chol hа-Moed Sukkot: `yaale_veyavo_he` with `חַג הַסֻּכּוֹת`, Sukkot hАрахаман, and `מִגְדּוֹל`
+
+Shabbat, Yom Tov, Rosh Hashanah, Shemini Atzeret, and omitted-insert instruction blocks are retained only as source-map/future material and are not shown by runtime MVP logic.
+
+Manual sections are rendered collapsed by default in the text modal:
+
+- Зимун
+- Зимун на свадьбе / Шева брахот
+- Добавления после брит милы
+- Шева брахот
+- Благословение на бокал вина
+
+Hebrew text in `BlessingTextModal` uses a larger RTL siddur-like style and an iOS system serif fallback (`Times New Roman`) when available. No font assets are bundled in this PR. If iPhone smoke shows that the fallback is not stable enough, add a separate licensed Hebrew serif font in a future PR after license review; do not commit arbitrary `.ttf` or `.otf` files.
+
+All newly added religious text blocks remain `needsVerification: true` pending final source/rabbinic and rights review.
 
 ## Stabilization pass
 

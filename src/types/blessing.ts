@@ -40,8 +40,16 @@ export interface BlessingContentBlock {
   kind?: BlessingContentBlockKind;
   titleRu?: string;
   bodyRu?: string;
+  annotationRu?: string;
   blessingSlug?: string;
+  calendarFlag?: JewishCalendarFlag;
+  calendarFlags?: readonly JewishCalendarFlag[];
+  collapsibleGroupKey?: string;
+  dayNameByFlag?: Partial<Record<JewishCalendarFlag, string>>;
+  defaultCollapsed?: boolean;
   language?: BlessingLanguage;
+  renderVariant?: 'base' | 'insert' | 'annotation' | 'manual_collapsible';
+  triggerMode?: 'always' | 'hebcal' | 'manual' | 'future_not_runtime';
   translitNusach?: BlessingTranslitNusach;
   needsVerification?: boolean;
 }
@@ -74,6 +82,8 @@ export interface BlessingNusachVariant {
   titleRu: string;
   contentBlocks: readonly BlessingContentBlock[];
   dynamicInsertRules?: readonly BlessingInsertRule[];
+  sourceName?: string;
+  sourceUrl?: string;
   needsVerification: boolean;
 }
 

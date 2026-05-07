@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useState } from 'react';
 import {
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -39,9 +41,13 @@ type BlessingTextModalProps = {
 type BlessingTextOverlayProps = Omit<BlessingTextModalProps, 'visible'>;
 
 type DisplayBlock = {
+  annotationRu?: string;
   body: string;
+  collapsibleGroupKey?: string;
+  defaultCollapsed?: boolean;
   kind?: BlessingContentBlock['kind'];
   key: string;
+  renderVariant?: BlessingContentBlock['renderVariant'];
   titleRu?: string;
 };
 
@@ -72,9 +78,13 @@ function hasBlockBody(block: BlessingContentBlock): block is BlessingContentBloc
 
 function toDisplayBlock(block: BlessingContentBlock): DisplayBlock {
   return {
+    annotationRu: block.annotationRu,
     body: block.bodyRu?.trim() ?? '',
+    collapsibleGroupKey: block.collapsibleGroupKey,
+    defaultCollapsed: block.defaultCollapsed,
     kind: block.kind,
     key: block.key,
+    renderVariant: block.renderVariant,
     titleRu: block.titleRu,
   };
 }
@@ -150,6 +160,18 @@ function getPlaceholderMessage(
   return languagePlaceholders[selectedLanguage];
 }
 
+function isInsertBlock(block: DisplayBlock): boolean {
+  return block.renderVariant === 'insert' || block.kind === 'insert';
+}
+
+function isAnnotationBlock(block: DisplayBlock): boolean {
+  return block.renderVariant === 'annotation' || block.kind === 'note';
+}
+
+function isManualCollapsibleBlock(block: DisplayBlock): boolean {
+  return block.renderVariant === 'manual_collapsible' || Boolean(block.collapsibleGroupKey);
+}
+
 export function BlessingTextOverlay({
   onClose,
   onLanguageChange,
@@ -181,6 +203,14 @@ export function BlessingTextOverlay({
   const activeContent = textResult
     ? getActiveTextContent(textResult, selectedLanguage, activeTranslitNusach)
     : null;
+  const [expandedManualGroups, setExpandedManualGroups] = useState<Record<string, boolean>>({});
+
+  function toggleManualGroup(groupKey: string, defaultExpanded: boolean) {
+    setExpandedManualGroups((current) => ({
+      ...current,
+      [groupKey]: !(current[groupKey] ?? defaultExpanded),
+    }));
+  }
 
   if (!textResult || !activeContent) {
     return null;
@@ -265,32 +295,113 @@ export function BlessingTextOverlay({
               style={[styles.scrollArea, { maxHeight: scrollMaxHeight }]}
             >
               {activeContent.kind === 'blocks' ? (
-                activeContent.blocks.map((block) => (
-                  <View
-                    key={block.key}
-                    style={[styles.textBlock, block.kind === 'insert' && styles.insertBlock]}
-                  >
-                    {block.titleRu ? (
-                      <Text
-                        style={[
-                          styles.blockTitle,
-                          block.kind === 'insert' && styles.insertBlockTitle,
-                        ]}
-                      >
-                        {block.titleRu}
-                      </Text>
-                    ) : null}
-                    <Text
-                      selectable
+                activeContent.blocks.map((block) => {
+                  const isInsert = isInsertBlock(block);
+                  const isAnnotation = isAnnotationBlock(block);
+                  const isManualCollapsible = isManualCollapsibleBlock(block);
+                  const groupKey = block.collapsibleGroupKey ?? block.key;
+                  const manualDefaultExpanded = block.defaultCollapsed === false;
+                  const isManualExpanded =
+                    expandedManualGroups[groupKey] ?? manualDefaultExpanded;
+
+                  if (isManualCollapsible) {
+                    return (
+                      <View key={block.key} style={styles.manualBlock}>
+                        <Pressable
+                          accessibilityLabel={block.titleRu ?? 'Раскрыть дополнительный блок'}
+                          accessibilityRole="button"
+                          onPress={() => toggleManualGroup(groupKey, manualDefaultExpanded)}
+                          style={({ pressed }) => [
+                            styles.manualHeader,
+                            pressed && styles.pressed,
+                          ]}
+                        >
+                          <Text numberOfLines={2} style={styles.manualTitle}>
+                            {block.titleRu}
+                          </Text>
+                          <Ionicons
+                            name={isManualExpanded ? 'chevron-up' : 'chevron-down'}
+                            size={18}
+                            color={colors.goldAccent}
+                          />
+                        </Pressable>
+
+                        {isManualExpanded ? (
+                          <View style={styles.manualContent}>
+                            {block.annotationRu ? (
+                              <Text style={styles.annotationText}>{block.annotationRu}</Text>
+                            ) : null}
+                            <Text
+                              selectable
+                              style={[
+                                styles.bodyText,
+                                selectedLanguage === 'he' && styles.hebrewBodyText,
+                                selectedLanguage === 'he' && styles.hebrewSiddurText,
+                              ]}
+                            >
+                              {block.body}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    );
+                  }
+
+                  return (
+                    <View
+                      key={block.key}
                       style={[
-                        styles.bodyText,
-                        selectedLanguage === 'he' && styles.hebrewBodyText,
+                        styles.textBlock,
+                        isInsert && styles.insertBlock,
+                        isAnnotation && styles.annotationBlock,
                       ]}
                     >
-                      {block.body}
-                    </Text>
-                  </View>
-                ))
+                      {block.titleRu ? (
+                        <View style={styles.blockTitleRow}>
+                          <Text
+                            style={[
+                              styles.blockTitle,
+                              isInsert && styles.insertBlockTitle,
+                              isAnnotation && styles.annotationTitle,
+                            ]}
+                          >
+                            {block.titleRu}
+                          </Text>
+                          {isInsert ? (
+                            <View style={styles.insertBadge}>
+                              <Text style={styles.insertBadgeText}>Вставка</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                      ) : null}
+                      {block.annotationRu ? (
+                        <Text
+                          style={[
+                            styles.annotationText,
+                            isInsert && styles.insertAnnotationText,
+                          ]}
+                        >
+                          {block.annotationRu}
+                        </Text>
+                      ) : null}
+                      <Text
+                        selectable
+                        style={[
+                          styles.bodyText,
+                          selectedLanguage === 'he' &&
+                            !isAnnotation &&
+                            styles.hebrewBodyText,
+                          selectedLanguage === 'he' &&
+                            !isAnnotation &&
+                            styles.hebrewSiddurText,
+                          isAnnotation && styles.annotationBodyText,
+                        ]}
+                      >
+                        {block.body}
+                      </Text>
+                    </View>
+                  );
+                })
               ) : (
                 <Text style={styles.placeholderText}>{activeContent.message}</Text>
               )}
@@ -412,13 +523,32 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   insertBlock: {
+    borderRadius: radius.md,
     borderLeftWidth: 2,
+    borderRightWidth: 2,
     borderLeftColor: 'rgba(255,200,50,0.54)',
-    backgroundColor: 'rgba(255,200,50,0.05)',
-    paddingLeft: 10,
-    paddingVertical: 8,
+    borderRightColor: 'rgba(255,200,50,0.18)',
+    backgroundColor: 'rgba(255,200,50,0.06)',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  annotationBlock: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,200,50,0.13)',
+    backgroundColor: colors.glass.w05,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+  },
+  blockTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   blockTitle: {
+    flex: 1,
+    minWidth: 0,
     color: colors.goldAccent,
     fontSize: 13,
     fontWeight: '900',
@@ -427,6 +557,74 @@ const styles = StyleSheet.create({
   insertBlockTitle: {
     color: colors.goldAccent,
   },
+  annotationTitle: {
+    color: colors.textMuted,
+  },
+  insertBadge: {
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,200,50,0.22)',
+    backgroundColor: 'rgba(255,200,50,0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  insertBadgeText: {
+    color: colors.accent.goldText,
+    fontSize: 10,
+    fontWeight: '900',
+    lineHeight: 13,
+  },
+  annotationText: {
+    color: colors.textDim,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 18,
+    textAlign: 'left',
+    writingDirection: 'ltr',
+  },
+  insertAnnotationText: {
+    color: colors.textMuted,
+  },
+  annotationBodyText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 18,
+    textAlign: 'left',
+    writingDirection: 'ltr',
+  },
+  manualBlock: {
+    overflow: 'hidden',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.11)',
+    backgroundColor: colors.glass.w05,
+  },
+  manualHeader: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  manualTitle: {
+    flex: 1,
+    minWidth: 0,
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 18,
+  },
+  manualContent: {
+    gap: 9,
+    borderTopWidth: 1,
+    borderTopColor: colors.separator,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    paddingTop: 10,
+  },
   bodyText: {
     color: colors.textSecondary,
     fontSize: 16,
@@ -434,8 +632,18 @@ const styles = StyleSheet.create({
     lineHeight: 25,
   },
   hebrewBodyText: {
+    color: colors.text,
+    fontSize: 26,
+    fontWeight: '400',
+    lineHeight: 42,
     textAlign: 'right',
     writingDirection: 'rtl',
+  },
+  hebrewSiddurText: {
+    fontFamily: Platform.select({
+      ios: 'Times New Roman',
+      default: undefined,
+    }),
   },
   placeholderText: {
     color: colors.textMuted,
