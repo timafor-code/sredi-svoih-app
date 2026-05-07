@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BlessingConditionBadge } from '@/components/blessings/BlessingConditionBadge';
+import { BlessingItemNotesBlock } from '@/components/blessings/BlessingItemNotesBlock';
 import { BlessingStepRow } from '@/components/blessings/BlessingStepRow';
 import { GlassCard } from '@/components/glass/GlassCard';
 import { colors } from '@/theme/colors';
@@ -29,10 +30,6 @@ function getCategoryLabel(value: string): string {
   return categoryLabels[value] ?? value;
 }
 
-function isConditional(complexity: BlessingItemDetails['item']['complexity']) {
-  return complexity === 'conditional' || complexity === 'complex';
-}
-
 function formatStepCount(count: number): string {
   const mod10 = count % 10;
   const mod100 = count % 100;
@@ -53,10 +50,14 @@ export function BlessingItemSchemeCard({
   onClose,
   onStepPress,
 }: BlessingItemSchemeCardProps) {
-  const { conditions, disputes, item, steps } = details;
+  const { item, itemAnnotations, steps } = details;
+  const { conditions, disputes, notes, sourceRefs } = itemAnnotations;
   const categoryText = item.category ? getCategoryLabel(item.category) : null;
-  const hasComplexityBadge = isConditional(item.complexity);
-  const hasNotes = conditions.length > 0 || disputes.length > 0;
+  const hasComplexityBadge = item.complexity === 'complex';
+  const hasConditionBadge =
+    item.complexity === 'conditional' || (!hasComplexityBadge && conditions.length > 0);
+  const hasDisputeBadge = disputes.length > 0;
+  const hasHeaderBadges = hasComplexityBadge || hasConditionBadge || hasDisputeBadge;
 
   return (
     <GlassCard contentStyle={styles.content} style={styles.card}>
@@ -66,16 +67,20 @@ export function BlessingItemSchemeCard({
           <Text numberOfLines={2} style={styles.title}>
             {item.titleRu}
           </Text>
+          {hasHeaderBadges ? (
+            <View style={styles.headerBadges}>
+              {hasComplexityBadge ? (
+                <BlessingConditionBadge label="Сложный случай" tone="complex" />
+              ) : null}
+              {hasConditionBadge ? (
+                <BlessingConditionBadge label="Есть условия" tone="condition" />
+              ) : null}
+              {hasDisputeBadge ? (
+                <BlessingConditionBadge label="Спорный случай" tone="dispute" />
+              ) : null}
+            </View>
+          ) : null}
         </View>
-
-        {hasComplexityBadge ? (
-          <View style={styles.conditionPill}>
-            <Ionicons name="alert-circle-outline" size={14} color={colors.goldAccent} />
-            <Text numberOfLines={1} style={styles.conditionPillText}>
-              Есть условия
-            </Text>
-          </View>
-        ) : null}
 
         {onClose ? (
           <Pressable
@@ -134,25 +139,13 @@ export function BlessingItemSchemeCard({
         </View>
       )}
 
-      {hasNotes ? (
-        <View style={styles.notes}>
-          <Text style={styles.notesTitle}>Условия и спорные случаи</Text>
-          {conditions.map((condition) => (
-            <BlessingConditionBadge
-              key={condition.key}
-              condition={condition}
-              kind="condition"
-            />
-          ))}
-          {disputes.map((dispute) => (
-            <BlessingConditionBadge
-              key={dispute.key}
-              dispute={dispute}
-              kind="dispute"
-            />
-          ))}
-        </View>
-      ) : null}
+      <BlessingItemNotesBlock
+        complexity={item.complexity}
+        conditions={conditions}
+        disputes={disputes}
+        notes={notes}
+        sourceRefs={sourceRefs}
+      />
     </GlassCard>
   );
 }
@@ -186,23 +179,12 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 27,
   },
-  conditionPill: {
-    maxWidth: 118,
+  headerBadges: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    gap: 5,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: 'rgba(255,159,10,0.34)',
-    backgroundColor: colors.accent.orangeBg,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  conditionPillText: {
-    flexShrink: 1,
-    color: colors.goldAccent,
-    fontSize: 11,
-    fontWeight: '900',
+    gap: 6,
+    marginTop: 9,
   },
   closeButton: {
     width: 36,
@@ -276,15 +258,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '700',
-  },
-  notes: {
-    gap: 10,
-  },
-  notesTitle: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '900',
-    paddingHorizontal: 2,
   },
   pressed: {
     opacity: 0.78,

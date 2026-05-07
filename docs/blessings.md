@@ -6,9 +6,9 @@ The blessings MVP uses a local offline-first catalog. Blessings are reference co
 
 For the MVP, blessings do not live in Supabase. This PR intentionally does not add migrations, database tables, RPC, manifest sync, remote sync, SQLite, or service-role access for blessings. Supabase remains responsible for existing app data such as events; the blessings foundation is a separate local layer.
 
-## Brachas.txt alignment
+## Source Alignment
 
-The food catalog is being aligned to `Brachas.txt`, a local reference for Chabad custom / Alter Rebbe psak. The current source range covered by the catalog pass is the visible alphabetical block `А-П`.
+The food catalog is being aligned to "Руководство по благословениям" Рабби Шнеур-Залман из Ляд, a local reference for Chabad custom / Alter Rebbe psak. The current source range covered by the catalog pass is the visible alphabetical block `А-П`.
 
 Disclaimer for the catalog:
 

@@ -183,6 +183,13 @@ export interface BlessingResolvedStep {
   patternKey: string;
 }
 
+export interface BlessingItemResolvedAnnotations {
+  conditions: readonly BlessingCondition[];
+  notes: readonly BlessingNote[];
+  disputes: readonly BlessingDispute[];
+  sourceRefs: readonly string[];
+}
+
 export interface BlessingItemDetails {
   item: BlessingItem;
   pattern: BlessingPattern;
@@ -190,6 +197,9 @@ export interface BlessingItemDetails {
   conditions: readonly BlessingCondition[];
   notes: readonly BlessingNote[];
   disputes: readonly BlessingDispute[];
+  sourceRefs: readonly string[];
+  itemAnnotations: BlessingItemResolvedAnnotations;
+  patternAnnotations: BlessingItemResolvedAnnotations;
 }
 
 export interface BlessingSearchResult {
