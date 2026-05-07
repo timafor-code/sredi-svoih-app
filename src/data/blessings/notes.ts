@@ -170,6 +170,13 @@ export const blessingNotes = [
     needsVerification: true,
   },
   {
+    key: 'semolina_porridge_consistency',
+    titleRu: 'Манная каша по консистенции',
+    descriptionRu: 'Жидкая, которую пьют, — Шеhаколь. Густая, которую едят ложкой или жуют, — Мезонот.',
+    sourceRefs: ['Brachas.txt: Каша манная'],
+    needsVerification: true,
+  },
+  {
     key: 'potato_mashed_regular',
     titleRu: 'Размятый картофель',
     descriptionRu: 'Вареный, жареный, печеный картофель и пюре из мятого картофеля получают hаадама.',

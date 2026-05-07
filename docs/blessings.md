@@ -54,6 +54,34 @@ npm run validate:blessings
 
 The validator imports the offline catalog and service, checks entity uniqueness, required fields, pattern/item references, condition/note/dispute keys, source references, alias integrity, and search smoke cases. Errors block the PR and must be fixed. Warnings do not fail the command, but they require review; alias collisions are intentionally warnings so shared terms can be checked manually.
 
+## Alias warning review
+
+Reviewed on 2026-05-07 for `npm run validate:blessings`. The reviewed collisions are exact alias + owner-set pairs in `allowedAliasCollisions`; a new owner for the same alias or a new alias collision should still warn.
+
+Intentional product/direct-blessing collisions:
+
+- `картофель`: `item:potato` and `blessing:bore_pri_haadama`
+- `хлеб`, `хала`: `item:bread` and `blessing:hamotzi`
+- `печенье`: `item:cookies` and `blessing:bore_minei_mezonot`
+- `торт`: `item:cake` and `blessing:bore_minei_mezonot`
+- `вода`: `item:water` and `blessing:shehakol`
+- `чай`: `item:tea` and `blessing:shehakol`
+- `кофе`: `item:coffee` and `blessing:shehakol`
+- `вино`: `item:wine` and `blessing:bore_pri_hagafen`
+- `виноградный сок`: `item:grape_juice` and `blessing:bore_pri_hagafen`
+
+These are allowed because a common food/drink term may reasonably find both the item scheme and the direct before-blessing card. Search ranking should keep item results first for these product queries.
+
+Intentional `Мейн Шалош` general/variant collisions:
+
+- `ал хамихья`, `аль hамихья`, `ал hамихья`: `blessing:mein_shalosh` and `blessing:mein_shalosh_al_hamichya`
+- `аль hагефен`, `ал hагефен`: `blessing:mein_shalosh` and `blessing:mein_shalosh_al_hagefen`
+- `аль hаэц`, `ал hаэц`: `blessing:mein_shalosh` and `blessing:mein_shalosh_al_haetz`
+
+These are allowed because the general `Мейн Шалош` entry is a variants landing point, while the specific variants are still needed for item schemes and direct lookup.
+
+No accidental or ambiguous alias collisions were found in this review.
+
 ## Entry card
 
 This entry-card PR adds only the "Благословения" card to the "Молитвы" tab. The full `/prayers/blessings` screen, search UI, direct blessing cards, modal flows, and blessing text presentation will be handled in separate PRs.
