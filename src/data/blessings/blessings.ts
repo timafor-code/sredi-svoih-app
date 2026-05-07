@@ -105,7 +105,7 @@ export const blessings = [
         language: 'he',
         kind: 'text',
         titleRu: 'Иврит',
-        bodyRu: 'ברוך אתה ה׳ אלוהינו מלך העולם אשר קדשנו במצותיו וצונו על נטילת ידים',
+        bodyRu: 'בָּרוּךְ אַתָּה יְיָ אֱלֹהֵינוּ מֶלֶךְ הָעוֹלָם, אֲשֶׁר קִדְּשָׁנוּ בְּמִצְוֹתָיו וְצִוָּנוּ עַל נְטִילַת יָדָיִם.',
         needsVerification: true,
       },
       {
@@ -114,7 +114,7 @@ export const blessings = [
         translitNusach: 'sephard',
         kind: 'text',
         titleRu: 'Транслитерация · Сефард',
-        bodyRu: 'Baruch Atah Adonai Eloheinu Melech haolam, asher kidshanu bemitzvotav vetzivanu al netilat yadayim.',
+        bodyRu: 'Барух Ата А-донай, Элоhейну Мелех hа-олам, ашер кидешану бэ-мицвотав вэ-цивану аль нетилат ядаим.',
         needsVerification: true,
       },
       {
@@ -123,7 +123,7 @@ export const blessings = [
         translitNusach: 'ashkenaz',
         kind: 'text',
         titleRu: 'Транслитерация · Ашкеназ',
-        bodyRu: 'Ашкеназская транслитерация будет добавлена после проверки.',
+        bodyRu: 'Борух Ато А-дойной, Элойhейну Мелех hо-ойлом, ашер кидшону бэ-мицвойсов вэ-цивону аль нэтилас ёдоим.',
         needsVerification: true,
       },
       {
@@ -153,7 +153,7 @@ export const blessings = [
         language: 'he',
         kind: 'text',
         titleRu: 'Иврит',
-        bodyRu: 'ברוך אתה ה׳ אלוהינו מלך העולם המוציא לחם מן הארץ',
+        bodyRu: 'בָּרוּךְ אַתָּה יְיָ אֱלֹהֵינוּ מֶלֶךְ הָעוֹלָם, הַמּוֹצִיא לֶחֶם מִן הָאָרֶץ.',
         needsVerification: true,
       },
       {
@@ -162,7 +162,7 @@ export const blessings = [
         translitNusach: 'sephard',
         kind: 'text',
         titleRu: 'Транслитерация · Сефард',
-        bodyRu: 'Baruch Atah Adonai Eloheinu Melech haolam, hamotzi lechem min haaretz.',
+        bodyRu: 'Барух Ата А-донай, Элоhейну Мелех hа-олам, hа-моци лехем мин hа-арец.',
         needsVerification: true,
       },
       {
@@ -171,7 +171,7 @@ export const blessings = [
         translitNusach: 'ashkenaz',
         kind: 'text',
         titleRu: 'Транслитерация · Ашкеназ',
-        bodyRu: 'Ашкеназская транслитерация будет добавлена после проверки.',
+        bodyRu: 'Борух Ато А-дойной, Элойhейну Мелех hо-ойлом, hа-мойци лехем мин hо-орец.',
         needsVerification: true,
       },
       {
@@ -201,7 +201,7 @@ export const blessings = [
         language: 'he',
         kind: 'text',
         titleRu: 'Иврит',
-        bodyRu: 'ברוך אתה ה׳ אלוהינו מלך העולם בורא מיני מזונות',
+        bodyRu: 'בָּרוּךְ אַתָּה יְיָ אֱלֹהֵינוּ מֶלֶךְ הָעוֹלָם, בּוֹרֵא מִינֵי מְזוֹנוֹת.',
         needsVerification: true,
       },
       {
@@ -210,7 +210,7 @@ export const blessings = [
         translitNusach: 'sephard',
         kind: 'text',
         titleRu: 'Транслитерация · Сефард',
-        bodyRu: 'Baruch Atah Adonai Eloheinu Melech haolam, bore minei mezonot.',
+        bodyRu: 'Барух Ата А-донай, Элоhейну Мелех hа-олам, боре миней мезонот.',
         needsVerification: true,
       },
       {
@@ -219,7 +219,7 @@ export const blessings = [
         translitNusach: 'ashkenaz',
         kind: 'text',
         titleRu: 'Транслитерация · Ашкеназ',
-        bodyRu: 'Ашкеназская транслитерация будет добавлена после проверки.',
+        bodyRu: 'Борух Ато А-дойной, Элойhейну Мелех hо-ойлом, бойрей миней мезойнойс.',
         needsVerification: true,
       },
       {
@@ -249,7 +249,7 @@ export const blessings = [
         language: 'he',
         kind: 'text',
         titleRu: 'Иврит',
-        bodyRu: 'ברוך אתה ה׳ אלוהינו מלך העולם בורא פרי האדמה',
+        bodyRu: 'בָּרוּךְ אַתָּה יְיָ אֱלֹהֵינוּ מֶלֶךְ הָעוֹלָם, בּוֹרֵא פְּרִי הָאֲדָמָה.',
         needsVerification: true,
       },
       {
@@ -258,7 +258,7 @@ export const blessings = [
         translitNusach: 'sephard',
         kind: 'text',
         titleRu: 'Транслитерация · Сефард',
-        bodyRu: 'Baruch Atah Adonai Eloheinu Melech haolam, bore pri haadama.',
+        bodyRu: 'Барух Ата А-донай, Элоhейну Мелех hа-олам, боре при hа-адама.',
         needsVerification: true,
       },
       {
@@ -267,7 +267,7 @@ export const blessings = [
         translitNusach: 'ashkenaz',
         kind: 'text',
         titleRu: 'Транслитерация · Ашкеназ',
-        bodyRu: 'Ашкеназская транслитерация будет добавлена после проверки.',
+        bodyRu: 'Борух Ато А-дойной, Элойhейну Мелех hо-ойлом, бойрей при hо-адомо.',
         needsVerification: true,
       },
       {
@@ -297,7 +297,7 @@ export const blessings = [
         language: 'he',
         kind: 'text',
         titleRu: 'Иврит',
-        bodyRu: 'ברוך אתה ה׳ אלוהינו מלך העולם בורא פרי העץ',
+        bodyRu: 'בָּרוּךְ אַתָּה יְיָ אֱלֹהֵינוּ מֶלֶךְ הָעוֹלָם, בּוֹרֵא פְּרִי הָעֵץ.',
         needsVerification: true,
       },
       {
@@ -306,7 +306,7 @@ export const blessings = [
         translitNusach: 'sephard',
         kind: 'text',
         titleRu: 'Транслитерация · Сефард',
-        bodyRu: 'Baruch Atah Adonai Eloheinu Melech haolam, bore pri haetz.',
+        bodyRu: 'Барух Ата А-донай, Элоhейну Мелех hа-олам, боре при hа-эц.',
         needsVerification: true,
       },
       {
@@ -315,7 +315,7 @@ export const blessings = [
         translitNusach: 'ashkenaz',
         kind: 'text',
         titleRu: 'Транслитерация · Ашкеназ',
-        bodyRu: 'Ашкеназская транслитерация будет добавлена после проверки.',
+        bodyRu: 'Борух Ато А-дойной, Элойhейну Мелех hо-ойлом, бойрей при hо-эйц.',
         needsVerification: true,
       },
       {
@@ -345,7 +345,7 @@ export const blessings = [
         language: 'he',
         kind: 'text',
         titleRu: 'Иврит',
-        bodyRu: 'ברוך אתה ה׳ אלוהינו מלך העולם שהכל נהיה בדברו',
+        bodyRu: 'בָּרוּךְ אַתָּה יְיָ אֱלֹהֵינוּ מֶלֶךְ הָעוֹלָם, שֶׁהַכֹּל נִהְיָה בִּדְבָרוֹ.',
         needsVerification: true,
       },
       {
@@ -354,7 +354,7 @@ export const blessings = [
         translitNusach: 'sephard',
         kind: 'text',
         titleRu: 'Транслитерация · Сефард',
-        bodyRu: 'Baruch Atah Adonai Eloheinu Melech haolam, shehakol nihyah bidvaro.',
+        bodyRu: 'Барух Ата А-донай, Элоhейну Мелех hа-олам, шеhаколь ниhья бидваро.',
         needsVerification: true,
       },
       {
@@ -363,7 +363,7 @@ export const blessings = [
         translitNusach: 'ashkenaz',
         kind: 'text',
         titleRu: 'Транслитерация · Ашкеназ',
-        bodyRu: 'Ашкеназская транслитерация будет добавлена после проверки.',
+        bodyRu: 'Борух Ато А-дойной, Элойhейну Мелех hо-ойлом, шеhакойл ниhйо бидворой.',
         needsVerification: true,
       },
       {
@@ -393,7 +393,7 @@ export const blessings = [
         language: 'he',
         kind: 'text',
         titleRu: 'Иврит',
-        bodyRu: 'ברוך אתה ה׳ אלוהינו מלך העולם בורא פרי הגפן',
+        bodyRu: 'בָּרוּךְ אַתָּה יְיָ אֱלֹהֵינוּ מֶלֶךְ הָעוֹלָם, בּוֹרֵא פְּרִי הַגָּפֶן.',
         needsVerification: true,
       },
       {
@@ -402,7 +402,7 @@ export const blessings = [
         translitNusach: 'sephard',
         kind: 'text',
         titleRu: 'Транслитерация · Сефард',
-        bodyRu: 'Baruch Atah Adonai Eloheinu Melech haolam, bore pri hagafen.',
+        bodyRu: 'Барух Ата А-донай, Элоhейну Мелех hа-олам, боре при hа-гафен.',
         needsVerification: true,
       },
       {
@@ -411,7 +411,7 @@ export const blessings = [
         translitNusach: 'ashkenaz',
         kind: 'text',
         titleRu: 'Транслитерация · Ашкеназ',
-        bodyRu: 'Ашкеназская транслитерация будет добавлена после проверки.',
+        bodyRu: 'Борух Ато А-дойной, Элойhейну Мелех hо-ойлом, бойрей при hа-гофен.',
         needsVerification: true,
       },
       {
@@ -441,7 +441,7 @@ export const blessings = [
         language: 'he',
         kind: 'text',
         titleRu: 'Иврит',
-        bodyRu: 'ברוך אתה ה׳ אלוהינו מלך העולם בורא נפשות רבות וחסרונן על כל מה שבראת להחיות בהם נפש כל חי ברוך חי העולמים',
+        bodyRu: 'בָּרוּךְ אַתָּה יְיָ אֱלֹהֵינוּ מֶלֶךְ הָעוֹלָם, בּוֹרֵא נְפָשׁוֹת רַבּוֹת וְחֶסְרוֹנָן, עַל כָּל מַה שֶּׁבָּרָאתָ לְהַחֲיוֹת בָּהֶם נֶפֶשׁ כָּל חָי, בָּרוּךְ חֵי הָעוֹלָמִים.',
         needsVerification: true,
       },
       {
@@ -450,7 +450,7 @@ export const blessings = [
         translitNusach: 'sephard',
         kind: 'text',
         titleRu: 'Транслитерация · Сефард',
-        bodyRu: 'Baruch Atah Adonai Eloheinu Melech haolam, bore nefashot rabot vechesronan, al kol mah shebarata lehachayot bahem nefesh kol chai. Baruch chei haolamim.',
+        bodyRu: 'Барух Ата А-донай, Элоhейну Мелех hа-олам, боре нефашот раббот вэ-хесронан, аль коль ма ше-барата леhахайот баhем нефеш коль хай, барух хей hа-оламим.',
         needsVerification: true,
       },
       {
@@ -459,7 +459,7 @@ export const blessings = [
         translitNusach: 'ashkenaz',
         kind: 'text',
         titleRu: 'Транслитерация · Ашкеназ',
-        bodyRu: 'Ашкеназская транслитерация будет добавлена после проверки.',
+        bodyRu: 'Борух Ато А-дойной, Элойhейну Мелех hо-ойлом, бойрей нефошойс рабойс вэ-хесронан, аль коль ма ше-боросо леhахайойс боhем нефеш коль хай, борух хей hо-ойломим.',
         needsVerification: true,
       },
       {
@@ -467,7 +467,7 @@ export const blessings = [
         language: 'ru',
         kind: 'text',
         titleRu: 'Русский перевод',
-        bodyRu: 'Благословен Ты, Господь, Бог наш, Царь вселенной, творящий множество живых существ и всё необходимое им, за всё, что Ты сотворил, чтобы поддерживать жизнь всякого живого существа. Благословен Живущий вечно.',
+        bodyRu: 'Благословен Ты, Господь, Бог наш, Царь вселенной, творящий множество живых существ и всё необходимое им; за всё, что Ты сотворил, чтобы поддерживать жизнь всякого живого существа. Благословен Живущий вечно.',
         needsVerification: true,
       },
     ],
