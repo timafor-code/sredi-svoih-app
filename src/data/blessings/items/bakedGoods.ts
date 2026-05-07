@@ -2,7 +2,13 @@ import type { BlessingItemTuple } from '@/types/blessing';
 
 export const bakedGoodItems = [
   ['cookies', 'Печенье', 'mezonot_al_hamichya', ['печенье', 'cookies', 'cookie'], { category: 'baked_goods' }],
-  ['cake', 'Торт', 'mezonot_al_hamichya', ['торт', 'кекс', 'cake'], { category: 'baked_goods' }],
+  [
+    'cake',
+    'Торт',
+    'mezonot_al_hamichya',
+    ['торт', 'кекс', 'cake'],
+    { category: 'baked_goods', noteKeys: ['cream_independent_when_significant'], sourceRefs: ['Brachas.txt: Торт 818'] },
+  ],
   ['cracker', 'Крекер', 'mezonot_al_hamichya', ['крекер', 'cracker'], { category: 'baked_goods' }],
   ['biscuit', 'Бисквит', 'mezonot_al_hamichya', ['бисквит', 'бисквитный торт', 'sponge cake', 'biscuit'], { category: 'baked_goods', sourceRefs: ['Brachas.txt: Бисквит'] }],
   [
@@ -120,6 +126,49 @@ export const bakedGoodItems = [
       needsVerification: true,
       sourceRefs: ['Brachas.txt: Пицца 796'],
     },
+  ],
+  [
+    'sushki',
+    'Сушки',
+    'mezonot_al_hamichya',
+    ['сушки', 'сушка', 'sushki'],
+    {
+      category: 'baked_goods',
+      complexity: 'conditional',
+      conditionKeys: ['meal_size_amount'],
+      noteKeys: ['sushki_meal_size'],
+      needsVerification: true,
+      sourceRefs: ['Brachas.txt: Сушки 817'],
+    },
+  ],
+  [
+    'toast',
+    'Тост',
+    'hamotzi_meal',
+    ['тост', 'гренка', 'поджаренный хлеб', 'toast'],
+    { category: 'baked_goods', noteKeys: ['toast_description'], sourceRefs: ['Brachas.txt: Тост 819'] },
+  ],
+  [
+    'sweet_challah',
+    'Хала сладкая',
+    'mezonot_al_hamichya',
+    ['сладкая хала', 'хала сладкая', 'sweet challah'],
+    {
+      category: 'baked_goods',
+      complexity: 'conditional',
+      conditionKeys: ['bread_like_dough_case', 'meal_size_amount'],
+      noteKeys: ['sweet_challah_meal_size'],
+      disputeKeys: ['bread_like_pastry_case'],
+      needsVerification: true,
+      sourceRefs: ['Brachas.txt: Хала сладкая 827'],
+    },
+  ],
+  [
+    'strudel',
+    'Штрудель',
+    'mezonot_al_hamichya',
+    ['штрудель', 'strudel'],
+    { category: 'baked_goods', noteKeys: ['strudel_description'], sourceRefs: ['Brachas.txt: Штрудель 836'] },
   ],
   [
     'bun',

@@ -101,6 +101,20 @@ export const blessingConditions = [
     needsVerification: true,
   },
   {
+    key: 'depends_on_local_custom',
+    titleRu: 'Зависит от местного обычая',
+    descriptionRu: 'Для некоторых продуктов важно, принято ли в данном месте есть их отдельно в таком виде.',
+    sourceRefs: ['Brachas.txt: Лук зеленый', 'Brachas.txt: Чеснок'],
+    needsVerification: true,
+  },
+  {
+    key: 'broth_only_case',
+    titleRu: 'Если пьют только отвар',
+    descriptionRu: 'Для овощного или фруктового отвара справочник не дает простой автоматический сценарий и требует покрыть сомнение другими благословениями.',
+    sourceRefs: ['Brachas.txt: Суп овощной 814', 'Brachas.txt: Суп фруктовый 816'],
+    needsVerification: true,
+  },
+  {
     key: 'mixed_food_primary_ingredient',
     titleRu: 'Главный ингредиент в смеси',
     descriptionRu: 'В смеси нужно определить основной компонент; без этого каталог не делает окончательный вывод.',

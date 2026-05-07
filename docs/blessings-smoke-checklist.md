@@ -31,6 +31,15 @@ In `/prayers/blessings`, type each query and confirm the first result:
 - `абрикос` -> item `apricot`; first step `bore_pri_haetz`; note mentions урюк and абрикосовое повидло.
 - `ананас` -> item `pineapple`; first step `bore_pri_haadama`; note says hаэц said by mistake is valid.
 - `рис` -> item `rice`; first step `shehakol`; condition/dispute note keeps the case cautious.
+- `рахат-лукум` -> item `rahat_lukum`; first step `shehakol`.
+- `редька` -> item `black_radish`; note mentions the very bitter case.
+- `суп с лапшой` -> item `noodle_soup`; first step `bore_minei_mezonot`; condition says noodles must be significant.
+- `уксус` -> item `vinegar`; item is `complex` with diluted, undrinkable, and wine-vinegar scenarios.
+- `фалафель из порошка` -> item `falafel_powder`; first step `shehakol`.
+- `цитрон` -> item `citron`; item is conditional and notes raw/jam/povidlo forms.
+- `чипсы` -> item `potato_chips`; item is conditional by slices vs powder/flour.
+- `шакшука` -> item `shakshuka`; item is conditional by majority.
+- `ячмень зерна` -> item `barley_kernels`; first step `shehakol`.
 - `пицца` -> item `pizza`; item is `complex` with water-dough, juice/egg-dough, and meal-size scenarios.
 - `вода` -> item `water`; condition includes `drink_for_thirst_or_pleasure`.
 - `мейн шалош` -> blessing `mein_shalosh`; display mode is `variants`.
@@ -92,6 +101,13 @@ Search and open conditional products such as:
 - `фалафель`
 - `шницель`
 - `гранола`
+- `овощной салат`
+- `томатный соус`
+- `уксус`
+- `цитрон`
+- `чолнт`
+- `шакшука`
+- `шпинат`
 
 Expected result: the item scheme shows condition/dispute notes under `Условия и спорные случаи`, with verification wording where applicable.
 

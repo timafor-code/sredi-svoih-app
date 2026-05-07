@@ -22,7 +22,7 @@ export const sweetItems = [
       sourceRefs: ['Brachas.txt: Драже 744'],
     },
   ],
-  ['chocolate', 'Шоколад', 'shehakol_bore_nefashot', ['шоколад', 'chocolate'], { category: 'sweets', needsVerification: true }],
+  ['chocolate', 'Шоколад', 'shehakol_bore_nefashot', ['шоколад', 'chocolate'], { category: 'sweets', sourceRefs: ['Brachas.txt: Шоколад'] }],
   ['ice_cream', 'Мороженое', 'shehakol_bore_nefashot', ['мороженое', 'ice cream'], { category: 'sweets', sourceRefs: ['Brachas.txt: Мороженое'] }],
   [
     'ice_cream_wafer_cup',
@@ -59,6 +59,7 @@ export const sweetItems = [
       sourceRefs: ['Brachas.txt: Варенье'],
     },
   ],
+  ['rose_jam', 'Розовое варенье', 'haadama_bore_nefashot', ['розовое варенье', 'варенье из розы', 'rose jam'], { category: 'sweets', sourceRefs: ['Brachas.txt: Розовое варенье'] }],
   [
     'orange_peel_jam',
     'Варенье из апельсиновых корок / цукаты',
@@ -106,6 +107,8 @@ export const sweetItems = [
   ['hard_candy', 'Леденец', 'shehakol_bore_nefashot', ['карамель', 'леденцы', 'hard candy'], { category: 'sweets' }],
   ['marshmallow', 'Зефир', 'shehakol_bore_nefashot', ['зефир', 'маршмеллоу', 'marshmallow'], { category: 'sweets', sourceRefs: ['Brachas.txt: Зефир'] }],
   ['popsicle', 'Артик / фруктовый лёд', 'shehakol_bore_nefashot', ['артик', 'фруктовый лед', 'фруктовый лёд', 'эскимо лед', 'popsicle', 'ice pop'], { category: 'sweets', noteKeys: ['artic_fruit_ice'], sourceRefs: ['Brachas.txt: Артик 720'] }],
+  ['rahat_lukum', 'Рахат-лукум', 'shehakol_bore_nefashot', ['рахат-лукум', 'лукум', 'turkish delight'], { category: 'sweets', sourceRefs: ['Brachas.txt: Рахат-лукум'] }],
+  ['sugar', 'Сахар', 'shehakol_bore_nefashot', ['сахар', 'sugar'], { category: 'sweets', sourceRefs: ['Brachas.txt: Сахар'] }],
   ['coconut_shredded', 'Кокосовая стружка', 'shehakol_bore_nefashot', ['кокосовая стружка', 'тертый кокос', 'тёртый кокос', 'shredded coconut'], { category: 'sweets', noteKeys: ['coconut_shredded_milk_shehakol'], sourceRefs: ['Brachas.txt: Кокос 756'] }],
   ['jelly', 'Желе', 'shehakol_bore_nefashot', ['желе', 'jelly', 'gelatin dessert'], { category: 'sweets', needsVerification: true }],
   ['pudding', 'Пудинг', 'shehakol_bore_nefashot', ['пудинг', 'pudding'], { category: 'sweets', needsVerification: true }],
@@ -126,14 +129,9 @@ export const sweetItems = [
   [
     'halva',
     'Халва',
-    'conditional',
+    'shehakol_bore_nefashot',
     ['халва', 'halva', 'חלבה'],
-    {
-      category: 'sweets',
-      complexity: 'conditional',
-      conditionKeys: ['depends_on_main_ingredient', 'depends_on_grain_content'],
-      needsVerification: true,
-    },
+    { category: 'sweets', sourceRefs: ['Brachas.txt: Халва'] },
   ],
   [
     'cake_pop',
