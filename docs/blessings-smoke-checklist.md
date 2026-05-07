@@ -149,6 +149,23 @@ Expected result: the item scheme shows condition/dispute notes under `Услов
 - Confirm only one language tab is active at a time.
 - Confirm missing/placeholder content shows a soft `Текст требует проверки` message instead of a crash or blank modal.
 
+## iPhone: Биркат hамазон Хабад Hebrew
+
+- Open `Молитвы` -> `Благословения`.
+- Open `Биркат hамазон`.
+- Select text nusach `Хабад`.
+- Select `Иврит`.
+- Confirm large RTL Hebrew renders with nikud, feels closer to a siddur/serif style on iPhone, and is visually the main text.
+- Confirm Russian annotations use the smaller muted annotation style.
+- Confirm Hebcal insert blocks, when present, use a distinct soft gold/glass treatment.
+- Confirm manual blocks are collapsed by default.
+- Expand and collapse `Зимун`.
+- Expand and collapse `Добавления после брит милы`.
+- Expand and collapse `Шева брахот`.
+- Select `Русский` and confirm the Russian translation placeholder remains.
+- Select `Транслит` and confirm the transliteration placeholder remains.
+- Select text nusach `Бейт Сфаради` and confirm it remains a placeholder.
+
 ## Transliteration nusach split
 
 - Open `Амоци`.
@@ -171,6 +188,11 @@ Expected result: the item scheme shows condition/dispute notes under `Услов
 
 These are service-level checks and can be verified with a temporary local dev console/script if needed:
 
-- `getBlessingText('birkat_hamazon', { calendarFlags: ['hanukkah'] })` should include an insert placeholder block.
+- `getBlessingText('birkat_hamazon', { calendarFlags: ['hanukkah'], language: 'he', selectedTextNusach: 'chabad' })` should include `al_hanisim_opening_he` and `al_hanisim_hanukkah_he`.
+- `getBlessingText('birkat_hamazon', { calendarFlags: ['purim'], language: 'he', selectedTextNusach: 'chabad' })` should include `al_hanisim_opening_he` and `al_hanisim_purim_he`.
+- `getBlessingText('birkat_hamazon', { calendarFlags: ['rosh_chodesh'], language: 'he', selectedTextNusach: 'chabad' })` should include `יעלה ויבוא` with `רֹאשׁ הַחֹדֶשׁ`, Rosh Chodesh hАрахаман, and `מִגְדּוֹל`.
+- `getBlessingText('birkat_hamazon', { calendarFlags: ['chol_hamoed_pesach'], language: 'he', selectedTextNusach: 'chabad' })` should include `יעלה ויבוא` with `חַג הַמַּצּוֹת` and `מִגְדּוֹל`.
+- `getBlessingText('birkat_hamazon', { calendarFlags: ['chol_hamoed_sukkot'], language: 'he', selectedTextNusach: 'chabad' })` should include `יעלה ויבוא` with `חַג הַסֻּכּוֹת`, Sukkot hАрахаман, and `מִגְדּוֹל`.
 - `getBlessingText('rainbow', { calendarFlags: ['hanukkah'] })` should not include an insert block.
-- `getBlessingText('birkat_hamazon', { calendarFlags: [] })` should keep the original placeholder-only behavior.
+- `getBlessingText('birkat_hamazon', { calendarFlags: [], language: 'he', selectedTextNusach: 'chabad' })` should not include `Аль hанисим` or `יעלה ויבוא` and should use `מַגְדִּיל`.
+- `getBlessingText('birkat_hamazon', { calendarFlags: [], language: 'he', selectedTextNusach: 'beit_sefaradi' })` should keep the Beit Sefaradi placeholder behavior.
