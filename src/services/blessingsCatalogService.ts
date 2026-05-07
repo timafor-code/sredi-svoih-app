@@ -8,11 +8,13 @@ import type {
   BlessingItem,
   BlessingItemDetails,
   BlessingItemTuple,
+  BlessingNusachVariant,
   BlessingPattern,
   BlessingResolvedStep,
   BlessingSearchResult,
   BlessingTextOptions,
   BlessingTextResult,
+  BlessingTextNusach,
 } from '@/types/blessing';
 
 type MatchField = {
@@ -21,6 +23,13 @@ type MatchField = {
 };
 
 type MatchScore = Pick<BlessingSearchResult, 'matchedOn' | 'matchedText' | 'score'>;
+
+type ResolvedBlessingTextSource = {
+  contentBlocks: BlessingTextResult['contentBlocks'];
+  dynamicInsertRules: BlessingTextResult['dynamicInsertRules'];
+  needsVerification: boolean;
+  selectedTextNusach?: BlessingTextNusach;
+};
 
 const homeGroups: readonly BlessingHomeGroup[] = ['before_food', 'after_food', 'various'];
 
@@ -258,17 +267,58 @@ export function getBlessingText(
     return null;
   }
 
-  const contentBlocks = blessing.contentBlocks ?? [];
+  const textSource = resolveBlessingTextSource(blessing, options.selectedTextNusach);
 
   return buildBlessingTextResult({
     blessing,
     calendarFlags: options.calendarFlags ?? [],
     language: options.language ?? 'ru',
     nusach: options.nusach ?? 'common',
-    contentBlocks,
+    selectedTextNusach: textSource.selectedTextNusach,
+    contentBlocks: textSource.contentBlocks,
+    dynamicInsertRules: textSource.dynamicInsertRules,
     needsVerification:
-      blessing.needsVerification || contentBlocks.some((block) => block.needsVerification === true),
+      blessing.needsVerification ||
+      textSource.needsVerification ||
+      textSource.contentBlocks.some((block) => block.needsVerification === true),
   });
+}
+
+function resolveBlessingTextSource(
+  blessing: Blessing,
+  selectedTextNusach?: BlessingTextNusach,
+): ResolvedBlessingTextSource {
+  const variant = resolveBlessingNusachVariant(blessing.nusachVariants, selectedTextNusach);
+
+  if (variant) {
+    return {
+      contentBlocks: variant.contentBlocks,
+      dynamicInsertRules: variant.dynamicInsertRules,
+      needsVerification: variant.needsVerification,
+      selectedTextNusach: variant.nusach,
+    };
+  }
+
+  return {
+    contentBlocks: blessing.contentBlocks ?? [],
+    dynamicInsertRules: blessing.dynamicInsertRules,
+    needsVerification: false,
+  };
+}
+
+function resolveBlessingNusachVariant(
+  variants: readonly BlessingNusachVariant[] | undefined,
+  selectedTextNusach?: BlessingTextNusach,
+): BlessingNusachVariant | null {
+  if (!variants || variants.length === 0) {
+    return null;
+  }
+
+  return (
+    variants.find((variant) => variant.nusach === selectedTextNusach) ??
+    variants.find((variant) => variant.nusach === 'chabad') ??
+    variants[0]
+  );
 }
 
 export function listBlessingsByCategory(category: string): Blessing[] {

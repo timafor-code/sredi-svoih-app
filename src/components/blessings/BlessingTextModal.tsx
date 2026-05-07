@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BlessingLanguageTabs } from '@/components/blessings/BlessingLanguageTabs';
+import { BlessingTextNusachTabs } from '@/components/blessings/BlessingTextNusachTabs';
 import { BlessingTranslitNusachTabs } from '@/components/blessings/BlessingTranslitNusachTabs';
 import { GlassCard } from '@/components/glass/GlassCard';
 import { colors } from '@/theme/colors';
@@ -19,14 +20,17 @@ import type {
   BlessingContentBlock,
   BlessingLanguage,
   BlessingTextResult,
+  BlessingTextNusach,
   BlessingTranslitNusach,
 } from '@/types/blessing';
 
 type BlessingTextModalProps = {
   onClose: () => void;
   onLanguageChange: (language: BlessingLanguage) => void;
+  onTextNusachChange: (value: BlessingTextNusach) => void;
   onTranslitNusachChange: (value: BlessingTranslitNusach) => void;
   selectedLanguage: BlessingLanguage;
+  selectedTextNusach: BlessingTextNusach;
   selectedTranslitNusach: BlessingTranslitNusach;
   textResult: BlessingTextResult | null;
   visible: boolean;
@@ -147,8 +151,10 @@ function getPlaceholderMessage(
 export function BlessingTextModal({
   onClose,
   onLanguageChange,
+  onTextNusachChange,
   onTranslitNusachChange,
   selectedLanguage,
+  selectedTextNusach,
   selectedTranslitNusach,
   textResult,
   visible,
@@ -161,9 +167,18 @@ export function BlessingTextModal({
   );
   const showVerificationNotice =
     !!textResult && (textResult.blessing.needsVerification || textResult.needsVerification);
-  const scrollMaxHeight = Math.max(190, panelMaxHeight - (showVerificationNotice ? 286 : 230));
+  const textNusachVariants = textResult?.blessing.nusachVariants ?? [];
+  const showTextNusachTabs = textNusachVariants.length > 1;
+  const shouldShowTranslitNusachTabs =
+    selectedLanguage === 'translit' &&
+    (!showTextNusachTabs || selectedTextNusach !== 'beit_sefaradi');
+  const activeTranslitNusach: BlessingTranslitNusach = shouldShowTranslitNusachTabs
+    ? selectedTranslitNusach
+    : 'sephard';
+  const scrollOffset = (showVerificationNotice ? 286 : 230) + (showTextNusachTabs ? 50 : 0);
+  const scrollMaxHeight = Math.max(190, panelMaxHeight - scrollOffset);
   const activeContent = textResult
-    ? getActiveTextContent(textResult, selectedLanguage, selectedTranslitNusach)
+    ? getActiveTextContent(textResult, selectedLanguage, activeTranslitNusach)
     : null;
 
   return (
@@ -218,12 +233,20 @@ export function BlessingTextModal({
               <Text style={styles.description}>{textResult.blessing.descriptionRu}</Text>
             ) : null}
 
+            {showTextNusachTabs ? (
+              <BlessingTextNusachTabs
+                onValueChange={onTextNusachChange}
+                value={selectedTextNusach}
+                variants={textNusachVariants}
+              />
+            ) : null}
+
             <BlessingLanguageTabs
               onValueChange={onLanguageChange}
               value={selectedLanguage}
             />
 
-            {selectedLanguage === 'translit' ? (
+            {shouldShowTranslitNusachTabs ? (
               <BlessingTranslitNusachTabs
                 onValueChange={onTranslitNusachChange}
                 value={selectedTranslitNusach}

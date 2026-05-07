@@ -1,7 +1,36 @@
 import { createAfterFoodDynamicInsertRules } from './afterFoodInsertRules';
-import type { Blessing } from '@/types/blessing';
+import type { Blessing, BlessingNusachVariant } from '@/types/blessing';
 
 const birkatHamazonDynamicInsertRules = createAfterFoodDynamicInsertRules('placeholder');
+
+function createBirkatHamazonPlaceholderBlocks(titleRu: string): BlessingNusachVariant['contentBlocks'] {
+  return [
+    {
+      key: 'placeholder',
+      kind: 'placeholder',
+      titleRu,
+      bodyRu: `Placeholder для Биркат hамазон (${titleRu}). Полный текст требует отдельной проверки.`,
+      needsVerification: true,
+    },
+  ];
+}
+
+const birkatHamazonNusachVariants = [
+  {
+    nusach: 'chabad',
+    titleRu: 'Хабад',
+    contentBlocks: createBirkatHamazonPlaceholderBlocks('Хабад'),
+    dynamicInsertRules: birkatHamazonDynamicInsertRules,
+    needsVerification: true,
+  },
+  {
+    nusach: 'beit_sefaradi',
+    titleRu: 'Бейт Сфаради',
+    contentBlocks: createBirkatHamazonPlaceholderBlocks('Бейт Сфаради'),
+    dynamicInsertRules: birkatHamazonDynamicInsertRules,
+    needsVerification: true,
+  },
+] as const satisfies readonly BlessingNusachVariant[];
 
 export const birkatHamazonBlessings = [
   {
@@ -23,6 +52,7 @@ export const birkatHamazonBlessings = [
       },
     ],
     dynamicInsertRules: birkatHamazonDynamicInsertRules,
+    nusachVariants: birkatHamazonNusachVariants,
     needsVerification: true,
   },
 ] as const satisfies readonly Blessing[];

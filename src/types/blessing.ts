@@ -2,6 +2,8 @@ export type BlessingLanguage = 'he' | 'translit' | 'ru';
 
 export type BlessingTranslitNusach = 'sephard' | 'ashkenaz';
 
+export type BlessingTextNusach = 'chabad' | 'beit_sefaradi';
+
 export type Nusach = 'common' | 'chabad' | 'sephardi';
 
 export type DefaultPsak = 'chabad_alter_rebbe' | 'common' | 'other';
@@ -67,6 +69,14 @@ export interface BlessingInsertRule {
   needsVerification: boolean;
 }
 
+export interface BlessingNusachVariant {
+  nusach: BlessingTextNusach;
+  titleRu: string;
+  contentBlocks: readonly BlessingContentBlock[];
+  dynamicInsertRules?: readonly BlessingInsertRule[];
+  needsVerification: boolean;
+}
+
 export interface Blessing {
   slug: string;
   titleRu: string;
@@ -80,6 +90,7 @@ export interface Blessing {
   contentBlocks?: readonly BlessingContentBlock[];
   inserts?: readonly BlessingInsert[];
   dynamicInsertRules?: readonly BlessingInsertRule[];
+  nusachVariants?: readonly BlessingNusachVariant[];
   sourceName?: string;
   sourceUrl?: string;
   needsVerification: boolean;
@@ -182,6 +193,7 @@ export interface BlessingTextOptions {
   calendarFlags?: readonly JewishCalendarFlag[];
   language?: BlessingLanguage;
   nusach?: Nusach;
+  selectedTextNusach?: BlessingTextNusach;
 }
 
 export interface BlessingTextResult {
@@ -189,6 +201,8 @@ export interface BlessingTextResult {
   calendarFlags: readonly JewishCalendarFlag[];
   language: BlessingLanguage;
   nusach: Nusach;
+  selectedTextNusach?: BlessingTextNusach;
   contentBlocks: readonly BlessingContentBlock[];
+  dynamicInsertRules?: readonly BlessingInsertRule[];
   needsVerification: boolean;
 }
