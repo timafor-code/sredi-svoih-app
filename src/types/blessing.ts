@@ -48,6 +48,7 @@ export interface BlessingContentBlock {
   dayNameByFlag?: Partial<Record<JewishCalendarFlag, string>>;
   defaultCollapsed?: boolean;
   language?: BlessingLanguage;
+  prefaceMode?: 'tachanun' | 'no_tachanun';
   renderVariant?: 'base' | 'insert' | 'annotation' | 'manual_collapsible';
   triggerMode?: 'always' | 'hebcal' | 'manual' | 'future_not_runtime';
   translitNusach?: BlessingTranslitNusach;

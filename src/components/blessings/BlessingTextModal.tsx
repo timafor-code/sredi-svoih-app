@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Modal,
   Platform,
@@ -16,6 +16,7 @@ import { BlessingLanguageTabs } from '@/components/blessings/BlessingLanguageTab
 import { BlessingTextNusachTabs } from '@/components/blessings/BlessingTextNusachTabs';
 import { BlessingTranslitNusachTabs } from '@/components/blessings/BlessingTranslitNusachTabs';
 import { GlassCard } from '@/components/glass/GlassCard';
+import { getBlessingText } from '@/services/blessingsCatalogService';
 import { colors } from '@/theme/colors';
 import { radius } from '@/theme/radius';
 import type {
@@ -24,6 +25,7 @@ import type {
   BlessingTextResult,
   BlessingTextNusach,
   BlessingTranslitNusach,
+  JewishCalendarFlag,
 } from '@/types/blessing';
 
 type BlessingTextModalProps = {
@@ -39,6 +41,12 @@ type BlessingTextModalProps = {
 };
 
 type BlessingTextOverlayProps = Omit<BlessingTextModalProps, 'visible'>;
+
+type BirkatPrefaceMode = 'hidden' | NonNullable<BlessingContentBlock['prefaceMode']>;
+
+type DevCalendarFlagState = Partial<Record<JewishCalendarFlag, boolean>>;
+
+type TextRenderMode = 'dark' | 'reader';
 
 type DisplayBlock = {
   annotationRu?: string;
@@ -72,6 +80,32 @@ const translitNusachPlaceholders: Record<BlessingTranslitNusach, string> = {
   ashkenaz: 'Ашкеназская транслитерация будет добавлена после проверки',
 };
 
+const prefaceModeOptions: readonly { label: string; value: BirkatPrefaceMode }[] = [
+  { label: 'Без вступления', value: 'hidden' },
+  { label: 'С Тахануном', value: 'tachanun' },
+  { label: 'Без Тахануна', value: 'no_tachanun' },
+];
+
+const calendarFlagOrder: readonly JewishCalendarFlag[] = [
+  'hanukkah',
+  'purim',
+  'rosh_chodesh',
+  'chol_hamoed_pesach',
+  'chol_hamoed_sukkot',
+];
+
+const devCalendarFlagOptions: readonly { flag: JewishCalendarFlag; label: string }[] = [
+  { flag: 'hanukkah', label: 'Ханука' },
+  { flag: 'purim', label: 'Пурим' },
+  { flag: 'rosh_chodesh', label: 'Рош Ходеш' },
+  { flag: 'chol_hamoed_pesach', label: 'Холь hа-Моэд Песах' },
+  { flag: 'chol_hamoed_sukkot', label: 'Холь hа-Моэд Суккот' },
+];
+
+const readerMinFontSize = 22;
+const readerMaxFontSize = 36;
+const readerFontStep = 2;
+
 function hasBlockBody(block: BlessingContentBlock): block is BlessingContentBlock & { bodyRu: string } {
   return typeof block.bodyRu === 'string' && block.bodyRu.trim().length > 0;
 }
@@ -93,11 +127,13 @@ function getActiveTextContent(
   textResult: BlessingTextResult,
   selectedLanguage: BlessingLanguage,
   selectedTranslitNusach: BlessingTranslitNusach,
+  prefaceMode: BirkatPrefaceMode,
 ): ActiveTextContent {
   const visibleBlocks = getVisibleBlocks(
     textResult.contentBlocks,
     selectedLanguage,
     selectedTranslitNusach,
+    prefaceMode,
   );
 
   const blocks = visibleBlocks.filter(hasBlockBody).map(toDisplayBlock);
@@ -119,15 +155,31 @@ function getVisibleBlocks(
   contentBlocks: readonly BlessingContentBlock[],
   selectedLanguage: BlessingLanguage,
   selectedTranslitNusach: BlessingTranslitNusach,
+  prefaceMode: BirkatPrefaceMode,
 ): readonly BlessingContentBlock[] {
+  const prefaceFilteredBlocks = contentBlocks.filter((block) =>
+    shouldShowPrefaceBlock(block, prefaceMode),
+  );
+
   switch (selectedLanguage) {
     case 'he':
-      return contentBlocks.filter((block) => block.language === 'he');
+      return prefaceFilteredBlocks.filter((block) => block.language === 'he');
     case 'ru':
-      return contentBlocks.filter((block) => !block.language || block.language === 'ru');
+      return prefaceFilteredBlocks.filter((block) => !block.language || block.language === 'ru');
     case 'translit':
-      return getVisibleTranslitBlocks(contentBlocks, selectedTranslitNusach);
+      return getVisibleTranslitBlocks(prefaceFilteredBlocks, selectedTranslitNusach);
   }
+}
+
+function shouldShowPrefaceBlock(
+  block: BlessingContentBlock,
+  prefaceMode: BirkatPrefaceMode,
+): boolean {
+  if (!block.prefaceMode) {
+    return true;
+  }
+
+  return prefaceMode !== 'hidden' && block.prefaceMode === prefaceMode;
 }
 
 function getVisibleTranslitBlocks(
@@ -172,6 +224,32 @@ function isManualCollapsibleBlock(block: DisplayBlock): boolean {
   return block.renderVariant === 'manual_collapsible' || Boolean(block.collapsibleGroupKey);
 }
 
+function isBirkatHamazonChabadHebrewMode(
+  textResult: BlessingTextResult,
+  selectedLanguage: BlessingLanguage,
+  selectedTextNusach: BlessingTextNusach,
+): boolean {
+  return (
+    textResult.blessing.slug === 'birkat_hamazon' &&
+    selectedLanguage === 'he' &&
+    (textResult.selectedTextNusach ?? selectedTextNusach) === 'chabad'
+  );
+}
+
+function getSelectedDevCalendarFlags(
+  devCalendarFlags: DevCalendarFlagState,
+): JewishCalendarFlag[] {
+  return calendarFlagOrder.filter((flag) => devCalendarFlags[flag] === true);
+}
+
+function mergeCalendarFlags(
+  baseFlags: readonly JewishCalendarFlag[],
+  extraFlags: readonly JewishCalendarFlag[],
+): JewishCalendarFlag[] {
+  const activeFlags = new Set([...baseFlags, ...extraFlags]);
+  return calendarFlagOrder.filter((flag) => activeFlags.has(flag));
+}
+
 export function BlessingTextOverlay({
   onClose,
   onLanguageChange,
@@ -188,9 +266,46 @@ export function BlessingTextOverlay({
   const bottomPadding = Math.max(insets.bottom + 14, 22);
   const availablePanelHeight = Math.max(320, height - topPadding - bottomPadding);
   const panelMaxHeight = Math.min(availablePanelHeight, 720);
+  const [expandedManualGroups, setExpandedManualGroups] = useState<Record<string, boolean>>({});
+  const [prefaceMode, setPrefaceMode] = useState<BirkatPrefaceMode>('hidden');
+  const [devCalendarFlags, setDevCalendarFlags] = useState<DevCalendarFlagState>({});
+  const [isReaderOpen, setIsReaderOpen] = useState(false);
+  const [readerFontSize, setReaderFontSize] = useState(28);
+  const [showReaderAnnotations, setShowReaderAnnotations] = useState(true);
+  const isBirkatHebrewRuntime =
+    !!textResult &&
+    isBirkatHamazonChabadHebrewMode(textResult, selectedLanguage, selectedTextNusach);
+  const selectedDevCalendarFlags = getSelectedDevCalendarFlags(devCalendarFlags);
+  const shouldUseDevCalendarOverride =
+    isBirkatHebrewRuntime && selectedDevCalendarFlags.length > 0;
+  const effectiveCalendarFlags =
+    textResult && shouldUseDevCalendarOverride
+      ? mergeCalendarFlags(textResult.calendarFlags, selectedDevCalendarFlags)
+      : textResult?.calendarFlags ?? [];
+  const effectiveCalendarFlagKey = effectiveCalendarFlags.join('|');
+  const effectiveTextResult = useMemo(() => {
+    if (!textResult || !shouldUseDevCalendarOverride) {
+      return textResult;
+    }
+
+    return (
+      getBlessingText(textResult.blessing.slug, {
+        calendarFlags: effectiveCalendarFlags,
+        language: selectedLanguage,
+        selectedTextNusach,
+      }) ?? textResult
+    );
+  }, [
+    effectiveCalendarFlagKey,
+    selectedLanguage,
+    selectedTextNusach,
+    shouldUseDevCalendarOverride,
+    textResult,
+  ]);
   const showVerificationNotice =
-    !!textResult && (textResult.blessing.needsVerification || textResult.needsVerification);
-  const textNusachVariants = textResult?.blessing.nusachVariants ?? [];
+    !!effectiveTextResult &&
+    (effectiveTextResult.blessing.needsVerification || effectiveTextResult.needsVerification);
+  const textNusachVariants = effectiveTextResult?.blessing.nusachVariants ?? [];
   const showTextNusachTabs = textNusachVariants.length > 1;
   const shouldShowTranslitNusachTabs =
     selectedLanguage === 'translit' &&
@@ -198,12 +313,23 @@ export function BlessingTextOverlay({
   const activeTranslitNusach: BlessingTranslitNusach = shouldShowTranslitNusachTabs
     ? selectedTranslitNusach
     : 'sephard';
-  const scrollOffset = (showVerificationNotice ? 286 : 230) + (showTextNusachTabs ? 50 : 0);
+  const showBirkatHebrewTools = isBirkatHebrewRuntime;
+  const showDevInsertTester = showBirkatHebrewTools && __DEV__;
+  const scrollOffset =
+    (showVerificationNotice ? 286 : 230) +
+    (showTextNusachTabs ? 50 : 0) +
+    (showBirkatHebrewTools ? 100 : 0) +
+    (showDevInsertTester ? 84 : 0);
   const scrollMaxHeight = Math.max(190, panelMaxHeight - scrollOffset);
-  const activeContent = textResult
-    ? getActiveTextContent(textResult, selectedLanguage, activeTranslitNusach)
+  const activeContent = effectiveTextResult
+    ? getActiveTextContent(
+        effectiveTextResult,
+        selectedLanguage,
+        activeTranslitNusach,
+        prefaceMode,
+      )
     : null;
-  const [expandedManualGroups, setExpandedManualGroups] = useState<Record<string, boolean>>({});
+  const readerLineHeight = Math.round(readerFontSize * 1.6);
 
   function toggleManualGroup(groupKey: string, defaultExpanded: boolean) {
     setExpandedManualGroups((current) => ({
@@ -212,7 +338,159 @@ export function BlessingTextOverlay({
     }));
   }
 
-  if (!textResult || !activeContent) {
+  function toggleDevCalendarFlag(flag: JewishCalendarFlag) {
+    setDevCalendarFlags((current) => ({
+      ...current,
+      [flag]: current[flag] !== true,
+    }));
+  }
+
+  function adjustReaderFontSize(delta: number) {
+    setReaderFontSize((current) =>
+      Math.min(readerMaxFontSize, Math.max(readerMinFontSize, current + delta)),
+    );
+  }
+
+  function renderDisplayBlock(block: DisplayBlock, renderMode: TextRenderMode) {
+    const isReader = renderMode === 'reader';
+    const isInsert = isInsertBlock(block);
+    const isAnnotation = isAnnotationBlock(block);
+    const isManualCollapsible = isManualCollapsibleBlock(block);
+    const groupKey = block.collapsibleGroupKey ?? block.key;
+    const manualDefaultExpanded = block.defaultCollapsed === false;
+    const isManualExpanded = expandedManualGroups[groupKey] ?? manualDefaultExpanded;
+
+    if (isReader && isAnnotation && !showReaderAnnotations) {
+      return null;
+    }
+
+    if (isManualCollapsible) {
+      return (
+        <View
+          key={block.key}
+          style={isReader ? styles.readerManualBlock : styles.manualBlock}
+        >
+          <Pressable
+            accessibilityLabel={block.titleRu ?? 'Раскрыть дополнительный блок'}
+            accessibilityRole="button"
+            onPress={() => toggleManualGroup(groupKey, manualDefaultExpanded)}
+            style={({ pressed }) => [
+              isReader ? styles.readerManualHeader : styles.manualHeader,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text
+              numberOfLines={2}
+              style={isReader ? styles.readerManualTitle : styles.manualTitle}
+            >
+              {block.titleRu}
+            </Text>
+            <Ionicons
+              name={isManualExpanded ? 'chevron-up' : 'chevron-down'}
+              size={18}
+              color={isReader ? '#111111' : colors.goldAccent}
+            />
+          </Pressable>
+
+          {isManualExpanded ? (
+            <View style={isReader ? styles.readerManualContent : styles.manualContent}>
+              {block.annotationRu && (!isReader || showReaderAnnotations) ? (
+                <Text
+                  style={isReader ? styles.readerAnnotationText : styles.annotationText}
+                >
+                  {block.annotationRu}
+                </Text>
+              ) : null}
+              <Text
+                selectable
+                style={[
+                  isReader ? styles.readerBodyText : styles.bodyText,
+                  selectedLanguage === 'he' &&
+                    (isReader ? styles.readerHebrewText : styles.hebrewBodyText),
+                  selectedLanguage === 'he' && styles.hebrewSiddurText,
+                  isReader &&
+                    selectedLanguage === 'he' && {
+                      fontSize: readerFontSize,
+                      lineHeight: readerLineHeight,
+                    },
+                ]}
+              >
+                {block.body}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      );
+    }
+
+    return (
+      <View
+        key={block.key}
+        style={[
+          isReader ? styles.readerTextBlock : styles.textBlock,
+          isInsert && (isReader ? styles.readerInsertBlock : styles.insertBlock),
+          isAnnotation && (isReader ? styles.readerAnnotationBlock : styles.annotationBlock),
+        ]}
+      >
+        {block.titleRu ? (
+          <View style={styles.blockTitleRow}>
+            <Text
+              style={[
+                isReader ? styles.readerBlockTitle : styles.blockTitle,
+                isInsert && (isReader ? styles.readerInsertBlockTitle : styles.insertBlockTitle),
+                isAnnotation && (isReader ? styles.readerAnnotationTitle : styles.annotationTitle),
+              ]}
+            >
+              {block.titleRu}
+            </Text>
+            {isInsert ? (
+              <View style={isReader ? styles.readerInsertBadge : styles.insertBadge}>
+                <Text
+                  style={
+                    isReader ? styles.readerInsertBadgeText : styles.insertBadgeText
+                  }
+                >
+                  Вставка
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+        {block.annotationRu && (!isReader || showReaderAnnotations) ? (
+          <Text
+            style={[
+              isReader ? styles.readerAnnotationText : styles.annotationText,
+              !isReader && isInsert && styles.insertAnnotationText,
+            ]}
+          >
+            {block.annotationRu}
+          </Text>
+        ) : null}
+        <Text
+          selectable
+          style={[
+            isReader ? styles.readerBodyText : styles.bodyText,
+            selectedLanguage === 'he' &&
+              !isAnnotation &&
+              (isReader ? styles.readerHebrewText : styles.hebrewBodyText),
+            selectedLanguage === 'he' && !isAnnotation && styles.hebrewSiddurText,
+            isReader &&
+              selectedLanguage === 'he' &&
+              !isAnnotation && {
+                fontSize: readerFontSize,
+                lineHeight: readerLineHeight,
+              },
+            isAnnotation &&
+              (isReader ? styles.readerAnnotationBodyText : styles.annotationBodyText),
+          ]}
+        >
+          {block.body}
+        </Text>
+      </View>
+    );
+  }
+
+  if (!effectiveTextResult || !activeContent) {
     return null;
   }
 
@@ -241,7 +519,7 @@ export function BlessingTextOverlay({
               <View style={styles.titleBlock}>
                 <Text style={styles.eyebrow}>Благословение</Text>
                 <Text numberOfLines={3} style={styles.title}>
-                  {textResult.blessing.titleRu}
+                  {effectiveTextResult.blessing.titleRu}
                 </Text>
               </View>
 
@@ -256,8 +534,8 @@ export function BlessingTextOverlay({
               </Pressable>
             </View>
 
-            {textResult.blessing.descriptionRu ? (
-              <Text style={styles.description}>{textResult.blessing.descriptionRu}</Text>
+            {effectiveTextResult.blessing.descriptionRu ? (
+              <Text style={styles.description}>{effectiveTextResult.blessing.descriptionRu}</Text>
             ) : null}
 
             {showTextNusachTabs ? (
@@ -289,124 +567,207 @@ export function BlessingTextOverlay({
               </View>
             ) : null}
 
+            {showBirkatHebrewTools ? (
+              <View style={styles.readerActionRow}>
+                <Pressable
+                  accessibilityLabel="Открыть режим чтения"
+                  accessibilityRole="button"
+                  onPress={() => setIsReaderOpen(true)}
+                  style={({ pressed }) => [styles.readerOpenButton, pressed && styles.pressed]}
+                >
+                  <Ionicons name="book-outline" size={17} color={colors.goldAccent} />
+                  <Text numberOfLines={1} style={styles.readerOpenButtonText}>
+                    Режим чтения
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+
+            {showBirkatHebrewTools ? (
+              <View style={styles.prefaceSelector}>
+                {prefaceModeOptions.map((option) => {
+                  const isActive = prefaceMode === option.value;
+
+                  return (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={option.value}
+                      onPress={() => setPrefaceMode(option.value)}
+                      style={({ pressed }) => [
+                        styles.prefaceOption,
+                        isActive && styles.prefaceOptionActive,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text
+                        numberOfLines={1}
+                        style={[
+                          styles.prefaceOptionText,
+                          isActive && styles.prefaceOptionTextActive,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+
+            {showDevInsertTester ? (
+              <View style={styles.devInsertPanel}>
+                <Text style={styles.devInsertTitle}>Проверка вставок</Text>
+                <View style={styles.devInsertChips}>
+                  {devCalendarFlagOptions.map((option) => {
+                    const isActive = devCalendarFlags[option.flag] === true;
+
+                    return (
+                      <Pressable
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: isActive }}
+                        key={option.flag}
+                        onPress={() => toggleDevCalendarFlag(option.flag)}
+                        style={({ pressed }) => [
+                          styles.devInsertChip,
+                          isActive && styles.devInsertChipActive,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Ionicons
+                          name={isActive ? 'checkbox' : 'square-outline'}
+                          size={14}
+                          color={isActive ? colors.goldAccent : colors.textDim}
+                        />
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            styles.devInsertChipText,
+                            isActive && styles.devInsertChipTextActive,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
+
             <ScrollView
               contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator
               style={[styles.scrollArea, { maxHeight: scrollMaxHeight }]}
             >
               {activeContent.kind === 'blocks' ? (
-                activeContent.blocks.map((block) => {
-                  const isInsert = isInsertBlock(block);
-                  const isAnnotation = isAnnotationBlock(block);
-                  const isManualCollapsible = isManualCollapsibleBlock(block);
-                  const groupKey = block.collapsibleGroupKey ?? block.key;
-                  const manualDefaultExpanded = block.defaultCollapsed === false;
-                  const isManualExpanded =
-                    expandedManualGroups[groupKey] ?? manualDefaultExpanded;
-
-                  if (isManualCollapsible) {
-                    return (
-                      <View key={block.key} style={styles.manualBlock}>
-                        <Pressable
-                          accessibilityLabel={block.titleRu ?? 'Раскрыть дополнительный блок'}
-                          accessibilityRole="button"
-                          onPress={() => toggleManualGroup(groupKey, manualDefaultExpanded)}
-                          style={({ pressed }) => [
-                            styles.manualHeader,
-                            pressed && styles.pressed,
-                          ]}
-                        >
-                          <Text numberOfLines={2} style={styles.manualTitle}>
-                            {block.titleRu}
-                          </Text>
-                          <Ionicons
-                            name={isManualExpanded ? 'chevron-up' : 'chevron-down'}
-                            size={18}
-                            color={colors.goldAccent}
-                          />
-                        </Pressable>
-
-                        {isManualExpanded ? (
-                          <View style={styles.manualContent}>
-                            {block.annotationRu ? (
-                              <Text style={styles.annotationText}>{block.annotationRu}</Text>
-                            ) : null}
-                            <Text
-                              selectable
-                              style={[
-                                styles.bodyText,
-                                selectedLanguage === 'he' && styles.hebrewBodyText,
-                                selectedLanguage === 'he' && styles.hebrewSiddurText,
-                              ]}
-                            >
-                              {block.body}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
-                    );
-                  }
-
-                  return (
-                    <View
-                      key={block.key}
-                      style={[
-                        styles.textBlock,
-                        isInsert && styles.insertBlock,
-                        isAnnotation && styles.annotationBlock,
-                      ]}
-                    >
-                      {block.titleRu ? (
-                        <View style={styles.blockTitleRow}>
-                          <Text
-                            style={[
-                              styles.blockTitle,
-                              isInsert && styles.insertBlockTitle,
-                              isAnnotation && styles.annotationTitle,
-                            ]}
-                          >
-                            {block.titleRu}
-                          </Text>
-                          {isInsert ? (
-                            <View style={styles.insertBadge}>
-                              <Text style={styles.insertBadgeText}>Вставка</Text>
-                            </View>
-                          ) : null}
-                        </View>
-                      ) : null}
-                      {block.annotationRu ? (
-                        <Text
-                          style={[
-                            styles.annotationText,
-                            isInsert && styles.insertAnnotationText,
-                          ]}
-                        >
-                          {block.annotationRu}
-                        </Text>
-                      ) : null}
-                      <Text
-                        selectable
-                        style={[
-                          styles.bodyText,
-                          selectedLanguage === 'he' &&
-                            !isAnnotation &&
-                            styles.hebrewBodyText,
-                          selectedLanguage === 'he' &&
-                            !isAnnotation &&
-                            styles.hebrewSiddurText,
-                          isAnnotation && styles.annotationBodyText,
-                        ]}
-                      >
-                        {block.body}
-                      </Text>
-                    </View>
-                  );
-                })
+                activeContent.blocks.map((block) => renderDisplayBlock(block, 'dark'))
               ) : (
                 <Text style={styles.placeholderText}>{activeContent.message}</Text>
               )}
             </ScrollView>
         </GlassCard>
+
+        <Modal
+          animationType="slide"
+          onRequestClose={() => setIsReaderOpen(false)}
+          presentationStyle="fullScreen"
+          visible={isReaderOpen}
+        >
+          <View
+            style={[
+              styles.readerOverlay,
+              {
+                paddingBottom: Math.max(insets.bottom + 12, 18),
+                paddingTop: insets.top + 8,
+              },
+            ]}
+          >
+            <View style={styles.readerHeader}>
+              <Pressable
+                accessibilityLabel="Закрыть режим чтения"
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => setIsReaderOpen(false)}
+                style={({ pressed }) => [styles.readerCloseButton, pressed && styles.pressed]}
+              >
+                <Ionicons name="close" size={22} color="#111111" />
+              </Pressable>
+
+              <Text numberOfLines={1} style={styles.readerTitle}>
+                Биркат hамазон
+              </Text>
+
+              <View style={styles.readerFontControls}>
+                <Pressable
+                  accessibilityLabel="Уменьшить размер текста"
+                  accessibilityRole="button"
+                  disabled={readerFontSize <= readerMinFontSize}
+                  onPress={() => adjustReaderFontSize(-readerFontStep)}
+                  style={({ pressed }) => [
+                    styles.readerFontButton,
+                    readerFontSize <= readerMinFontSize && styles.readerFontButtonDisabled,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={styles.readerFontButtonText}>A−</Text>
+                </Pressable>
+                <Text style={styles.readerFontValue}>{readerFontSize}</Text>
+                <Pressable
+                  accessibilityLabel="Увеличить размер текста"
+                  accessibilityRole="button"
+                  disabled={readerFontSize >= readerMaxFontSize}
+                  onPress={() => adjustReaderFontSize(readerFontStep)}
+                  style={({ pressed }) => [
+                    styles.readerFontButton,
+                    readerFontSize >= readerMaxFontSize && styles.readerFontButtonDisabled,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={styles.readerFontButtonText}>A+</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <View style={styles.readerToggleRow}>
+              <Pressable
+                accessibilityRole="switch"
+                accessibilityState={{ checked: showReaderAnnotations }}
+                onPress={() => setShowReaderAnnotations((current) => !current)}
+                style={({ pressed }) => [
+                  styles.readerAnnotationToggle,
+                  showReaderAnnotations && styles.readerAnnotationToggleActive,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Ionicons
+                  name={showReaderAnnotations ? 'checkbox' : 'square-outline'}
+                  size={15}
+                  color={showReaderAnnotations ? '#8A5B00' : '#666666'}
+                />
+                <Text
+                  style={[
+                    styles.readerAnnotationToggleText,
+                    showReaderAnnotations && styles.readerAnnotationToggleTextActive,
+                  ]}
+                >
+                  Аннотации
+                </Text>
+              </Pressable>
+            </View>
+
+            <ScrollView
+              contentContainerStyle={styles.readerScrollContent}
+              showsVerticalScrollIndicator
+              style={styles.readerScrollArea}
+            >
+              {activeContent.kind === 'blocks' ? (
+                activeContent.blocks.map((block) => renderDisplayBlock(block, 'reader'))
+              ) : (
+                <Text style={styles.readerPlaceholderText}>{activeContent.message}</Text>
+              )}
+            </ScrollView>
+          </View>
+        </Modal>
     </View>
   );
 }
@@ -508,6 +869,108 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     lineHeight: 17,
+  },
+  readerActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  readerOpenButton: {
+    minHeight: 36,
+    maxWidth: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,200,50,0.26)',
+    backgroundColor: 'rgba(255,200,50,0.08)',
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+  },
+  readerOpenButtonText: {
+    flexShrink: 1,
+    color: colors.goldAccent,
+    fontSize: 12,
+    fontWeight: '900',
+    lineHeight: 16,
+  },
+  prefaceSelector: {
+    minHeight: 38,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+  },
+  prefaceOption: {
+    minHeight: 34,
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.glass.w05,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  prefaceOptionActive: {
+    borderColor: 'rgba(255,200,50,0.48)',
+    backgroundColor: 'rgba(255,200,50,0.12)',
+  },
+  prefaceOptionText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '900',
+    lineHeight: 15,
+  },
+  prefaceOptionTextActive: {
+    color: colors.goldAccent,
+  },
+  devInsertPanel: {
+    gap: 8,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(99,179,237,0.20)',
+    backgroundColor: 'rgba(99,179,237,0.07)',
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+  },
+  devInsertTitle: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '900',
+    lineHeight: 15,
+  },
+  devInsertChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+  },
+  devInsertChip: {
+    minHeight: 30,
+    maxWidth: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: colors.glass.w05,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  devInsertChipActive: {
+    borderColor: 'rgba(255,200,50,0.42)',
+    backgroundColor: 'rgba(255,200,50,0.11)',
+  },
+  devInsertChipText: {
+    flexShrink: 1,
+    color: colors.textDim,
+    fontSize: 11,
+    fontWeight: '800',
+    lineHeight: 15,
+  },
+  devInsertChipTextActive: {
+    color: colors.goldAccent,
   },
   scrollArea: {
     borderRadius: radius.card,
@@ -647,6 +1110,220 @@ const styles = StyleSheet.create({
   },
   placeholderText: {
     color: colors.textMuted,
+    fontSize: 15,
+    fontWeight: '800',
+    lineHeight: 22,
+  },
+  readerOverlay: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+  },
+  readerHeader: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  readerCloseButton: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(17,17,17,0.14)',
+    backgroundColor: '#FFFFFF',
+  },
+  readerTitle: {
+    flex: 1,
+    minWidth: 0,
+    color: '#111111',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 23,
+  },
+  readerFontControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  readerFontButton: {
+    minWidth: 38,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(17,17,17,0.16)',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 8,
+  },
+  readerFontButtonDisabled: {
+    opacity: 0.38,
+  },
+  readerFontButtonText: {
+    color: '#111111',
+    fontSize: 14,
+    fontWeight: '900',
+    lineHeight: 18,
+  },
+  readerFontValue: {
+    minWidth: 26,
+    color: '#111111',
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  readerToggleRow: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: 8,
+  },
+  readerAnnotationToggle: {
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(17,17,17,0.14)',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  readerAnnotationToggleActive: {
+    borderColor: 'rgba(180,130,0,0.30)',
+    backgroundColor: '#FFF8E6',
+  },
+  readerAnnotationToggleText: {
+    color: '#666666',
+    fontSize: 12,
+    fontWeight: '900',
+    lineHeight: 16,
+  },
+  readerAnnotationToggleTextActive: {
+    color: '#8A5B00',
+  },
+  readerScrollArea: {
+    flex: 1,
+  },
+  readerScrollContent: {
+    gap: 18,
+    paddingBottom: 28,
+    paddingTop: 8,
+  },
+  readerTextBlock: {
+    gap: 8,
+  },
+  readerInsertBlock: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(180,130,0,0.25)',
+    backgroundColor: '#FFF8E6',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  readerAnnotationBlock: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(17,17,17,0.10)',
+    backgroundColor: '#F7F7F7',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  readerBlockTitle: {
+    flex: 1,
+    minWidth: 0,
+    color: '#8A5B00',
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 18,
+  },
+  readerInsertBlockTitle: {
+    color: '#8A5B00',
+  },
+  readerAnnotationTitle: {
+    color: '#666666',
+  },
+  readerInsertBadge: {
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(180,130,0,0.24)',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  readerInsertBadgeText: {
+    color: '#8A5B00',
+    fontSize: 10,
+    fontWeight: '900',
+    lineHeight: 13,
+  },
+  readerAnnotationText: {
+    color: '#666666',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 18,
+    textAlign: 'left',
+    writingDirection: 'ltr',
+  },
+  readerAnnotationBodyText: {
+    color: '#666666',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 18,
+    textAlign: 'left',
+    writingDirection: 'ltr',
+  },
+  readerBodyText: {
+    color: '#111111',
+    fontSize: 16,
+    fontWeight: '400',
+    lineHeight: 25,
+  },
+  readerHebrewText: {
+    color: '#111111',
+    fontWeight: '400',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  readerManualBlock: {
+    overflow: 'hidden',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(17,17,17,0.14)',
+    backgroundColor: '#FFFFFF',
+  },
+  readerManualHeader: {
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  readerManualTitle: {
+    flex: 1,
+    minWidth: 0,
+    color: '#111111',
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 18,
+  },
+  readerManualContent: {
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(17,17,17,0.12)',
+    paddingHorizontal: 12,
+    paddingBottom: 13,
+    paddingTop: 11,
+  },
+  readerPlaceholderText: {
+    color: '#666666',
     fontSize: 15,
     fontWeight: '800',
     lineHeight: 22,

@@ -152,18 +152,24 @@ Expected result: the item scheme shows condition/dispute notes under `Услов
 ## iPhone: Биркат hамазон Хабад Hebrew
 
 - Open `Молитвы` -> `Благословения`.
-- Open `Биркат hамазон`.
-- Select text nusach `Хабад`.
-- Select `Иврит`.
-- Confirm large RTL Hebrew renders with nikud, feels closer to a siddur/serif style on iPhone, and is visually the main text.
-- Confirm Russian annotations use the smaller muted annotation style.
-- Confirm Hebcal insert blocks, when present, use a distinct soft gold/glass treatment.
-- Confirm manual blocks are collapsed by default.
-- Expand and collapse `Зимун`.
-- Expand and collapse `Добавления после брит милы`.
-- Expand and collapse `Шева брахот`.
-- Select `Русский` and confirm the Russian translation placeholder remains.
-- Select `Транслит` and confirm the transliteration placeholder remains.
+- Open `Биркат hамазон` -> `Хабад` -> `Иврит`.
+- Verify default preface state: no Tachanun/no-Tachanun preface is shown.
+- Select `С Тахануном`; confirm only `preface_tachanun_days_he` appears.
+- Select `Без Тахануна`; confirm only `preface_no_tachanun_days_he` appears.
+- Confirm both prefaces never appear together.
+- In dev mode, enable `Ханука`; confirm Al Hanisim Hanukkah appears.
+- Enable `Пурим`; confirm Al Hanisim Purim appears.
+- Enable `Рош Ходеш`; confirm Yaaleh Veyavo, Rosh Chodesh hАрахаман, and `מִגְדּוֹל` appear.
+- Enable `Холь hа-Моэд Песах`; confirm Yaaleh Veyavo uses `חַג הַמַּצּוֹת`.
+- Enable `Холь hа-Моэд Суккот`; confirm Yaaleh Veyavo uses `חַג הַסֻּכּוֹת` and Sukkot hАрахаман appears.
+- Open reader mode.
+- Confirm white background, black Hebrew, and readable close button.
+- Increase and decrease font size.
+- Confirm nikud is readable and lines do not overlap.
+- Toggle annotations.
+- Expand and collapse `Зимун` in reader mode.
+- Close reader mode and confirm the dark modal is still open.
+- Select `Русский` and `Транслит`; confirm both are still placeholders.
 - Select text nusach `Бейт Сфаради` and confirm it remains a placeholder.
 
 ## Transliteration nusach split

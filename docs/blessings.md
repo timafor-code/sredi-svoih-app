@@ -267,6 +267,16 @@ This insert infrastructure does not add Supabase blessing storage, migrations, S
 
 This PR adds Hebrew only. Russian translation of the main text, Sephardic transliteration, and Ashkenazic transliteration are not included. The Beit Sefaradi nusach remains a placeholder.
 
+The Hebrew reader/runtime pass keeps that scope and adds only working-reader controls for the Chabad Hebrew variant:
+
+- manual preface selector: no preface, Tachanun-day preface, or no-Tachanun-day preface;
+- Hebcal insert rendering from local content blocks;
+- dev-only insert test controls inside `BlessingTextModal` for Hanukkah, Purim, Rosh Chodesh, Chol hа-Moed Pesach, and Chol hа-Moed Sukkot;
+- white fullscreen reader mode with black RTL Hebrew, local font-size controls, and an annotations toggle;
+- shared collapsed/expanded state for manual sections between the dark modal and reader mode.
+
+Shabbat and Yom Tov are still not runtime in the MVP. Transliteration and Russian translation of the main Birkat hамазон text are still not added.
+
 Runtime Hebcal inserts are limited to:
 
 - Hanukkah: `al_hanisim_opening_he` + `al_hanisim_hanukkah_he`
