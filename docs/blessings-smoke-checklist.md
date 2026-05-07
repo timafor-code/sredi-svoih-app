@@ -24,6 +24,7 @@ In `/prayers/blessings`, type each query and confirm the first result:
 - `клубника` -> item `strawberry`
 - `грибы` -> item `mushroom`
 - `овсянка` -> item `oatmeal`
+- `манная каша` -> item `semolina_porridge`; note says `Жидкая, которую пьют, — Шеhаколь. Густая, которую едят ложкой или жуют, — Мезонот.`
 - `суши` -> item `sushi`
 - `фалафель` -> item `falafel`
 - `смузи` -> item `smoothie`
@@ -98,6 +99,7 @@ Expected result: product details render the item scheme with ordered blessing st
 Search and open conditional products such as:
 
 - `овсянка`
+- `манная каша`
 - `смузи`
 - `суши`
 - `фалафель`

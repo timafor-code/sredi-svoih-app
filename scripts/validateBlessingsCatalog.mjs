@@ -25,6 +25,27 @@ const aliasWarnings = [];
 
 const allowedEmptyPatternKeys = new Set(['conditional', 'complex', 'no_bracha', 'no_blessing']);
 const conditionalPatternKeys = new Set(['conditional', 'complex']);
+const allowedAliasCollisions = new Map(
+  [
+    ['картофель', ['blessing:bore_pri_haadama', 'item:potato']],
+    ['хлеб', ['blessing:hamotzi', 'item:bread']],
+    ['хала', ['blessing:hamotzi', 'item:bread']],
+    ['печенье', ['blessing:bore_minei_mezonot', 'item:cookies']],
+    ['торт', ['blessing:bore_minei_mezonot', 'item:cake']],
+    ['вода', ['blessing:shehakol', 'item:water']],
+    ['чай', ['blessing:shehakol', 'item:tea']],
+    ['кофе', ['blessing:shehakol', 'item:coffee']],
+    ['вино', ['blessing:bore_pri_hagafen', 'item:wine']],
+    ['виноградный сок', ['blessing:bore_pri_hagafen', 'item:grape_juice']],
+    ['ал хамихья', ['blessing:mein_shalosh', 'blessing:mein_shalosh_al_hamichya']],
+    ['аль hамихья', ['blessing:mein_shalosh', 'blessing:mein_shalosh_al_hamichya']],
+    ['ал hамихья', ['blessing:mein_shalosh', 'blessing:mein_shalosh_al_hamichya']],
+    ['аль hагефен', ['blessing:mein_shalosh', 'blessing:mein_shalosh_al_hagefen']],
+    ['ал hагефен', ['blessing:mein_shalosh', 'blessing:mein_shalosh_al_hagefen']],
+    ['аль hаэц', ['blessing:mein_shalosh', 'blessing:mein_shalosh_al_haetz']],
+    ['ал hаэц', ['blessing:mein_shalosh', 'blessing:mein_shalosh_al_haetz']],
+  ].map(([alias, owners]) => [normalizeAlias(alias), formatAliasOwnersKey(owners)]),
+);
 
 const blessings = ensureArray('catalog.blessings', blessingsCatalog.blessings);
 const patterns = ensureArray('catalog.patterns', blessingsCatalog.patterns);
@@ -263,6 +284,10 @@ function validateAliasCollisions() {
       continue;
     }
 
+    if (isAllowedAliasCollision(alias, owners)) {
+      continue;
+    }
+
     addAliasWarning(`alias "${alias}" is used by ${Array.from(owners).sort().join(', ')}`);
   }
 }
@@ -272,6 +297,7 @@ function validateSearchSmokeCases() {
     { query: 'хлеб', resultType: 'item', slug: 'bread' },
     { query: 'вода', resultType: 'item', slug: 'water' },
     { query: 'рис', resultType: 'item', slug: 'rice' },
+    { query: 'манная каша', resultType: 'item', slug: 'semolina_porridge' },
     { query: 'пицца', resultType: 'item', slug: 'pizza' },
     { query: 'абрикос', resultType: 'item', slug: 'apricot' },
     { query: 'ананас', resultType: 'item', slug: 'pineapple' },
@@ -519,6 +545,14 @@ function normalizeAlias(alias) {
 
 function normalizeExactAlias(alias) {
   return alias.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function isAllowedAliasCollision(alias, owners) {
+  return allowedAliasCollisions.get(alias) === formatAliasOwnersKey(owners);
+}
+
+function formatAliasOwnersKey(owners) {
+  return Array.from(owners).sort().join('|');
 }
 
 function formatTopResults(results) {
