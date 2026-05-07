@@ -36,6 +36,8 @@ type BlessingTextModalProps = {
   visible: boolean;
 };
 
+type BlessingTextOverlayProps = Omit<BlessingTextModalProps, 'visible'>;
+
 type DisplayBlock = {
   body: string;
   kind?: BlessingContentBlock['kind'];
@@ -148,7 +150,7 @@ function getPlaceholderMessage(
   return languagePlaceholders[selectedLanguage];
 }
 
-export function BlessingTextModal({
+export function BlessingTextOverlay({
   onClose,
   onLanguageChange,
   onTextNusachChange,
@@ -157,14 +159,13 @@ export function BlessingTextModal({
   selectedTextNusach,
   selectedTranslitNusach,
   textResult,
-  visible,
-}: BlessingTextModalProps) {
+}: BlessingTextOverlayProps) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
-  const panelMaxHeight = Math.max(
-    360,
-    Math.min(height - insets.top - insets.bottom - 42, 720),
-  );
+  const topPadding = insets.top + 8;
+  const bottomPadding = Math.max(insets.bottom + 14, 22);
+  const availablePanelHeight = Math.max(320, height - topPadding - bottomPadding);
+  const panelMaxHeight = Math.min(availablePanelHeight, 720);
   const showVerificationNotice =
     !!textResult && (textResult.blessing.needsVerification || textResult.needsVerification);
   const textNusachVariants = textResult?.blessing.nusachVariants ?? [];
@@ -181,23 +182,20 @@ export function BlessingTextModal({
     ? getActiveTextContent(textResult, selectedLanguage, activeTranslitNusach)
     : null;
 
+  if (!textResult || !activeContent) {
+    return null;
+  }
+
   return (
-    <Modal
-      animationType="fade"
-      onRequestClose={onClose}
-      presentationStyle="overFullScreen"
-      transparent
-      visible={visible}
+    <View
+      style={[
+        styles.overlay,
+        {
+          paddingBottom: bottomPadding,
+          paddingTop: topPadding,
+        },
+      ]}
     >
-      <View
-        style={[
-          styles.overlay,
-          {
-            paddingBottom: Math.max(insets.bottom + 14, 22),
-            paddingTop: Math.max(insets.top + 16, 32),
-          },
-        ]}
-      >
         <Pressable
           accessibilityLabel="Закрыть текст благословения"
           accessibilityRole="button"
@@ -205,11 +203,10 @@ export function BlessingTextModal({
           style={StyleSheet.absoluteFillObject}
         />
 
-        {textResult && activeContent ? (
-          <GlassCard
-            contentStyle={styles.panelContent}
-            style={[styles.panel, { maxHeight: panelMaxHeight }]}
-          >
+        <GlassCard
+          contentStyle={styles.panelContent}
+          style={[styles.panel, { maxHeight: panelMaxHeight }]}
+        >
             <View style={styles.header}>
               <View style={styles.titleBlock}>
                 <Text style={styles.eyebrow}>Благословение</Text>
@@ -298,9 +295,29 @@ export function BlessingTextModal({
                 <Text style={styles.placeholderText}>{activeContent.message}</Text>
               )}
             </ScrollView>
-          </GlassCard>
-        ) : null}
-      </View>
+        </GlassCard>
+    </View>
+  );
+}
+
+export function BlessingTextModal({
+  visible,
+  onClose,
+  ...overlayProps
+}: BlessingTextModalProps) {
+  if (!visible || !overlayProps.textResult) {
+    return null;
+  }
+
+  return (
+    <Modal
+      animationType="fade"
+      onRequestClose={onClose}
+      presentationStyle="overFullScreen"
+      transparent
+      visible={visible}
+    >
+      <BlessingTextOverlay onClose={onClose} {...overlayProps} />
     </Modal>
   );
 }
@@ -308,7 +325,7 @@ export function BlessingTextModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
     paddingHorizontal: 14,
     backgroundColor: 'rgba(0,0,0,0.66)',
   },

@@ -10,6 +10,7 @@ export type ApplyBlessingDynamicInsertsParams = {
   blessing: Blessing;
   calendarFlags: readonly JewishCalendarFlag[];
   contentBlocks: readonly BlessingContentBlock[];
+  dynamicInsertRules?: readonly BlessingInsertRule[];
 };
 
 export function buildBlessingTextResult(textResult: BlessingTextResult): BlessingTextResult {
@@ -17,6 +18,7 @@ export function buildBlessingTextResult(textResult: BlessingTextResult): Blessin
     blessing: textResult.blessing,
     calendarFlags: textResult.calendarFlags,
     contentBlocks: textResult.contentBlocks,
+    dynamicInsertRules: textResult.dynamicInsertRules,
   });
 
   if (contentBlocks === textResult.contentBlocks) {
@@ -36,7 +38,7 @@ export function applyBlessingDynamicInserts(
   params: ApplyBlessingDynamicInsertsParams,
 ): readonly BlessingContentBlock[] {
   const { blessing, calendarFlags, contentBlocks } = params;
-  const rules = blessing.dynamicInsertRules ?? [];
+  const rules = params.dynamicInsertRules ?? blessing.dynamicInsertRules ?? [];
 
   if (rules.length === 0 || calendarFlags.length === 0) {
     return contentBlocks;

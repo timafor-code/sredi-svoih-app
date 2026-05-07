@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BlessingConditionBadge } from '@/components/blessings/BlessingConditionBadge';
 import { BlessingStepRow } from '@/components/blessings/BlessingStepRow';
@@ -10,6 +10,7 @@ import type { BlessingItemDetails, BlessingResolvedStep } from '@/types/blessing
 
 type BlessingItemSchemeCardProps = {
   details: BlessingItemDetails;
+  onClose?: () => void;
   onStepPress: (step: BlessingResolvedStep) => void;
 };
 
@@ -47,7 +48,11 @@ function formatStepCount(count: number): string {
   return `${count} шагов`;
 }
 
-export function BlessingItemSchemeCard({ details, onStepPress }: BlessingItemSchemeCardProps) {
+export function BlessingItemSchemeCard({
+  details,
+  onClose,
+  onStepPress,
+}: BlessingItemSchemeCardProps) {
   const { conditions, disputes, item, steps } = details;
   const categoryText = item.category ? getCategoryLabel(item.category) : null;
   const hasComplexityBadge = isConditional(item.complexity);
@@ -70,6 +75,18 @@ export function BlessingItemSchemeCard({ details, onStepPress }: BlessingItemSch
               Есть условия
             </Text>
           </View>
+        ) : null}
+
+        {onClose ? (
+          <Pressable
+            accessibilityLabel="Закрыть"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={onClose}
+            style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="close" size={20} color={colors.text} />
+          </Pressable>
         ) : null}
       </View>
 
@@ -187,6 +204,16 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
   },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.glass.w08,
+  },
   metaRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -258,5 +285,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
     paddingHorizontal: 2,
+  },
+  pressed: {
+    opacity: 0.78,
   },
 });

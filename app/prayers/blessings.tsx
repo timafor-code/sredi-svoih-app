@@ -6,10 +6,10 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BlessingDirectCard } from '@/components/blessings/BlessingDirectCard';
 import { BlessingHomeGroup } from '@/components/blessings/BlessingHomeGroup';
-import { BlessingItemSchemeCard } from '@/components/blessings/BlessingItemSchemeCard';
+import { BlessingItemSchemeModal } from '@/components/blessings/BlessingItemSchemeModal';
 import { BlessingSearchBar } from '@/components/blessings/BlessingSearchBar';
 import { BlessingSearchResults } from '@/components/blessings/BlessingSearchResults';
-import { BlessingTextModal } from '@/components/blessings/BlessingTextModal';
+import { BlessingTextModal, BlessingTextOverlay } from '@/components/blessings/BlessingTextModal';
 import { Screen } from '@/components/ui/Screen';
 import { resolveJewishCalendarFlags } from '@/lib/jewishCalendarFlags';
 import {
@@ -28,6 +28,7 @@ import type {
   BlessingResolvedStep,
   BlessingSearchResult,
   BlessingTextResult,
+  BlessingTextNusach,
   BlessingTranslitNusach,
 } from '@/types/blessing';
 
@@ -38,6 +39,7 @@ const homeGroupLabels: Record<BlessingHomeGroupKey, string> = {
 };
 
 const homeGroupOrder: readonly BlessingHomeGroupKey[] = ['before_food', 'after_food', 'various'];
+type BlessingTextSource = 'direct' | 'scheme';
 
 export default function BlessingsScreen() {
   const router = useRouter();
@@ -48,9 +50,11 @@ export default function BlessingsScreen() {
     useState<BlessingTranslitNusach>('sephard');
   const [selectedItemDetails, setSelectedItemDetails] = useState<BlessingItemDetails | null>(null);
   const [modalLanguage, setModalLanguage] = useState<BlessingLanguage>('ru');
+  const [modalTextNusach, setModalTextNusach] = useState<BlessingTextNusach>('chabad');
   const [modalTranslitNusach, setModalTranslitNusach] =
     useState<BlessingTranslitNusach>('sephard');
   const [modalTextResult, setModalTextResult] = useState<BlessingTextResult | null>(null);
+  const [modalTextSource, setModalTextSource] = useState<BlessingTextSource | null>(null);
   const calendarFlags = useMemo(() => resolveJewishCalendarFlags(new Date()), []);
   const homeBlessings = useMemo(() => listHomeBlessings(), []);
   const hasSearchQuery = searchQuery.trim().length > 0;
@@ -76,11 +80,14 @@ export default function BlessingsScreen() {
     blessingSlug: string,
     initialLanguage?: BlessingLanguage,
     initialTranslitNusach: BlessingTranslitNusach = 'sephard',
+    initialTextNusach: BlessingTextNusach = 'chabad',
+    source: BlessingTextSource = 'direct',
   ) => {
     const language = initialLanguage ?? modalLanguage;
     const textResult = getBlessingText(blessingSlug, {
       calendarFlags: resolveJewishCalendarFlags(new Date()),
       language,
+      selectedTextNusach: initialTextNusach,
     });
 
     if (!textResult) {
@@ -89,12 +96,23 @@ export default function BlessingsScreen() {
     }
 
     setModalLanguage(language);
+    setModalTextNusach(textResult.selectedTextNusach ?? initialTextNusach);
     setModalTranslitNusach(initialTranslitNusach);
     setModalTextResult(textResult);
+    setModalTextSource(source);
   };
 
   const closeBlessingText = () => {
     setModalTextResult(null);
+    setModalTextSource(null);
+  };
+
+  const closeSchemeModal = () => {
+    setSelectedItemDetails(null);
+
+    if (modalTextSource === 'scheme') {
+      closeBlessingText();
+    }
   };
 
   const handleModalLanguageChange = (language: BlessingLanguage) => {
@@ -108,6 +126,7 @@ export default function BlessingsScreen() {
     const textResult = getBlessingText(blessingSlug, {
       calendarFlags: modalTextResult.calendarFlags,
       language,
+      selectedTextNusach: modalTextNusach,
     });
 
     if (textResult) {
@@ -117,6 +136,26 @@ export default function BlessingsScreen() {
 
   const handleModalTranslitNusachChange = (value: BlessingTranslitNusach) => {
     setModalTranslitNusach(value);
+  };
+
+  const handleModalTextNusachChange = (value: BlessingTextNusach) => {
+    setModalTextNusach(value);
+
+    if (!modalTextResult) {
+      return;
+    }
+
+    const blessingSlug = modalTextResult.blessing.slug;
+    const textResult = getBlessingText(blessingSlug, {
+      calendarFlags: modalTextResult.calendarFlags,
+      language: modalLanguage,
+      selectedTextNusach: value,
+    });
+
+    if (textResult) {
+      setModalTextResult(textResult);
+      setModalTextNusach(textResult.selectedTextNusach ?? value);
+    }
   };
 
   const handleHomeBlessingPress = (blessing: Blessing) => {
@@ -162,8 +201,11 @@ export default function BlessingsScreen() {
   };
 
   const handleStepPress = (step: BlessingResolvedStep) => {
-    openBlessingText(step.blessingSlug, 'ru');
+    openBlessingText(step.blessingSlug, 'ru', 'sephard', 'chabad', 'scheme');
   };
+
+  const isSchemeTextOverlayVisible =
+    selectedItemDetails !== null && modalTextResult !== null && modalTextSource === 'scheme';
 
   return (
     <Screen contentContainerStyle={styles.content}>
@@ -215,12 +257,6 @@ export default function BlessingsScreen() {
             selectedBlessingSlug={selectedBlessingSlug}
             selectedItemSlug={selectedItemDetails?.item.slug}
           />
-          {selectedItemDetails ? (
-            <BlessingItemSchemeCard
-              details={selectedItemDetails}
-              onStepPress={handleStepPress}
-            />
-          ) : null}
           {selectedBlessingText ? (
             <BlessingDirectCard
               onLanguageChange={setSelectedLanguage}
@@ -252,14 +288,36 @@ export default function BlessingsScreen() {
           ))}
         </View>
       )}
+      <BlessingItemSchemeModal
+        details={selectedItemDetails}
+        onClose={closeSchemeModal}
+        onStepPress={handleStepPress}
+        overlayContent={
+          isSchemeTextOverlayVisible ? (
+            <BlessingTextOverlay
+              onClose={closeBlessingText}
+              onLanguageChange={handleModalLanguageChange}
+              onTextNusachChange={handleModalTextNusachChange}
+              onTranslitNusachChange={handleModalTranslitNusachChange}
+              selectedLanguage={modalLanguage}
+              selectedTextNusach={modalTextNusach}
+              selectedTranslitNusach={modalTranslitNusach}
+              textResult={modalTextResult}
+            />
+          ) : null
+        }
+        visible={selectedItemDetails !== null}
+      />
       <BlessingTextModal
         onClose={closeBlessingText}
         onLanguageChange={handleModalLanguageChange}
+        onTextNusachChange={handleModalTextNusachChange}
         onTranslitNusachChange={handleModalTranslitNusachChange}
         selectedLanguage={modalLanguage}
+        selectedTextNusach={modalTextNusach}
         selectedTranslitNusach={modalTranslitNusach}
         textResult={modalTextResult}
-        visible={modalTextResult !== null}
+        visible={modalTextResult !== null && modalTextSource !== 'scheme'}
       />
     </Screen>
   );
