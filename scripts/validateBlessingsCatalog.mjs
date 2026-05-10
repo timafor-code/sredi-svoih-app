@@ -25,6 +25,31 @@ const aliasWarnings = [];
 
 const allowedEmptyPatternKeys = new Set(['conditional', 'complex', 'no_bracha', 'no_blessing']);
 const conditionalPatternKeys = new Set(['conditional', 'complex']);
+const meinShaloshBlessingSlugs = new Set([
+  'mein_shalosh',
+  'mein_shalosh_al_hamichya',
+  'mein_shalosh_al_hagefen',
+  'mein_shalosh_al_haetz',
+]);
+const allowedMeinShaloshVariantKeys = new Set([
+  'all',
+  'al_hamichya',
+  'al_hagefen',
+  'al_haetz',
+]);
+const allowedTriggerModes = new Set(['always', 'hebcal', 'manual', 'future_not_runtime']);
+const allowedMeinShaloshRuntimeFlags = new Set([
+  'rosh_chodesh',
+  'chol_hamoed_pesach',
+  'chol_hamoed_sukkot',
+]);
+const futureOnlyMeinShaloshKeyParts = [
+  'shabbat',
+  'shavuot',
+  'shemini_atzeret',
+  'rosh_hashanah',
+  'yom_tov',
+];
 const allowedAliasCollisions = new Map(
   [
     ['картофель', ['blessing:bore_pri_haadama', 'item:potato']],
@@ -135,6 +160,7 @@ function validateBlessings() {
     validateAliases(owner, blessing.aliases);
     validateContentBlocks(owner, blessing.contentBlocks);
     validateNusachVariants(owner, blessing.nusachVariants);
+    validateMeinShaloshBlessing(owner, blessing);
 
     if (blessing.home?.enabled === true && typeof blessing.home.order !== 'number') {
       addError(`${owner} has home.enabled=true but home.order is not set`);
@@ -442,6 +468,110 @@ function validateContentBlocks(owner, contentBlocks) {
 
     validateOptionalBlessingSlug(`${owner}.contentBlocks[${index}]`, block.blessingSlug);
   });
+}
+
+function validateMeinShaloshBlessing(owner, blessing) {
+  if (!meinShaloshBlessingSlugs.has(blessing.slug)) {
+    return;
+  }
+
+  const blocks = collectBlessingContentBlocks(blessing);
+
+  for (const block of blocks) {
+    if (!isPlainObject(block)) {
+      continue;
+    }
+
+    const blockOwner = `${owner}.block:${describeKey(block.key)}`;
+
+    if (block.variantKey !== undefined && !allowedMeinShaloshVariantKeys.has(block.variantKey)) {
+      addError(`${blockOwner} has invalid Mein Shalosh variantKey "${block.variantKey}"`);
+    }
+
+    if (block.triggerMode !== undefined && !allowedTriggerModes.has(block.triggerMode)) {
+      addError(`${blockOwner} has invalid triggerMode "${block.triggerMode}"`);
+    }
+
+    if (block.language === 'he' && block.kind !== 'note') {
+      validateMeinShaloshTranslitByStyle(blockOwner, block);
+    }
+
+    validateMeinShaloshRuntimeFlags(blockOwner, block);
+    validateMeinShaloshFutureOnlyBlock(blockOwner, block);
+  }
+}
+
+function collectBlessingContentBlocks(blessing) {
+  const directBlocks = Array.isArray(blessing.contentBlocks) ? blessing.contentBlocks : [];
+  const variantBlocks = Array.isArray(blessing.nusachVariants)
+    ? blessing.nusachVariants.flatMap((variant) =>
+        Array.isArray(variant.contentBlocks) ? variant.contentBlocks : [],
+      )
+    : [];
+
+  return [...directBlocks, ...variantBlocks];
+}
+
+function validateMeinShaloshTranslitByStyle(owner, block) {
+  if (!isPlainObject(block.translitRuByStyle)) {
+    addError(`${owner} is missing translitRuByStyle`);
+    return;
+  }
+
+  if (!isNonEmptyString(block.translitRuByStyle.ashkenazi)) {
+    addError(`${owner} is missing ashkenazi translitRuByStyle`);
+  }
+
+  if (!isNonEmptyString(block.translitRuByStyle.sephardi)) {
+    addError(`${owner} is missing sephardi translitRuByStyle`);
+  }
+}
+
+function validateMeinShaloshRuntimeFlags(owner, block) {
+  if (block.triggerMode !== 'hebcal') {
+    return;
+  }
+
+  const flags = getBlockCalendarFlags(block);
+
+  if (flags.length === 0) {
+    addError(`${owner} has triggerMode=hebcal but no calendarFlag/calendarFlags`);
+    return;
+  }
+
+  for (const flag of flags) {
+    if (!allowedMeinShaloshRuntimeFlags.has(flag)) {
+      addError(`${owner} uses non-runtime Mein Shalosh calendar flag "${flag}"`);
+    }
+  }
+}
+
+function validateMeinShaloshFutureOnlyBlock(owner, block) {
+  if (!isNonEmptyString(block.key)) {
+    return;
+  }
+
+  const isFutureOnlyBlock = futureOnlyMeinShaloshKeyParts.some((part) => block.key.includes(part));
+
+  if (!isFutureOnlyBlock) {
+    return;
+  }
+
+  if (block.triggerMode !== 'future_not_runtime') {
+    addError(`${owner} must use triggerMode=future_not_runtime`);
+  }
+
+  if (getBlockCalendarFlags(block).length > 0) {
+    addError(`${owner} must not declare runtime calendar flags`);
+  }
+}
+
+function getBlockCalendarFlags(block) {
+  if (Array.isArray(block.calendarFlags)) {
+    return block.calendarFlags;
+  }
+
+  return isNonEmptyString(block.calendarFlag) ? [block.calendarFlag] : [];
 }
 
 function validateNusachVariants(owner, nusachVariants) {

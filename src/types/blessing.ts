@@ -2,6 +2,8 @@ export type BlessingLanguage = 'he' | 'translit' | 'ru';
 
 export type BlessingTranslitNusach = 'sephard' | 'ashkenaz';
 
+export type BlessingTransliterationStyle = 'ashkenazi' | 'sephardi';
+
 export type BlessingTextNusach = 'chabad' | 'beit_sefaradi';
 
 export type Nusach = 'common' | 'chabad' | 'sephardi';
@@ -57,6 +59,8 @@ export interface BlessingContentBlock {
   renderVariant?: 'base' | 'insert' | 'annotation' | 'manual_collapsible';
   segments?: readonly BlessingContentSegment[];
   triggerMode?: 'always' | 'hebcal' | 'manual' | 'future_not_runtime';
+  translitRu?: string;
+  translitRuByStyle?: Partial<Record<BlessingTransliterationStyle, string>>;
   translitNusach?: BlessingTranslitNusach;
   variantKey?: string;
   variantLabelRu?: string;
@@ -247,6 +251,7 @@ export interface BlessingTextOptions {
   language?: BlessingLanguage;
   nusach?: Nusach;
   selectedTextNusach?: BlessingTextNusach;
+  transliterationStyle?: BlessingTransliterationStyle;
 }
 
 export interface BlessingTextResult {
@@ -256,6 +261,7 @@ export interface BlessingTextResult {
   language: BlessingLanguage;
   nusach: Nusach;
   selectedTextNusach?: BlessingTextNusach;
+  transliterationStyle?: BlessingTransliterationStyle;
   contentBlocks: readonly BlessingContentBlock[];
   dynamicInsertRules?: readonly BlessingInsertRule[];
   needsVerification: boolean;

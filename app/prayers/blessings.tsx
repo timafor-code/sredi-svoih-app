@@ -15,6 +15,7 @@ import { resolveJewishCalendarFlags } from '@/lib/jewishCalendarFlags';
 import {
   getBlessingItemDetails,
   getBlessingText,
+  getBlessingTransliterationStyle,
   listHomeBlessings,
   searchBlessings,
 } from '@/services/blessingsCatalogService';
@@ -41,6 +42,15 @@ const homeGroupLabels: Record<BlessingHomeGroupKey, string> = {
 const homeGroupOrder: readonly BlessingHomeGroupKey[] = ['before_food', 'after_food', 'various'];
 type BlessingTextSource = 'direct' | 'scheme';
 
+function getTransliterationStyleOption(
+  language: BlessingLanguage,
+  translitNusach: BlessingTranslitNusach,
+) {
+  return language === 'translit'
+    ? getBlessingTransliterationStyle(translitNusach)
+    : undefined;
+}
+
 export default function BlessingsScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
@@ -65,9 +75,16 @@ export default function BlessingsScreen() {
   const selectedBlessingText = useMemo(
     () =>
       selectedBlessingSlug
-        ? getBlessingText(selectedBlessingSlug, { calendarFlags, language: selectedLanguage })
+        ? getBlessingText(selectedBlessingSlug, {
+            calendarFlags,
+            language: selectedLanguage,
+            transliterationStyle: getTransliterationStyleOption(
+              selectedLanguage,
+              selectedTranslitNusach,
+            ),
+          })
         : null,
-    [calendarFlags, selectedBlessingSlug, selectedLanguage],
+    [calendarFlags, selectedBlessingSlug, selectedLanguage, selectedTranslitNusach],
   );
 
   const handleSearchChange = (value: string) => {
@@ -88,6 +105,7 @@ export default function BlessingsScreen() {
       calendarFlags: resolveJewishCalendarFlags(new Date()),
       language,
       selectedTextNusach: initialTextNusach,
+      transliterationStyle: getTransliterationStyleOption(language, initialTranslitNusach),
     });
 
     if (!textResult) {
@@ -127,6 +145,7 @@ export default function BlessingsScreen() {
       calendarFlags: modalTextResult.calendarFlags,
       language,
       selectedTextNusach: modalTextNusach,
+      transliterationStyle: getTransliterationStyleOption(language, modalTranslitNusach),
     });
 
     if (textResult) {
@@ -136,6 +155,21 @@ export default function BlessingsScreen() {
 
   const handleModalTranslitNusachChange = (value: BlessingTranslitNusach) => {
     setModalTranslitNusach(value);
+
+    if (!modalTextResult || modalLanguage !== 'translit') {
+      return;
+    }
+
+    const textResult = getBlessingText(modalTextResult.blessing.slug, {
+      calendarFlags: modalTextResult.calendarFlags,
+      language: modalLanguage,
+      selectedTextNusach: modalTextNusach,
+      transliterationStyle: getBlessingTransliterationStyle(value),
+    });
+
+    if (textResult) {
+      setModalTextResult(textResult);
+    }
   };
 
   const handleModalTextNusachChange = (value: BlessingTextNusach) => {
@@ -150,6 +184,10 @@ export default function BlessingsScreen() {
       calendarFlags: modalTextResult.calendarFlags,
       language: modalLanguage,
       selectedTextNusach: value,
+      transliterationStyle: getTransliterationStyleOption(
+        modalLanguage,
+        modalTranslitNusach,
+      ),
     });
 
     if (textResult) {
@@ -159,7 +197,7 @@ export default function BlessingsScreen() {
   };
 
   const handleHomeBlessingPress = (blessing: Blessing) => {
-    openBlessingText(blessing.slug, 'ru');
+    openBlessingText(blessing.slug, blessing.displayMode === 'variants' ? 'he' : 'ru');
   };
 
   const handleSearchResultPress = (result: BlessingSearchResult) => {
@@ -182,6 +220,10 @@ export default function BlessingsScreen() {
       const textResult = getBlessingText(result.slug, {
         calendarFlags,
         language: selectedLanguage,
+        transliterationStyle: getTransliterationStyleOption(
+          selectedLanguage,
+          selectedTranslitNusach,
+        ),
       });
 
       if (!textResult) {
