@@ -4,7 +4,6 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { BlessingDirectCard } from '@/components/blessings/BlessingDirectCard';
 import { BlessingHomeGroup } from '@/components/blessings/BlessingHomeGroup';
 import { BlessingItemSchemeModal } from '@/components/blessings/BlessingItemSchemeModal';
 import { BlessingSearchBar } from '@/components/blessings/BlessingSearchBar';
@@ -55,9 +54,6 @@ export default function BlessingsScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBlessingSlug, setSelectedBlessingSlug] = useState<string | null>(null);
-  const [selectedLanguage, setSelectedLanguage] = useState<BlessingLanguage>('ru');
-  const [selectedTranslitNusach, setSelectedTranslitNusach] =
-    useState<BlessingTranslitNusach>('sephard');
   const [selectedItemDetails, setSelectedItemDetails] = useState<BlessingItemDetails | null>(null);
   const [modalLanguage, setModalLanguage] = useState<BlessingLanguage>('ru');
   const [modalTextNusach, setModalTextNusach] = useState<BlessingTextNusach>('chabad');
@@ -72,21 +68,6 @@ export default function BlessingsScreen() {
     () => (hasSearchQuery ? searchBlessings(searchQuery) : []),
     [hasSearchQuery, searchQuery],
   );
-  const selectedBlessingText = useMemo(
-    () =>
-      selectedBlessingSlug
-        ? getBlessingText(selectedBlessingSlug, {
-            calendarFlags,
-            language: selectedLanguage,
-            transliterationStyle: getTransliterationStyleOption(
-              selectedLanguage,
-              selectedTranslitNusach,
-            ),
-          })
-        : null,
-    [calendarFlags, selectedBlessingSlug, selectedLanguage, selectedTranslitNusach],
-  );
-
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
     setSelectedItemDetails(null);
@@ -110,7 +91,7 @@ export default function BlessingsScreen() {
 
     if (!textResult) {
       Alert.alert('Текст недоступен', 'Текст для этого благословения пока недоступен');
-      return;
+      return false;
     }
 
     setModalLanguage(language);
@@ -118,6 +99,7 @@ export default function BlessingsScreen() {
     setModalTranslitNusach(initialTranslitNusach);
     setModalTextResult(textResult);
     setModalTextSource(source);
+    return true;
   };
 
   const closeBlessingText = () => {
@@ -217,25 +199,9 @@ export default function BlessingsScreen() {
     }
 
     if (result.resultType === 'blessing') {
-      const textResult = getBlessingText(result.slug, {
-        calendarFlags,
-        language: selectedLanguage,
-        transliterationStyle: getTransliterationStyleOption(
-          selectedLanguage,
-          selectedTranslitNusach,
-        ),
-      });
-
-      if (!textResult) {
-        setSelectedItemDetails(null);
-        setSelectedBlessingSlug(null);
-        Alert.alert(result.titleRu, 'Текст для этого благословения пока недоступен');
-        return;
-      }
-
       setSelectedItemDetails(null);
-      setSelectedBlessingSlug(result.slug);
-      openBlessingText(result.slug, selectedLanguage);
+      const didOpenText = openBlessingText(result.slug, 'ru');
+      setSelectedBlessingSlug(didOpenText ? result.slug : null);
       return;
     }
 
@@ -299,22 +265,6 @@ export default function BlessingsScreen() {
             selectedBlessingSlug={selectedBlessingSlug}
             selectedItemSlug={selectedItemDetails?.item.slug}
           />
-          {selectedBlessingText ? (
-            <BlessingDirectCard
-              onLanguageChange={setSelectedLanguage}
-              onOpenText={() =>
-                openBlessingText(
-                  selectedBlessingText.blessing.slug,
-                  selectedLanguage,
-                  selectedTranslitNusach,
-                )
-              }
-              onTranslitNusachChange={setSelectedTranslitNusach}
-              selectedLanguage={selectedLanguage}
-              selectedTranslitNusach={selectedTranslitNusach}
-              textResult={selectedBlessingText}
-            />
-          ) : null}
         </View>
       ) : (
         <View style={styles.quickAccess}>
