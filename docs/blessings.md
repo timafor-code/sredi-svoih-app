@@ -74,9 +74,9 @@ These are allowed because a common food/drink term may reasonably find both the 
 
 Intentional `Мейн Шалош` general/variant collisions:
 
-- `ал хамихья`, `аль hамихья`, `ал hамихья`: `blessing:mein_shalosh` and `blessing:mein_shalosh_al_hamichya`
-- `аль hагефен`, `ал hагефен`: `blessing:mein_shalosh` and `blessing:mein_shalosh_al_hagefen`
-- `аль hаэц`, `ал hаэц`: `blessing:mein_shalosh` and `blessing:mein_shalosh_al_haetz`
+- `ал хамихья`, `аль хамихья`, `аль hамихья`, `ал hамихья`: `blessing:mein_shalosh` and `blessing:mein_shalosh_al_hamichya`
+- `аль гефен`, `ал гефен`, `аль hагефен`, `ал hагефен`: `blessing:mein_shalosh` and `blessing:mein_shalosh_al_hagefen`
+- `аль аэц`, `ал аэц`, `аль hаэц`, `ал hаэц`: `blessing:mein_shalosh` and `blessing:mein_shalosh_al_haetz`
 
 These are allowed because the general `Мейн Шалош` entry is a variants landing point, while the specific variants are still needed for item schemes and direct lookup.
 
@@ -380,6 +380,10 @@ When the user reaches Mein Shalosh from a concrete product, show only the concre
 - Аль hамихья - after mezonot / baked goods
 - Аль hагефен - after wine / grape juice
 - Аль hаэц - after seven-species fruit
+
+`mein_shalosh` now has a Chabad Hebrew source-map imported from an external md file. The source md itself is not stored in the repository. The Hebrew Chabad layer keeps the three semantic variants visible for quick access and narrows to the concrete variant for `mein_shalosh_al_hamichya`, `mein_shalosh_al_hagefen`, and `mein_shalosh_al_haetz`.
+
+The long-text reader mode is shared by Birkat Hamazon and Mein Shalosh. Russian, transliteration, and Beit Sefaradi text layers for Mein Shalosh remain placeholders.
 
 ## Text verification
 

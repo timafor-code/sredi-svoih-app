@@ -17,6 +17,7 @@ import { BlessingLanguageTabs } from '@/components/blessings/BlessingLanguageTab
 import { BlessingTextNusachTabs } from '@/components/blessings/BlessingTextNusachTabs';
 import { BlessingTranslitNusachTabs } from '@/components/blessings/BlessingTranslitNusachTabs';
 import { GlassCard } from '@/components/glass/GlassCard';
+import { supportsBlessingReaderMode } from '@/lib/blessingReaderMode';
 import { colors } from '@/theme/colors';
 import { radius } from '@/theme/radius';
 import type {
@@ -218,10 +219,6 @@ function isManualCollapsibleBlock(block: DisplayBlock): boolean {
   return block.renderVariant === 'manual_collapsible' || Boolean(block.collapsibleGroupKey);
 }
 
-function isBirkatHamazon(textResult: BlessingTextResult): boolean {
-  return textResult.blessing.slug === 'birkat_hamazon';
-}
-
 function isBirkatHamazonChabadMode(
   textResult: BlessingTextResult,
   selectedTextNusach: BlessingTextNusach,
@@ -271,7 +268,6 @@ export function BlessingTextOverlay({
   const [isReaderOpen, setIsReaderOpen] = useState(false);
   const [readerFontSize, setReaderFontSize] = useState(28);
   const [showReaderAnnotations, setShowReaderAnnotations] = useState(true);
-  const isBirkat = !!textResult && isBirkatHamazon(textResult);
   const isBirkatHamazonChabad =
     !!textResult &&
     isBirkatHamazonChabadMode(textResult, selectedTextNusach);
@@ -284,14 +280,14 @@ export function BlessingTextOverlay({
   const activeTranslitNusach: BlessingTranslitNusach = shouldShowTranslitNusachTabs
     ? selectedTranslitNusach
     : 'sephard';
-  const showReaderButton = isBirkat;
+  const showReaderButton = supportsBlessingReaderMode(textResult);
   const showBirkatTachanunTools =
     isBirkatHamazonChabad && (selectedLanguage === 'he' || selectedLanguage === 'translit');
-  const showBirkatTools = showReaderButton || showBirkatTachanunTools;
+  const showTextTools = showReaderButton || showBirkatTachanunTools;
   const scrollOffset =
     230 +
     (showTextNusachTabs ? 50 : 0) +
-    (showBirkatTools ? 56 : 0);
+    (showTextTools ? 56 : 0);
   const scrollMaxHeight = Math.max(190, panelMaxHeight - scrollOffset);
   const activeContent = effectiveTextResult
     ? getActiveTextContent(
@@ -552,7 +548,7 @@ export function BlessingTextOverlay({
               />
             ) : null}
 
-            {showBirkatTools ? (
+            {showTextTools ? (
               <View style={styles.birkatToolsRow}>
                 {showReaderButton ? (
                   <Pressable

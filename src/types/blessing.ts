@@ -58,6 +58,8 @@ export interface BlessingContentBlock {
   segments?: readonly BlessingContentSegment[];
   triggerMode?: 'always' | 'hebcal' | 'manual' | 'future_not_runtime';
   translitNusach?: BlessingTranslitNusach;
+  variantKey?: string;
+  variantLabelRu?: string;
   needsVerification?: boolean;
 }
 
