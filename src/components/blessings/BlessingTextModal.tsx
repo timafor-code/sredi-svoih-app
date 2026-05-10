@@ -218,14 +218,12 @@ function isManualCollapsibleBlock(block: DisplayBlock): boolean {
   return block.renderVariant === 'manual_collapsible' || Boolean(block.collapsibleGroupKey);
 }
 
-function isBirkatHamazonChabadHebrewMode(
+function isBirkatHamazonChabadMode(
   textResult: BlessingTextResult,
-  selectedLanguage: BlessingLanguage,
   selectedTextNusach: BlessingTextNusach,
 ): boolean {
   return (
     textResult.blessing.slug === 'birkat_hamazon' &&
-    selectedLanguage === 'he' &&
     (textResult.selectedTextNusach ?? selectedTextNusach) === 'chabad'
   );
 }
@@ -253,9 +251,9 @@ export function BlessingTextOverlay({
   const [isReaderOpen, setIsReaderOpen] = useState(false);
   const [readerFontSize, setReaderFontSize] = useState(28);
   const [showReaderAnnotations, setShowReaderAnnotations] = useState(true);
-  const isBirkatHebrewRuntime =
+  const isBirkatHamazonChabad =
     !!textResult &&
-    isBirkatHamazonChabadHebrewMode(textResult, selectedLanguage, selectedTextNusach);
+    isBirkatHamazonChabadMode(textResult, selectedTextNusach);
   const effectiveTextResult = textResult;
   const textNusachVariants = effectiveTextResult?.blessing.nusachVariants ?? [];
   const showTextNusachTabs = textNusachVariants.length > 1;
@@ -265,11 +263,14 @@ export function BlessingTextOverlay({
   const activeTranslitNusach: BlessingTranslitNusach = shouldShowTranslitNusachTabs
     ? selectedTranslitNusach
     : 'sephard';
-  const showBirkatHebrewTools = isBirkatHebrewRuntime;
+  const showBirkatReaderButton = isBirkatHamazonChabad && selectedLanguage === 'he';
+  const showBirkatTachanunTools =
+    isBirkatHamazonChabad && (selectedLanguage === 'he' || selectedLanguage === 'translit');
+  const showBirkatTools = showBirkatReaderButton || showBirkatTachanunTools;
   const scrollOffset =
     230 +
     (showTextNusachTabs ? 50 : 0) +
-    (showBirkatHebrewTools ? 56 : 0);
+    (showBirkatTools ? 56 : 0);
   const scrollMaxHeight = Math.max(190, panelMaxHeight - scrollOffset);
   const activeContent = effectiveTextResult
     ? getActiveTextContent(
@@ -524,44 +525,48 @@ export function BlessingTextOverlay({
               />
             ) : null}
 
-            {showBirkatHebrewTools ? (
+            {showBirkatTools ? (
               <View style={styles.birkatToolsRow}>
-                <Pressable
-                  accessibilityLabel="Открыть режим чтения"
-                  accessibilityRole="button"
-                  onPress={() => setIsReaderOpen(true)}
-                  style={({ pressed }) => [styles.readerOpenButton, pressed && styles.pressed]}
-                >
-                  <Ionicons name="book-outline" size={17} color={colors.goldAccent} />
-                  <Text numberOfLines={1} style={styles.readerOpenButtonText}>
-                    Режим чтения
-                  </Text>
-                </Pressable>
+                {showBirkatReaderButton ? (
+                  <Pressable
+                    accessibilityLabel="Открыть режим чтения"
+                    accessibilityRole="button"
+                    onPress={() => setIsReaderOpen(true)}
+                    style={({ pressed }) => [styles.readerOpenButton, pressed && styles.pressed]}
+                  >
+                    <Ionicons name="book-outline" size={17} color={colors.goldAccent} />
+                    <Text numberOfLines={1} style={styles.readerOpenButtonText}>
+                      Режим чтения
+                    </Text>
+                  </Pressable>
+                ) : null}
 
-                <View style={styles.tachanunSwitchControl}>
-                  <Text numberOfLines={1} style={styles.tachanunSwitchLabel}>
-                    Таханун
-                  </Text>
-                  <Switch
-                    accessibilityLabel="Таханун"
-                    accessibilityRole="switch"
-                    accessibilityState={{ checked: isTachanunPrefaceEnabled }}
-                    ios_backgroundColor="rgba(255,255,255,0.20)"
-                    onValueChange={setTachanunPrefaceEnabled}
-                    thumbColor={
-                      Platform.OS === 'android'
-                        ? isTachanunPrefaceEnabled
-                          ? colors.goldAccent
-                          : colors.textMuted
-                        : undefined
-                    }
-                    trackColor={{
-                      false: 'rgba(255,255,255,0.20)',
-                      true: 'rgba(255,200,50,0.52)',
-                    }}
-                    value={isTachanunPrefaceEnabled}
-                  />
-                </View>
+                {showBirkatTachanunTools ? (
+                  <View style={styles.tachanunSwitchControl}>
+                    <Text numberOfLines={1} style={styles.tachanunSwitchLabel}>
+                      Таханун
+                    </Text>
+                    <Switch
+                      accessibilityLabel="Таханун"
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked: isTachanunPrefaceEnabled }}
+                      ios_backgroundColor="rgba(255,255,255,0.20)"
+                      onValueChange={setTachanunPrefaceEnabled}
+                      thumbColor={
+                        Platform.OS === 'android'
+                          ? isTachanunPrefaceEnabled
+                            ? colors.goldAccent
+                            : colors.textMuted
+                          : undefined
+                      }
+                      trackColor={{
+                        false: 'rgba(255,255,255,0.20)',
+                        true: 'rgba(255,200,50,0.52)',
+                      }}
+                      value={isTachanunPrefaceEnabled}
+                    />
+                  </View>
+                ) : null}
               </View>
             ) : null}
 

@@ -265,7 +265,9 @@ This insert infrastructure does not add Supabase blessing storage, migrations, S
 - `sourceUrl: https://w2.chabad.org/media/pdf/92404.pdf`
 - `needsVerification: true`
 
-This PR adds Hebrew only. Russian translation of the main text, Sephardic transliteration, and Ashkenazic transliteration are not included. The Beit Sefaradi nusach remains a placeholder.
+Chabad Birkat hамазон now has Hebrew with nikud plus Russian transliteration layers for `Сефард` and `Ашкеназ`. The transliteration was added from the provided project files, but follows the current Hebrew block structure after PR #87-#91 rather than the older md source-map structure.
+
+Russian translation of the main text is still not added, and the Beit Sefaradi nusach remains a placeholder.
 
 The Hebrew reader/runtime pass keeps that scope and adds only working-reader controls for the Chabad Hebrew variant:
 
@@ -279,7 +281,8 @@ The Hebrew reader/runtime pass keeps that scope and adds only working-reader con
 
 The dev-only insert test controls for Hanukkah, Purim, Rosh Chodesh, Chol hа-Moed Pesach, and Chol hа-Moed Sukkot were removed from `BlessingTextModal`. Real Hebcal inserts are preserved through `resolveJewishCalendarFlags()` and `getBlessingText()`; the modal renders the already-assembled `textResult.contentBlocks` without adding fake calendar flags.
 
-Shabbat and Yom Tov are still not runtime in the MVP. Transliteration and Russian translation of the main Birkat hамазон text are still not added.
+Shabbat and Yom Tov are still not runtime in the MVP. Russian translation of the main Birkat hамазон text is still not added.
+The same local runtime behavior applies to Chabad transliteration blocks: Tachanun preface switching, Hebcal inserts, Magdil/Migdol selection, and manual collapsed sections use the same block metadata as Hebrew.
 
 Runtime Hebcal inserts are limited to:
 

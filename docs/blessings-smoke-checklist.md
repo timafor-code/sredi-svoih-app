@@ -176,6 +176,26 @@ Expected result: the item scheme shows condition/dispute notes under `Услов
 
 If the real calendar date has a relevant flag, the corresponding insert should appear automatically. On an ordinary day, Hanukkah, Purim, Rosh Chodesh, and Chol hа-Moed insert blocks should not appear.
 
+## iPhone: Биркат hамазон Хабад translit
+
+1. Open `Молитвы` -> `Благословения`.
+2. Open `Биркат hамазон`.
+3. Select `Хабад`.
+4. Select `Иврит` and confirm Hebrew still works.
+5. Select `Транслит`.
+6. Select `Сефард`.
+7. Confirm Sephardic translit is visible and not placeholder.
+8. Open `Зимун` and confirm role labels + translit.
+9. Select `Ашкеназ`.
+10. Confirm Ashkenazi translit is visible and not placeholder.
+11. Open `Зимун` and confirm role labels + translit.
+12. Toggle `Таханун` on/off and confirm preface changes in translit.
+13. Confirm manual sections remain collapsed by default.
+14. Open `Добавления после брит милы` in translit.
+15. Open `Шева брахот` in translit.
+16. Confirm `Русский` still placeholder.
+17. Confirm `Бейт Сфаради` still placeholder.
+
 ## Transliteration nusach split
 
 - Open `Амоци`.
