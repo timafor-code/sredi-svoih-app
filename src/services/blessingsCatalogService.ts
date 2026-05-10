@@ -14,6 +14,8 @@ import type {
   BlessingPattern,
   BlessingResolvedStep,
   BlessingSearchResult,
+  BlessingTransliterationStyle,
+  BlessingTranslitNusach,
   BlessingTextOptions,
   BlessingTextResult,
   BlessingTextNusach,
@@ -43,6 +45,7 @@ type ResolvedBlessingTextSource = {
 const homeGroups: readonly BlessingHomeGroup[] = ['before_food', 'after_food', 'various'];
 const MIN_FUZZY_LENGTH = 4;
 const FUZZY_SCORE_BASE = 50;
+const defaultChabadTransliterationStyle: BlessingTransliterationStyle = 'ashkenazi';
 
 const catalogBlessings: readonly Blessing[] = blessingsCatalog.blessings;
 
@@ -67,6 +70,12 @@ const disputesByKey = new Map<string, BlessingDispute>(
 );
 
 const expandedItems: readonly BlessingItem[] = blessingsCatalog.items.map(expandBlessingItemTuple);
+
+export function getBlessingTransliterationStyle(
+  translitNusach: BlessingTranslitNusach,
+): BlessingTransliterationStyle {
+  return translitNusach === 'ashkenaz' ? 'ashkenazi' : 'sephardi';
+}
 
 function expandBlessingItemTuple(tuple: BlessingItemTuple): BlessingItem {
   const [slug, titleRu, patternKey, aliases, options] = tuple;
@@ -422,6 +431,11 @@ export function getBlessingText(
   }
 
   const textSource = resolveBlessingTextSource(blessing, options.selectedTextNusach);
+  const transliterationStyle = resolveTransliterationStyle(options, textSource.selectedTextNusach);
+  const contentBlocks = applyTransliterationStyle(
+    textSource.contentBlocks,
+    transliterationStyle,
+  );
 
   return buildBlessingTextResult({
     blessing,
@@ -429,13 +443,68 @@ export function getBlessingText(
     language: options.language ?? 'ru',
     nusach: options.nusach ?? 'common',
     selectedTextNusach: textSource.selectedTextNusach,
-    contentBlocks: textSource.contentBlocks,
+    transliterationStyle,
+    contentBlocks,
     dynamicInsertRules: textSource.dynamicInsertRules,
     needsVerification:
       blessing.needsVerification ||
       textSource.needsVerification ||
-      textSource.contentBlocks.some((block) => block.needsVerification === true),
+      contentBlocks.some((block) => block.needsVerification === true),
   });
+}
+
+function resolveTransliterationStyle(
+  options: BlessingTextOptions,
+  selectedTextNusach?: BlessingTextNusach,
+): BlessingTransliterationStyle | undefined {
+  if (options.language !== 'translit') {
+    return options.transliterationStyle;
+  }
+
+  if (options.transliterationStyle) {
+    return options.transliterationStyle;
+  }
+
+  return selectedTextNusach === 'beit_sefaradi' ? 'sephardi' : defaultChabadTransliterationStyle;
+}
+
+function applyTransliterationStyle(
+  contentBlocks: BlessingTextResult['contentBlocks'],
+  transliterationStyle?: BlessingTransliterationStyle,
+): BlessingTextResult['contentBlocks'] {
+  if (!transliterationStyle) {
+    return contentBlocks;
+  }
+
+  const translitBlocks = contentBlocks.filter((block) => block.language === 'translit');
+
+  if (translitBlocks.length === 0) {
+    return contentBlocks;
+  }
+
+  const preferredBlocks = translitBlocks.filter(
+    (block) => getBlockTransliterationStyle(block.translitNusach) === transliterationStyle,
+  );
+  const fallbackBlocks = translitBlocks.filter((block) => !block.translitNusach);
+  const allowedTranslitBlocks =
+    preferredBlocks.length > 0 ? new Set(preferredBlocks) : new Set(fallbackBlocks);
+
+  return contentBlocks.filter(
+    (block) => block.language !== 'translit' || allowedTranslitBlocks.has(block),
+  );
+}
+
+function getBlockTransliterationStyle(
+  translitNusach: BlessingTranslitNusach | undefined,
+): BlessingTransliterationStyle | null {
+  switch (translitNusach) {
+    case 'ashkenaz':
+      return 'ashkenazi';
+    case 'sephard':
+      return 'sephardi';
+    case undefined:
+      return null;
+  }
 }
 
 function resolveBlessingTextSource(
@@ -527,6 +596,7 @@ export const blessingsCatalogService = {
   searchBlessings,
   getBlessingItemDetails,
   getBlessingText,
+  getBlessingTransliterationStyle,
   listBlessingsByCategory,
   listItemsByCategory,
   normalizeBlessingQuery,

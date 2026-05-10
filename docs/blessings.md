@@ -381,9 +381,27 @@ When the user reaches Mein Shalosh from a concrete product, show only the concre
 - Аль hагефен - after wine / grape juice
 - Аль hаэц - after seven-species fruit
 
-`mein_shalosh` now has a Chabad Hebrew source-map imported from an external md file. The source md itself is not stored in the repository. The Hebrew Chabad layer keeps the three semantic variants visible for quick access and narrows to the concrete variant for `mein_shalosh_al_hamichya`, `mein_shalosh_al_hagefen`, and `mein_shalosh_al_haetz`.
+`mein_shalosh` now has a Chabad Hebrew source map plus Ashkenazi and Sephardic Cyrillic transliteration layers. The source files used for the transliteration PR are:
 
-The long-text reader mode is shared by Birkat Hamazon and Mein Shalosh. Russian, transliteration, and Beit Sefaradi text layers for Mein Shalosh remain placeholders.
+- `mein-shalosh-habad-ashk-translit.md`
+- `mein-shalosh-habad-seph-translit.md`
+
+The source note is `source image 1.png, page 96, "Blessing After Certain Foods"`, and `needsVerification: true` remains on the catalog entries and source blocks. The source map covers only the visible page; do not add continuation text from memory or from a different source in this MVP pass.
+
+Mein Shalosh uses `translitRuByStyle` on the Hebrew source blocks and generates runtime `translit` blocks for:
+
+- `ashkenazi`
+- `sephardi`
+
+Runtime inserts are limited to:
+
+- `rosh_chodesh`
+- `chol_hamoed_pesach`
+- `chol_hamoed_sukkot`
+
+Shabbat and Yom Tov-related inserts are stored only as `future_not_runtime` source-map blocks. Blessings remain a local offline-first MVP catalog: no Supabase blessings tables, migrations, SQLite, remote sync, remote manifest, or service-role access.
+
+The long-text reader mode is shared by Birkat Hamazon and Mein Shalosh. Russian translation and Beit Sefaradi text layers for Mein Shalosh remain placeholders.
 
 ## Text verification
 
