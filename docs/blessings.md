@@ -269,10 +269,12 @@ This PR adds Hebrew only. Russian translation of the main text, Sephardic transl
 
 The Hebrew reader/runtime pass keeps that scope and adds only working-reader controls for the Chabad Hebrew variant:
 
-- manual preface selector: no preface, Tachanun-day preface, or no-Tachanun-day preface;
+- compact iOS-style `Таханун` switch: off shows the no-Tachanun preface behavior, on shows `preface_tachanun_days_he`, and the two preface psalms are mutually exclusive;
 - Hebcal insert rendering from local content blocks;
 - white fullscreen reader mode with black RTL Hebrew, local font-size controls, and an annotations toggle;
 - shared collapsed/expanded state for manual sections between the dark modal and reader mode.
+
+`Зимун` now renders role annotations as structured content segments before their corresponding Hebrew lines. The Russian labels `Ведущий:`, `Отвечают:`, `Те, кто ел, отвечают:`, and `Те, кто не ел, отвечают:` are styled as LTR annotations, not as part of the Hebrew body. The Hebrew remains vocalized RTL text. `Зимун на свадьбе / Шева брахот` uses the same segment renderer for its parallel Zimun structure.
 
 The dev-only insert test controls for Hanukkah, Purim, Rosh Chodesh, Chol hа-Moed Pesach, and Chol hа-Moed Sukkot were removed from `BlessingTextModal`. Real Hebcal inserts are preserved through `resolveJewishCalendarFlags()` and `getBlessingText()`; the modal renders the already-assembled `textResult.contentBlocks` without adding fake calendar flags.
 

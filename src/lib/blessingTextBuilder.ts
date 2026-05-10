@@ -54,7 +54,7 @@ function resolveRuntimeContentBlocks(
 
     const resolvedBlock = resolveRuntimeBlockBody(block, calendarFlags, activeFlags);
 
-    if (!resolvedBlock.bodyRu?.trim()) {
+    if (!hasRenderableContent(resolvedBlock)) {
       didChange = true;
       continue;
     }
@@ -67,6 +67,13 @@ function resolveRuntimeContentBlocks(
   }
 
   return didChange ? resolvedBlocks : contentBlocks;
+}
+
+function hasRenderableContent(block: BlessingContentBlock): boolean {
+  return (
+    Boolean(block.bodyRu?.trim()) ||
+    Boolean(block.segments?.some((segment) => segment.bodyRu.trim().length > 0))
+  );
 }
 
 export function applyBlessingDynamicInserts(
