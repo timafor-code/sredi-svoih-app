@@ -269,9 +269,10 @@ This PR adds Hebrew only. Russian translation of the main text, Sephardic transl
 
 The Hebrew reader/runtime pass keeps that scope and adds only working-reader controls for the Chabad Hebrew variant:
 
-- compact iOS-style `Таханун` switch: off shows the no-Tachanun preface behavior, on shows `preface_tachanun_days_he`, and the two preface psalms are mutually exclusive;
+- compact iOS-style `Таханун` switch with calendar auto-default: on for a regular weekday, off for Rosh Chodesh, Hanukkah, Purim, Chol hа-Moed Pesach, and Chol hа-Moed Sukkot; users can still change it manually while the modal is open;
 - Hebcal insert rendering from local content blocks;
-- white fullscreen reader mode with black RTL Hebrew, local font-size controls, and an annotations toggle;
+- automatic Magdil/Migdol selection in the text builder: regular weekdays use `מַגְדִּיל`, while Rosh Chodesh, Chol hа-Moed, Purim, and Hanukkah use `מִגְדּוֹל`;
+- white fullscreen reader mode with black RTL Hebrew, local font-size controls up to `50`, proportional line height, and an annotations toggle;
 - shared collapsed/expanded state for manual sections between the dark modal and reader mode.
 
 `Зимун` now renders role annotations as structured content segments before their corresponding Hebrew lines. The Russian labels `Ведущий:`, `Отвечают:`, `Те, кто ел, отвечают:`, and `Те, кто не ел, отвечают:` are styled as LTR annotations, not as part of the Hebrew body. The Hebrew remains vocalized RTL text. `Зимун на свадьбе / Шева брахот` uses the same segment renderer for its parallel Zimun structure.
@@ -282,8 +283,8 @@ Shabbat and Yom Tov are still not runtime in the MVP. Transliteration and Russia
 
 Runtime Hebcal inserts are limited to:
 
-- Hanukkah: `al_hanisim_opening_he` + `al_hanisim_hanukkah_he`
-- Purim: `al_hanisim_opening_he` + `al_hanisim_purim_he`
+- Hanukkah: `al_hanisim_opening_he` + `al_hanisim_hanukkah_he`, `מִגְדּוֹל`, and Tachanun default off
+- Purim: `al_hanisim_opening_he` + `al_hanisim_purim_he`, `מִגְדּוֹל`, and Tachanun default off
 - Rosh Chodesh: `yaale_veyavo_he` with `רֹאשׁ הַחֹדֶשׁ`, Rosh Chodesh hАрахаман, and `מִגְדּוֹל`
 - Chol hа-Moed Pesach: `yaale_veyavo_he` with `חַג הַמַּצּוֹת` and `מִגְדּוֹל`
 - Chol hа-Moed Sukkot: `yaale_veyavo_he` with `חַג הַסֻּכּוֹת`, Sukkot hАрахаман, and `מִגְדּוֹל`
@@ -298,9 +299,9 @@ Manual sections are rendered collapsed by default in the text modal:
 - Шева брахот
 - Благословение на бокал вина
 
-Hebrew text in `BlessingTextModal` uses a larger RTL siddur-like style and an iOS system serif fallback (`Times New Roman`) when available. White fullscreen reader mode remains available for the Chabad Hebrew variant, with font-size controls and an annotation toggle. No font assets are bundled in this PR. If iPhone smoke shows that the fallback is not stable enough, add a separate licensed Hebrew serif font in a future PR after license review; do not commit arbitrary `.ttf` or `.otf` files.
+Hebrew text in `BlessingTextModal` uses a larger RTL siddur-like style and an iOS system serif fallback (`Times New Roman`) when available. White fullscreen reader mode remains available for the Chabad Hebrew variant, with font-size controls from `22` to `50` and an annotation toggle. Reader Hebrew line height scales with the selected font size so nikud remains readable. No font assets are bundled in this PR. If iPhone smoke shows that the fallback is not stable enough, add a separate licensed Hebrew serif font in a future PR after license review; do not commit arbitrary `.ttf` or `.otf` files.
 
-All newly added religious text blocks may still carry internal `needsVerification: true` pending final source/rabbinic and rights review. Source and rights status still require a separate decision before public release, but those warnings are not shown to users in the modal.
+Internal metadata such as `needsVerification`, `sourceName`, and `sourceUrl` may remain for validators and documentation. User-facing modal and reader annotations should not show PDF/source/review/test/status warnings; annotations should describe practical reading behavior, inserts, collapsible sections, and Zimun roles.
 
 ## Stabilization pass
 

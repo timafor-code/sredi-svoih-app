@@ -84,8 +84,12 @@ const translitNusachPlaceholders: Record<BlessingTranslitNusach, string> = {
 };
 
 const readerMinFontSize = 22;
-const readerMaxFontSize = 36;
+const readerMaxFontSize = 50;
 const readerFontStep = 2;
+
+function getInitialPrefaceMode(textResult: BlessingTextResult | null): BirkatPrefaceMode {
+  return textResult?.defaultTachanunOn ? 'tachanun' : 'no_tachanun';
+}
 
 function hasBlockBody(block: BlessingContentBlock): boolean {
   return (
@@ -243,7 +247,9 @@ export function BlessingTextOverlay({
   const availablePanelHeight = Math.max(320, height - topPadding - bottomPadding);
   const panelMaxHeight = Math.min(availablePanelHeight, 720);
   const [expandedManualGroups, setExpandedManualGroups] = useState<Record<string, boolean>>({});
-  const [prefaceMode, setPrefaceMode] = useState<BirkatPrefaceMode>('no_tachanun');
+  const [prefaceMode, setPrefaceMode] = useState<BirkatPrefaceMode>(() =>
+    getInitialPrefaceMode(textResult),
+  );
   const [isReaderOpen, setIsReaderOpen] = useState(false);
   const [readerFontSize, setReaderFontSize] = useState(28);
   const [showReaderAnnotations, setShowReaderAnnotations] = useState(true);

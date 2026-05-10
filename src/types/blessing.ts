@@ -250,6 +250,7 @@ export interface BlessingTextOptions {
 export interface BlessingTextResult {
   blessing: Blessing;
   calendarFlags: readonly JewishCalendarFlag[];
+  defaultTachanunOn?: boolean;
   language: BlessingLanguage;
   nusach: Nusach;
   selectedTextNusach?: BlessingTextNusach;
