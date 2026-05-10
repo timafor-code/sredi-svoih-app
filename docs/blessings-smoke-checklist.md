@@ -226,11 +226,18 @@ If the real calendar date has a relevant flag, the corresponding insert should a
 
 ## Mein Shalosh
 
+- Open `Молитвы` -> `Благословения`.
 - Tap quick access `Мейн Шалош` and confirm it opens the general `mein_shalosh` entry with three variants.
+- Select `Хабад` -> `Иврит`.
 - Confirm the quick access version shows all three blocks: `Аль hамихья`, `Аль hагефен`, and `Аль hаэц`.
-- Search/tap `инжир`, `виноград`, `финики`, `оливки`, or `гранат`; confirm the after-blessing step is `mein_shalosh_al_haetz`.
-- Search/tap `вино` or `виноградный сок`; confirm the after-blessing step is `mein_shalosh_al_hagefen`.
-- Search/tap `печенье`, `торт`, or `крекер`; confirm the after-blessing step is `mein_shalosh_al_hamichya`.
+- Open reader mode and confirm it opens as a white full-screen reader.
+- Confirm font-size increase/decrease works in reader mode.
+- Confirm the annotations toggle hides and restores annotations in reader mode.
+- Search `мейн шалош` and confirm it opens `mein_shalosh`.
+- Search `вино`; confirm the scheme is `hАгафен` -> `Мейн Шалош / Аль hагефен`.
+- Search/tap `инжир`, `виноград`, `финики`, `оливки`, or `гранат`; confirm the scheme is `hАэц` -> `Мейн Шалош / Аль hаэц`.
+- Search/tap `печенье`, `торт`, or `крекер`; confirm the scheme is `Мезонот` -> `Мейн Шалош / Аль hамихья`.
+- Confirm Birkat Hamazon reader mode still opens and the Tachanun switch still appears only there.
 
 ## Dynamic inserts
 
@@ -244,3 +251,6 @@ These are service-level checks and can be verified with a temporary local dev co
 - `getBlessingText('rainbow', { calendarFlags: ['hanukkah'] })` should not include an insert block.
 - `getBlessingText('birkat_hamazon', { calendarFlags: [], language: 'he', selectedTextNusach: 'chabad' })` should not include `Аль hанисим` or `יעלה ויבוא` and should use `מַגְדִּיל`.
 - `getBlessingText('birkat_hamazon', { calendarFlags: [], language: 'he', selectedTextNusach: 'beit_sefaradi' })` should keep the Beit Sefaradi placeholder behavior.
+- `getBlessingText('mein_shalosh', { calendarFlags: [], language: 'he', selectedTextNusach: 'chabad' })` should include all three variant opening blocks and should not include Shabbat or Yom Tov future-only inserts.
+- `getBlessingText('mein_shalosh_al_hagefen', { calendarFlags: ['rosh_chodesh'], language: 'he', selectedTextNusach: 'chabad' })` should include the Аль hагефен variant and the Rosh Chodesh insert.
+- `getBlessingText('mein_shalosh_al_haetz', { calendarFlags: ['chol_hamoed_sukkot'], language: 'he', selectedTextNusach: 'chabad' })` should include the Аль hаэц variant and the Sukkot insert.
