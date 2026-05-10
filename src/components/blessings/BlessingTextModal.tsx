@@ -218,6 +218,10 @@ function isManualCollapsibleBlock(block: DisplayBlock): boolean {
   return block.renderVariant === 'manual_collapsible' || Boolean(block.collapsibleGroupKey);
 }
 
+function isBirkatHamazon(textResult: BlessingTextResult): boolean {
+  return textResult.blessing.slug === 'birkat_hamazon';
+}
+
 function isBirkatHamazonChabadMode(
   textResult: BlessingTextResult,
   selectedTextNusach: BlessingTextNusach,
@@ -226,6 +230,22 @@ function isBirkatHamazonChabadMode(
     textResult.blessing.slug === 'birkat_hamazon' &&
     (textResult.selectedTextNusach ?? selectedTextNusach) === 'chabad'
   );
+}
+
+function getReaderModeLabel(
+  selectedLanguage: BlessingLanguage,
+  selectedTranslitNusach: BlessingTranslitNusach,
+): string {
+  switch (selectedLanguage) {
+    case 'he':
+      return 'Иврит';
+    case 'ru':
+      return 'Русский';
+    case 'translit':
+      return selectedTranslitNusach === 'sephard'
+        ? 'Транслит · Сефард'
+        : 'Транслит · Ашкеназ';
+  }
 }
 
 export function BlessingTextOverlay({
@@ -251,6 +271,7 @@ export function BlessingTextOverlay({
   const [isReaderOpen, setIsReaderOpen] = useState(false);
   const [readerFontSize, setReaderFontSize] = useState(28);
   const [showReaderAnnotations, setShowReaderAnnotations] = useState(true);
+  const isBirkat = !!textResult && isBirkatHamazon(textResult);
   const isBirkatHamazonChabad =
     !!textResult &&
     isBirkatHamazonChabadMode(textResult, selectedTextNusach);
@@ -263,10 +284,10 @@ export function BlessingTextOverlay({
   const activeTranslitNusach: BlessingTranslitNusach = shouldShowTranslitNusachTabs
     ? selectedTranslitNusach
     : 'sephard';
-  const showBirkatReaderButton = isBirkatHamazonChabad && selectedLanguage === 'he';
+  const showReaderButton = isBirkat;
   const showBirkatTachanunTools =
     isBirkatHamazonChabad && (selectedLanguage === 'he' || selectedLanguage === 'translit');
-  const showBirkatTools = showBirkatReaderButton || showBirkatTachanunTools;
+  const showBirkatTools = showReaderButton || showBirkatTachanunTools;
   const scrollOffset =
     230 +
     (showTextNusachTabs ? 50 : 0) +
@@ -280,8 +301,11 @@ export function BlessingTextOverlay({
         prefaceMode,
       )
     : null;
-  const readerLineHeight = Math.round(readerFontSize * 1.6);
+  const readerLineHeight = Math.round(
+    readerFontSize * (selectedLanguage === 'he' ? 1.6 : 1.42),
+  );
   const isTachanunPrefaceEnabled = prefaceMode === 'tachanun';
+  const readerModeLabel = getReaderModeLabel(selectedLanguage, activeTranslitNusach);
 
   function toggleManualGroup(groupKey: string, defaultExpanded: boolean) {
     setExpandedManualGroups((current) => ({
@@ -316,7 +340,10 @@ export function BlessingTextOverlay({
         (isReader ? styles.readerHebrewText : styles.hebrewBodyText),
       selectedLanguage === 'he' && !isAnnotation && styles.hebrewSiddurText,
       isReader &&
-        selectedLanguage === 'he' &&
+        selectedLanguage !== 'he' &&
+        !isAnnotation &&
+        styles.readerPlainText,
+      isReader &&
         !isAnnotation && {
           fontSize: readerFontSize,
           lineHeight: readerLineHeight,
@@ -527,7 +554,7 @@ export function BlessingTextOverlay({
 
             {showBirkatTools ? (
               <View style={styles.birkatToolsRow}>
-                {showBirkatReaderButton ? (
+                {showReaderButton ? (
                   <Pressable
                     accessibilityLabel="Открыть режим чтения"
                     accessibilityRole="button"
@@ -609,9 +636,14 @@ export function BlessingTextOverlay({
                 <Ionicons name="close" size={22} color="#111111" />
               </Pressable>
 
-              <Text numberOfLines={1} style={styles.readerTitle}>
-                Биркат hамазон
-              </Text>
+              <View style={styles.readerTitleBlock}>
+                <Text numberOfLines={1} style={styles.readerTitle}>
+                  {effectiveTextResult.blessing.titleRu}
+                </Text>
+                <Text numberOfLines={1} style={styles.readerModeLabel}>
+                  {readerModeLabel}
+                </Text>
+              </View>
 
               <View style={styles.readerFontControls}>
                 <Pressable
@@ -980,13 +1012,22 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(17,17,17,0.14)',
     backgroundColor: '#FFFFFF',
   },
-  readerTitle: {
+  readerTitleBlock: {
     flex: 1,
     minWidth: 0,
+    gap: 2,
+  },
+  readerTitle: {
     color: '#111111',
     fontSize: 18,
     fontWeight: '900',
     lineHeight: 23,
+  },
+  readerModeLabel: {
+    color: '#666666',
+    fontSize: 11,
+    fontWeight: '800',
+    lineHeight: 15,
   },
   readerFontControls: {
     flexDirection: 'row',
@@ -1145,6 +1186,12 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     textAlign: 'right',
     writingDirection: 'rtl',
+  },
+  readerPlainText: {
+    color: '#111111',
+    fontWeight: '400',
+    textAlign: 'left',
+    writingDirection: 'ltr',
   },
   readerManualBlock: {
     overflow: 'hidden',
