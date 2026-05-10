@@ -154,29 +154,27 @@ Expected result: the item scheme shows condition/dispute notes under `Услов
 1. Open `Молитвы` -> `Благословения`.
 2. Open `Биркат hамазон`.
 3. Select `Хабад` -> `Иврит`.
-4. Confirm the Tachanun UI is a compact iOS-style switch.
-5. Toggle Tachanun ON/OFF.
-6. Confirm both Tachanun/no-Tachanun prefaces do not appear together.
-7. Confirm the reader mode button is still present.
-8. Open `Зимун`.
-9. Confirm role labels appear: `Ведущий`, `Отвечают`, `Те, кто ел, отвечают`, `Те, кто не ел, отвечают`.
-10. Confirm role labels are styled as annotations, not Hebrew text.
-11. Confirm Hebrew text remains RTL and with nikud.
-12. Open reader mode.
-13. Open `Зимун` in reader mode.
-14. Confirm role labels also display correctly in reader mode.
-15. Confirm font-size controls still work.
-16. Confirm `Русский` placeholder.
-17. Confirm `Транслит` placeholder.
-18. Confirm `Бейт Сфаради` placeholder.
-19. Confirm no dev insert test chips are visible.
-20. Confirm no warning about test, verification, future checked text, or source review is visible.
-21. Confirm the annotation toggle still works.
-22. Confirm manual sections are collapsed by default.
-23. Expand/collapse `Добавления после брит милы`.
-24. Expand/collapse `Шева брахот`.
+4. Confirm no `PDF`, source, verification, review, or test wording is visible in annotations.
+5. Confirm the `Таханун` switch is on by default on a regular weekday.
+6. Confirm the user can manually turn `Таханун` off.
+7. Confirm only one preface behavior is visible; Tachanun and no-Tachanun blocks do not appear together.
+8. On relevant calendar dates, confirm `Таханун` defaults off for Rosh Chodesh, Hanukkah, Purim, Chol hа-Moed Pesach, and Chol hа-Moed Sukkot.
+9. Confirm a regular day uses `מַגְדִּיל`.
+10. Confirm Rosh Chodesh, Chol hа-Moed, Hanukkah, and Purim use `מִגְדּוֹל`.
+11. Open reader mode.
+12. Increase Hebrew font to `50`.
+13. Confirm nikud remains readable and text scrolls correctly.
+14. Confirm the font can be decreased again.
+15. Confirm Russian, transliteration, and Beit Sefaradi placeholders are unchanged.
+16. Open `Зимун`.
+17. Confirm role labels appear: `Ведущий`, `Отвечают`, `Те, кто ел, отвечают`, `Те, кто не ел, отвечают`.
+18. Confirm role labels are styled as annotations, not Hebrew text.
+19. Confirm the annotation toggle still works.
+20. Confirm manual sections are collapsed by default.
+21. Expand/collapse `Добавления после брит милы`.
+22. Expand/collapse `Шева брахот`.
 
-If the real Hebcal date has a relevant flag, the corresponding insert should appear automatically. On an ordinary day, Hanukkah, Purim, Rosh Chodesh, and Chol hа-Moed insert blocks should not appear.
+If the real calendar date has a relevant flag, the corresponding insert should appear automatically. On an ordinary day, Hanukkah, Purim, Rosh Chodesh, and Chol hа-Moed insert blocks should not appear.
 
 ## Transliteration nusach split
 

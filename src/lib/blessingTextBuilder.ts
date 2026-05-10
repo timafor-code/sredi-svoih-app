@@ -13,7 +13,27 @@ export type ApplyBlessingDynamicInsertsParams = {
   dynamicInsertRules?: readonly BlessingInsertRule[];
 };
 
+const NO_TACHANUN_DEFAULT_FLAGS: readonly JewishCalendarFlag[] = [
+  'rosh_chodesh',
+  'hanukkah',
+  'purim',
+  'chol_hamoed_pesach',
+  'chol_hamoed_sukkot',
+];
+
+const MIGDOL_VARIANT_FLAGS: readonly JewishCalendarFlag[] = [
+  'rosh_chodesh',
+  'chol_hamoed_pesach',
+  'chol_hamoed_sukkot',
+  'purim',
+  'hanukkah',
+];
+
 export function buildBlessingTextResult(textResult: BlessingTextResult): BlessingTextResult {
+  const baseResult = {
+    ...textResult,
+    defaultTachanunOn: shouldDefaultTachanunOn(textResult.calendarFlags),
+  };
   const contentBlocksWithDynamicInserts = applyBlessingDynamicInserts({
     blessing: textResult.blessing,
     calendarFlags: textResult.calendarFlags,
@@ -26,16 +46,22 @@ export function buildBlessingTextResult(textResult: BlessingTextResult): Blessin
   );
 
   if (contentBlocks === textResult.contentBlocks) {
-    return textResult;
+    return baseResult;
   }
 
   return {
-    ...textResult,
+    ...baseResult,
     contentBlocks,
     needsVerification:
       textResult.needsVerification ||
       contentBlocks.some((block) => block.needsVerification === true),
   };
+}
+
+export function shouldDefaultTachanunOn(
+  calendarFlags: readonly JewishCalendarFlag[],
+): boolean {
+  return !calendarFlags.some((flag) => NO_TACHANUN_DEFAULT_FLAGS.includes(flag));
 }
 
 function resolveRuntimeContentBlocks(
@@ -180,11 +206,7 @@ function getSelectedBodyVariantKey(
 }
 
 function hasMigdolCalendarFlag(activeFlags: ReadonlySet<JewishCalendarFlag>): boolean {
-  return (
-    activeFlags.has('rosh_chodesh') ||
-    activeFlags.has('chol_hamoed_pesach') ||
-    activeFlags.has('chol_hamoed_sukkot')
-  );
+  return MIGDOL_VARIANT_FLAGS.some((flag) => activeFlags.has(flag));
 }
 
 function hasLabeledBodyVariants(bodyRu: string | undefined): boolean {
