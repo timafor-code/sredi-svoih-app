@@ -129,7 +129,7 @@ Search results include lightweight match metadata for the UI. Fuzzy results may 
 
 The direct-card PR renders direct blessing search results on `/prayers/blessings` without leaving the screen. Selecting a direct blessing such as "Радуга", "Молния", "Гром", "Ашер яцар", or "Шеhехеяну" now shows a `BlessingDirectCard` below the search results instead of the old placeholder alert.
 
-The card uses local `getBlessingText()` data only, keeps a single active language tab visible at a time, and shows gentle placeholder copy when Hebrew, transliteration, or checked Russian text is not available yet. Verification notices stay soft because most catalog text is still pending source review.
+The card uses local `getBlessingText()` data only, keeps a single active language tab visible at a time, and shows neutral placeholder copy when Hebrew, transliteration, or Russian text is not available yet. User-facing verification notices are not shown in the blessing UI.
 
 This PR still does not add the shared `BlessingTextModal`, dynamic inserts, Supabase storage, migrations, SQLite, remote sync, or any source-text expansion. Those flows remain separate small PRs.
 
@@ -137,7 +137,7 @@ This PR still does not add the shared `BlessingTextModal`, dynamic inserts, Supa
 
 The full-text-modal PR adds the shared controlled `BlessingTextModal` for `/prayers/blessings`. It opens local `getBlessingText()` results from quick access rows, the direct blessing card's "Открыть полный текст" button, and item scheme steps.
 
-The modal keeps the same local catalog boundary as the previous blessings MVP work: it shows only the selected language tab, scrolls inside a dark glass panel for future long texts, and displays verification placeholders when a language is not ready. Dynamic inserts for Birkat Hamazon and Mein Shalosh remain a separate PR and are not rendered or assembled here.
+The modal keeps the same local catalog boundary as the previous blessings MVP work: it shows only the selected language tab, scrolls inside a dark glass panel for long texts, and displays neutral placeholders when a language is not ready. Dynamic inserts are assembled by the local catalog service before UI rendering.
 
 ## Core short blessing texts
 
@@ -145,7 +145,7 @@ This PR adds short core blessing text blocks for basic before-food and after-foo
 
 Long Birkat Hamazon and Mein Shalosh texts remain separate PRs.
 
-Holiday inserts remain a separate PR.
+Holiday inserts are handled locally through `calendarFlags` and blessing text blocks where available.
 
 Texts that keep `needsVerification: true` still require final rabbinic/source review before they are treated as approved.
 
@@ -271,9 +271,10 @@ The Hebrew reader/runtime pass keeps that scope and adds only working-reader con
 
 - manual preface selector: no preface, Tachanun-day preface, or no-Tachanun-day preface;
 - Hebcal insert rendering from local content blocks;
-- dev-only insert test controls inside `BlessingTextModal` for Hanukkah, Purim, Rosh Chodesh, Chol hа-Moed Pesach, and Chol hа-Moed Sukkot;
 - white fullscreen reader mode with black RTL Hebrew, local font-size controls, and an annotations toggle;
 - shared collapsed/expanded state for manual sections between the dark modal and reader mode.
+
+The dev-only insert test controls for Hanukkah, Purim, Rosh Chodesh, Chol hа-Moed Pesach, and Chol hа-Moed Sukkot were removed from `BlessingTextModal`. Real Hebcal inserts are preserved through `resolveJewishCalendarFlags()` and `getBlessingText()`; the modal renders the already-assembled `textResult.contentBlocks` without adding fake calendar flags.
 
 Shabbat and Yom Tov are still not runtime in the MVP. Transliteration and Russian translation of the main Birkat hамазон text are still not added.
 
@@ -295,9 +296,9 @@ Manual sections are rendered collapsed by default in the text modal:
 - Шева брахот
 - Благословение на бокал вина
 
-Hebrew text in `BlessingTextModal` uses a larger RTL siddur-like style and an iOS system serif fallback (`Times New Roman`) when available. No font assets are bundled in this PR. If iPhone smoke shows that the fallback is not stable enough, add a separate licensed Hebrew serif font in a future PR after license review; do not commit arbitrary `.ttf` or `.otf` files.
+Hebrew text in `BlessingTextModal` uses a larger RTL siddur-like style and an iOS system serif fallback (`Times New Roman`) when available. White fullscreen reader mode remains available for the Chabad Hebrew variant, with font-size controls and an annotation toggle. No font assets are bundled in this PR. If iPhone smoke shows that the fallback is not stable enough, add a separate licensed Hebrew serif font in a future PR after license review; do not commit arbitrary `.ttf` or `.otf` files.
 
-All newly added religious text blocks remain `needsVerification: true` pending final source/rabbinic and rights review.
+All newly added religious text blocks may still carry internal `needsVerification: true` pending final source/rabbinic and rights review. Source and rights status still require a separate decision before public release, but those warnings are not shown to users in the modal.
 
 ## Stabilization pass
 
@@ -374,4 +375,4 @@ When the user reaches Mein Shalosh from a concrete product, show only the concre
 
 ## Text verification
 
-This foundation intentionally does not include long religious texts. Real blessing text, nusach differences, inserts, and source links require review. Keep `needsVerification: true` for placeholder content and for any case that still needs halachic/source validation.
+Real blessing text, nusach differences, inserts, and source links require review. Keep `needsVerification: true` for placeholder content and for any case that still needs halachic/source validation, but do not surface generic verification warnings in the user-facing blessing modal.

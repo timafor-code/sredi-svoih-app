@@ -104,7 +104,7 @@ Search and tap each direct blessing:
 - `туалет`
 - `новый плод`
 
-Expected result: the full text modal opens immediately. Placeholder or verification wording is acceptable; do not expect real long religious text in this MVP pass.
+Expected result: the full text modal opens immediately. Neutral placeholder wording is acceptable where a language is unavailable; do not expect real long religious text in every MVP entry.
 
 ## Item schemes
 
@@ -140,37 +140,38 @@ Search and open conditional products such as:
 - `шакшука`
 - `шпинат`
 
-Expected result: the item scheme shows condition/dispute notes under `Условия и спорные случаи`, with verification wording where applicable.
+Expected result: the item scheme shows condition/dispute notes under `Условия и спорные случаи` where applicable.
 
 ## Language tabs
 
 - Open any modal from quick access, a direct blessing, and an item scheme step.
 - Switch between Russian, Hebrew, and transliteration tabs.
 - Confirm only one language tab is active at a time.
-- Confirm missing/placeholder content shows a soft `Текст требует проверки` message instead of a crash or blank modal.
+- Confirm missing/placeholder content shows neutral unavailable-copy instead of a crash, blank modal, or verification warning.
 
 ## iPhone: Биркат hамазон Хабад Hebrew
 
-- Open `Молитвы` -> `Благословения`.
-- Open `Биркат hамазон` -> `Хабад` -> `Иврит`.
-- Verify default preface state: no Tachanun/no-Tachanun preface is shown.
-- Select `С Тахануном`; confirm only `preface_tachanun_days_he` appears.
-- Select `Без Тахануна`; confirm only `preface_no_tachanun_days_he` appears.
-- Confirm both prefaces never appear together.
-- In dev mode, enable `Ханука`; confirm Al Hanisim Hanukkah appears.
-- Enable `Пурим`; confirm Al Hanisim Purim appears.
-- Enable `Рош Ходеш`; confirm Yaaleh Veyavo, Rosh Chodesh hАрахаман, and `מִגְדּוֹל` appear.
-- Enable `Холь hа-Моэд Песах`; confirm Yaaleh Veyavo uses `חַג הַמַּצּוֹת`.
-- Enable `Холь hа-Моэд Суккот`; confirm Yaaleh Veyavo uses `חַג הַסֻּכּוֹת` and Sukkot hАрахаман appears.
-- Open reader mode.
-- Confirm white background, black Hebrew, and readable close button.
-- Increase and decrease font size.
-- Confirm nikud is readable and lines do not overlap.
-- Toggle annotations.
-- Expand and collapse `Зимун` in reader mode.
-- Close reader mode and confirm the dark modal is still open.
-- Select `Русский` and `Транслит`; confirm both are still placeholders.
-- Select text nusach `Бейт Сфаради` and confirm it remains a placeholder.
+1. Open `Молитвы` -> `Благословения`.
+2. Open `Биркат hамазон`.
+3. Select `Хабад`.
+4. Select `Иврит`.
+5. Confirm no dev insert test chips are visible.
+6. Confirm no warning about test, verification, future checked text, or source review is visible.
+7. Confirm the Tachanun selector is still visible.
+8. Confirm the reader mode button is still visible.
+9. Open reader mode.
+10. Confirm white reader mode still works: white background, black Hebrew, and readable close button.
+11. Confirm font-size controls still work.
+12. Confirm the annotation toggle still works.
+13. Confirm manual sections are collapsed by default.
+14. Expand/collapse `Зимун`.
+15. Expand/collapse `Добавления после брит милы`.
+16. Expand/collapse `Шева брахот`.
+17. Confirm `Русский` is a placeholder.
+18. Confirm `Транслит` is a placeholder.
+19. Confirm `Бейт Сфаради` is a placeholder.
+
+If the real Hebcal date has a relevant flag, the corresponding insert should appear automatically. On an ordinary day, Hanukkah, Purim, Rosh Chodesh, and Chol hа-Moed insert blocks should not appear.
 
 ## Transliteration nusach split
 
@@ -178,7 +179,7 @@ Expected result: the item scheme shows condition/dispute notes under `Услов
 - Select `Транслит`.
 - Confirm the `Сефард` / `Ашкеназ` segmented control is visible.
 - Confirm `Сефард` shows the existing transliteration text.
-- Confirm `Ашкеназ` shows `Ашкеназская транслитерация будет добавлена после проверки.`
+- Confirm `Ашкеназ` shows `Ашкеназская транслитерация пока недоступна.`
 - Repeat the same `Транслит` -> `Сефард` / `Ашкеназ` check for `Шеhаколь`, `hагафен`, and `Боре нефашот`.
 - Confirm `Иврит` and `Русский` do not show the nusach tabs.
 

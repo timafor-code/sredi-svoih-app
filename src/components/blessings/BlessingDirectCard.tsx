@@ -44,14 +44,14 @@ type ActiveTextContent =
     };
 
 const languagePlaceholders: Record<BlessingLanguage, string> = {
-  he: 'Текст на иврите будет добавлен после проверки',
-  translit: 'Сефардская транслитерация будет добавлена после проверки',
-  ru: 'Текст требует проверки и будет добавлен позже',
+  he: 'Текст на иврите пока недоступен',
+  translit: 'Транслитерация пока недоступна',
+  ru: 'Русский перевод пока недоступен',
 };
 
 const translitNusachPlaceholders: Record<BlessingTranslitNusach, string> = {
-  sephard: 'Сефардская транслитерация будет добавлена после проверки',
-  ashkenaz: 'Ашкеназская транслитерация будет добавлена после проверки',
+  sephard: 'Сефардская транслитерация пока недоступна',
+  ashkenaz: 'Ашкеназская транслитерация пока недоступна',
 };
 
 function getBlessingIcon(blessing: Blessing): IoniconName {
@@ -176,7 +176,6 @@ export function BlessingDirectCard({
     selectedLanguage,
     selectedTranslitNusach,
   );
-  const showVerificationNotice = blessing.needsVerification || textResult.needsVerification;
 
   return (
     <GlassCard contentStyle={styles.content} style={styles.card}>
@@ -201,13 +200,6 @@ export function BlessingDirectCard({
           ) : null}
         </View>
       </View>
-
-      {showVerificationNotice ? (
-        <View style={styles.notice}>
-          <Ionicons name="information-circle-outline" size={18} color={colors.goldAccent} />
-          <Text style={styles.noticeText}>Текст требует проверки</Text>
-        </View>
-      ) : null}
 
       <BlessingLanguageTabs value={selectedLanguage} onValueChange={onLanguageChange} />
 
@@ -307,26 +299,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     marginTop: 7,
-  },
-  notice: {
-    minHeight: 42,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: 'rgba(255,200,50,0.18)',
-    backgroundColor: 'rgba(255,200,50,0.07)',
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-  },
-  noticeText: {
-    flex: 1,
-    minWidth: 0,
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '800',
-    lineHeight: 17,
   },
   textBox: {
     gap: 12,

@@ -5,14 +5,6 @@ const birkatHamazonChabadSourceUrl = 'https://w2.chabad.org/media/pdf/92404.pdf'
 
 export const birkatHamazonChabadHebrewBlocks = [
   {
-    key: 'source_notice_he',
-    kind: 'note',
-    language: 'he',
-    titleRu: 'Источник и статус',
-    bodyRu: 'Источник сверки: Chabad.org PDF 92404, Siddur Tehilat Hashem / Kehot. Текст требует финальной сверки и проверки прав перед публичным релизом.',
-    needsVerification: true,
-  },
-  {
     key: 'preface_tachanun_days_he',
     kind: 'text',
     language: 'he',
@@ -395,7 +387,6 @@ type BirkatHamazonChabadHebrewBlockKey =
 const birkatHamazonChabadRuntimeMetadata: Partial<
   Record<BirkatHamazonChabadHebrewBlockKey, Partial<BlessingContentBlock>>
 > = {
-  source_notice_he: { renderVariant: 'annotation' },
   preface_tachanun_days_he: { prefaceMode: 'tachanun' },
   preface_no_tachanun_days_he: { prefaceMode: 'no_tachanun' },
   al_hanisim_opening_he: {
@@ -454,7 +445,7 @@ function createBirkatHamazonPlaceholderBlocks(titleRu: string): BlessingNusachVa
       key: 'placeholder',
       kind: 'placeholder',
       titleRu,
-      bodyRu: `Placeholder для Биркат hамазон (${titleRu}). Полный текст требует отдельной проверки.`,
+      bodyRu: `Текст нусаха ${titleRu} пока недоступен.`,
       needsVerification: true,
     },
   ];
