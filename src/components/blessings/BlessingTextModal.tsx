@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   Modal,
   Platform,
@@ -16,7 +16,6 @@ import { BlessingLanguageTabs } from '@/components/blessings/BlessingLanguageTab
 import { BlessingTextNusachTabs } from '@/components/blessings/BlessingTextNusachTabs';
 import { BlessingTranslitNusachTabs } from '@/components/blessings/BlessingTranslitNusachTabs';
 import { GlassCard } from '@/components/glass/GlassCard';
-import { getBlessingText } from '@/services/blessingsCatalogService';
 import { colors } from '@/theme/colors';
 import { radius } from '@/theme/radius';
 import type {
@@ -25,7 +24,6 @@ import type {
   BlessingTextResult,
   BlessingTextNusach,
   BlessingTranslitNusach,
-  JewishCalendarFlag,
 } from '@/types/blessing';
 
 type BlessingTextModalProps = {
@@ -43,8 +41,6 @@ type BlessingTextModalProps = {
 type BlessingTextOverlayProps = Omit<BlessingTextModalProps, 'visible'>;
 
 type BirkatPrefaceMode = 'hidden' | NonNullable<BlessingContentBlock['prefaceMode']>;
-
-type DevCalendarFlagState = Partial<Record<JewishCalendarFlag, boolean>>;
 
 type TextRenderMode = 'dark' | 'reader';
 
@@ -70,36 +66,20 @@ type ActiveTextContent =
     };
 
 const languagePlaceholders: Record<BlessingLanguage, string> = {
-  he: 'Текст на иврите будет добавлен после проверки',
-  translit: 'Сефардская транслитерация будет добавлена после проверки',
-  ru: 'Текст требует проверки и будет добавлен позже',
+  he: 'Текст на иврите пока недоступен',
+  translit: 'Транслитерация пока недоступна',
+  ru: 'Русский перевод пока недоступен',
 };
 
 const translitNusachPlaceholders: Record<BlessingTranslitNusach, string> = {
-  sephard: 'Сефардская транслитерация будет добавлена после проверки',
-  ashkenaz: 'Ашкеназская транслитерация будет добавлена после проверки',
+  sephard: 'Сефардская транслитерация пока недоступна',
+  ashkenaz: 'Ашкеназская транслитерация пока недоступна',
 };
 
 const prefaceModeOptions: readonly { label: string; value: BirkatPrefaceMode }[] = [
   { label: 'Без вступления', value: 'hidden' },
   { label: 'С Тахануном', value: 'tachanun' },
   { label: 'Без Тахануна', value: 'no_tachanun' },
-];
-
-const calendarFlagOrder: readonly JewishCalendarFlag[] = [
-  'hanukkah',
-  'purim',
-  'rosh_chodesh',
-  'chol_hamoed_pesach',
-  'chol_hamoed_sukkot',
-];
-
-const devCalendarFlagOptions: readonly { flag: JewishCalendarFlag; label: string }[] = [
-  { flag: 'hanukkah', label: 'Ханука' },
-  { flag: 'purim', label: 'Пурим' },
-  { flag: 'rosh_chodesh', label: 'Рош Ходеш' },
-  { flag: 'chol_hamoed_pesach', label: 'Холь hа-Моэд Песах' },
-  { flag: 'chol_hamoed_sukkot', label: 'Холь hа-Моэд Суккот' },
 ];
 
 const readerMinFontSize = 22;
@@ -236,20 +216,6 @@ function isBirkatHamazonChabadHebrewMode(
   );
 }
 
-function getSelectedDevCalendarFlags(
-  devCalendarFlags: DevCalendarFlagState,
-): JewishCalendarFlag[] {
-  return calendarFlagOrder.filter((flag) => devCalendarFlags[flag] === true);
-}
-
-function mergeCalendarFlags(
-  baseFlags: readonly JewishCalendarFlag[],
-  extraFlags: readonly JewishCalendarFlag[],
-): JewishCalendarFlag[] {
-  const activeFlags = new Set([...baseFlags, ...extraFlags]);
-  return calendarFlagOrder.filter((flag) => activeFlags.has(flag));
-}
-
 export function BlessingTextOverlay({
   onClose,
   onLanguageChange,
@@ -268,43 +234,13 @@ export function BlessingTextOverlay({
   const panelMaxHeight = Math.min(availablePanelHeight, 720);
   const [expandedManualGroups, setExpandedManualGroups] = useState<Record<string, boolean>>({});
   const [prefaceMode, setPrefaceMode] = useState<BirkatPrefaceMode>('hidden');
-  const [devCalendarFlags, setDevCalendarFlags] = useState<DevCalendarFlagState>({});
   const [isReaderOpen, setIsReaderOpen] = useState(false);
   const [readerFontSize, setReaderFontSize] = useState(28);
   const [showReaderAnnotations, setShowReaderAnnotations] = useState(true);
   const isBirkatHebrewRuntime =
     !!textResult &&
     isBirkatHamazonChabadHebrewMode(textResult, selectedLanguage, selectedTextNusach);
-  const selectedDevCalendarFlags = getSelectedDevCalendarFlags(devCalendarFlags);
-  const shouldUseDevCalendarOverride =
-    isBirkatHebrewRuntime && selectedDevCalendarFlags.length > 0;
-  const effectiveCalendarFlags =
-    textResult && shouldUseDevCalendarOverride
-      ? mergeCalendarFlags(textResult.calendarFlags, selectedDevCalendarFlags)
-      : textResult?.calendarFlags ?? [];
-  const effectiveCalendarFlagKey = effectiveCalendarFlags.join('|');
-  const effectiveTextResult = useMemo(() => {
-    if (!textResult || !shouldUseDevCalendarOverride) {
-      return textResult;
-    }
-
-    return (
-      getBlessingText(textResult.blessing.slug, {
-        calendarFlags: effectiveCalendarFlags,
-        language: selectedLanguage,
-        selectedTextNusach,
-      }) ?? textResult
-    );
-  }, [
-    effectiveCalendarFlagKey,
-    selectedLanguage,
-    selectedTextNusach,
-    shouldUseDevCalendarOverride,
-    textResult,
-  ]);
-  const showVerificationNotice =
-    !!effectiveTextResult &&
-    (effectiveTextResult.blessing.needsVerification || effectiveTextResult.needsVerification);
+  const effectiveTextResult = textResult;
   const textNusachVariants = effectiveTextResult?.blessing.nusachVariants ?? [];
   const showTextNusachTabs = textNusachVariants.length > 1;
   const shouldShowTranslitNusachTabs =
@@ -314,12 +250,10 @@ export function BlessingTextOverlay({
     ? selectedTranslitNusach
     : 'sephard';
   const showBirkatHebrewTools = isBirkatHebrewRuntime;
-  const showDevInsertTester = showBirkatHebrewTools && __DEV__;
   const scrollOffset =
-    (showVerificationNotice ? 286 : 230) +
+    230 +
     (showTextNusachTabs ? 50 : 0) +
-    (showBirkatHebrewTools ? 100 : 0) +
-    (showDevInsertTester ? 84 : 0);
+    (showBirkatHebrewTools ? 100 : 0);
   const scrollMaxHeight = Math.max(190, panelMaxHeight - scrollOffset);
   const activeContent = effectiveTextResult
     ? getActiveTextContent(
@@ -335,13 +269,6 @@ export function BlessingTextOverlay({
     setExpandedManualGroups((current) => ({
       ...current,
       [groupKey]: !(current[groupKey] ?? defaultExpanded),
-    }));
-  }
-
-  function toggleDevCalendarFlag(flag: JewishCalendarFlag) {
-    setDevCalendarFlags((current) => ({
-      ...current,
-      [flag]: current[flag] !== true,
     }));
   }
 
@@ -558,15 +485,6 @@ export function BlessingTextOverlay({
               />
             ) : null}
 
-            {showVerificationNotice ? (
-              <View style={styles.notice}>
-                <Ionicons name="information-circle-outline" size={18} color={colors.goldAccent} />
-                <Text style={styles.noticeText}>
-                  Текст требует проверки. Полная версия будет добавлена после сверки источника.
-                </Text>
-              </View>
-            ) : null}
-
             {showBirkatHebrewTools ? (
               <View style={styles.readerActionRow}>
                 <Pressable
@@ -611,46 +529,6 @@ export function BlessingTextOverlay({
                     </Pressable>
                   );
                 })}
-              </View>
-            ) : null}
-
-            {showDevInsertTester ? (
-              <View style={styles.devInsertPanel}>
-                <Text style={styles.devInsertTitle}>Проверка вставок</Text>
-                <View style={styles.devInsertChips}>
-                  {devCalendarFlagOptions.map((option) => {
-                    const isActive = devCalendarFlags[option.flag] === true;
-
-                    return (
-                      <Pressable
-                        accessibilityRole="checkbox"
-                        accessibilityState={{ checked: isActive }}
-                        key={option.flag}
-                        onPress={() => toggleDevCalendarFlag(option.flag)}
-                        style={({ pressed }) => [
-                          styles.devInsertChip,
-                          isActive && styles.devInsertChipActive,
-                          pressed && styles.pressed,
-                        ]}
-                      >
-                        <Ionicons
-                          name={isActive ? 'checkbox' : 'square-outline'}
-                          size={14}
-                          color={isActive ? colors.goldAccent : colors.textDim}
-                        />
-                        <Text
-                          numberOfLines={1}
-                          style={[
-                            styles.devInsertChipText,
-                            isActive && styles.devInsertChipTextActive,
-                          ]}
-                        >
-                          {option.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
               </View>
             ) : null}
 
@@ -850,26 +728,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 19,
   },
-  notice: {
-    minHeight: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: 'rgba(255,200,50,0.18)',
-    backgroundColor: 'rgba(255,200,50,0.07)',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  noticeText: {
-    flex: 1,
-    minWidth: 0,
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '800',
-    lineHeight: 17,
-  },
   readerActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -923,53 +781,6 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
   prefaceOptionTextActive: {
-    color: colors.goldAccent,
-  },
-  devInsertPanel: {
-    gap: 8,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: 'rgba(99,179,237,0.20)',
-    backgroundColor: 'rgba(99,179,237,0.07)',
-    paddingHorizontal: 11,
-    paddingVertical: 10,
-  },
-  devInsertTitle: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: '900',
-    lineHeight: 15,
-  },
-  devInsertChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7,
-  },
-  devInsertChip: {
-    minHeight: 30,
-    maxWidth: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: colors.glass.w05,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-  },
-  devInsertChipActive: {
-    borderColor: 'rgba(255,200,50,0.42)',
-    backgroundColor: 'rgba(255,200,50,0.11)',
-  },
-  devInsertChipText: {
-    flexShrink: 1,
-    color: colors.textDim,
-    fontSize: 11,
-    fontWeight: '800',
-    lineHeight: 15,
-  },
-  devInsertChipTextActive: {
     color: colors.goldAccent,
   },
   scrollArea: {
