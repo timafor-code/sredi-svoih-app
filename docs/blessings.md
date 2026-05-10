@@ -265,21 +265,26 @@ This insert infrastructure does not add Supabase blessing storage, migrations, S
 - `sourceUrl: https://w2.chabad.org/media/pdf/92404.pdf`
 - `needsVerification: true`
 
-This PR adds Hebrew only. Russian translation of the main text, Sephardic transliteration, and Ashkenazic transliteration are not included. The Beit Sefaradi nusach remains a placeholder.
+Chabad Birkat hамазон now has Hebrew with nikud plus Russian transliteration layers for `Сефард` and `Ашкеназ`. The transliteration was added from the provided project files, but follows the current Hebrew block structure after PR #87-#91 rather than the older md source-map structure.
 
-The Hebrew reader/runtime pass keeps that scope and adds only working-reader controls for the Chabad Hebrew variant:
+Russian translation of the main text is still not added, and the Beit Sefaradi nusach remains a placeholder.
+
+The reader/runtime pass keeps that scope and adds working controls for the Birkat hамазон text surface:
 
 - compact iOS-style `Таханун` switch with calendar auto-default: on for a regular weekday, off for Rosh Chodesh, Hanukkah, Purim, Chol hа-Moed Pesach, and Chol hа-Moed Sukkot; users can still change it manually while the modal is open;
 - Hebcal insert rendering from local content blocks;
 - automatic Magdil/Migdol selection in the text builder: regular weekdays use `מַגְדִּיל`, while Rosh Chodesh, Chol hа-Moed, Purim, and Hanukkah use `מִגְדּוֹל`;
-- white fullscreen reader mode with black RTL Hebrew, local font-size controls up to `50`, proportional line height, and an annotations toggle;
+- white fullscreen reader mode for Hebrew, Sephard translit, Ashkenaz translit, and future Russian text;
+- Hebrew reader text uses black RTL siddur-style typography; translit and Russian use black LTR readable typography without the Hebrew font style;
+- local font-size controls up to `50`, proportional line height per language, and an annotations toggle;
 - shared collapsed/expanded state for manual sections between the dark modal and reader mode.
 
 `Зимун` now renders role annotations as structured content segments before their corresponding Hebrew lines. The Russian labels `Ведущий:`, `Отвечают:`, `Те, кто ел, отвечают:`, and `Те, кто не ел, отвечают:` are styled as LTR annotations, not as part of the Hebrew body. The Hebrew remains vocalized RTL text. `Зимун на свадьбе / Шева брахот` uses the same segment renderer for its parallel Zimun structure.
 
 The dev-only insert test controls for Hanukkah, Purim, Rosh Chodesh, Chol hа-Moed Pesach, and Chol hа-Moed Sukkot were removed from `BlessingTextModal`. Real Hebcal inserts are preserved through `resolveJewishCalendarFlags()` and `getBlessingText()`; the modal renders the already-assembled `textResult.contentBlocks` without adding fake calendar flags.
 
-Shabbat and Yom Tov are still not runtime in the MVP. Transliteration and Russian translation of the main Birkat hамазон text are still not added.
+Shabbat and Yom Tov are still not runtime in the MVP. Russian translation of the main Birkat hамазон text is still not added.
+The same local runtime behavior applies to Chabad transliteration blocks: Tachanun preface switching, Hebcal inserts, Magdil/Migdol selection, and manual collapsed sections use the same block metadata as Hebrew.
 
 Runtime Hebcal inserts are limited to:
 
@@ -299,7 +304,7 @@ Manual sections are rendered collapsed by default in the text modal:
 - Шева брахот
 - Благословение на бокал вина
 
-Hebrew text in `BlessingTextModal` uses a larger RTL siddur-like style and an iOS system serif fallback (`Times New Roman`) when available. White fullscreen reader mode remains available for the Chabad Hebrew variant, with font-size controls from `22` to `50` and an annotation toggle. Reader Hebrew line height scales with the selected font size so nikud remains readable. No font assets are bundled in this PR. If iPhone smoke shows that the fallback is not stable enough, add a separate licensed Hebrew serif font in a future PR after license review; do not commit arbitrary `.ttf` or `.otf` files.
+Hebrew text in `BlessingTextModal` uses a larger RTL siddur-like style and an iOS system serif fallback (`Times New Roman`) when available. White fullscreen reader mode uses the active language and translit nusach after the same visible-block filtering as the dark modal. Hebrew stays RTL with siddur styling; Sephard translit, Ashkenaz translit, and future Russian stay LTR with a normal readable font. Font-size controls run from `22` to `50`, and line height scales by language so nikud and translit both remain readable. No font assets are bundled in this PR. If iPhone smoke shows that the fallback is not stable enough, add a separate licensed Hebrew serif font in a future PR after license review; do not commit arbitrary `.ttf` or `.otf` files.
 
 Internal metadata such as `needsVerification`, `sourceName`, and `sourceUrl` may remain for validators and documentation. User-facing modal and reader annotations should not show PDF/source/review/test/status warnings; annotations should describe practical reading behavior, inserts, collapsible sections, and Zimun roles.
 

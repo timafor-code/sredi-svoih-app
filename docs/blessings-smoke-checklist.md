@@ -165,7 +165,7 @@ Expected result: the item scheme shows condition/dispute notes under `Услов
 12. Increase Hebrew font to `50`.
 13. Confirm nikud remains readable and text scrolls correctly.
 14. Confirm the font can be decreased again.
-15. Confirm Russian, transliteration, and Beit Sefaradi placeholders are unchanged.
+15. Confirm Russian and Beit Sefaradi placeholders are unchanged.
 16. Open `Зимун`.
 17. Confirm role labels appear: `Ведущий`, `Отвечают`, `Те, кто ел, отвечают`, `Те, кто не ел, отвечают`.
 18. Confirm role labels are styled as annotations, not Hebrew text.
@@ -175,6 +175,44 @@ Expected result: the item scheme shows condition/dispute notes under `Услов
 22. Expand/collapse `Шева брахот`.
 
 If the real calendar date has a relevant flag, the corresponding insert should appear automatically. On an ordinary day, Hanukkah, Purim, Rosh Chodesh, and Chol hа-Moed insert blocks should not appear.
+
+## iPhone: Биркат hамазон Хабад translit
+
+1. Open `Молитвы` -> `Благословения`.
+2. Open `Биркат hамазон`.
+3. Select `Хабад`.
+4. Select `Иврит` and confirm Hebrew still works.
+5. Select `Транслит`.
+6. Select `Сефард`.
+7. Confirm Sephardic translit is visible and not placeholder.
+8. Open `Зимун` and confirm role labels + translit.
+9. Select `Ашкеназ`.
+10. Confirm Ashkenazi translit is visible and not placeholder.
+11. Open `Зимун` and confirm role labels + translit.
+12. Toggle `Таханун` on/off and confirm preface changes in translit.
+13. Confirm manual sections remain collapsed by default.
+14. Open `Добавления после брит милы` in translit.
+15. Open `Шева брахот` in translit.
+16. Confirm `Русский` still placeholder.
+17. Confirm `Бейт Сфаради` still placeholder.
+
+## iPhone: Биркат hамазон reader mode across languages
+
+1. Open `Биркат hамазон` -> `Хабад`.
+2. Select `Иврит` -> open reader mode -> confirm Hebrew RTL reader works.
+3. Close reader.
+4. Select `Транслит` -> `Сефард` -> open reader mode.
+5. Confirm Sephard translit appears in the white reader.
+6. Confirm translit is LTR and not using the Hebrew font.
+7. Confirm font-size controls work.
+8. Confirm annotations are grey LTR.
+9. Confirm `Зимун` opens in reader mode and role labels display correctly.
+10. Close reader.
+11. Select `Транслит` -> `Ашкеназ` -> open reader mode.
+12. Confirm Ashkenaz translit appears in the white reader.
+13. Confirm font-size controls and manual sections work.
+14. Confirm `Русский` placeholder does not crash reader mode.
+15. Confirm `Бейт Сфаради` placeholder does not crash.
 
 ## Transliteration nusach split
 

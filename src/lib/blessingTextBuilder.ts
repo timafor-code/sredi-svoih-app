@@ -188,7 +188,7 @@ function getSelectedBodyVariantKey(
   calendarFlags: readonly JewishCalendarFlag[],
   activeFlags: ReadonlySet<JewishCalendarFlag>,
 ): string | null {
-  if (block.key === 'migdol_magdal_he') {
+  if (block.key.startsWith('migdol_magdal_')) {
     return hasMigdolCalendarFlag(activeFlags) ? 'rosh_chodesh_or_chol_hamoed' : 'weekday';
   }
 
