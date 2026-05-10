@@ -6,6 +6,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   useWindowDimensions,
   View,
@@ -44,6 +45,11 @@ type BirkatPrefaceMode = 'hidden' | NonNullable<BlessingContentBlock['prefaceMod
 
 type TextRenderMode = 'dark' | 'reader';
 
+type DisplaySegment = {
+  annotationRu?: string;
+  body: string;
+};
+
 type DisplayBlock = {
   annotationRu?: string;
   body: string;
@@ -52,6 +58,7 @@ type DisplayBlock = {
   kind?: BlessingContentBlock['kind'];
   key: string;
   renderVariant?: BlessingContentBlock['renderVariant'];
+  segments?: DisplaySegment[];
   titleRu?: string;
 };
 
@@ -76,18 +83,15 @@ const translitNusachPlaceholders: Record<BlessingTranslitNusach, string> = {
   ashkenaz: 'Ашкеназская транслитерация пока недоступна',
 };
 
-const prefaceModeOptions: readonly { label: string; value: BirkatPrefaceMode }[] = [
-  { label: 'Без вступления', value: 'hidden' },
-  { label: 'С Тахануном', value: 'tachanun' },
-  { label: 'Без Тахануна', value: 'no_tachanun' },
-];
-
 const readerMinFontSize = 22;
 const readerMaxFontSize = 36;
 const readerFontStep = 2;
 
-function hasBlockBody(block: BlessingContentBlock): block is BlessingContentBlock & { bodyRu: string } {
-  return typeof block.bodyRu === 'string' && block.bodyRu.trim().length > 0;
+function hasBlockBody(block: BlessingContentBlock): boolean {
+  return (
+    (typeof block.bodyRu === 'string' && block.bodyRu.trim().length > 0) ||
+    Boolean(block.segments?.some((segment) => segment.bodyRu.trim().length > 0))
+  );
 }
 
 function toDisplayBlock(block: BlessingContentBlock): DisplayBlock {
@@ -99,6 +103,12 @@ function toDisplayBlock(block: BlessingContentBlock): DisplayBlock {
     kind: block.kind,
     key: block.key,
     renderVariant: block.renderVariant,
+    segments: block.segments
+      ?.map((segment) => ({
+        annotationRu: segment.annotationRu,
+        body: segment.bodyRu.trim(),
+      }))
+      .filter((segment) => segment.body.length > 0),
     titleRu: block.titleRu,
   };
 }
@@ -233,7 +243,7 @@ export function BlessingTextOverlay({
   const availablePanelHeight = Math.max(320, height - topPadding - bottomPadding);
   const panelMaxHeight = Math.min(availablePanelHeight, 720);
   const [expandedManualGroups, setExpandedManualGroups] = useState<Record<string, boolean>>({});
-  const [prefaceMode, setPrefaceMode] = useState<BirkatPrefaceMode>('hidden');
+  const [prefaceMode, setPrefaceMode] = useState<BirkatPrefaceMode>('no_tachanun');
   const [isReaderOpen, setIsReaderOpen] = useState(false);
   const [readerFontSize, setReaderFontSize] = useState(28);
   const [showReaderAnnotations, setShowReaderAnnotations] = useState(true);
@@ -253,7 +263,7 @@ export function BlessingTextOverlay({
   const scrollOffset =
     230 +
     (showTextNusachTabs ? 50 : 0) +
-    (showBirkatHebrewTools ? 100 : 0);
+    (showBirkatHebrewTools ? 56 : 0);
   const scrollMaxHeight = Math.max(190, panelMaxHeight - scrollOffset);
   const activeContent = effectiveTextResult
     ? getActiveTextContent(
@@ -264,6 +274,7 @@ export function BlessingTextOverlay({
       )
     : null;
   const readerLineHeight = Math.round(readerFontSize * 1.6);
+  const isTachanunPrefaceEnabled = prefaceMode === 'tachanun';
 
   function toggleManualGroup(groupKey: string, defaultExpanded: boolean) {
     setExpandedManualGroups((current) => ({
@@ -278,6 +289,10 @@ export function BlessingTextOverlay({
     );
   }
 
+  function setTachanunPrefaceEnabled(enabled: boolean) {
+    setPrefaceMode(enabled ? 'tachanun' : 'no_tachanun');
+  }
+
   function renderDisplayBlock(block: DisplayBlock, renderMode: TextRenderMode) {
     const isReader = renderMode === 'reader';
     const isInsert = isInsertBlock(block);
@@ -286,9 +301,57 @@ export function BlessingTextOverlay({
     const groupKey = block.collapsibleGroupKey ?? block.key;
     const manualDefaultExpanded = block.defaultCollapsed === false;
     const isManualExpanded = expandedManualGroups[groupKey] ?? manualDefaultExpanded;
+    const hasSegments = Boolean(block.segments?.length);
+    const bodyTextStyle = [
+      isReader ? styles.readerBodyText : styles.bodyText,
+      selectedLanguage === 'he' &&
+        !isAnnotation &&
+        (isReader ? styles.readerHebrewText : styles.hebrewBodyText),
+      selectedLanguage === 'he' && !isAnnotation && styles.hebrewSiddurText,
+      isReader &&
+        selectedLanguage === 'he' &&
+        !isAnnotation && {
+          fontSize: readerFontSize,
+          lineHeight: readerLineHeight,
+        },
+      isAnnotation &&
+        (isReader ? styles.readerAnnotationBodyText : styles.annotationBodyText),
+    ];
 
     if (isReader && isAnnotation && !showReaderAnnotations) {
       return null;
+    }
+
+    function renderBodyText(body: string, key: string) {
+      return (
+        <Text
+          key={key}
+          selectable
+          style={bodyTextStyle}
+        >
+          {body}
+        </Text>
+      );
+    }
+
+    function renderSegmentedBody() {
+      return block.segments?.map((segment, index) => (
+        <View
+          key={`${block.key}:segment:${index}`}
+          style={isReader ? styles.readerSegmentBlock : styles.segmentBlock}
+        >
+          {segment.annotationRu && (!isReader || showReaderAnnotations) ? (
+            <Text
+              style={
+                isReader ? styles.readerSegmentAnnotationText : styles.segmentAnnotationText
+              }
+            >
+              {segment.annotationRu}
+            </Text>
+          ) : null}
+          {renderBodyText(segment.body, `${block.key}:segment:${index}:body`)}
+        </View>
+      ));
     }
 
     if (isManualCollapsible) {
@@ -328,22 +391,9 @@ export function BlessingTextOverlay({
                   {block.annotationRu}
                 </Text>
               ) : null}
-              <Text
-                selectable
-                style={[
-                  isReader ? styles.readerBodyText : styles.bodyText,
-                  selectedLanguage === 'he' &&
-                    (isReader ? styles.readerHebrewText : styles.hebrewBodyText),
-                  selectedLanguage === 'he' && styles.hebrewSiddurText,
-                  isReader &&
-                    selectedLanguage === 'he' && {
-                      fontSize: readerFontSize,
-                      lineHeight: readerLineHeight,
-                    },
-                ]}
-              >
-                {block.body}
-              </Text>
+              {hasSegments
+                ? renderSegmentedBody()
+                : renderBodyText(block.body, `${block.key}:body`)}
             </View>
           ) : null}
         </View>
@@ -393,26 +443,9 @@ export function BlessingTextOverlay({
             {block.annotationRu}
           </Text>
         ) : null}
-        <Text
-          selectable
-          style={[
-            isReader ? styles.readerBodyText : styles.bodyText,
-            selectedLanguage === 'he' &&
-              !isAnnotation &&
-              (isReader ? styles.readerHebrewText : styles.hebrewBodyText),
-            selectedLanguage === 'he' && !isAnnotation && styles.hebrewSiddurText,
-            isReader &&
-              selectedLanguage === 'he' &&
-              !isAnnotation && {
-                fontSize: readerFontSize,
-                lineHeight: readerLineHeight,
-              },
-            isAnnotation &&
-              (isReader ? styles.readerAnnotationBodyText : styles.annotationBodyText),
-          ]}
-        >
-          {block.body}
-        </Text>
+        {hasSegments
+          ? renderSegmentedBody()
+          : renderBodyText(block.body, `${block.key}:body`)}
       </View>
     );
   }
@@ -486,7 +519,7 @@ export function BlessingTextOverlay({
             ) : null}
 
             {showBirkatHebrewTools ? (
-              <View style={styles.readerActionRow}>
+              <View style={styles.birkatToolsRow}>
                 <Pressable
                   accessibilityLabel="Открыть режим чтения"
                   accessibilityRole="button"
@@ -498,37 +531,31 @@ export function BlessingTextOverlay({
                     Режим чтения
                   </Text>
                 </Pressable>
-              </View>
-            ) : null}
 
-            {showBirkatHebrewTools ? (
-              <View style={styles.prefaceSelector}>
-                {prefaceModeOptions.map((option) => {
-                  const isActive = prefaceMode === option.value;
-
-                  return (
-                    <Pressable
-                      accessibilityRole="button"
-                      key={option.value}
-                      onPress={() => setPrefaceMode(option.value)}
-                      style={({ pressed }) => [
-                        styles.prefaceOption,
-                        isActive && styles.prefaceOptionActive,
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <Text
-                        numberOfLines={1}
-                        style={[
-                          styles.prefaceOptionText,
-                          isActive && styles.prefaceOptionTextActive,
-                        ]}
-                      >
-                        {option.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
+                <View style={styles.tachanunSwitchControl}>
+                  <Text numberOfLines={1} style={styles.tachanunSwitchLabel}>
+                    Таханун
+                  </Text>
+                  <Switch
+                    accessibilityLabel="Таханун"
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: isTachanunPrefaceEnabled }}
+                    ios_backgroundColor="rgba(255,255,255,0.20)"
+                    onValueChange={setTachanunPrefaceEnabled}
+                    thumbColor={
+                      Platform.OS === 'android'
+                        ? isTachanunPrefaceEnabled
+                          ? colors.goldAccent
+                          : colors.textMuted
+                        : undefined
+                    }
+                    trackColor={{
+                      false: 'rgba(255,255,255,0.20)',
+                      true: 'rgba(255,200,50,0.52)',
+                    }}
+                    value={isTachanunPrefaceEnabled}
+                  />
+                </View>
               </View>
             ) : null}
 
@@ -728,60 +755,45 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 19,
   },
-  readerActionRow: {
+  birkatToolsRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 10,
   },
   readerOpenButton: {
-    minHeight: 36,
+    minHeight: 32,
     maxWidth: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 6,
     borderRadius: radius.full,
     borderWidth: 1,
     borderColor: 'rgba(255,200,50,0.26)',
     backgroundColor: 'rgba(255,200,50,0.08)',
-    paddingHorizontal: 11,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   readerOpenButtonText: {
     flexShrink: 1,
     color: colors.goldAccent,
-    fontSize: 12,
-    fontWeight: '900',
-    lineHeight: 16,
-  },
-  prefaceSelector: {
-    minHeight: 38,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7,
-  },
-  prefaceOption: {
-    minHeight: 34,
-    flexGrow: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.glass.w05,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  prefaceOptionActive: {
-    borderColor: 'rgba(255,200,50,0.48)',
-    backgroundColor: 'rgba(255,200,50,0.12)',
-  },
-  prefaceOptionText: {
-    color: colors.textMuted,
     fontSize: 11,
     fontWeight: '900',
     lineHeight: 15,
   },
-  prefaceOptionTextActive: {
-    color: colors.goldAccent,
+  tachanunSwitchControl: {
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginLeft: 'auto',
+  },
+  tachanunSwitchLabel: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 17,
   },
   scrollArea: {
     borderRadius: radius.card,
@@ -795,6 +807,17 @@ const styles = StyleSheet.create({
   },
   textBlock: {
     gap: 8,
+  },
+  segmentBlock: {
+    gap: 5,
+  },
+  segmentAnnotationText: {
+    color: 'rgba(255,200,50,0.72)',
+    fontSize: 12,
+    fontWeight: '900',
+    lineHeight: 16,
+    textAlign: 'left',
+    writingDirection: 'ltr',
   },
   insertBlock: {
     borderRadius: radius.md,
@@ -1028,6 +1051,17 @@ const styles = StyleSheet.create({
   },
   readerTextBlock: {
     gap: 8,
+  },
+  readerSegmentBlock: {
+    gap: 5,
+  },
+  readerSegmentAnnotationText: {
+    color: '#666666',
+    fontSize: 12,
+    fontWeight: '900',
+    lineHeight: 16,
+    textAlign: 'left',
+    writingDirection: 'ltr',
   },
   readerInsertBlock: {
     borderRadius: radius.md,

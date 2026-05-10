@@ -29,6 +29,11 @@ export type JewishCalendarFlag =
   | 'chol_hamoed_pesach'
   | 'chol_hamoed_sukkot';
 
+export interface BlessingContentSegment {
+  annotationRu?: string;
+  bodyRu: string;
+}
+
 export interface BlessingHomeConfig {
   enabled: boolean;
   group: BlessingHomeGroup;
@@ -50,6 +55,7 @@ export interface BlessingContentBlock {
   language?: BlessingLanguage;
   prefaceMode?: 'tachanun' | 'no_tachanun';
   renderVariant?: 'base' | 'insert' | 'annotation' | 'manual_collapsible';
+  segments?: readonly BlessingContentSegment[];
   triggerMode?: 'always' | 'hebcal' | 'manual' | 'future_not_runtime';
   translitNusach?: BlessingTranslitNusach;
   needsVerification?: boolean;
