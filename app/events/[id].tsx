@@ -18,6 +18,7 @@ import {
   getRegistrationStatusTitle,
   useEventRegistrationAction,
 } from '@/hooks/useEventRegistrationAction';
+import { isEventPast } from '@/lib/eventTime';
 import { useAuthStore } from '@/store/useAuthStore';
 import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
@@ -34,16 +35,6 @@ const eventStatusTitles: Partial<Record<NonNullable<EventItem['status']>, string
   cancelled: 'Событие отменено',
   archived: 'Событие в архиве',
 };
-
-function parseTime(value: string | null | undefined): number | null {
-  if (!value) {
-    return null;
-  }
-
-  const time = new Date(value).getTime();
-
-  return Number.isNaN(time) ? null : time;
-}
 
 function formatDateTime(value: string, timeZone?: string | null, includeDate = true): string {
   const options: Intl.DateTimeFormatOptions = includeDate
@@ -113,9 +104,7 @@ function formatEventDate(event: EventItem): string {
 }
 
 function hasEventPassed(event: EventItem): boolean {
-  const eventTime = parseTime(event.endsAt) ?? parseTime(event.startsAt);
-
-  return eventTime !== null && eventTime < Date.now();
+  return isEventPast(event);
 }
 
 function getPlace(event: EventItem): string {

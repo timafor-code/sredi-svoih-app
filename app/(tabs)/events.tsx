@@ -22,6 +22,7 @@ import {
   getEventRegistrationActionTitle,
   useEventRegistrationAction,
 } from '@/hooks/useEventRegistrationAction';
+import { getEventSortTime, isEventPast, parseEventTime } from '@/lib/eventTime';
 import { useAuthStore } from '@/store/useAuthStore';
 import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
@@ -97,38 +98,26 @@ function eventMatchesFilter(event: EventItem, filter: EventFilterId): boolean {
   }
 }
 
-function parseEventTime(value: string | null | undefined): number | null {
-  if (!value) {
-    return null;
+function eventMatchesTimeFilter(event: EventItem, filter: EventTimeFilter, now: number): boolean {
+  const past = isEventPast(event, null, now);
+
+  if (filter === 'Прошедшие') {
+    return past;
   }
 
-  const time = new Date(value).getTime();
+  const hasAnyTime = parseEventTime(event.startsAt) !== null || parseEventTime(event.endsAt) !== null;
 
-  return Number.isNaN(time) ? null : time;
-}
-
-function getEventBoundaryTime(event: EventItem): number | null {
-  return parseEventTime(event.endsAt) ?? parseEventTime(event.startsAt);
-}
-
-function eventMatchesTimeFilter(event: EventItem, filter: EventTimeFilter, now: number): boolean {
-  const eventTime = getEventBoundaryTime(event);
-
-  if (eventTime === null) {
+  if (!hasAnyTime && event.isPermanent !== true) {
     return false;
   }
 
-  return filter === 'Ближайшие' ? eventTime >= now : eventTime < now;
-}
-
-function getEventStartSortTime(event: EventItem): number {
-  return parseEventTime(event.startsAt) ?? 0;
+  return !past;
 }
 
 function sortEventsByTime(events: EventItem[], filter: EventTimeFilter): EventItem[] {
   return [...events].sort((first, second) => {
-    const firstTime = getEventStartSortTime(first);
-    const secondTime = getEventStartSortTime(second);
+    const firstTime = getEventSortTime(first);
+    const secondTime = getEventSortTime(second);
 
     if (firstTime === secondTime) {
       return first.title.localeCompare(second.title, 'ru');
