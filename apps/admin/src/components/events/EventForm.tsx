@@ -46,6 +46,7 @@ type EventFormState = {
   audience: string;
   startDate: string;
   startTime: string;
+  isPermanent: boolean;
   endDate: string;
   endTime: string;
   timezone: string;
@@ -67,7 +68,7 @@ type StringFormField = {
   [Field in keyof EventFormState]: EventFormState[Field] extends string ? Field : never;
 }[keyof EventFormState];
 
-type FormErrorKey = StringFormField | "waitlistEnabled" | "requiresApproval" | "form";
+type FormErrorKey = StringFormField | "isPermanent" | "waitlistEnabled" | "requiresApproval" | "form";
 type FormErrors = Partial<Record<FormErrorKey, string>>;
 
 type EventFormProps = {
@@ -102,6 +103,7 @@ const defaultForm: EventFormState = {
   audience: "",
   startDate: "",
   startTime: "",
+  isPermanent: false,
   endDate: "",
   endTime: "",
   timezone: DEFAULT_TIMEZONE,
@@ -253,7 +255,13 @@ export function EventForm({
     }
 
     setForm((current) => ({ ...current, [field]: value }));
-    setErrors((current) => ({ ...current, [field]: undefined, form: undefined }));
+    setErrors((current) => ({
+      ...current,
+      [field]: undefined,
+      endDate: field === "isPermanent" && value === true ? undefined : current.endDate,
+      endTime: field === "isPermanent" && value === true ? undefined : current.endTime,
+      form: undefined,
+    }));
 
     if (field === "registrationMode" && typeof value === "string") {
       onRegistrationModeChange?.(value);
@@ -408,19 +416,28 @@ export function EventForm({
             type="time"
             value={form.startTime}
           />
+          <CheckboxField
+            checked={form.isPermanent}
+            helperText="Не переносить событие в прошедшие по времени окончания. Используется для курсов, Шабата и серий."
+            label="Постоянное событие"
+            onChange={(value) => updateField("isPermanent", value)}
+            variant="permanent"
+          />
           <TextField
+            disabled={form.isPermanent}
             error={errors.endDate}
             label="Дата окончания"
             onChange={(value) => updateField("endDate", value)}
             type="date"
-            value={form.endDate}
+            value={form.isPermanent ? "" : form.endDate}
           />
           <TextField
+            disabled={form.isPermanent}
             error={errors.endTime}
             label="Время окончания"
             onChange={(value) => updateField("endTime", value)}
             type="time"
-            value={form.endTime}
+            value={form.isPermanent ? "" : form.endTime}
           />
           <TextField
             error={errors.timezone}
@@ -572,9 +589,13 @@ function TextField({
   label: string;
   onChange: (value: string) => void;
   value: string;
-} & Pick<InputHTMLAttributes<HTMLInputElement>, "min" | "placeholder" | "type">) {
+} & Pick<InputHTMLAttributes<HTMLInputElement>, "disabled" | "min" | "placeholder" | "type">) {
   return (
-    <label className="event-form-field">
+    <label
+      className={
+        props.disabled ? "event-form-field event-form-field--disabled" : "event-form-field"
+      }
+    >
       <span>{label}</span>
       <input
         aria-invalid={Boolean(error)}
@@ -641,21 +662,34 @@ function SelectField({
 
 function CheckboxField({
   checked,
+  helperText,
   label,
   onChange,
+  variant,
 }: {
   checked: boolean;
+  helperText?: string;
   label: string;
   onChange: (value: boolean) => void;
+  variant?: "default" | "permanent";
 }) {
   return (
-    <label className="event-form-check">
+    <label
+      className={
+        variant === "permanent"
+          ? "event-form-check event-form-check--permanent"
+          : "event-form-check"
+      }
+    >
       <input
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
         type="checkbox"
       />
-      <span>{label}</span>
+      <span className="event-form-check__content">
+        <span>{label}</span>
+        {helperText ? <small>{helperText}</small> : null}
+      </span>
     </label>
   );
 }
@@ -690,6 +724,7 @@ function buildFormFromEvent(event: AdminEvent): EventFormState {
     audience: event.audience ?? "",
     startDate: start.date,
     startTime: start.time,
+    isPermanent: event.isPermanent,
     endDate: end.date,
     endTime: end.time,
     timezone,
@@ -716,6 +751,7 @@ function validateForm(
   const eventKind = isAdminEventKind(form.eventKind) ? form.eventKind : null;
   const category = cleanString(form.category);
   const timezone = cleanString(form.timezone) ?? DEFAULT_TIMEZONE;
+  const isPermanent = form.isPermanent;
   const status = isAdminEventStatus(form.status) ? form.status : null;
   const visibility = isAdminEventVisibility(form.visibility) ? form.visibility : null;
   const registrationMode = isAdminEventRegistrationMode(form.registrationMode)
@@ -773,7 +809,7 @@ function validateForm(
   }
 
   let endsAt: string | null = null;
-  if (form.endDate || form.endTime) {
+  if (!isPermanent && (form.endDate || form.endTime)) {
     if (!form.endDate) {
       errors.endDate = "Укажите дату окончания или очистите время окончания.";
     }
@@ -791,7 +827,7 @@ function validateForm(
     }
   }
 
-  if (startsAt && endsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
+  if (!isPermanent && startsAt && endsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
     errors.endDate = "Окончание должно быть позже начала.";
   }
 
@@ -827,7 +863,8 @@ function validateForm(
       shortDescription: cleanString(form.shortDescription),
       description: cleanString(form.description),
       startsAt,
-      endsAt,
+      endsAt: isPermanent ? null : endsAt,
+      isPermanent,
       timezone,
       locationName: cleanString(form.locationName),
       address: cleanString(form.address),

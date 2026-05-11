@@ -1310,6 +1310,7 @@ function buildImportDraftPrefill(item: AdminImportReviewItem): ImportDraftPrefil
     shortDescription: rawDetails.shortDescription,
     startsAt,
     endsAt: rawDetails.endsAt,
+    isPermanent: false,
     timezone: rawDetails.timezone ?? "Europe/Moscow",
     locationName: cleanString(item.parsedLocation) ?? rawDetails.location,
     address: rawDetails.address,

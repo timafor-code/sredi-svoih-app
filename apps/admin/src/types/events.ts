@@ -30,6 +30,7 @@ export type AdminEventRow = {
   short_description: string | null;
   starts_at: string | null;
   ends_at: string | null;
+  is_permanent: boolean;
   timezone: string | null;
   location_name: string | null;
   address: string | null;
@@ -64,6 +65,7 @@ export type AdminEvent = {
   shortDescription: string | null;
   startsAt: string | null;
   endsAt: string | null;
+  isPermanent: boolean;
   timezone: string | null;
   locationName: string | null;
   address: string | null;
@@ -96,6 +98,7 @@ export type AdminEventMutationInput = {
   description: string | null;
   startsAt: string;
   endsAt: string | null;
+  isPermanent: boolean;
   timezone: string;
   locationName: string | null;
   address: string | null;
