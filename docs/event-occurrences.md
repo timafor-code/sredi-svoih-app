@@ -135,6 +135,65 @@ Parent event: `event_kind = 'announcement'` and usually
 
 This PR does not introduce a separate news module.
 
+## Active vs past state
+
+Parent event active/past and occurrence active/past are derived in the client
+(both mobile and web-admin) instead of being stored. The shared rules are:
+
+- A parent event is **active/upcoming** if it has at least one future active
+  occurrence, even when `events.starts_at` is already in the past.
+- A parent event is **past** only when none of its `event_occurrences` are
+  future and active and the parent event itself is in the past per the rules
+  below.
+- A parent event with `events.is_permanent = true` is never moved to past based
+  on `starts_at` alone, because the parent is a long-lived card without a real
+  end time.
+- For events without occurrences and `is_permanent = false`, the existing rule
+  applies: past when `ends_at < now`, or when `ends_at is null` and
+  `starts_at < now`.
+- An occurrence is past when `ends_at < now`, or when `ends_at is null` and
+  `starts_at < now`.
+- An occurrence with `status in ('cancelled', 'archived', 'hidden')` is treated
+  as inactive even if its date is in the future.
+
+Past occurrences are kept in the database — nothing is auto-deleted and
+`status` is never changed by the client. They are simply hidden from the
+default active list:
+
+- The web-admin "Dates and sessions" constructor hides past occurrences from
+  the active list by default. A toggle `Показать прошедшие` exposes them with
+  a small `Прошёл` badge.
+- The mobile list and event detail screens treat parent events with future
+  active occurrences as active, so a parent created on 5 May with future
+  occurrences on 15/22/29 May stays in the upcoming list while older
+  occurrences are filtered out.
+
+## Registration window state
+
+The occurrence registration state is derived from
+`registration_opens_at` / `registration_closes_at` plus the occurrence and
+parent event timing. Possible states with their Russian labels:
+
+| State | Label |
+| --- | --- |
+| `not_required` | Регистрация не требуется (event `registration_mode = 'none'`) |
+| `past` | Сеанс прошёл |
+| `not_started` | Регистрация ещё не началась (`now < registration_opens_at`) |
+| `closed` | Регистрация закрыта (`now > registration_closes_at`) |
+| `always_open` | Регистрация открыта (both window fields null) |
+| `open` | Регистрация открыта |
+
+Mobile occurrence picker disables non-`open`/`always_open` rows; web-admin
+shows the same label per occurrence row alongside the existing window times.
+
+The shared helper lives at `src/lib/eventTime.ts` for mobile and at
+`apps/admin/src/lib/eventTime.ts` for web-admin. Each side keeps its own copy
+because the admin Vite project and the mobile Expo project do not share a TS
+path. No migration was needed: existing `events.is_permanent`, the
+`event_occurrences` table and current RLS are sufficient. Mobile reads active
+occurrences in a single batch `select` on `event_occurrences` that respects the
+existing public/members RLS.
+
 ## Out of scope
 
 This PR does not change mobile registration, does not add scheduled generation,

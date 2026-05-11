@@ -41,6 +41,7 @@ export interface Event {
   description: string | null;
   startsAt: string;
   endsAt: string | null;
+  isPermanent: boolean;
   timezone: string | null;
   locationName: string | null;
   address: string | null;
@@ -96,6 +97,7 @@ export interface EventItem {
   description?: string | null;
   startsAt?: string;
   endsAt?: string | null;
+  isPermanent?: boolean;
   timezone?: string | null;
   locationName?: string | null;
   address?: string | null;

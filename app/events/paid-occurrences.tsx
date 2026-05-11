@@ -16,6 +16,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassCard } from '@/components/glass/GlassCard';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
+import {
+  getOccurrenceRegistrationState,
+  getOccurrenceRegistrationStateLabel,
+  type OccurrenceRegistrationState,
+} from '@/lib/eventTime';
 import { listEventOccurrences } from '@/services/eventOccurrencesService';
 import { useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
@@ -24,16 +29,6 @@ import type { EventOccurrence } from '@/types/eventOccurrence';
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function parseTime(value: string | null | undefined): number | null {
-  if (!value) {
-    return null;
-  }
-
-  const time = new Date(value).getTime();
-
-  return Number.isNaN(time) ? null : time;
 }
 
 function formatDate(value: string, timeZone?: string | null, includeYear = true): string {
@@ -96,23 +91,24 @@ function formatDateTime(value: string, timeZone?: string | null): string {
   }
 }
 
-function formatRegistrationWindow(occurrence: EventOccurrence): string {
-  const now = Date.now();
-  const opensAt = parseTime(occurrence.registrationOpensAt);
-  const closesAt = parseTime(occurrence.registrationClosesAt);
+function formatRegistrationWindowDetail(occurrence: EventOccurrence): string | null {
+  const opens = occurrence.registrationOpensAt
+    ? formatDateTime(occurrence.registrationOpensAt, occurrence.timezone)
+    : null;
+  const closes = occurrence.registrationClosesAt
+    ? formatDateTime(occurrence.registrationClosesAt, occurrence.timezone)
+    : null;
 
-  if (opensAt !== null && now < opensAt && occurrence.registrationOpensAt) {
-    return `Регистрация откроется ${formatDateTime(
-      occurrence.registrationOpensAt,
-      occurrence.timezone,
-    )}`;
+  if (opens && closes) {
+    return `Регистрация: ${opens} – ${closes}`;
   }
-
-  if (closesAt !== null && now > closesAt) {
-    return 'Регистрация закрыта';
+  if (opens) {
+    return `Регистрация открывается ${opens}`;
   }
-
-  return 'Регистрация открыта';
+  if (closes) {
+    return `Регистрация закрывается ${closes}`;
+  }
+  return null;
 }
 
 function getPlace(event: EventItem): string {
@@ -143,25 +139,40 @@ function Chip({ children }: ChipProps) {
 }
 
 type OccurrenceCardProps = {
+  disabled: boolean;
   eventTitle: string;
   occurrence: EventOccurrence;
+  registrationState: OccurrenceRegistrationState;
   selected: boolean;
   onPress: () => void;
 };
 
 function OccurrenceCard({
+  disabled,
   eventTitle,
   occurrence,
   onPress,
+  registrationState,
   selected,
 }: OccurrenceCardProps) {
+  const stateLabel = getOccurrenceRegistrationStateLabel(registrationState);
+  const windowDetail = formatRegistrationWindowDetail(occurrence);
+  const badgeStyle =
+    registrationState === 'open' || registrationState === 'always_open'
+      ? styles.stateBadgeOpen
+      : registrationState === 'past'
+        ? styles.stateBadgePast
+        : styles.stateBadgeMuted;
+
   return (
     <Pressable
-      onPress={onPress}
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
       style={({ pressed }) => [
         styles.occurrenceCard,
         selected && styles.occurrenceCardSelected,
-        pressed && styles.pressed,
+        disabled && styles.occurrenceCardDisabled,
+        pressed && !disabled && styles.pressed,
       ]}
     >
       <View style={styles.occurrenceContent}>
@@ -175,14 +186,14 @@ function OccurrenceCard({
           {occurrence.title?.trim() || eventTitle}
         </Text>
         <View style={styles.occurrenceMetaRow}>
-          <View style={styles.activeBadge}>
-            <Text style={styles.activeBadgeText}>Активна</Text>
+          <View style={[styles.stateBadge, badgeStyle]}>
+            <Text style={styles.stateBadgeText}>{stateLabel}</Text>
           </View>
-          <Text style={styles.windowText}>{formatRegistrationWindow(occurrence)}</Text>
+          {windowDetail ? <Text style={styles.windowText}>{windowDetail}</Text> : null}
         </View>
       </View>
-      <View style={[styles.radio, selected && styles.radioSelected]}>
-        {selected ? <View style={styles.radioDot} /> : null}
+      <View style={[styles.radio, selected && styles.radioSelected, disabled && styles.radioDisabled]}>
+        {selected && !disabled ? <View style={styles.radioDot} /> : null}
       </View>
     </Pressable>
   );
@@ -376,15 +387,25 @@ export default function PaidOccurrencesScreen() {
               </GlassCard>
             ) : (
               <View style={styles.occurrencesList}>
-                {occurrences.map((occurrence) => (
-                  <OccurrenceCard
-                    key={occurrence.id}
-                    eventTitle={event.title}
-                    occurrence={occurrence}
-                    selected={occurrence.id === selectedOccurrenceId}
-                    onPress={() => setSelectedOccurrenceId(occurrence.id)}
-                  />
-                ))}
+                {occurrences.map((occurrence) => {
+                  const state = getOccurrenceRegistrationState(
+                    occurrence,
+                    Date.now(),
+                    event.registrationMode,
+                  );
+                  const selectable = state === 'open' || state === 'always_open';
+                  return (
+                    <OccurrenceCard
+                      key={occurrence.id}
+                      disabled={!selectable}
+                      eventTitle={event.title}
+                      occurrence={occurrence}
+                      registrationState={state}
+                      selected={occurrence.id === selectedOccurrenceId}
+                      onPress={() => setSelectedOccurrenceId(occurrence.id)}
+                    />
+                  );
+                })}
               </View>
             )}
           </>
@@ -563,6 +584,9 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
   },
+  occurrenceCardDisabled: {
+    opacity: 0.55,
+  },
   pressed: {
     opacity: 0.84,
   },
@@ -594,15 +618,25 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 4,
   },
-  activeBadge: {
+  stateBadge: {
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: colors.accent.greenBorder,
-    backgroundColor: colors.accent.greenBg,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  activeBadgeText: {
+  stateBadgeOpen: {
+    borderColor: colors.accent.greenBorder,
+    backgroundColor: colors.accent.greenBg,
+  },
+  stateBadgeMuted: {
+    borderColor: colors.glass.w16,
+    backgroundColor: colors.glass.w10,
+  },
+  stateBadgePast: {
+    borderColor: colors.accent.redBorder,
+    backgroundColor: colors.accent.redBg,
+  },
+  stateBadgeText: {
     color: colors.text,
     fontSize: 11,
     fontWeight: '700',
@@ -626,6 +660,9 @@ const styles = StyleSheet.create({
   radioSelected: {
     borderColor: colors.orange,
     backgroundColor: colors.accent.orangeBg,
+  },
+  radioDisabled: {
+    opacity: 0.4,
   },
   radioDot: {
     width: 10,

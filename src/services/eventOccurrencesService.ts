@@ -100,3 +100,60 @@ export async function listEventOccurrences(eventId: string): Promise<EventOccurr
     ((data ?? []) as EventOccurrenceRow[]).map(normalizeEventOccurrenceRow),
   );
 }
+
+const EVENT_OCCURRENCE_FIELDS = `
+  id,
+  event_id,
+  title,
+  starts_at,
+  ends_at,
+  timezone,
+  registration_opens_at,
+  registration_closes_at,
+  capacity,
+  waitlist_enabled,
+  requires_approval,
+  status,
+  sort_order,
+  created_at,
+  updated_at
+`;
+
+export async function listActiveOccurrencesForEvents(
+  eventIds: ReadonlyArray<string>,
+): Promise<Map<string, EventOccurrence[]>> {
+  const map = new Map<string, EventOccurrence[]>();
+
+  if (eventIds.length === 0) {
+    return map;
+  }
+
+  const { data, error } = await supabase
+    .from('event_occurrences')
+    .select(EVENT_OCCURRENCE_FIELDS)
+    .in('event_id', eventIds as string[])
+    .eq('status', 'active');
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const normalized = ((data ?? []) as EventOccurrenceRow[]).map(
+    normalizeEventOccurrenceRow,
+  );
+
+  normalized.forEach((occurrence) => {
+    const existing = map.get(occurrence.eventId);
+    if (existing) {
+      existing.push(occurrence);
+    } else {
+      map.set(occurrence.eventId, [occurrence]);
+    }
+  });
+
+  map.forEach((occurrences, key) => {
+    map.set(key, sortOccurrences(occurrences));
+  });
+
+  return map;
+}
