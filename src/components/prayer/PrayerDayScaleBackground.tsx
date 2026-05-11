@@ -1,6 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 
 import type { PrayerDayPeriod } from '@/lib/prayerDayPeriod';
 
@@ -10,7 +11,9 @@ type PrayerDayScaleBackgroundProps = {
 
 const CROSSFADE_DURATION_MS = 900;
 
-const STAR_SEED: ReadonlyArray<{ top: number; left: number; size: number; opacity: number }> = [
+type StarSeed = { top: number; left: number; size: number; opacity: number };
+
+const STAR_SEED: ReadonlyArray<StarSeed> = [
   { top: 8, left: 6, size: 2, opacity: 0.85 },
   { top: 14, left: 22, size: 1, opacity: 0.55 },
   { top: 6, left: 38, size: 1.5, opacity: 0.7 },
@@ -38,6 +41,127 @@ const STAR_SEED: ReadonlyArray<{ top: number; left: number; size: number; opacit
   { top: 48, left: 44, size: 1, opacity: 0.45 },
 ];
 
+const STAR_STATIC: ReadonlyArray<StarSeed> = STAR_SEED.filter((_, idx) => idx % 3 === 0);
+const STAR_TWINKLE_A: ReadonlyArray<StarSeed> = STAR_SEED.filter((_, idx) => idx % 3 === 1);
+const STAR_TWINKLE_B: ReadonlyArray<StarSeed> = STAR_SEED.filter((_, idx) => idx % 3 === 2);
+
+function renderStars(stars: ReadonlyArray<StarSeed>, keyPrefix: string) {
+  return stars.map((star, idx) => (
+    <View
+      key={`${keyPrefix}-${idx}`}
+      style={{
+        position: 'absolute',
+        top: `${star.top}%`,
+        left: `${star.left}%`,
+        width: star.size,
+        height: star.size,
+        borderRadius: star.size / 2,
+        backgroundColor: '#FFFFFF',
+        opacity: star.opacity,
+      }}
+    />
+  ));
+}
+
+function AnimatedTwinkleGroup({
+  stars,
+  duration,
+  minOpacity,
+  maxOpacity,
+  keyPrefix,
+}: {
+  stars: ReadonlyArray<StarSeed>;
+  duration: number;
+  minOpacity: number;
+  maxOpacity: number;
+  keyPrefix: string;
+}) {
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(progress, {
+          toValue: 1,
+          duration,
+          useNativeDriver: true,
+        }),
+        Animated.timing(progress, {
+          toValue: 0,
+          duration,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [progress, duration]);
+
+  const opacity = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [minOpacity, maxOpacity],
+  });
+
+  return (
+    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { opacity }]}>
+      {renderStars(stars, keyPrefix)}
+    </Animated.View>
+  );
+}
+
+function AnimatedBreathingBlob({
+  style,
+  duration,
+  minOpacity,
+  maxOpacity,
+  minScale,
+  maxScale,
+}: {
+  style: StyleProp<ViewStyle>;
+  duration: number;
+  minOpacity: number;
+  maxOpacity: number;
+  minScale: number;
+  maxScale: number;
+}) {
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(progress, {
+          toValue: 1,
+          duration,
+          useNativeDriver: true,
+        }),
+        Animated.timing(progress, {
+          toValue: 0,
+          duration,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [progress, duration]);
+
+  const opacity = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [minOpacity, maxOpacity],
+  });
+  const scale = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [minScale, maxScale],
+  });
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[style, { opacity, transform: [{ scale }] }]}
+    />
+  );
+}
+
 function PeriodLayer({ period }: { period: PrayerDayPeriod }) {
   if (period === 'dawn') {
     return (
@@ -49,7 +173,14 @@ function PeriodLayer({ period }: { period: PrayerDayPeriod }) {
           end={{ x: 0.5, y: 1 }}
           style={StyleSheet.absoluteFillObject}
         />
-        <View style={[styles.softBlob, styles.dawnGlowLeft]} />
+        <AnimatedBreathingBlob
+          style={[styles.softBlob, styles.dawnGlowLeft]}
+          duration={6200}
+          minOpacity={0.85}
+          maxOpacity={1}
+          minScale={1}
+          maxScale={1.025}
+        />
         <View style={[styles.softBlob, styles.dawnHaze]} />
         <LinearGradient
           colors={['rgba(255,200,140,0)', 'rgba(255,180,120,0.30)']}
@@ -95,7 +226,14 @@ function PeriodLayer({ period }: { period: PrayerDayPeriod }) {
           style={StyleSheet.absoluteFillObject}
         />
         <View style={[styles.softBlob, styles.sunsetCloudLeft]} />
-        <View style={[styles.softBlob, styles.sunsetCloudRight]} />
+        <AnimatedBreathingBlob
+          style={[styles.softBlob, styles.sunsetCloudRight]}
+          duration={5400}
+          minOpacity={0.85}
+          maxOpacity={1}
+          minScale={1}
+          maxScale={1.025}
+        />
         <LinearGradient
           colors={['rgba(255,130,90,0)', 'rgba(255,140,90,0.32)']}
           start={{ x: 0.5, y: 0.5 }}
@@ -116,28 +254,35 @@ function PeriodLayer({ period }: { period: PrayerDayPeriod }) {
         end={{ x: 0.5, y: 1 }}
         style={StyleSheet.absoluteFillObject}
       />
-      {STAR_SEED.map((star, idx) => (
-        <View
-          key={`star-${idx}`}
-          style={{
-            position: 'absolute',
-            top: `${star.top}%`,
-            left: `${star.left}%`,
-            width: star.size,
-            height: star.size,
-            borderRadius: star.size / 2,
-            backgroundColor: '#FFFFFF',
-            opacity: star.opacity,
-          }}
-        />
-      ))}
+      {renderStars(STAR_STATIC, 'star-static')}
+      <AnimatedTwinkleGroup
+        stars={STAR_TWINKLE_A}
+        duration={2800}
+        minOpacity={0.4}
+        maxOpacity={0.8}
+        keyPrefix="star-a"
+      />
+      <AnimatedTwinkleGroup
+        stars={STAR_TWINKLE_B}
+        duration={3600}
+        minOpacity={0.35}
+        maxOpacity={0.75}
+        keyPrefix="star-b"
+      />
       <LinearGradient
         colors={['rgba(80,60,160,0)', 'rgba(80,60,160,0.35)']}
         start={{ x: 0.5, y: 0.55 }}
         end={{ x: 0.5, y: 1 }}
         style={styles.horizonStrip}
       />
-      <View style={[styles.softBlob, styles.nightGlow]} />
+      <AnimatedBreathingBlob
+        style={[styles.softBlob, styles.nightGlow]}
+        duration={6800}
+        minOpacity={0.85}
+        maxOpacity={1}
+        minScale={1}
+        maxScale={1.025}
+      />
       <View style={styles.contentOverlay} />
     </View>
   );
