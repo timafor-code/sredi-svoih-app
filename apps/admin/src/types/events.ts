@@ -20,6 +20,83 @@ export type AdminEventVisibility = (typeof ADMIN_EVENT_VISIBILITIES)[number];
 export type AdminEventKind = (typeof ADMIN_EVENT_KINDS)[number];
 export type AdminEventRegistrationMode = (typeof ADMIN_EVENT_REGISTRATION_MODES)[number];
 
+export const EVENT_STATUS_LABELS: Record<AdminEventStatus, string> = {
+  draft: "Черновик",
+  published: "Опубликовано",
+  cancelled: "Отменено",
+  archived: "В архиве",
+};
+
+export const EVENT_VISIBILITY_LABELS: Record<AdminEventVisibility, string> = {
+  public: "Публично",
+  members_only: "Для участников",
+  hidden: "Скрыто",
+};
+
+export const REGISTRATION_MODE_LABELS: Record<AdminEventRegistrationMode, string> = {
+  none: "Без регистрации",
+  external_link: "Внешняя ссылка",
+  internal_free: "Внутренняя бесплатная",
+  internal_paid: "Варианты участия / оплата",
+};
+
+export const REGISTRATION_MODE_SHORT_LABELS: Record<AdminEventRegistrationMode, string> = {
+  none: "Нет",
+  external_link: "Внешняя",
+  internal_free: "Внутр.",
+  internal_paid: "Варианты",
+};
+
+export const EVENT_SOURCE_LABELS = {
+  manual: "Вручную",
+  external: "Внешняя",
+  external_link: "Внешняя",
+  import: "Импорт",
+  website_scrape: "Импорт",
+} as const;
+
+export function isAdminEventStatus(value: string): value is AdminEventStatus {
+  return (ADMIN_EVENT_STATUSES as readonly string[]).includes(value);
+}
+
+export function isAdminEventVisibility(value: string): value is AdminEventVisibility {
+  return (ADMIN_EVENT_VISIBILITIES as readonly string[]).includes(value);
+}
+
+export function isAdminEventRegistrationMode(
+  value: string,
+): value is AdminEventRegistrationMode {
+  return (ADMIN_EVENT_REGISTRATION_MODES as readonly string[]).includes(value);
+}
+
+export function getEventStatusLabel(status: string): string {
+  return isAdminEventStatus(status) ? EVENT_STATUS_LABELS[status] : status;
+}
+
+export function getEventVisibilityLabel(visibility: string): string {
+  return isAdminEventVisibility(visibility) ? EVENT_VISIBILITY_LABELS[visibility] : visibility;
+}
+
+export function getRegistrationModeLabel(registrationMode: string): string {
+  return isAdminEventRegistrationMode(registrationMode)
+    ? REGISTRATION_MODE_LABELS[registrationMode]
+    : registrationMode;
+}
+
+export function getRegistrationModeShortLabel(registrationMode: string): string {
+  return isAdminEventRegistrationMode(registrationMode)
+    ? REGISTRATION_MODE_SHORT_LABELS[registrationMode]
+    : registrationMode;
+}
+
+export function getEventSourceLabel(sourceType: string): string {
+  const normalizedSourceType = sourceType.trim().toLocaleLowerCase("en-US");
+
+  return normalizedSourceType in EVENT_SOURCE_LABELS
+    ? EVENT_SOURCE_LABELS[normalizedSourceType as keyof typeof EVENT_SOURCE_LABELS]
+    : sourceType;
+}
+
 export type AdminEventRow = {
   id: string;
   community_id: string;

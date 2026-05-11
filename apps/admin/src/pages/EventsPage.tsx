@@ -12,6 +12,16 @@ import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
 import { listAdminEvents, updateAdminEvent } from "../services/adminEventsService";
 import type { AdminBadgeTone } from "../types/admin";
+import {
+  ADMIN_EVENT_REGISTRATION_MODES,
+  ADMIN_EVENT_STATUSES,
+  ADMIN_EVENT_VISIBILITIES,
+  getEventSourceLabel,
+  getEventStatusLabel,
+  getEventVisibilityLabel,
+  getRegistrationModeLabel,
+  getRegistrationModeShortLabel,
+} from "../types/events";
 import type {
   AdminEvent,
   AdminEventRegistrationMode,
@@ -60,25 +70,26 @@ type EventsPageProps = {
 
 const STATUS_FILTERS: Array<{ value: StatusFilter; label: string }> = [
   { value: "all", label: "Все" },
-  { value: "draft", label: "draft" },
-  { value: "published", label: "published" },
-  { value: "cancelled", label: "cancelled" },
-  { value: "archived", label: "archived" },
+  ...ADMIN_EVENT_STATUSES.map((status) => ({
+    value: status,
+    label: getEventStatusLabel(status),
+  })),
 ];
 
 const VISIBILITY_FILTERS: Array<{ value: VisibilityFilter; label: string }> = [
   { value: "all", label: "Все" },
-  { value: "public", label: "public" },
-  { value: "members_only", label: "members_only" },
-  { value: "hidden", label: "hidden" },
+  ...ADMIN_EVENT_VISIBILITIES.map((visibility) => ({
+    value: visibility,
+    label: getEventVisibilityLabel(visibility),
+  })),
 ];
 
 const REGISTRATION_MODE_FILTERS: Array<{ value: RegistrationModeFilter; label: string }> = [
   { value: "all", label: "Все" },
-  { value: "none", label: "none" },
-  { value: "external_link", label: "external_link" },
-  { value: "internal_free", label: "internal_free" },
-  { value: "internal_paid", label: "internal_paid" },
+  ...ADMIN_EVENT_REGISTRATION_MODES.map((registrationMode) => ({
+    value: registrationMode,
+    label: getRegistrationModeLabel(registrationMode),
+  })),
 ];
 
 const EVENT_STATUS_ACTIONS: EventStatusAction[] = [
@@ -424,7 +435,7 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
           <EventsState
             description={
               events.length === 0
-                ? "Supabase вернул пустой список для текущей сессии. Если RLS разрешает только published/public, здесь появятся только они."
+                ? "Supabase вернул пустой список для текущей сессии. Если RLS разрешает только опубликованные публичные события, здесь появятся только они."
                 : "Измените поисковый запрос или фильтры."
             }
             title={events.length === 0 ? "События не найдены" : "Нет совпадений"}
@@ -595,8 +606,8 @@ function EventsTable({
               </span>
               <div className="event-table__cell-stack" role="cell">
                 <span>{formatCapacity(event.capacity)}</span>
-                {event.waitlistEnabled ? <small>waitlist</small> : null}
-                {event.requiresApproval ? <small>approval</small> : null}
+                {event.waitlistEnabled ? <small>лист ожидания</small> : null}
+                {event.requiresApproval ? <small>подтверждение</small> : null}
               </div>
               <div className="event-table__cell-stack event-table__source" role="cell">
                 <span>{formatSourceLabel(event.sourceType)}</span>
@@ -800,9 +811,11 @@ function EventStatusActionDialog({
           <div className="event-action-state">
             <span>Сейчас</span>
             <div className="badge-row">
-              <Badge tone={getStatusTone(plan.event.status)}>{plan.event.status}</Badge>
+              <Badge tone={getStatusTone(plan.event.status)}>
+                {formatStatusLabel(plan.event.status)}
+              </Badge>
               <Badge tone={getVisibilityTone(plan.event.visibility)}>
-                {plan.event.visibility}
+                {formatVisibilityLabel(plan.event.visibility)}
               </Badge>
             </div>
             <p>{getMobileVisibilityNotice(plan.event.status, plan.event.visibility)}</p>
@@ -811,9 +824,11 @@ function EventStatusActionDialog({
           <div className="event-action-state event-action-state--next">
             <span>Будет</span>
             <div className="badge-row">
-              <Badge tone={getStatusTone(plan.nextStatus)}>{plan.nextStatus}</Badge>
+              <Badge tone={getStatusTone(plan.nextStatus)}>
+                {formatStatusLabel(plan.nextStatus)}
+              </Badge>
               <Badge tone={getVisibilityTone(plan.nextVisibility)}>
-                {plan.nextVisibility}
+                {formatVisibilityLabel(plan.nextVisibility)}
               </Badge>
             </div>
             <p>{getMobileVisibilityNotice(plan.nextStatus, plan.nextVisibility)}</p>
@@ -861,8 +876,8 @@ function buildEventStatusActionPlan(
       },
       summary:
         event.visibility === "hidden"
-          ? "Сейчас событие hidden, поэтому публикация поставит visibility=public. Если нужно members_only, сначала измените visibility в edit flow."
-          : "Публикация сохранит текущую visibility, потому что она уже не hidden.",
+          ? "Сейчас событие скрыто, поэтому публикация сделает его публичным. Если нужна видимость «Для участников», сначала измените видимость в редактировании."
+          : "Публикация сохранит текущую видимость, потому что событие уже не скрыто.",
     };
   }
 
@@ -875,7 +890,7 @@ function buildEventStatusActionPlan(
       payload: {
         visibility: "hidden",
       },
-      summary: "Меняется только visibility. Status останется без изменений.",
+      summary: "Меняется только видимость. Статус останется без изменений.",
     };
   }
 
@@ -891,7 +906,7 @@ function buildEventStatusActionPlan(
       },
       summary:
         event.status === "published"
-          ? "Опубликованное событие вернётся в черновик и станет hidden."
+          ? "Опубликованное событие вернётся в черновик и станет скрытым."
           : "Событие станет черновиком и будет скрыто из мобильного приложения.",
     };
   }
@@ -920,7 +935,7 @@ function buildEventStatusActionPlan(
       visibility: "hidden",
     },
     summary:
-      "Событие будет отправлено в архив и скрыто. Регистрации, уведомления и payment changes здесь не меняются.",
+      "Событие будет отправлено в архив и скрыто. Регистрации, уведомления и платежные изменения здесь не меняются.",
   };
 }
 
@@ -968,7 +983,7 @@ function getMobileVisibilityNotice(status: string, visibility: string): string {
   }
 
   if (visibility === "hidden") {
-    return "Hidden не отображается в мобильном приложении.";
+    return "Скрытое событие не отображается в мобильном приложении.";
   }
 
   if (status === "archived") {
@@ -976,14 +991,14 @@ function getMobileVisibilityNotice(status: string, visibility: string): string {
   }
 
   if (status === "published" && visibility === "public") {
-    return "Опубликованное public-событие будет видно всем пользователям.";
+    return "Опубликованное публичное событие будет видно всем пользователям.";
   }
 
   if (status === "published" && visibility === "members_only") {
-    return "Members only будет видно только участникам общины.";
+    return "Событие для участников будет видно только участникам общины.";
   }
 
-  return "Событие не станет published/public, поэтому не должно отображаться как публичное активное событие.";
+  return "Событие не станет опубликованным и публичным, поэтому не должно отображаться как публичное активное событие.";
 }
 
 function EventThumb({ event }: { event: AdminEvent }) {
@@ -1098,81 +1113,19 @@ function formatCapacity(capacity: number | null): string {
 }
 
 function formatStatusLabel(status: string): string {
-  if (status === "published") {
-    return "● Опубликовано";
-  }
-
-  if (status === "draft") {
-    return "◌ Черновик";
-  }
-
-  if (status === "hidden") {
-    return "◌ Скрыто";
-  }
-
-  if (status === "cancelled") {
-    return "× Отменено";
-  }
-
-  if (status === "archived") {
-    return "⊞ Архив";
-  }
-
-  return status;
+  return getEventStatusLabel(status);
 }
 
 function formatVisibilityLabel(visibility: string): string {
-  if (visibility === "public") {
-    return "◉ Публично";
-  }
-
-  if (visibility === "members_only") {
-    return "◉ Для участников";
-  }
-
-  if (visibility === "hidden") {
-    return "◎ Скрыто";
-  }
-
-  return visibility;
+  return getEventVisibilityLabel(visibility);
 }
 
 function formatRegistrationModeLabel(registrationMode: string): string {
-  if (registrationMode === "none") {
-    return "-";
-  }
-
-  if (registrationMode === "external_link") {
-    return "↗ Внешняя";
-  }
-
-  if (registrationMode === "internal_free") {
-    return "✓ Внутр.";
-  }
-
-  if (registrationMode === "internal_paid") {
-    return "₽ Варианты";
-  }
-
-  return registrationMode;
+  return getRegistrationModeShortLabel(registrationMode);
 }
 
 function formatSourceLabel(sourceType: string): string {
-  const normalizedSourceType = sourceType.trim().toLocaleLowerCase("en-US");
-
-  if (normalizedSourceType === "manual") {
-    return "✦ Вручную";
-  }
-
-  if (normalizedSourceType === "import") {
-    return "⟳ Импорт";
-  }
-
-  if (normalizedSourceType === "external" || normalizedSourceType === "external_link") {
-    return "↗ Внешняя";
-  }
-
-  return sourceType;
+  return getEventSourceLabel(sourceType);
 }
 
 function getStatusTone(status: string): AdminBadgeTone {

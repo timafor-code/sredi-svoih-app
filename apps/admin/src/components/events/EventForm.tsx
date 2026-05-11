@@ -22,6 +22,9 @@ import {
   ADMIN_EVENT_REGISTRATION_MODES,
   ADMIN_EVENT_STATUSES,
   ADMIN_EVENT_VISIBILITIES,
+  EVENT_STATUS_LABELS,
+  EVENT_VISIBILITY_LABELS,
+  REGISTRATION_MODE_LABELS,
 } from "../../types/events";
 import type { AdminEventCategory } from "../../types/eventCategories";
 
@@ -121,8 +124,14 @@ const defaultForm: EventFormState = {
   priceCurrency: DEFAULT_PRICE_CURRENCY,
 };
 
-const statusOptions = ADMIN_EVENT_STATUSES.map((value) => ({ label: value, value }));
-const visibilityOptions = ADMIN_EVENT_VISIBILITIES.map((value) => ({ label: value, value }));
+const statusOptions = ADMIN_EVENT_STATUSES.map((value) => ({
+  label: EVENT_STATUS_LABELS[value],
+  value,
+}));
+const visibilityOptions = ADMIN_EVENT_VISIBILITIES.map((value) => ({
+  label: EVENT_VISIBILITY_LABELS[value],
+  value,
+}));
 const eventKindLabels: Record<AdminEventKind, string> = {
   single: "Разовое событие",
   course: "Курс / серия занятий",
@@ -136,7 +145,7 @@ const eventKindOptions = ADMIN_EVENT_KINDS.map((value) => ({
   value,
 }));
 const registrationModeOptions = ADMIN_EVENT_REGISTRATION_MODES.map((value) => ({
-  label: value,
+  label: REGISTRATION_MODE_LABELS[value],
   value,
 }));
 
@@ -441,7 +450,7 @@ export function EventForm({
           />
           <TextField
             error={errors.timezone}
-            label="Timezone"
+            label="Часовой пояс"
             onChange={(value) => updateField("timezone", value)}
             value={form.timezone}
           />
@@ -464,7 +473,7 @@ export function EventForm({
             value={form.address}
           />
           <TextField
-            label="Image URL"
+            label="Ссылка на изображение"
             onChange={(value) => updateField("imageUrl", value)}
             placeholder="https://..."
             value={form.imageUrl}
@@ -480,7 +489,7 @@ export function EventForm({
           <SelectField
             error={errors.status}
             disabled={forceDraftHidden}
-            label="Status"
+            label="Статус"
             onChange={(value) => updateField("status", value)}
             options={statusOptions}
             value={effectiveStatus}
@@ -488,7 +497,7 @@ export function EventForm({
           <SelectField
             error={errors.visibility}
             disabled={forceDraftHidden}
-            label="Visibility"
+            label="Видимость"
             onChange={(value) => updateField("visibility", value)}
             options={visibilityOptions}
             value={effectiveVisibility}
@@ -503,21 +512,21 @@ export function EventForm({
         <div className="event-form-grid event-form-grid--two">
           <SelectField
             error={errors.registrationMode}
-            label="Registration mode *"
+            label="Тип регистрации *"
             onChange={(value) => updateField("registrationMode", value)}
             options={registrationModeOptions}
             value={form.registrationMode}
           />
           <TextField
             error={errors.registrationUrl}
-            label="Registration URL"
+            label="Ссылка регистрации"
             onChange={(value) => updateField("registrationUrl", value)}
             placeholder="https://..."
             value={form.registrationUrl}
           />
           <TextField
             error={errors.capacity}
-            label="Capacity"
+            label="Лимит мест"
             min={1}
             onChange={(value) => updateField("capacity", value)}
             type="number"
@@ -525,14 +534,14 @@ export function EventForm({
           />
           <TextField
             error={errors.priceAmount}
-            label="Price amount"
+            label="Стоимость"
             min={0}
             onChange={(value) => updateField("priceAmount", value)}
             type="number"
             value={form.priceAmount}
           />
           <TextField
-            label="Price currency"
+            label="Валюта"
             onChange={(value) => updateField("priceCurrency", value)}
             value={form.priceCurrency}
           />
@@ -541,12 +550,12 @@ export function EventForm({
         <div className="event-form-checks">
           <CheckboxField
             checked={form.waitlistEnabled}
-            label="Waitlist enabled"
+            label="Лист ожидания"
             onChange={(value) => updateField("waitlistEnabled", value)}
           />
           <CheckboxField
             checked={form.requiresApproval}
-            label="Requires approval"
+            label="Требует подтверждения"
             onChange={(value) => updateField("requiresApproval", value)}
           />
         </div>
@@ -779,19 +788,19 @@ function validateForm(
   }
 
   if (!status) {
-    errors.status = "Выберите корректный status.";
+    errors.status = "Выберите корректный статус.";
   }
 
   if (!visibility) {
-    errors.visibility = "Выберите корректную visibility.";
+    errors.visibility = "Выберите корректную видимость.";
   }
 
   if (!registrationMode) {
-    errors.registrationMode = "Выберите корректный registration mode.";
+    errors.registrationMode = "Выберите корректный тип регистрации.";
   }
 
   if (registrationMode === "external_link" && !cleanString(form.registrationUrl)) {
-    errors.registrationUrl = "Для external_link нужна ссылка регистрации.";
+    errors.registrationUrl = "Для внешней регистрации нужна ссылка.";
   }
 
   let startsAt: string | null = null;
@@ -800,12 +809,12 @@ function validateForm(
       startsAt = buildZonedIso(form.startDate, form.startTime, timezone);
     } catch {
       errors.startDate = "Дата и время начала должны быть валидными.";
-      errors.timezone = "Проверьте timezone.";
+      errors.timezone = "Проверьте часовой пояс.";
     }
   }
 
   if (status === "published" && !startsAt) {
-    errors.status = "Для published нужно валидное время начала.";
+    errors.status = "Для публикации нужно валидное время начала.";
   }
 
   let endsAt: string | null = null;
@@ -833,12 +842,12 @@ function validateForm(
 
   const capacity = parseIntegerField(form.capacity, false);
   if (capacity.error) {
-    errors.capacity = "Capacity должен быть положительным целым числом.";
+    errors.capacity = "Лимит мест должен быть положительным целым числом.";
   }
 
   const priceAmount = parseIntegerField(form.priceAmount, true);
   if (priceAmount.error) {
-    errors.priceAmount = "Price amount должен быть нулём или положительным целым числом.";
+    errors.priceAmount = "Стоимость должна быть нулём или положительным целым числом.";
   }
 
   if (

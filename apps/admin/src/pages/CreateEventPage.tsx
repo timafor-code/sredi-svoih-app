@@ -7,6 +7,7 @@ import { GlassCard } from "../components/ui/GlassCard";
 import { createAdminEvent } from "../services/adminEventsService";
 import { listAdminEventCategories } from "../services/eventCategoriesService";
 import { useAdminAuth } from "../store/useAdminAuth";
+import { getEventStatusLabel, getEventVisibilityLabel } from "../types/events";
 import type { AdminEvent, AdminEventMutationInput } from "../types/events";
 import type { AdminEventCategory } from "../types/eventCategories";
 
@@ -90,7 +91,7 @@ export function CreateEventPage({ onBackToList, onCreated }: CreateEventPageProp
     return (
       <div className="page-stack page-stack--event-create">
         <section className="page-header">
-          <Badge tone="green">created</Badge>
+          <Badge tone="green">Создано</Badge>
           <h1>Событие создано</h1>
           <p>
             Запись создана через RPC admin_create_event. Вернитесь к списку, чтобы
@@ -103,7 +104,8 @@ export function CreateEventPage({ onBackToList, onCreated }: CreateEventPageProp
             <span>Новое событие</span>
             <h2>{createdEvent.title}</h2>
             <p>
-              {createdEvent.status} / {createdEvent.visibility}
+              {getEventStatusLabel(createdEvent.status)} /{" "}
+              {getEventVisibilityLabel(createdEvent.visibility)}
             </p>
           </div>
           <Button onClick={onBackToList} variant="primary">
@@ -117,7 +119,7 @@ export function CreateEventPage({ onBackToList, onCreated }: CreateEventPageProp
   return (
     <div className="page-stack page-stack--event-create">
       <section className="page-header">
-        <Badge tone="gold">manual create</Badge>
+        <Badge tone="gold">Ручное создание</Badge>
         <h1>Создать событие</h1>
         <p>
           Ручное создание события в текущей общине. Сохранение идёт через
