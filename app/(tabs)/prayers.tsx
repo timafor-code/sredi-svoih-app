@@ -83,30 +83,11 @@ export default function PrayersScreen() {
       { id: 'chatzot', l: 'Полдень', t: daily.times.chatzot.time, at: daily.times.chatzot.at },
       { id: 'sunset', l: 'Закат', t: daily.times.sunset.time, at: daily.times.sunset.at },
       { id: 'tzeit', l: 'Ночь', t: daily.times.tzeit.time, at: daily.times.tzeit.at },
-      {
-        id: 'alot-next',
-        l: 'Рассвет',
-        t: tomorrowDaily.times.alot.time,
-        at: tomorrowDaily.times.alot.at,
-      },
     ];
-    const withPercent = raw.map((item) => {
+    return raw.map((item) => {
       const rawPercent = ((item.at.getTime() - timelineStartMs) / timelineDurationMs) * 100;
       return { ...item, percent: Math.max(0, Math.min(100, rawPercent)) };
     });
-    const sorted = [...withPercent].sort((a, b) => a.percent - b.percent);
-    const minGap = 12;
-    const rowById: Record<string, number> = {};
-    let topPrev = -Infinity;
-    sorted.forEach((p) => {
-      if (p.percent - topPrev >= minGap) {
-        rowById[p.id] = 0;
-        topPrev = p.percent;
-      } else {
-        rowById[p.id] = 1;
-      }
-    });
-    return withPercent.map((p) => ({ ...p, row: rowById[p.id] }));
   }, [daily.times, tomorrowDaily.times]);
 
   useEffect(() => {
@@ -177,10 +158,7 @@ export default function PrayersScreen() {
                 ? { right: 0 as const, alignItems: 'flex-end' as const }
                 : { left: `${item.percent}%` as const, marginLeft: -28, alignItems: 'center' as const };
             return (
-              <View
-                key={item.id}
-                style={[styles.zmanPoint, horizontalStyle, { top: item.row === 1 ? 24 : 0 }]}
-              >
+              <View key={item.id} style={[styles.zmanPoint, horizontalStyle]}>
                 <Text style={styles.zmanTime}>{item.t}</Text>
                 <Text style={styles.zmanLabel}>{item.l}</Text>
               </View>
@@ -349,11 +327,12 @@ const styles = StyleSheet.create({
   },
   zmanOverview: {
     position: 'relative',
-    height: 48,
+    height: 28,
     marginTop: 2,
   },
   zmanPoint: {
     position: 'absolute',
+    top: 0,
     width: 56,
   },
   zmanTime: {
