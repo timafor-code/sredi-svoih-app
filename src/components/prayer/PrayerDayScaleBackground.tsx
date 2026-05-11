@@ -1,12 +1,14 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, StyleSheet, View } from 'react-native';
 
 import type { PrayerDayPeriod } from '@/lib/prayerDayPeriod';
 
 type PrayerDayScaleBackgroundProps = {
   period: PrayerDayPeriod;
 };
+
+const CROSSFADE_DURATION_MS = 900;
 
 const STAR_SEED: ReadonlyArray<{ top: number; left: number; size: number; opacity: number }> = [
   { top: 8, left: 6, size: 2, opacity: 0.85 },
@@ -36,15 +38,10 @@ const STAR_SEED: ReadonlyArray<{ top: number; left: number; size: number; opacit
   { top: 48, left: 44, size: 1, opacity: 0.45 },
 ];
 
-export function PrayerDayScaleBackground({ period }: PrayerDayScaleBackgroundProps) {
-  const stars = useMemo(
-    () => (period === 'night' ? STAR_SEED : []),
-    [period],
-  );
-
+function PeriodLayer({ period }: { period: PrayerDayPeriod }) {
   if (period === 'dawn') {
     return (
-      <View pointerEvents="none" style={styles.fill}>
+      <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
         <LinearGradient
           colors={['#1B2545', '#3A3560', '#7E5A6E', '#D89A82']}
           locations={[0, 0.35, 0.7, 1]}
@@ -67,7 +64,7 @@ export function PrayerDayScaleBackground({ period }: PrayerDayScaleBackgroundPro
 
   if (period === 'day') {
     return (
-      <View pointerEvents="none" style={styles.fill}>
+      <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
         <LinearGradient
           colors={['#0E1A3A', '#1B3A6B', '#2A5C9A']}
           locations={[0, 0.55, 1]}
@@ -89,7 +86,7 @@ export function PrayerDayScaleBackground({ period }: PrayerDayScaleBackgroundPro
 
   if (period === 'sunset') {
     return (
-      <View pointerEvents="none" style={styles.fill}>
+      <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
         <LinearGradient
           colors={['#1A1F4A', '#3D2F6B', '#A04E6E', '#E68A4A']}
           locations={[0, 0.4, 0.75, 1]}
@@ -111,7 +108,7 @@ export function PrayerDayScaleBackground({ period }: PrayerDayScaleBackgroundPro
   }
 
   return (
-    <View pointerEvents="none" style={styles.fill}>
+    <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
       <LinearGradient
         colors={['#04060F', '#0A1228', '#161E3D']}
         locations={[0, 0.55, 1]}
@@ -119,7 +116,7 @@ export function PrayerDayScaleBackground({ period }: PrayerDayScaleBackgroundPro
         end={{ x: 0.5, y: 1 }}
         style={StyleSheet.absoluteFillObject}
       />
-      {stars.map((star, idx) => (
+      {STAR_SEED.map((star, idx) => (
         <View
           key={`star-${idx}`}
           style={{
@@ -142,6 +139,62 @@ export function PrayerDayScaleBackground({ period }: PrayerDayScaleBackgroundPro
       />
       <View style={[styles.softBlob, styles.nightGlow]} />
       <View style={styles.contentOverlay} />
+    </View>
+  );
+}
+
+export function PrayerDayScaleBackground({ period }: PrayerDayScaleBackgroundProps) {
+  const [currentPeriod, setCurrentPeriod] = useState<PrayerDayPeriod>(period);
+  const [previousPeriod, setPreviousPeriod] = useState<PrayerDayPeriod | null>(null);
+  const topOpacity = useRef(new Animated.Value(1)).current;
+  const animationRef = useRef<Animated.CompositeAnimation | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      animationRef.current?.stop();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (period === currentPeriod) {
+      return;
+    }
+
+    animationRef.current?.stop();
+    setPreviousPeriod(currentPeriod);
+    setCurrentPeriod(period);
+    topOpacity.setValue(0);
+
+    const animation = Animated.timing(topOpacity, {
+      toValue: 1,
+      duration: CROSSFADE_DURATION_MS,
+      useNativeDriver: true,
+    });
+    animationRef.current = animation;
+    animation.start(({ finished }) => {
+      if (!finished || !isMountedRef.current) {
+        return;
+      }
+      setPreviousPeriod(null);
+    });
+  }, [period, currentPeriod, topOpacity]);
+
+  return (
+    <View pointerEvents="none" style={styles.fill}>
+      {previousPeriod !== null && previousPeriod !== currentPeriod ? (
+        <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+          <PeriodLayer period={previousPeriod} />
+        </View>
+      ) : null}
+      <Animated.View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFillObject, { opacity: topOpacity }]}
+      >
+        <PeriodLayer period={currentPeriod} />
+      </Animated.View>
     </View>
   );
 }
