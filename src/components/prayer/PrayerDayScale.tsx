@@ -61,11 +61,11 @@ export function PrayerDayScale({ today, tomorrow, now }: Props) {
           <View
             pointerEvents="none"
             style={[
-              styles.activeHalo,
+              styles.activeHaloBlur,
               {
                 left: `${activeGlow.leftPct}%`,
                 width: `${activeGlow.widthPct}%`,
-                backgroundColor: hexToRgba(activeGlow.accent, 0.12),
+                backgroundColor: hexToRgba(activeGlow.accent, 0.20),
                 shadowColor: activeGlow.accent,
               },
             ]}
@@ -165,13 +165,13 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 4,
   },
-  activeHalo: {
+  activeHaloBlur: {
     position: 'absolute',
-    top: 16,
-    height: 32,
-    borderRadius: 10,
-    shadowOpacity: 0.75,
-    shadowRadius: 18,
+    top: 12,
+    height: 40,
+    borderRadius: 12,
+    shadowOpacity: 1,
+    shadowRadius: 28,
     shadowOffset: { width: 0, height: 0 },
   },
   bar: {

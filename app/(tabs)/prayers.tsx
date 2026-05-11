@@ -79,16 +79,34 @@ export default function PrayersScreen() {
     const timelineEndMs = tomorrowDaily.times.sunrise.at.getTime();
     const timelineDurationMs = Math.max(1, timelineEndMs - timelineStartMs);
     const raw = [
-      { l: 'Рассвет', t: daily.times.alot.time, at: daily.times.alot.at },
-      { l: 'Полдень', t: daily.times.chatzot.time, at: daily.times.chatzot.at },
-      { l: 'Закат', t: daily.times.sunset.time, at: daily.times.sunset.at },
-      { l: 'Ночь', t: daily.times.tzeit.time, at: daily.times.tzeit.at },
+      { id: 'sunrise', l: 'Восход', t: daily.times.sunrise.time, at: daily.times.sunrise.at },
+      { id: 'chatzot', l: 'Полдень', t: daily.times.chatzot.time, at: daily.times.chatzot.at },
+      { id: 'sunset', l: 'Закат', t: daily.times.sunset.time, at: daily.times.sunset.at },
+      { id: 'tzeit', l: 'Ночь', t: daily.times.tzeit.time, at: daily.times.tzeit.at },
+      {
+        id: 'alot-next',
+        l: 'Рассвет',
+        t: tomorrowDaily.times.alot.time,
+        at: tomorrowDaily.times.alot.at,
+      },
     ];
-    return raw.map((item) => {
+    const withPercent = raw.map((item) => {
       const rawPercent = ((item.at.getTime() - timelineStartMs) / timelineDurationMs) * 100;
-      const percent = Math.max(3, Math.min(97, rawPercent));
-      return { ...item, percent };
+      return { ...item, percent: Math.max(0, Math.min(100, rawPercent)) };
     });
+    const sorted = [...withPercent].sort((a, b) => a.percent - b.percent);
+    const minGap = 12;
+    const rowById: Record<string, number> = {};
+    let topPrev = -Infinity;
+    sorted.forEach((p) => {
+      if (p.percent - topPrev >= minGap) {
+        rowById[p.id] = 0;
+        topPrev = p.percent;
+      } else {
+        rowById[p.id] = 1;
+      }
+    });
+    return withPercent.map((p) => ({ ...p, row: rowById[p.id] }));
   }, [daily.times, tomorrowDaily.times]);
 
   useEffect(() => {
@@ -150,12 +168,24 @@ export default function PrayersScreen() {
         <Text style={[styles.overline, styles.scaleOverline]}>ШКАЛА ДНЯ</Text>
         <PrayerDayScale today={daily} tomorrow={tomorrowDaily} now={now} />
         <View style={styles.zmanOverview}>
-          {overview.map((item) => (
-            <View key={item.t} style={[styles.zmanPoint, { left: `${item.percent}%` }]}>
-              <Text style={styles.zmanTime}>{item.t}</Text>
-              <Text style={styles.zmanLabel}>{item.l}</Text>
-            </View>
-          ))}
+          {overview.map((item) => {
+            const isLeftEdge = item.percent <= 5;
+            const isRightEdge = item.percent >= 95;
+            const horizontalStyle = isLeftEdge
+              ? { left: 0 as const, alignItems: 'flex-start' as const }
+              : isRightEdge
+                ? { right: 0 as const, alignItems: 'flex-end' as const }
+                : { left: `${item.percent}%` as const, marginLeft: -28, alignItems: 'center' as const };
+            return (
+              <View
+                key={item.id}
+                style={[styles.zmanPoint, horizontalStyle, { top: item.row === 1 ? 24 : 0 }]}
+              >
+                <Text style={styles.zmanTime}>{item.t}</Text>
+                <Text style={styles.zmanLabel}>{item.l}</Text>
+              </View>
+            );
+          })}
         </View>
       </GlassCard>
 
@@ -319,15 +349,12 @@ const styles = StyleSheet.create({
   },
   zmanOverview: {
     position: 'relative',
-    height: 28,
+    height: 48,
     marginTop: 2,
   },
   zmanPoint: {
     position: 'absolute',
-    top: 0,
     width: 56,
-    marginLeft: -28,
-    alignItems: 'center',
   },
   zmanTime: {
     color: colors.textSecondary,
