@@ -1639,7 +1639,7 @@ function OccurrenceModal({
                 value={form.title}
               />
             </ModalField>
-            <ModalField error={errors.timezone} label="Timezone">
+            <ModalField error={errors.timezone} label="Часовой пояс">
               <input
                 onChange={(event) =>
                   onChange((current) => ({ ...current, timezone: event.target.value }))
@@ -1728,7 +1728,7 @@ function OccurrenceModal({
                 value={form.capacity}
               />
             </ModalField>
-            <ModalField error={errors.status} label="Status">
+            <ModalField error={errors.status} label="Статус">
               <select
                 onChange={(event) =>
                   onChange((current) => ({
@@ -1752,14 +1752,14 @@ function OccurrenceModal({
           <div className="participation-modal__toggles">
             <ModalToggle
               checked={form.waitlistEnabled}
-              label="Waitlist enabled"
+              label="Лист ожидания"
               onChange={(value) =>
                 onChange((current) => ({ ...current, waitlistEnabled: value }))
               }
             />
             <ModalToggle
               checked={form.requiresApproval}
-              label="Requires approval"
+              label="Требует подтверждения"
               onChange={(value) =>
                 onChange((current) => ({ ...current, requiresApproval: value }))
               }

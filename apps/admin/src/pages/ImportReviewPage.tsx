@@ -12,8 +12,13 @@ import {
   publishImportItemAsDraft,
 } from "../services/adminImportReviewService";
 import type { AdminBadgeTone } from "../types/admin";
+import { getEventStatusLabel, getEventVisibilityLabel } from "../types/events";
 import type { AdminEvent, AdminEventMutationInput } from "../types/events";
 import type { AdminEventCategory } from "../types/eventCategories";
+import {
+  ADMIN_IMPORT_DATE_QUALITIES,
+  ADMIN_IMPORT_ITEM_STATUSES,
+} from "../types/importReview";
 import type {
   AdminImportDateQuality,
   AdminImportItemStatus,
@@ -27,20 +32,34 @@ type DateQualityFilter = "all" | AdminImportDateQuality;
 type StatusFilter = "all" | AdminImportItemStatus;
 type ReviewLimit = 50 | 100;
 
+const DATE_QUALITY_LABELS: Record<AdminImportDateQuality, string> = {
+  confident: "Уверенная",
+  partial: "Частичная",
+  recurring_rule: "Повтор",
+  none: "Нет даты",
+};
+
+const IMPORT_STATUS_LABELS: Record<AdminImportItemStatus, string> = {
+  new: "Новое",
+  linked: "Связано",
+  ignored: "Игнорируется",
+  error: "Ошибка",
+};
+
 const DATE_QUALITY_FILTERS: Array<{ value: DateQualityFilter; label: string }> = [
   { value: "all", label: "Все" },
-  { value: "confident", label: "confident" },
-  { value: "partial", label: "partial" },
-  { value: "recurring_rule", label: "recurring_rule" },
-  { value: "none", label: "none" },
+  ...ADMIN_IMPORT_DATE_QUALITIES.map((dateQuality) => ({
+    value: dateQuality,
+    label: formatDateQualityLabel(dateQuality),
+  })),
 ];
 
 const STATUS_FILTERS: Array<{ value: StatusFilter; label: string }> = [
   { value: "all", label: "Все" },
-  { value: "new", label: "new" },
-  { value: "linked", label: "linked" },
-  { value: "ignored", label: "ignored" },
-  { value: "error", label: "error" },
+  ...ADMIN_IMPORT_ITEM_STATUSES.map((status) => ({
+    value: status,
+    label: formatImportStatusLabel(status),
+  })),
 ];
 
 const REVIEW_LIMITS: ReviewLimit[] = [50, 100];
@@ -85,7 +104,7 @@ export function ImportReviewPage({
       setError(
         nextError instanceof Error
           ? nextError.message
-          : "Не удалось загрузить import items из Supabase.",
+          : "Не удалось загрузить элементы импорта из Supabase.",
       );
       return false;
     } finally {
@@ -119,7 +138,7 @@ export function ImportReviewPage({
           setDetailError(
             nextError instanceof Error
               ? nextError.message
-              : "Не удалось загрузить import item через admin_get_import_item.",
+              : "Не удалось загрузить элемент импорта через admin_get_import_item.",
           );
         }
       })
@@ -159,8 +178,8 @@ export function ImportReviewPage({
 
       setSuccessMessage(
         reloaded
-          ? `Import item «${ignoredTitle}» проигнорирован и скрыт из очереди проверки.`
-          : `Import item «${ignoredTitle}» проигнорирован. Очередь не обновилась, попробуйте «Обновить очередь».`,
+          ? `Элемент импорта «${ignoredTitle}» проигнорирован и скрыт из очереди проверки.`
+          : `Элемент импорта «${ignoredTitle}» проигнорирован. Очередь не обновилась, попробуйте «Обновить очередь».`,
       );
     },
     [handleCloseDetail, loadItems],
@@ -194,8 +213,8 @@ export function ImportReviewPage({
 
       setSuccessMessage(
         reloaded
-          ? `Событие «${eventTitle}» создано как draft/hidden через admin_publish_import_item. Import item обновлён в очереди.`
-          : `Событие «${eventTitle}» создано как draft/hidden. Очередь не обновилась, попробуйте «Обновить очередь».`,
+          ? `Событие «${eventTitle}» создано как черновик и скрыто через admin_publish_import_item. Элемент импорта обновлён в очереди.`
+          : `Событие «${eventTitle}» создано как черновик и скрыто. Очередь не обновилась, попробуйте «Обновить очередь».`,
       );
     },
     [loadItems, onEventCreated],
@@ -272,22 +291,22 @@ export function ImportReviewPage({
   return (
     <div className="page-stack page-stack--import">
       <section className="page-header">
-        <Badge tone="gold">review queue</Badge>
+        <Badge tone="gold">Очередь проверки</Badge>
         <h1>Импорт с сайта</h1>
         <p>
-          Проверка импорта. Из detail можно проигнорировать item или создать
+          Проверка импорта. Из деталей можно проигнорировать элемент или создать
           событие-черновик через отдельные RPC; публикация и запуск импорта остаются
           вне этой страницы.
         </p>
       </section>
 
       <GlassCard className="import-notice">
-        <Badge tone="gold">human review</Badge>
+        <Badge tone="gold">Ручная проверка</Badge>
         <div>
           <h2>Очередь ручной проверки</h2>
           <p>
             Список читается через RPC `admin_list_import_items_needing_review` с текущей
-            Supabase-сессией. В detail можно скрыть item из очереди через
+            Supabase-сессией. В деталях можно скрыть элемент из очереди через
             `admin_ignore_import_item` или создать скрытый черновик через
             `admin_publish_import_item`. Созданное событие не публикуется автоматически.
           </p>
@@ -323,7 +342,7 @@ export function ImportReviewPage({
           </label>
 
           <label className="filter-field">
-            <span>Date quality</span>
+            <span>Качество даты</span>
             <select
               onChange={(event) =>
                 setDateQualityFilter(event.target.value as DateQualityFilter)
@@ -353,7 +372,7 @@ export function ImportReviewPage({
           </label>
 
           <label className="filter-field">
-            <span>Limit</span>
+            <span>Лимит</span>
             <select
               onChange={(event) => setLimit(Number(event.target.value) as ReviewLimit)}
               value={limit}
@@ -370,7 +389,7 @@ export function ImportReviewPage({
 
       <GlassCard className="table-panel import-review-panel" elevated>
         <div className="table-panel__header">
-          <h2>Items на проверку</h2>
+          <h2>Элементы на проверку</h2>
           <div className="events-summary">
             <span>
               Показано {filteredItems.length} из {items.length}
@@ -382,7 +401,7 @@ export function ImportReviewPage({
         {loading ? (
           <ImportReviewState
             description="Вызываем admin_list_import_items_needing_review и ждём ответ Supabase."
-            title="Загрузка import items"
+            title="Загрузка элементов импорта"
           />
         ) : error ? (
           <ImportReviewState description={error} title="Не удалось загрузить импорт">
@@ -442,23 +461,25 @@ function ImportReviewList({
   onOpenDetail: (itemId: string) => void;
 }) {
   return (
-    <div className="import-review-list" aria-label="Import items needing review">
+    <div className="import-review-list" aria-label="Элементы импорта на проверку">
       {items.map((item) => (
         <article className="import-review-item" key={item.id}>
           <div className="import-review-item__head">
             <div className="import-review-item__title">
               <div className="badge-row">
-                <Badge tone={getStatusTone(item.status)}>{item.status ?? "unknown"}</Badge>
-                <Badge tone={getDateQualityTone(getDateQuality(item))}>
-                  {getDateQuality(item) ?? "date quality unknown"}
+                <Badge tone={getStatusTone(item.status)}>
+                  {formatImportStatusLabel(item.status)}
                 </Badge>
-                {item.linkedEventId ? <Badge tone="green">linked</Badge> : null}
+                <Badge tone={getDateQualityTone(getDateQuality(item))}>
+                  {formatDateQualityLabel(getDateQuality(item))}
+                </Badge>
+                {item.linkedEventId ? <Badge tone="green">Связано</Badge> : null}
               </div>
               <h3>{item.parsedTitle || "Без названия"}</h3>
             </div>
             <div className="import-review-item__actions">
               <div className="import-review-item__created">
-                <span>created_at</span>
+                <span>Создано</span>
                 <strong>{formatDateTime(item.createdAt)}</strong>
               </div>
               <Button onClick={() => onOpenDetail(item.id)} size="sm" variant="secondary">
@@ -468,10 +489,10 @@ function ImportReviewList({
           </div>
 
           <div className="import-review-grid">
-            <ImportReviewField label="Parsed date" value={formatDateTime(item.parsedStartsAt)} />
-            <ImportReviewField label="Location" value={item.parsedLocation || "Не указано"} />
-            <ImportReviewField label="Reason / notes" value={getReviewNotes(item)} wide />
-            <ImportReviewField label="Source URL" wide>
+            <ImportReviewField label="Дата" value={formatDateTime(item.parsedStartsAt)} />
+            <ImportReviewField label="Место" value={item.parsedLocation || "Не указано"} />
+            <ImportReviewField label="Причина / заметки" value={getReviewNotes(item)} wide />
+            <ImportReviewField label="Источник" wide>
               {item.sourceUrl ? (
                 <a
                   className="import-review-link"
@@ -488,7 +509,7 @@ function ImportReviewList({
           </div>
 
           <details className="import-review-meta">
-            <summary>Raw/import metadata</summary>
+            <summary>Метаданные raw/import</summary>
             <div className="import-review-meta__grid">
               <MetadataPair label="id" value={item.id} />
               <MetadataPair label="source_id" value={item.sourceId} />
@@ -559,7 +580,7 @@ function ImportItemDetailDrawer({
   const [draftError, setDraftError] = useState<string | null>(null);
   const [draftResult, setDraftResult] = useState<AdminPublishImportItemResult | null>(null);
   const displayItem = item ?? fallbackItem;
-  const title = displayItem ? getImportItemTitle(displayItem) : "Import item";
+  const title = displayItem ? getImportItemTitle(displayItem) : "Элемент импорта";
   const isAdminIgnored = displayItem ? isAdminIgnoredImportItem(displayItem) : false;
   const isSafeIgnoredByImporter =
     displayItem?.status === "ignored" && !isAdminIgnored;
@@ -656,7 +677,7 @@ function ImportItemDetailDrawer({
       setIgnoreError(
         nextError instanceof Error
           ? nextError.message
-          : "Не удалось игнорировать import item через admin_ignore_import_item.",
+          : "Не удалось игнорировать элемент импорта через admin_ignore_import_item.",
       );
       setIgnoreLoading(false);
     }
@@ -680,11 +701,11 @@ function ImportItemDetailDrawer({
         <div className="import-detail-drawer__head">
           <div className="import-detail-drawer__title">
             <div className="badge-row">
-              <Badge tone="gold">review detail</Badge>
+              <Badge tone="gold">Детали проверки</Badge>
               <Badge tone="glass">admin_get_import_item</Badge>
-              {isAdminIgnored ? <Badge tone="muted">admin ignored</Badge> : null}
+              {isAdminIgnored ? <Badge tone="muted">Игнорируется админом</Badge> : null}
               {isSafeIgnoredByImporter ? (
-                <Badge tone="gold">safe ignored by importer</Badge>
+                <Badge tone="gold">Игнорируется импортёром</Badge>
               ) : null}
             </div>
             <h2 id={titleId}>{title}</h2>
@@ -698,11 +719,11 @@ function ImportItemDetailDrawer({
         <div className="import-detail-drawer__body">
           {loading ? (
             <ImportReviewState
-              description="Вызываем admin_get_import_item и ждём полные данные import item."
-              title="Загрузка detail"
+              description="Вызываем admin_get_import_item и ждём полные данные элемента импорта."
+              title="Загрузка деталей"
             />
           ) : error ? (
-            <ImportReviewState description={error} title="Не удалось загрузить detail">
+            <ImportReviewState description={error} title="Не удалось загрузить детали">
               <Button onClick={onRetry} variant="primary">
                 Повторить
               </Button>
@@ -745,8 +766,8 @@ function ImportItemDetailDrawer({
             </>
           ) : (
             <ImportReviewState
-              description="RPC не вернул данные для выбранного import item."
-              title="Detail пуст"
+              description="RPC не вернул данные для выбранного элемента импорта."
+              title="Детали пусты"
             />
           )}
         </div>
@@ -800,19 +821,19 @@ function ImportItemDetailActions({
             <h3>Элемент уже проигнорирован</h3>
             <p>Эти данные пришли из `raw_payload.adminReview`.</p>
           </div>
-          <Badge tone="muted">ignored</Badge>
+          <Badge tone="muted">Игнорируется</Badge>
         </div>
         <div className="import-detail-grid">
           <ImportReviewField
-            label="adminReview.ignoredAt"
+            label="Когда проигнорировано"
             value={formatDateTimeDetail(adminReview.ignoredAt)}
           />
           <ImportReviewField
-            label="adminReview.ignoredBy"
+            label="Кем проигнорировано"
             value={adminReview.ignoredBy ?? "Не указано"}
           />
           <ImportReviewField
-            label="adminReview.ignoreReason"
+            label="Причина"
             value={adminReview.ignoreReason ?? "Не указано"}
             wide
           />
@@ -827,14 +848,14 @@ function ImportItemDetailActions({
         <div className="import-detail-actions__head">
           <div>
             <h3>Событие уже создано</h3>
-            <p>Import item уже связан с записью в events. Повторное создание недоступно.</p>
+            <p>Элемент импорта уже связан с записью в events. Повторное создание недоступно.</p>
           </div>
-          <Badge tone="green">linked</Badge>
+          <Badge tone="green">Связано</Badge>
         </div>
         <div className="import-detail-grid">
           <ImportReviewField
-            label="linkedEventId"
-            value={linkedEventId ?? "linked_event_id не вернулся"}
+            label="ID события"
+            value={linkedEventId ?? "ID связанного события не вернулся"}
             wide
           />
         </div>
@@ -855,12 +876,12 @@ function ImportItemDetailActions({
         <div>
           <h3>Действия</h3>
           <p>
-            Можно создать событие как скрытый черновик или скрыть item из очереди
+            Можно создать событие как скрытый черновик или скрыть элемент из очереди
             проверки без создания события.
           </p>
           {isSafeIgnoredByImporter ? (
             <div className="badge-row">
-              <Badge tone="gold">safe ignored by importer</Badge>
+              <Badge tone="gold">Игнорируется импортёром</Badge>
               <Badge tone="glass">требует проверки</Badge>
             </div>
           ) : null}
@@ -888,7 +909,7 @@ function ImportItemDetailActions({
           <div className="import-ignore-confirm__summary">
             <strong>{title}</strong>
             <span>
-              sourceUrl:{" "}
+              Ссылка источника:{" "}
               {item.sourceUrl ? (
                 <a
                   className="import-review-link"
@@ -967,14 +988,14 @@ function ImportDraftCreatedState({
           </p>
         </div>
         <div className="badge-row">
-          <Badge tone="gold">{event?.status ?? "draft"}</Badge>
-          <Badge tone="muted">{event?.visibility ?? "hidden"}</Badge>
+          <Badge tone="gold">{getEventStatusLabel(event?.status ?? "draft")}</Badge>
+          <Badge tone="muted">{getEventVisibilityLabel(event?.visibility ?? "hidden")}</Badge>
         </div>
       </div>
 
       <div className="import-detail-grid">
-        {event ? <ImportReviewField label="title" value={event.title} /> : null}
-        <ImportReviewField label="linkedEventId" value={linkedEventId ?? "Не указано"} />
+        {event ? <ImportReviewField label="Название" value={event.title} /> : null}
+        <ImportReviewField label="ID события" value={linkedEventId ?? "Не указано"} />
       </div>
 
       <div className="import-ignore-actions">
@@ -1046,7 +1067,7 @@ function ImportToEventDraftForm({
     <section className="import-draft-form-panel">
       <div className="import-draft-form-panel__head">
         <div>
-          <Badge tone="gold">draft / hidden</Badge>
+          <Badge tone="gold">Черновик / скрыто</Badge>
           <h3>Создать событие из импорта</h3>
         </div>
       </div>
@@ -1055,7 +1076,7 @@ function ImportToEventDraftForm({
         categories={categories}
         categoriesError={categoriesError}
         categoriesLoading={categoriesLoading}
-        cancelLabel="Вернуться к detail"
+        cancelLabel="Вернуться к деталям"
         forceDraftHidden
         initialEvent={prefill.event}
         mode="create"
@@ -1092,7 +1113,7 @@ function ImportDraftFormNotice({ prefill }: { prefill: ImportDraftPrefill }) {
 
       {prefill.registrationUrlSource === "sourceUrl" ? (
         <div className="import-draft-notice import-draft-notice--info">
-          <strong>Registration URL взят из sourceUrl import item.</strong>
+          <strong>Ссылка регистрации взята из sourceUrl элемента импорта.</strong>
           <p>Проверьте, что эта ссылка действительно ведёт на внешнюю регистрацию.</p>
         </div>
       ) : null}
@@ -1101,7 +1122,7 @@ function ImportDraftFormNotice({ prefill }: { prefill: ImportDraftPrefill }) {
         <div className="import-draft-notice import-draft-notice--warning">
           <strong>Похоже на платное событие.</strong>
           <p>
-            Internal paid не выбирается автоматически. Сейчас можно создать черновик
+            Платная внутренняя регистрация не выбирается автоматически. Сейчас можно создать черновик
             без вариантов участия и настроить их после создания.
           </p>
         </div>
@@ -1121,37 +1142,37 @@ function ImportItemDetailContent({ item }: { item: AdminImportReviewItem }) {
         <h3>Основное</h3>
         <div className="import-detail-grid">
           <ImportReviewField
-            label="Title"
+            label="Название"
             value={rawDetails.title ?? item.parsedTitle ?? "Не указано"}
           />
-          <ImportReviewField label="Parsed title" value={item.parsedTitle || "Не указано"} />
-          <ImportReviewField label="Status" value={item.status ?? "unknown"} />
+          <ImportReviewField label="Распознанное название" value={item.parsedTitle || "Не указано"} />
+          <ImportReviewField label="Статус" value={formatImportStatusLabel(item.status)} />
           <ImportReviewField
-            label="dateConfidence"
-            value={review?.dateConfidence ?? "Не указано"}
+            label="Уверенность даты"
+            value={formatDateQualityLabel(review?.dateConfidence)}
           />
-          <ImportReviewField label="dateStatus" value={review?.dateStatus ?? "Не указано"} />
-          <ImportReviewField label="needsReview" value={formatBooleanValue(needsReview)} />
-          <ImportReviewField label="Reason" value={review?.reason ?? "Не указано"} wide />
-          <ImportReviewField label="Notes" value={review?.notes ?? "Не указано"} wide />
+          <ImportReviewField label="Статус даты" value={review?.dateStatus ?? "Не указано"} />
+          <ImportReviewField label="Требует проверки" value={formatBooleanValue(needsReview)} />
+          <ImportReviewField label="Причина" value={review?.reason ?? "Не указано"} wide />
+          <ImportReviewField label="Заметки" value={review?.notes ?? "Не указано"} wide />
         </div>
       </section>
 
       <section className="import-detail-section">
         <h3>Дата и место</h3>
         <div className="import-detail-grid">
-          <ImportReviewField label="rawDateText" value={review?.rawDateText ?? "Не указано"} />
-          <ImportReviewField label="rawTimeText" value={review?.rawTimeText ?? "Не указано"} />
+          <ImportReviewField label="Исходная дата" value={review?.rawDateText ?? "Не указано"} />
+          <ImportReviewField label="Исходное время" value={review?.rawTimeText ?? "Не указано"} />
           <ImportReviewField
-            label="suggestedStartsAt"
+            label="Предложенное начало"
             value={formatDateTimeDetail(review?.suggestedStartsAt ?? null)}
           />
           <ImportReviewField
-            label="parsedStartsAt"
+            label="Распознанное начало"
             value={formatDateTimeDetail(item.parsedStartsAt)}
           />
           <ImportReviewField
-            label="parsedLocation"
+            label="Распознанное место"
             value={item.parsedLocation || "Не указано"}
             wide
           />
@@ -1161,13 +1182,13 @@ function ImportItemDetailContent({ item }: { item: AdminImportReviewItem }) {
       <section className="import-detail-section">
         <h3>Источник</h3>
         <div className="import-detail-grid">
-          <ImportReviewField label="sourceName" value={item.sourceName || "Не указано"} />
-          <ImportReviewField label="externalId" value={item.externalId || "Не указано"} />
-          <ImportReviewField label="createdAt" value={formatDateTimeDetail(item.createdAt)} />
+          <ImportReviewField label="Название источника" value={item.sourceName || "Не указано"} />
+          <ImportReviewField label="Внешний ID" value={item.externalId || "Не указано"} />
+          <ImportReviewField label="Создано" value={formatDateTimeDetail(item.createdAt)} />
           {item.linkedEventId ? (
-            <ImportReviewField label="linkedEventId" value={item.linkedEventId} />
+            <ImportReviewField label="ID события" value={item.linkedEventId} />
           ) : null}
-          <ImportReviewField label="sourceUrl" wide>
+          <ImportReviewField label="Ссылка источника" wide>
             {item.sourceUrl ? (
               <a
                 className="import-review-link"
@@ -1185,11 +1206,11 @@ function ImportItemDetailContent({ item }: { item: AdminImportReviewItem }) {
       </section>
 
       <section className="import-detail-section">
-        <h3>Raw payload fields</h3>
+        <h3>Поля raw payload</h3>
         {rawDetails.imageUrl ? (
           <figure className="import-detail-image">
             <img
-              alt={item.parsedTitle || "Import item image"}
+              alt={item.parsedTitle || "Изображение элемента импорта"}
               loading="lazy"
               src={rawDetails.imageUrl}
             />
@@ -1206,7 +1227,7 @@ function ImportItemDetailContent({ item }: { item: AdminImportReviewItem }) {
           </figure>
         ) : null}
         <div className="import-detail-grid">
-          <ImportReviewField label="registrationUrl" wide>
+          <ImportReviewField label="Ссылка регистрации" wide>
             {rawDetails.registrationUrl ? (
               <a
                 className="import-review-link"
@@ -1221,12 +1242,12 @@ function ImportItemDetailContent({ item }: { item: AdminImportReviewItem }) {
             )}
           </ImportReviewField>
           <ImportReviewField
-            label="Description"
+            label="Описание"
             value={rawDetails.description ?? "Не указано"}
             wide
           />
           <ImportReviewField
-            label="Short description"
+            label="Краткое описание"
             value={rawDetails.shortDescription ?? "Не указано"}
             wide
           />
@@ -1591,7 +1612,7 @@ function formatBooleanValue(value: boolean | null | undefined): string {
     return "Не указано";
   }
 
-  return value ? "true" : "false";
+  return value ? "Да" : "Нет";
 }
 
 function formatDateTime(value: string | null): string {
@@ -1632,6 +1653,30 @@ function formatRawPayloadFull(value: JsonValue): string {
   } catch {
     return "Не удалось отобразить raw_payload.";
   }
+}
+
+function isImportStatus(value: string): value is AdminImportItemStatus {
+  return (ADMIN_IMPORT_ITEM_STATUSES as readonly string[]).includes(value);
+}
+
+function formatImportStatusLabel(status: string | null | undefined): string {
+  if (!status) {
+    return "Неизвестно";
+  }
+
+  return isImportStatus(status) ? IMPORT_STATUS_LABELS[status] : status;
+}
+
+function isDateQuality(value: string): value is AdminImportDateQuality {
+  return (ADMIN_IMPORT_DATE_QUALITIES as readonly string[]).includes(value);
+}
+
+function formatDateQualityLabel(dateQuality: string | null | undefined): string {
+  if (!dateQuality) {
+    return "Качество даты неизвестно";
+  }
+
+  return isDateQuality(dateQuality) ? DATE_QUALITY_LABELS[dateQuality] : dateQuality;
 }
 
 function getStatusTone(status: string | null): AdminBadgeTone {

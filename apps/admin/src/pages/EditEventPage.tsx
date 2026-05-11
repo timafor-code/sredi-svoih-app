@@ -8,6 +8,7 @@ import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
 import { updateAdminEvent } from "../services/adminEventsService";
 import { listAdminEventCategories } from "../services/eventCategoriesService";
+import { getEventStatusLabel, getEventVisibilityLabel } from "../types/events";
 import type { AdminEvent, AdminEventMutationInput } from "../types/events";
 import type { AdminEventCategory } from "../types/eventCategories";
 
@@ -89,7 +90,7 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
   return (
     <div className="page-stack page-stack--event-create">
       <section className="page-header">
-        <Badge tone="blue">edit</Badge>
+        <Badge tone="blue">Редактирование</Badge>
         <h1>Редактировать событие</h1>
         <p>
           Изменения сохраняются через RPC admin_update_event с текущей
@@ -103,7 +104,8 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
             <span>Событие обновлено</span>
             <h2>{savedEvent.title}</h2>
             <p>
-              {savedEvent.status} / {savedEvent.visibility}
+              {getEventStatusLabel(savedEvent.status)} /{" "}
+              {getEventVisibilityLabel(savedEvent.visibility)}
             </p>
           </div>
           <Button onClick={onBackToList} variant="primary">
