@@ -1030,6 +1030,10 @@ function formatEventDateRange(event: AdminEvent): string {
 
   const startsAt = formatDateTime(event.startsAt, event.timezone);
 
+  if (event.isPermanent) {
+    return `${startsAt} - постоянное`;
+  }
+
   if (!event.endsAt) {
     return startsAt;
   }

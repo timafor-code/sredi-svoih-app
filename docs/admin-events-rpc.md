@@ -77,6 +77,7 @@ short_description / shortDescription
 description
 starts_at / startsAt
 ends_at / endsAt
+is_permanent / isPermanent
 timezone
 location_name / locationName
 address
@@ -105,6 +106,7 @@ current authenticated user.
 Validation mirrors the existing admin create/import values: `title` and
 `timezone` cannot be empty when passed; `starts_at` must cast to
 `timestamptz`; `ends_at` must be null or later than the effective `starts_at`;
+`is_permanent` defaults to `false` and, when true, clears `ends_at` to `null`;
 `status` is limited to `draft`, `published`, `cancelled`, `archived`;
 `visibility` is limited to `public`, `members_only`, `hidden`;
 `registration_mode` is limited to `none`, `external_link`, `internal_free`,
@@ -118,6 +120,12 @@ RPC sets `published_at = now()`. Moving a published event back to
 `draft`, `cancelled`, or `archived` preserves the historical `published_at`.
 If `status` is not changed, `published_at` is not changed.
 
+`is_permanent` is for parent/card/series events such as courses, Shabbat
+series, or recurring event containers that should stay active in admin time
+grouping even when a technical end date is absent or would otherwise be in the
+past. It is stored on `events`; concrete dated sessions still belong in
+`event_occurrences`.
+
 Every successful admin update stores `manual_override = true`. This matches the
 website importer protection: later imports skip events marked as manual
 overrides, so an admin edit cannot be overwritten by the importer. Passing
@@ -129,7 +137,8 @@ Example:
 {
   "title": "Updated lecture title",
   "startsAt": "2026-05-12T19:00:00+03:00",
-  "endsAt": "2026-05-12T21:00:00+03:00",
+  "endsAt": null,
+  "isPermanent": true,
   "timezone": "Europe/Moscow",
   "status": "published",
   "visibility": "members_only",
@@ -145,7 +154,7 @@ Example:
 
 Use `src/services/adminEventsService.ts`. It calls `supabase.rpc(...)` with the
 normal app Supabase client from `src/services/supabaseClient.ts` and normalizes
-RPC rows from snake_case to camelCase app types in `src/types/adminEvent.ts`.
+RPC rows from snake_case to camelCase app types in `src/types/events.ts`.
 
 The web-admin edit UI and any dedicated `apps/admin` update service wiring can
 be connected in the next UI PR by calling `admin_update_event` with the normal

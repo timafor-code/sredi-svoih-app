@@ -38,6 +38,12 @@ The admin create/edit form accepts `eventKind` / `event_kind` and stores it in
 `events.event_kind`. Missing create payloads default to `single`; update payloads
 only change `event_kind` when the payload includes `eventKind` or `event_kind`.
 
+Parent/card events that represent an ongoing course, Shabbat series, recurring
+container, or similar long-lived card should set `events.is_permanent = true`.
+The web-admin form then stores `ends_at = null` for the parent event so it does
+not move to a past grouping solely because of an end time. Concrete dated
+sessions remain in `event_occurrences`.
+
 ## Web-admin occurrence generator
 
 The web-admin "Dates and sessions" constructor keeps the manual date list as the

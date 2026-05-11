@@ -1498,7 +1498,7 @@ a {
 }
 
 .event-form-grid--time {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .event-form-field {
@@ -1550,6 +1550,24 @@ a {
   color: var(--text-faint);
 }
 
+.event-form-field input:disabled,
+.event-form-field select:disabled,
+.event-form-field textarea:disabled {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, 0.42);
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.event-form-field input:disabled::-webkit-calendar-picker-indicator {
+  opacity: 0.42;
+}
+
+.event-form-field--disabled span {
+  color: var(--text-faint);
+}
+
 .event-form-field small {
   color: #ff9ca2;
   font-size: 11px;
@@ -1576,8 +1594,30 @@ a {
   font-weight: 700;
 }
 
+.event-form-check--permanent {
+  align-items: flex-start;
+  min-height: 64px;
+  padding: 10px 12px;
+}
+
 .event-form-check input {
   accent-color: var(--red);
+}
+
+.event-form-check--permanent input {
+  margin-top: 2px;
+}
+
+.event-form-check__content {
+  display: grid;
+  gap: 4px;
+}
+
+.event-form-check__content small {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .event-form-notice {
