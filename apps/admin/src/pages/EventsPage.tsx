@@ -1,11 +1,11 @@
 import {
-  Fragment,
   useCallback,
   useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -44,6 +44,12 @@ type EventStatusActionPlan = PendingEventAction & {
   nextVisibility: string;
   payload: UpdateAdminEventInput;
   summary: string;
+};
+
+type EventActionMenuState = {
+  eventId: string;
+  left: number;
+  top: number;
 };
 
 type EventsPageProps = {
@@ -112,6 +118,16 @@ const EVENT_STATUS_ACTIONS: EventStatusAction[] = [
     variant: "primary",
   },
 ];
+
+const EVENT_OVERFLOW_STATUS_ACTION_IDS: EventStatusActionId[] = [
+  "hide",
+  "draft",
+  "cancel",
+  "archive",
+];
+
+const EVENT_OVERFLOW_MENU_WIDTH = 220;
+const EVENT_OVERFLOW_MENU_HEIGHT = 292;
 
 export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: EventsPageProps) {
   const [events, setEvents] = useState<AdminEvent[]>([]);
@@ -224,6 +240,13 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
     setPendingAction({ action, event });
     setActionError(null);
     setActionSuccess(null);
+  }, []);
+
+  const handleDuplicateEvent = useCallback((event: AdminEvent) => {
+    setActionError(null);
+    setActionSuccess(
+      `Дублирование «${event.title}» будет добавлено позже: действие не меняет данные.`,
+    );
   }, []);
 
   const cancelStatusAction = useCallback(() => {
@@ -424,6 +447,7 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
           <EventsTable
             actionInFlight={actionInFlight}
             events={filteredEvents}
+            onDuplicateEvent={handleDuplicateEvent}
             onEditEvent={onEditEvent}
             onRequestStatusAction={requestStatusAction}
           />
@@ -446,107 +470,286 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
 function EventsTable({
   actionInFlight,
   events,
+  onDuplicateEvent,
   onEditEvent,
   onRequestStatusAction,
 }: {
   actionInFlight: PendingEventAction | null;
   events: AdminEvent[];
+  onDuplicateEvent: (event: AdminEvent) => void;
   onEditEvent: (event: AdminEvent) => void;
   onRequestStatusAction: (event: AdminEvent, action: EventStatusAction) => void;
 }) {
+  const [openActionMenu, setOpenActionMenu] = useState<EventActionMenuState | null>(null);
+
+  useEffect(() => {
+    if (!openActionMenu) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenActionMenu(null);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openActionMenu]);
+
+  const openActionMenuEvent = openActionMenu
+    ? events.find((event) => event.id === openActionMenu.eventId)
+    : null;
+
+  const openActionsMenu = useCallback((event: AdminEvent, button: HTMLButtonElement) => {
+    const rect = button.getBoundingClientRect();
+    const safePadding = 12;
+    const left = Math.max(
+      safePadding,
+      Math.min(
+        rect.right - EVENT_OVERFLOW_MENU_WIDTH,
+        window.innerWidth - EVENT_OVERFLOW_MENU_WIDTH - safePadding,
+      ),
+    );
+    const top = Math.max(
+      safePadding,
+      Math.min(
+        rect.bottom + 8,
+        window.innerHeight - EVENT_OVERFLOW_MENU_HEIGHT - safePadding,
+      ),
+    );
+
+    setOpenActionMenu((current) =>
+      current?.eventId === event.id
+        ? null
+        : {
+            eventId: event.id,
+            left,
+            top,
+          },
+    );
+  }, []);
+
   return (
     <div className="events-table-scroll">
       <div className="data-table data-table--events" role="table" aria-label="События">
         <div className="data-table__row data-table__row--head" role="row">
-          <span role="columnheader">Афиша / Название</span>
-          <span role="columnheader">Дата/время</span>
-          <span role="columnheader">Место</span>
-          <span role="columnheader">Статусы</span>
+          <span role="columnheader">Название</span>
+          <span role="columnheader">Дата и время</span>
           <span role="columnheader">Категория</span>
+          <span role="columnheader">Статус</span>
+          <span role="columnheader">Видимость</span>
           <span role="columnheader">Регистрация</span>
-          <span role="columnheader">Capacity</span>
-          <span role="columnheader">Source</span>
-          <span role="columnheader">Updated</span>
+          <span role="columnheader">Записей</span>
+          <span role="columnheader">Источник</span>
+          <span role="columnheader">Действия</span>
         </div>
 
         {events.map((event) => {
-          const activeActionId =
-            actionInFlight?.event.id === event.id ? actionInFlight.action.id : null;
-          const isActionDisabled = Boolean(actionInFlight);
           const secondaryText = event.subtitle ?? event.shortDescription;
-          const visibleStatusActions = getVisibleEventStatusActions(event);
+          const eventPlace = formatEventPlace(event);
 
           return (
-            <Fragment key={event.id}>
-              <div className="data-table__row data-table__row--event-main" role="row">
-                <div className="event-table__identity" role="cell">
+            <div
+              className="data-table__row data-table__row--event-main"
+              key={event.id}
+              role="row"
+            >
+              <div className="event-table__identity" role="cell">
+                <button
+                  className="event-table__identity-button"
+                  onClick={() => onEditEvent(event)}
+                  type="button"
+                >
                   <EventThumb event={event} />
                   <div className="event-table__identity-body">
                     <div className="event-table__cell-stack event-table__title">
-                      <button
-                        className="event-table__title-button"
-                        onClick={() => onEditEvent(event)}
-                        type="button"
-                      >
-                        {event.title}
-                      </button>
+                      <strong className="event-table__title-text">{event.title}</strong>
                       {secondaryText ? <span>{secondaryText}</span> : null}
                     </div>
                   </div>
-                </div>
-                <span role="cell">{formatEventDateRange(event)}</span>
-                <div className="event-table__cell-stack" role="cell">
-                  <span>{event.locationName || event.address || "Не указано"}</span>
-                  {event.locationName && event.address ? <small>{event.address}</small> : null}
-                </div>
-                <span className="badge-row" role="cell">
-                  <Badge tone={getStatusTone(event.status)}>{event.status}</Badge>
-                  <Badge tone={getVisibilityTone(event.visibility)}>{event.visibility}</Badge>
-                </span>
-                <span role="cell">{event.category || "Не указана"}</span>
-                <span role="cell">
-                  <Badge tone={getRegistrationModeTone(event.registrationMode)}>
-                    {event.registrationMode}
-                  </Badge>
-                </span>
-                <div className="event-table__cell-stack" role="cell">
-                  <span>{formatCapacity(event.capacity)}</span>
-                  {event.waitlistEnabled ? <small>waitlist</small> : null}
-                  {event.requiresApproval ? <small>approval</small> : null}
-                </div>
-                <div className="event-table__cell-stack" role="cell">
-                  <span>{event.sourceType}</span>
-                  {event.sourceExternalId ? <small>{event.sourceExternalId}</small> : null}
-                </div>
-                <span role="cell">{formatDateTime(event.updatedAt, null)}</span>
+                </button>
               </div>
-              <div className="event-actions-row" role="row">
-                <div
-                  className="event-actions-bar"
-                  role="cell"
-                  aria-label={`Быстрые действия: ${event.title}`}
+              <div className="event-table__cell-stack event-table__date" role="cell">
+                <span>{formatEventDateRange(event)}</span>
+                {eventPlace ? <small>{eventPlace}</small> : null}
+              </div>
+              <span role="cell">
+                <Badge tone="glass">{formatCategoryLabel(event.category)}</Badge>
+              </span>
+              <span role="cell">
+                <Badge tone={getStatusTone(event.status)}>{formatStatusLabel(event.status)}</Badge>
+              </span>
+              <span role="cell">
+                <Badge tone={getVisibilityTone(event.visibility)}>
+                  {formatVisibilityLabel(event.visibility)}
+                </Badge>
+              </span>
+              <span role="cell">
+                <Badge tone={getRegistrationModeTone(event.registrationMode)}>
+                  {formatRegistrationModeLabel(event.registrationMode)}
+                </Badge>
+              </span>
+              <div className="event-table__cell-stack" role="cell">
+                <span>{formatCapacity(event.capacity)}</span>
+                {event.waitlistEnabled ? <small>waitlist</small> : null}
+                {event.requiresApproval ? <small>approval</small> : null}
+              </div>
+              <div className="event-table__cell-stack event-table__source" role="cell">
+                <span>{formatSourceLabel(event.sourceType)}</span>
+                {event.sourceExternalId ? <small>{event.sourceExternalId}</small> : null}
+              </div>
+              <div
+                className="event-table__actions"
+                role="cell"
+                aria-label={`Действия: ${event.title}`}
+              >
+                <button
+                  aria-expanded={openActionMenu?.eventId === event.id}
+                  aria-haspopup="menu"
+                  aria-label={`Дополнительные действия: ${event.title}`}
+                  className="event-action-dots"
+                  onClick={(clickEvent) => {
+                    clickEvent.stopPropagation();
+                    openActionsMenu(event, clickEvent.currentTarget);
+                  }}
+                  onMouseDown={(mouseEvent) => {
+                    mouseEvent.stopPropagation();
+                  }}
+                  type="button"
                 >
-                  <Button onClick={() => onEditEvent(event)} size="sm" type="button">
-                    Редактировать
-                  </Button>
-                  {visibleStatusActions.map((action) => (
-                    <button
-                      className={`event-status-action event-status-action--${action.id}`}
-                      disabled={isActionDisabled}
-                      key={action.id}
-                      onClick={() => onRequestStatusAction(event, action)}
-                      type="button"
-                    >
-                      {activeActionId === action.id ? action.loadingLabel : action.label}
-                    </button>
-                  ))}
-                </div>
+                  ...
+                </button>
               </div>
-            </Fragment>
+            </div>
+          );
+        })}
+
+        {openActionMenu && openActionMenuEvent ? (
+          <EventOverflowMenu
+            actionInFlight={actionInFlight}
+            event={openActionMenuEvent}
+            left={openActionMenu.left}
+            onClose={() => setOpenActionMenu(null)}
+            onDuplicateEvent={onDuplicateEvent}
+            onEditEvent={onEditEvent}
+            onRequestStatusAction={onRequestStatusAction}
+            top={openActionMenu.top}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function EventOverflowMenu({
+  actionInFlight,
+  event,
+  left,
+  onClose,
+  onDuplicateEvent,
+  onEditEvent,
+  onRequestStatusAction,
+  top,
+}: {
+  actionInFlight: PendingEventAction | null;
+  event: AdminEvent;
+  left: number;
+  onClose: () => void;
+  onDuplicateEvent: (event: AdminEvent) => void;
+  onEditEvent: (event: AdminEvent) => void;
+  onRequestStatusAction: (event: AdminEvent, action: EventStatusAction) => void;
+  top: number;
+}) {
+  const activeActionId =
+    actionInFlight?.event.id === event.id ? actionInFlight.action.id : null;
+  const isActionDisabled = Boolean(actionInFlight);
+  const availableActionIds = new Set(
+    getVisibleEventStatusActions(event).map((action) => action.id),
+  );
+  const publishAction = EVENT_STATUS_ACTIONS.find((action) => action.id === "publish");
+  const isPublishAvailable = publishAction ? availableActionIds.has(publishAction.id) : false;
+  const statusActions = getOverflowStatusActions();
+
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div className="event-overflow-layer" onClick={onClose}>
+      <div
+        className="event-overflow-menu"
+        onClick={(clickEvent) => {
+          clickEvent.stopPropagation();
+        }}
+        role="menu"
+        style={{ left, top }}
+      >
+        <button
+          className="event-overflow-menu__item"
+          onClick={() => {
+            onClose();
+            onEditEvent(event);
+          }}
+          role="menuitem"
+          type="button"
+        >
+          Редактировать
+        </button>
+        {publishAction ? (
+          <button
+            className="event-overflow-menu__item event-overflow-menu__item--publish"
+            disabled={isActionDisabled || !isPublishAvailable}
+            onClick={() => {
+              onClose();
+              onRequestStatusAction(event, publishAction);
+            }}
+            role="menuitem"
+            type="button"
+          >
+            {activeActionId === publishAction.id
+              ? publishAction.loadingLabel
+              : publishAction.label}
+          </button>
+        ) : null}
+        <button
+          className="event-overflow-menu__item"
+          disabled={isActionDisabled}
+          onClick={() => {
+            onClose();
+            onDuplicateEvent(event);
+          }}
+          role="menuitem"
+          type="button"
+        >
+          Дублировать
+        </button>
+
+        {statusActions.map((action) => {
+          const isAvailable = availableActionIds.has(action.id);
+
+          return (
+            <button
+              className={`event-overflow-menu__item event-overflow-menu__item--${action.id}`}
+              disabled={isActionDisabled || !isAvailable}
+              key={action.id}
+              onClick={() => {
+                onClose();
+                onRequestStatusAction(event, action);
+              }}
+              role="menuitem"
+              type="button"
+            >
+              {activeActionId === action.id ? action.loadingLabel : action.label}
+            </button>
           );
         })}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -749,6 +952,12 @@ function getVisibleEventStatusActions(event: AdminEvent): EventStatusAction[] {
   });
 }
 
+function getOverflowStatusActions(): EventStatusAction[] {
+  return EVENT_STATUS_ACTIONS.filter((action) =>
+    EVENT_OVERFLOW_STATUS_ACTION_IDS.includes(action.id),
+  );
+}
+
 function getMobileVisibilityNotice(status: string, visibility: string): string {
   if (status === "draft") {
     return "Черновик не отображается в мобильном приложении.";
@@ -828,6 +1037,14 @@ function formatEventDateRange(event: AdminEvent): string {
   return `${startsAt} - ${formatDateTime(event.endsAt, event.timezone)}`;
 }
 
+function formatEventPlace(event: AdminEvent): string | null {
+  const parts = [event.locationName, event.address].filter(
+    (part): part is string => Boolean(part?.trim()),
+  );
+
+  return parts.length > 0 ? parts.join(" / ") : null;
+}
+
 function formatDateTime(value: string | null, timezone: string | null): string {
   if (!value) {
     return "Не указано";
@@ -853,8 +1070,105 @@ function formatDateTime(value: string | null, timezone: string | null): string {
   }
 }
 
+function formatCategoryLabel(category: string | null): string {
+  if (!category) {
+    return "Не указана";
+  }
+
+  const labels: Record<string, string> = {
+    lecture: "Лекция",
+    tour: "Экскурсия",
+    holiday: "Праздник",
+    children: "Детское",
+    shabbat: "Шаббат",
+    course: "Курс",
+    community: "Общинное",
+    other: "Другое",
+  };
+
+  return labels[category] ?? category;
+}
+
 function formatCapacity(capacity: number | null): string {
-  return capacity === null ? "Без лимита" : String(capacity);
+  return capacity === null ? "Без лимита" : `- / ${capacity}`;
+}
+
+function formatStatusLabel(status: string): string {
+  if (status === "published") {
+    return "● Опубликовано";
+  }
+
+  if (status === "draft") {
+    return "◌ Черновик";
+  }
+
+  if (status === "hidden") {
+    return "◌ Скрыто";
+  }
+
+  if (status === "cancelled") {
+    return "× Отменено";
+  }
+
+  if (status === "archived") {
+    return "⊞ Архив";
+  }
+
+  return status;
+}
+
+function formatVisibilityLabel(visibility: string): string {
+  if (visibility === "public") {
+    return "◉ Публично";
+  }
+
+  if (visibility === "members_only") {
+    return "◉ Для участников";
+  }
+
+  if (visibility === "hidden") {
+    return "◎ Скрыто";
+  }
+
+  return visibility;
+}
+
+function formatRegistrationModeLabel(registrationMode: string): string {
+  if (registrationMode === "none") {
+    return "-";
+  }
+
+  if (registrationMode === "external_link") {
+    return "↗ Внешняя";
+  }
+
+  if (registrationMode === "internal_free") {
+    return "✓ Внутр.";
+  }
+
+  if (registrationMode === "internal_paid") {
+    return "₽ Варианты";
+  }
+
+  return registrationMode;
+}
+
+function formatSourceLabel(sourceType: string): string {
+  const normalizedSourceType = sourceType.trim().toLocaleLowerCase("en-US");
+
+  if (normalizedSourceType === "manual") {
+    return "✦ Вручную";
+  }
+
+  if (normalizedSourceType === "import") {
+    return "⟳ Импорт";
+  }
+
+  if (normalizedSourceType === "external" || normalizedSourceType === "external_link") {
+    return "↗ Внешняя";
+  }
+
+  return sourceType;
 }
 
 function getStatusTone(status: string): AdminBadgeTone {
