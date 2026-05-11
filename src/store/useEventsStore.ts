@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { listEventCategories } from '@/services/eventCategoriesService';
+import { listActiveOccurrencesForEvents } from '@/services/eventOccurrencesService';
 import { getEventById, listPublishedEvents } from '@/services/eventsService';
 import {
   cancelRegistration as cancelRegistrationService,
@@ -15,6 +16,7 @@ import {
   type EventRegistration,
 } from '@/types/event';
 import type { EventCategory } from '@/types/eventCategory';
+import type { EventOccurrence } from '@/types/eventOccurrence';
 
 type LoadEventOptions = {
   forceRefresh?: boolean;
@@ -23,6 +25,7 @@ type LoadEventOptions = {
 type EventsState = {
   events: EventItem[];
   categories: EventCategory[];
+  activeOccurrencesByEventId: Record<string, EventOccurrence[]>;
   selectedEvent: EventItem | null;
   myRegistrations: EventRegistration[];
   loading: boolean;
@@ -36,6 +39,7 @@ type EventsState = {
   registerForEvent: (eventId: string) => Promise<EventRegistration>;
   cancelRegistration: (registrationId: string) => Promise<EventRegistration>;
   getRegistrationForEvent: (eventId: string) => EventRegistration | null;
+  getActiveOccurrences: (eventId: string) => EventOccurrence[];
   resetPrivateState: () => void;
 };
 
@@ -128,6 +132,7 @@ function mapEvent(
     featured: position === 0,
     startsAt: event.startsAt,
     endsAt: event.endsAt,
+    isPermanent: event.isPermanent,
     timezone: event.timezone,
     locationName: event.locationName,
     address: event.address,
@@ -220,6 +225,7 @@ function findLoadedEvent(
 export const useEventsStore = create<EventsState>((set, get) => ({
   events: [],
   categories: [],
+  activeOccurrencesByEventId: {},
   selectedEvent: null,
   myRegistrations: [],
   loading: false,
@@ -237,10 +243,23 @@ export const useEventsStore = create<EventsState>((set, get) => ({
         listEventCategories().catch(() => [] as EventCategory[]),
       ]);
       const categoryIndex = buildCategoryIndex(categories);
+      const mappedEvents = events.map((event, index) =>
+        mapEvent(event, categoryIndex, index),
+      );
+
+      const occurrencesMap = await listActiveOccurrencesForEvents(
+        mappedEvents.map((event) => event.id),
+      ).catch(() => new Map<string, EventOccurrence[]>());
+
+      const occurrencesRecord: Record<string, EventOccurrence[]> = {};
+      occurrencesMap.forEach((value, key) => {
+        occurrencesRecord[key] = value;
+      });
 
       set({
-        events: events.map((event, index) => mapEvent(event, categoryIndex, index)),
+        events: mappedEvents,
         categories,
+        activeOccurrencesByEventId: occurrencesRecord,
         loading: false,
         error: null,
       });
@@ -398,15 +417,30 @@ export const useEventsStore = create<EventsState>((set, get) => ({
 
   getRegistrationForEvent: (eventId: string) => findRegistrationForEvent(get().myRegistrations, eventId),
 
+  getActiveOccurrences: (eventId: string) => get().activeOccurrencesByEventId[eventId] ?? [],
+
   resetPrivateState: () => {
-    set((state) => ({
-      events: state.events.filter((event) => event.visibility === 'public'),
-      selectedEvent: state.selectedEvent?.visibility === 'public' ? state.selectedEvent : null,
-      myRegistrations: [],
-      error: null,
-      selectedEventError: null,
-      selectedEventLoading: false,
-      registrationsLoading: false,
-    }));
+    set((state) => {
+      const publicEvents = state.events.filter((event) => event.visibility === 'public');
+      const publicIds = new Set(publicEvents.map((event) => event.id));
+      const nextOccurrences: Record<string, EventOccurrence[]> = {};
+      publicIds.forEach((id) => {
+        const occurrences = state.activeOccurrencesByEventId[id];
+        if (occurrences) {
+          nextOccurrences[id] = occurrences;
+        }
+      });
+
+      return {
+        events: publicEvents,
+        activeOccurrencesByEventId: nextOccurrences,
+        selectedEvent: state.selectedEvent?.visibility === 'public' ? state.selectedEvent : null,
+        myRegistrations: [],
+        error: null,
+        selectedEventError: null,
+        selectedEventLoading: false,
+        registrationsLoading: false,
+      };
+    });
   },
 }));

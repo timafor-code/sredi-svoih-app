@@ -3,6 +3,11 @@ import { createPortal } from "react-dom";
 
 import { Button } from "../ui/Button";
 import {
+  getOccurrenceRegistrationState,
+  getOccurrenceRegistrationStateLabel,
+  isOccurrencePast,
+} from "../../lib/eventTime";
+import {
   listAdminEventOccurrences,
   replaceAdminEventOccurrences,
 } from "../../services/adminEventOccurrencesService";
@@ -124,6 +129,41 @@ let draftIdCounter = 0;
 function nextDraftId(): string {
   draftIdCounter += 1;
   return `occurrence-${Date.now().toString(36)}-${draftIdCounter}`;
+}
+
+function parseRegistrationIso(value: string, timezone: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/.exec(trimmed);
+  if (!match) {
+    return null;
+  }
+  try {
+    return buildZonedIso(match[1], match[2], timezone);
+  } catch {
+    return null;
+  }
+}
+
+function isDraftPast(draft: DraftOccurrence, now: number = Date.now()): boolean {
+  const startsAt = buildDraftStartIso(draft);
+  const endsAt = buildDraftEndIso(draft);
+  return isOccurrencePast({ startsAt, endsAt }, now);
+}
+
+function getDraftRegistrationState(draft: DraftOccurrence, now: number = Date.now()) {
+  return getOccurrenceRegistrationState(
+    {
+      startsAt: buildDraftStartIso(draft) ?? "",
+      endsAt: buildDraftEndIso(draft),
+      status: draft.status,
+      registrationOpensAt: parseRegistrationIso(draft.registrationOpensAt, draft.timezone),
+      registrationClosesAt: parseRegistrationIso(draft.registrationClosesAt, draft.timezone),
+    },
+    now,
+  );
 }
 
 function isOccurrenceStatus(value: string): value is AdminEventOccurrenceStatus {
@@ -748,6 +788,7 @@ export function EventOccurrencesConstructor({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [modalState, setModalState] = useState<ModalState>({ kind: "closed" });
+  const [showPastOccurrences, setShowPastOccurrences] = useState(false);
   const [generatorForm, setGeneratorForm] = useState<OccurrenceGeneratorForm>(() =>
     buildDefaultGeneratorForm(resolveDefaultGeneratorPreset(eventKind)),
   );
@@ -792,6 +833,16 @@ export function EventOccurrencesConstructor({
     drafts,
     eventCapacity,
   ]);
+  const pastDraftCount = useMemo(
+    () => drafts.filter((draft) => isDraftPast(draft)).length,
+    [drafts],
+  );
+  const visibleDrafts = useMemo(() => {
+    if (showPastOccurrences) {
+      return drafts;
+    }
+    return drafts.filter((draft) => !isDraftPast(draft));
+  }, [drafts, showPastOccurrences]);
   const generatorPreview = useMemo(
     () => buildGeneratorPreview(generatorForm, drafts, fallbackTimezone, eventCapacity),
     [drafts, eventCapacity, fallbackTimezone, generatorForm],
@@ -1020,6 +1071,19 @@ export function EventOccurrencesConstructor({
 
       <div className="event-occurrences-constructor__layout">
         <div className="event-occurrences-constructor__main">
+          {pastDraftCount > 0 ? (
+            <label className="event-occurrences-constructor__past-toggle">
+              <input
+                checked={showPastOccurrences}
+                onChange={(event) => setShowPastOccurrences(event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                Показать прошедшие ({pastDraftCount})
+              </span>
+            </label>
+          ) : null}
+
           {loading ? (
             <p className="event-occurrences-constructor__empty">
               Загружаем даты и сеансы...
@@ -1036,10 +1100,25 @@ export function EventOccurrencesConstructor({
                 + Добавить дату
               </button>
             </div>
+          ) : visibleDrafts.length === 0 ? (
+            <div className="event-occurrences-constructor__empty">
+              <p>
+                Активных дат нет. Включите «Показать прошедшие», чтобы увидеть прошедшие
+                сеансы, или добавьте новую дату.
+              </p>
+              <button
+                className="event-occurrences-add-btn"
+                disabled={disabled}
+                onClick={openAddModal}
+                type="button"
+              >
+                + Добавить дату
+              </button>
+            </div>
           ) : (
             <div className="event-occurrence-list-stack">
               <ul className="event-occurrence-rows">
-                {drafts.map((draft, index) => (
+                {visibleDrafts.map((draft, index) => (
                   <OccurrenceRow
                     disabled={disabled}
                     draft={draft}
@@ -1052,7 +1131,7 @@ export function EventOccurrencesConstructor({
                     onStatusChange={(status) =>
                       handleStatusChange(draft.draftId, status)
                     }
-                    total={drafts.length}
+                    total={visibleDrafts.length}
                   />
                 ))}
               </ul>
@@ -1412,10 +1491,15 @@ function OccurrenceRow({
   const timeLabel = formatDraftTimeRange(draft);
   const title = draft.title.trim();
   const statusLabel = STATUS_LABELS[draft.status];
+  const past = isDraftPast(draft);
+  const registrationState = getDraftRegistrationState(draft);
+  const registrationStateLabel = getOccurrenceRegistrationStateLabel(registrationState);
 
   return (
     <li
-      className={`event-occurrence-row event-occurrence-row--${draft.status}`}
+      className={`event-occurrence-row event-occurrence-row--${draft.status}${
+        past ? " event-occurrence-row--past" : ""
+      }`}
     >
       <div className="event-occurrence-row__date">
         <strong>{dateLabel}</strong>
@@ -1425,8 +1509,12 @@ function OccurrenceRow({
       <div className="event-occurrence-row__body">
         <div className="event-occurrence-row__title">
           {title ? title : "Без подписи"}
+          {past ? (
+            <span className="event-occurrence-row__past-badge">Прошёл</span>
+          ) : null}
         </div>
         <div className="event-occurrence-row__meta">
+          <span>{registrationStateLabel}</span>
           <span>{formatRegistrationWindow(draft)}</span>
           <span>{formatCapacity(draft)}</span>
         </div>

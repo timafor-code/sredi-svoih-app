@@ -22,10 +22,15 @@ import {
   getEventRegistrationActionTitle,
   useEventRegistrationAction,
 } from '@/hooks/useEventRegistrationAction';
+import {
+  getEventEarliestUpcomingTime,
+  isEventPast,
+} from '@/lib/eventTime';
 import { useAuthStore } from '@/store/useAuthStore';
 import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
 import type { EventItem, EventRegistration } from '@/types/event';
+import type { EventOccurrence } from '@/types/eventOccurrence';
 
 const SPECIAL_FILTERS = [
   { id: 'all', title: 'Все' },
@@ -107,28 +112,42 @@ function parseEventTime(value: string | null | undefined): number | null {
   return Number.isNaN(time) ? null : time;
 }
 
-function getEventBoundaryTime(event: EventItem): number | null {
-  return parseEventTime(event.endsAt) ?? parseEventTime(event.startsAt);
+function eventMatchesTimeFilter(
+  event: EventItem,
+  filter: EventTimeFilter,
+  occurrences: EventOccurrence[] | undefined,
+  now: number,
+): boolean {
+  const past = isEventPast(event, occurrences, now);
+  return filter === 'Ближайшие' ? !past : past;
 }
 
-function eventMatchesTimeFilter(event: EventItem, filter: EventTimeFilter, now: number): boolean {
-  const eventTime = getEventBoundaryTime(event);
-
-  if (eventTime === null) {
-    return false;
+function getEventSortTime(
+  event: EventItem,
+  occurrences: EventOccurrence[] | undefined,
+  filter: EventTimeFilter,
+  now: number,
+): number {
+  if (filter === 'Ближайшие') {
+    return (
+      getEventEarliestUpcomingTime(event, occurrences, now)
+      ?? parseEventTime(event.startsAt)
+      ?? 0
+    );
   }
 
-  return filter === 'Ближайшие' ? eventTime >= now : eventTime < now;
-}
-
-function getEventStartSortTime(event: EventItem): number {
   return parseEventTime(event.startsAt) ?? 0;
 }
 
-function sortEventsByTime(events: EventItem[], filter: EventTimeFilter): EventItem[] {
+function sortEventsByTime(
+  events: EventItem[],
+  filter: EventTimeFilter,
+  occurrencesByEventId: Record<string, EventOccurrence[]>,
+  now: number,
+): EventItem[] {
   return [...events].sort((first, second) => {
-    const firstTime = getEventStartSortTime(first);
-    const secondTime = getEventStartSortTime(second);
+    const firstTime = getEventSortTime(first, occurrencesByEventId[first.id], filter, now);
+    const secondTime = getEventSortTime(second, occurrencesByEventId[second.id], filter, now);
 
     if (firstTime === secondTime) {
       return first.title.localeCompare(second.title, 'ru');
@@ -369,6 +388,7 @@ export default function EventsScreen() {
   const {
     events,
     categories,
+    activeOccurrencesByEventId,
     myRegistrations,
     loading,
     error,
@@ -425,14 +445,16 @@ export default function EventsScreen() {
     return markFirstEventFeatured(
       sortEventsByTime(
         events.filter((event) => (
-          eventMatchesTimeFilter(event, timeFilter, now)
+          eventMatchesTimeFilter(event, timeFilter, activeOccurrencesByEventId[event.id], now)
           && eventMatchesFilter(event, filter)
           && eventMatchesSearch(event, normalizedSearch)
         )),
         timeFilter,
+        activeOccurrencesByEventId,
+        now,
       ),
     );
-  }, [events, filter, normalizedSearch, timeFilter]);
+  }, [activeOccurrencesByEventId, events, filter, normalizedSearch, timeFilter]);
 
   const registrationByEventId = useMemo(() => {
     const registrationMap = new Map<string, EventRegistration>();

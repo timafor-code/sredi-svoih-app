@@ -18,10 +18,12 @@ import {
   getRegistrationStatusTitle,
   useEventRegistrationAction,
 } from '@/hooks/useEventRegistrationAction';
+import { isEventPast } from '@/lib/eventTime';
 import { useAuthStore } from '@/store/useAuthStore';
 import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
 import type { EventItem, EventRegistration } from '@/types/event';
+import type { EventOccurrence } from '@/types/eventOccurrence';
 
 const registrationModeTitles: Record<EventItem['registrationMode'], string> = {
   none: 'Регистрация не требуется',
@@ -34,16 +36,6 @@ const eventStatusTitles: Partial<Record<NonNullable<EventItem['status']>, string
   cancelled: 'Событие отменено',
   archived: 'Событие в архиве',
 };
-
-function parseTime(value: string | null | undefined): number | null {
-  if (!value) {
-    return null;
-  }
-
-  const time = new Date(value).getTime();
-
-  return Number.isNaN(time) ? null : time;
-}
 
 function formatDateTime(value: string, timeZone?: string | null, includeDate = true): string {
   const options: Intl.DateTimeFormatOptions = includeDate
@@ -112,10 +104,8 @@ function formatEventDate(event: EventItem): string {
   return `${start} - ${end}`;
 }
 
-function hasEventPassed(event: EventItem): boolean {
-  const eventTime = parseTime(event.endsAt) ?? parseTime(event.startsAt);
-
-  return eventTime !== null && eventTime < Date.now();
+function hasEventPassed(event: EventItem, occurrences?: EventOccurrence[]): boolean {
+  return isEventPast(event, occurrences);
 }
 
 function getPlace(event: EventItem): string {
@@ -189,6 +179,7 @@ type RegistrationBlockProps = {
   cancelling: boolean;
   event: EventItem;
   hasSession: boolean;
+  occurrences: EventOccurrence[];
   onCancel: (registration: EventRegistration) => void;
   onOpenPaidRegistration: (event: EventItem) => void;
   onRegister: (event: EventItem, registration: EventRegistration | null) => void;
@@ -200,6 +191,7 @@ function RegistrationBlock({
   cancelling,
   event,
   hasSession,
+  occurrences,
   onCancel,
   onOpenPaidRegistration,
   onRegister,
@@ -207,7 +199,7 @@ function RegistrationBlock({
   registering,
 }: RegistrationBlockProps) {
   const activeRegistration = getActiveRegistration(registration);
-  const eventPassed = hasEventPassed(event);
+  const eventPassed = hasEventPassed(event, occurrences);
 
   if (event.registrationMode === 'external_link') {
     return (
@@ -321,6 +313,7 @@ export default function EventDetailScreen() {
   const membership = useAuthStore((state) => state.membership);
   const loadSession = useAuthStore((state) => state.loadSession);
   const {
+    activeOccurrencesByEventId,
     events,
     loadEventById,
     loadMyRegistrations,
@@ -562,6 +555,7 @@ export default function EventDetailScreen() {
 
             <RegistrationBlock
               event={event}
+              occurrences={activeOccurrencesByEventId[event.id] ?? []}
               registration={registration}
               hasSession={Boolean(session)}
               registering={registeringEventId === event.id}

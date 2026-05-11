@@ -19,6 +19,7 @@ export type CommunityEventRow = {
 
   starts_at: string;
   ends_at: string | null;
+  is_permanent: boolean | null;
   timezone: string | null;
 
   location_name: string | null;
@@ -59,6 +60,7 @@ export const EVENT_FIELDS = `
   description,
   starts_at,
   ends_at,
+  is_permanent,
   timezone,
   location_name,
   address,
@@ -92,6 +94,7 @@ export function normalizeEventRow(row: CommunityEventRow): Event {
     description: row.description,
     startsAt: row.starts_at,
     endsAt: row.ends_at,
+    isPermanent: row.is_permanent === true,
     timezone: row.timezone,
     locationName: row.location_name,
     address: row.address,
