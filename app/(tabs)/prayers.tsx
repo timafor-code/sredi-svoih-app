@@ -9,9 +9,9 @@ import { MorningShemaCard } from '@/components/prayer/MorningShemaCard';
 import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
 import { PrayerDayScale } from '@/components/prayer/PrayerDayScale';
 import { PrayerWindowCard } from '@/components/prayer/PrayerWindowCard';
+import { ZmanimModal } from '@/components/prayer/ZmanimModal';
 import { HeaderButton, Logo } from '@/components/ui/BrandHeader';
 import { Screen } from '@/components/ui/Screen';
-import { SectionTitle } from '@/components/ui/SectionTitle';
 import { useNow } from '@/hooks/useNow';
 import { addDays, formatRuDate, formatRuTime } from '@/lib/dates';
 import { getHebrewDate, getHebrewDateLabel } from '@/lib/hebcal';
@@ -34,6 +34,7 @@ function isPrayerRecordableNow(prayer: PrayerWindow) {
 export default function PrayersScreen() {
   const now = useNow();
   const [selectedPrayerId, setSelectedPrayerId] = useState<PrayerWindow['id'] | null>(null);
+  const [zmanimModalVisible, setZmanimModalVisible] = useState(false);
   const requestedPrayerActivityForUserRef = useRef<string | null>(null);
   const authUser = useAuthStore((state) => state.user);
   const prayerActivityItems = usePrayerTrackerStore((state) => state.items);
@@ -201,21 +202,33 @@ export default function PrayersScreen() {
         <HeaderButton icon="filter" />
       </View>
 
-      <GlassCard>
-        <Text style={[styles.overline, styles.scaleOverline]}>ШКАЛА ДНЯ</Text>
-        <PrayerDayScale today={daily} tomorrow={tomorrowDaily} now={now} />
-        <View
-          style={styles.zmanOverview}
-          onLayout={(e) => setOverviewWidth(e.nativeEvent.layout.width)}
-        >
-          {overviewPositioned?.map((item) => (
-            <View key={item.id} style={[styles.zmanPoint, { left: item.leftPx }]}>
-              <Text style={[styles.zmanTime, { textAlign: item.align }]}>{item.t}</Text>
-              <Text style={[styles.zmanLabel, { textAlign: item.align }]}>{item.l}</Text>
-            </View>
-          ))}
-        </View>
-      </GlassCard>
+      <Pressable
+        accessibilityHint="Открыть полный список зманим"
+        accessibilityLabel="Шкала дня. Нажмите, чтобы открыть все зманим."
+        accessibilityRole="button"
+        onPress={() => setZmanimModalVisible(true)}
+        style={({ pressed }) => pressed && styles.scalePressed}
+      >
+        <GlassCard>
+          <Text style={[styles.overline, styles.scaleOverline]}>ШКАЛА ДНЯ</Text>
+          <PrayerDayScale today={daily} tomorrow={tomorrowDaily} now={now} />
+          <View
+            style={styles.zmanOverview}
+            onLayout={(e) => setOverviewWidth(e.nativeEvent.layout.width)}
+          >
+            {overviewPositioned?.map((item) => (
+              <View key={item.id} style={[styles.zmanPoint, { left: item.leftPx }]}>
+                <Text style={[styles.zmanTime, { textAlign: item.align }]}>{item.t}</Text>
+                <Text style={[styles.zmanLabel, { textAlign: item.align }]}>{item.l}</Text>
+              </View>
+            ))}
+          </View>
+          <View style={styles.scaleFooter}>
+            <Text style={styles.scaleCta}>Все зманим</Text>
+            <Ionicons name="chevron-forward" size={14} color="rgba(255,200,50,0.85)" />
+          </View>
+        </GlassCard>
+      </Pressable>
 
       <MorningShemaCard
         city={city}
@@ -261,27 +274,20 @@ export default function PrayersScreen() {
 
       <BlessingsEntryCard />
 
-      <View>
-        <SectionTitle title="ЗМАНИМ · ТАБЛИЦА" action="Подробнее о зманим" />
-        <GlassCard padded={false}>
-          {daily.items.map((zman, index) => {
-            const highlight = zman.id === nextZmanId;
-            return (
-              <View key={zman.id} style={[styles.zmanRow, index > 0 && styles.rowDivider, highlight && styles.zmanRowHighlight]}>
-                <Text style={styles.zmanRowIcon}>{zman.icon}</Text>
-                <Text style={[styles.zmanRowName, highlight && styles.zmanRowAccent]}>{zman.name}</Text>
-                <Text style={[styles.zmanRowTime, highlight && styles.zmanRowAccent]}>{zman.time}</Text>
-              </View>
-            );
-          })}
-        </GlassCard>
-      </View>
-
       <Pressable style={styles.infoCard}>
         <LinearGradient colors={['rgba(74,144,217,0.10)', 'rgba(74,144,217,0.04)']} style={StyleSheet.absoluteFillObject} />
         <Ionicons name="information-circle-outline" size={18} color="#4A90D9" />
         <Text style={styles.infoText}>Зманим рассчитаны через Hebcal для города {city}, часовой пояс {daily.timeZone}.</Text>
       </Pressable>
+
+      <ZmanimModal
+        city={city}
+        daily={daily}
+        date={now}
+        nextZmanId={nextZmanId}
+        onClose={() => setZmanimModalVisible(false)}
+        visible={zmanimModalVisible}
+      />
 
       {selectedPrayer?.active ? (
         <PrayerActionModal
@@ -375,6 +381,23 @@ const styles = StyleSheet.create({
   scaleOverline: {
     marginBottom: 6,
   },
+  scaleCta: {
+    color: 'rgba(255,200,50,0.85)',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  scalePressed: {
+    opacity: 0.92,
+  },
+  scaleFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 4,
+    marginTop: 6,
+  },
   zmanOverview: {
     position: 'relative',
     height: 28,
@@ -396,39 +419,6 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     color: colors.textGhost,
     fontSize: 9,
-  },
-  zmanRow: {
-    minHeight: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  rowDivider: {
-    borderTopWidth: 1,
-    borderTopColor: colors.separator,
-  },
-  zmanRowHighlight: {
-    backgroundColor: 'rgba(240,120,42,0.05)',
-  },
-  zmanRowIcon: {
-    width: 20,
-    textAlign: 'center',
-    fontSize: 15,
-  },
-  zmanRowName: {
-    flex: 1,
-    color: colors.textSecondary,
-    fontSize: 13,
-  },
-  zmanRowTime: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  zmanRowAccent: {
-    color: colors.orange,
   },
   infoCard: {
     minHeight: 48,
