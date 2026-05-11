@@ -58,18 +58,32 @@ export function PrayerDayScale({ today, tomorrow, now }: Props) {
     <View style={styles.wrap}>
       <View style={styles.barFrame}>
         {activeGlow ? (
-          <View
-            pointerEvents="none"
-            style={[
-              styles.activeHaloBlur,
-              {
-                left: `${activeGlow.leftPct}%`,
-                width: `${activeGlow.widthPct}%`,
-                backgroundColor: hexToRgba(activeGlow.accent, 0.20),
-                shadowColor: activeGlow.accent,
-              },
-            ]}
-          />
+          <>
+            <View
+              pointerEvents="none"
+              style={[
+                styles.activeHaloOuter,
+                {
+                  left: `${activeGlow.leftPct}%`,
+                  width: `${activeGlow.widthPct}%`,
+                  backgroundColor: hexToRgba(activeGlow.accent, 0.035),
+                  shadowColor: activeGlow.accent,
+                },
+              ]}
+            />
+            <View
+              pointerEvents="none"
+              style={[
+                styles.activeHaloInner,
+                {
+                  left: `${activeGlow.leftPct}%`,
+                  width: `${activeGlow.widthPct}%`,
+                  backgroundColor: hexToRgba(activeGlow.accent, 0.055),
+                  shadowColor: activeGlow.accent,
+                },
+              ]}
+            />
+          </>
         ) : null}
         <View style={styles.bar}>
           {model.segments.map((seg) => (
@@ -109,7 +123,7 @@ function SegmentView({ segment }: { segment: PrayerDaySegment }) {
         { flex: flexValue },
         segment.active && segment.kind === 'prayer' && styles.segmentActive,
         segment.active && segment.accent
-          ? { borderColor: hexToRgba(segment.accent, 0.75) }
+          ? { borderColor: hexToRgba(segment.accent, 0.62) }
           : null,
       ]}
     >
@@ -121,14 +135,8 @@ function SegmentView({ segment }: { segment: PrayerDaySegment }) {
       />
       {segment.active && segment.kind === 'prayer' && segment.accent ? (
         <>
-          <View
-            style={[
-              StyleSheet.absoluteFillObject,
-              { backgroundColor: hexToRgba(segment.accent, 0.22) },
-            ]}
-          />
           <LinearGradient
-            colors={[hexToRgba(segment.accent, 0.55), 'rgba(255,255,255,0)']}
+            colors={[hexToRgba(segment.accent, 0.12), 'rgba(255,255,255,0)']}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
             style={StyleSheet.absoluteFillObject}
@@ -165,13 +173,22 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 4,
   },
-  activeHaloBlur: {
+  activeHaloOuter: {
     position: 'absolute',
-    top: 12,
-    height: 40,
+    top: 6,
+    height: 52,
+    borderRadius: 18,
+    shadowOpacity: 0.46,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  activeHaloInner: {
+    position: 'absolute',
+    top: 14,
+    height: 32,
     borderRadius: 12,
-    shadowOpacity: 1,
-    shadowRadius: 28,
+    shadowOpacity: 0.30,
+    shadowRadius: 14,
     shadowOffset: { width: 0, height: 0 },
   },
   bar: {
@@ -194,7 +211,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   segmentActive: {
-    borderWidth: 1.5,
+    borderWidth: 1.25,
   },
   segmentActiveSheen: {
     ...StyleSheet.absoluteFillObject,
@@ -205,8 +222,8 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 4,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.14)',
   },
   segmentLabel: {
     color: 'rgba(255,255,255,0.92)',
@@ -244,15 +261,15 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 1,
     backgroundColor: '#FFFFFF',
-    opacity: 0.85,
+    opacity: 0.78,
   },
   markerGlow: {
     position: 'absolute',
-    top: 12,
-    marginLeft: -6,
-    width: 12,
-    height: 36,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    top: 16,
+    marginLeft: -4,
+    width: 8,
+    height: 28,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.10)',
   },
 });
