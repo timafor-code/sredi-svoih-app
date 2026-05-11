@@ -94,7 +94,25 @@ function SegmentView({ segment }: { segment: PrayerDaySegment }) {
         end={{ x: 0, y: 1 }}
         style={StyleSheet.absoluteFillObject}
       />
-      {segment.active ? <View style={styles.segmentActiveSheen} /> : null}
+      {segment.active && segment.kind === 'prayer' && segment.accent ? (
+        <>
+          <View
+            style={[
+              StyleSheet.absoluteFillObject,
+              { backgroundColor: hexToRgba(segment.accent, 0.22) },
+            ]}
+          />
+          <LinearGradient
+            colors={[hexToRgba(segment.accent, 0.55), 'rgba(255,255,255,0)']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={styles.segmentTopSheen} />
+        </>
+      ) : segment.active ? (
+        <View style={styles.segmentActiveSheen} />
+      ) : null}
       {showLabel ? (
         <Text style={styles.segmentLabel} numberOfLines={1}>
           {segment.label}
@@ -115,16 +133,16 @@ function hexToRgba(hex: string, alpha: number) {
 
 const styles = StyleSheet.create({
   wrap: {
-    marginBottom: 12,
+    marginBottom: 8,
   },
   barFrame: {
     position: 'relative',
-    paddingTop: 22,
+    paddingTop: 20,
   },
   bar: {
-    height: 30,
+    height: 24,
     flexDirection: 'row',
-    borderRadius: 12,
+    borderRadius: 10,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.glass.w10,
@@ -133,7 +151,7 @@ const styles = StyleSheet.create({
   },
   segmentShell: {
     overflow: 'hidden',
-    borderRadius: 8,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
     minWidth: 4,
@@ -145,7 +163,15 @@ const styles = StyleSheet.create({
   },
   segmentActiveSheen: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  segmentTopSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.25)',
   },
   segmentLabel: {
     color: 'rgba(255,255,255,0.92)',
@@ -177,20 +203,20 @@ const styles = StyleSheet.create({
   },
   markerLine: {
     position: 'absolute',
-    top: 18,
+    top: 16,
     marginLeft: -1,
     width: 2,
-    height: 34,
+    height: 28,
     borderRadius: 1,
     backgroundColor: '#FFFFFF',
     opacity: 0.85,
   },
   markerGlow: {
     position: 'absolute',
-    top: 14,
+    top: 12,
     marginLeft: -6,
     width: 12,
-    height: 42,
+    height: 36,
     borderRadius: 6,
     backgroundColor: 'rgba(255,255,255,0.18)',
   },

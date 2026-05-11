@@ -75,10 +75,10 @@ export default function PrayersScreen() {
   );
   const nextZmanId = daily.items.find((item) => now.getTime() < item.at.getTime())?.id;
   const overview = [
-    { e: '🌅', l: 'Рассвет', t: daily.times.alot.time },
-    { e: '⚡', l: 'Полдень', t: daily.times.chatzot.time },
-    { e: '🌇', l: 'Закат', t: daily.times.sunset.time },
-    { e: '🌃', l: 'Ночь', t: daily.times.tzeit.time },
+    { l: 'Рассвет', t: daily.times.alot.time },
+    { l: 'Полдень', t: daily.times.chatzot.time },
+    { l: 'Закат', t: daily.times.sunset.time },
+    { l: 'Ночь', t: daily.times.tzeit.time },
   ];
 
   useEffect(() => {
@@ -142,7 +142,6 @@ export default function PrayersScreen() {
         <View style={styles.zmanOverview}>
           {overview.map((item) => (
             <View key={item.t} style={styles.zmanPoint}>
-              <Text style={styles.zmanEmoji}>{item.e}</Text>
               <Text style={styles.zmanTime}>{item.t}</Text>
               <Text style={styles.zmanLabel}>{item.l}</Text>
             </View>
@@ -306,17 +305,15 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
   },
   scaleOverline: {
-    marginBottom: 10,
+    marginBottom: 6,
   },
   zmanOverview: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginTop: 2,
   },
   zmanPoint: {
     alignItems: 'center',
-  },
-  zmanEmoji: {
-    fontSize: 16,
   },
   zmanTime: {
     color: colors.textSecondary,
