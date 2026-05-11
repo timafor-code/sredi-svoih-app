@@ -58,31 +58,18 @@ export function PrayerDayScale({ today, tomorrow, now }: Props) {
     <View style={styles.wrap}>
       <View style={styles.barFrame}>
         {activeGlow ? (
-          <>
-            <View
-              pointerEvents="none"
-              style={[
-                styles.activeHaloOuter,
-                {
-                  left: `${activeGlow.leftPct}%`,
-                  width: `${activeGlow.widthPct}%`,
-                  backgroundColor: hexToRgba(activeGlow.accent, 0.18),
-                  shadowColor: activeGlow.accent,
-                },
-              ]}
-            />
-            <View
-              pointerEvents="none"
-              style={[
-                styles.activeHaloInner,
-                {
-                  left: `${activeGlow.leftPct}%`,
-                  width: `${activeGlow.widthPct}%`,
-                  backgroundColor: hexToRgba(activeGlow.accent, 0.38),
-                },
-              ]}
-            />
-          </>
+          <View
+            pointerEvents="none"
+            style={[
+              styles.activeHalo,
+              {
+                left: `${activeGlow.leftPct}%`,
+                width: `${activeGlow.widthPct}%`,
+                backgroundColor: hexToRgba(activeGlow.accent, 0.12),
+                shadowColor: activeGlow.accent,
+              },
+            ]}
+          />
         ) : null}
         <View style={styles.bar}>
           {model.segments.map((seg) => (
@@ -171,27 +158,21 @@ function hexToRgba(hex: string, alpha: number) {
 
 const styles = StyleSheet.create({
   wrap: {
-    marginBottom: 14,
+    marginBottom: 10,
   },
   barFrame: {
     position: 'relative',
     paddingTop: 20,
-    paddingBottom: 8,
+    paddingBottom: 4,
   },
-  activeHaloOuter: {
+  activeHalo: {
     position: 'absolute',
-    top: 6,
-    height: 52,
-    borderRadius: 16,
-    shadowOpacity: 1,
+    top: 16,
+    height: 32,
+    borderRadius: 10,
+    shadowOpacity: 0.75,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 0 },
-  },
-  activeHaloInner: {
-    position: 'absolute',
-    top: 12,
-    height: 40,
-    borderRadius: 12,
   },
   bar: {
     height: 24,

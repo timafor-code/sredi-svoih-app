@@ -74,12 +74,22 @@ export default function PrayersScreen() {
     ),
   );
   const nextZmanId = daily.items.find((item) => now.getTime() < item.at.getTime())?.id;
-  const overview = [
-    { l: 'Рассвет', t: daily.times.alot.time },
-    { l: 'Полдень', t: daily.times.chatzot.time },
-    { l: 'Закат', t: daily.times.sunset.time },
-    { l: 'Ночь', t: daily.times.tzeit.time },
-  ];
+  const overview = useMemo(() => {
+    const timelineStartMs = daily.times.sunrise.at.getTime();
+    const timelineEndMs = tomorrowDaily.times.sunrise.at.getTime();
+    const timelineDurationMs = Math.max(1, timelineEndMs - timelineStartMs);
+    const raw = [
+      { l: 'Рассвет', t: daily.times.alot.time, at: daily.times.alot.at },
+      { l: 'Полдень', t: daily.times.chatzot.time, at: daily.times.chatzot.at },
+      { l: 'Закат', t: daily.times.sunset.time, at: daily.times.sunset.at },
+      { l: 'Ночь', t: daily.times.tzeit.time, at: daily.times.tzeit.at },
+    ];
+    return raw.map((item) => {
+      const rawPercent = ((item.at.getTime() - timelineStartMs) / timelineDurationMs) * 100;
+      const percent = Math.max(3, Math.min(97, rawPercent));
+      return { ...item, percent };
+    });
+  }, [daily.times, tomorrowDaily.times]);
 
   useEffect(() => {
     if (!authUser) {
@@ -141,7 +151,7 @@ export default function PrayersScreen() {
         <PrayerDayScale today={daily} tomorrow={tomorrowDaily} now={now} />
         <View style={styles.zmanOverview}>
           {overview.map((item) => (
-            <View key={item.t} style={styles.zmanPoint}>
+            <View key={item.t} style={[styles.zmanPoint, { left: `${item.percent}%` }]}>
               <Text style={styles.zmanTime}>{item.t}</Text>
               <Text style={styles.zmanLabel}>{item.l}</Text>
             </View>
@@ -308,11 +318,15 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   zmanOverview: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    position: 'relative',
+    height: 28,
     marginTop: 2,
   },
   zmanPoint: {
+    position: 'absolute',
+    top: 0,
+    width: 56,
+    marginLeft: -28,
     alignItems: 'center',
   },
   zmanTime: {
