@@ -32,7 +32,7 @@ const dateSelectingEventKinds = new Set(['single', 'course', 'sunday_school', 'h
 
 const optionTypeLabels: Record<string, string> = {
   participation: 'Участие',
-  meal: 'Питание',
+  meal: 'Трапеза',
   package: 'Пакет',
   child: 'Детский',
   family: 'Семейный',
@@ -197,7 +197,7 @@ function OptionCard({
     </View>
   ) : (
     <View style={[styles.radio, selected && styles.radioSelected]}>
-      {selected ? <View style={styles.radioDot} /> : null}
+      {selected ? <Ionicons name="checkmark" size={15} color={colors.text} /> : null}
     </View>
   );
 
@@ -260,8 +260,7 @@ export default function PaidOptionsScreen() {
   const [occurrence, setOccurrence] = useState<EventOccurrence | null>(null);
   const [occurrenceMissing, setOccurrenceMissing] = useState(false);
   const [options, setOptions] = useState<EventParticipationOption[]>([]);
-  const [selectedMainId, setSelectedMainId] = useState<string | null>(null);
-  const [selectedDonationIds, setSelectedDonationIds] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [quantities, setQuantities] = useState<Quantities>({});
   const [heroImageFailed, setHeroImageFailed] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -311,13 +310,8 @@ export default function PaidOptionsScreen() {
       setOccurrence(selectedOccurrence);
       setOccurrenceMissing(Boolean(occurrenceId && !selectedOccurrence));
       setOptions(loadedOptions);
-      setSelectedMainId((current) => (
-        current && loadedOptions.some((option) => option.id === current && !option.isDonation)
-          ? current
-          : null
-      ));
-      setSelectedDonationIds((current) => (
-        current.filter((id) => loadedOptions.some((option) => option.id === id && option.isDonation))
+      setSelectedIds((current) => (
+        current.filter((id) => loadedOptions.some((option) => option.id === id))
       ));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Не удалось загрузить варианты участия');
@@ -342,20 +336,10 @@ export default function PaidOptionsScreen() {
     () => options.filter((option) => option.isDonation),
     [options],
   );
-  const selectedMainOption = useMemo(
-    () => mainOptions.find((option) => option.id === selectedMainId) ?? null,
-    [mainOptions, selectedMainId],
-  );
-  const selectedDonationOptions = useMemo(
-    () => donationOptions.filter((option) => selectedDonationIds.includes(option.id)),
-    [donationOptions, selectedDonationIds],
-  );
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedOptions = useMemo(
-    () => [
-      ...(selectedMainOption ? [selectedMainOption] : []),
-      ...selectedDonationOptions,
-    ],
-    [selectedDonationOptions, selectedMainOption],
+    () => options.filter((option) => selectedIdSet.has(option.id)),
+    [options, selectedIdSet],
   );
 
   const totals = useMemo(() => {
@@ -373,9 +357,7 @@ export default function PaidOptionsScreen() {
     );
   }, [quantities, selectedOptions]);
 
-  const canContinue = Boolean(
-    selectedMainOption || (mainOptions.length === 0 && selectedDonationOptions.length > 0),
-  );
+  const canContinue = selectedOptions.length > 0;
 
   const handleBack = useCallback(() => {
     if (router.canGoBack()) {
@@ -391,16 +373,8 @@ export default function PaidOptionsScreen() {
     router.push('/events');
   }, [eventId, router]);
 
-  const selectMainOption = useCallback((option: EventParticipationOption) => {
-    setSelectedMainId(option.id);
-    setQuantities((current) => ({
-      ...current,
-      [option.id]: getOptionQuantity(option, current),
-    }));
-  }, []);
-
-  const toggleDonation = useCallback((option: EventParticipationOption) => {
-    setSelectedDonationIds((current) => {
+  const toggleOption = useCallback((option: EventParticipationOption) => {
+    setSelectedIds((current) => {
       if (current.includes(option.id)) {
         return current.filter((id) => id !== option.id);
       }
@@ -530,7 +504,7 @@ export default function PaidOptionsScreen() {
                 <View style={styles.infoTextBlock}>
                   <Text style={styles.infoTitle}>Выберите вариант участия</Text>
                   <Text style={styles.infoText}>
-                    Основной вариант выбирается один, пожертвование можно добавить отдельно.
+                    Можно выбрать несколько вариантов участия и добавить пожертвование отдельно.
                   </Text>
                 </View>
               </View>
@@ -556,9 +530,9 @@ export default function PaidOptionsScreen() {
                         key={option.id}
                         kind="main"
                         option={option}
-                        selected={option.id === selectedMainId}
+                        selected={selectedIdSet.has(option.id)}
                         quantity={getOptionQuantity(option, quantities)}
-                        onPress={() => selectMainOption(option)}
+                        onPress={() => toggleOption(option)}
                         onDecrease={() => updateQuantity(option, -1)}
                         onIncrease={() => updateQuantity(option, 1)}
                       />
@@ -574,9 +548,9 @@ export default function PaidOptionsScreen() {
                         key={option.id}
                         kind="donation"
                         option={option}
-                        selected={selectedDonationIds.includes(option.id)}
+                        selected={selectedIdSet.has(option.id)}
                         quantity={getOptionQuantity(option, quantities)}
-                        onPress={() => toggleDonation(option)}
+                        onPress={() => toggleOption(option)}
                         onDecrease={() => updateQuantity(option, -1)}
                         onIncrease={() => updateQuantity(option, 1)}
                       />
@@ -856,12 +830,6 @@ const styles = StyleSheet.create({
   },
   radioSelected: {
     borderColor: colors.orange,
-    backgroundColor: colors.accent.orangeBg,
-  },
-  radioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
     backgroundColor: colors.orange,
   },
   checkbox: {
