@@ -7,12 +7,13 @@ import { BlessingsEntryCard } from '@/components/blessings/BlessingsEntryCard';
 import { GlassCard } from '@/components/glass/GlassCard';
 import { MorningShemaCard } from '@/components/prayer/MorningShemaCard';
 import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
+import { PrayerDayScale } from '@/components/prayer/PrayerDayScale';
 import { PrayerWindowCard } from '@/components/prayer/PrayerWindowCard';
 import { HeaderButton, Logo } from '@/components/ui/BrandHeader';
 import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { useNow } from '@/hooks/useNow';
-import { formatRuDate, formatRuTime, progressBetween } from '@/lib/dates';
+import { addDays, formatRuDate, formatRuTime } from '@/lib/dates';
 import { getHebrewDate, getHebrewDateLabel } from '@/lib/hebcal';
 import { formatLocalDateKey, hasRecordedActivity, prayerActivityTypeFromPrayerId } from '@/lib/prayerTracker';
 import { getDailyZmanim, getHebcalLocation, getPrayerWindows } from '@/lib/zmanim';
@@ -38,6 +39,11 @@ export default function PrayersScreen() {
   const city = useSettingsStore((state) => state.city);
   const location = useMemo(() => getHebcalLocation(city), [city]);
   const daily = useMemo(() => getDailyZmanim({ city, date: now }), [city, now]);
+  const tomorrowDate = useMemo(() => addDays(now, 1), [now]);
+  const tomorrowDaily = useMemo(
+    () => getDailyZmanim({ city, date: tomorrowDate }),
+    [city, tomorrowDate],
+  );
   const hdate = useMemo(() => getHebrewDate(now, location), [location, now]);
   const hebrewDateLabel = useMemo(() => getHebrewDateLabel(hdate), [hdate]);
   const hebrewDatePayload = useMemo(
@@ -67,7 +73,6 @@ export default function PrayersScreen() {
       authUser.id,
     ),
   );
-  const dayProgress = progressBetween(daily.times.alot.at, daily.times.tzeit.at, now);
   const nextZmanId = daily.items.find((item) => now.getTime() < item.at.getTime())?.id;
   const overview = [
     { e: '🌅', l: 'Рассвет', t: daily.times.alot.time },
@@ -133,23 +138,7 @@ export default function PrayersScreen() {
 
       <GlassCard>
         <Text style={[styles.overline, styles.scaleOverline]}>ШКАЛА ДНЯ</Text>
-        <View style={styles.scaleWrap}>
-          <View style={styles.scaleBar}>
-            <View style={[styles.scalePart, { flex: 2, backgroundColor: 'rgba(255,190,40,0.55)' }]}>
-              <Text style={styles.scaleText}>Шахарит</Text>
-            </View>
-            <View style={[styles.scalePart, { flex: 2, backgroundColor: 'rgba(240,100,42,0.70)' }]}>
-              <Text style={styles.scaleText}>Минха</Text>
-            </View>
-            <View style={[styles.scalePart, { flex: 1.2, backgroundColor: 'rgba(80,100,200,0.55)' }]}>
-              <Text style={styles.scaleText}>Маарив</Text>
-            </View>
-          </View>
-          <View style={[styles.nowMarkerLabel, { left: `${Math.round(dayProgress * 100)}%` }]}>
-            <Text style={styles.nowMarkerText}>{formatRuTime(now, daily.timeZone)}</Text>
-          </View>
-          <View style={[styles.nowMarker, { left: `${Math.round(dayProgress * 100)}%` }]} />
-        </View>
+        <PrayerDayScale today={daily} tomorrow={tomorrowDaily} now={now} />
         <View style={styles.zmanOverview}>
           {overview.map((item) => (
             <View key={item.t} style={styles.zmanPoint}>
@@ -317,54 +306,7 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
   },
   scaleOverline: {
-    marginBottom: 22,
-  },
-  scaleWrap: {
-    position: 'relative',
-    marginBottom: 12,
-  },
-  scaleBar: {
-    height: 24,
-    flexDirection: 'row',
-    overflow: 'hidden',
-    borderRadius: 4,
-    gap: 1,
-  },
-  scalePart: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scaleText: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  nowMarkerLabel: {
-    position: 'absolute',
-    top: -26,
-    left: '50%',
-    transform: [{ translateX: -22 }],
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: colors.glass.w20,
-    backgroundColor: colors.glass.w12,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  nowMarkerText: {
-    color: colors.text,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  nowMarker: {
-    position: 'absolute',
-    top: -6,
-    left: '50%',
-    width: 2,
-    height: 36,
-    borderRadius: 1,
-    backgroundColor: colors.text,
-    opacity: 0.6,
+    marginBottom: 10,
   },
   zmanOverview: {
     flexDirection: 'row',
