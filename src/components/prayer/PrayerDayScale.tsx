@@ -43,9 +43,47 @@ export function PrayerDayScale({ today, tomorrow, now }: Props) {
   const onTimeline =
     now.getTime() >= model.timelineStart.getTime() && now.getTime() <= model.timelineEnd.getTime();
 
+  const activeGlowSegment = model.segments.find(
+    (seg) => seg.active && seg.kind === 'prayer' && seg.accent,
+  );
+  const activeGlow = activeGlowSegment
+    ? {
+        leftPct: activeGlowSegment.startPercent * 100,
+        widthPct: (activeGlowSegment.endPercent - activeGlowSegment.startPercent) * 100,
+        accent: activeGlowSegment.accent as string,
+      }
+    : null;
+
   return (
     <View style={styles.wrap}>
       <View style={styles.barFrame}>
+        {activeGlow ? (
+          <>
+            <View
+              pointerEvents="none"
+              style={[
+                styles.activeHaloOuter,
+                {
+                  left: `${activeGlow.leftPct}%`,
+                  width: `${activeGlow.widthPct}%`,
+                  backgroundColor: hexToRgba(activeGlow.accent, 0.18),
+                  shadowColor: activeGlow.accent,
+                },
+              ]}
+            />
+            <View
+              pointerEvents="none"
+              style={[
+                styles.activeHaloInner,
+                {
+                  left: `${activeGlow.leftPct}%`,
+                  width: `${activeGlow.widthPct}%`,
+                  backgroundColor: hexToRgba(activeGlow.accent, 0.38),
+                },
+              ]}
+            />
+          </>
+        ) : null}
         <View style={styles.bar}>
           {model.segments.map((seg) => (
             <SegmentView key={seg.id} segment={seg} />
@@ -133,11 +171,27 @@ function hexToRgba(hex: string, alpha: number) {
 
 const styles = StyleSheet.create({
   wrap: {
-    marginBottom: 8,
+    marginBottom: 14,
   },
   barFrame: {
     position: 'relative',
     paddingTop: 20,
+    paddingBottom: 8,
+  },
+  activeHaloOuter: {
+    position: 'absolute',
+    top: 6,
+    height: 52,
+    borderRadius: 16,
+    shadowOpacity: 1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  activeHaloInner: {
+    position: 'absolute',
+    top: 12,
+    height: 40,
+    borderRadius: 12,
   },
   bar: {
     height: 24,
