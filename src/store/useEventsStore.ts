@@ -148,6 +148,7 @@ function mapEvent(
     priceAmount: event.priceAmount,
     priceCurrency: event.priceCurrency,
     publishedAt: event.publishedAt,
+    isPermanent: event.isPermanent,
     ...display,
   };
 }

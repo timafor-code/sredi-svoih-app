@@ -61,6 +61,7 @@ export interface Event {
   priceAmount: number | null;
   priceCurrency: string | null;
   publishedAt: string | null;
+  isPermanent: boolean;
 }
 
 export interface EventRegistration {
@@ -116,4 +117,5 @@ export interface EventItem {
   priceAmount?: number | null;
   priceCurrency?: string | null;
   publishedAt?: string | null;
+  isPermanent?: boolean;
 }

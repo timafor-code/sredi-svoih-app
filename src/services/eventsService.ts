@@ -47,6 +47,8 @@ export type CommunityEventRow = {
   price_currency: string | null;
 
   published_at: string | null;
+
+  is_permanent: boolean | null;
 };
 
 export const EVENT_FIELDS = `
@@ -78,7 +80,8 @@ export const EVENT_FIELDS = `
   requires_approval,
   price_amount,
   price_currency,
-  published_at
+  published_at,
+  is_permanent
 `;
 
 export function normalizeEventRow(row: CommunityEventRow): Event {
@@ -112,6 +115,7 @@ export function normalizeEventRow(row: CommunityEventRow): Event {
     priceAmount: row.price_amount,
     priceCurrency: row.price_currency,
     publishedAt: row.published_at,
+    isPermanent: Boolean(row.is_permanent),
   };
 }
 
