@@ -210,10 +210,7 @@ export default function PrayersScreen() {
         style={({ pressed }) => pressed && styles.scalePressed}
       >
         <GlassCard>
-          <View style={styles.scaleHeader}>
-            <Text style={[styles.overline, styles.scaleOverline]}>ШКАЛА ДНЯ</Text>
-            <Text style={styles.scaleCta}>Все зманим</Text>
-          </View>
+          <Text style={[styles.overline, styles.scaleOverline]}>ШКАЛА ДНЯ</Text>
           <PrayerDayScale today={daily} tomorrow={tomorrowDaily} now={now} />
           <View
             style={styles.zmanOverview}
@@ -227,8 +224,8 @@ export default function PrayersScreen() {
             ))}
           </View>
           <View style={styles.scaleFooter}>
-            <Text style={styles.scaleFooterHint}>Нажмите, чтобы открыть все зманим</Text>
-            <Ionicons name="chevron-forward" size={14} color="rgba(255,200,50,0.70)" />
+            <Text style={styles.scaleCta}>Все зманим</Text>
+            <Ionicons name="chevron-forward" size={14} color="rgba(255,200,50,0.85)" />
           </View>
         </GlassCard>
       </Pressable>
@@ -381,16 +378,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     includeFontPadding: false,
   },
-  scaleHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 6,
-  },
   scaleOverline: {
-    flex: 1,
-    minWidth: 0,
+    marginBottom: 6,
   },
   scaleCta: {
     color: 'rgba(255,200,50,0.85)',
@@ -405,14 +394,9 @@ const styles = StyleSheet.create({
   scaleFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
     gap: 4,
     marginTop: 6,
-  },
-  scaleFooterHint: {
-    color: 'rgba(255,200,50,0.70)',
-    fontSize: 11,
-    fontWeight: '700',
   },
   zmanOverview: {
     position: 'relative',
