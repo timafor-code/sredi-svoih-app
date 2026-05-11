@@ -23,6 +23,9 @@ import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
 
+const OVERVIEW_PIN_WIDTH = 56;
+const OVERVIEW_PIN_GAP = 6;
+
 function isPrayerRecordableNow(prayer: PrayerWindow) {
   const nowMs = Date.now();
   return nowMs >= prayer.start.getTime() && nowMs <= prayer.end.getTime();
@@ -90,6 +93,52 @@ export default function PrayersScreen() {
     });
   }, [daily.times, tomorrowDaily.times]);
 
+  const [overviewWidth, setOverviewWidth] = useState(0);
+  const overviewPositioned = useMemo(() => {
+    if (overviewWidth <= 0) {
+      return overview.map((p) => ({ ...p, centerX: null as number | null }));
+    }
+    const minStep = OVERVIEW_PIN_WIDTH + OVERVIEW_PIN_GAP;
+    const halfPin = OVERVIEW_PIN_WIDTH / 2;
+    const sorted = overview
+      .map((p) => ({ id: p.id, centerX: (p.percent / 100) * overviewWidth }))
+      .sort((a, b) => a.centerX - b.centerX);
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1];
+      const cur = sorted[i];
+      if (cur && prev && cur.centerX < prev.centerX + minStep) {
+        cur.centerX = prev.centerX + minStep;
+      }
+    }
+    const last = sorted[sorted.length - 1];
+    if (last && last.centerX > overviewWidth - halfPin) {
+      last.centerX = overviewWidth - halfPin;
+      for (let i = sorted.length - 2; i >= 0; i--) {
+        const cur = sorted[i];
+        const next = sorted[i + 1];
+        if (cur && next && next.centerX - cur.centerX < minStep) {
+          cur.centerX = next.centerX - minStep;
+        }
+      }
+    }
+    const first = sorted[0];
+    if (first && first.centerX < halfPin) {
+      first.centerX = halfPin;
+      for (let i = 1; i < sorted.length; i++) {
+        const prev = sorted[i - 1];
+        const cur = sorted[i];
+        if (cur && prev && cur.centerX - prev.centerX < minStep) {
+          cur.centerX = prev.centerX + minStep;
+        }
+      }
+    }
+    const byId: Record<string, number> = {};
+    sorted.forEach((p) => {
+      byId[p.id] = p.centerX;
+    });
+    return overview.map((p) => ({ ...p, centerX: byId[p.id] ?? null }));
+  }, [overview, overviewWidth]);
+
   useEffect(() => {
     if (!authUser) {
       requestedPrayerActivityForUserRef.current = null;
@@ -148,17 +197,17 @@ export default function PrayersScreen() {
       <GlassCard>
         <Text style={[styles.overline, styles.scaleOverline]}>ШКАЛА ДНЯ</Text>
         <PrayerDayScale today={daily} tomorrow={tomorrowDaily} now={now} />
-        <View style={styles.zmanOverview}>
-          {overview.map((item) => {
-            const isLeftEdge = item.percent <= 5;
-            const isRightEdge = item.percent >= 95;
-            const horizontalStyle = isLeftEdge
-              ? { left: 0 as const, alignItems: 'flex-start' as const }
-              : isRightEdge
-                ? { right: 0 as const, alignItems: 'flex-end' as const }
-                : { left: `${item.percent}%` as const, marginLeft: -28, alignItems: 'center' as const };
+        <View
+          style={styles.zmanOverview}
+          onLayout={(e) => setOverviewWidth(e.nativeEvent.layout.width)}
+        >
+          {overviewPositioned.map((item) => {
+            if (item.centerX === null) return null;
             return (
-              <View key={item.id} style={[styles.zmanPoint, horizontalStyle]}>
+              <View
+                key={item.id}
+                style={[styles.zmanPoint, { left: item.centerX - OVERVIEW_PIN_WIDTH / 2 }]}
+              >
                 <Text style={styles.zmanTime}>{item.t}</Text>
                 <Text style={styles.zmanLabel}>{item.l}</Text>
               </View>
@@ -333,7 +382,8 @@ const styles = StyleSheet.create({
   zmanPoint: {
     position: 'absolute',
     top: 0,
-    width: 56,
+    width: OVERVIEW_PIN_WIDTH,
+    alignItems: 'center',
   },
   zmanTime: {
     color: colors.textSecondary,
