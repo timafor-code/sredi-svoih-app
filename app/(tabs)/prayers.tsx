@@ -8,6 +8,7 @@ import { GlassCard } from '@/components/glass/GlassCard';
 import { MorningShemaCard } from '@/components/prayer/MorningShemaCard';
 import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
 import { PrayerDayScale } from '@/components/prayer/PrayerDayScale';
+import { PrayerDayScaleBackground } from '@/components/prayer/PrayerDayScaleBackground';
 import { PrayerWindowCard } from '@/components/prayer/PrayerWindowCard';
 import { ZmanimModal } from '@/components/prayer/ZmanimModal';
 import { HeaderButton, Logo } from '@/components/ui/BrandHeader';
@@ -15,6 +16,7 @@ import { Screen } from '@/components/ui/Screen';
 import { useNow } from '@/hooks/useNow';
 import { addDays, formatRuDate, formatRuTime } from '@/lib/dates';
 import { getHebrewDate, getHebrewDateLabel } from '@/lib/hebcal';
+import { resolvePrayerDayPeriod } from '@/lib/prayerDayPeriod';
 import { formatLocalDateKey, hasRecordedActivity, prayerActivityTypeFromPrayerId } from '@/lib/prayerTracker';
 import { getDailyZmanim, getHebcalLocation, getPrayerWindows } from '@/lib/zmanim';
 import type { PrayerWindow } from '@/lib/zmanim';
@@ -62,6 +64,7 @@ export default function PrayersScreen() {
     [hdate, hebrewDateLabel],
   );
   const prayers = useMemo(() => getPrayerWindows(daily, now), [daily, now]);
+  const dayPeriod = useMemo(() => resolvePrayerDayPeriod(daily, now), [daily, now]);
   const selectedPrayer = useMemo(
     () => prayers.find((prayer) => prayer.id === selectedPrayerId) ?? null,
     [prayers, selectedPrayerId],
@@ -210,22 +213,27 @@ export default function PrayersScreen() {
         style={({ pressed }) => pressed && styles.scalePressed}
       >
         <GlassCard>
-          <Text style={[styles.overline, styles.scaleOverline]}>ШКАЛА ДНЯ</Text>
-          <PrayerDayScale today={daily} tomorrow={tomorrowDaily} now={now} />
-          <View
-            style={styles.zmanOverview}
-            onLayout={(e) => setOverviewWidth(e.nativeEvent.layout.width)}
-          >
-            {overviewPositioned?.map((item) => (
-              <View key={item.id} style={[styles.zmanPoint, { left: item.leftPx }]}>
-                <Text style={[styles.zmanTime, { textAlign: item.align }]}>{item.t}</Text>
-                <Text style={[styles.zmanLabel, { textAlign: item.align }]}>{item.l}</Text>
-              </View>
-            ))}
+          <View pointerEvents="none" style={styles.scaleBackgroundLayer}>
+            <PrayerDayScaleBackground period={dayPeriod} />
           </View>
-          <View style={styles.scaleFooter}>
-            <Text style={styles.scaleCta}>Все зманим</Text>
-            <Ionicons name="chevron-forward" size={14} color="rgba(255,200,50,0.85)" />
+          <View style={styles.scaleContentLayer}>
+            <Text style={[styles.overline, styles.scaleOverline]}>ШКАЛА ДНЯ</Text>
+            <PrayerDayScale today={daily} tomorrow={tomorrowDaily} now={now} />
+            <View
+              style={styles.zmanOverview}
+              onLayout={(e) => setOverviewWidth(e.nativeEvent.layout.width)}
+            >
+              {overviewPositioned?.map((item) => (
+                <View key={item.id} style={[styles.zmanPoint, { left: item.leftPx }]}>
+                  <Text style={[styles.zmanTime, { textAlign: item.align }]}>{item.t}</Text>
+                  <Text style={[styles.zmanLabel, { textAlign: item.align }]}>{item.l}</Text>
+                </View>
+              ))}
+            </View>
+            <View style={styles.scaleFooter}>
+              <Text style={styles.scaleCta}>Все зманим</Text>
+              <Ionicons name="chevron-forward" size={14} color="rgba(255,200,50,0.85)" />
+            </View>
           </View>
         </GlassCard>
       </Pressable>
@@ -390,6 +398,16 @@ const styles = StyleSheet.create({
   },
   scalePressed: {
     opacity: 0.92,
+  },
+  scaleBackgroundLayer: {
+    position: 'absolute',
+    top: -16,
+    left: -16,
+    right: -16,
+    bottom: -16,
+  },
+  scaleContentLayer: {
+    position: 'relative',
   },
   scaleFooter: {
     flexDirection: 'row',
