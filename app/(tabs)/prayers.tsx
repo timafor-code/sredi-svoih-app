@@ -24,7 +24,7 @@ import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
 
 const OVERVIEW_PIN_WIDTH = 56;
-const OVERVIEW_PIN_GAP = 6;
+const OVERVIEW_SUNSET_TZEIT_MIN_GAP = 8;
 
 function isPrayerRecordableNow(prayer: PrayerWindow) {
   const nowMs = Date.now();
@@ -95,48 +95,55 @@ export default function PrayersScreen() {
 
   const [overviewWidth, setOverviewWidth] = useState(0);
   const overviewPositioned = useMemo(() => {
-    if (overviewWidth <= 0) {
-      return overview.map((p) => ({ ...p, centerX: null as number | null }));
+    if (overviewWidth <= 0) return null;
+    const find = (id: string) => overview.find((p) => p.id === id);
+    const sunrise = find('sunrise');
+    const chatzot = find('chatzot');
+    const sunset = find('sunset');
+    const tzeit = find('tzeit');
+    if (!sunrise || !chatzot || !sunset || !tzeit) return null;
+
+    const maxLeft = Math.max(0, overviewWidth - OVERVIEW_PIN_WIDTH);
+
+    let sunsetRightX = (sunset.percent / 100) * overviewWidth;
+    let tzeitLeftX = (tzeit.percent / 100) * overviewWidth;
+    const naturalGap = tzeitLeftX - sunsetRightX;
+    if (naturalGap < OVERVIEW_SUNSET_TZEIT_MIN_GAP) {
+      const deficit = OVERVIEW_SUNSET_TZEIT_MIN_GAP - naturalGap;
+      sunsetRightX -= deficit / 2;
+      tzeitLeftX += deficit / 2;
     }
-    const minStep = OVERVIEW_PIN_WIDTH + OVERVIEW_PIN_GAP;
-    const halfPin = OVERVIEW_PIN_WIDTH / 2;
-    const sorted = overview
-      .map((p) => ({ id: p.id, centerX: (p.percent / 100) * overviewWidth }))
-      .sort((a, b) => a.centerX - b.centerX);
-    for (let i = 1; i < sorted.length; i++) {
-      const prev = sorted[i - 1];
-      const cur = sorted[i];
-      if (cur && prev && cur.centerX < prev.centerX + minStep) {
-        cur.centerX = prev.centerX + minStep;
-      }
-    }
-    const last = sorted[sorted.length - 1];
-    if (last && last.centerX > overviewWidth - halfPin) {
-      last.centerX = overviewWidth - halfPin;
-      for (let i = sorted.length - 2; i >= 0; i--) {
-        const cur = sorted[i];
-        const next = sorted[i + 1];
-        if (cur && next && next.centerX - cur.centerX < minStep) {
-          cur.centerX = next.centerX - minStep;
-        }
-      }
-    }
-    const first = sorted[0];
-    if (first && first.centerX < halfPin) {
-      first.centerX = halfPin;
-      for (let i = 1; i < sorted.length; i++) {
-        const prev = sorted[i - 1];
-        const cur = sorted[i];
-        if (cur && prev && cur.centerX - prev.centerX < minStep) {
-          cur.centerX = prev.centerX + minStep;
-        }
-      }
-    }
-    const byId: Record<string, number> = {};
-    sorted.forEach((p) => {
-      byId[p.id] = p.centerX;
-    });
-    return overview.map((p) => ({ ...p, centerX: byId[p.id] ?? null }));
+
+    const sunsetLeft = Math.max(0, Math.min(maxLeft, sunsetRightX - OVERVIEW_PIN_WIDTH));
+    const tzeitLeft = Math.max(0, Math.min(maxLeft, tzeitLeftX));
+
+    const chatzotCenter = (chatzot.percent / 100) * overviewWidth;
+    const chatzotLeft = Math.max(0, Math.min(maxLeft, chatzotCenter - OVERVIEW_PIN_WIDTH / 2));
+
+    return [
+      { id: sunrise.id, l: sunrise.l, t: sunrise.t, leftPx: 0, align: 'left' as const },
+      {
+        id: chatzot.id,
+        l: chatzot.l,
+        t: chatzot.t,
+        leftPx: chatzotLeft,
+        align: 'center' as const,
+      },
+      {
+        id: sunset.id,
+        l: sunset.l,
+        t: sunset.t,
+        leftPx: sunsetLeft,
+        align: 'right' as const,
+      },
+      {
+        id: tzeit.id,
+        l: tzeit.l,
+        t: tzeit.t,
+        leftPx: tzeitLeft,
+        align: 'left' as const,
+      },
+    ];
   }, [overview, overviewWidth]);
 
   useEffect(() => {
@@ -201,18 +208,12 @@ export default function PrayersScreen() {
           style={styles.zmanOverview}
           onLayout={(e) => setOverviewWidth(e.nativeEvent.layout.width)}
         >
-          {overviewPositioned.map((item) => {
-            if (item.centerX === null) return null;
-            return (
-              <View
-                key={item.id}
-                style={[styles.zmanPoint, { left: item.centerX - OVERVIEW_PIN_WIDTH / 2 }]}
-              >
-                <Text style={styles.zmanTime}>{item.t}</Text>
-                <Text style={styles.zmanLabel}>{item.l}</Text>
-              </View>
-            );
-          })}
+          {overviewPositioned?.map((item) => (
+            <View key={item.id} style={[styles.zmanPoint, { left: item.leftPx }]}>
+              <Text style={[styles.zmanTime, { textAlign: item.align }]}>{item.t}</Text>
+              <Text style={[styles.zmanLabel, { textAlign: item.align }]}>{item.l}</Text>
+            </View>
+          ))}
         </View>
       </GlassCard>
 
@@ -383,15 +384,16 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     width: OVERVIEW_PIN_WIDTH,
-    alignItems: 'center',
   },
   zmanTime: {
+    alignSelf: 'stretch',
     color: colors.textSecondary,
     fontSize: 10,
     fontWeight: '700',
     marginTop: 2,
   },
   zmanLabel: {
+    alignSelf: 'stretch',
     color: colors.textGhost,
     fontSize: 9,
   },
