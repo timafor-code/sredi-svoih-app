@@ -25,6 +25,10 @@ Home and the Prayers screen also share `MorningShemaCard`. It records `activity_
 
 The Omer modal records `activity_type = omer_count`. On open, it reads the current local `activity_date` from `prayer_activity_logs` for the selected city/timezone. If a row already exists for the signed-in user, the button is disabled with `Посчитано` and the modal shows `Сегодня уже посчитано`. DB uniqueness remains `user_id + activity_date + activity_type`.
 
+### Omer Count Card
+
+`OmerCountCard` is a reusable Omer count entry card. It is currently rendered only on the Prayers tab, and tapping it opens the existing Omer modal. The background fill is calculated as `day / 49`. The card appears only for Omer days `1...49`; on day 50 it hides automatically because `getOmerInfo` should no longer return an active Omer day, and the component also guards against values outside that range.
+
 ## Time Gates
 
 Prayer cards can be recorded only during their active window. Past and future prayers remain visible on the Prayers screen, but they are not available for recording.
