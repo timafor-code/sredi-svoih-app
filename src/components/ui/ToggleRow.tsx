@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors } from '@/theme/colors';
 
 type ToggleRowProps = {
+  disabled?: boolean;
   icon?: string;
   isLast?: boolean;
   label: string;
@@ -12,6 +13,7 @@ type ToggleRowProps = {
 };
 
 export function ToggleRow({
+  disabled,
   icon,
   isLast,
   label,
@@ -20,14 +22,14 @@ export function ToggleRow({
   value,
 }: ToggleRowProps) {
   return (
-    <View style={[styles.row, !isLast && styles.divider]}>
+    <View style={[styles.row, !isLast && styles.divider, disabled && styles.disabled]}>
       {icon ? (
         <View style={styles.iconBox}>
           <Text style={styles.icon}>{icon}</Text>
         </View>
       ) : null}
       <View style={styles.textBlock}>
-        <Text numberOfLines={1} style={styles.label}>
+        <Text numberOfLines={2} style={styles.label}>
           {label}
         </Text>
         {subtitle ? (
@@ -38,7 +40,8 @@ export function ToggleRow({
       </View>
       <Pressable
         accessibilityRole="switch"
-        accessibilityState={{ checked: value }}
+        accessibilityState={{ checked: value, disabled }}
+        disabled={disabled}
         onPress={() => onValueChange(!value)}
         style={[styles.switchTrack, value && styles.switchTrackOn]}
       >
@@ -60,6 +63,9 @@ const styles = StyleSheet.create({
   divider: {
     borderBottomWidth: 1,
     borderBottomColor: colors.separator,
+  },
+  disabled: {
+    opacity: 0.5,
   },
   iconBox: {
     width: 34,
@@ -84,6 +90,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     includeFontPadding: false,
+    lineHeight: 19,
   },
   subtitle: {
     color: colors.textGhost,
