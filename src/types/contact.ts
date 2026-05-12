@@ -12,6 +12,60 @@ export interface HebrewDateJson {
   year: number;
 }
 
+export interface ProfileContactVisibilityRow {
+  birthday_reminders_enabled: boolean;
+  created_at: string;
+  share_birth_date: boolean;
+  share_city: boolean;
+  share_email: boolean;
+  share_hebrew_birth_date: boolean;
+  share_hebrew_name: boolean;
+  share_phone: boolean;
+  show_in_community_directory: boolean;
+  updated_at: string;
+  user_id: string;
+}
+
+export interface ProfileContactVisibility {
+  birthdayRemindersEnabled: boolean;
+  createdAt: string;
+  shareBirthDate: boolean;
+  shareCity: boolean;
+  shareEmail: boolean;
+  shareHebrewBirthDate: boolean;
+  shareHebrewName: boolean;
+  sharePhone: boolean;
+  showInCommunityDirectory: boolean;
+  updatedAt: string;
+  userId: string;
+}
+
+export interface CommunityContactRpcRow {
+  avatar_url: string | null;
+  birth_date: string | null;
+  city: string | null;
+  community_id: string;
+  display_name: string | null;
+  email: string | null;
+  first_name: string | null;
+  hebrew_birth_date: HebrewDateJson | null;
+  hebrew_name: string | null;
+  id: string;
+  joined_at: string | null;
+  last_name: string | null;
+  membership_status: string | null;
+  phone: string | null;
+  role: string | null;
+  share_birth_date: boolean;
+  share_city: boolean;
+  share_email: boolean;
+  share_hebrew_birth_date: boolean;
+  share_hebrew_name: boolean;
+  share_phone: boolean;
+  show_in_community_directory: boolean;
+  user_id: string;
+}
+
 export interface ContactPhoneNumber {
   digits?: string;
   id?: string;
@@ -38,6 +92,7 @@ export interface BirthdayOccurrence {
 
 export interface CommunityContact {
   avatarBg?: string;
+  avatarUrl?: string;
   birthdayVisibility?: ContactVisibility;
   birthDate?: string;
   city?: string;
