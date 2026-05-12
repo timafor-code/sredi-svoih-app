@@ -33,17 +33,19 @@ The Omer modal records `activity_type = omer_count`. On open, it reads the curre
 
 The city used for zmanim is stored locally on the device in the settings store, so it works without sign-in. On first use the Prayers screen attempts to detect the city through Expo GPS. A supported GPS city is applied automatically, while an unsupported GPS result is kept out of the active zmanim calculation and the user is asked to choose from the supported list.
 
-Manual selection has priority over GPS and is not overwritten by later automatic GPS checks. The city picker modal includes a GPS action so the user can switch back to GPS explicitly. The supported list is exported from `SUPPORTED_ZMANIM_CITIES` in `src/lib/zmanim.ts`.
+Manual selection has priority over GPS and is not overwritten by later automatic GPS checks. Tapping a supported city in the city picker applies and persists it immediately; there is no separate Save button. The city picker modal includes a GPS action so the user can switch back to GPS explicitly. The supported list is exported from `SUPPORTED_ZMANIM_CITIES` in `src/lib/zmanim.ts`.
 
 Manual smoke checklist:
 
 - [ ] Open the Prayers tab.
 - [ ] Check that the city appears next to the date as a tappable element.
 - [ ] Tap the city and confirm that `CityPickerModal` opens in the same visual style as `ZmanimModal`.
-- [ ] Pick Moscow / Jerusalem / Tel Aviv and save.
+- [ ] Pick Moscow / Jerusalem / Tel Aviv and confirm the modal closes immediately.
+- [ ] Reopen the modal and confirm the checkmark is on the selected city.
 - [ ] Close and reopen the app, then confirm the city is still saved without sign-in.
 - [ ] Confirm zmanim, `OmerCountCard`, and `PrayerDayScale` recalculate for the selected city.
 - [ ] Tap the GPS action and verify supported-city, denied-permission, and manual-priority behavior.
+- [ ] Confirm the Save button is no longer shown.
 
 ## Time Gates
 
