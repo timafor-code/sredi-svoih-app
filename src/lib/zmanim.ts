@@ -41,6 +41,7 @@ export interface DailyZmanim {
     sunrise: ZmanTime;
     sunset: ZmanTime;
     tzeit: ZmanTime;
+    tzeitHakochavimAngle: ZmanTime;
   };
 }
 
@@ -81,6 +82,9 @@ const CITY_TO_HEBCAL: Record<string, string> = {
 };
 
 const FALLBACK_LOCATION = new Location(55.75222, 37.61556, false, 'Europe/Moscow', 'Moscow', 'RU', undefined, 144);
+const ALOT_HASHACHAR_DEGREES = 16.1;
+const ALOT_HASHACHAR_MIN_FALLBACK_DEGREES = 6;
+const TZEIT_HAKOCHAVIM_ANGLE_DEGREES = 8.5;
 
 export function getHebcalCityName(city = FALLBACK_CITY) {
   return CITY_TO_HEBCAL[city] ?? city;
@@ -90,12 +94,61 @@ export function getHebcalLocation(city = FALLBACK_CITY) {
   return Location.lookup(getHebcalCityName(city)) ?? FALLBACK_LOCATION;
 }
 
-function formatZman(date: Date, location: Location) {
+function isValidDate(date: Date | null | undefined): date is Date {
+  return date instanceof Date && Number.isFinite(date.getTime());
+}
+
+function formatZman(date: Date | null | undefined, location: Location) {
+  if (!isValidDate(date)) return '—';
   return Zmanim.formatTime(Zmanim.roundTime(date), location.getTimeFormatter());
 }
 
-function makeTime(at: Date, location: Location): ZmanTime {
-  return { at, time: formatZman(at, location) };
+function makeTime(at: Date | null | undefined, location: Location): ZmanTime {
+  return { at: isValidDate(at) ? at : new Date(NaN), time: formatZman(at, location) };
+}
+
+function compareZmanItemsByTime(a: ZmanimItem, b: ZmanimItem) {
+  const aTime = a.at.getTime();
+  const bTime = b.at.getTime();
+  const aValid = Number.isFinite(aTime);
+  const bValid = Number.isFinite(bTime);
+  if (aValid && bValid) return aTime - bTime;
+  if (aValid) return -1;
+  if (bValid) return 1;
+  return 0;
+}
+
+function getNearestAvailableMorningAngleTime(zmanim: Zmanim, targetAngle: number) {
+  let low = ALOT_HASHACHAR_MIN_FALLBACK_DEGREES;
+  let high = targetAngle;
+  let best: Date | null = null;
+
+  for (let i = 0; i < 12; i++) {
+    const angle = (low + high) / 2;
+    const candidate = zmanim.timeAtAngle(angle, true);
+    if (isValidDate(candidate)) {
+      best = candidate;
+      low = angle;
+    } else {
+      high = angle;
+    }
+  }
+
+  return best;
+}
+
+function getAlotHaShachar(zmanim: Zmanim) {
+  const alot = zmanim.alotHaShachar();
+  if (isValidDate(alot)) return alot;
+
+  // Around high-latitude white nights 16.1° can miss by a fraction of a degree.
+  // Prefer the closest available angular dawn before falling back to fixed 72 minutes.
+  return getNearestAvailableMorningAngleTime(zmanim, ALOT_HASHACHAR_DEGREES) ?? zmanim.alotHaShachar72();
+}
+
+function getHebcalCompatibleTzeit(zmanim: Zmanim) {
+  // Hebcal's public zmanim JSON exposes dusk/tzaisBaalHatanya as the site-compatible daily tzeit value.
+  return zmanim.dusk();
 }
 
 export function getDailyZmanim(req: ZmanimRequest = {}): DailyZmanim {
@@ -103,9 +156,11 @@ export function getDailyZmanim(req: ZmanimRequest = {}): DailyZmanim {
   const date = req.date ?? new Date();
   const location = getHebcalLocation(city);
   const zmanim = new Zmanim(location, date, req.useElevation ?? false);
+  const tzeit = makeTime(getHebcalCompatibleTzeit(zmanim), location);
+  const tzeitHakochavimAngle = makeTime(zmanim.tzeit(TZEIT_HAKOCHAVIM_ANGLE_DEGREES), location);
 
   const times: DailyZmanim['times'] = {
-    alot: makeTime(zmanim.alotHaShachar(), location),
+    alot: makeTime(getAlotHaShachar(zmanim), location),
     chatzot: makeTime(zmanim.chatzot(), location),
     misheyakir: makeTime(zmanim.misheyakir(), location),
     minchaGedola: makeTime(zmanim.minchaGedola(), location),
@@ -116,12 +171,13 @@ export function getDailyZmanim(req: ZmanimRequest = {}): DailyZmanim {
     sofZmanTfilla: makeTime(zmanim.sofZmanTfilla(), location),
     sunrise: makeTime(zmanim.sunrise(), location),
     sunset: makeTime(zmanim.sunset(), location),
-    tzeit: makeTime(zmanim.tzeit(), location),
+    tzeit,
+    tzeitHakochavimAngle,
   };
 
   const items: ZmanimItem[] = [
-    { ...times.alot, icon: '🌅', id: 'alot', name: 'Алот ха-шахар (рассвет)' },
-    { ...times.misheyakir, icon: '🌄', id: 'misheyakir', name: 'Мишейакир' },
+    { ...times.alot, icon: '🌅', id: 'alot', name: 'Алот hаШахар (рассвет)' },
+    { ...times.misheyakir, icon: '🌄', id: 'misheyakir', name: 'Мишейакир (время для талита и тфилин)' },
     { ...times.sunrise, icon: '☀️', id: 'sunrise', name: 'Восход солнца' },
     { ...times.shemaMga, icon: '🌤️', id: 'shema-mga', name: 'Шма (Маген Авраам)' },
     { ...times.shemaGra, icon: '🌤️', id: 'shema-gra', name: 'Шма (Гра)' },
@@ -131,8 +187,9 @@ export function getDailyZmanim(req: ZmanimRequest = {}): DailyZmanim {
     { ...times.minchaKetana, icon: '🌞', id: 'mincha-ketana', name: 'Минха Ктана' },
     { ...times.plagHaMincha, icon: '🌆', id: 'plag', name: 'Плаг ха-Минха' },
     { ...times.sunset, icon: '🌇', id: 'sunset', name: 'Закат' },
-    { ...times.tzeit, icon: '🌃', id: 'tzeit', name: 'Цет ха-Кохавим (появление звёзд)' },
-  ];
+    { ...times.tzeit, icon: '🌃', id: 'tzeit', name: 'Цет hаКохавим (появление звёзд)' },
+    { ...times.tzeitHakochavimAngle, icon: '🌌', id: 'tzeit-angle', name: 'Цет hаКохавим (угловой расчёт 8.5°)' },
+  ].sort(compareZmanItemsByTime);
 
   return {
     city,
@@ -255,5 +312,6 @@ export function getZmanimMock(req: ZmanimRequest = {}) {
     sunrise: daily.times.sunrise.time,
     sunset: daily.times.sunset.time,
     tzeit: daily.times.tzeit.time,
+    tzeitHakochavimAngle: daily.times.tzeitHakochavimAngle.time,
   };
 }
