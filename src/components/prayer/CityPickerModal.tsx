@@ -17,6 +17,7 @@ import {
   isSupportedZmanimCity,
   normalizeZmanimCityName,
   SUPPORTED_ZMANIM_CITIES,
+  type SupportedZmanimCity,
 } from '@/lib/zmanim';
 import { LocationServiceError, requestCurrentCityByGps } from '@/services/locationService';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -41,7 +42,6 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
   const setGpsCity = useSettingsStore((state) => state.setGpsCity);
   const setLocationPermissionStatus = useSettingsStore((state) => state.setLocationPermissionStatus);
   const zmanimSource = useSettingsStore((state) => state.zmanimSource);
-  const [selectedCity, setSelectedCity] = useState(city);
   const [gpsState, setGpsState] = useState<GpsState>('idle');
   const [gpsMessage, setGpsMessage] = useState<string | null>(null);
 
@@ -62,7 +62,6 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
   useEffect(() => {
     if (!visible) return;
 
-    setSelectedCity(city);
     setGpsState('idle');
 
     if (gpsCity && !isSupportedZmanimCity(gpsCity)) {
@@ -71,10 +70,10 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
     }
 
     setGpsMessage(null);
-  }, [city, gpsCity, visible]);
+  }, [gpsCity, visible]);
 
-  const handleSave = () => {
-    setCity(selectedCity);
+  const handleCityPress = (item: SupportedZmanimCity) => {
+    setCity(item);
     onClose();
   };
 
@@ -109,7 +108,6 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
       const normalizedCity = normalizeZmanimCityName(result.city);
       setGpsCity(normalizedCity);
       resetToGpsCity();
-      setSelectedCity(normalizedCity);
       setGpsState('idle');
       onClose();
     } catch (error) {
@@ -244,18 +242,21 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
                 <Text style={styles.sectionTitle}>Поддерживаемые города</Text>
                 <Text style={styles.sectionCount}>{SUPPORTED_ZMANIM_CITIES.length}</Text>
               </View>
+              <Text style={styles.hintText}>
+                Нажмите на город, выбор сохранится сразу.
+              </Text>
 
               <View style={styles.listBox}>
                 {SUPPORTED_ZMANIM_CITIES.map((item, index) => {
                   const isLast = index === SUPPORTED_ZMANIM_CITIES.length - 1;
-                  const isSelected = selectedCity === item;
                   const isCurrent = city === item;
+                  const isSelected = isCurrent;
 
                   return (
                     <Pressable
                       accessibilityRole="button"
                       key={item}
-                      onPress={() => setSelectedCity(item)}
+                      onPress={() => handleCityPress(item)}
                       style={({ pressed }) => [
                         styles.row,
                         !isLast && styles.rowDivider,
@@ -287,14 +288,6 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
                   );
                 })}
               </View>
-
-              <Pressable
-                accessibilityRole="button"
-                onPress={handleSave}
-                style={({ pressed }) => [styles.saveButton, pressed && styles.pressed]}
-              >
-                <Text style={styles.saveButtonText}>Сохранить</Text>
-              </Pressable>
             </GlassCard>
           </ScrollView>
         </View>
@@ -459,6 +452,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
+  hintText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+    paddingHorizontal: 2,
+  },
   listBox: {
     overflow: 'hidden',
     borderRadius: radius.card,
@@ -510,19 +509,5 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
-  },
-  saveButton: {
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: colors.goldAccent,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-  },
-  saveButtonText: {
-    color: '#1A1100',
-    fontSize: 14,
-    fontWeight: '900',
   },
 });
