@@ -1,6 +1,11 @@
 import { formatBirthdayWhen } from '@/lib/birthdays';
 import { daysUntil } from '@/lib/dates';
-import { getHebrewDate, getHebrewDateLabel, getNextHebrewBirthday } from '@/lib/hebcal';
+import {
+  getHebrewDate,
+  getHebrewDateLabel,
+  getNextHebrewBirthday,
+  getNextHebrewDateOccurrence,
+} from '@/lib/hebcal';
 import type {
   BirthdayOccurrence,
   CommunityContact,
@@ -79,9 +84,12 @@ function buildBirthdayOccurrence(
   fromDate: Date,
 ): BirthdayOccurrence | null {
   const birthDate = parseDateOnly(contact.birthDate);
-  if (!birthDate) return null;
+  const nextBirthday = birthDate
+    ? getNextHebrewBirthday(birthDate, fromDate)
+    : contact.hebrewBirthDate
+      ? getNextHebrewDateOccurrence(contact.hebrewBirthDate, fromDate)
+      : null;
 
-  const nextBirthday = getNextHebrewBirthday(birthDate, fromDate);
   if (!nextBirthday) return null;
 
   const count = daysUntil(nextBirthday, fromDate);
@@ -91,7 +99,7 @@ function buildBirthdayOccurrence(
     contactId: contact.id,
     daysUntil: count,
     displayName: contact.displayName,
-    hebrewBirthDate: contact.hebrewBirthDate ?? toHebrewDateJson(birthDate),
+    hebrewBirthDate: contact.hebrewBirthDate ?? (birthDate ? toHebrewDateJson(birthDate) : toHebrewDateJson(nextBirthday)),
     id: `${contact.id}:birthday`,
     initials: contact.initials,
     nextDateGregorian: toDateOnly(nextBirthday),

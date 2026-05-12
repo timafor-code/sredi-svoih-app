@@ -103,6 +103,11 @@ export interface OmerInfo {
   countingRu: string;
 }
 
+export interface HebrewDateParts {
+  day: number;
+  month: number;
+}
+
 /**
  * Returns Omer info if `date` is between 16 Nisan and 5 Sivan inclusive,
  * otherwise `null` (Omer is not counted on those days).
@@ -205,5 +210,36 @@ export function getNextHebrewBirthday(
     const greg = anniv.greg();
     if (greg.getTime() >= todayMidnight.getTime()) return greg;
   }
+  return null;
+}
+
+export function getNextHebrewDateOccurrence(
+  hebrewDate: HebrewDateParts,
+  fromDate: Date = new Date(),
+): Date | null {
+  const fromHd = new HDate(fromDate);
+  const todayMidnight = new Date(
+    fromDate.getFullYear(),
+    fromDate.getMonth(),
+    fromDate.getDate(),
+  );
+
+  for (let y = fromHd.getFullYear(); y <= fromHd.getFullYear() + 1; y++) {
+    try {
+      const anniversary = new HDate(hebrewDate.day, hebrewDate.month, y);
+      const greg = anniversary.greg();
+
+      if (
+        anniversary.getDate() === hebrewDate.day &&
+        anniversary.getMonth() === hebrewDate.month &&
+        greg.getTime() >= todayMidnight.getTime()
+      ) {
+        return greg;
+      }
+    } catch {
+      // Some Hebrew dates do not exist in every year, for example Adar I in non-leap years.
+    }
+  }
+
   return null;
 }

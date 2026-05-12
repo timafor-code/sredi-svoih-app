@@ -8,6 +8,23 @@ import type {
   HebrewDateJson,
 } from '@/types/contact';
 
+export const COMMUNITY_CONTACTS_AUTH_REQUIRED = 'auth_required';
+export const COMMUNITY_CONTACTS_MEMBERSHIP_REQUIRED = 'membership_required';
+
+type SessionCapableSupabase = {
+  auth: {
+    getSession: () => Promise<{
+      data: { session: unknown | null };
+      error: { message: string } | null;
+    }>;
+  };
+};
+
+type SupabaseRpcError = {
+  code?: string;
+  message: string;
+};
+
 function toDateOnly(value: Date) {
   const year = String(value.getFullYear()).padStart(4, '0');
   const month = String(value.getMonth() + 1).padStart(2, '0');
@@ -77,6 +94,36 @@ function getBackendDisplayName(row: CommunityContactRpcRow): string {
   return fullName || 'Community member';
 }
 
+async function assertAuthenticated(supabase: SessionCapableSupabase): Promise<void> {
+  const { data, error } = await supabase.auth.getSession();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!data.session) {
+    throw new Error(COMMUNITY_CONTACTS_AUTH_REQUIRED);
+  }
+}
+
+function normalizeCommunityContactsRpcError(error: SupabaseRpcError): Error {
+  const message = error.message.toLowerCase();
+
+  if (error.code === '28000' || message.includes('auth required')) {
+    return new Error(COMMUNITY_CONTACTS_AUTH_REQUIRED);
+  }
+
+  if (
+    error.code === '42501' ||
+    message.includes('active community membership required') ||
+    message.includes('membership required')
+  ) {
+    return new Error(COMMUNITY_CONTACTS_MEMBERSHIP_REQUIRED);
+  }
+
+  return new Error(error.message);
+}
+
 function toCommunityContact(contact: (typeof mockContacts)[number]): CommunityContact {
   const birthDate = parseRuDate(contact.dobGregorian);
 
@@ -110,7 +157,7 @@ export function mapCommunityContactRpcRow(row: CommunityContactRpcRow): Communit
 
   return {
     avatarUrl: trimToUndefined(row.avatar_url),
-    birthdayVisibility: row.share_birth_date ? 'members' : 'rabbi_only',
+    birthdayVisibility: row.share_birth_date || row.share_hebrew_birth_date ? 'members' : 'rabbi_only',
     birthDate: trimToUndefined(row.birth_date),
     city: trimToUndefined(row.city),
     displayName,
@@ -134,18 +181,25 @@ export async function listCommunityContactsFromBackend(
   communityId?: string,
 ): Promise<CommunityContact[]> {
   const { supabase } = await import('./supabaseClient');
+  await assertAuthenticated(supabase);
+
   const { data, error } = await supabase.rpc('list_community_contacts', {
     p_community_id: communityId ?? null,
   });
 
   if (error) {
-    throw new Error(error.message);
+    throw normalizeCommunityContactsRpcError(error);
   }
 
-  return ((data ?? []) as CommunityContactRpcRow[]).map(mapCommunityContactRpcRow);
+  return ((data ?? []) as CommunityContactRpcRow[])
+    .filter((row) => row.show_in_community_directory)
+    .map(mapCommunityContactRpcRow);
+}
+
+export async function listMockCommunityContacts(): Promise<CommunityContact[]> {
+  return mockContacts.map(toCommunityContact);
 }
 
 export async function listCommunityContacts(): Promise<CommunityContact[]> {
-  // TODO: Switch PR3/PR4 UI to listCommunityContactsFromBackend once auth/session UX is ready.
-  return mockContacts.map(toCommunityContact);
+  return listCommunityContactsFromBackend();
 }
