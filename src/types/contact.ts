@@ -40,6 +40,18 @@ export interface ProfileContactVisibility {
   userId: string;
 }
 
+export type ContactVisibilityUpdateInput = Pick<
+  ProfileContactVisibility,
+  | 'birthdayRemindersEnabled'
+  | 'shareBirthDate'
+  | 'shareCity'
+  | 'shareEmail'
+  | 'shareHebrewBirthDate'
+  | 'shareHebrewName'
+  | 'sharePhone'
+  | 'showInCommunityDirectory'
+>;
+
 export interface CommunityContactRpcRow {
   avatar_url: string | null;
   birth_date: string | null;

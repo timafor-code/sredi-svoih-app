@@ -45,6 +45,8 @@ PR3 подключает локальные iPhone contacts во вкладке 
 
 PR4 разделяет detail screens по источнику данных. Community contacts открываются через `/contacts/community/[id]` и пока используют текущий mock/community adapter, потому что вкладка "Община" еще не переведена на `list_community_contacts`. Local iPhone contacts открываются через `/contacts/iphone/[id]`, читаются только из уже загруженного `useContactsStore.localContacts`, не запрашивают permission автоматически на detail screen и не отправляются в Supabase. Если local contact не найден после рестарта или до загрузки вкладки "Мои контакты", экран показывает clean "Контакт не найден" state без permission prompt.
 
+PR5 подключает экран Profile → Contacts and birthdays settings к backend visibility RPC: `get_my_contact_visibility()` для загрузки и `upsert_my_contact_visibility(...)` для сохранения. Настройки публикации в каталоге общины теперь backend-backed, а настройки iPhone contacts остаются local-only. Экран настроек не загружает iPhone contacts в Supabase, не сохраняет всю адресную книгу в AsyncStorage/SecureStore и не подключает вкладку Contacts к `list_community_contacts`.
+
 ## Birthday layer
 
 Birthday layer объединяет дни рождения из community contacts и local iPhone contacts в единый список ближайших еврейских дней рождения. Сейчас это вычисляется на клиенте через существующую Hebcal-логику.
@@ -56,5 +58,6 @@ Birthday layer объединяет дни рождения из community conta
 1. Community contact sharing backend: done in PR2 via `profile_contact_visibility` and backend privacy RPC.
 2. iPhone contacts UI: done in PR3 with explicit permission action, local birthday contacts list, empty/denied states, and no Supabase upload.
 3. Contact detail real data: done in PR4 with explicit community and iPhone detail routes, no mock fallback, and local-only iPhone detail.
-4. Contact sharing settings UI: connect Profile → Contacts and birthdays settings to visibility RPC, while keeping iPhone sync settings local.
-5. Birthday reminders settings: настройки локальных уведомлений и расписание reminder occurrences.
+4. Contact sharing settings UI: done in PR5 via Profile → Contacts and birthdays settings, visibility RPC, backend-backed community sharing toggles, and local-only iPhone settings.
+5. Community contacts backend UI: planned next; wire Contacts tab "Община" to `list_community_contacts` while preserving local iPhone contacts.
+6. Birthday reminders settings: настройки локальных уведомлений и расписание reminder occurrences.
