@@ -1,17 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BlessingsEntryCard } from '@/components/blessings/BlessingsEntryCard';
 import { GlassCard } from '@/components/glass/GlassCard';
 import { MorningShemaCard } from '@/components/prayer/MorningShemaCard';
+import { OmerCountCard } from '@/components/prayer/OmerCountCard';
 import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
 import { PrayerDayScale } from '@/components/prayer/PrayerDayScale';
 import { PrayerDayScaleBackground } from '@/components/prayer/PrayerDayScaleBackground';
 import { PrayerWindowCard } from '@/components/prayer/PrayerWindowCard';
 import { ZmanimModal } from '@/components/prayer/ZmanimModal';
-import { HeaderButton, Logo } from '@/components/ui/BrandHeader';
+import { Logo } from '@/components/ui/BrandHeader';
 import { Screen } from '@/components/ui/Screen';
 import { useNow } from '@/hooks/useNow';
 import { addDays, formatRuDate, formatRuTime } from '@/lib/dates';
@@ -34,6 +36,7 @@ function isPrayerRecordableNow(prayer: PrayerWindow) {
 }
 
 export default function PrayersScreen() {
+  const router = useRouter();
   const now = useNow();
   const [selectedPrayerId, setSelectedPrayerId] = useState<PrayerWindow['id'] | null>(null);
   const [zmanimModalVisible, setZmanimModalVisible] = useState(false);
@@ -188,10 +191,6 @@ export default function PrayersScreen() {
     <Screen>
       <View style={styles.header}>
         <Logo />
-        <View style={styles.cityPill}>
-          <Ionicons name="location" size={13} color="rgba(255,255,255,0.62)" />
-          <Text style={styles.cityText}>По выбранному городу{'\n'}не по GPS</Text>
-        </View>
       </View>
 
       <View>
@@ -201,9 +200,11 @@ export default function PrayersScreen() {
         </Text>
       </View>
 
-      <View style={styles.filterRow}>
-        <HeaderButton icon="filter" />
-      </View>
+      <OmerCountCard
+        city={city}
+        now={now}
+        onPress={() => router.push('/modals/omer')}
+      />
 
       <Pressable
         accessibilityHint="Открыть полный список зманим"
@@ -348,23 +349,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
-  cityPill: {
-    minHeight: 42,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.glass.w10,
-    backgroundColor: colors.glass.w07,
-    paddingHorizontal: 12,
-  },
-  cityText: {
-    color: colors.textMuted,
-    fontSize: 11,
-    lineHeight: 14,
-    textAlign: 'center',
-  },
   title: {
     color: colors.text,
     fontSize: 24,
@@ -375,9 +359,6 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     fontSize: 13,
     marginTop: 3,
-  },
-  filterRow: {
-    alignItems: 'flex-end',
   },
   overline: {
     color: colors.textDim,
