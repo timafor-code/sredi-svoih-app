@@ -12,6 +12,8 @@ import { SegmentControl } from '@/components/ui/SegmentControl';
 import { mockContacts } from '@/data/mockContacts';
 import { useNow } from '@/hooks/useNow';
 import { getUpcomingContactBirthdays } from '@/lib/birthdays';
+import { getLocalContactAvatarBg } from '@/lib/contactAvatar';
+import { getCommunityContactRoute, getIphoneContactRoute } from '@/lib/contactRoutes';
 import { useContactsStore } from '@/store/useContactsStore';
 import { colors } from '@/theme/colors';
 import type {
@@ -30,15 +32,9 @@ type BirthdayPreviewItem = {
   id: string;
   initials: string;
   name: string;
+  route: ReturnType<typeof getCommunityContactRoute>;
   when: string;
 };
-
-const localAvatarPalette = ['#4A90D9', '#4A9D72', '#D9824A', '#8F6ED5', '#D94A73'];
-
-function getLocalAvatarBg(id: string) {
-  const sum = Array.from(id).reduce((value, char) => value + char.charCodeAt(0), 0);
-  return localAvatarPalette[sum % localAvatarPalette.length];
-}
 
 function isLocalAccessIssue(status: LocalContactsPermissionStatus) {
   return status === 'denied' || status === 'limited' || status === 'unavailable' || status === 'error';
@@ -47,11 +43,12 @@ function isLocalAccessIssue(status: LocalContactsPermissionStatus) {
 function toLocalBirthdayPreview(birthday: BirthdayOccurrence): BirthdayPreviewItem {
   return {
     active: birthday.daysUntil === 0,
-    bg: birthday.avatarBg ?? getLocalAvatarBg(birthday.contactId),
+    bg: birthday.avatarBg ?? getLocalContactAvatarBg(birthday.contactId),
     date: birthday.nextDateHebrew.label,
     id: birthday.contactId,
     initials: birthday.initials,
     name: birthday.displayName,
+    route: getIphoneContactRoute(birthday.contactId),
     when: birthday.when,
   };
 }
@@ -83,7 +80,7 @@ function BirthdayRow({
 
   return (
     <Pressable
-      onPress={() => router.push(`/contacts/${item.id}`)}
+      onPress={() => router.push(item.route)}
       style={({ pressed }) => [styles.birthdayRow, !isLast && styles.rowDivider, pressed && styles.pressed]}
     >
       {content}
@@ -104,7 +101,7 @@ function CommunityRow({ contact, isLast }: { contact: ContactItem; isLast?: bool
 
   return (
     <Pressable
-      onPress={() => router.push(`/contacts/${contact.id}`)}
+      onPress={() => router.push(getCommunityContactRoute(contact.id))}
       style={({ pressed }) => [styles.contactRow, !isLast && styles.rowDivider, pressed && styles.pressed]}
     >
       <Avatar initials={contact.initials} bg={contact.avatarBg} size={44} />
@@ -135,12 +132,16 @@ function CommunityRow({ contact, isLast }: { contact: ContactItem; isLast?: bool
 }
 
 function LocalIphoneRow({ contact, isLast }: { contact: LocalIphoneContact; isLast?: boolean }) {
+  const router = useRouter();
   const birthday = contact.nextHebrewBirthday;
   const nextBirthdayLabel = `${birthday.nextDateHebrew.label} · ${birthday.when}`;
 
   return (
-    <View style={[styles.contactRow, !isLast && styles.rowDivider]}>
-      <Avatar initials={contact.initials} bg={getLocalAvatarBg(contact.id)} size={44} />
+    <Pressable
+      onPress={() => router.push(getIphoneContactRoute(contact.id))}
+      style={({ pressed }) => [styles.contactRow, !isLast && styles.rowDivider, pressed && styles.pressed]}
+    >
+      <Avatar initials={contact.initials} bg={getLocalContactAvatarBg(contact.id)} size={44} />
       <View style={styles.contactContent}>
         <View style={styles.flex}>
           <Text numberOfLines={1} style={styles.rowTitle}>
@@ -159,9 +160,12 @@ function LocalIphoneRow({ contact, isLast }: { contact: LocalIphoneContact; isLa
             </View>
           </View>
         </View>
-        <ActionButton icon="gift-outline" />
+        <View style={styles.actions}>
+          <ActionButton icon="gift-outline" />
+          <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.22)" />
+        </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -226,6 +230,7 @@ export default function ContactsScreen() {
         id: contact.id,
         initials: contact.initials,
         name: contact.name,
+        route: getCommunityContactRoute(contact.id),
         when: birthday.when,
       })),
     [now],
@@ -356,12 +361,7 @@ export default function ContactsScreen() {
           <SectionTitle title="БЛИЖАЙШИЕ ДНИ РОЖДЕНИЯ ИЗ iPhone" />
           <GlassCard padded={false}>
             {localBirthdays.map((item, index) => (
-              <BirthdayRow
-                key={item.id}
-                detailEnabled={false}
-                item={item}
-                isLast={index === localBirthdays.length - 1}
-              />
+              <BirthdayRow key={item.id} item={item} isLast={index === localBirthdays.length - 1} />
             ))}
           </GlassCard>
         </View>
