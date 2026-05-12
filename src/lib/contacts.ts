@@ -8,6 +8,10 @@ export async function requestContactsPermission() {
 export async function readContactsLocalOnly() {
   const granted = await requestContactsPermission();
   if (!granted) return [];
+  return readContactsLocalOnlyGranted();
+}
+
+export async function readContactsLocalOnlyGranted() {
   const res = await Contacts.getContactsAsync({ fields: [Contacts.Fields.Birthday, Contacts.Fields.PhoneNumbers] });
   return res.data;
 }
