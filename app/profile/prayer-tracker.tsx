@@ -140,6 +140,75 @@ function getPlaceLabel(item: PrayerActivityLog): string | null {
   return parts.length > 0 ? parts.join(', ') : null;
 }
 
+function getFirstStringValue(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function getFirstNumberValue(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return Math.trunc(value);
+    }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsed = Number.parseInt(value, 10);
+
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return null;
+}
+
+function getOmerDay(item: PrayerActivityLog): number | null {
+  return getFirstNumberValue(item.metadata.omerDay, item.hebrewDate.omerDay);
+}
+
+function getOmerSefirahRu(item: PrayerActivityLog): string | null {
+  return getFirstStringValue(item.metadata.sefirahRu, item.hebrewDate.sefirahRu);
+}
+
+function getOmerSefirahHe(item: PrayerActivityLog): string | null {
+  return getFirstStringValue(item.metadata.sefirahHe, item.hebrewDate.sefirahHe);
+}
+
+function getOmerDayHe(item: PrayerActivityLog): string | null {
+  return getFirstStringValue(item.metadata.dayHe, item.hebrewDate.dayHe);
+}
+
+function getActivityTitle(item: PrayerActivityLog): string {
+  if (item.activityType !== 'omer_count') {
+    return ACTIVITY_LABELS[item.activityType];
+  }
+
+  const omerDay = getOmerDay(item);
+
+  return omerDay ? `Омер · день ${omerDay}` : ACTIVITY_LABELS.omer_count;
+}
+
+function getActivityDetails(item: PrayerActivityLog): string | null {
+  if (item.activityType !== 'omer_count') {
+    return null;
+  }
+
+  const sefirahRu = getOmerSefirahRu(item);
+  const sefirahHe = getOmerSefirahHe(item);
+
+  if (sefirahRu && sefirahHe) {
+    return `${sefirahRu} · ${sefirahHe}`;
+  }
+
+  return sefirahRu ?? sefirahHe ?? getOmerDayHe(item);
+}
+
 function groupActivities(items: PrayerActivityLog[]): ActivityGroup[] {
   const groups = new Map<string, PrayerActivityLog[]>();
 
@@ -161,6 +230,7 @@ function ActivityCard({ item }: { item: PrayerActivityLog }) {
   const hebrewDateLabel = getHebrewDateLabel(item);
   const dateLabel = hebrewDateLabel ? `${gregorianDateLabel} · ${hebrewDateLabel}` : gregorianDateLabel;
   const placeLabel = getPlaceLabel(item);
+  const activityDetails = getActivityDetails(item);
 
   return (
     <GlassCard style={styles.activityCard}>
@@ -169,13 +239,19 @@ function ActivityCard({ item }: { item: PrayerActivityLog }) {
           <Ionicons name={ACTIVITY_ICONS[item.activityType]} size={19} color={colors.orange} />
         </View>
         <View style={styles.activityTitleBlock}>
-          <Text style={styles.activityTitle}>{ACTIVITY_LABELS[item.activityType]}</Text>
+          <Text style={styles.activityTitle}>{getActivityTitle(item)}</Text>
           <Text style={styles.activityTime}>{getActivityTimeLabel(item)}</Text>
         </View>
       </View>
 
-      {dateLabel || placeLabel ? (
+      {activityDetails || dateLabel || placeLabel ? (
         <View style={styles.metaBlock}>
+          {activityDetails ? (
+            <View style={styles.metaRow}>
+              <Ionicons name="calendar-number-outline" size={15} color={colors.textDim} />
+              <Text style={styles.metaText}>{activityDetails}</Text>
+            </View>
+          ) : null}
           {dateLabel ? (
             <View style={styles.metaRow}>
               <Ionicons name="calendar-outline" size={15} color={colors.textDim} />
