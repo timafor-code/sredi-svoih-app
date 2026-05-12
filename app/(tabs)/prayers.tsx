@@ -6,6 +6,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BlessingsEntryCard } from '@/components/blessings/BlessingsEntryCard';
 import { GlassCard } from '@/components/glass/GlassCard';
+import { CityPickerModal } from '@/components/prayer/CityPickerModal';
 import { MorningShemaCard } from '@/components/prayer/MorningShemaCard';
 import { OmerCountCard } from '@/components/prayer/OmerCountCard';
 import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
@@ -22,6 +23,7 @@ import { resolvePrayerDayPeriod } from '@/lib/prayerDayPeriod';
 import { formatLocalDateKey, hasRecordedActivity, prayerActivityTypeFromPrayerId } from '@/lib/prayerTracker';
 import { getDailyZmanim, getHebcalLocation, getPrayerWindows } from '@/lib/zmanim';
 import type { PrayerWindow } from '@/lib/zmanim';
+import { LocationServiceError, requestCurrentCityByGps } from '@/services/locationService';
 import { useAuthStore } from '@/store/useAuthStore';
 import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -39,13 +41,20 @@ export default function PrayersScreen() {
   const router = useRouter();
   const now = useNow();
   const [selectedPrayerId, setSelectedPrayerId] = useState<PrayerWindow['id'] | null>(null);
+  const [cityPickerVisible, setCityPickerVisible] = useState(false);
   const [zmanimModalVisible, setZmanimModalVisible] = useState(false);
+  const requestedAutoGpsRef = useRef(false);
   const requestedPrayerActivityForUserRef = useRef<string | null>(null);
   const authUser = useAuthStore((state) => state.user);
   const prayerActivityItems = usePrayerTrackerStore((state) => state.items);
   const prayerActivityLoading = usePrayerTrackerStore((state) => state.loading);
   const loadMyActivity = usePrayerTrackerStore((state) => state.loadMyActivity);
   const city = useSettingsStore((state) => state.city);
+  const hasHydratedSettings = useSettingsStore((state) => state.hasHydrated);
+  const locationPermissionStatus = useSettingsStore((state) => state.locationPermissionStatus);
+  const setGpsCity = useSettingsStore((state) => state.setGpsCity);
+  const setLocationPermissionStatus = useSettingsStore((state) => state.setLocationPermissionStatus);
+  const zmanimSource = useSettingsStore((state) => state.zmanimSource);
   const location = useMemo(() => getHebcalLocation(city), [city]);
   const daily = useMemo(() => getDailyZmanim({ city, date: now }), [city, now]);
   const tomorrowDate = useMemo(() => addDays(now, 1), [now]);
@@ -154,6 +163,39 @@ export default function PrayersScreen() {
   }, [overview, overviewWidth]);
 
   useEffect(() => {
+    if (
+      !hasHydratedSettings
+      || requestedAutoGpsRef.current
+      || zmanimSource === 'manual'
+      || locationPermissionStatus === 'denied'
+    ) {
+      return;
+    }
+
+    requestedAutoGpsRef.current = true;
+
+    void requestCurrentCityByGps()
+      .then((result) => {
+        if (!result) return;
+
+        setLocationPermissionStatus('granted');
+
+        setGpsCity(result.city);
+      })
+      .catch((error) => {
+        if (error instanceof LocationServiceError && error.code === 'permission-denied') {
+          setLocationPermissionStatus('denied');
+        }
+      });
+  }, [
+    hasHydratedSettings,
+    locationPermissionStatus,
+    setGpsCity,
+    setLocationPermissionStatus,
+    zmanimSource,
+  ]);
+
+  useEffect(() => {
     if (!authUser) {
       requestedPrayerActivityForUserRef.current = null;
       return;
@@ -195,9 +237,22 @@ export default function PrayersScreen() {
 
       <View>
         <Text style={styles.title}>Молитвы и зманим</Text>
-        <Text style={styles.subtitle}>
-          {hebrewDateLabel} · {formatRuDate(now, daily.timeZone)} · {city} ▾
-        </Text>
+        <View style={styles.subtitleRow}>
+          <Text style={styles.subtitleDate}>
+            {hebrewDateLabel} · {formatRuDate(now, daily.timeZone)}
+          </Text>
+          <Pressable
+            accessibilityHint="Открыть выбор города для зманим"
+            accessibilityLabel={`Город для зманим: ${city}`}
+            accessibilityRole="button"
+            onPress={() => setCityPickerVisible(true)}
+            style={({ pressed }) => [styles.cityChip, pressed && styles.cityChipPressed]}
+          >
+            <Ionicons name="location" size={12} color="rgba(255,255,255,0.72)" />
+            <Text numberOfLines={1} style={styles.cityChipText}>{city}</Text>
+            <Ionicons name="chevron-down" size={12} color="rgba(255,255,255,0.46)" />
+          </Pressable>
+        </View>
       </View>
 
       <OmerCountCard
@@ -298,6 +353,11 @@ export default function PrayersScreen() {
         visible={zmanimModalVisible}
       />
 
+      <CityPickerModal
+        onClose={() => setCityPickerVisible(false)}
+        visible={cityPickerVisible}
+      />
+
       {selectedPrayer?.active ? (
         <PrayerActionModal
           activityType={prayerActivityTypeFromPrayerId(selectedPrayer.id)}
@@ -359,6 +419,39 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     fontSize: 13,
     marginTop: 3,
+  },
+  subtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginTop: 4,
+  },
+  subtitleDate: {
+    color: colors.textDim,
+    fontSize: 13,
+  },
+  cityChip: {
+    minHeight: 28,
+    maxWidth: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.glass.w10,
+    backgroundColor: colors.glass.w07,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  cityChipPressed: {
+    opacity: 0.78,
+  },
+  cityChipText: {
+    flexShrink: 1,
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '800',
   },
   overline: {
     color: colors.textDim,

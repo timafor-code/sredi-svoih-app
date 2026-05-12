@@ -72,8 +72,19 @@ export interface PrayerWindow {
   title: string;
 }
 
-const FALLBACK_CITY = 'Москва';
-const CITY_TO_HEBCAL: Record<string, string> = {
+export const SUPPORTED_ZMANIM_CITIES = [
+  'Москва',
+  'Иерусалим',
+  'Нью-Йорк',
+  'Санкт-Петербург',
+  'Тель-Авив',
+] as const;
+
+export type SupportedZmanimCity = (typeof SUPPORTED_ZMANIM_CITIES)[number];
+
+export const FALLBACK_ZMANIM_CITY: SupportedZmanimCity = 'Москва';
+
+const CITY_TO_HEBCAL: Record<SupportedZmanimCity, string> = {
   'Иерусалим': 'Jerusalem',
   'Москва': 'Moscow',
   'Нью-Йорк': 'New York',
@@ -81,16 +92,67 @@ const CITY_TO_HEBCAL: Record<string, string> = {
   'Тель-Авив': 'Tel Aviv',
 };
 
+const CITY_NORMALIZATION: Record<string, SupportedZmanimCity> = {
+  'jerusalem': 'Иерусалим',
+  'yerushalayim': 'Иерусалим',
+  'ירושלים': 'Иерусалим',
+  'иерусалим': 'Иерусалим',
+  'moscow': 'Москва',
+  'moskva': 'Москва',
+  'москва': 'Москва',
+  'new york': 'Нью-Йорк',
+  'new york city': 'Нью-Йорк',
+  'nyc': 'Нью-Йорк',
+  'нью йорк': 'Нью-Йорк',
+  'нью-йорк': 'Нью-Йорк',
+  'saint petersburg': 'Санкт-Петербург',
+  'sankt peterburg': 'Санкт-Петербург',
+  'sankt-peterburg': 'Санкт-Петербург',
+  'st petersburg': 'Санкт-Петербург',
+  'st. petersburg': 'Санкт-Петербург',
+  'санкт петербург': 'Санкт-Петербург',
+  'санкт-петербург': 'Санкт-Петербург',
+  'tel aviv': 'Тель-Авив',
+  'tel-aviv': 'Тель-Авив',
+  'tel aviv yafo': 'Тель-Авив',
+  'tel aviv-yafo': 'Тель-Авив',
+  'תל אביב': 'Тель-Авив',
+  'תל אביב יפו': 'Тель-Авив',
+  'תל אביב-יפו': 'Тель-Авив',
+  'тель авив': 'Тель-Авив',
+  'тель-авив': 'Тель-Авив',
+};
+
 const FALLBACK_LOCATION = new Location(55.75222, 37.61556, false, 'Europe/Moscow', 'Moscow', 'RU', undefined, 144);
 const ALOT_HASHACHAR_DEGREES = 16.1;
 const ALOT_HASHACHAR_MIN_FALLBACK_DEGREES = 6;
 const TZEIT_HAKOCHAVIM_ANGLE_DEGREES = 8.5;
 
-export function getHebcalCityName(city = FALLBACK_CITY) {
-  return CITY_TO_HEBCAL[city] ?? city;
+function makeCityKey(value: string) {
+  return value
+    .trim()
+    .replace(/[‐‑‒–—]/g, '-')
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('ru-RU');
 }
 
-export function getHebcalLocation(city = FALLBACK_CITY) {
+export function normalizeZmanimCityName(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+
+  return CITY_NORMALIZATION[makeCityKey(trimmed)] ?? trimmed;
+}
+
+export function isSupportedZmanimCity(city: string) {
+  return SUPPORTED_ZMANIM_CITIES.includes(normalizeZmanimCityName(city) as SupportedZmanimCity);
+}
+
+export function getHebcalCityName(city: string = FALLBACK_ZMANIM_CITY) {
+  const normalizedCity = normalizeZmanimCityName(city);
+  return CITY_TO_HEBCAL[normalizedCity as SupportedZmanimCity] ?? city;
+}
+
+export function getHebcalLocation(city: string = FALLBACK_ZMANIM_CITY) {
   return Location.lookup(getHebcalCityName(city)) ?? FALLBACK_LOCATION;
 }
 
@@ -152,7 +214,7 @@ function getHebcalCompatibleTzeit(zmanim: Zmanim) {
 }
 
 export function getDailyZmanim(req: ZmanimRequest = {}): DailyZmanim {
-  const city = req.city ?? FALLBACK_CITY;
+  const city = req.city ?? FALLBACK_ZMANIM_CITY;
   const date = req.date ?? new Date();
   const location = getHebcalLocation(city);
   const zmanim = new Zmanim(location, date, req.useElevation ?? false);

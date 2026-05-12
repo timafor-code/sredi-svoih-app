@@ -29,6 +29,22 @@ The Omer modal records `activity_type = omer_count`. On open, it reads the curre
 
 `OmerCountCard` is a reusable Omer count entry card. It is currently rendered only on the Prayers tab, and tapping it opens the existing Omer modal. The background fill is calculated as `day / 49`. The card appears only for Omer days `1...49`; on day 50 it hides automatically because `getOmerInfo` should no longer return an active Omer day, and the component also guards against values outside that range.
 
+## Zmanim City
+
+The city used for zmanim is stored locally on the device in the settings store, so it works without sign-in. On first use the Prayers screen attempts to detect the city through Expo GPS. A supported GPS city is applied automatically, while an unsupported GPS result is kept out of the active zmanim calculation and the user is asked to choose from the supported list.
+
+Manual selection has priority over GPS and is not overwritten by later automatic GPS checks. The city picker modal includes a GPS action so the user can switch back to GPS explicitly. The supported list is exported from `SUPPORTED_ZMANIM_CITIES` in `src/lib/zmanim.ts`.
+
+Manual smoke checklist:
+
+- [ ] Open the Prayers tab.
+- [ ] Check that the city appears next to the date as a tappable element.
+- [ ] Tap the city and confirm that `CityPickerModal` opens in the same visual style as `ZmanimModal`.
+- [ ] Pick Moscow / Jerusalem / Tel Aviv and save.
+- [ ] Close and reopen the app, then confirm the city is still saved without sign-in.
+- [ ] Confirm zmanim, `OmerCountCard`, and `PrayerDayScale` recalculate for the selected city.
+- [ ] Tap the GPS action and verify supported-city, denied-permission, and manual-priority behavior.
+
 ## Time Gates
 
 Prayer cards can be recorded only during their active window. Past and future prayers remain visible on the Prayers screen, but they are not available for recording.
