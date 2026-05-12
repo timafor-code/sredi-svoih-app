@@ -1,7 +1,12 @@
 import { mockContacts } from '@/data/mockContacts';
 import { parseRuDate } from '@/lib/birthdays';
 import { getHebrewDate, getHebrewDateLabel } from '@/lib/hebcal';
-import type { CommunityContact, ContactPhoneNumber, HebrewDateJson } from '@/types/contact';
+import type {
+  CommunityContact,
+  CommunityContactRpcRow,
+  ContactPhoneNumber,
+  HebrewDateJson,
+} from '@/types/contact';
 
 function toDateOnly(value: Date) {
   const year = String(value.getFullYear()).padStart(4, '0');
@@ -23,6 +28,53 @@ function toHebrewDateJson(date: Date): HebrewDateJson {
 
 function toPhoneNumbers(phone?: string): ContactPhoneNumber[] {
   return phone ? [{ label: 'primary', number: phone }] : [];
+}
+
+function trimToUndefined(value?: string | null): string | undefined {
+  const trimmed = value?.trim();
+
+  return trimmed ? trimmed : undefined;
+}
+
+function toInitials(displayName: string): string {
+  const initials = displayName
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('');
+
+  return initials || '?';
+}
+
+function isHebrewDateJson(value: unknown): value is HebrewDateJson {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<HebrewDateJson>;
+
+  return (
+    typeof candidate.day === 'number' &&
+    typeof candidate.label === 'string' &&
+    typeof candidate.month === 'number' &&
+    typeof candidate.monthName === 'string' &&
+    typeof candidate.year === 'number'
+  );
+}
+
+function getBackendDisplayName(row: CommunityContactRpcRow): string {
+  const displayName = trimToUndefined(row.display_name);
+  if (displayName) {
+    return displayName;
+  }
+
+  const fullName = [row.first_name, row.last_name]
+    .map((part) => trimToUndefined(part))
+    .filter((part): part is string => Boolean(part))
+    .join(' ');
+
+  return fullName || 'Community member';
 }
 
 function toCommunityContact(contact: (typeof mockContacts)[number]): CommunityContact {
@@ -51,7 +103,49 @@ function toCommunityContact(contact: (typeof mockContacts)[number]): CommunityCo
   };
 }
 
+export function mapCommunityContactRpcRow(row: CommunityContactRpcRow): CommunityContact {
+  const displayName = getBackendDisplayName(row);
+  const phone = trimToUndefined(row.phone);
+  const role = trimToUndefined(row.role);
+
+  return {
+    avatarUrl: trimToUndefined(row.avatar_url),
+    birthdayVisibility: row.share_birth_date ? 'members' : 'rabbi_only',
+    birthDate: trimToUndefined(row.birth_date),
+    city: trimToUndefined(row.city),
+    displayName,
+    email: trimToUndefined(row.email),
+    emailVisibility: row.share_email ? 'members' : 'rabbi_only',
+    hebrewBirthDate: isHebrewDateJson(row.hebrew_birth_date) ? row.hebrew_birth_date : undefined,
+    hebrewName: trimToUndefined(row.hebrew_name),
+    id: row.id,
+    initials: toInitials(displayName),
+    phone,
+    phoneNumbers: toPhoneNumbers(phone),
+    phoneVisibility: row.share_phone ? 'members' : 'rabbi_only',
+    role,
+    source: 'community',
+    subtitle: role,
+    visibility: row.show_in_community_directory ? 'members' : 'rabbi_only',
+  };
+}
+
+export async function listCommunityContactsFromBackend(
+  communityId?: string,
+): Promise<CommunityContact[]> {
+  const { supabase } = await import('./supabaseClient');
+  const { data, error } = await supabase.rpc('list_community_contacts', {
+    p_community_id: communityId ?? null,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return ((data ?? []) as CommunityContactRpcRow[]).map(mapCommunityContactRpcRow);
+}
+
 export async function listCommunityContacts(): Promise<CommunityContact[]> {
-  // TODO: Replace this adapter with the list_community_contacts RPC in the next backend PR.
+  // TODO: Switch PR3/PR4 UI to listCommunityContactsFromBackend once auth/session UX is ready.
   return mockContacts.map(toCommunityContact);
 }
