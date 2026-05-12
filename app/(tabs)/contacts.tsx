@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
@@ -9,16 +9,19 @@ import { Logo, OmerPill } from '@/components/ui/BrandHeader';
 import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { SegmentControl } from '@/components/ui/SegmentControl';
-import { mockContacts } from '@/data/mockContacts';
 import { useNow } from '@/hooks/useNow';
-import { getUpcomingContactBirthdays } from '@/lib/birthdays';
 import { getLocalContactAvatarBg } from '@/lib/contactAvatar';
 import { getCommunityContactRoute, getIphoneContactRoute } from '@/lib/contactRoutes';
+import {
+  COMMUNITY_CONTACTS_AUTH_REQUIRED,
+  COMMUNITY_CONTACTS_MEMBERSHIP_REQUIRED,
+} from '@/services/communityContactsService';
+import { contactsService } from '@/services/contactsService';
 import { useContactsStore } from '@/store/useContactsStore';
 import { colors } from '@/theme/colors';
 import type {
   BirthdayOccurrence,
-  ContactItem,
+  CommunityContact,
   LocalContactsPermissionStatus,
   LocalIphoneContact,
 } from '@/types/contact';
@@ -32,7 +35,7 @@ type BirthdayPreviewItem = {
   id: string;
   initials: string;
   name: string;
-  route: ReturnType<typeof getCommunityContactRoute>;
+  route: ReturnType<typeof getCommunityContactRoute> | ReturnType<typeof getIphoneContactRoute>;
   when: string;
 };
 
@@ -49,6 +52,19 @@ function toLocalBirthdayPreview(birthday: BirthdayOccurrence): BirthdayPreviewIt
     initials: birthday.initials,
     name: birthday.displayName,
     route: getIphoneContactRoute(birthday.contactId),
+    when: birthday.when,
+  };
+}
+
+function toCommunityBirthdayPreview(birthday: BirthdayOccurrence): BirthdayPreviewItem {
+  return {
+    active: birthday.daysUntil === 0,
+    bg: birthday.avatarBg ?? '#2a3a4a',
+    date: birthday.nextDateHebrew.label,
+    id: birthday.contactId,
+    initials: birthday.initials,
+    name: birthday.displayName,
+    route: getCommunityContactRoute(birthday.contactId),
     when: birthday.when,
   };
 }
@@ -96,34 +112,44 @@ function ActionButton({ icon }: { icon: keyof typeof Ionicons.glyphMap }) {
   );
 }
 
-function CommunityRow({ contact, isLast }: { contact: ContactItem; isLast?: boolean }) {
+function CommunityRow({ contact, isLast }: { contact: CommunityContact; isLast?: boolean }) {
   const router = useRouter();
+  const hasPhone = Boolean(contact.phone || contact.phoneNumbers.length > 0);
+  const subtitle = [
+    contact.city,
+    contact.subtitle && contact.subtitle !== contact.role ? contact.subtitle : undefined,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(' · ');
 
   return (
     <Pressable
       onPress={() => router.push(getCommunityContactRoute(contact.id))}
       style={({ pressed }) => [styles.contactRow, !isLast && styles.rowDivider, pressed && styles.pressed]}
     >
-      <Avatar initials={contact.initials} bg={contact.avatarBg} size={44} />
+      <Avatar initials={contact.initials} bg={contact.avatarBg} uri={contact.avatarUrl} size={44} />
       <View style={styles.contactContent}>
         <View style={styles.flex}>
           <Text numberOfLines={1} style={styles.rowTitle}>
-            {contact.name}
+            {contact.displayName}
           </Text>
-          <View style={styles.metaLine}>
-            {contact.role ? (
-              <View style={[styles.rolePill, { backgroundColor: `${contact.roleColor ?? colors.orange}22` }]}>
-                <Text style={[styles.roleText, { color: contact.roleColor ?? colors.orange }]}>{contact.role}</Text>
-              </View>
-            ) : null}
-            <Text numberOfLines={1} style={styles.rowSubtitle}>
-              {contact.subtitle}
-            </Text>
-          </View>
+          {contact.role || subtitle ? (
+            <View style={styles.metaLine}>
+              {contact.role ? (
+                <View style={[styles.rolePill, { backgroundColor: `${contact.roleColor ?? colors.orange}22` }]}>
+                  <Text style={[styles.roleText, { color: contact.roleColor ?? colors.orange }]}>{contact.role}</Text>
+                </View>
+              ) : null}
+              {subtitle ? (
+                <Text numberOfLines={1} style={styles.rowSubtitle}>
+                  {subtitle}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
         </View>
         <View style={styles.actions}>
-          <ActionButton icon="chatbubble-outline" />
-          <ActionButton icon="call-outline" />
+          {hasPhone ? <ActionButton icon="call-outline" /> : null}
           <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.22)" />
         </View>
       </View>
@@ -169,7 +195,7 @@ function LocalIphoneRow({ contact, isLast }: { contact: LocalIphoneContact; isLa
   );
 }
 
-function LocalContactsStateCard({
+function ContactsStateCard({
   buttonTitle,
   icon,
   onPress,
@@ -206,6 +232,10 @@ export default function ContactsScreen() {
   const now = useNow();
   const [tab, setTab] = useState<(typeof tabs)[number]>('Община');
   const [search, setSearch] = useState('');
+  const communityContacts = useContactsStore((state) => state.communityContacts);
+  const communityError = useContactsStore((state) => state.communityError);
+  const loadingCommunity = useContactsStore((state) => state.loadingCommunity);
+  const loadCommunityContacts = useContactsStore((state) => state.loadCommunityContacts);
   const localContacts = useContactsStore((state) => state.localContacts);
   const localContactsPermission = useContactsStore((state) => state.localContactsPermission);
   const loadingLocal = useContactsStore((state) => state.loadingLocal);
@@ -213,42 +243,115 @@ export default function ContactsScreen() {
   const upcomingBirthdays = useContactsStore((state) => state.upcomingBirthdays);
 
   const normalizedSearch = search.trim().toLowerCase();
+  const isCommunity = tab === 'Община';
+
+  useEffect(() => {
+    if (!isCommunity) {
+      return;
+    }
+
+    void loadCommunityContacts();
+  }, [isCommunity, loadCommunityContacts]);
+
   const community = useMemo(
-    () => mockContacts.filter((contact) => contact.name.toLowerCase().includes(normalizedSearch)),
-    [normalizedSearch],
+    () =>
+      communityContacts.filter((contact) =>
+        [contact.displayName, contact.role, contact.subtitle, contact.city]
+          .filter((part): part is string => Boolean(part))
+          .join(' ')
+          .toLowerCase()
+          .includes(normalizedSearch),
+      ),
+    [communityContacts, normalizedSearch],
   );
   const personal = useMemo(
     () => localContacts.filter((contact) => contact.displayName.toLowerCase().includes(normalizedSearch)),
     [localContacts, normalizedSearch],
   );
-  const birthdays = useMemo<BirthdayPreviewItem[]>(
+  const communityBirthdays = useMemo<BirthdayPreviewItem[]>(
     () =>
-      getUpcomingContactBirthdays(mockContacts, now, 3).map(({ birthday, contact }) => ({
-        active: birthday.daysUntil === 0,
-        bg: contact.avatarBg ?? '#2a3a4a',
-        date: birthday.nextBirthday,
-        id: contact.id,
-        initials: contact.initials,
-        name: contact.name,
-        route: getCommunityContactRoute(contact.id),
-        when: birthday.when,
-      })),
-    [now],
+      contactsService
+        .getUpcomingBirthdays({ communityContacts, fromDate: now, limit: 3 })
+        .map(toCommunityBirthdayPreview),
+    [communityContacts, now],
   );
   const localBirthdays = useMemo(
     () => upcomingBirthdays.filter((birthday) => birthday.source === 'iphone').slice(0, 3).map(toLocalBirthdayPreview),
     [upcomingBirthdays],
   );
 
-  const isCommunity = tab === 'Община';
   const canShowLocalContacts = localContactsPermission === 'granted';
   const localContactsCount = localContacts.length;
   const showLocalCount = canShowLocalContacts && !loadingLocal;
 
+  function renderCommunityContactsContent() {
+    if (loadingCommunity) {
+      return (
+        <ContactsStateCard
+          icon="sync"
+          title="Загружаем контакты общины…"
+          subtitle="Получаем опубликованные карточки участников"
+        />
+      );
+    }
+
+    if (communityError === COMMUNITY_CONTACTS_AUTH_REQUIRED) {
+      return (
+        <ContactsStateCard
+          icon="lock-closed-outline"
+          title="Чтобы видеть каталог общины, войдите в приложение"
+          subtitle="После входа каталог станет доступен"
+        />
+      );
+    }
+
+    if (communityError === COMMUNITY_CONTACTS_MEMBERSHIP_REQUIRED) {
+      return (
+        <ContactsStateCard
+          icon="people-circle-outline"
+          title="Каталог доступен участникам общины"
+          subtitle="Активное членство нужно для просмотра опубликованных контактов"
+        />
+      );
+    }
+
+    if (communityError) {
+      return (
+        <ContactsStateCard
+          buttonTitle="Повторить"
+          icon="alert-circle-outline"
+          onPress={loadCommunityContacts}
+          title="Не удалось загрузить контакты общины"
+          subtitle="Попробуйте обновить каталог ещё раз"
+        />
+      );
+    }
+
+    if (community.length === 0) {
+      return (
+        <GlassCard padded={false}>
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>
+              {search ? 'Контакты не найдены' : 'Пока никто не открыл карточку в каталоге'}
+            </Text>
+          </View>
+        </GlassCard>
+      );
+    }
+
+    return (
+      <GlassCard padded={false}>
+        {community.map((contact, index) => (
+          <CommunityRow key={contact.id} contact={contact} isLast={index === community.length - 1} />
+        ))}
+      </GlassCard>
+    );
+  }
+
   function renderLocalContactsContent() {
     if (loadingLocal) {
       return (
-        <LocalContactsStateCard
+        <ContactsStateCard
           icon="sync"
           title="Загружаем контакты…"
           subtitle="Ищем локальные контакты iPhone с днями рождения"
@@ -258,7 +361,7 @@ export default function ContactsScreen() {
 
     if (localContactsPermission === 'unknown') {
       return (
-        <LocalContactsStateCard
+        <ContactsStateCard
           buttonTitle="Разрешить доступ"
           icon="phone-portrait-outline"
           onPress={loadLocalContacts}
@@ -270,7 +373,7 @@ export default function ContactsScreen() {
 
     if (isLocalAccessIssue(localContactsPermission)) {
       return (
-        <LocalContactsStateCard
+        <ContactsStateCard
           buttonTitle="Повторить"
           icon="alert-circle-outline"
           onPress={loadLocalContacts}
@@ -283,7 +386,7 @@ export default function ContactsScreen() {
     if (personal.length === 0) {
       if (!search) {
         return (
-          <LocalContactsStateCard
+          <ContactsStateCard
             icon="calendar-outline"
             title="Контактов с днями рождения не найдено"
             subtitle="Добавьте дату рождения в карточку контакта iPhone"
@@ -345,12 +448,12 @@ export default function ContactsScreen() {
         </Pressable>
       </View>
 
-      {isCommunity && !search ? (
+      {isCommunity && !search && !loadingCommunity && !communityError && communityBirthdays.length > 0 ? (
         <View>
           <SectionTitle title="БЛИЖАЙШИЕ ДНИ РОЖДЕНИЯ" action="Все дни рождения →" />
           <GlassCard padded={false}>
-            {birthdays.map((item, index) => (
-              <BirthdayRow key={item.id} item={item} isLast={index === birthdays.length - 1} />
+            {communityBirthdays.map((item, index) => (
+              <BirthdayRow key={item.id} item={item} isLast={index === communityBirthdays.length - 1} />
             ))}
           </GlassCard>
         </View>
@@ -384,21 +487,7 @@ export default function ContactsScreen() {
           title={isCommunity ? 'КОНТАКТЫ ОБЩИНЫ' : 'МОИ КОНТАКТЫ'}
           action={isCommunity && !search ? 'Все контакты →' : undefined}
         />
-        {isCommunity ? (
-          <GlassCard padded={false}>
-            {community.length === 0 ? (
-              <View style={styles.empty}>
-                <Text style={styles.emptyText}>Контакты не найдены</Text>
-              </View>
-            ) : (
-              community.map((contact, index) => (
-                <CommunityRow key={contact.id} contact={contact} isLast={index === community.length - 1} />
-              ))
-            )}
-          </GlassCard>
-        ) : (
-          renderLocalContactsContent()
-        )}
+        {isCommunity ? renderCommunityContactsContent() : renderLocalContactsContent()}
       </View>
     </Screen>
   );

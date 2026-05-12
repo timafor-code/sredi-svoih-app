@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Fragment } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
@@ -10,9 +11,22 @@ import { mockContacts } from '@/data/mockContacts';
 import { useNow } from '@/hooks/useNow';
 import { getContactBirthdayInfo } from '@/lib/birthdays';
 import { decodeContactRouteId } from '@/lib/contactRoutes';
+import { formatRuDate } from '@/lib/dates';
+import { contactsService } from '@/services/contactsService';
+import { useContactsStore } from '@/store/useContactsStore';
 import { colors } from '@/theme/colors';
+import type { CommunityContact } from '@/types/contact';
 
 const contactsRoute = '/contacts';
+
+type InfoRowData = {
+  accent?: boolean;
+  icon: string;
+  key: string;
+  label: string;
+  subtitle?: string;
+  value: string;
+};
 
 function InfoRow({
   accent,
@@ -39,6 +53,102 @@ function InfoRow({
       </View>
     </View>
   );
+}
+
+function InfoRowsCard({ rows }: { rows: InfoRowData[] }) {
+  return (
+    <GlassCard padded={false}>
+      {rows.map((row, index) => (
+        <Fragment key={row.key}>
+          {index > 0 ? <View style={styles.separator} /> : null}
+          <InfoRow
+            accent={row.accent}
+            icon={row.icon}
+            label={row.label}
+            subtitle={row.subtitle}
+            value={row.value}
+          />
+        </Fragment>
+      ))}
+    </GlassCard>
+  );
+}
+
+function parseDateOnly(value?: string): Date | null {
+  if (!value) return null;
+
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(year, month, day);
+
+  if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) return null;
+  return date;
+}
+
+function formatDateOnly(value: string) {
+  const date = parseDateOnly(value);
+  return date ? formatRuDate(date) : value;
+}
+
+function getBackendBirthday(contact: CommunityContact, now: Date) {
+  return contactsService.getUpcomingBirthdays({ communityContacts: [contact], fromDate: now, limit: 1 })[0];
+}
+
+function getBackendContactRows(contact: CommunityContact): InfoRowData[] {
+  const phone = contact.phone ?? contact.phoneNumbers[0]?.number;
+  return [
+    phone
+      ? {
+          icon: '☎️',
+          key: 'phone',
+          label: 'Телефон',
+          value: phone,
+        }
+      : null,
+    contact.email
+      ? {
+          icon: '✉️',
+          key: 'email',
+          label: 'Email',
+          value: contact.email,
+        }
+      : null,
+  ].filter((row): row is InfoRowData => Boolean(row));
+}
+
+function getBackendProfileRows(contact: CommunityContact): InfoRowData[] {
+  const birthdayRow = contact.birthDate
+    ? {
+        icon: '🎂',
+        key: 'birthDate',
+        label: 'Дата рождения',
+        subtitle: contact.hebrewBirthDate?.label,
+        value: formatDateOnly(contact.birthDate),
+      }
+    : contact.hebrewBirthDate
+      ? {
+          icon: '🎂',
+          key: 'hebrewBirthDate',
+          label: 'Еврейская дата рождения',
+          value: contact.hebrewBirthDate.label,
+        }
+      : null;
+
+  return [
+    birthdayRow,
+    contact.hebrewName
+      ? {
+          icon: '✡️',
+          key: 'hebrewName',
+          label: 'Еврейское имя',
+          value: contact.hebrewName,
+        }
+      : null,
+  ].filter((row): row is InfoRowData => Boolean(row));
 }
 
 function NotFoundState() {
@@ -78,11 +188,93 @@ function NotFoundState() {
   );
 }
 
+function BackendCommunityContactDetail({
+  contact,
+  now,
+  onBack,
+}: {
+  contact: CommunityContact;
+  now: Date;
+  onBack: () => void;
+}) {
+  const contactRows = getBackendContactRows(contact);
+  const profileRows = getBackendProfileRows(contact);
+  const birthday = getBackendBirthday(contact, now);
+  const heroSubtitle = [
+    contact.city,
+    contact.subtitle && contact.subtitle !== contact.role ? contact.subtitle : undefined,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(' · ');
+
+  return (
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <Screen>
+        <Pressable onPress={onBack} style={styles.backRow}>
+          <Ionicons name="chevron-back" size={22} color={colors.orange} />
+          <Text style={styles.backText}>Контакты</Text>
+        </Pressable>
+
+        <GlassCard>
+          <View style={styles.hero}>
+            <Avatar initials={contact.initials} bg={contact.avatarBg} uri={contact.avatarUrl} size={82} />
+            <View style={styles.flex}>
+              <Text style={styles.name}>{contact.displayName}</Text>
+              {heroSubtitle ? <Text style={styles.city}>{heroSubtitle}</Text> : null}
+              {contact.role ? (
+                <View style={[styles.rolePill, { borderColor: `${contact.roleColor ?? colors.orange}55`, backgroundColor: `${contact.roleColor ?? colors.orange}22` }]}>
+                  <Text style={[styles.roleText, { color: contact.roleColor ?? colors.orange }]}>{contact.role}</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        </GlassCard>
+
+        {contactRows.length > 0 ? (
+          <View>
+            <SectionTitle title="КОНТАКТЫ" />
+            <InfoRowsCard rows={contactRows} />
+          </View>
+        ) : null}
+
+        {profileRows.length > 0 ? (
+          <View>
+            <SectionTitle title="ПРОФИЛЬ" />
+            <InfoRowsCard rows={profileRows} />
+          </View>
+        ) : null}
+
+        {birthday ? (
+          <View>
+            <SectionTitle title="ЕВРЕЙСКИЙ КАЛЕНДАРЬ" />
+            <GlassCard style={styles.birthdayCard}>
+              <View style={styles.birthdayContent}>
+                <Text style={styles.birthdayEmoji}>🎂</Text>
+                <View style={styles.flex}>
+                  <Text style={styles.goldOverline}>СЛЕДУЮЩИЙ ДЕНЬ РОЖДЕНИЯ</Text>
+                  <Text style={styles.goldTitle}>{birthday.nextDateHebrew.label}</Text>
+                  <Text style={styles.infoSubtitle}>
+                    {formatDateOnly(birthday.nextDateGregorian)} · {birthday.when}
+                  </Text>
+                </View>
+              </View>
+            </GlassCard>
+          </View>
+        ) : null}
+      </Screen>
+    </>
+  );
+}
+
 export default function CommunityContactDetail() {
   const { id } = useLocalSearchParams<{ id?: string | string[] }>();
   const router = useRouter();
   const now = useNow();
   const contactId = decodeContactRouteId(id);
+  const backendContact = useContactsStore((state) =>
+    state.communityContacts.find((item) => item.id === contactId),
+  );
   const contact = mockContacts.find((item) => item.id === contactId);
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -92,6 +284,10 @@ export default function CommunityContactDetail() {
 
     router.replace(contactsRoute);
   };
+
+  if (backendContact) {
+    return <BackendCommunityContactDetail contact={backendContact} now={now} onBack={handleBack} />;
+  }
 
   if (!contact) {
     return <NotFoundState />;

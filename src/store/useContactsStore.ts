@@ -10,6 +10,7 @@ import type {
 } from '@/types/contact';
 
 interface ContactsStoreState {
+  communityError: string | null;
   communityContacts: CommunityContact[];
   contactListItems: ContactListItem[];
   error: string | null;
@@ -44,6 +45,7 @@ function getDerivedState(
 }
 
 export const useContactsStore = create<ContactsStore>((set, get) => ({
+  communityError: null,
   communityContacts: [],
   contactListItems: [],
   error: null,
@@ -53,21 +55,28 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
   localContactsPermission: 'unknown',
   upcomingBirthdays: [],
 
-  clearError: () => set({ error: null }),
+  clearError: () => set({ communityError: null, error: null }),
 
   loadCommunityContacts: async () => {
-    set({ error: null, loadingCommunity: true });
+    set({ communityError: null, error: null, loadingCommunity: true });
 
     try {
       const communityContacts = await contactsService.listCommunityContacts();
       const { localContacts } = get();
       set({
+        communityError: null,
         communityContacts,
         loadingCommunity: false,
         ...getDerivedState(communityContacts, localContacts),
       });
     } catch (error) {
-      set({ error: toErrorMessage(error), loadingCommunity: false });
+      const { localContacts } = get();
+      set({
+        communityContacts: [],
+        communityError: toErrorMessage(error),
+        loadingCommunity: false,
+        ...getDerivedState([], localContacts),
+      });
     }
   },
 
@@ -91,7 +100,12 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
 
   refreshAll: async () => {
     const shouldRefreshLocal = get().localContactsPermission === 'granted';
-    set({ error: null, loadingCommunity: true, loadingLocal: shouldRefreshLocal });
+    set({
+      communityError: null,
+      error: null,
+      loadingCommunity: true,
+      loadingLocal: shouldRefreshLocal,
+    });
 
     const [communityResult, localResult] = await Promise.allSettled([
       contactsService.listCommunityContacts(),
@@ -99,19 +113,20 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     ]);
 
     const communityContacts =
-      communityResult.status === 'fulfilled' ? communityResult.value : get().communityContacts;
+      communityResult.status === 'fulfilled' ? communityResult.value : [];
     const localContacts =
       localResult.status === 'fulfilled' && localResult.value ? localResult.value.contacts : get().localContacts;
+    const communityError =
+      communityResult.status === 'rejected' ? toErrorMessage(communityResult.reason) : null;
     const error =
-      communityResult.status === 'rejected'
-        ? toErrorMessage(communityResult.reason)
-        : localResult.status === 'fulfilled' && localResult.value && !localResult.value.ok
+      localResult.status === 'fulfilled' && localResult.value && !localResult.value.ok
           ? localResult.value.error ?? 'local_contacts_error'
           : localResult.status === 'rejected'
             ? toErrorMessage(localResult.reason)
             : null;
 
     set({
+      communityError,
       communityContacts,
       error,
       loadingCommunity: false,
