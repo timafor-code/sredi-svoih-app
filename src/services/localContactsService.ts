@@ -1,4 +1,4 @@
-import { readContactsLocalOnlyGranted, requestContactsPermission } from '@/lib/contacts';
+import { readContactsLocalOnlyGranted, requestContactsPermissionStatus } from '@/lib/contacts';
 import { formatBirthdayWhen } from '@/lib/birthdays';
 import { daysUntil } from '@/lib/dates';
 import { getHebrewDate, getHebrewDateLabel, getNextHebrewBirthday } from '@/lib/hebcal';
@@ -168,13 +168,13 @@ function toErrorMessage(error: unknown) {
 
 export async function loadLocalBirthdayContacts(fromDate: Date = new Date()): Promise<LoadLocalBirthdayContactsResult> {
   try {
-    const granted = await requestContactsPermission();
-    if (!granted) {
+    const permissionStatus = await requestContactsPermissionStatus();
+    if (permissionStatus !== 'granted') {
       return {
         contacts: [],
-        error: 'contacts_permission_denied',
+        error: permissionStatus === 'error' ? 'local_contacts_error' : 'contacts_permission_denied',
         ok: false,
-        permissionStatus: 'denied',
+        permissionStatus,
       };
     }
 

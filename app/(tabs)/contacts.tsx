@@ -9,11 +9,17 @@ import { Logo, OmerPill } from '@/components/ui/BrandHeader';
 import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { SegmentControl } from '@/components/ui/SegmentControl';
-import { mockContacts, mockPersonalContacts } from '@/data/mockContacts';
+import { mockContacts } from '@/data/mockContacts';
 import { useNow } from '@/hooks/useNow';
 import { getUpcomingContactBirthdays } from '@/lib/birthdays';
+import { useContactsStore } from '@/store/useContactsStore';
 import { colors } from '@/theme/colors';
-import type { ContactItem } from '@/types/contact';
+import type {
+  BirthdayOccurrence,
+  ContactItem,
+  LocalContactsPermissionStatus,
+  LocalIphoneContact,
+} from '@/types/contact';
 
 const tabs = ['Община', 'Мои контакты'] as const;
 
@@ -27,22 +33,60 @@ type BirthdayPreviewItem = {
   when: string;
 };
 
-type PersonalContact = (typeof mockPersonalContacts)[number];
+const localAvatarPalette = ['#4A90D9', '#4A9D72', '#D9824A', '#8F6ED5', '#D94A73'];
 
-function BirthdayRow({ item, isLast }: { item: BirthdayPreviewItem; isLast?: boolean }) {
+function getLocalAvatarBg(id: string) {
+  const sum = Array.from(id).reduce((value, char) => value + char.charCodeAt(0), 0);
+  return localAvatarPalette[sum % localAvatarPalette.length];
+}
+
+function isLocalAccessIssue(status: LocalContactsPermissionStatus) {
+  return status === 'denied' || status === 'limited' || status === 'unavailable' || status === 'error';
+}
+
+function toLocalBirthdayPreview(birthday: BirthdayOccurrence): BirthdayPreviewItem {
+  return {
+    active: birthday.daysUntil === 0,
+    bg: birthday.avatarBg ?? getLocalAvatarBg(birthday.contactId),
+    date: birthday.nextDateHebrew.label,
+    id: birthday.contactId,
+    initials: birthday.initials,
+    name: birthday.displayName,
+    when: birthday.when,
+  };
+}
+
+function BirthdayRow({
+  detailEnabled = true,
+  isLast,
+  item,
+}: {
+  detailEnabled?: boolean;
+  isLast?: boolean;
+  item: BirthdayPreviewItem;
+}) {
   const router = useRouter();
-
-  return (
-    <Pressable
-      onPress={() => router.push(`/contacts/${item.id}`)}
-      style={({ pressed }) => [styles.birthdayRow, !isLast && styles.rowDivider, pressed && styles.pressed]}
-    >
+  const content = (
+    <>
       <Avatar initials={item.initials} bg={item.bg} size={44} />
       <View style={styles.flex}>
         <Text style={styles.rowTitle}>{item.name}</Text>
         <Text style={styles.rowSubtitle}>{item.date}</Text>
       </View>
       <Text style={[styles.whenText, item.active && styles.whenTextActive]}>{item.when}</Text>
+    </>
+  );
+
+  if (!detailEnabled) {
+    return <View style={[styles.birthdayRow, !isLast && styles.rowDivider]}>{content}</View>;
+  }
+
+  return (
+    <Pressable
+      onPress={() => router.push(`/contacts/${item.id}`)}
+      style={({ pressed }) => [styles.birthdayRow, !isLast && styles.rowDivider, pressed && styles.pressed]}
+    >
+      {content}
     </Pressable>
   );
 }
@@ -90,18 +134,30 @@ function CommunityRow({ contact, isLast }: { contact: ContactItem; isLast?: bool
   );
 }
 
-function PersonalRow({ contact, isLast }: { contact: PersonalContact; isLast?: boolean }) {
+function LocalIphoneRow({ contact, isLast }: { contact: LocalIphoneContact; isLast?: boolean }) {
+  const birthday = contact.nextHebrewBirthday;
+  const nextBirthdayLabel = `${birthday.nextDateHebrew.label} · ${birthday.when}`;
+
   return (
     <View style={[styles.contactRow, !isLast && styles.rowDivider]}>
-      <Avatar initials={contact.initials} bg={contact.avatarBg} size={44} />
+      <Avatar initials={contact.initials} bg={getLocalAvatarBg(contact.id)} size={44} />
       <View style={styles.contactContent}>
         <View style={styles.flex}>
           <Text numberOfLines={1} style={styles.rowTitle}>
-            {contact.name}
+            {contact.displayName}
           </Text>
           <Text numberOfLines={1} style={styles.rowSubtitle}>
-            {contact.subtitle}
+            {contact.hebrewBirthDate.label}
           </Text>
+          <View style={styles.localMetaLine}>
+            <Ionicons name="calendar-outline" size={12} color={colors.orange} />
+            <Text numberOfLines={1} style={styles.localMetaText}>
+              {nextBirthdayLabel}
+            </Text>
+            <View style={styles.sourcePill}>
+              <Text style={styles.sourcePillText}>iPhone</Text>
+            </View>
+          </View>
         </View>
         <ActionButton icon="gift-outline" />
       </View>
@@ -109,10 +165,48 @@ function PersonalRow({ contact, isLast }: { contact: PersonalContact; isLast?: b
   );
 }
 
+function LocalContactsStateCard({
+  buttonTitle,
+  icon,
+  onPress,
+  subtitle,
+  title,
+}: {
+  buttonTitle?: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress?: () => void;
+  subtitle: string;
+  title: string;
+}) {
+  return (
+    <GlassCard padded={false}>
+      <View style={styles.stateCard}>
+        <View style={styles.stateIcon}>
+          <Ionicons name={icon} size={22} color="#4A90D9" />
+        </View>
+        <View style={styles.flex}>
+          <Text style={styles.stateTitle}>{title}</Text>
+          <Text style={styles.stateSubtitle}>{subtitle}</Text>
+        </View>
+        {buttonTitle && onPress ? (
+          <Pressable onPress={onPress} style={({ pressed }) => [styles.stateButton, pressed && styles.pressed]}>
+            <Text style={styles.stateButtonText}>{buttonTitle}</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </GlassCard>
+  );
+}
+
 export default function ContactsScreen() {
   const now = useNow();
   const [tab, setTab] = useState<(typeof tabs)[number]>('Община');
   const [search, setSearch] = useState('');
+  const localContacts = useContactsStore((state) => state.localContacts);
+  const localContactsPermission = useContactsStore((state) => state.localContactsPermission);
+  const loadingLocal = useContactsStore((state) => state.loadingLocal);
+  const loadLocalContacts = useContactsStore((state) => state.loadLocalContacts);
+  const upcomingBirthdays = useContactsStore((state) => state.upcomingBirthdays);
 
   const normalizedSearch = search.trim().toLowerCase();
   const community = useMemo(
@@ -120,8 +214,8 @@ export default function ContactsScreen() {
     [normalizedSearch],
   );
   const personal = useMemo(
-    () => mockPersonalContacts.filter((contact) => contact.name.toLowerCase().includes(normalizedSearch)),
-    [normalizedSearch],
+    () => localContacts.filter((contact) => contact.displayName.toLowerCase().includes(normalizedSearch)),
+    [localContacts, normalizedSearch],
   );
   const birthdays = useMemo<BirthdayPreviewItem[]>(
     () =>
@@ -136,9 +230,79 @@ export default function ContactsScreen() {
       })),
     [now],
   );
+  const localBirthdays = useMemo(
+    () => upcomingBirthdays.filter((birthday) => birthday.source === 'iphone').slice(0, 3).map(toLocalBirthdayPreview),
+    [upcomingBirthdays],
+  );
 
   const isCommunity = tab === 'Община';
-  const contacts = isCommunity ? community : personal;
+  const canShowLocalContacts = localContactsPermission === 'granted';
+  const localContactsCount = localContacts.length;
+  const showLocalCount = canShowLocalContacts && !loadingLocal;
+
+  function renderLocalContactsContent() {
+    if (loadingLocal) {
+      return (
+        <LocalContactsStateCard
+          icon="sync"
+          title="Загружаем контакты…"
+          subtitle="Ищем локальные контакты iPhone с днями рождения"
+        />
+      );
+    }
+
+    if (localContactsPermission === 'unknown') {
+      return (
+        <LocalContactsStateCard
+          buttonTitle="Разрешить доступ"
+          icon="phone-portrait-outline"
+          onPress={loadLocalContacts}
+          title="Синхронизация iPhone"
+          subtitle="Покажем контакты с днями рождения и рассчитаем еврейские даты"
+        />
+      );
+    }
+
+    if (isLocalAccessIssue(localContactsPermission)) {
+      return (
+        <LocalContactsStateCard
+          buttonTitle="Повторить"
+          icon="alert-circle-outline"
+          onPress={loadLocalContacts}
+          title="Доступ к контактам не разрешён"
+          subtitle="Разрешите доступ в настройках iPhone, чтобы видеть дни рождения"
+        />
+      );
+    }
+
+    if (personal.length === 0) {
+      if (!search) {
+        return (
+          <LocalContactsStateCard
+            icon="calendar-outline"
+            title="Контактов с днями рождения не найдено"
+            subtitle="Добавьте дату рождения в карточку контакта iPhone"
+          />
+        );
+      }
+
+      return (
+        <GlassCard padded={false}>
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>Контакты не найдены</Text>
+          </View>
+        </GlassCard>
+      );
+    }
+
+    return (
+      <GlassCard padded={false}>
+        {personal.map((contact, index) => (
+          <LocalIphoneRow key={contact.id} contact={contact} isLast={index === personal.length - 1} />
+        ))}
+      </GlassCard>
+    );
+  }
 
   return (
     <Screen contentContainerStyle={styles.screenContent}>
@@ -181,58 +345,60 @@ export default function ContactsScreen() {
           <SectionTitle title="БЛИЖАЙШИЕ ДНИ РОЖДЕНИЯ" action="Все дни рождения →" />
           <GlassCard padded={false}>
             {birthdays.map((item, index) => (
-              <BirthdayRow key={item.name} item={item} isLast={index === birthdays.length - 1} />
+              <BirthdayRow key={item.id} item={item} isLast={index === birthdays.length - 1} />
             ))}
           </GlassCard>
         </View>
       ) : null}
 
-      {isCommunity && !search ? (
-        <GlassCard padded={false}>
-          <View style={styles.syncBanner}>
-            <View style={styles.syncIcon}>
-              <Ionicons name="sync" size={20} color="#4A90D9" />
-            </View>
-            <View style={styles.flex}>
-              <Text style={styles.rowTitle}>Синхронизация iPhone</Text>
-              <Text style={styles.rowSubtitle}>128 личных контактов с еврейскими датами</Text>
-            </View>
-            <View style={styles.syncStatus}>
-              <Text style={styles.syncStatusText}>Включена</Text>
-              <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-              <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.3)" />
-            </View>
-          </View>
-        </GlassCard>
+      {!isCommunity && !search && localBirthdays.length > 0 ? (
+        <View>
+          <SectionTitle title="БЛИЖАЙШИЕ ДНИ РОЖДЕНИЯ ИЗ iPhone" />
+          <GlassCard padded={false}>
+            {localBirthdays.map((item, index) => (
+              <BirthdayRow
+                key={item.id}
+                detailEnabled={false}
+                item={item}
+                isLast={index === localBirthdays.length - 1}
+              />
+            ))}
+          </GlassCard>
+        </View>
       ) : null}
 
-      {!isCommunity && !search ? (
+      {!isCommunity && !search && showLocalCount ? (
         <View style={styles.personalHint}>
-          <Text style={styles.hintEmoji}>📱</Text>
+          <View style={styles.hintIcon}>
+            <Ionicons name="phone-portrait-outline" size={20} color="#4A90D9" />
+          </View>
           <View style={styles.flex}>
-            <Text style={styles.rowTitle}>128 контактов синхронизировано</Text>
+            <Text style={styles.rowTitle}>{localContactsCount} контактов с днями рождения</Text>
             <Text style={styles.rowSubtitle}>Еврейские даты рассчитаны автоматически</Text>
           </View>
         </View>
       ) : null}
 
       <View>
-        <SectionTitle title={isCommunity ? 'КОНТАКТЫ ОБЩИНЫ' : 'МОИ КОНТАКТЫ'} action={!search ? 'Все контакты →' : undefined} />
-        <GlassCard padded={false}>
-          {contacts.length === 0 ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyText}>Контакты не найдены</Text>
-            </View>
-          ) : isCommunity ? (
-            community.map((contact, index) => (
-              <CommunityRow key={contact.id} contact={contact} isLast={index === community.length - 1} />
-            ))
-          ) : (
-            personal.map((contact, index) => (
-              <PersonalRow key={contact.id} contact={contact} isLast={index === personal.length - 1} />
-            ))
-          )}
-        </GlassCard>
+        <SectionTitle
+          title={isCommunity ? 'КОНТАКТЫ ОБЩИНЫ' : 'МОИ КОНТАКТЫ'}
+          action={isCommunity && !search ? 'Все контакты →' : undefined}
+        />
+        {isCommunity ? (
+          <GlassCard padded={false}>
+            {community.length === 0 ? (
+              <View style={styles.empty}>
+                <Text style={styles.emptyText}>Контакты не найдены</Text>
+              </View>
+            ) : (
+              community.map((contact, index) => (
+                <CommunityRow key={contact.id} contact={contact} isLast={index === community.length - 1} />
+              ))
+            )}
+          </GlassCard>
+        ) : (
+          renderLocalContactsContent()
+        )}
       </View>
     </Screen>
   );
@@ -336,6 +502,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+  localMetaLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 7,
+  },
+  localMetaText: {
+    flex: 1,
+    minWidth: 0,
+    color: colors.textFaint,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  sourcePill: {
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(74,144,217,0.24)',
+    backgroundColor: 'rgba(74,144,217,0.12)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  sourcePillText: {
+    color: '#8DBBE8',
+    fontSize: 10,
+    fontWeight: '700',
+    includeFontPadding: false,
+  },
   whenText: {
     color: colors.textFaint,
     fontSize: 13,
@@ -344,15 +537,15 @@ const styles = StyleSheet.create({
   whenTextActive: {
     color: colors.orange,
   },
-  syncBanner: {
-    minHeight: 70,
+  stateCard: {
+    minHeight: 92,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 16,
   },
-  syncIcon: {
+  stateIcon: {
     width: 40,
     height: 40,
     borderRadius: 12,
@@ -362,14 +555,28 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(74,144,217,0.20)',
     backgroundColor: 'rgba(74,144,217,0.12)',
   },
-  syncStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  stateTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
   },
-  syncStatusText: {
-    color: colors.success,
-    fontSize: 13,
+  stateSubtitle: {
+    color: colors.textGhost,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 3,
+  },
+  stateButton: {
+    minHeight: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.orange,
+    paddingHorizontal: 12,
+  },
+  stateButtonText: {
+    color: '#fff',
+    fontSize: 12,
     fontWeight: '700',
   },
   personalHint: {
@@ -383,8 +590,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(74,144,217,0.08)',
     paddingHorizontal: 16,
   },
-  hintEmoji: {
-    fontSize: 22,
+  hintIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(74,144,217,0.20)',
+    backgroundColor: 'rgba(74,144,217,0.12)',
   },
   metaLine: {
     flexDirection: 'row',

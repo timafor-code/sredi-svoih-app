@@ -90,20 +90,22 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
   },
 
   refreshAll: async () => {
-    set({ error: null, loadingCommunity: true, loadingLocal: true });
+    const shouldRefreshLocal = get().localContactsPermission === 'granted';
+    set({ error: null, loadingCommunity: true, loadingLocal: shouldRefreshLocal });
 
     const [communityResult, localResult] = await Promise.allSettled([
       contactsService.listCommunityContacts(),
-      contactsService.listLocalBirthdayContacts(),
+      shouldRefreshLocal ? contactsService.listLocalBirthdayContacts() : Promise.resolve(null),
     ]);
 
     const communityContacts =
       communityResult.status === 'fulfilled' ? communityResult.value : get().communityContacts;
-    const localContacts = localResult.status === 'fulfilled' ? localResult.value.contacts : get().localContacts;
+    const localContacts =
+      localResult.status === 'fulfilled' && localResult.value ? localResult.value.contacts : get().localContacts;
     const error =
       communityResult.status === 'rejected'
         ? toErrorMessage(communityResult.reason)
-        : localResult.status === 'fulfilled' && !localResult.value.ok
+        : localResult.status === 'fulfilled' && localResult.value && !localResult.value.ok
           ? localResult.value.error ?? 'local_contacts_error'
           : localResult.status === 'rejected'
             ? toErrorMessage(localResult.reason)
@@ -116,7 +118,9 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       loadingLocal: false,
       localContacts,
       localContactsPermission:
-        localResult.status === 'fulfilled' ? localResult.value.permissionStatus : get().localContactsPermission,
+        localResult.status === 'fulfilled' && localResult.value
+          ? localResult.value.permissionStatus
+          : get().localContactsPermission,
       ...getDerivedState(communityContacts, localContacts),
     });
   },

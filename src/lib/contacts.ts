@@ -1,8 +1,26 @@
 import * as Contacts from 'expo-contacts';
+import type { ContactsPermissionResponse } from 'expo-contacts';
+
+import type { LocalContactsPermissionStatus } from '@/types/contact';
+
+function toLocalContactsPermissionStatus(permission: ContactsPermissionResponse): LocalContactsPermissionStatus {
+  if (permission.status === 'granted') {
+    return permission.accessPrivileges === 'limited' ? 'limited' : 'granted';
+  }
+
+  return 'denied';
+}
+
+export async function requestContactsPermissionStatus(): Promise<LocalContactsPermissionStatus> {
+  try {
+    return toLocalContactsPermissionStatus(await Contacts.requestPermissionsAsync());
+  } catch {
+    return 'error';
+  }
+}
 
 export async function requestContactsPermission() {
-  const { status } = await Contacts.requestPermissionsAsync();
-  return status === 'granted';
+  return (await requestContactsPermissionStatus()) === 'granted';
 }
 
 export async function readContactsLocalOnly() {
