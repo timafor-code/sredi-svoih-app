@@ -17,6 +17,7 @@ import { SectionTitle } from '@/components/ui/SectionTitle';
 import { mockContacts } from '@/data/mockContacts';
 import { useNow } from '@/hooks/useNow';
 import { getUpcomingContactBirthdays } from '@/lib/birthdays';
+import { getCommunityContactRoute } from '@/lib/contactRoutes';
 import { formatRuDate, formatRuTime, formatRuWeekdayDayMonth } from '@/lib/dates';
 import { getHebrewDate, getHebrewDateLabel, getUpcomingHoliday, getWeeklyParsha } from '@/lib/hebcal';
 import type { UpcomingHoliday, WeeklyParsha } from '@/lib/hebcal';
@@ -88,7 +89,7 @@ function BirthdayRow({ item, isLast }: { item: HomeBirthdayItem; isLast?: boolea
 
   return (
     <Pressable
-      onPress={() => router.push(`/contacts/${item.id}`)}
+      onPress={() => router.push(getCommunityContactRoute(item.id))}
       style={({ pressed }) => [styles.birthdayRow, !isLast && styles.rowDivider, pressed && styles.rowPressed]}
     >
       <Avatar initials={item.initials} bg={item.bg} size={40} />
