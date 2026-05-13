@@ -232,8 +232,8 @@ registration event's community through `has_community_role(...)` with
 `array['admin', 'event_manager']`. Execute grants are limited to
 `authenticated`.
 
-CSV export is intentionally not part of this foundation. The planned export
-format is Excel `.xlsx`, and that export will be implemented in a separate PR.
+CSV export is intentionally not part of this foundation. Web-admin uses Excel
+`.xlsx` for registration exports.
 
 ## Client Service
 
@@ -278,4 +278,19 @@ buttons. Status changes call `updateRegistrationStatus(...)` for `pending`,
 `markRegistrationAttendance(...)` for `attended` and `no_show`. Destructive
 changes (`cancelled`, `rejected`, `no_show`) require confirmation in the UI.
 
-Excel `.xlsx` export remains planned as a separate PR. CSV export is not used.
+## Web Admin Registrations Excel Export
+
+`apps/admin` exports registrations for the currently selected event as an Excel
+`.xlsx` workbook. CSV is intentionally not used in web-admin.
+
+The export button calls `admin_list_event_registrations` through
+`listEventRegistrations(...)` with pagination: `limit` is `200`, `offset` starts
+at `0`, and fetching continues while the RPC returns a full page. Current table
+status/search filters are not applied, so the workbook contains all
+registrations for the selected event.
+
+The workbook always contains a sheet named "Все регистрации". If returned rows
+include `occurrence_id` or `occurrence_starts_at`, the workbook also includes
+safe Excel sheet names for each occurrence, capped to Excel's 31-character sheet
+name limit. No backend storage, migrations, or additional RPCs are required for
+the export.
