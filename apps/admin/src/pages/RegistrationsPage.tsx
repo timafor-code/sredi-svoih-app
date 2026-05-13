@@ -16,6 +16,7 @@ import {
   markRegistrationAttendance,
   updateRegistrationStatus,
 } from "../services/adminEventsService";
+import { exportEventRegistrationsToExcel } from "../services/registrationExcelExport";
 import type { AdminBadgeTone } from "../types/admin";
 import type {
   AdminEventRegistrationRow,
@@ -157,6 +158,7 @@ export function RegistrationsPage() {
   const [pendingAction, setPendingAction] = useState<PendingRegistrationAction | null>(null);
   const [actionInFlight, setActionInFlight] = useState<ActionInFlight | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [excelExportLoading, setExcelExportLoading] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const pushToast = useCallback((kind: ToastKind, message: string) => {
@@ -418,6 +420,28 @@ export function RegistrationsPage() {
     });
   }, [loadRegistrationEventSummaries, loadRegistrations, pushToast]);
 
+  const handleExportExcel = useCallback(() => {
+    if (!selectedEvent || excelExportLoading) {
+      return;
+    }
+
+    setExcelExportLoading(true);
+
+    void exportEventRegistrationsToExcel(selectedEvent)
+      .then((result) => {
+        pushToast("success", `Excel готов: ${formatRegistrationCount(result.rowCount)}.`);
+      })
+      .catch((nextError) => {
+        pushToast(
+          "error",
+          nextError instanceof Error ? nextError.message : "Не удалось подготовить Excel.",
+        );
+      })
+      .finally(() => {
+        setExcelExportLoading(false);
+      });
+  }, [excelExportLoading, pushToast, selectedEvent]);
+
   return (
     <div className="page-stack page-stack--registrations">
       <section className="page-header registrations-page-header">
@@ -501,13 +525,28 @@ export function RegistrationsPage() {
                   <h2>{selectedEvent.title}</h2>
                   <p>{formatDateTime(selectedEvent.startsAt)}</p>
                 </div>
-                <Button
-                  disabled={registrationsLoading || eventsLoading}
-                  onClick={refreshAll}
-                  size="sm"
-                >
-                  {registrationsLoading ? "Обновляем..." : "Обновить"}
-                </Button>
+                <div className="registrations-main-actions">
+                  <Button
+                    disabled={
+                      !selectedEvent ||
+                      registrationsLoading ||
+                      eventsLoading ||
+                      excelExportLoading
+                    }
+                    onClick={handleExportExcel}
+                    size="sm"
+                    variant="gold"
+                  >
+                    {excelExportLoading ? "Готовим Excel..." : "Экспорт Excel"}
+                  </Button>
+                  <Button
+                    disabled={registrationsLoading || eventsLoading}
+                    onClick={refreshAll}
+                    size="sm"
+                  >
+                    {registrationsLoading ? "Обновляем..." : "Обновить"}
+                  </Button>
+                </div>
               </div>
 
               <RegistrationSummaryCards event={selectedEvent} />
@@ -1316,6 +1355,25 @@ function formatRegistrationAmount(registration: AdminEventRegistrationRow): stri
   const currency = registration.selectedOptions[0]?.currency ?? "RUB";
 
   return hasAmount ? formatMoney(amount, currency) : "Без суммы";
+}
+
+function formatRegistrationCount(count: number): string {
+  const remainder100 = count % 100;
+  const remainder10 = count % 10;
+
+  if (remainder100 >= 11 && remainder100 <= 14) {
+    return `${count} регистраций`;
+  }
+
+  if (remainder10 === 1) {
+    return `${count} регистрация`;
+  }
+
+  if (remainder10 >= 2 && remainder10 <= 4) {
+    return `${count} регистрации`;
+  }
+
+  return `${count} регистраций`;
 }
 
 function formatMoney(amount: number, currency: string): string {

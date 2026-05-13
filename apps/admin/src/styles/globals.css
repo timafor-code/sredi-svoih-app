@@ -3779,6 +3779,13 @@ a {
   line-height: 1;
 }
 
+.registrations-main-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .registration-search-field {
   display: grid;
   min-width: 0;
@@ -4816,10 +4823,12 @@ a {
     flex-direction: column;
   }
 
+  .registrations-main-actions,
   .registrations-pagination {
     justify-content: stretch;
   }
 
+  .registrations-main-actions .button,
   .registrations-pagination .button,
   .registration-detail-actions .button {
     flex: 1;
