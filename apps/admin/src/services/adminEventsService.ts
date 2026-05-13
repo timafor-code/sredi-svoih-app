@@ -6,6 +6,16 @@ import type {
   CreateAdminEventInput,
   UpdateAdminEventInput,
 } from "../types/events";
+import type {
+  AdminEventRegistrationRow,
+  AdminEventRegistrationRpcRow,
+  AdminRegistrationAttendanceStatus,
+  AdminRegistrationEventSummary,
+  AdminRegistrationEventSummaryRpcRow,
+  AdminRegistrationOptionSelectionSummary,
+  AdminRegistrationStatusUpdate,
+  ListEventRegistrationsParams,
+} from "../types/registrations";
 
 type SupabaseSelectError = {
   code?: string;
@@ -75,6 +85,58 @@ function nullableNumber(value: unknown): number | null {
   return null;
 }
 
+function safeNumber(value: unknown, fallback: number): number {
+  return nullableNumber(value) ?? fallback;
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => (typeof entry === "string" ? entry.trim() : null))
+    .filter((entry): entry is string => Boolean(entry && entry.length > 0));
+}
+
+function normalizeSelectionValue(
+  value: unknown,
+): AdminRegistrationOptionSelectionSummary | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const row = value as Record<string, unknown>;
+
+  return {
+    id: requiredString(row.id, ""),
+    optionId: nullableString(row.optionId ?? row.option_id),
+    title: requiredString(row.title, ""),
+    description: nullableString(row.description),
+    optionType: requiredString(row.optionType ?? row.option_type, "participation"),
+    quantity: safeNumber(row.quantity, 1),
+    unitPriceAmount: safeNumber(row.unitPriceAmount ?? row.unit_price_amount, 0),
+    totalAmount: safeNumber(row.totalAmount ?? row.total_amount, 0),
+    currency: requiredString(row.currency, "RUB"),
+    countsTowardCapacity: (row.countsTowardCapacity ?? row.counts_toward_capacity) !== false,
+    seatsCount: safeNumber(row.seatsCount ?? row.seats_count, 0),
+    isDonation: (row.isDonation ?? row.is_donation) === true,
+    createdAt: requiredString(row.createdAt ?? row.created_at, ""),
+  };
+}
+
+function normalizeSelectedOptions(
+  value: unknown,
+): AdminRegistrationOptionSelectionSummary[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map(normalizeSelectionValue)
+    .filter((entry): entry is AdminRegistrationOptionSelectionSummary => Boolean(entry));
+}
+
 export function normalizeAdminEventRow(row: Partial<AdminEventRow>): AdminEvent {
   return {
     id: requiredString(row.id, ""),
@@ -112,6 +174,56 @@ export function normalizeAdminEventRow(row: Partial<AdminEventRow>): AdminEvent 
   };
 }
 
+export function normalizeRegistrationEventSummaryRow(
+  row: Partial<AdminRegistrationEventSummaryRpcRow>,
+): AdminRegistrationEventSummary {
+  return {
+    eventId: requiredString(row.event_id, ""),
+    title: requiredString(row.title, "Untitled event"),
+    startsAt: nullableString(row.starts_at),
+    eventKind: requiredString(row.event_kind, "single"),
+    registrationMode: requiredString(row.registration_mode, "none"),
+    occurrenceCount: safeNumber(row.occurrence_count, 0),
+    confirmedCount: safeNumber(row.confirmed_count, 0),
+    pendingCount: safeNumber(row.pending_count, 0),
+    waitlistedCount: safeNumber(row.waitlisted_count, 0),
+    cancelledCount: safeNumber(row.cancelled_count, 0),
+    rejectedCount: safeNumber(row.rejected_count, 0),
+    attendedCount: safeNumber(row.attended_count, 0),
+    noShowCount: safeNumber(row.no_show_count, 0),
+  };
+}
+
+export function normalizeEventRegistrationRow(
+  row: Partial<AdminEventRegistrationRpcRow>,
+): AdminEventRegistrationRow {
+  return {
+    id: requiredString(row.id, ""),
+    eventId: requiredString(row.event_id, ""),
+    occurrenceId: nullableString(row.occurrence_id),
+    userId: requiredString(row.user_id, ""),
+    participantDisplayName: requiredString(row.participant_display_name, "Participant"),
+    email: nullableString(row.email),
+    phone: nullableString(row.phone),
+    status: requiredString(row.status, "pending"),
+    seatsCount: safeNumber(row.seats_count, 1),
+    guestNames: normalizeStringArray(row.guest_names),
+    comment: nullableString(row.comment),
+    paymentStatus: requiredString(row.payment_status, "not_required"),
+    paymentId: nullableString(row.payment_id),
+    registeredAt: requiredString(row.registered_at, ""),
+    confirmedAt: nullableString(row.confirmed_at),
+    cancelledAt: nullableString(row.cancelled_at),
+    occurrenceStartsAt: nullableString(row.occurrence_starts_at),
+    occurrenceEndsAt: nullableString(row.occurrence_ends_at),
+    occurrenceTitle: nullableString(row.occurrence_title),
+    selectedOptions: normalizeSelectedOptions(row.selected_options),
+    totalAmount: nullableNumber(row.total_amount),
+    createdAt: requiredString(row.created_at, ""),
+    updatedAt: requiredString(row.updated_at, ""),
+  };
+}
+
 function normalizeSingleAdminEvent(
   data: Partial<AdminEventRow> | Partial<AdminEventRow>[] | null,
 ): AdminEvent {
@@ -122,6 +234,21 @@ function normalizeSingleAdminEvent(
   }
 
   return normalizeAdminEventRow(row);
+}
+
+function normalizeSingleEventRegistration(
+  data:
+    | Partial<AdminEventRegistrationRpcRow>
+    | Partial<AdminEventRegistrationRpcRow>[]
+    | null,
+): AdminEventRegistrationRow {
+  const row = Array.isArray(data) ? data[0] : data;
+
+  if (!row) {
+    throw new Error("Admin registration RPC returned an empty result.");
+  }
+
+  return normalizeEventRegistrationRow(row);
 }
 
 function formatSupabaseError(action: string, error: SupabaseSelectError): string {
@@ -142,6 +269,75 @@ export async function listAdminEvents(): Promise<AdminEvent[]> {
   }
 
   return ((data ?? []) as AdminEventRow[]).map(normalizeAdminEventRow);
+}
+
+export async function listRegistrationEvents(): Promise<AdminRegistrationEventSummary[]> {
+  const supabase = requireSupabaseClient();
+  const { data, error } = await supabase.rpc("admin_list_registration_events");
+
+  if (error) {
+    throw new Error(formatSupabaseError("List registration events", error));
+  }
+
+  return ((data ?? []) as AdminRegistrationEventSummaryRpcRow[]).map(
+    normalizeRegistrationEventSummaryRow,
+  );
+}
+
+export async function listEventRegistrations(
+  params: ListEventRegistrationsParams,
+): Promise<AdminEventRegistrationRow[]> {
+  const supabase = requireSupabaseClient();
+  const payload = buildListEventRegistrationsPayload(params);
+  const { data, error } = await supabase.rpc("admin_list_event_registrations", {
+    payload,
+  });
+
+  if (error) {
+    throw new Error(formatSupabaseError("List event registrations", error));
+  }
+
+  return ((data ?? []) as AdminEventRegistrationRpcRow[]).map(normalizeEventRegistrationRow);
+}
+
+export async function updateRegistrationStatus(
+  registrationId: string,
+  nextStatus: AdminRegistrationStatusUpdate,
+  reason?: string | null,
+): Promise<AdminEventRegistrationRow> {
+  const supabase = requireSupabaseClient();
+  const { data, error } = await supabase.rpc("admin_update_registration_status", {
+    registration_id: registrationId,
+    next_status: nextStatus,
+    reason: reason ?? null,
+  });
+
+  if (error) {
+    throw new Error(formatSupabaseError("Update registration status", error));
+  }
+
+  return normalizeSingleEventRegistration(
+    data as Partial<AdminEventRegistrationRpcRow> | Partial<AdminEventRegistrationRpcRow>[] | null,
+  );
+}
+
+export async function markRegistrationAttendance(
+  registrationId: string,
+  attendanceStatus: AdminRegistrationAttendanceStatus,
+): Promise<AdminEventRegistrationRow> {
+  const supabase = requireSupabaseClient();
+  const { data, error } = await supabase.rpc("admin_mark_registration_attendance", {
+    registration_id: registrationId,
+    attendance_status: attendanceStatus,
+  });
+
+  if (error) {
+    throw new Error(formatSupabaseError("Mark registration attendance", error));
+  }
+
+  return normalizeSingleEventRegistration(
+    data as Partial<AdminEventRegistrationRpcRow> | Partial<AdminEventRegistrationRpcRow>[] | null,
+  );
 }
 
 export async function createAdminEvent(input: CreateAdminEventInput): Promise<AdminEvent> {
@@ -198,6 +394,25 @@ export async function deleteAdminEvent(eventId: string): Promise<AdminEvent> {
   }
 
   return normalizeSingleAdminEvent(data as Partial<AdminEventRow> | Partial<AdminEventRow>[] | null);
+}
+
+type ListEventRegistrationsPayload = Record<string, string | number>;
+
+function buildListEventRegistrationsPayload(
+  params: ListEventRegistrationsParams,
+): ListEventRegistrationsPayload {
+  const payload = {
+    eventId: params.eventId,
+    occurrenceId: params.occurrenceId,
+    status: params.status,
+    search: params.search,
+    limit: params.limit,
+    offset: params.offset,
+  } satisfies Record<string, string | number | null | undefined>;
+
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== null && value !== undefined),
+  ) as ListEventRegistrationsPayload;
 }
 
 type AdminEventMutationPayload = Record<string, string | number | boolean | null>;

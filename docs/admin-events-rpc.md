@@ -43,6 +43,15 @@ Supabase admin API, and must not freely write to `events` for admin workflows.
 - `admin_update_event(event_id uuid, payload jsonb)` updates allowed event fields
   for an existing event in a community where the caller is an `admin` or
   `event_manager`.
+- `admin_list_registration_events()` returns event cards for communities where
+  the caller is an `admin` or `event_manager`, with occurrence and registration
+  status counters for the future registrations screen.
+- `admin_list_event_registrations(payload jsonb)` returns registration rows for
+  one event, optionally filtered by occurrence, status, and search text.
+- `admin_update_registration_status(registration_id uuid, next_status text,
+  reason text default null)` moves a registration between queue/review states.
+- `admin_mark_registration_attendance(registration_id uuid, attendance_status
+  text)` marks a registration as attended or no-show.
 - `admin_publish_import_item(import_item_id uuid, payload jsonb)` creates or
   updates/links an event from a reviewed import item with
   `source_type = 'website_scrape'` and `manual_override = true`.
@@ -150,11 +159,103 @@ Example:
 }
 ```
 
+## Registration Management RPCs
+
+The registrations foundation supports the future three-column web-admin view
+from `docs/prototype/admin-events-center.html`: events on the left,
+registrations in the center, and participant details on the right. This PR only
+adds backend RPCs plus TypeScript service/types. It does not add the UI screen.
+
+`admin_list_registration_events()` returns one row per event the authenticated
+caller can manage:
+
+```text
+event_id
+title
+starts_at
+event_kind
+registration_mode
+occurrence_count
+confirmed_count
+pending_count
+waitlisted_count
+cancelled_count
+rejected_count
+attended_count
+no_show_count
+```
+
+`admin_list_event_registrations(payload jsonb)` accepts camelCase or snake_case
+event and occurrence keys:
+
+```json
+{
+  "eventId": "event uuid",
+  "occurrenceId": "optional occurrence uuid",
+  "status": "pending",
+  "search": "name, email, phone, comment, or guest",
+  "limit": 100,
+  "offset": 0
+}
+```
+
+`eventId`/`event_id` is required. `occurrenceId`/`occurrence_id`, `status`,
+`search`, `limit`, and `offset` are optional. `status: "all"` is treated as no
+status filter. The RPC clamps `limit` to `1..200`.
+
+Registration rows include the registration id, event and occurrence ids,
+participant profile display name, email, phone, status, seat count, guest names,
+comment, payment status/id, registration timestamps, occurrence
+starts/ends/title, selected participation options as a JSONB array, and
+`total_amount` when it can be summed from option selections.
+
+Status transitions:
+
+```text
+admin_update_registration_status:
+  allowed next_status values: pending, confirmed, waitlisted, cancelled, rejected
+  confirmed sets confirmed_at when it was empty
+  cancelled/rejected set cancelled_at when it was empty
+  pending/confirmed/waitlisted clear cancelled_at
+
+admin_mark_registration_attendance:
+  allowed attendance_status values: attended, no_show
+  writes event_registrations.status to attended/no_show
+```
+
+The `reason` parameter on `admin_update_registration_status` is reserved for a
+future audit/notification layer. The current schema has no dedicated reason
+column, so the RPC accepts the value but does not persist it.
+
+All registration management RPCs require `auth.uid()` and verify the
+registration event's community through `has_community_role(...)` with
+`array['admin', 'event_manager']`. Execute grants are limited to
+`authenticated`.
+
+CSV export is intentionally not part of this foundation. The planned export
+format is Excel `.xlsx`, and that export will be implemented in a separate PR.
+
 ## Client Service
 
-Use `src/services/adminEventsService.ts`. It calls `supabase.rpc(...)` with the
-normal app Supabase client from `src/services/supabaseClient.ts` and normalizes
-RPC rows from snake_case to camelCase app types in `src/types/events.ts`.
+Use `src/services/adminEventsService.ts` for the React Native admin/event import
+foundation. It calls `supabase.rpc(...)` with the normal app Supabase client
+from `src/services/supabaseClient.ts` and normalizes RPC rows from snake_case to
+camelCase app types in `src/types/events.ts`.
+
+For web-admin, use `apps/admin/src/services/adminEventsService.ts`. The
+registration service methods are:
+
+```text
+listRegistrationEvents()
+listEventRegistrations(params)
+updateRegistrationStatus(registrationId, nextStatus, reason?)
+markRegistrationAttendance(registrationId, attendanceStatus)
+```
+
+The web-admin registration DTOs live in
+`apps/admin/src/types/registrations.ts`: `AdminRegistrationEventSummary`,
+`AdminEventRegistrationRow`, `AdminRegistrationStatus`, and
+`AdminRegistrationOptionSelectionSummary`.
 
 The web-admin edit UI and any dedicated `apps/admin` update service wiring can
 be connected in the next UI PR by calling `admin_update_event` with the normal
