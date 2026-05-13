@@ -35,7 +35,6 @@ export const navigationGroups: NavigationGroup[] = [
         label: "Регистрации",
         icon: "✓",
         roles: ["admin", "event_manager"],
-        badge: "1",
       },
       {
         section: "members",

@@ -161,10 +161,10 @@ Example:
 
 ## Registration Management RPCs
 
-The registrations foundation supports the future three-column web-admin view
-from `docs/prototype/admin-events-center.html`: events on the left,
-registrations in the center, and participant details on the right. This PR only
-adds backend RPCs plus TypeScript service/types. It does not add the UI screen.
+The registrations foundation supports the three-column web-admin view from
+`docs/prototype/admin-events-center.html`: events on the left, registrations in
+the center, and participant details on the right. The web-admin UI is wired to
+these RPCs in `apps/admin/src/pages/RegistrationsPage.tsx`.
 
 `admin_list_registration_events()` returns one row per event the authenticated
 caller can manage:
@@ -257,6 +257,25 @@ The web-admin registration DTOs live in
 `AdminEventRegistrationRow`, `AdminRegistrationStatus`, and
 `AdminRegistrationOptionSelectionSummary`.
 
-The web-admin edit UI and any dedicated `apps/admin` update service wiring can
-be connected in the next UI PR by calling `admin_update_event` with the normal
-authenticated Supabase client session.
+## Web Admin Registrations Screen
+
+`apps/admin` exposes the working registrations screen through the existing
+sidebar section "Registrations" / "Регистрации". The screen uses the normal
+authenticated Supabase client session and does not use service-role keys,
+Supabase Admin API, or direct database credentials.
+
+The UI loads event counters with `listRegistrationEvents()`, filters the event
+list client-side, and loads the selected event's registrations with
+`listEventRegistrations({ eventId, status, search, limit, offset })`.
+Registration rows show participant contacts, status, occurrence date/title,
+seat count, selected participation options, payment status/amount, registration
+time, and an actions menu.
+
+The detail panel shows participant contact data, event/occurrence details,
+selected options, guests, comment, payment metadata, timestamps, and action
+buttons. Status changes call `updateRegistrationStatus(...)` for `pending`,
+`confirmed`, `waitlisted`, `cancelled`, and `rejected`; attendance changes call
+`markRegistrationAttendance(...)` for `attended` and `no_show`. Destructive
+changes (`cancelled`, `rejected`, `no_show`) require confirmation in the UI.
+
+Excel `.xlsx` export remains planned as a separate PR. CSV export is not used.
