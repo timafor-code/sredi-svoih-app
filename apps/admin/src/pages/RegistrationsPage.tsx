@@ -1,32 +1,1416 @@
-import { registrationPreview } from "../data/mockAdmin";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
+
 import { Badge } from "../components/ui/Badge";
+import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
+import {
+  listEventRegistrations,
+  listRegistrationEvents,
+  markRegistrationAttendance,
+  updateRegistrationStatus,
+} from "../services/adminEventsService";
+import type { AdminBadgeTone } from "../types/admin";
+import type {
+  AdminEventRegistrationRow,
+  AdminRegistrationAttendanceStatus,
+  AdminRegistrationEventSummary,
+  AdminRegistrationOptionSelectionSummary,
+  AdminRegistrationStatus,
+  AdminRegistrationStatusUpdate,
+} from "../types/registrations";
+
+type RegistrationStatusFilter = AdminRegistrationStatus | "all";
+type ToastKind = "success" | "error";
+
+type ToastMessage = {
+  id: number;
+  kind: ToastKind;
+  message: string;
+};
+
+type RegistrationAction =
+  | {
+      kind: "status";
+      status: AdminRegistrationStatusUpdate;
+      label: string;
+      loadingLabel: string;
+      destructive?: boolean;
+      variant?: "primary" | "secondary" | "ghost" | "gold";
+    }
+  | {
+      kind: "attendance";
+      status: AdminRegistrationAttendanceStatus;
+      label: string;
+      loadingLabel: string;
+      destructive?: boolean;
+      variant?: "primary" | "secondary" | "ghost" | "gold";
+    };
+
+type PendingRegistrationAction = {
+  action: RegistrationAction;
+  registration: AdminEventRegistrationRow;
+};
+
+type ActionInFlight = {
+  registrationId: string;
+  status: AdminRegistrationStatus;
+};
+
+type RegistrationActionMenuState = {
+  registrationId: string;
+  left: number;
+  top: number;
+};
+
+const REGISTRATION_PAGE_SIZE = 50;
+const REGISTRATION_MENU_WIDTH = 232;
+const REGISTRATION_MENU_HEIGHT = 318;
+
+const STATUS_FILTERS: Array<{ value: RegistrationStatusFilter; label: string }> = [
+  { value: "all", label: "Все" },
+  { value: "pending", label: "Pending" },
+  { value: "confirmed", label: "Confirmed" },
+  { value: "waitlisted", label: "Waitlist" },
+  { value: "cancelled", label: "Cancelled" },
+  { value: "rejected", label: "Rejected" },
+  { value: "attended", label: "Attended" },
+  { value: "no_show", label: "No-show" },
+];
+
+const REGISTRATION_ACTIONS: RegistrationAction[] = [
+  {
+    kind: "status",
+    status: "confirmed",
+    label: "Подтвердить",
+    loadingLabel: "Подтверждаем...",
+    variant: "gold",
+  },
+  {
+    kind: "status",
+    status: "pending",
+    label: "Вернуть в заявку",
+    loadingLabel: "Возвращаем...",
+    variant: "secondary",
+  },
+  {
+    kind: "status",
+    status: "waitlisted",
+    label: "В лист ожидания",
+    loadingLabel: "Переносим...",
+    variant: "secondary",
+  },
+  {
+    kind: "status",
+    status: "cancelled",
+    label: "Отменить",
+    loadingLabel: "Отменяем...",
+    destructive: true,
+    variant: "primary",
+  },
+  {
+    kind: "status",
+    status: "rejected",
+    label: "Отклонить",
+    loadingLabel: "Отклоняем...",
+    destructive: true,
+    variant: "primary",
+  },
+  {
+    kind: "attendance",
+    status: "attended",
+    label: "Пришёл",
+    loadingLabel: "Отмечаем...",
+    variant: "secondary",
+  },
+  {
+    kind: "attendance",
+    status: "no_show",
+    label: "No-show",
+    loadingLabel: "Отмечаем...",
+    destructive: true,
+    variant: "primary",
+  },
+];
 
 export function RegistrationsPage() {
+  const [events, setEvents] = useState<AdminRegistrationEventSummary[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+  const [eventQuery, setEventQuery] = useState("");
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+
+  const [registrations, setRegistrations] = useState<AdminEventRegistrationRow[]>([]);
+  const [registrationsLoading, setRegistrationsLoading] = useState(false);
+  const [registrationsError, setRegistrationsError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<RegistrationStatusFilter>("all");
+  const [registrationSearch, setRegistrationSearch] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [selectedRegistrationId, setSelectedRegistrationId] = useState<string | null>(null);
+
+  const [pendingAction, setPendingAction] = useState<PendingRegistrationAction | null>(null);
+  const [actionInFlight, setActionInFlight] = useState<ActionInFlight | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const pushToast = useCallback((kind: ToastKind, message: string) => {
+    const id = Date.now() + Math.random();
+    setToasts((current) => [...current, { id, kind, message }]);
+  }, []);
+
+  const removeToast = useCallback((toastId: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== toastId));
+  }, []);
+
+  useEffect(() => {
+    if (toasts.length === 0) {
+      return undefined;
+    }
+
+    const timers = toasts.map((toast) =>
+      window.setTimeout(() => removeToast(toast.id), 5200),
+    );
+
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [removeToast, toasts]);
+
+  const loadRegistrationEventSummaries = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!silent) {
+        setEventsLoading(true);
+      }
+
+      setEventsError(null);
+
+      try {
+        const nextEvents = await listRegistrationEvents();
+
+        setEvents(nextEvents);
+        setSelectedEventId((currentEventId) => {
+          if (currentEventId && nextEvents.some((event) => event.eventId === currentEventId)) {
+            return currentEventId;
+          }
+
+          return nextEvents[0]?.eventId ?? null;
+        });
+
+        return nextEvents;
+      } catch (nextError) {
+        const message =
+          nextError instanceof Error
+            ? nextError.message
+            : "Не удалось загрузить события с регистрациями.";
+        setEventsError(message);
+        throw nextError;
+      } finally {
+        if (!silent) {
+          setEventsLoading(false);
+        }
+      }
+    },
+    [],
+  );
+
+  const loadRegistrations = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!selectedEventId) {
+        setRegistrations([]);
+        setSelectedRegistrationId(null);
+        setRegistrationsLoading(false);
+        setRegistrationsError(null);
+        return [];
+      }
+
+      if (!silent) {
+        setRegistrationsLoading(true);
+      }
+
+      setRegistrationsError(null);
+
+      try {
+        const nextRegistrations = await listEventRegistrations({
+          eventId: selectedEventId,
+          status: statusFilter,
+          search: registrationSearch.trim() || null,
+          limit: REGISTRATION_PAGE_SIZE,
+          offset,
+        });
+
+        setRegistrations(nextRegistrations);
+        setSelectedRegistrationId((currentRegistrationId) => {
+          if (
+            currentRegistrationId &&
+            nextRegistrations.some((registration) => registration.id === currentRegistrationId)
+          ) {
+            return currentRegistrationId;
+          }
+
+          return nextRegistrations[0]?.id ?? null;
+        });
+
+        return nextRegistrations;
+      } catch (nextError) {
+        const message =
+          nextError instanceof Error
+            ? nextError.message
+            : "Не удалось загрузить регистрации события.";
+        setRegistrationsError(message);
+        throw nextError;
+      } finally {
+        if (!silent) {
+          setRegistrationsLoading(false);
+        }
+      }
+    },
+    [offset, registrationSearch, selectedEventId, statusFilter],
+  );
+
+  useEffect(() => {
+    void loadRegistrationEventSummaries().catch(() => undefined);
+  }, [loadRegistrationEventSummaries]);
+
+  useEffect(() => {
+    void loadRegistrations().catch(() => undefined);
+  }, [loadRegistrations]);
+
+  const selectedEvent = useMemo(
+    () => events.find((event) => event.eventId === selectedEventId) ?? null,
+    [events, selectedEventId],
+  );
+
+  const filteredEvents = useMemo(() => {
+    const normalizedQuery = eventQuery.trim().toLocaleLowerCase("ru");
+
+    if (!normalizedQuery) {
+      return events;
+    }
+
+    return events.filter((event) => {
+      const searchableText = [
+        event.title,
+        event.startsAt,
+        event.eventKind,
+        event.registrationMode,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase("ru");
+
+      return searchableText.includes(normalizedQuery);
+    });
+  }, [eventQuery, events]);
+
+  const selectedRegistration = useMemo(
+    () =>
+      registrations.find((registration) => registration.id === selectedRegistrationId) ??
+      null,
+    [registrations, selectedRegistrationId],
+  );
+
+  const hasPreviousPage = offset > 0;
+  const hasNextPage = registrations.length === REGISTRATION_PAGE_SIZE;
+  const registrationRangeStart = registrations.length > 0 ? offset + 1 : 0;
+  const registrationRangeEnd = offset + registrations.length;
+
+  const refreshAfterAction = useCallback(async () => {
+    await Promise.all([
+      loadRegistrationEventSummaries({ silent: true }),
+      loadRegistrations({ silent: true }),
+    ]);
+  }, [loadRegistrationEventSummaries, loadRegistrations]);
+
+  const runRegistrationAction = useCallback(
+    async (registration: AdminEventRegistrationRow, action: RegistrationAction) => {
+      if (actionInFlight) {
+        return;
+      }
+
+      const nextStatus = action.status;
+      setActionInFlight({ registrationId: registration.id, status: nextStatus });
+      setActionError(null);
+
+      try {
+        if (action.kind === "status") {
+          await updateRegistrationStatus(registration.id, action.status);
+        } else {
+          await markRegistrationAttendance(registration.id, action.status);
+        }
+
+        await refreshAfterAction();
+        setPendingAction(null);
+        pushToast(
+          "success",
+          `${registration.participantDisplayName}: ${getRegistrationStatusLabel(nextStatus)}.`,
+        );
+      } catch (nextError) {
+        const message =
+          nextError instanceof Error
+            ? nextError.message
+            : "Не удалось обновить регистрацию.";
+        setActionError(message);
+        pushToast("error", message);
+      } finally {
+        setActionInFlight(null);
+      }
+    },
+    [actionInFlight, pushToast, refreshAfterAction],
+  );
+
+  const requestRegistrationAction = useCallback(
+    (registration: AdminEventRegistrationRow, action: RegistrationAction) => {
+      setActionError(null);
+
+      if (action.destructive) {
+        setPendingAction({ action, registration });
+        return;
+      }
+
+      void runRegistrationAction(registration, action);
+    },
+    [runRegistrationAction],
+  );
+
+  const confirmPendingAction = useCallback(() => {
+    if (!pendingAction) {
+      return;
+    }
+
+    void runRegistrationAction(pendingAction.registration, pendingAction.action);
+  }, [pendingAction, runRegistrationAction]);
+
+  const handleSelectEvent = useCallback((eventId: string) => {
+    setSelectedEventId(eventId);
+    setSelectedRegistrationId(null);
+    setStatusFilter("all");
+    setRegistrationSearch("");
+    setOffset(0);
+  }, []);
+
+  const handleStatusFilterChange = useCallback((nextStatus: RegistrationStatusFilter) => {
+    setStatusFilter(nextStatus);
+    setSelectedRegistrationId(null);
+    setOffset(0);
+  }, []);
+
+  const handleRegistrationSearchChange = useCallback((nextSearch: string) => {
+    setRegistrationSearch(nextSearch);
+    setSelectedRegistrationId(null);
+    setOffset(0);
+  }, []);
+
+  const refreshAll = useCallback(() => {
+    void Promise.all([
+      loadRegistrationEventSummaries(),
+      loadRegistrations(),
+    ]).catch((nextError) => {
+      pushToast(
+        "error",
+        nextError instanceof Error ? nextError.message : "Не удалось обновить регистрации.",
+      );
+    });
+  }, [loadRegistrationEventSummaries, loadRegistrations, pushToast]);
+
   return (
-    <div className="page-stack">
-      <section className="page-header">
-        <Badge tone="blue">mock</Badge>
+    <div className="page-stack page-stack--registrations">
+      <section className="page-header registrations-page-header">
+        <Badge tone="green">Supabase RPC</Badge>
         <h1>Регистрации</h1>
-        <p>Здесь появится очередь заявок и выбранные варианты участия.</p>
+        <p>
+          Рабочий центр заявок на события: список событий, таблица регистраций,
+          детали участника и управление статусами через admin registration RPC.
+        </p>
       </section>
 
-      <GlassCard className="registration-card" elevated>
-        <div className="registration-card__head">
-          <div>
-            <span>{registrationPreview.eventTitle}</span>
-            <h2>{registrationPreview.person}</h2>
-          </div>
-          <Badge tone="gold">{registrationPreview.status}</Badge>
-        </div>
-        <div className="option-list">
-          {registrationPreview.options.map((option) => (
-            <div className="option-list__item" key={option}>
-              {option}
+      <div className="registrations-workspace">
+        <GlassCard className="registrations-events-panel" elevated>
+          <div className="registrations-panel__head">
+            <div>
+              <span>События</span>
+              <strong>{events.length}</strong>
             </div>
-          ))}
-        </div>
-      </GlassCard>
+            <Button disabled={eventsLoading} onClick={refreshAll} size="sm">
+              {eventsLoading ? "..." : "Обновить"}
+            </Button>
+          </div>
+
+          <label className="registration-search-field">
+            <span>Поиск события</span>
+            <input
+              onChange={(event) => setEventQuery(event.target.value)}
+              placeholder="Название или дата"
+              type="search"
+              value={eventQuery}
+            />
+          </label>
+
+          <div className="registration-event-list">
+            {eventsLoading ? (
+              <RegistrationsState
+                description="Читаем admin_list_registration_events."
+                title="Загрузка событий"
+              />
+            ) : eventsError ? (
+              <RegistrationsState description={eventsError} title="События не загрузились">
+                <Button onClick={() => void loadRegistrationEventSummaries()} size="sm">
+                  Повторить
+                </Button>
+              </RegistrationsState>
+            ) : filteredEvents.length === 0 ? (
+              <RegistrationsState
+                description={
+                  events.length === 0
+                    ? "Для текущей сессии нет событий с доступными регистрациями."
+                    : "Измените поиск по событиям."
+                }
+                title={events.length === 0 ? "Нет событий" : "Нет совпадений"}
+              />
+            ) : (
+              filteredEvents.map((event) => (
+                <RegistrationEventCard
+                  event={event}
+                  isSelected={event.eventId === selectedEventId}
+                  key={event.eventId}
+                  onSelect={handleSelectEvent}
+                />
+              ))
+            )}
+          </div>
+        </GlassCard>
+
+        <GlassCard className="registrations-main-panel" elevated>
+          {selectedEvent ? (
+            <>
+              <div className="registrations-main-head">
+                <div>
+                  <div className="badge-row">
+                    <Badge tone="glass">{formatEventKind(selectedEvent.eventKind)}</Badge>
+                    <Badge tone="blue">
+                      {selectedEvent.occurrenceCount > 0
+                        ? `${selectedEvent.occurrenceCount} сеанс.`
+                        : "без сеансов"}
+                    </Badge>
+                  </div>
+                  <h2>{selectedEvent.title}</h2>
+                  <p>{formatDateTime(selectedEvent.startsAt)}</p>
+                </div>
+                <Button
+                  disabled={registrationsLoading || eventsLoading}
+                  onClick={refreshAll}
+                  size="sm"
+                >
+                  {registrationsLoading ? "Обновляем..." : "Обновить"}
+                </Button>
+              </div>
+
+              <RegistrationSummaryCards event={selectedEvent} />
+
+              <div className="registration-controls">
+                <div className="registration-filter-chips" aria-label="Фильтр статуса">
+                  {STATUS_FILTERS.map((filter) => (
+                    <button
+                      className={`registration-filter-chip${
+                        statusFilter === filter.value ? " registration-filter-chip--active" : ""
+                      }`}
+                      key={filter.value}
+                      onClick={() => handleStatusFilterChange(filter.value)}
+                      type="button"
+                    >
+                      {filter.label}
+                    </button>
+                  ))}
+                </div>
+
+                <label className="registration-search-field registration-search-field--wide">
+                  <span>Поиск по заявкам</span>
+                  <input
+                    onChange={(event) => handleRegistrationSearchChange(event.target.value)}
+                    placeholder="Участник, email, телефон, комментарий, гость"
+                    type="search"
+                    value={registrationSearch}
+                  />
+                </label>
+              </div>
+
+              <div className="registrations-table-panel">
+                <div className="registrations-table-panel__head">
+                  <span>
+                    Показано {registrationRangeStart}-{registrationRangeEnd}
+                  </span>
+                  <div className="registrations-pagination">
+                    <Button
+                      disabled={!hasPreviousPage || registrationsLoading}
+                      onClick={() =>
+                        setOffset((currentOffset) =>
+                          Math.max(0, currentOffset - REGISTRATION_PAGE_SIZE),
+                        )
+                      }
+                      size="sm"
+                    >
+                      Назад
+                    </Button>
+                    <Button
+                      disabled={!hasNextPage || registrationsLoading}
+                      onClick={() =>
+                        setOffset((currentOffset) => currentOffset + REGISTRATION_PAGE_SIZE)
+                      }
+                      size="sm"
+                    >
+                      Далее
+                    </Button>
+                  </div>
+                </div>
+
+                {registrationsLoading ? (
+                  <RegistrationsState
+                    description="Читаем admin_list_event_registrations для выбранного события."
+                    title="Загрузка регистраций"
+                  />
+                ) : registrationsError ? (
+                  <RegistrationsState
+                    description={registrationsError}
+                    title="Регистрации не загрузились"
+                  >
+                    <Button onClick={() => void loadRegistrations()} size="sm">
+                      Повторить
+                    </Button>
+                  </RegistrationsState>
+                ) : registrations.length === 0 ? (
+                  <RegistrationsState
+                    description={
+                      statusFilter === "all" && !registrationSearch.trim()
+                        ? "По этому событию пока нет регистраций."
+                        : "Для выбранного фильтра или поиска нет совпадений."
+                    }
+                    title="Нет заявок"
+                  />
+                ) : (
+                  <RegistrationsTable
+                    actionInFlight={actionInFlight}
+                    event={selectedEvent}
+                    onAction={requestRegistrationAction}
+                    onSelectRegistration={setSelectedRegistrationId}
+                    registrations={registrations}
+                    selectedRegistrationId={selectedRegistrationId}
+                  />
+                )}
+              </div>
+            </>
+          ) : (
+            <RegistrationsState
+              description="Выберите событие слева, чтобы открыть заявки."
+              title="Событие не выбрано"
+            />
+          )}
+        </GlassCard>
+
+        <GlassCard className="registration-detail-panel" elevated>
+          <RegistrationDetailPanel
+            actionInFlight={actionInFlight}
+            event={selectedEvent}
+            onAction={requestRegistrationAction}
+            registration={selectedRegistration}
+          />
+        </GlassCard>
+      </div>
+
+      {pendingAction ? (
+        <RegistrationConfirmDialog
+          actionError={actionError}
+          isLoading={Boolean(actionInFlight)}
+          onCancel={() => {
+            if (!actionInFlight) {
+              setPendingAction(null);
+              setActionError(null);
+            }
+          }}
+          onConfirm={confirmPendingAction}
+          pendingAction={pendingAction}
+        />
+      ) : null}
+
+      <ToastViewport onRemove={removeToast} toasts={toasts} />
     </div>
   );
+}
+
+function RegistrationEventCard({
+  event,
+  isSelected,
+  onSelect,
+}: {
+  event: AdminRegistrationEventSummary;
+  isSelected: boolean;
+  onSelect: (eventId: string) => void;
+}) {
+  return (
+    <button
+      aria-pressed={isSelected}
+      className={`registration-event-card${isSelected ? " registration-event-card--active" : ""}`}
+      onClick={() => onSelect(event.eventId)}
+      type="button"
+    >
+      <div className="registration-event-card__title">
+        <strong>{event.title}</strong>
+        <span>{formatDateTime(event.startsAt)}</span>
+      </div>
+      <div className="registration-event-card__counters">
+        <CounterPill label="ok" tone="green" value={event.confirmedCount} />
+        <CounterPill label="new" tone="gold" value={event.pendingCount} />
+        <CounterPill label="wait" tone="purple" value={event.waitlistedCount} />
+      </div>
+    </button>
+  );
+}
+
+function CounterPill({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone: AdminBadgeTone;
+  value: number;
+}) {
+  return (
+    <span className={`registration-counter registration-counter--${tone}`}>
+      <strong>{value}</strong>
+      <small>{label}</small>
+    </span>
+  );
+}
+
+function RegistrationSummaryCards({ event }: { event: AdminRegistrationEventSummary }) {
+  const inactiveCount = event.cancelledCount + event.rejectedCount;
+  const attendanceCount = event.attendedCount + event.noShowCount;
+
+  return (
+    <div className="registration-summary-grid">
+      <SummaryCard label="confirmed" tone="green" value={event.confirmedCount} />
+      <SummaryCard label="pending" tone="gold" value={event.pendingCount} />
+      <SummaryCard label="waitlisted" tone="purple" value={event.waitlistedCount} />
+      <SummaryCard
+        description={`${event.cancelledCount} отменено / ${event.rejectedCount} отклонено`}
+        label="cancelled/rejected"
+        tone="red"
+        value={inactiveCount}
+      />
+      <SummaryCard
+        description={`${event.attendedCount} пришёл / ${event.noShowCount} no-show`}
+        label="attended/no_show"
+        tone="green"
+        value={attendanceCount}
+      />
+    </div>
+  );
+}
+
+function SummaryCard({
+  description,
+  label,
+  tone,
+  value,
+}: {
+  description?: string;
+  label: string;
+  tone: AdminBadgeTone;
+  value: number;
+}) {
+  return (
+    <div className={`registration-summary-card registration-summary-card--${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {description ? <small>{description}</small> : null}
+    </div>
+  );
+}
+
+function RegistrationsTable({
+  actionInFlight,
+  event,
+  onAction,
+  onSelectRegistration,
+  registrations,
+  selectedRegistrationId,
+}: {
+  actionInFlight: ActionInFlight | null;
+  event: AdminRegistrationEventSummary;
+  onAction: (registration: AdminEventRegistrationRow, action: RegistrationAction) => void;
+  onSelectRegistration: (registrationId: string) => void;
+  registrations: AdminEventRegistrationRow[];
+  selectedRegistrationId: string | null;
+}) {
+  const [openActionMenu, setOpenActionMenu] = useState<RegistrationActionMenuState | null>(null);
+
+  useEffect(() => {
+    if (!openActionMenu) {
+      return undefined;
+    }
+
+    const handleKeyDown = (keyboardEvent: KeyboardEvent) => {
+      if (keyboardEvent.key === "Escape") {
+        setOpenActionMenu(null);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openActionMenu]);
+
+  const openRegistration = openActionMenu
+    ? registrations.find((registration) => registration.id === openActionMenu.registrationId)
+    : null;
+
+  const openActionsMenu = useCallback(
+    (registration: AdminEventRegistrationRow, button: HTMLButtonElement) => {
+      const rect = button.getBoundingClientRect();
+      const safePadding = 12;
+      const left = Math.max(
+        safePadding,
+        Math.min(
+          rect.right - REGISTRATION_MENU_WIDTH,
+          window.innerWidth - REGISTRATION_MENU_WIDTH - safePadding,
+        ),
+      );
+      const top = Math.max(
+        safePadding,
+        Math.min(
+          rect.bottom + 8,
+          window.innerHeight - REGISTRATION_MENU_HEIGHT - safePadding,
+        ),
+      );
+
+      setOpenActionMenu((current) =>
+        current?.registrationId === registration.id
+          ? null
+          : {
+              registrationId: registration.id,
+              left,
+              top,
+            },
+      );
+    },
+    [],
+  );
+
+  return (
+    <div className="registrations-table-scroll">
+      <div
+        aria-label="Регистрации события"
+        className="data-table data-table--registrations"
+        role="table"
+      >
+        <div className="data-table__row data-table__row--head" role="row">
+          <span role="columnheader">Участник</span>
+          <span role="columnheader">Контакты</span>
+          <span role="columnheader">Статус</span>
+          <span role="columnheader">Дата/сеанс</span>
+          <span role="columnheader">Мест</span>
+          <span role="columnheader">Опции</span>
+          <span role="columnheader">Оплата</span>
+          <span role="columnheader">Заявка</span>
+          <span role="columnheader">Действия</span>
+        </div>
+
+        {registrations.map((registration) => {
+          const isSelected = registration.id === selectedRegistrationId;
+
+          return (
+            <div
+              className={`data-table__row data-table__row--registration${
+                isSelected ? " data-table__row--registration-selected" : ""
+              }`}
+              key={registration.id}
+              onClick={() => onSelectRegistration(registration.id)}
+              onKeyDown={(keyboardEvent) => {
+                if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+                  keyboardEvent.preventDefault();
+                  onSelectRegistration(registration.id);
+                }
+              }}
+              role="row"
+              tabIndex={0}
+            >
+              <div className="registration-table-person" role="cell">
+                <span className="registration-avatar" aria-hidden="true">
+                  {getInitials(registration.participantDisplayName)}
+                </span>
+                <div>
+                  <strong>{registration.participantDisplayName}</strong>
+                  {registration.guestNames.length > 0 ? (
+                    <small>{registration.guestNames.length} гост.</small>
+                  ) : null}
+                </div>
+              </div>
+              <div className="registration-table-stack" role="cell">
+                <span>{registration.email ?? "email не указан"}</span>
+                <small>{registration.phone ?? "телефон не указан"}</small>
+              </div>
+              <span role="cell">
+                <Badge tone={getRegistrationStatusTone(registration.status)}>
+                  {getRegistrationStatusLabel(registration.status)}
+                </Badge>
+              </span>
+              <div className="registration-table-stack" role="cell">
+                <span>{formatOccurrenceLabel(registration, event)}</span>
+                {registration.occurrenceTitle ? <small>{registration.occurrenceTitle}</small> : null}
+              </div>
+              <span role="cell">{registration.seatsCount}</span>
+              <div className="registration-table-stack" role="cell">
+                <span>{formatOptionsCompact(registration.selectedOptions)}</span>
+                {registration.selectedOptions.length > 2 ? (
+                  <small>+{registration.selectedOptions.length - 2} ещё</small>
+                ) : null}
+              </div>
+              <div className="registration-table-stack" role="cell">
+                <span>{formatPaymentStatus(registration.paymentStatus)}</span>
+                <small>{formatRegistrationAmount(registration)}</small>
+              </div>
+              <span role="cell">{formatDateTime(registration.registeredAt)}</span>
+              <div
+                aria-label={`Действия: ${registration.participantDisplayName}`}
+                className="event-table__actions"
+                role="cell"
+              >
+                <button
+                  aria-expanded={openActionMenu?.registrationId === registration.id}
+                  aria-haspopup="menu"
+                  aria-label={`Действия регистрации: ${registration.participantDisplayName}`}
+                  className="event-action-dots"
+                  disabled={Boolean(actionInFlight)}
+                  onClick={(clickEvent) => {
+                    clickEvent.stopPropagation();
+                    openActionsMenu(registration, clickEvent.currentTarget);
+                  }}
+                  onMouseDown={(mouseEvent) => {
+                    mouseEvent.stopPropagation();
+                  }}
+                  type="button"
+                >
+                  ...
+                </button>
+              </div>
+            </div>
+          );
+        })}
+
+        {openActionMenu && openRegistration ? (
+          <RegistrationOverflowMenu
+            actionInFlight={actionInFlight}
+            left={openActionMenu.left}
+            onAction={(registration, action) => {
+              setOpenActionMenu(null);
+              onAction(registration, action);
+            }}
+            onClose={() => setOpenActionMenu(null)}
+            registration={openRegistration}
+            top={openActionMenu.top}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function RegistrationOverflowMenu({
+  actionInFlight,
+  left,
+  onAction,
+  onClose,
+  registration,
+  top,
+}: {
+  actionInFlight: ActionInFlight | null;
+  left: number;
+  onAction: (registration: AdminEventRegistrationRow, action: RegistrationAction) => void;
+  onClose: () => void;
+  registration: AdminEventRegistrationRow;
+  top: number;
+}) {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div className="event-overflow-layer" onClick={onClose}>
+      <div
+        className="event-overflow-menu registration-action-menu"
+        onClick={(clickEvent) => clickEvent.stopPropagation()}
+        role="menu"
+        style={{ left, top }}
+      >
+        {REGISTRATION_ACTIONS.map((action) => {
+          const isCurrentStatus = registration.status === action.status;
+          const isLoading =
+            actionInFlight?.registrationId === registration.id &&
+            actionInFlight.status === action.status;
+
+          return (
+            <button
+              className={`event-overflow-menu__item registration-action-menu__item${
+                action.destructive ? " registration-action-menu__item--danger" : ""
+              }`}
+              disabled={Boolean(actionInFlight) || isCurrentStatus}
+              key={`${action.kind}-${action.status}`}
+              onClick={() => onAction(registration, action)}
+              role="menuitem"
+              type="button"
+            >
+              {isLoading ? action.loadingLabel : action.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function RegistrationDetailPanel({
+  actionInFlight,
+  event,
+  onAction,
+  registration,
+}: {
+  actionInFlight: ActionInFlight | null;
+  event: AdminRegistrationEventSummary | null;
+  onAction: (registration: AdminEventRegistrationRow, action: RegistrationAction) => void;
+  registration: AdminEventRegistrationRow | null;
+}) {
+  if (!registration || !event) {
+    return (
+      <RegistrationsState
+        description="Выберите строку в таблице, чтобы открыть контакты, опции и историю статусов."
+        title="Заявка не выбрана"
+      />
+    );
+  }
+
+  return (
+    <div className="registration-detail">
+      <div className="registration-detail__profile">
+        <span className="registration-avatar registration-avatar--large" aria-hidden="true">
+          {getInitials(registration.participantDisplayName)}
+        </span>
+        <h2>{registration.participantDisplayName}</h2>
+        <div className="badge-row">
+          <Badge tone={getRegistrationStatusTone(registration.status)}>
+            {getRegistrationStatusLabel(registration.status)}
+          </Badge>
+          <Badge tone="glass">{registration.seatsCount} мест</Badge>
+        </div>
+      </div>
+
+      <DetailSection title="Контакты">
+        <DetailRow label="Email" value={registration.email ?? "Не указан"} />
+        <DetailRow label="Телефон" value={registration.phone ?? "Не указан"} />
+        <DetailRow label="User ID" value={registration.userId} />
+      </DetailSection>
+
+      <DetailSection title="Событие и сеанс">
+        <DetailRow label="Событие" value={event.title} />
+        <DetailRow label="Дата" value={formatOccurrenceLabel(registration, event)} />
+        <DetailRow
+          label="Сеанс"
+          value={registration.occurrenceTitle ?? "Без отдельного сеанса"}
+        />
+      </DetailSection>
+
+      <DetailSection title="Опции участия">
+        {registration.selectedOptions.length > 0 ? (
+          <div className="registration-options-list">
+            {registration.selectedOptions.map((option) => (
+              <div className="registration-option-row" key={option.id || option.title}>
+                <div>
+                  <strong>{option.title}</strong>
+                  <span>
+                    {option.isDonation ? "Пожертвование" : option.optionType} × {option.quantity}
+                  </span>
+                </div>
+                <div>
+                  <strong>{formatMoney(option.totalAmount, option.currency)}</strong>
+                  <span>{option.isDonation ? "не место" : `${option.seatsCount} мест`}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="registration-detail__muted">Опции не выбраны.</p>
+        )}
+      </DetailSection>
+
+      <DetailSection title="Гости и комментарий">
+        {registration.guestNames.length > 0 ? (
+          <div className="registration-guest-list">
+            {registration.guestNames.map((guestName) => (
+              <span key={guestName}>{guestName}</span>
+            ))}
+          </div>
+        ) : (
+          <p className="registration-detail__muted">Гости не указаны.</p>
+        )}
+        <DetailRow label="Комментарий" value={registration.comment ?? "Нет комментария"} />
+      </DetailSection>
+
+      <DetailSection title="Оплата">
+        <DetailRow label="Статус" value={formatPaymentStatus(registration.paymentStatus)} />
+        <DetailRow label="Сумма" value={formatRegistrationAmount(registration)} />
+        <DetailRow label="Payment ID" value={registration.paymentId ?? "Не указан"} />
+      </DetailSection>
+
+      <DetailSection title="История">
+        <DetailRow label="Зарегистрирован" value={formatDateTime(registration.registeredAt)} />
+        <DetailRow label="Подтверждён" value={formatDateTime(registration.confirmedAt)} />
+        <DetailRow label="Отменён/отклонён" value={formatDateTime(registration.cancelledAt)} />
+      </DetailSection>
+
+      <DetailSection title="Действия">
+        <div className="registration-detail-actions">
+          {REGISTRATION_ACTIONS.map((action) => {
+            const isCurrentStatus = registration.status === action.status;
+            const isLoading =
+              actionInFlight?.registrationId === registration.id &&
+              actionInFlight.status === action.status;
+
+            return (
+              <Button
+                disabled={Boolean(actionInFlight) || isCurrentStatus}
+                key={`${action.kind}-${action.status}`}
+                onClick={() => onAction(registration, action)}
+                size="sm"
+                variant={action.variant ?? "secondary"}
+              >
+                {isLoading ? action.loadingLabel : action.label}
+              </Button>
+            );
+          })}
+        </div>
+      </DetailSection>
+    </div>
+  );
+}
+
+function DetailSection({
+  children,
+  title,
+}: {
+  children: ReactNode;
+  title: string;
+}) {
+  return (
+    <section className="registration-detail-section">
+      <h3>{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="registration-detail-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function RegistrationConfirmDialog({
+  actionError,
+  isLoading,
+  onCancel,
+  onConfirm,
+  pendingAction,
+}: {
+  actionError: string | null;
+  isLoading: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  pendingAction: PendingRegistrationAction;
+}) {
+  const nextStatus = pendingAction.action.status;
+
+  return (
+    <div
+      className="event-action-dialog-backdrop"
+      onMouseDown={(mouseEvent) => {
+        if (mouseEvent.target === mouseEvent.currentTarget && !isLoading) {
+          onCancel();
+        }
+      }}
+    >
+      <section
+        aria-labelledby="registration-action-dialog-title"
+        aria-modal="true"
+        className="event-action-dialog registration-action-dialog"
+        role="dialog"
+      >
+        <div className="event-action-dialog__head">
+          <div>
+            <Badge tone={getRegistrationStatusTone(nextStatus)}>
+              {getRegistrationStatusLabel(nextStatus)}
+            </Badge>
+            <h2 id="registration-action-dialog-title">Подтвердить действие</h2>
+          </div>
+          <Button disabled={isLoading} onClick={onCancel} variant="ghost">
+            Закрыть
+          </Button>
+        </div>
+
+        <div className="event-action-dialog__event">
+          <span>Заявка</span>
+          <strong>{pendingAction.registration.participantDisplayName}</strong>
+        </div>
+
+        <div className="event-action-dialog__states">
+          <div className="event-action-state">
+            <span>Сейчас</span>
+            <Badge tone={getRegistrationStatusTone(pendingAction.registration.status)}>
+              {getRegistrationStatusLabel(pendingAction.registration.status)}
+            </Badge>
+          </div>
+
+          <div className="event-action-state event-action-state--next">
+            <span>Будет</span>
+            <Badge tone={getRegistrationStatusTone(nextStatus)}>
+              {getRegistrationStatusLabel(nextStatus)}
+            </Badge>
+          </div>
+        </div>
+
+        <div className="event-action-dialog__notice event-action-dialog__notice--danger">
+          <p>{getDestructiveActionDescription(nextStatus)}</p>
+        </div>
+
+        {actionError ? (
+          <div className="form-error" role="alert">
+            {actionError}
+          </div>
+        ) : null}
+
+        <div className="event-action-dialog__actions">
+          <Button disabled={isLoading} onClick={onCancel} variant="secondary">
+            Отмена
+          </Button>
+          <Button disabled={isLoading} onClick={onConfirm} variant="primary">
+            {isLoading ? pendingAction.action.loadingLabel : pendingAction.action.label}
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ToastViewport({
+  onRemove,
+  toasts,
+}: {
+  onRemove: (toastId: number) => void;
+  toasts: ToastMessage[];
+}) {
+  if (toasts.length === 0 || typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div className="registration-toast-stack" role="status">
+      {toasts.map((toast) => (
+        <button
+          className={`registration-toast registration-toast--${toast.kind}`}
+          key={toast.id}
+          onClick={() => onRemove(toast.id)}
+          type="button"
+        >
+          {toast.message}
+        </button>
+      ))}
+    </div>,
+    document.body,
+  );
+}
+
+function RegistrationsState({
+  children,
+  description,
+  title,
+}: {
+  children?: ReactNode;
+  description: string;
+  title: string;
+}) {
+  return (
+    <div className="registrations-state" role="status">
+      <h3>{title}</h3>
+      <p>{description}</p>
+      {children ? <div className="registrations-state__actions">{children}</div> : null}
+    </div>
+  );
+}
+
+function formatDateTime(value: string | null): string {
+  if (!value) {
+    return "Не указано";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function formatOccurrenceLabel(
+  registration: AdminEventRegistrationRow,
+  event: AdminRegistrationEventSummary,
+): string {
+  if (registration.occurrenceStartsAt) {
+    return formatDateTime(registration.occurrenceStartsAt);
+  }
+
+  if (event.startsAt) {
+    return formatDateTime(event.startsAt);
+  }
+
+  return "Без отдельного сеанса";
+}
+
+function formatOptionsCompact(options: AdminRegistrationOptionSelectionSummary[]): string {
+  if (options.length === 0) {
+    return "Без опций";
+  }
+
+  return options
+    .slice(0, 2)
+    .map((option) => {
+      const title = option.isDonation ? `Пожертвование: ${option.title}` : option.title;
+      const amount =
+        option.totalAmount > 0
+          ? ` · ${formatMoney(option.totalAmount, option.currency)}`
+          : "";
+      return `${title} × ${option.quantity}${amount}`;
+    })
+    .join(", ");
+}
+
+function formatRegistrationAmount(registration: AdminEventRegistrationRow): string {
+  const amount =
+    registration.totalAmount ??
+    registration.selectedOptions.reduce((sum, option) => sum + option.totalAmount, 0);
+  const hasAmount =
+    registration.totalAmount !== null ||
+    registration.selectedOptions.some((option) => option.totalAmount > 0);
+  const currency = registration.selectedOptions[0]?.currency ?? "RUB";
+
+  return hasAmount ? formatMoney(amount, currency) : "Без суммы";
+}
+
+function formatMoney(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("ru-RU", {
+      currency,
+      maximumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+      style: "currency",
+    }).format(amount);
+  } catch {
+    return `${amount.toLocaleString("ru-RU")} ${currency}`;
+  }
+}
+
+function formatPaymentStatus(status: string): string {
+  const labels: Record<string, string> = {
+    cancelled: "Отменено",
+    failed: "Ошибка оплаты",
+    not_required: "Не требуется",
+    paid: "Оплачено",
+    pending: "Ожидает оплаты",
+    refunded: "Возврат",
+  };
+
+  return labels[status] ?? status;
+}
+
+function getRegistrationStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    attended: "Пришёл",
+    cancelled: "Отменено",
+    confirmed: "Подтверждено",
+    no_show: "No-show",
+    pending: "Заявка",
+    rejected: "Отклонено",
+    waitlisted: "Лист ожидания",
+  };
+
+  return labels[status] ?? status;
+}
+
+function getRegistrationStatusTone(status: string): AdminBadgeTone {
+  if (status === "confirmed" || status === "attended") {
+    return "green";
+  }
+
+  if (status === "pending") {
+    return "gold";
+  }
+
+  if (status === "waitlisted") {
+    return "purple";
+  }
+
+  if (status === "rejected" || status === "no_show") {
+    return "red";
+  }
+
+  if (status === "cancelled") {
+    return "muted";
+  }
+
+  return "glass";
+}
+
+function getDestructiveActionDescription(status: string): string {
+  if (status === "cancelled") {
+    return "Заявка будет отменена через admin_update_registration_status. Участник исчезнет из текущего фильтра, если он не показывает отменённые заявки.";
+  }
+
+  if (status === "rejected") {
+    return "Заявка будет отклонена через admin_update_registration_status. Используйте это только для заявок, которые не должны попасть в подтверждённые.";
+  }
+
+  return "Регистрация будет отмечена как No-show через admin_mark_registration_attendance.";
+}
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length === 0) {
+    return "?";
+  }
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part.slice(0, 1).toLocaleUpperCase("ru"))
+    .join("");
+}
+
+function formatEventKind(eventKind: string): string {
+  const labels: Record<string, string> = {
+    recurring: "повторяющееся",
+    single: "одно событие",
+  };
+
+  return labels[eventKind] ?? eventKind;
 }
