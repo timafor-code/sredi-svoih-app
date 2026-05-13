@@ -1324,6 +1324,13 @@ a {
   color: #ff9ca2;
 }
 
+.event-overflow-menu__item--delete {
+  margin-top: 4px;
+  border-top: 1px solid rgba(255, 88, 96, 0.22);
+  border-radius: 0 0 6px 6px;
+  color: #ff6f78;
+}
+
 .event-overflow-menu__item--publish {
   color: var(--gold);
 }
@@ -1442,6 +1449,11 @@ a {
   border-left: 3px solid var(--gold);
   padding: 11px 13px;
   background: rgba(242, 184, 75, 0.08);
+}
+
+.event-action-dialog__notice--danger {
+  border-left-color: var(--red);
+  background: rgba(255, 59, 72, 0.1);
 }
 
 .event-action-dialog__actions {

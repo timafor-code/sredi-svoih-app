@@ -10,7 +10,11 @@ import { createPortal } from "react-dom";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
-import { listAdminEvents, updateAdminEvent } from "../services/adminEventsService";
+import {
+  deleteAdminEvent,
+  listAdminEvents,
+  updateAdminEvent,
+} from "../services/adminEventsService";
 import type { AdminBadgeTone } from "../types/admin";
 import {
   ADMIN_EVENT_REGISTRATION_MODES,
@@ -138,7 +142,7 @@ const EVENT_OVERFLOW_STATUS_ACTION_IDS: EventStatusActionId[] = [
 ];
 
 const EVENT_OVERFLOW_MENU_WIDTH = 220;
-const EVENT_OVERFLOW_MENU_HEIGHT = 292;
+const EVENT_OVERFLOW_MENU_HEIGHT = 326;
 
 export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: EventsPageProps) {
   const [events, setEvents] = useState<AdminEvent[]>([]);
@@ -154,6 +158,9 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
   const [actionInFlight, setActionInFlight] = useState<PendingEventAction | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [pendingDeleteEvent, setPendingDeleteEvent] = useState<AdminEvent | null>(null);
+  const [deleteInFlightEvent, setDeleteInFlightEvent] = useState<AdminEvent | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadEvents = useCallback(async () => {
     setLoading(true);
@@ -249,6 +256,16 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
 
   const requestStatusAction = useCallback((event: AdminEvent, action: EventStatusAction) => {
     setPendingAction({ action, event });
+    setPendingDeleteEvent(null);
+    setActionError(null);
+    setDeleteError(null);
+    setActionSuccess(null);
+  }, []);
+
+  const requestDeleteEvent = useCallback((event: AdminEvent) => {
+    setPendingDeleteEvent(event);
+    setPendingAction(null);
+    setDeleteError(null);
     setActionError(null);
     setActionSuccess(null);
   }, []);
@@ -266,6 +283,13 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
       setActionError(null);
     }
   }, [actionInFlight]);
+
+  const cancelDeleteEvent = useCallback(() => {
+    if (!deleteInFlightEvent) {
+      setPendingDeleteEvent(null);
+      setDeleteError(null);
+    }
+  }, [deleteInFlightEvent]);
 
   const confirmStatusAction = useCallback(async () => {
     if (!pendingAction || actionInFlight) {
@@ -297,6 +321,32 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
       setActionInFlight(null);
     }
   }, [actionInFlight, loadEvents, pendingAction]);
+
+  const confirmDeleteEvent = useCallback(async () => {
+    if (!pendingDeleteEvent || deleteInFlightEvent || actionInFlight) {
+      return;
+    }
+
+    setDeleteInFlightEvent(pendingDeleteEvent);
+    setDeleteError(null);
+    setActionSuccess(null);
+
+    try {
+      await deleteAdminEvent(pendingDeleteEvent.id);
+      await loadEvents();
+
+      setPendingDeleteEvent(null);
+      setActionSuccess(`Событие «${pendingDeleteEvent.title}» удалено.`);
+    } catch (nextError) {
+      setDeleteError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Не удалось удалить событие через admin_delete_event.",
+      );
+    } finally {
+      setDeleteInFlightEvent(null);
+    }
+  }, [actionInFlight, deleteInFlightEvent, loadEvents, pendingDeleteEvent]);
 
   const pendingActionPlan = pendingAction
     ? buildEventStatusActionPlan(pendingAction.event, pendingAction.action)
@@ -457,9 +507,11 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
         ) : (
           <EventsTable
             actionInFlight={actionInFlight}
+            deleteInFlightEvent={deleteInFlightEvent}
             events={filteredEvents}
             onDuplicateEvent={handleDuplicateEvent}
             onEditEvent={onEditEvent}
+            onRequestDeleteEvent={requestDeleteEvent}
             onRequestStatusAction={requestStatusAction}
           />
         )}
@@ -474,21 +526,35 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
           plan={pendingActionPlan}
         />
       ) : null}
+
+      {pendingDeleteEvent ? (
+        <EventDeleteDialog
+          error={deleteError}
+          event={pendingDeleteEvent}
+          isLoading={Boolean(deleteInFlightEvent)}
+          onCancel={cancelDeleteEvent}
+          onConfirm={confirmDeleteEvent}
+        />
+      ) : null}
     </div>
   );
 }
 
 function EventsTable({
   actionInFlight,
+  deleteInFlightEvent,
   events,
   onDuplicateEvent,
   onEditEvent,
+  onRequestDeleteEvent,
   onRequestStatusAction,
 }: {
   actionInFlight: PendingEventAction | null;
+  deleteInFlightEvent: AdminEvent | null;
   events: AdminEvent[];
   onDuplicateEvent: (event: AdminEvent) => void;
   onEditEvent: (event: AdminEvent) => void;
+  onRequestDeleteEvent: (event: AdminEvent) => void;
   onRequestStatusAction: (event: AdminEvent, action: EventStatusAction) => void;
 }) {
   const [openActionMenu, setOpenActionMenu] = useState<EventActionMenuState | null>(null);
@@ -642,11 +708,13 @@ function EventsTable({
         {openActionMenu && openActionMenuEvent ? (
           <EventOverflowMenu
             actionInFlight={actionInFlight}
+            deleteInFlightEvent={deleteInFlightEvent}
             event={openActionMenuEvent}
             left={openActionMenu.left}
             onClose={() => setOpenActionMenu(null)}
             onDuplicateEvent={onDuplicateEvent}
             onEditEvent={onEditEvent}
+            onRequestDeleteEvent={onRequestDeleteEvent}
             onRequestStatusAction={onRequestStatusAction}
             top={openActionMenu.top}
           />
@@ -658,26 +726,31 @@ function EventsTable({
 
 function EventOverflowMenu({
   actionInFlight,
+  deleteInFlightEvent,
   event,
   left,
   onClose,
   onDuplicateEvent,
   onEditEvent,
+  onRequestDeleteEvent,
   onRequestStatusAction,
   top,
 }: {
   actionInFlight: PendingEventAction | null;
+  deleteInFlightEvent: AdminEvent | null;
   event: AdminEvent;
   left: number;
   onClose: () => void;
   onDuplicateEvent: (event: AdminEvent) => void;
   onEditEvent: (event: AdminEvent) => void;
+  onRequestDeleteEvent: (event: AdminEvent) => void;
   onRequestStatusAction: (event: AdminEvent, action: EventStatusAction) => void;
   top: number;
 }) {
   const activeActionId =
     actionInFlight?.event.id === event.id ? actionInFlight.action.id : null;
-  const isActionDisabled = Boolean(actionInFlight);
+  const isDeleteInFlight = deleteInFlightEvent?.id === event.id;
+  const isActionDisabled = Boolean(actionInFlight || deleteInFlightEvent);
   const availableActionIds = new Set(
     getVisibleEventStatusActions(event).map((action) => action.id),
   );
@@ -701,6 +774,7 @@ function EventOverflowMenu({
       >
         <button
           className="event-overflow-menu__item"
+          disabled={isActionDisabled}
           onClick={() => {
             onClose();
             onEditEvent(event);
@@ -758,6 +832,18 @@ function EventOverflowMenu({
             </button>
           );
         })}
+        <button
+          className="event-overflow-menu__item event-overflow-menu__item--delete"
+          disabled={isActionDisabled}
+          onClick={() => {
+            onClose();
+            onRequestDeleteEvent(event);
+          }}
+          role="menuitem"
+          type="button"
+        >
+          {isDeleteInFlight ? "Удаляем..." : "Удалить"}
+        </button>
       </div>
     </div>,
     document.body,
@@ -851,6 +937,79 @@ function EventStatusActionDialog({
           </Button>
           <Button disabled={isLoading} onClick={onConfirm} variant={plan.action.variant}>
             {isLoading ? plan.action.loadingLabel : plan.action.confirmLabel}
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function EventDeleteDialog({
+  error,
+  event,
+  isLoading,
+  onCancel,
+  onConfirm,
+}: {
+  error: string | null;
+  event: AdminEvent;
+  isLoading: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="event-action-dialog-backdrop"
+      onMouseDown={(mouseEvent) => {
+        if (mouseEvent.target === mouseEvent.currentTarget && !isLoading) {
+          onCancel();
+        }
+      }}
+    >
+      <section
+        aria-labelledby="event-delete-dialog-title"
+        aria-modal="true"
+        className="event-action-dialog event-action-dialog--delete"
+        role="dialog"
+      >
+        <div className="event-action-dialog__head">
+          <div>
+            <Badge tone="red">Удаление</Badge>
+            <h2 id="event-delete-dialog-title">Удалить событие?</h2>
+          </div>
+        </div>
+
+        <div className="event-action-dialog__event">
+          <span>Событие</span>
+          <strong>{event.title}</strong>
+        </div>
+
+        <div className="event-action-dialog__notice event-action-dialog__notice--danger">
+          <p>
+            Это действие полностью удалит запись события из базы. Его нельзя будет
+            восстановить из админки.
+          </p>
+        </div>
+
+        <div className="event-action-dialog__notice">
+          <p>
+            Если событие нужно просто убрать из приложения, используйте «Скрыть» или
+            «В архив».
+          </p>
+        </div>
+
+        {error ? (
+          <div className="form-error" role="alert">
+            {error}
+          </div>
+        ) : null}
+
+        <div className="event-action-dialog__actions">
+          <Button disabled={isLoading} onClick={onCancel} variant="secondary">
+            Отмена
+          </Button>
+          <Button disabled={isLoading} onClick={onConfirm} variant="primary">
+            {isLoading ? "Удаляем..." : "Удалить событие"}
           </Button>
         </div>
       </section>

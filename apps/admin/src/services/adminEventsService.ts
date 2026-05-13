@@ -8,6 +8,7 @@ import type {
 } from "../types/events";
 
 type SupabaseSelectError = {
+  code?: string;
   message?: string;
   details?: string | null;
   hint?: string | null;
@@ -172,6 +173,28 @@ export async function updateAdminEvent(
 
   if (error) {
     throw new Error(formatSupabaseError("Update admin event", error));
+  }
+
+  return normalizeSingleAdminEvent(data as Partial<AdminEventRow> | Partial<AdminEventRow>[] | null);
+}
+
+export async function deleteAdminEvent(eventId: string): Promise<AdminEvent> {
+  const supabase = requireSupabaseClient();
+  const { data, error } = await supabase.rpc("admin_delete_event", {
+    event_id: eventId,
+  });
+
+  if (error) {
+    if (
+      error.code === "PGRST202" ||
+      error.message?.includes("public.admin_delete_event")
+    ) {
+      throw new Error(
+        "RPC admin_delete_event не найдена в Supabase. Примените миграцию 20260513120000_admin_delete_event_rpc.sql к базе, к которой подключена админка, и повторите удаление.",
+      );
+    }
+
+    throw new Error(formatSupabaseError("Delete admin event", error));
   }
 
   return normalizeSingleAdminEvent(data as Partial<AdminEventRow> | Partial<AdminEventRow>[] | null);
