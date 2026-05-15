@@ -18,12 +18,13 @@ import {
   getRegistrationStatusTitle,
   useEventRegistrationAction,
 } from '@/hooks/useEventRegistrationAction';
-import { isEventPast, parseEventTime } from '@/lib/eventTime';
+import { isEventPast } from '@/lib/eventTime';
 import {
-  formatRegistrationDateTime,
-  getNextRegistrationOpening,
+  formatRegistrationWindowLabel,
+  getNearestFutureOpening,
+  getNearestOccurrence,
   getOpenOccurrences,
-  getRegistrationWindowInfo,
+  getUnavailableRegistrationText,
 } from '@/lib/registrationWindow';
 import { listEventOccurrences } from '@/services/eventOccurrencesService';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -156,15 +157,6 @@ type PaidRegistrationAvailability = {
   unavailableReason: string | null;
 };
 
-function getNearestOccurrence(
-  occurrences: EventOccurrence[],
-): EventOccurrence | null {
-  return [...occurrences].sort((first, second) => (
-    (parseEventTime(first.startsAt) ?? Number.POSITIVE_INFINITY)
-    - (parseEventTime(second.startsAt) ?? Number.POSITIVE_INFINITY)
-  ))[0] ?? null;
-}
-
 function getPaidRegistrationAvailability(
   occurrences: EventOccurrence[],
   loading: boolean,
@@ -192,11 +184,11 @@ function getPaidRegistrationAvailability(
 
   if (occurrences.length === 0) {
     return {
-      canRegister: true,
+      canRegister: false,
       hasOccurrences: false,
       loading: false,
-      statusLabel: null,
-      unavailableReason: null,
+      statusLabel: 'Регистрация сейчас недоступна',
+      unavailableReason: getUnavailableRegistrationText(occurrences),
     };
   }
 
@@ -212,20 +204,16 @@ function getPaidRegistrationAvailability(
     };
   }
 
-  const nextOpening = getNextRegistrationOpening(occurrences);
+  const nextOpening = getNearestFutureOpening(occurrences);
   const nearestOccurrence = getNearestOccurrence(occurrences);
-  const nearestWindow = getRegistrationWindowInfo(nearestOccurrence);
 
   if (nextOpening?.registrationOpensAt) {
     return {
       canRegister: false,
       hasOccurrences: true,
       loading: false,
-      statusLabel: getRegistrationWindowInfo(nextOpening).label,
-      unavailableReason: `Запись откроется ${formatRegistrationDateTime(
-        nextOpening.registrationOpensAt,
-        nextOpening.timezone,
-      )}`,
+      statusLabel: formatRegistrationWindowLabel(nextOpening),
+      unavailableReason: getUnavailableRegistrationText(occurrences),
     };
   }
 
@@ -233,10 +221,8 @@ function getPaidRegistrationAvailability(
     canRegister: false,
     hasOccurrences: true,
     loading: false,
-    statusLabel: nearestWindow.label,
-    unavailableReason: nearestWindow.state === 'closed'
-      ? 'Запись на ближайший сеанс закрыта'
-      : 'Нет доступных сеансов для записи',
+    statusLabel: formatRegistrationWindowLabel(nearestOccurrence),
+    unavailableReason: getUnavailableRegistrationText(occurrences),
   };
 }
 
@@ -572,11 +558,27 @@ export default function EventDetailScreen() {
   }, [eventId, loadEventById]);
 
   const handleOpenPaidRegistration = useCallback((targetEvent: EventItem) => {
+    const openOccurrences = getOpenOccurrences(
+      paidOccurrencesLoadedEventId === targetEvent.id ? paidOccurrences : [],
+    );
+
+    if (openOccurrences.length === 0) {
+      return;
+    }
+
+    if (openOccurrences.length === 1) {
+      router.push({
+        pathname: '/events/paid-options',
+        params: { eventId: targetEvent.id, occurrenceId: openOccurrences[0].id },
+      });
+      return;
+    }
+
     router.push({
-      pathname: '/events/paid-options',
+      pathname: '/events/paid-occurrences',
       params: { eventId: targetEvent.id },
     });
-  }, [router]);
+  }, [paidOccurrences, paidOccurrencesLoadedEventId, router]);
 
   const conditionRows = useMemo(() => {
     if (!event) {

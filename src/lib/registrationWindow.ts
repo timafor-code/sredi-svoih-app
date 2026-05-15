@@ -139,7 +139,21 @@ export function getOpenOccurrences(
   return occurrences.filter((occurrence) => isRegistrationWindowOpen(occurrence, now));
 }
 
-export function getNextRegistrationOpening(
+function parseOccurrenceStartTime(occurrence: EventOccurrence): number {
+  const time = parseTime(occurrence.startsAt);
+
+  return time ?? Number.POSITIVE_INFINITY;
+}
+
+export function getNearestOccurrence(
+  occurrences: EventOccurrence[],
+): EventOccurrence | null {
+  return [...occurrences].sort((first, second) => (
+    parseOccurrenceStartTime(first) - parseOccurrenceStartTime(second)
+  ))[0] ?? null;
+}
+
+export function getNearestFutureOpening(
   occurrences: EventOccurrence[],
   now: Date | number = Date.now(),
 ): EventOccurrence | null {
@@ -156,4 +170,38 @@ export function getNextRegistrationOpening(
       (parseTime(first.registrationOpensAt) ?? Number.POSITIVE_INFINITY)
       - (parseTime(second.registrationOpensAt) ?? Number.POSITIVE_INFINITY)
     ))[0] ?? null;
+}
+
+export function getNextRegistrationOpening(
+  occurrences: EventOccurrence[],
+  now: Date | number = Date.now(),
+): EventOccurrence | null {
+  return getNearestFutureOpening(occurrences, now);
+}
+
+export function formatRegistrationWindowLabel(
+  occurrence: EventOccurrence | null | undefined,
+  now: Date | number = Date.now(),
+): string {
+  return getRegistrationWindowInfo(occurrence, now).label;
+}
+
+export function getUnavailableRegistrationText(
+  occurrences: EventOccurrence[],
+  now: Date | number = Date.now(),
+): string {
+  const nextOpening = getNearestFutureOpening(occurrences, now);
+
+  if (nextOpening?.registrationOpensAt) {
+    return `Запись откроется ${formatRegistrationDateTime(
+      nextOpening.registrationOpensAt,
+      nextOpening.timezone,
+    )}`;
+  }
+
+  const nearestWindow = getRegistrationWindowInfo(getNearestOccurrence(occurrences), now);
+
+  return nearestWindow.state === 'closed'
+    ? 'Запись на ближайший сеанс закрыта'
+    : 'Нет доступных сеансов для записи';
 }
