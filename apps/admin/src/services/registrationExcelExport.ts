@@ -259,7 +259,7 @@ function buildExportRow(
     guests: registration.guestNames.join(", "),
     occurrenceDate: formatDateTime(registration.occurrenceStartsAt ?? event.startsAt),
     occurrenceTitle: registration.occurrenceTitle ?? "",
-    paymentStatus: formatPaymentStatus(registration.paymentStatus),
+    paymentStatus: formatPaymentStatus(registration.paymentStatus, registration.paymentId),
     phone: registration.phone ?? "",
     registeredAt: formatDateTime(registration.registeredAt),
     seatsCount: registration.seatsCount,
@@ -360,7 +360,11 @@ function formatRegistrationStatus(status: string): string {
   return labels[status] ?? status;
 }
 
-function formatPaymentStatus(status: string): string {
+function formatPaymentStatus(status: string, paymentId?: string | null): string {
+  if (isSimulatedPaymentId(paymentId ?? null)) {
+    return "Тестовая оплата";
+  }
+
   const labels: Record<string, string> = {
     cancelled: "Отменено",
     failed: "Ошибка оплаты",
@@ -372,6 +376,10 @@ function formatPaymentStatus(status: string): string {
   };
 
   return labels[status] ?? status;
+}
+
+function isSimulatedPaymentId(paymentId: string | null): boolean {
+  return paymentId?.startsWith("simulated:") === true;
 }
 
 function formatSelectedOptions(

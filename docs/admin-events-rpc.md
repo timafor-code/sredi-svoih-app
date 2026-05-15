@@ -52,6 +52,8 @@ Supabase admin API, and must not freely write to `events` for admin workflows.
   reason text default null)` moves a registration between queue/review states.
 - `admin_mark_registration_attendance(registration_id uuid, attendance_status
   text)` marks a registration as attended or no-show.
+- `register_for_paid_event_simulated(payload jsonb)` creates an authenticated
+  MVP/dev-only paid registration simulation for `internal_paid` events.
 - `admin_publish_import_item(import_item_id uuid, payload jsonb)` creates or
   updates/links an event from a reviewed import item with
   `source_type = 'website_scrape'` and `manual_override = true`.
@@ -234,6 +236,52 @@ registration event's community through `has_community_role(...)` with
 
 CSV export is intentionally not part of this foundation. Web-admin uses Excel
 `.xlsx` for registration exports.
+
+## Paid Registration Simulation RPC
+
+`register_for_paid_event_simulated(payload jsonb)` is a temporary MVP/dev flow
+for mobile testing of `internal_paid` events. It is not a production payment
+integration: no real gateway, `create_payment`, checkout redirect, or
+`payment_webhook` is implemented.
+
+The RPC requires `auth.uid()` and accepts camelCase or snake_case payload keys:
+
+```json
+{
+  "eventId": "event uuid",
+  "occurrenceId": "optional occurrence uuid",
+  "optionSelections": [
+    { "optionId": "participation option uuid", "quantity": 1 }
+  ],
+  "seatsCount": 1,
+  "guestNames": ["optional guest"],
+  "comment": "optional comment"
+}
+```
+
+The backend validates that the event is published and
+`registration_mode = 'internal_paid'`. If the event has rows in
+`event_occurrences`, `occurrenceId` is required and must point to an active
+occurrence for that event. Selected participation options must belong to the
+event, be active, and have `quantity > 0`.
+
+`seats_count` is calculated from selected option quantities. Donation options
+never reserve seats, even if their stored capacity flag is true. The RPC stores
+option snapshots in `event_registration_option_selections` and sums
+`total_amount` from the selected options.
+
+Capacity is checked per occurrence when an occurrence is selected; otherwise it
+uses event-level capacity. Pending and confirmed registrations consume capacity.
+If capacity is available, `requires_approval = true` creates a `pending`
+registration; otherwise the registration is `confirmed`. If capacity is full
+and waitlist is enabled, the registration is `waitlisted`; if waitlist is not
+enabled, the RPC raises `No seats available for this event`.
+
+For the simulation, the registration is marked with
+`payment_status = 'succeeded'` and `payment_id = 'simulated:<registration_id>'`.
+The `payment_id` on `event_registrations` is text so web-admin and Excel export
+can display the simulated marker directly. This value is not a row in
+`payments`.
 
 ## Client Service
 

@@ -28,6 +28,20 @@ type EventRegistrationRow = {
   event?: CommunityEventRow | CommunityEventRow[] | null;
 };
 
+export type PaidEventOptionSelectionInput = {
+  optionId: string;
+  quantity: number;
+};
+
+export type RegisterForPaidEventSimulatedInput = {
+  eventId: string;
+  occurrenceId?: string | null;
+  optionSelections: PaidEventOptionSelectionInput[];
+  seatsCount?: number | null;
+  guestNames?: string[] | null;
+  comment?: string | null;
+};
+
 const REGISTRATION_FIELDS = `
   id,
   event_id,
@@ -113,6 +127,44 @@ export async function registerForEvent(
 
   const registrations = await loadMyRegistrations();
   const fallbackRegistration = registrations.find((item) => item.eventId === eventId);
+
+  if (!fallbackRegistration) {
+    throw new Error('Registration result is empty');
+  }
+
+  return fallbackRegistration;
+}
+
+export async function registerForPaidEventSimulated(
+  input: RegisterForPaidEventSimulatedInput,
+): Promise<EventRegistration> {
+  const payload = {
+    eventId: input.eventId,
+    occurrenceId: input.occurrenceId ?? null,
+    optionSelections: input.optionSelections.map((selection) => ({
+      optionId: selection.optionId,
+      quantity: selection.quantity,
+    })),
+    seatsCount: input.seatsCount ?? undefined,
+    guestNames: input.guestNames ?? undefined,
+    comment: input.comment ?? undefined,
+  };
+  const { data, error } = await supabase.rpc('register_for_paid_event_simulated', {
+    payload,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const registration = normalizeSingleResult(data as EventRegistrationRow | EventRegistrationRow[] | null);
+
+  if (registration) {
+    return registration;
+  }
+
+  const registrations = await loadMyRegistrations();
+  const fallbackRegistration = registrations.find((item) => item.eventId === input.eventId);
 
   if (!fallbackRegistration) {
     throw new Error('Registration result is empty');

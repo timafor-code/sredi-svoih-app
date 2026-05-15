@@ -25,10 +25,9 @@ import type { EventItem } from '@/types/event';
 import type { EventOccurrence } from '@/types/eventOccurrence';
 import type { EventParticipationOption } from '@/types/participationOption';
 
-const paymentAlertTitle = 'Оплата будет доступна позже';
-const paymentAlertText = 'Выбор варианта участия уже подготовлен. Подключение оплаты и финальной записи добавим следующим этапом.';
-
-const dateSelectingEventKinds = new Set(['single', 'course', 'sunday_school', 'holiday']);
+const paymentSimulationTitle = 'Тестовая оплата';
+const paymentSimulationText = 'Это тестовая имитация оплаты. Реальный платёжный сервис пока не подключён.';
+const paymentSimulationSuccessText = 'Запись создана. Оплата отмечена как тестовая.';
 
 const optionTypeLabels: Record<string, string> = {
   participation: 'Участие',
@@ -44,6 +43,16 @@ type Quantities = Record<string, number>;
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function parseTime(value: string | null | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const time = new Date(value).getTime();
+
+  return Number.isNaN(time) ? null : time;
 }
 
 function formatDate(value: string, timeZone?: string | null): string {
@@ -62,6 +71,29 @@ function formatDate(value: string, timeZone?: string | null): string {
   } catch {
     delete options.timeZone;
     return new Intl.DateTimeFormat('ru-RU', options).format(new Date(value));
+  }
+}
+
+function isSameCalendarDay(first: string, second: string, timeZone?: string | null): boolean {
+  const options: Intl.DateTimeFormatOptions = {
+    day: 'numeric',
+    month: 'numeric',
+    year: 'numeric',
+  };
+
+  if (timeZone) {
+    options.timeZone = timeZone;
+  }
+
+  try {
+    const formatter = new Intl.DateTimeFormat('ru-RU', options);
+
+    return formatter.format(new Date(first)) === formatter.format(new Date(second));
+  } catch {
+    delete options.timeZone;
+    const formatter = new Intl.DateTimeFormat('ru-RU', options);
+
+    return formatter.format(new Date(first)) === formatter.format(new Date(second));
   }
 }
 
@@ -107,11 +139,40 @@ function getOptionQuantity(option: EventParticipationOption, quantities: Quantit
   return clampQuantity(option, quantities[option.id] ?? option.minQuantity ?? 1);
 }
 
-function formatSelectedOccurrence(occurrence: EventOccurrence): string {
-  return `${formatDate(occurrence.startsAt, occurrence.timezone)}, ${formatTime(
+function isOccurrenceRegistrationOpen(occurrence: EventOccurrence): boolean {
+  const now = Date.now();
+  const opensAt = parseTime(occurrence.registrationOpensAt);
+  const closesAt = parseTime(occurrence.registrationClosesAt);
+
+  if (opensAt !== null && now < opensAt) {
+    return false;
+  }
+
+  if (closesAt !== null && now > closesAt) {
+    return false;
+  }
+
+  return true;
+}
+
+function formatOccurrenceSession(occurrence: EventOccurrence): string {
+  const start = `${formatDate(occurrence.startsAt, occurrence.timezone)}, ${formatTime(
     occurrence.startsAt,
     occurrence.timezone,
   )}`;
+
+  if (!occurrence.endsAt) {
+    return start;
+  }
+
+  const end = isSameCalendarDay(occurrence.startsAt, occurrence.endsAt, occurrence.timezone)
+    ? formatTime(occurrence.endsAt, occurrence.timezone)
+    : `${formatDate(occurrence.endsAt, occurrence.timezone)}, ${formatTime(
+      occurrence.endsAt,
+      occurrence.timezone,
+    )}`;
+
+  return `${start}-${end}`;
 }
 
 type ChipProps = {
@@ -246,6 +307,43 @@ function OptionCard({
   );
 }
 
+type OccurrenceChoiceCardProps = {
+  eventTitle: string;
+  occurrence: EventOccurrence;
+  selected: boolean;
+  onPress: () => void;
+};
+
+function OccurrenceChoiceCard({
+  eventTitle,
+  occurrence,
+  onPress,
+  selected,
+}: OccurrenceChoiceCardProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.occurrenceChoiceCard,
+        selected && styles.occurrenceChoiceCardSelected,
+        pressed && styles.pressed,
+      ]}
+    >
+      <View style={styles.occurrenceChoiceTextBlock}>
+        <Text style={styles.occurrenceChoiceTitle}>
+          {formatOccurrenceSession(occurrence)}
+        </Text>
+        <Text style={styles.occurrenceChoiceSubtitle}>
+          {occurrence.title?.trim() || eventTitle}
+        </Text>
+      </View>
+      <View style={[styles.radio, selected && styles.radioSelected]}>
+        {selected ? <Ionicons name="checkmark" size={15} color={colors.text} /> : null}
+      </View>
+    </Pressable>
+  );
+}
+
 export default function PaidOptionsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -256,21 +354,27 @@ export default function PaidOptionsScreen() {
   const eventId = firstParam(params.eventId);
   const occurrenceId = firstParam(params.occurrenceId);
   const loadEventById = useEventsStore((state) => state.loadEventById);
+  const registerForPaidEventSimulated = useEventsStore(
+    (state) => state.registerForPaidEventSimulated,
+  );
   const [event, setEvent] = useState<EventItem | null>(null);
-  const [occurrence, setOccurrence] = useState<EventOccurrence | null>(null);
+  const [occurrences, setOccurrences] = useState<EventOccurrence[]>([]);
+  const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<string | null>(null);
   const [occurrenceMissing, setOccurrenceMissing] = useState(false);
   const [options, setOptions] = useState<EventParticipationOption[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [quantities, setQuantities] = useState<Quantities>({});
   const [heroImageFailed, setHeroImageFailed] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!eventId) {
       setEvent(null);
       setOptions([]);
-      setOccurrence(null);
+      setOccurrences([]);
+      setSelectedOccurrenceId(null);
       setError('Событие не найдено');
       setLoading(false);
       return;
@@ -290,35 +394,29 @@ export default function PaidOptionsScreen() {
         throw new Error('Событие не найдено');
       }
 
-      if (
-        !occurrenceId
-        && dateSelectingEventKinds.has(String(loadedEvent.eventKind ?? ''))
-        && loadedEvent.eventKind !== 'shabbat'
-        && loadedOccurrences.length > 1
-      ) {
-        router.replace({ pathname: '/events/paid-occurrences', params: { eventId } });
-        return;
-      }
-
-      const selectedOccurrence = occurrenceId
-        ? loadedOccurrences.find((item) => item.id === occurrenceId) ?? null
-        : loadedOccurrences.length === 1
-          ? loadedOccurrences[0]
-          : null;
+      const openOccurrences = loadedOccurrences.filter(isOccurrenceRegistrationOpen);
+      const requestedOccurrence = occurrenceId
+        ? openOccurrences.find((item) => item.id === occurrenceId) ?? null
+        : null;
+      const nextSelectedOccurrenceId = requestedOccurrence?.id
+        ?? (openOccurrences.length === 1 ? openOccurrences[0].id : null);
 
       setEvent(loadedEvent);
-      setOccurrence(selectedOccurrence);
-      setOccurrenceMissing(Boolean(occurrenceId && !selectedOccurrence));
-      setOptions(loadedOptions);
+      setOccurrences(loadedOccurrences);
+      setSelectedOccurrenceId(nextSelectedOccurrenceId);
+      setOccurrenceMissing(Boolean(occurrenceId && !requestedOccurrence));
+      const activeOptions = loadedOptions.filter((option) => option.isActive);
+
+      setOptions(activeOptions);
       setSelectedIds((current) => (
-        current.filter((id) => loadedOptions.some((option) => option.id === id))
+        current.filter((id) => activeOptions.some((option) => option.id === id))
       ));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Не удалось загрузить варианты участия');
     } finally {
       setLoading(false);
     }
-  }, [eventId, loadEventById, occurrenceId, router]);
+  }, [eventId, loadEventById, occurrenceId]);
 
   useEffect(() => {
     void loadData();
@@ -341,6 +439,15 @@ export default function PaidOptionsScreen() {
     () => options.filter((option) => selectedIdSet.has(option.id)),
     [options, selectedIdSet],
   );
+  const openOccurrences = useMemo(
+    () => occurrences.filter(isOccurrenceRegistrationOpen),
+    [occurrences],
+  );
+  const selectedOccurrence = useMemo(
+    () => openOccurrences.find((item) => item.id === selectedOccurrenceId) ?? null,
+    [openOccurrences, selectedOccurrenceId],
+  );
+  const hasOccurrences = occurrences.length > 0;
 
   const totals = useMemo(() => {
     return selectedOptions.reduce(
@@ -350,14 +457,14 @@ export default function PaidOptionsScreen() {
 
         return {
           amount: acc.amount + lineTotal,
-          seats: acc.seats + (option.countsTowardCapacity ? quantity : 0),
+          seats: acc.seats + (!option.isDonation && option.countsTowardCapacity ? quantity : 0),
         };
       },
       { amount: 0, seats: 0 },
     );
   }, [quantities, selectedOptions]);
 
-  const canContinue = selectedOptions.length > 0;
+  const canContinue = totals.seats > 0 && !submitting && (!hasOccurrences || Boolean(selectedOccurrence));
 
   const handleBack = useCallback(() => {
     if (router.canGoBack()) {
@@ -398,9 +505,65 @@ export default function PaidOptionsScreen() {
     });
   }, []);
 
+  const submitRegistration = useCallback(async () => {
+    if (!eventId) {
+      return;
+    }
+
+    if (hasOccurrences && !selectedOccurrence) {
+      Alert.alert('Выберите дату или сеанс события');
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      await registerForPaidEventSimulated({
+        eventId,
+        occurrenceId: selectedOccurrence?.id ?? null,
+        optionSelections: selectedOptions.map((option) => ({
+          optionId: option.id,
+          quantity: getOptionQuantity(option, quantities),
+        })),
+        seatsCount: totals.seats,
+      });
+
+      Alert.alert('Готово', paymentSimulationSuccessText, [
+        {
+          text: 'ОК',
+          onPress: () => router.replace({ pathname: '/events/[id]', params: { id: eventId } }),
+        },
+      ]);
+    } catch (submitError) {
+      Alert.alert(
+        'Не удалось создать запись',
+        submitError instanceof Error ? submitError.message : 'Попробуйте ещё раз.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }, [
+    eventId,
+    hasOccurrences,
+    quantities,
+    registerForPaidEventSimulated,
+    router,
+    selectedOccurrence,
+    selectedOptions,
+    totals.seats,
+  ]);
+
   const handleContinue = useCallback(() => {
-    Alert.alert(paymentAlertTitle, paymentAlertText);
-  }, []);
+    if (hasOccurrences && !selectedOccurrence) {
+      Alert.alert('Выберите дату или сеанс события');
+      return;
+    }
+
+    Alert.alert(paymentSimulationTitle, paymentSimulationText, [
+      { text: 'Отмена', style: 'cancel' },
+      { text: 'Продолжить', onPress: () => { void submitRegistration(); } },
+    ]);
+  }, [hasOccurrences, selectedOccurrence, submitRegistration]);
 
   const showHeroImage = Boolean(event?.imageUrl && !heroImageFailed);
   const bottomOffset = Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 12);
@@ -468,21 +631,47 @@ export default function PaidOptionsScreen() {
               {event.subtitle ? <Text style={styles.subtitle}>{event.subtitle}</Text> : null}
             </View>
 
-            {occurrence ? (
+            {hasOccurrences && openOccurrences.length === 0 ? (
+              <GlassCard>
+                <View style={styles.warningRow}>
+                  <Ionicons name="alert-circle-outline" size={18} color={colors.warning} />
+                  <Text style={styles.warningText}>Регистрация сейчас недоступна</Text>
+                </View>
+              </GlassCard>
+            ) : null}
+
+            {hasOccurrences && openOccurrences.length === 1 && selectedOccurrence ? (
               <GlassCard>
                 <View style={styles.dateCardContent}>
                   <View style={styles.dateIcon}>
                     <Ionicons name="calendar-outline" size={18} color={colors.orange} />
                   </View>
                   <View style={styles.dateTextBlock}>
-                    <Text style={styles.dateLabel}>Дата участия</Text>
-                    <Text style={styles.dateTitle}>{formatSelectedOccurrence(occurrence)}</Text>
+                    <Text style={styles.dateLabel}>Выбран автоматически</Text>
+                    <Text style={styles.dateTitle}>
+                      Сеанс: {formatOccurrenceSession(selectedOccurrence)}
+                    </Text>
                     <Text style={styles.dateSubtitle}>
-                      {occurrence.title?.trim() || event.title}
+                      {selectedOccurrence.title?.trim() || event.title}
                     </Text>
                   </View>
                 </View>
               </GlassCard>
+            ) : null}
+
+            {hasOccurrences && openOccurrences.length > 1 ? (
+              <View style={styles.occurrenceChoiceBlock}>
+                <Text style={styles.optionSectionTitle}>Выберите дату или сеанс</Text>
+                {openOccurrences.map((item) => (
+                  <OccurrenceChoiceCard
+                    key={item.id}
+                    eventTitle={event.title}
+                    occurrence={item}
+                    selected={item.id === selectedOccurrenceId}
+                    onPress={() => setSelectedOccurrenceId(item.id)}
+                  />
+                ))}
+              </View>
             ) : null}
 
             {occurrenceMissing ? (
@@ -490,7 +679,7 @@ export default function PaidOptionsScreen() {
                 <View style={styles.warningRow}>
                   <Ionicons name="alert-circle-outline" size={18} color={colors.warning} />
                   <Text style={styles.warningText}>
-                    Выбранная дата недоступна. Можно выбрать вариант участия на уровне события.
+                    Выбранный сеанс сейчас недоступен. Выберите доступную дату или сеанс.
                   </Text>
                 </View>
               </GlassCard>
@@ -581,7 +770,7 @@ export default function PaidOptionsScreen() {
               </View>
             </View>
             <PrimaryButton
-              title="Записаться"
+              title={submitting ? 'Создаём запись...' : 'Имитировать оплату и записаться'}
               disabled={!canContinue}
               onPress={handleContinue}
               buttonStyle={styles.stickyButton}
@@ -758,6 +947,40 @@ const styles = StyleSheet.create({
   optionsBlock: {
     gap: 18,
   },
+  occurrenceChoiceBlock: {
+    gap: 10,
+  },
+  occurrenceChoiceCard: {
+    minHeight: 82,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.glass.w06,
+    padding: 16,
+  },
+  occurrenceChoiceCardSelected: {
+    borderColor: colors.accent.orangeBorder,
+    backgroundColor: colors.accent.orangeBg,
+  },
+  occurrenceChoiceTextBlock: {
+    flex: 1,
+    minWidth: 0,
+    gap: 5,
+  },
+  occurrenceChoiceTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '800',
+    lineHeight: 22,
+  },
+  occurrenceChoiceSubtitle: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
   optionSection: {
     gap: 10,
   },
@@ -922,9 +1145,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
   },
   stickyContent: {
-    minHeight: 76,
-    flexDirection: 'row',
-    alignItems: 'center',
+    minHeight: 112,
+    alignItems: 'stretch',
     gap: 12,
     padding: 12,
   },
@@ -966,6 +1188,6 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   stickyButton: {
-    minWidth: 126,
+    width: '100%',
   },
 });
