@@ -4045,6 +4045,102 @@ a {
   gap: 12px;
 }
 
+.registrations-export-group {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.registrations-export-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.registration-occurrence-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  background: rgba(36, 36, 58, 0.7);
+}
+
+.registration-occurrence-field {
+  display: grid;
+  gap: 6px;
+  min-width: 240px;
+  flex: 1 1 280px;
+}
+
+.registration-occurrence-field span {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.registration-occurrence-field select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  outline: 0;
+  padding: 0 11px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.registration-occurrence-field select:focus {
+  border-color: rgba(242, 184, 75, 0.62);
+}
+
+.registration-occurrence-field select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.registration-occurrence-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.registration-occurrence-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: rgba(242, 184, 75, 0.86);
+  cursor: pointer;
+}
+
+.registration-occurrence-error {
+  flex-basis: 100%;
+  color: rgba(229, 100, 110, 0.92);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.registration-summary-block {
+  display: grid;
+  gap: 8px;
+}
+
+.registration-summary-scope {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
 .registration-filter-chips {
   display: flex;
   flex-wrap: wrap;

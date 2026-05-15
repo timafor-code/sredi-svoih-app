@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
+import { listAdminEventOccurrences } from "../services/adminEventOccurrencesService";
 import {
   listEventRegistrations,
   listRegistrationEvents,
@@ -18,6 +19,7 @@ import {
 } from "../services/adminEventsService";
 import { exportEventRegistrationsToExcel } from "../services/registrationExcelExport";
 import type { AdminBadgeTone } from "../types/admin";
+import type { AdminEventOccurrence } from "../types/eventOccurrences";
 import type {
   AdminEventRegistrationRow,
   AdminRegistrationAttendanceStatus,
@@ -69,6 +71,18 @@ type RegistrationActionMenuState = {
   left: number;
   top: number;
 };
+
+type OccurrenceSummaryCounts = {
+  confirmedCount: number;
+  pendingCount: number;
+  waitlistedCount: number;
+  cancelledCount: number;
+  rejectedCount: number;
+  attendedCount: number;
+  noShowCount: number;
+};
+
+const OCCURRENCE_SUMMARY_FETCH_LIMIT = 1000;
 
 const REGISTRATION_PAGE_SIZE = 50;
 const REGISTRATION_MENU_WIDTH = 232;
@@ -155,6 +169,13 @@ export function RegistrationsPage() {
   const [offset, setOffset] = useState(0);
   const [selectedRegistrationId, setSelectedRegistrationId] = useState<string | null>(null);
 
+  const [occurrences, setOccurrences] = useState<AdminEventOccurrence[]>([]);
+  const [occurrencesLoading, setOccurrencesLoading] = useState(false);
+  const [occurrencesError, setOccurrencesError] = useState<string | null>(null);
+  const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<string | null>(null);
+  const [showPastOccurrences, setShowPastOccurrences] = useState(false);
+  const [occurrenceSummary, setOccurrenceSummary] = useState<OccurrenceSummaryCounts | null>(null);
+
   const [pendingAction, setPendingAction] = useState<PendingRegistrationAction | null>(null);
   const [actionInFlight, setActionInFlight] = useState<ActionInFlight | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -221,9 +242,24 @@ export function RegistrationsPage() {
     [],
   );
 
+  const selectedEvent = useMemo(
+    () => events.find((event) => event.eventId === selectedEventId) ?? null,
+    [events, selectedEventId],
+  );
+
+  const eventHasOccurrences = (selectedEvent?.occurrenceCount ?? 0) > 0;
+
   const loadRegistrations = useCallback(
     async ({ silent = false }: { silent?: boolean } = {}) => {
       if (!selectedEventId) {
+        setRegistrations([]);
+        setSelectedRegistrationId(null);
+        setRegistrationsLoading(false);
+        setRegistrationsError(null);
+        return [];
+      }
+
+      if (eventHasOccurrences && !selectedOccurrenceId) {
         setRegistrations([]);
         setSelectedRegistrationId(null);
         setRegistrationsLoading(false);
@@ -240,6 +276,7 @@ export function RegistrationsPage() {
       try {
         const nextRegistrations = await listEventRegistrations({
           eventId: selectedEventId,
+          occurrenceId: eventHasOccurrences ? selectedOccurrenceId : null,
           status: statusFilter,
           search: registrationSearch.trim() || null,
           limit: REGISTRATION_PAGE_SIZE,
@@ -272,8 +309,45 @@ export function RegistrationsPage() {
         }
       }
     },
-    [offset, registrationSearch, selectedEventId, statusFilter],
+    [
+      eventHasOccurrences,
+      offset,
+      registrationSearch,
+      selectedEventId,
+      selectedOccurrenceId,
+      statusFilter,
+    ],
   );
+
+  const loadOccurrenceSummary = useCallback(async () => {
+    if (!selectedEventId || !eventHasOccurrences || !selectedOccurrenceId) {
+      setOccurrenceSummary(null);
+      return;
+    }
+
+    try {
+      const rows = await listEventRegistrations({
+        eventId: selectedEventId,
+        occurrenceId: selectedOccurrenceId,
+        status: "all",
+        search: null,
+        limit: OCCURRENCE_SUMMARY_FETCH_LIMIT,
+        offset: 0,
+      });
+
+      setOccurrenceSummary({
+        confirmedCount: rows.filter((row) => row.status === "confirmed").length,
+        pendingCount: rows.filter((row) => row.status === "pending").length,
+        waitlistedCount: rows.filter((row) => row.status === "waitlisted").length,
+        cancelledCount: rows.filter((row) => row.status === "cancelled").length,
+        rejectedCount: rows.filter((row) => row.status === "rejected").length,
+        attendedCount: rows.filter((row) => row.status === "attended").length,
+        noShowCount: rows.filter((row) => row.status === "no_show").length,
+      });
+    } catch {
+      setOccurrenceSummary(null);
+    }
+  }, [eventHasOccurrences, selectedEventId, selectedOccurrenceId]);
 
   useEffect(() => {
     void loadRegistrationEventSummaries().catch(() => undefined);
@@ -283,9 +357,101 @@ export function RegistrationsPage() {
     void loadRegistrations().catch(() => undefined);
   }, [loadRegistrations]);
 
-  const selectedEvent = useMemo(
-    () => events.find((event) => event.eventId === selectedEventId) ?? null,
-    [events, selectedEventId],
+  useEffect(() => {
+    void loadOccurrenceSummary();
+  }, [loadOccurrenceSummary]);
+
+  useEffect(() => {
+    if (!selectedEventId || !eventHasOccurrences) {
+      setOccurrences([]);
+      setOccurrencesError(null);
+      setOccurrencesLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setOccurrencesLoading(true);
+    setOccurrencesError(null);
+    setOccurrences([]);
+
+    listAdminEventOccurrences(selectedEventId)
+      .then((nextOccurrences) => {
+        if (!cancelled) {
+          setOccurrences(nextOccurrences);
+        }
+      })
+      .catch((nextError) => {
+        if (!cancelled) {
+          const message =
+            nextError instanceof Error
+              ? nextError.message
+              : "Не удалось загрузить даты события.";
+          setOccurrencesError(message);
+          setOccurrences([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setOccurrencesLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [eventHasOccurrences, selectedEventId]);
+
+  const visibleOccurrences = useMemo(() => {
+    if (showPastOccurrences) {
+      return occurrences;
+    }
+
+    return occurrences.filter((occurrence) => !isPastOccurrence(occurrence));
+  }, [occurrences, showPastOccurrences]);
+
+  const hasOnlyPastOccurrences =
+    occurrences.length > 0 && visibleOccurrences.length === 0;
+
+  useEffect(() => {
+    if (!eventHasOccurrences) {
+      if (selectedOccurrenceId !== null) {
+        setSelectedOccurrenceId(null);
+      }
+      return;
+    }
+
+    if (occurrences.length === 0) {
+      return;
+    }
+
+    setSelectedOccurrenceId((currentId) => {
+      if (currentId && visibleOccurrences.some((occurrence) => occurrence.id === currentId)) {
+        return currentId;
+      }
+
+      if (visibleOccurrences.length === 0) {
+        return null;
+      }
+
+      const now = Date.now();
+      const sorted = [...visibleOccurrences].sort((left, right) => {
+        const leftTime = new Date(left.startsAt).getTime();
+        const rightTime = new Date(right.startsAt).getTime();
+        return leftTime - rightTime;
+      });
+      const future = sorted.find((occurrence) => {
+        const startTime = new Date(occurrence.startsAt).getTime();
+        return Number.isFinite(startTime) && startTime >= now;
+      });
+
+      return future?.id ?? sorted[0]?.id ?? null;
+    });
+  }, [eventHasOccurrences, occurrences, selectedOccurrenceId, visibleOccurrences]);
+
+  const selectedOccurrence = useMemo(
+    () =>
+      occurrences.find((occurrence) => occurrence.id === selectedOccurrenceId) ?? null,
+    [occurrences, selectedOccurrenceId],
   );
 
   const filteredEvents = useMemo(() => {
@@ -326,8 +492,9 @@ export function RegistrationsPage() {
     await Promise.all([
       loadRegistrationEventSummaries({ silent: true }),
       loadRegistrations({ silent: true }),
+      loadOccurrenceSummary(),
     ]);
-  }, [loadRegistrationEventSummaries, loadRegistrations]);
+  }, [loadOccurrenceSummary, loadRegistrationEventSummaries, loadRegistrations]);
 
   const runRegistrationAction = useCallback(
     async (registration: AdminEventRegistrationRow, action: RegistrationAction) => {
@@ -393,6 +560,22 @@ export function RegistrationsPage() {
     setSelectedRegistrationId(null);
     setStatusFilter("all");
     setRegistrationSearch("");
+    setOffset(0);
+    setSelectedOccurrenceId(null);
+    setOccurrences([]);
+    setOccurrencesError(null);
+    setShowPastOccurrences(false);
+    setOccurrenceSummary(null);
+  }, []);
+
+  const handleSelectOccurrence = useCallback((occurrenceId: string | null) => {
+    setSelectedOccurrenceId(occurrenceId);
+    setSelectedRegistrationId(null);
+    setOffset(0);
+  }, []);
+
+  const handleToggleArchive = useCallback((nextValue: boolean) => {
+    setShowPastOccurrences(nextValue);
     setOffset(0);
   }, []);
 
@@ -526,19 +709,26 @@ export function RegistrationsPage() {
                   <p>{formatDateTime(selectedEvent.startsAt)}</p>
                 </div>
                 <div className="registrations-main-actions">
-                  <Button
-                    disabled={
-                      !selectedEvent ||
-                      registrationsLoading ||
-                      eventsLoading ||
-                      excelExportLoading
-                    }
-                    onClick={handleExportExcel}
-                    size="sm"
-                    variant="gold"
-                  >
-                    {excelExportLoading ? "Готовим Excel..." : "Экспорт Excel"}
-                  </Button>
+                  <div className="registrations-export-group">
+                    <Button
+                      disabled={
+                        !selectedEvent ||
+                        registrationsLoading ||
+                        eventsLoading ||
+                        excelExportLoading
+                      }
+                      onClick={handleExportExcel}
+                      size="sm"
+                      variant="gold"
+                    >
+                      {excelExportLoading ? "Готовим Excel..." : "Экспорт Excel"}
+                    </Button>
+                    {eventHasOccurrences ? (
+                      <small className="registrations-export-hint">
+                        Экспортирует все даты события
+                      </small>
+                    ) : null}
+                  </div>
                   <Button
                     disabled={registrationsLoading || eventsLoading}
                     onClick={refreshAll}
@@ -549,7 +739,27 @@ export function RegistrationsPage() {
                 </div>
               </div>
 
-              <RegistrationSummaryCards event={selectedEvent} />
+              {eventHasOccurrences ? (
+                <RegistrationOccurrenceBar
+                  occurrences={visibleOccurrences}
+                  occurrencesLoading={occurrencesLoading}
+                  occurrencesError={occurrencesError}
+                  selectedOccurrenceId={selectedOccurrenceId}
+                  showPastOccurrences={showPastOccurrences}
+                  onSelectOccurrence={handleSelectOccurrence}
+                  onToggleArchive={handleToggleArchive}
+                  selectedOccurrence={selectedOccurrence}
+                />
+              ) : null}
+
+              <RegistrationSummaryCards
+                counts={occurrenceSummary ?? selectedEvent}
+                scopeLabel={
+                  eventHasOccurrences && occurrenceSummary
+                    ? "Счётчики выбранной даты"
+                    : "Счётчики события"
+                }
+              />
 
               <div className="registration-controls">
                 <div className="registration-filter-chips" aria-label="Фильтр статуса">
@@ -607,7 +817,29 @@ export function RegistrationsPage() {
                   </div>
                 </div>
 
-                {registrationsLoading ? (
+                {eventHasOccurrences && occurrencesLoading ? (
+                  <RegistrationsState
+                    description="Читаем admin_list_event_occurrences для серии."
+                    title="Загрузка дат"
+                  />
+                ) : eventHasOccurrences &&
+                  !occurrencesLoading &&
+                  hasOnlyPastOccurrences &&
+                  !showPastOccurrences ? (
+                  <RegistrationsState
+                    description="Активных дат нет. Откройте архив дат, чтобы посмотреть прошедшие списки."
+                    title="Нет активных дат"
+                  >
+                    <Button onClick={() => handleToggleArchive(true)} size="sm">
+                      Показать прошедшие
+                    </Button>
+                  </RegistrationsState>
+                ) : eventHasOccurrences && !selectedOccurrenceId ? (
+                  <RegistrationsState
+                    description="Выберите дату/сеанс в селекторе выше, чтобы открыть список."
+                    title="Дата не выбрана"
+                  />
+                ) : registrationsLoading ? (
                   <RegistrationsState
                     description="Читаем admin_list_event_registrations для выбранного события."
                     title="Загрузка регистраций"
@@ -625,7 +857,9 @@ export function RegistrationsPage() {
                   <RegistrationsState
                     description={
                       statusFilter === "all" && !registrationSearch.trim()
-                        ? "По этому событию пока нет регистраций."
+                        ? eventHasOccurrences && selectedOccurrenceId
+                          ? "На эту дату пока нет регистраций."
+                          : "По этому событию пока нет регистраций."
                         : "Для выбранного фильтра или поиска нет совпадений."
                     }
                     title="Нет заявок"
@@ -726,29 +960,126 @@ function CounterPill({
   );
 }
 
-function RegistrationSummaryCards({ event }: { event: AdminRegistrationEventSummary }) {
-  const inactiveCount = event.cancelledCount + event.rejectedCount;
-  const attendanceCount = event.attendedCount + event.noShowCount;
+function RegistrationSummaryCards({
+  counts,
+  scopeLabel,
+}: {
+  counts: OccurrenceSummaryCounts;
+  scopeLabel?: string;
+}) {
+  const inactiveCount = counts.cancelledCount + counts.rejectedCount;
+  const attendanceCount = counts.attendedCount + counts.noShowCount;
 
   return (
-    <div className="registration-summary-grid">
-      <SummaryCard label="confirmed" tone="green" value={event.confirmedCount} />
-      <SummaryCard label="pending" tone="gold" value={event.pendingCount} />
-      <SummaryCard label="waitlisted" tone="purple" value={event.waitlistedCount} />
-      <SummaryCard
-        description={`${event.cancelledCount} отменено / ${event.rejectedCount} отклонено`}
-        label="cancelled/rejected"
-        tone="red"
-        value={inactiveCount}
-      />
-      <SummaryCard
-        description={`${event.attendedCount} пришёл / ${event.noShowCount} no-show`}
-        label="attended/no_show"
-        tone="green"
-        value={attendanceCount}
-      />
+    <div className="registration-summary-block">
+      {scopeLabel ? <span className="registration-summary-scope">{scopeLabel}</span> : null}
+      <div className="registration-summary-grid">
+        <SummaryCard label="confirmed" tone="green" value={counts.confirmedCount} />
+        <SummaryCard label="pending" tone="gold" value={counts.pendingCount} />
+        <SummaryCard label="waitlisted" tone="purple" value={counts.waitlistedCount} />
+        <SummaryCard
+          description={`${counts.cancelledCount} отменено / ${counts.rejectedCount} отклонено`}
+          label="cancelled/rejected"
+          tone="red"
+          value={inactiveCount}
+        />
+        <SummaryCard
+          description={`${counts.attendedCount} пришёл / ${counts.noShowCount} no-show`}
+          label="attended/no_show"
+          tone="green"
+          value={attendanceCount}
+        />
+      </div>
     </div>
   );
+}
+
+function RegistrationOccurrenceBar({
+  occurrences,
+  occurrencesLoading,
+  occurrencesError,
+  selectedOccurrenceId,
+  showPastOccurrences,
+  onSelectOccurrence,
+  onToggleArchive,
+  selectedOccurrence,
+}: {
+  occurrences: AdminEventOccurrence[];
+  occurrencesLoading: boolean;
+  occurrencesError: string | null;
+  selectedOccurrenceId: string | null;
+  showPastOccurrences: boolean;
+  onSelectOccurrence: (occurrenceId: string | null) => void;
+  onToggleArchive: (nextValue: boolean) => void;
+  selectedOccurrence: AdminEventOccurrence | null;
+}) {
+  const isSelectedPast = selectedOccurrence
+    ? isPastOccurrence(selectedOccurrence)
+    : false;
+
+  return (
+    <div className="registration-occurrence-bar" aria-label="Дата сеанса">
+      <label className="registration-occurrence-field">
+        <span>Дата / сеанс</span>
+        <select
+          aria-label="Выбор даты сеанса"
+          disabled={occurrencesLoading || occurrences.length === 0}
+          onChange={(event) => onSelectOccurrence(event.target.value || null)}
+          value={selectedOccurrenceId ?? ""}
+        >
+          {occurrences.length === 0 ? (
+            <option value="">
+              {occurrencesLoading ? "Загрузка..." : "Нет доступных дат"}
+            </option>
+          ) : (
+            occurrences.map((occurrence) => {
+              const isPast = isPastOccurrence(occurrence);
+              const titleSuffix = occurrence.title ? ` · ${occurrence.title}` : "";
+              const pastSuffix = isPast ? " · Прошло" : "";
+              return (
+                <option key={occurrence.id} value={occurrence.id}>
+                  {formatDateTime(occurrence.startsAt)}
+                  {titleSuffix}
+                  {pastSuffix}
+                </option>
+              );
+            })
+          )}
+        </select>
+      </label>
+
+      <label className="registration-occurrence-toggle">
+        <input
+          checked={showPastOccurrences}
+          onChange={(event) => onToggleArchive(event.target.checked)}
+          type="checkbox"
+        />
+        <span>Архив дат</span>
+      </label>
+
+      {isSelectedPast ? <Badge tone="muted">Архив</Badge> : null}
+
+      {occurrencesError ? (
+        <span className="registration-occurrence-error" role="alert">
+          {occurrencesError}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function isPastOccurrence(occurrence: AdminEventOccurrence): boolean {
+  const reference = occurrence.endsAt ?? occurrence.startsAt;
+  if (!reference) {
+    return false;
+  }
+
+  const timestamp = new Date(reference).getTime();
+  if (!Number.isFinite(timestamp)) {
+    return false;
+  }
+
+  return timestamp < Date.now();
 }
 
 function SummaryCard({
