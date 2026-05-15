@@ -283,17 +283,6 @@ function findRegistrationForEvent(
   return eventRegistrations.find(isActiveEventRegistration) ?? eventRegistrations[0] ?? null;
 }
 
-function findRegistrationForPaidInput(
-  registrations: EventRegistration[],
-  input: RegisterForPaidEventSimulatedInput,
-): EventRegistration | null {
-  return findActiveRegistrationForTarget(
-    registrations,
-    input.eventId,
-    input.occurrenceId ?? null,
-  );
-}
-
 function findLoadedEvent(
   events: EventItem[],
   registrations: EventRegistration[],
@@ -470,32 +459,40 @@ export const useEventsStore = create<EventsState>((set, get) => ({
   },
 
   registerForPaidEventSimulated: async (input: RegisterForPaidEventSimulatedInput) => {
-    const existingRegistration = findRegistrationForPaidInput(get().myRegistrations, input);
-
-    if (existingRegistration) {
-      throw new Error(input.occurrenceId ? 'Вы уже записаны на этот сеанс' : 'Вы уже записаны');
-    }
-
     set({ registrationsLoading: true, error: null });
 
     try {
       const registration = await registerForPaidEventSimulatedService(input);
 
-      set((state) => ({
-        myRegistrations: upsertRegistration(state.myRegistrations, registration),
-        registrationsLoading: false,
-        error: null,
-      }));
+      // Always reload the full server list. Repeat paid registrations on the
+      // same (event, occurrence) produce separate rows with new ids; merging by
+      // a single RPC return value would still leave room for the local state to
+      // miss a row if the RPC payload is lean (no embedded options/event), so
+      // refetch and let the server be the source of truth.
+      try {
+        const registrations = await loadMyRegistrationsService();
+        const hydrated = registrations.find((item) => item.id === registration.id);
 
-      return registration;
+        set({
+          myRegistrations: sortRegistrations(registrations),
+          registrationsLoading: false,
+          error: null,
+        });
+
+        return hydrated ?? registration;
+      } catch {
+        set((state) => ({
+          myRegistrations: upsertRegistration(state.myRegistrations, registration),
+          registrationsLoading: false,
+          error: null,
+        }));
+
+        return registration;
+      }
     } catch (error) {
       const message = friendlyRegistrationError(error);
 
-      if (message === 'Вы уже записаны' || message === 'Вы уже записаны на этот сеанс') {
-        await get().loadMyRegistrations();
-      } else {
-        set({ registrationsLoading: false, error: message });
-      }
+      set({ registrationsLoading: false, error: message });
 
       throw new Error(message);
     }

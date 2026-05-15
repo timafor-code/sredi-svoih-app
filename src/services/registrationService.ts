@@ -387,22 +387,22 @@ export async function registerForPaidEventSimulated(
   const registration = normalizeSingleResult(data as EventRegistrationRow | EventRegistrationRow[] | null);
 
   if (registration) {
-    try {
-      const registrations = await loadMyRegistrations();
-      const hydratedRegistration = registrations.find((item) => item.id === registration.id);
-
-      return hydratedRegistration ?? registration;
-    } catch {
-      return registration;
-    }
+    return registration;
   }
 
+  // RPC should always return the newly inserted row, but if it ever comes back
+  // empty fall back to refetching the user's registrations.
   const registrations = await loadMyRegistrations();
   const targetOccurrenceId = input.occurrenceId ?? null;
-  const fallbackRegistration = registrations.find((item) => (
-    item.eventId === input.eventId
-    && (targetOccurrenceId ? item.occurrenceId === targetOccurrenceId : !item.occurrenceId)
-  )) ?? registrations.find((item) => item.eventId === input.eventId);
+  const fallbackRegistration = registrations
+    .filter((item) => (
+      item.eventId === input.eventId
+      && (targetOccurrenceId ? item.occurrenceId === targetOccurrenceId : !item.occurrenceId)
+    ))
+    .sort((first, second) => (
+      new Date(second.registeredAt).getTime() - new Date(first.registeredAt).getTime()
+    ))[0]
+    ?? registrations.find((item) => item.eventId === input.eventId);
 
   if (!fallbackRegistration) {
     throw new Error('Registration result is empty');
