@@ -114,8 +114,9 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
         </GlassCard>
       ) : null}
 
-      <GlassCard className="event-create-card" elevated>
+      <GlassCard className="event-create-card event-create-card--sticky-actions" elevated>
         <EventForm
+          actionsPlacement="stickyTop"
           initialEvent={currentEvent}
           mode="edit"
           categories={categories}
