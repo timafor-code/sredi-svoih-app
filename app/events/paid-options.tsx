@@ -18,12 +18,10 @@ import { GlassCard } from '@/components/glass/GlassCard';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import {
-  formatRegistrationDateTime,
-  getNextRegistrationOpening,
+  getNearestOccurrence,
   getOpenOccurrences,
-  getRegistrationWindowInfo,
+  getUnavailableRegistrationText,
   isRegistrationWindowOpen,
-  type RegistrationWindowInfo,
 } from '@/lib/registrationWindow';
 import { listEventOccurrences } from '@/services/eventOccurrencesService';
 import { listEventParticipationOptions } from '@/services/participationOptionsService';
@@ -155,36 +153,6 @@ function formatOccurrenceSession(occurrence: EventOccurrence): string {
     )}`;
 
   return `${start}-${end}`;
-}
-
-function parseOccurrenceStartTime(occurrence: EventOccurrence): number {
-  const time = new Date(occurrence.startsAt).getTime();
-
-  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
-}
-
-function getNearestOccurrence(occurrences: EventOccurrence[]): EventOccurrence | null {
-  return [...occurrences].sort((first, second) => (
-    parseOccurrenceStartTime(first) - parseOccurrenceStartTime(second)
-  ))[0] ?? null;
-}
-
-function getUnavailableRegistrationText(occurrences: EventOccurrence[]): string {
-  const nextOpening = getNextRegistrationOpening(occurrences);
-
-  if (nextOpening?.registrationOpensAt) {
-    return `Запись откроется ${formatRegistrationDateTime(
-      nextOpening.registrationOpensAt,
-      nextOpening.timezone,
-    )}`;
-  }
-
-  const nearestOccurrence = getNearestOccurrence(occurrences);
-  const nearestWindow = getRegistrationWindowInfo(nearestOccurrence);
-
-  return nearestWindow.state === 'closed'
-    ? 'Запись на ближайший сеанс закрыта'
-    : 'Нет доступных сеансов для записи';
 }
 
 type ChipProps = {
@@ -326,59 +294,6 @@ function OptionCard({
   );
 }
 
-type OccurrenceChoiceCardProps = {
-  disabled?: boolean;
-  eventTitle: string;
-  occurrence: EventOccurrence;
-  onPress?: () => void;
-  selected: boolean;
-  windowInfo: RegistrationWindowInfo;
-};
-
-function OccurrenceChoiceCard({
-  disabled = false,
-  eventTitle,
-  occurrence,
-  onPress,
-  selected,
-  windowInfo,
-}: OccurrenceChoiceCardProps) {
-  return (
-    <Pressable
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.occurrenceChoiceCard,
-        selected && styles.occurrenceChoiceCardSelected,
-        disabled && styles.occurrenceChoiceCardDisabled,
-        pressed && !disabled && styles.pressed,
-      ]}
-    >
-      <View style={styles.occurrenceChoiceTextBlock}>
-        <Text style={styles.occurrenceChoiceTitle}>
-          {formatOccurrenceSession(occurrence)}
-        </Text>
-        <Text style={styles.occurrenceChoiceSubtitle}>
-          {occurrence.title?.trim() || eventTitle}
-        </Text>
-        <Text style={[
-          styles.occurrenceChoiceStatus,
-          windowInfo.state === 'open' && styles.occurrenceChoiceStatusOpen,
-        ]}>
-          {windowInfo.label}
-        </Text>
-      </View>
-      {disabled ? (
-        <Ionicons name="lock-closed-outline" size={20} color={colors.textDim} />
-      ) : (
-        <View style={[styles.radio, selected && styles.radioSelected]}>
-          {selected ? <Ionicons name="checkmark" size={15} color={colors.text} /> : null}
-        </View>
-      )}
-    </Pressable>
-  );
-}
-
 export default function PaidOptionsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -395,7 +310,7 @@ export default function PaidOptionsScreen() {
   const [event, setEvent] = useState<EventItem | null>(null);
   const [occurrences, setOccurrences] = useState<EventOccurrence[]>([]);
   const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<string | null>(null);
-  const [occurrenceMissing, setOccurrenceMissing] = useState(false);
+  const [occurrenceUnavailableReason, setOccurrenceUnavailableReason] = useState<string | null>(null);
   const [options, setOptions] = useState<EventParticipationOption[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [quantities, setQuantities] = useState<Quantities>({});
@@ -410,6 +325,7 @@ export default function PaidOptionsScreen() {
       setOptions([]);
       setOccurrences([]);
       setSelectedOccurrenceId(null);
+      setOccurrenceUnavailableReason(null);
       setError('Событие не найдено');
       setLoading(false);
       return;
@@ -431,17 +347,28 @@ export default function PaidOptionsScreen() {
 
       const openOccurrences = getOpenOccurrences(loadedOccurrences);
       const requestedOccurrence = occurrenceId
-        ? openOccurrences.find((item) => item.id === occurrenceId) ?? null
+        ? loadedOccurrences.find((item) => item.id === occurrenceId) ?? null
         : null;
-      const nextSelectedOccurrenceId = requestedOccurrence?.id
-        ?? (openOccurrences.length === 1 ? openOccurrences[0].id : null);
+      const requestedOpenOccurrence = requestedOccurrence && isRegistrationWindowOpen(requestedOccurrence)
+        ? requestedOccurrence
+        : null;
+      const autoSelectedOccurrenceId = openOccurrences.length === 1
+        ? openOccurrences[0].id
+        : null;
+      const nextSelectedOccurrenceId = occurrenceId
+        ? (requestedOpenOccurrence?.id ?? null)
+        : autoSelectedOccurrenceId;
 
       setEvent(loadedEvent);
       setOccurrences(loadedOccurrences);
       setSelectedOccurrenceId(nextSelectedOccurrenceId);
-      setOccurrenceMissing(Boolean(occurrenceId && !requestedOccurrence));
+      setOccurrenceUnavailableReason(
+        occurrenceId && !requestedOpenOccurrence
+          ? 'Выбранный сеанс сейчас недоступен.'
+          : null,
+      );
       const activeOptions = loadedOptions.filter((option) => option.isActive);
-      const shouldClearSelections = loadedOccurrences.length > 0 && openOccurrences.length === 0;
+      const shouldClearSelections = !nextSelectedOccurrenceId;
 
       setOptions(activeOptions);
       setSelectedIds((current) => (
@@ -486,9 +413,13 @@ export default function PaidOptionsScreen() {
     () => openOccurrences.find((item) => item.id === selectedOccurrenceId) ?? null,
     [openOccurrences, selectedOccurrenceId],
   );
-  const hasOccurrences = occurrences.length > 0;
-  const registrationFlowBlocked = hasOccurrences && openOccurrences.length === 0;
-  const selectedOccurrenceOpen = !hasOccurrences || isRegistrationWindowOpen(selectedOccurrence);
+  const shouldRedirectToOccurrenceStep = Boolean(
+    event?.id === eventId && !occurrenceId && openOccurrences.length > 1,
+  );
+  const registrationFlowBlocked = !shouldRedirectToOccurrenceStep && !selectedOccurrence;
+  const selectedOccurrenceOpen = Boolean(
+    selectedOccurrence && isRegistrationWindowOpen(selectedOccurrence),
+  );
   const nearestOccurrence = useMemo(
     () => getNearestOccurrence(occurrences),
     [occurrences],
@@ -497,6 +428,18 @@ export default function PaidOptionsScreen() {
     () => getUnavailableRegistrationText(occurrences),
     [occurrences],
   );
+  const registrationUnavailableText = occurrenceUnavailableReason ?? unavailableRegistrationText;
+
+  useEffect(() => {
+    if (!eventId || occurrenceId || openOccurrences.length <= 1 || event?.id !== eventId) {
+      return;
+    }
+
+    router.replace({
+      pathname: '/events/paid-occurrences',
+      params: { eventId },
+    });
+  }, [event?.id, eventId, occurrenceId, openOccurrences.length, router]);
 
   const totals = useMemo(() => {
     return selectedOptions.reduce(
@@ -516,13 +459,15 @@ export default function PaidOptionsScreen() {
   const canContinue = totals.seats > 0
     && !submitting
     && !registrationFlowBlocked
-    && (!hasOccurrences || Boolean(selectedOccurrence))
     && selectedOccurrenceOpen;
   const displayedTotals = registrationFlowBlocked ? { amount: 0, seats: 0 } : totals;
-  const showParticipationControls = !registrationFlowBlocked
-    && (!hasOccurrences || Boolean(selectedOccurrence));
+  const showParticipationControls = !registrationFlowBlocked && !shouldRedirectToOccurrenceStep;
   const showStickyPanel = Boolean(
-    !loading && !error && event && (options.length > 0 || registrationFlowBlocked),
+    !loading
+      && !error
+      && event
+      && !shouldRedirectToOccurrenceStep
+      && (options.length > 0 || registrationFlowBlocked),
   );
 
   const handleBack = useCallback(() => {
@@ -569,7 +514,7 @@ export default function PaidOptionsScreen() {
       return;
     }
 
-    if (hasOccurrences && (!selectedOccurrence || !isRegistrationWindowOpen(selectedOccurrence))) {
+    if (!selectedOccurrence || !isRegistrationWindowOpen(selectedOccurrence)) {
       Alert.alert(
         'Регистрация сейчас недоступна',
         'Выберите доступный сеанс или дождитесь открытия записи.',
@@ -611,7 +556,6 @@ export default function PaidOptionsScreen() {
     }
   }, [
     eventId,
-    hasOccurrences,
     quantities,
     registerForPaidEventSimulated,
     router,
@@ -621,7 +565,7 @@ export default function PaidOptionsScreen() {
   ]);
 
   const handleContinue = useCallback(() => {
-    if (hasOccurrences && (!selectedOccurrence || !isRegistrationWindowOpen(selectedOccurrence))) {
+    if (!selectedOccurrence || !isRegistrationWindowOpen(selectedOccurrence)) {
       Alert.alert(
         'Регистрация сейчас недоступна',
         'Выберите доступный сеанс или дождитесь открытия записи.',
@@ -638,7 +582,7 @@ export default function PaidOptionsScreen() {
       { text: 'Отмена', style: 'cancel' },
       { text: 'Продолжить', onPress: () => { void submitRegistration(); } },
     ]);
-  }, [hasOccurrences, selectedOccurrence, submitRegistration, totals.seats]);
+  }, [selectedOccurrence, submitRegistration, totals.seats]);
 
   const showHeroImage = Boolean(event?.imageUrl && !heroImageFailed);
   const bottomOffset = Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 12);
@@ -706,12 +650,12 @@ export default function PaidOptionsScreen() {
               {event.subtitle ? <Text style={styles.subtitle}>{event.subtitle}</Text> : null}
             </View>
 
-            {hasOccurrences && openOccurrences.length === 0 ? (
+            {registrationFlowBlocked ? (
               <GlassCard>
                 <View style={styles.unavailableCardContent}>
                   <Ionicons name="alert-circle-outline" size={18} color={colors.warning} />
                   <Text style={styles.warningTitle}>Регистрация сейчас недоступна</Text>
-                  <Text style={styles.warningText}>{unavailableRegistrationText}</Text>
+                  <Text style={styles.warningText}>{registrationUnavailableText}</Text>
                   {nearestOccurrence ? (
                     <Text style={styles.nearestSessionText}>
                       Ближайший сеанс: {formatOccurrenceSession(nearestOccurrence)}
@@ -721,14 +665,16 @@ export default function PaidOptionsScreen() {
               </GlassCard>
             ) : null}
 
-            {hasOccurrences && openOccurrences.length === 1 && selectedOccurrence ? (
+            {selectedOccurrence ? (
               <GlassCard>
                 <View style={styles.dateCardContent}>
                   <View style={styles.dateIcon}>
                     <Ionicons name="calendar-outline" size={18} color={colors.orange} />
                   </View>
                   <View style={styles.dateTextBlock}>
-                    <Text style={styles.dateLabel}>Выбран автоматически</Text>
+                    <Text style={styles.dateLabel}>
+                      {occurrenceId ? 'Выбранный сеанс' : 'Выбран автоматически'}
+                    </Text>
                     <Text style={styles.dateTitle}>
                       Сеанс: {formatOccurrenceSession(selectedOccurrence)}
                     </Text>
@@ -736,33 +682,6 @@ export default function PaidOptionsScreen() {
                       {selectedOccurrence.title?.trim() || event.title}
                     </Text>
                   </View>
-                </View>
-              </GlassCard>
-            ) : null}
-
-            {hasOccurrences && openOccurrences.length > 1 ? (
-              <View style={styles.occurrenceChoiceBlock}>
-                <Text style={styles.optionSectionTitle}>Выберите дату или сеанс</Text>
-                {openOccurrences.map((item) => (
-                  <OccurrenceChoiceCard
-                    key={item.id}
-                    eventTitle={event.title}
-                    occurrence={item}
-                    selected={item.id === selectedOccurrenceId}
-                    windowInfo={getRegistrationWindowInfo(item)}
-                    onPress={() => setSelectedOccurrenceId(item.id)}
-                  />
-                ))}
-              </View>
-            ) : null}
-
-            {occurrenceMissing && !registrationFlowBlocked ? (
-              <GlassCard>
-                <View style={styles.warningRow}>
-                  <Ionicons name="alert-circle-outline" size={18} color={colors.warning} />
-                  <Text style={styles.warningText}>
-                    Выбранный сеанс сейчас недоступен. Выберите доступную дату или сеанс.
-                  </Text>
                 </View>
               </GlassCard>
             ) : null}
@@ -997,19 +916,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-  warningRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
   unavailableCardContent: {
     alignItems: 'flex-start',
     gap: 8,
-  },
-  warningTextBlock: {
-    flex: 1,
-    minWidth: 0,
-    gap: 4,
   },
   warningTitle: {
     color: colors.text,
@@ -1060,58 +969,6 @@ const styles = StyleSheet.create({
   },
   optionsBlock: {
     gap: 18,
-  },
-  occurrenceChoiceBlock: {
-    gap: 10,
-  },
-  occurrenceChoiceCard: {
-    minHeight: 82,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.glass.w06,
-    padding: 16,
-  },
-  occurrenceChoiceCardSelected: {
-    borderColor: colors.accent.orangeBorder,
-    backgroundColor: colors.accent.orangeBg,
-  },
-  occurrenceChoiceCardDisabled: {
-    opacity: 0.62,
-  },
-  occurrenceChoiceTextBlock: {
-    flex: 1,
-    minWidth: 0,
-    gap: 5,
-  },
-  occurrenceChoiceTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '800',
-    lineHeight: 22,
-  },
-  occurrenceChoiceSubtitle: {
-    color: colors.textMuted,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  occurrenceChoiceStatus: {
-    color: colors.textDim,
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  occurrenceChoiceStatusOpen: {
-    color: colors.success,
-    fontWeight: '700',
-  },
-  unavailableSectionTitle: {
-    color: colors.textMuted,
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: 0,
   },
   optionSection: {
     gap: 10,

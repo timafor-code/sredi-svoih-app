@@ -17,8 +17,8 @@ import { GlassCard } from '@/components/glass/GlassCard';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import {
+  formatRegistrationWindowLabel,
   getOpenOccurrences,
-  getRegistrationWindowInfo,
 } from '@/lib/registrationWindow';
 import { listEventOccurrences } from '@/services/eventOccurrencesService';
 import { useEventsStore } from '@/store/useEventsStore';
@@ -112,7 +112,7 @@ function OccurrenceCard({
   onPress,
   selected,
 }: OccurrenceCardProps) {
-  const windowInfo = getRegistrationWindowInfo(occurrence);
+  const registrationLabel = formatRegistrationWindowLabel(occurrence);
 
   return (
     <Pressable
@@ -136,15 +136,10 @@ function OccurrenceCard({
           {occurrence.title?.trim() || eventTitle}
         </Text>
         <View style={styles.occurrenceMetaRow}>
-          <View style={[
-            styles.activeBadge,
-            windowInfo.state !== 'open' && styles.unavailableBadge,
-          ]}>
-            <Text style={styles.activeBadgeText}>
-              {windowInfo.state === 'open' ? 'Доступна' : 'Недоступна'}
-            </Text>
+          <View style={styles.activeBadge}>
+            <Text style={styles.activeBadgeText}>Доступна</Text>
           </View>
-          <Text style={styles.windowText}>{windowInfo.label}</Text>
+          <Text style={styles.windowText}>{registrationLabel}</Text>
         </View>
       </View>
       {disabled ? (
@@ -240,14 +235,14 @@ export default function PaidOccurrencesScreen() {
     router.push('/events');
   }, [eventId, router]);
 
-  const openOptions = useCallback((occurrenceId?: string) => {
+  const openOptions = useCallback((occurrenceId: string) => {
     if (!eventId) {
       return;
     }
 
     router.push({
       pathname: '/events/paid-options',
-      params: occurrenceId ? { eventId, occurrenceId } : { eventId },
+      params: { eventId, occurrenceId },
     });
   }, [eventId, router]);
 
@@ -331,26 +326,11 @@ export default function PaidOccurrencesScreen() {
             <View style={styles.sectionIntro}>
               <Text style={styles.sectionTitle}>Выберите дату</Text>
               <Text style={styles.helperText}>
-                Сначала выберите конкретную встречу, затем формат участия.
+                Сначала выберите сеанс, затем вариант участия
               </Text>
             </View>
 
-            {occurrences.length === 0 ? (
-              <GlassCard>
-                <View style={styles.stateCard}>
-                  <Ionicons name="calendar-clear-outline" size={24} color={colors.textDim} />
-                  <Text style={styles.emptyTitle}>Даты пока не добавлены</Text>
-                  <Text style={styles.stateText}>
-                    Можно перейти к вариантам участия на уровне события.
-                  </Text>
-                  <PrimaryButton
-                    title="Перейти к вариантам участия"
-                    onPress={() => openOptions()}
-                    buttonStyle={styles.emptyButton}
-                  />
-                </View>
-              </GlassCard>
-            ) : openOccurrences.length === 0 ? (
+            {openOccurrences.length === 0 ? (
               <GlassCard>
                 <View style={styles.stateCard}>
                   <Ionicons name="alert-circle-outline" size={24} color={colors.warning} />
@@ -378,7 +358,7 @@ export default function PaidOccurrencesScreen() {
         ) : null}
       </Screen>
 
-      {!loading && !error && event && occurrences.length > 0 ? (
+      {!loading && !error && event ? (
         <View pointerEvents="box-none" style={[styles.stickyWrap, { bottom: bottomOffset }]}>
           <GlassCard style={styles.stickyCard} contentStyle={styles.stickyContent}>
             <View style={styles.selectedSummary}>
@@ -596,10 +576,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  unavailableBadge: {
-    borderColor: colors.accent.goldBorder,
-    backgroundColor: colors.accent.goldBg,
-  },
   activeBadgeText: {
     color: colors.text,
     fontSize: 11,
@@ -611,12 +587,6 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     fontSize: 12,
     lineHeight: 17,
-  },
-  unavailableSectionTitle: {
-    color: colors.textMuted,
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: 0,
   },
   radio: {
     width: 24,
@@ -653,9 +623,6 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '800',
     textAlign: 'center',
-  },
-  emptyButton: {
-    marginTop: 4,
   },
   errorText: {
     color: colors.danger,
