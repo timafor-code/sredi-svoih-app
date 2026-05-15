@@ -485,8 +485,7 @@ export default function PaidOptionsScreen() {
   const canContinue = totals.seats > 0
     && !submitting
     && !registrationFlowBlocked
-    && selectedOccurrenceOpen
-    && !existingRegistrationForSelectedTarget;
+    && selectedOccurrenceOpen;
   const displayedTotals = registrationFlowBlocked ? { amount: 0, seats: 0 } : totals;
   const showParticipationControls = !registrationFlowBlocked && !shouldRedirectToOccurrenceStep;
   const showStickyPanel = Boolean(
@@ -554,11 +553,6 @@ export default function PaidOptionsScreen() {
       return;
     }
 
-    if (existingRegistrationForSelectedTarget) {
-      Alert.alert('Вы уже записаны', 'Вы уже записаны на этот сеанс.');
-      return;
-    }
-
     setSubmitting(true);
 
     try {
@@ -591,7 +585,6 @@ export default function PaidOptionsScreen() {
     quantities,
     registerForPaidEventSimulated,
     router,
-    existingRegistrationForSelectedTarget,
     selectedOccurrence,
     selectedOptions,
     totals.seats,
@@ -612,7 +605,14 @@ export default function PaidOptionsScreen() {
     }
 
     if (existingRegistrationForSelectedTarget) {
-      Alert.alert('Вы уже записаны', 'Вы уже записаны на этот сеанс.');
+      Alert.alert(
+        'Создать ещё одну запись?',
+        'У вас уже есть запись на этот сеанс. Новая запись будет создана отдельно.',
+        [
+          { text: 'Отмена', style: 'cancel' },
+          { text: 'Создать ещё одну запись', onPress: () => { void submitRegistration(); } },
+        ],
+      );
       return;
     }
 
@@ -727,11 +727,11 @@ export default function PaidOptionsScreen() {
             {existingRegistrationForSelectedTarget ? (
               <GlassCard>
                 <View style={styles.duplicateCardContent}>
-                  <Ionicons name="checkmark-circle-outline" size={18} color={colors.success} />
+                  <Ionicons name="information-circle-outline" size={18} color={colors.orange} />
                   <View style={styles.duplicateTextBlock}>
-                    <Text style={styles.duplicateTitle}>Вы уже записаны на этот сеанс</Text>
+                    <Text style={styles.duplicateTitle}>У вас уже есть запись на этот сеанс</Text>
                     <Text style={styles.duplicateText}>
-                      Можно выбрать другую дату этого события, если регистрация на неё открыта.
+                      Можно создать ещё одну отдельную запись, например для гостя или благотворительного участия.
                     </Text>
                   </View>
                 </View>
@@ -836,7 +836,7 @@ export default function PaidOptionsScreen() {
                 : submitting
                   ? 'Создаём запись...'
                   : existingRegistrationForSelectedTarget
-                    ? 'Вы уже записаны на этот сеанс'
+                    ? 'Создать ещё одну запись'
                     : 'Имитировать оплату и записаться'}
               disabled={!canContinue}
               onPress={handleContinue}
