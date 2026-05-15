@@ -18,11 +18,19 @@ import {
   getRegistrationStatusTitle,
   useEventRegistrationAction,
 } from '@/hooks/useEventRegistrationAction';
-import { isEventPast } from '@/lib/eventTime';
+import { isEventPast, parseEventTime } from '@/lib/eventTime';
+import {
+  formatRegistrationDateTime,
+  getNextRegistrationOpening,
+  getOpenOccurrences,
+  getRegistrationWindowInfo,
+} from '@/lib/registrationWindow';
+import { listEventOccurrences } from '@/services/eventOccurrencesService';
 import { useAuthStore } from '@/store/useAuthStore';
 import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
 import type { EventItem, EventRegistration } from '@/types/event';
+import type { EventOccurrence } from '@/types/eventOccurrence';
 
 const registrationModeTitles: Record<EventItem['registrationMode'], string> = {
   none: 'Регистрация не требуется',
@@ -140,6 +148,98 @@ function getPaidRegistrationButtonTitle(event: EventItem): string {
   }
 }
 
+type PaidRegistrationAvailability = {
+  canRegister: boolean;
+  hasOccurrences: boolean;
+  loading: boolean;
+  statusLabel: string | null;
+  unavailableReason: string | null;
+};
+
+function getNearestOccurrence(
+  occurrences: EventOccurrence[],
+): EventOccurrence | null {
+  return [...occurrences].sort((first, second) => (
+    (parseEventTime(first.startsAt) ?? Number.POSITIVE_INFINITY)
+    - (parseEventTime(second.startsAt) ?? Number.POSITIVE_INFINITY)
+  ))[0] ?? null;
+}
+
+function getPaidRegistrationAvailability(
+  occurrences: EventOccurrence[],
+  loading: boolean,
+  error: string | null,
+): PaidRegistrationAvailability {
+  if (loading) {
+    return {
+      canRegister: false,
+      hasOccurrences: true,
+      loading: true,
+      statusLabel: 'Проверяем доступные сеансы...',
+      unavailableReason: null,
+    };
+  }
+
+  if (error) {
+    return {
+      canRegister: false,
+      hasOccurrences: true,
+      loading: false,
+      statusLabel: 'Регистрация сейчас недоступна',
+      unavailableReason: 'Не удалось проверить доступные сеансы. Попробуйте обновить событие.',
+    };
+  }
+
+  if (occurrences.length === 0) {
+    return {
+      canRegister: true,
+      hasOccurrences: false,
+      loading: false,
+      statusLabel: null,
+      unavailableReason: null,
+    };
+  }
+
+  const openOccurrences = getOpenOccurrences(occurrences);
+
+  if (openOccurrences.length > 0) {
+    return {
+      canRegister: true,
+      hasOccurrences: true,
+      loading: false,
+      statusLabel: 'Регистрация открыта',
+      unavailableReason: null,
+    };
+  }
+
+  const nextOpening = getNextRegistrationOpening(occurrences);
+  const nearestOccurrence = getNearestOccurrence(occurrences);
+  const nearestWindow = getRegistrationWindowInfo(nearestOccurrence);
+
+  if (nextOpening?.registrationOpensAt) {
+    return {
+      canRegister: false,
+      hasOccurrences: true,
+      loading: false,
+      statusLabel: getRegistrationWindowInfo(nextOpening).label,
+      unavailableReason: `Запись откроется ${formatRegistrationDateTime(
+        nextOpening.registrationOpensAt,
+        nextOpening.timezone,
+      )}`,
+    };
+  }
+
+  return {
+    canRegister: false,
+    hasOccurrences: true,
+    loading: false,
+    statusLabel: nearestWindow.label,
+    unavailableReason: nearestWindow.state === 'closed'
+      ? 'Запись на ближайший сеанс закрыта'
+      : 'Нет доступных сеансов для записи',
+  };
+}
+
 type ChipProps = {
   children: string;
   tone?: 'default' | 'warning' | 'danger' | 'success';
@@ -181,6 +281,7 @@ type RegistrationBlockProps = {
   onCancel: (registration: EventRegistration) => void;
   onOpenPaidRegistration: (event: EventItem) => void;
   onRegister: (event: EventItem, registration: EventRegistration | null) => void;
+  paidRegistrationAvailability: PaidRegistrationAvailability | null;
   registration: EventRegistration | null;
   registering: boolean;
 };
@@ -192,6 +293,7 @@ function RegistrationBlock({
   onCancel,
   onOpenPaidRegistration,
   onRegister,
+  paidRegistrationAvailability,
   registration,
   registering,
 }: RegistrationBlockProps) {
@@ -216,6 +318,13 @@ function RegistrationBlock({
   }
 
   if (event.registrationMode === 'internal_paid') {
+    const canOpenPaidRegistration = paidRegistrationAvailability?.canRegister ?? true;
+    const paidRegistrationButtonTitle = paidRegistrationAvailability?.loading
+      ? 'Загружаем сеансы...'
+      : canOpenPaidRegistration
+        ? getPaidRegistrationButtonTitle(event)
+        : 'Регистрация сейчас недоступна';
+
     return (
       <GlassCard>
         <View style={styles.sectionHeader}>
@@ -223,9 +332,31 @@ function RegistrationBlock({
           <Chip tone="warning">Платное участие</Chip>
         </View>
         <Text style={styles.sectionText}>Выберите дату и вариант участия. Оплату и финальную запись подключим следующим этапом.</Text>
+        {paidRegistrationAvailability?.statusLabel ? (
+          <View style={styles.registrationStatusRow}>
+            <Ionicons
+              name={canOpenPaidRegistration ? 'checkmark-circle-outline' : 'time-outline'}
+              size={17}
+              color={canOpenPaidRegistration ? colors.success : colors.warning}
+            />
+            <Text style={styles.registrationStatusText}>
+              {paidRegistrationAvailability.statusLabel}
+            </Text>
+          </View>
+        ) : null}
+        {paidRegistrationAvailability?.unavailableReason ? (
+          <Text style={styles.mutedNote}>
+            {paidRegistrationAvailability.unavailableReason}
+          </Text>
+        ) : null}
         <PrimaryButton
-          title={getPaidRegistrationButtonTitle(event)}
-          onPress={() => onOpenPaidRegistration(event)}
+          title={paidRegistrationButtonTitle}
+          disabled={!canOpenPaidRegistration}
+          onPress={() => {
+            if (canOpenPaidRegistration) {
+              onOpenPaidRegistration(event);
+            }
+          }}
           buttonStyle={styles.registrationButton}
         />
       </GlassCard>
@@ -305,6 +436,10 @@ export default function EventDetailScreen() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const eventId = Array.isArray(params.id) ? params.id[0] : params.id;
   const [heroImageFailed, setHeroImageFailed] = useState(false);
+  const [paidOccurrences, setPaidOccurrences] = useState<EventOccurrence[]>([]);
+  const [paidOccurrencesLoadedEventId, setPaidOccurrencesLoadedEventId] = useState<string | null>(null);
+  const [paidOccurrencesLoading, setPaidOccurrencesLoading] = useState(false);
+  const [paidOccurrencesError, setPaidOccurrencesError] = useState<string | null>(null);
   const session = useAuthStore((state) => state.session);
   const authUser = useAuthStore((state) => state.user);
   const membership = useAuthStore((state) => state.membership);
@@ -364,6 +499,50 @@ export default function EventDetailScreen() {
   useEffect(() => {
     setHeroImageFailed(false);
   }, [event?.imageUrl]);
+
+  useEffect(() => {
+    if (!event?.id || event.registrationMode !== 'internal_paid') {
+      setPaidOccurrences([]);
+      setPaidOccurrencesLoadedEventId(null);
+      setPaidOccurrencesLoading(false);
+      setPaidOccurrencesError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    setPaidOccurrencesLoading(true);
+    setPaidOccurrencesError(null);
+
+    void listEventOccurrences(event.id)
+      .then((loadedOccurrences) => {
+        if (cancelled) {
+          return;
+        }
+
+        setPaidOccurrences(loadedOccurrences);
+        setPaidOccurrencesLoadedEventId(event.id);
+        setPaidOccurrencesError(null);
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setPaidOccurrences([]);
+        setPaidOccurrencesLoadedEventId(event.id);
+        setPaidOccurrencesError('Не удалось проверить доступные сеансы.');
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPaidOccurrencesLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [event?.id, event?.registrationMode]);
 
   const registration = useMemo(() => {
     if (!eventId) {
@@ -425,6 +604,24 @@ export default function EventDetailScreen() {
 
     return rows;
   }, [event]);
+
+  const paidRegistrationAvailability = useMemo(() => {
+    if (!event || event.registrationMode !== 'internal_paid') {
+      return null;
+    }
+
+    return getPaidRegistrationAvailability(
+      paidOccurrences,
+      paidOccurrencesLoading || paidOccurrencesLoadedEventId !== event.id,
+      paidOccurrencesError,
+    );
+  }, [
+    event,
+    paidOccurrences,
+    paidOccurrencesError,
+    paidOccurrencesLoadedEventId,
+    paidOccurrencesLoading,
+  ]);
 
   const description = event?.description ?? event?.shortDescription ?? null;
   const statusTitle = event?.status ? eventStatusTitles[event.status] : undefined;
@@ -542,6 +739,7 @@ export default function EventDetailScreen() {
               hasSession={Boolean(session)}
               registering={registeringEventId === event.id}
               cancelling={cancellingRegistrationId === registration?.id}
+              paidRegistrationAvailability={paidRegistrationAvailability}
               onRegister={handleRegistrationAction}
               onCancel={handleCancelRegistration}
               onOpenPaidRegistration={handleOpenPaidRegistration}
@@ -705,6 +903,19 @@ const styles = StyleSheet.create({
   },
   registrationButton: {
     marginTop: 14,
+  },
+  registrationStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginTop: 12,
+  },
+  registrationStatusText: {
+    flex: 1,
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
   },
   cancelButton: {
     minHeight: 40,

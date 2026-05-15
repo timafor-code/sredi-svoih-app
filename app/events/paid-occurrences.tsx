@@ -16,6 +16,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassCard } from '@/components/glass/GlassCard';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
+import {
+  getOpenOccurrences,
+  getRegistrationWindowInfo,
+} from '@/lib/registrationWindow';
 import { listEventOccurrences } from '@/services/eventOccurrencesService';
 import { useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
@@ -24,16 +28,6 @@ import type { EventOccurrence } from '@/types/eventOccurrence';
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function parseTime(value: string | null | undefined): number | null {
-  if (!value) {
-    return null;
-  }
-
-  const time = new Date(value).getTime();
-
-  return Number.isNaN(time) ? null : time;
 }
 
 function formatDate(value: string, timeZone?: string | null, includeYear = true): string {
@@ -76,45 +70,6 @@ function formatTime(value: string, timeZone?: string | null): string {
   }
 }
 
-function formatDateTime(value: string, timeZone?: string | null): string {
-  const options: Intl.DateTimeFormatOptions = {
-    day: 'numeric',
-    month: 'long',
-    hour: '2-digit',
-    minute: '2-digit',
-  };
-
-  if (timeZone) {
-    options.timeZone = timeZone;
-  }
-
-  try {
-    return new Intl.DateTimeFormat('ru-RU', options).format(new Date(value));
-  } catch {
-    delete options.timeZone;
-    return new Intl.DateTimeFormat('ru-RU', options).format(new Date(value));
-  }
-}
-
-function formatRegistrationWindow(occurrence: EventOccurrence): string {
-  const now = Date.now();
-  const opensAt = parseTime(occurrence.registrationOpensAt);
-  const closesAt = parseTime(occurrence.registrationClosesAt);
-
-  if (opensAt !== null && now < opensAt && occurrence.registrationOpensAt) {
-    return `Регистрация откроется ${formatDateTime(
-      occurrence.registrationOpensAt,
-      occurrence.timezone,
-    )}`;
-  }
-
-  if (closesAt !== null && now > closesAt) {
-    return 'Регистрация закрыта';
-  }
-
-  return 'Регистрация открыта';
-}
-
 function getPlace(event: EventItem): string {
   if (event.locationName && event.address) {
     return `${event.locationName}, ${event.address}`;
@@ -143,25 +98,31 @@ function Chip({ children }: ChipProps) {
 }
 
 type OccurrenceCardProps = {
+  disabled?: boolean;
   eventTitle: string;
   occurrence: EventOccurrence;
   selected: boolean;
-  onPress: () => void;
+  onPress?: () => void;
 };
 
 function OccurrenceCard({
+  disabled = false,
   eventTitle,
   occurrence,
   onPress,
   selected,
 }: OccurrenceCardProps) {
+  const windowInfo = getRegistrationWindowInfo(occurrence);
+
   return (
     <Pressable
+      disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
         styles.occurrenceCard,
         selected && styles.occurrenceCardSelected,
-        pressed && styles.pressed,
+        disabled && styles.occurrenceCardDisabled,
+        pressed && !disabled && styles.pressed,
       ]}
     >
       <View style={styles.occurrenceContent}>
@@ -175,15 +136,24 @@ function OccurrenceCard({
           {occurrence.title?.trim() || eventTitle}
         </Text>
         <View style={styles.occurrenceMetaRow}>
-          <View style={styles.activeBadge}>
-            <Text style={styles.activeBadgeText}>Активна</Text>
+          <View style={[
+            styles.activeBadge,
+            windowInfo.state !== 'open' && styles.unavailableBadge,
+          ]}>
+            <Text style={styles.activeBadgeText}>
+              {windowInfo.state === 'open' ? 'Доступна' : 'Недоступна'}
+            </Text>
           </View>
-          <Text style={styles.windowText}>{formatRegistrationWindow(occurrence)}</Text>
+          <Text style={styles.windowText}>{windowInfo.label}</Text>
         </View>
       </View>
-      <View style={[styles.radio, selected && styles.radioSelected]}>
-        {selected ? <View style={styles.radioDot} /> : null}
-      </View>
+      {disabled ? (
+        <Ionicons name="lock-closed-outline" size={20} color={colors.textDim} />
+      ) : (
+        <View style={[styles.radio, selected && styles.radioSelected]}>
+          {selected ? <View style={styles.radioDot} /> : null}
+        </View>
+      )}
     </Pressable>
   );
 }
@@ -201,9 +171,13 @@ export default function PaidOccurrencesScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const openOccurrences = useMemo(
+    () => getOpenOccurrences(occurrences),
+    [occurrences],
+  );
   const selectedOccurrence = useMemo(
-    () => occurrences.find((occurrence) => occurrence.id === selectedOccurrenceId) ?? null,
-    [occurrences, selectedOccurrenceId],
+    () => openOccurrences.find((occurrence) => occurrence.id === selectedOccurrenceId) ?? null,
+    [openOccurrences, selectedOccurrenceId],
   );
 
   const loadData = useCallback(async () => {
@@ -228,10 +202,12 @@ export default function PaidOccurrencesScreen() {
         throw new Error('Событие не найдено');
       }
 
+      const loadedOpenOccurrences = getOpenOccurrences(loadedOccurrences);
+
       setEvent(loadedEvent);
       setOccurrences(loadedOccurrences);
       setSelectedOccurrenceId((current) => (
-        current && loadedOccurrences.some((occurrence) => occurrence.id === current)
+        current && loadedOpenOccurrences.some((occurrence) => occurrence.id === current)
           ? current
           : null
       ));
@@ -374,9 +350,19 @@ export default function PaidOccurrencesScreen() {
                   />
                 </View>
               </GlassCard>
+            ) : openOccurrences.length === 0 ? (
+              <GlassCard>
+                <View style={styles.stateCard}>
+                  <Ionicons name="alert-circle-outline" size={24} color={colors.warning} />
+                  <Text style={styles.emptyTitle}>Регистрация сейчас недоступна</Text>
+                  <Text style={styles.stateText}>
+                    Сейчас нет сеансов с открытой записью.
+                  </Text>
+                </View>
+              </GlassCard>
             ) : (
               <View style={styles.occurrencesList}>
-                {occurrences.map((occurrence) => (
+                {openOccurrences.map((occurrence) => (
                   <OccurrenceCard
                     key={occurrence.id}
                     eventTitle={event.title}
@@ -387,6 +373,7 @@ export default function PaidOccurrencesScreen() {
                 ))}
               </View>
             )}
+
           </>
         ) : null}
       </Screen>
@@ -399,12 +386,16 @@ export default function PaidOccurrencesScreen() {
               <View style={styles.selectedTextBlock}>
                 <Text style={styles.selectedLabel}>Выбрано</Text>
                 <Text numberOfLines={1} style={styles.selectedText}>
-                  {selectedOccurrence ? formatSelectedOccurrence(selectedOccurrence) : 'Выберите дату'}
+                  {selectedOccurrence
+                    ? formatSelectedOccurrence(selectedOccurrence)
+                    : openOccurrences.length === 0
+                      ? 'Регистрация сейчас недоступна'
+                      : 'Выберите дату'}
                 </Text>
               </View>
             </View>
             <PrimaryButton
-              title="Продолжить"
+              title={openOccurrences.length === 0 ? 'Регистрация сейчас недоступна' : 'Продолжить'}
               disabled={!selectedOccurrence}
               onPress={() => selectedOccurrence && openOptions(selectedOccurrence.id)}
               buttonStyle={styles.stickyButton}
@@ -563,6 +554,9 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
   },
+  occurrenceCardDisabled: {
+    opacity: 0.62,
+  },
   pressed: {
     opacity: 0.84,
   },
@@ -602,6 +596,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
+  unavailableBadge: {
+    borderColor: colors.accent.goldBorder,
+    backgroundColor: colors.accent.goldBg,
+  },
   activeBadgeText: {
     color: colors.text,
     fontSize: 11,
@@ -613,6 +611,12 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     fontSize: 12,
     lineHeight: 17,
+  },
+  unavailableSectionTitle: {
+    color: colors.textMuted,
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0,
   },
   radio: {
     width: 24,

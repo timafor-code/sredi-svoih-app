@@ -17,6 +17,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassCard } from '@/components/glass/GlassCard';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
+import {
+  formatRegistrationDateTime,
+  getNextRegistrationOpening,
+  getOpenOccurrences,
+  getRegistrationWindowInfo,
+  isRegistrationWindowOpen,
+  type RegistrationWindowInfo,
+} from '@/lib/registrationWindow';
 import { listEventOccurrences } from '@/services/eventOccurrencesService';
 import { listEventParticipationOptions } from '@/services/participationOptionsService';
 import { useEventsStore } from '@/store/useEventsStore';
@@ -45,20 +53,10 @@ function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function parseTime(value: string | null | undefined): number | null {
-  if (!value) {
-    return null;
-  }
-
-  const time = new Date(value).getTime();
-
-  return Number.isNaN(time) ? null : time;
-}
-
 function formatDate(value: string, timeZone?: string | null): string {
   const options: Intl.DateTimeFormatOptions = {
-    day: 'numeric',
-    month: 'long',
+    day: '2-digit',
+    month: '2-digit',
     year: 'numeric',
   };
 
@@ -139,22 +137,6 @@ function getOptionQuantity(option: EventParticipationOption, quantities: Quantit
   return clampQuantity(option, quantities[option.id] ?? option.minQuantity ?? 1);
 }
 
-function isOccurrenceRegistrationOpen(occurrence: EventOccurrence): boolean {
-  const now = Date.now();
-  const opensAt = parseTime(occurrence.registrationOpensAt);
-  const closesAt = parseTime(occurrence.registrationClosesAt);
-
-  if (opensAt !== null && now < opensAt) {
-    return false;
-  }
-
-  if (closesAt !== null && now > closesAt) {
-    return false;
-  }
-
-  return true;
-}
-
 function formatOccurrenceSession(occurrence: EventOccurrence): string {
   const start = `${formatDate(occurrence.startsAt, occurrence.timezone)}, ${formatTime(
     occurrence.startsAt,
@@ -175,6 +157,36 @@ function formatOccurrenceSession(occurrence: EventOccurrence): string {
   return `${start}-${end}`;
 }
 
+function parseOccurrenceStartTime(occurrence: EventOccurrence): number {
+  const time = new Date(occurrence.startsAt).getTime();
+
+  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+}
+
+function getNearestOccurrence(occurrences: EventOccurrence[]): EventOccurrence | null {
+  return [...occurrences].sort((first, second) => (
+    parseOccurrenceStartTime(first) - parseOccurrenceStartTime(second)
+  ))[0] ?? null;
+}
+
+function getUnavailableRegistrationText(occurrences: EventOccurrence[]): string {
+  const nextOpening = getNextRegistrationOpening(occurrences);
+
+  if (nextOpening?.registrationOpensAt) {
+    return `Запись откроется ${formatRegistrationDateTime(
+      nextOpening.registrationOpensAt,
+      nextOpening.timezone,
+    )}`;
+  }
+
+  const nearestOccurrence = getNearestOccurrence(occurrences);
+  const nearestWindow = getRegistrationWindowInfo(nearestOccurrence);
+
+  return nearestWindow.state === 'closed'
+    ? 'Запись на ближайший сеанс закрыта'
+    : 'Нет доступных сеансов для записи';
+}
+
 type ChipProps = {
   children: string;
   tone?: 'default' | 'warning';
@@ -189,6 +201,7 @@ function Chip({ children, tone = 'default' }: ChipProps) {
 }
 
 type QuantityStepperProps = {
+  disabled?: boolean;
   option: EventParticipationOption;
   quantity: number;
   onDecrease: () => void;
@@ -196,6 +209,7 @@ type QuantityStepperProps = {
 };
 
 function QuantityStepper({
+  disabled = false,
   onDecrease,
   onIncrease,
   option,
@@ -207,24 +221,24 @@ function QuantityStepper({
   return (
     <View style={styles.stepper}>
       <Pressable
-        disabled={quantity <= min}
+        disabled={disabled || quantity <= min}
         onPress={onDecrease}
         style={({ pressed }) => [
           styles.stepperButton,
-          quantity <= min && styles.stepperButtonDisabled,
-          pressed && quantity > min && styles.pressed,
+          (disabled || quantity <= min) && styles.stepperButtonDisabled,
+          pressed && !disabled && quantity > min && styles.pressed,
         ]}
       >
         <Ionicons name="remove" size={17} color={colors.text} />
       </Pressable>
       <Text style={styles.stepperValue}>{quantity}</Text>
       <Pressable
-        disabled={quantity >= max}
+        disabled={disabled || quantity >= max}
         onPress={onIncrease}
         style={({ pressed }) => [
           styles.stepperButton,
-          quantity >= max && styles.stepperButtonDisabled,
-          pressed && quantity < max && styles.pressed,
+          (disabled || quantity >= max) && styles.stepperButtonDisabled,
+          pressed && !disabled && quantity < max && styles.pressed,
         ]}
       >
         <Ionicons name="add" size={17} color={colors.text} />
@@ -234,6 +248,7 @@ function QuantityStepper({
 }
 
 type OptionCardProps = {
+  disabled?: boolean;
   kind: 'main' | 'donation';
   option: EventParticipationOption;
   quantity: number;
@@ -244,6 +259,7 @@ type OptionCardProps = {
 };
 
 function OptionCard({
+  disabled = false,
   kind,
   onDecrease,
   onIncrease,
@@ -264,11 +280,13 @@ function OptionCard({
 
   return (
     <Pressable
+      disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
         styles.optionCard,
         selected && styles.optionCardSelected,
-        pressed && styles.pressed,
+        disabled && styles.optionCardDisabled,
+        pressed && !disabled && styles.pressed,
       ]}
     >
       <View style={styles.optionTopRow}>
@@ -296,6 +314,7 @@ function OptionCard({
         </Text>
         {selected && option.allowQuantity ? (
           <QuantityStepper
+            disabled={disabled}
             option={option}
             quantity={quantity}
             onDecrease={onDecrease}
@@ -308,25 +327,31 @@ function OptionCard({
 }
 
 type OccurrenceChoiceCardProps = {
+  disabled?: boolean;
   eventTitle: string;
   occurrence: EventOccurrence;
+  onPress?: () => void;
   selected: boolean;
-  onPress: () => void;
+  windowInfo: RegistrationWindowInfo;
 };
 
 function OccurrenceChoiceCard({
+  disabled = false,
   eventTitle,
   occurrence,
   onPress,
   selected,
+  windowInfo,
 }: OccurrenceChoiceCardProps) {
   return (
     <Pressable
+      disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
         styles.occurrenceChoiceCard,
         selected && styles.occurrenceChoiceCardSelected,
-        pressed && styles.pressed,
+        disabled && styles.occurrenceChoiceCardDisabled,
+        pressed && !disabled && styles.pressed,
       ]}
     >
       <View style={styles.occurrenceChoiceTextBlock}>
@@ -336,10 +361,20 @@ function OccurrenceChoiceCard({
         <Text style={styles.occurrenceChoiceSubtitle}>
           {occurrence.title?.trim() || eventTitle}
         </Text>
+        <Text style={[
+          styles.occurrenceChoiceStatus,
+          windowInfo.state === 'open' && styles.occurrenceChoiceStatusOpen,
+        ]}>
+          {windowInfo.label}
+        </Text>
       </View>
-      <View style={[styles.radio, selected && styles.radioSelected]}>
-        {selected ? <Ionicons name="checkmark" size={15} color={colors.text} /> : null}
-      </View>
+      {disabled ? (
+        <Ionicons name="lock-closed-outline" size={20} color={colors.textDim} />
+      ) : (
+        <View style={[styles.radio, selected && styles.radioSelected]}>
+          {selected ? <Ionicons name="checkmark" size={15} color={colors.text} /> : null}
+        </View>
+      )}
     </Pressable>
   );
 }
@@ -394,7 +429,7 @@ export default function PaidOptionsScreen() {
         throw new Error('Событие не найдено');
       }
 
-      const openOccurrences = loadedOccurrences.filter(isOccurrenceRegistrationOpen);
+      const openOccurrences = getOpenOccurrences(loadedOccurrences);
       const requestedOccurrence = occurrenceId
         ? openOccurrences.find((item) => item.id === occurrenceId) ?? null
         : null;
@@ -406,11 +441,15 @@ export default function PaidOptionsScreen() {
       setSelectedOccurrenceId(nextSelectedOccurrenceId);
       setOccurrenceMissing(Boolean(occurrenceId && !requestedOccurrence));
       const activeOptions = loadedOptions.filter((option) => option.isActive);
+      const shouldClearSelections = loadedOccurrences.length > 0 && openOccurrences.length === 0;
 
       setOptions(activeOptions);
       setSelectedIds((current) => (
-        current.filter((id) => activeOptions.some((option) => option.id === id))
+        shouldClearSelections
+          ? []
+          : current.filter((id) => activeOptions.some((option) => option.id === id))
       ));
+      setQuantities((current) => (shouldClearSelections ? {} : current));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Не удалось загрузить варианты участия');
     } finally {
@@ -440,7 +479,7 @@ export default function PaidOptionsScreen() {
     [options, selectedIdSet],
   );
   const openOccurrences = useMemo(
-    () => occurrences.filter(isOccurrenceRegistrationOpen),
+    () => getOpenOccurrences(occurrences),
     [occurrences],
   );
   const selectedOccurrence = useMemo(
@@ -448,6 +487,16 @@ export default function PaidOptionsScreen() {
     [openOccurrences, selectedOccurrenceId],
   );
   const hasOccurrences = occurrences.length > 0;
+  const registrationFlowBlocked = hasOccurrences && openOccurrences.length === 0;
+  const selectedOccurrenceOpen = !hasOccurrences || isRegistrationWindowOpen(selectedOccurrence);
+  const nearestOccurrence = useMemo(
+    () => getNearestOccurrence(occurrences),
+    [occurrences],
+  );
+  const unavailableRegistrationText = useMemo(
+    () => getUnavailableRegistrationText(occurrences),
+    [occurrences],
+  );
 
   const totals = useMemo(() => {
     return selectedOptions.reduce(
@@ -464,7 +513,17 @@ export default function PaidOptionsScreen() {
     );
   }, [quantities, selectedOptions]);
 
-  const canContinue = totals.seats > 0 && !submitting && (!hasOccurrences || Boolean(selectedOccurrence));
+  const canContinue = totals.seats > 0
+    && !submitting
+    && !registrationFlowBlocked
+    && (!hasOccurrences || Boolean(selectedOccurrence))
+    && selectedOccurrenceOpen;
+  const displayedTotals = registrationFlowBlocked ? { amount: 0, seats: 0 } : totals;
+  const showParticipationControls = !registrationFlowBlocked
+    && (!hasOccurrences || Boolean(selectedOccurrence));
+  const showStickyPanel = Boolean(
+    !loading && !error && event && (options.length > 0 || registrationFlowBlocked),
+  );
 
   const handleBack = useCallback(() => {
     if (router.canGoBack()) {
@@ -510,8 +569,16 @@ export default function PaidOptionsScreen() {
       return;
     }
 
-    if (hasOccurrences && !selectedOccurrence) {
-      Alert.alert('Выберите дату или сеанс события');
+    if (hasOccurrences && (!selectedOccurrence || !isRegistrationWindowOpen(selectedOccurrence))) {
+      Alert.alert(
+        'Регистрация сейчас недоступна',
+        'Выберите доступный сеанс или дождитесь открытия записи.',
+      );
+      return;
+    }
+
+    if (totals.seats <= 0) {
+      Alert.alert('Выберите вариант участия');
       return;
     }
 
@@ -554,8 +621,16 @@ export default function PaidOptionsScreen() {
   ]);
 
   const handleContinue = useCallback(() => {
-    if (hasOccurrences && !selectedOccurrence) {
-      Alert.alert('Выберите дату или сеанс события');
+    if (hasOccurrences && (!selectedOccurrence || !isRegistrationWindowOpen(selectedOccurrence))) {
+      Alert.alert(
+        'Регистрация сейчас недоступна',
+        'Выберите доступный сеанс или дождитесь открытия записи.',
+      );
+      return;
+    }
+
+    if (totals.seats <= 0) {
+      Alert.alert('Выберите вариант участия');
       return;
     }
 
@@ -563,11 +638,11 @@ export default function PaidOptionsScreen() {
       { text: 'Отмена', style: 'cancel' },
       { text: 'Продолжить', onPress: () => { void submitRegistration(); } },
     ]);
-  }, [hasOccurrences, selectedOccurrence, submitRegistration]);
+  }, [hasOccurrences, selectedOccurrence, submitRegistration, totals.seats]);
 
   const showHeroImage = Boolean(event?.imageUrl && !heroImageFailed);
   const bottomOffset = Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 12);
-  const summaryCurrency = selectedOptions[0]?.priceCurrency ?? 'RUB';
+  const summaryCurrency = registrationFlowBlocked ? 'RUB' : selectedOptions[0]?.priceCurrency ?? 'RUB';
 
   return (
     <View style={styles.root}>
@@ -633,9 +708,15 @@ export default function PaidOptionsScreen() {
 
             {hasOccurrences && openOccurrences.length === 0 ? (
               <GlassCard>
-                <View style={styles.warningRow}>
+                <View style={styles.unavailableCardContent}>
                   <Ionicons name="alert-circle-outline" size={18} color={colors.warning} />
-                  <Text style={styles.warningText}>Регистрация сейчас недоступна</Text>
+                  <Text style={styles.warningTitle}>Регистрация сейчас недоступна</Text>
+                  <Text style={styles.warningText}>{unavailableRegistrationText}</Text>
+                  {nearestOccurrence ? (
+                    <Text style={styles.nearestSessionText}>
+                      Ближайший сеанс: {formatOccurrenceSession(nearestOccurrence)}
+                    </Text>
+                  ) : null}
                 </View>
               </GlassCard>
             ) : null}
@@ -668,13 +749,14 @@ export default function PaidOptionsScreen() {
                     eventTitle={event.title}
                     occurrence={item}
                     selected={item.id === selectedOccurrenceId}
+                    windowInfo={getRegistrationWindowInfo(item)}
                     onPress={() => setSelectedOccurrenceId(item.id)}
                   />
                 ))}
               </View>
             ) : null}
 
-            {occurrenceMissing ? (
+            {occurrenceMissing && !registrationFlowBlocked ? (
               <GlassCard>
                 <View style={styles.warningRow}>
                   <Ionicons name="alert-circle-outline" size={18} color={colors.warning} />
@@ -685,74 +767,78 @@ export default function PaidOptionsScreen() {
               </GlassCard>
             ) : null}
 
-            <GlassCard>
-              <View style={styles.infoRow}>
-                <View style={styles.infoIcon}>
-                  <Ionicons name="ticket-outline" size={18} color={colors.orange} />
-                </View>
-                <View style={styles.infoTextBlock}>
-                  <Text style={styles.infoTitle}>Выберите вариант участия</Text>
-                  <Text style={styles.infoText}>
-                    Можно выбрать несколько вариантов участия и добавить пожертвование отдельно.
-                  </Text>
-                </View>
-              </View>
-            </GlassCard>
-
-            {options.length === 0 ? (
-              <GlassCard>
-                <View style={styles.stateCard}>
-                  <Ionicons name="ticket-outline" size={24} color={colors.textDim} />
-                  <Text style={styles.emptyTitle}>Варианты участия пока не добавлены</Text>
-                  <Text style={styles.stateText}>
-                    Когда команда добавит варианты, они появятся на этом экране.
-                  </Text>
-                </View>
-              </GlassCard>
-            ) : (
-              <View style={styles.optionsBlock}>
-                {mainOptions.length > 0 ? (
-                  <View style={styles.optionSection}>
-                    <Text style={styles.optionSectionTitle}>Участие</Text>
-                    {mainOptions.map((option) => (
-                      <OptionCard
-                        key={option.id}
-                        kind="main"
-                        option={option}
-                        selected={selectedIdSet.has(option.id)}
-                        quantity={getOptionQuantity(option, quantities)}
-                        onPress={() => toggleOption(option)}
-                        onDecrease={() => updateQuantity(option, -1)}
-                        onIncrease={() => updateQuantity(option, 1)}
-                      />
-                    ))}
+            {showParticipationControls ? (
+              <>
+                <GlassCard>
+                  <View style={styles.infoRow}>
+                    <View style={styles.infoIcon}>
+                      <Ionicons name="ticket-outline" size={18} color={colors.orange} />
+                    </View>
+                    <View style={styles.infoTextBlock}>
+                      <Text style={styles.infoTitle}>Выберите вариант участия</Text>
+                      <Text style={styles.infoText}>
+                        Можно выбрать несколько вариантов участия и добавить пожертвование отдельно.
+                      </Text>
+                    </View>
                   </View>
-                ) : null}
+                </GlassCard>
 
-                {donationOptions.length > 0 ? (
-                  <View style={styles.optionSection}>
-                    <Text style={styles.optionSectionTitle}>Дополнительно</Text>
-                    {donationOptions.map((option) => (
-                      <OptionCard
-                        key={option.id}
-                        kind="donation"
-                        option={option}
-                        selected={selectedIdSet.has(option.id)}
-                        quantity={getOptionQuantity(option, quantities)}
-                        onPress={() => toggleOption(option)}
-                        onDecrease={() => updateQuantity(option, -1)}
-                        onIncrease={() => updateQuantity(option, 1)}
-                      />
-                    ))}
+                {options.length === 0 ? (
+                  <GlassCard>
+                    <View style={styles.stateCard}>
+                      <Ionicons name="ticket-outline" size={24} color={colors.textDim} />
+                      <Text style={styles.emptyTitle}>Варианты участия пока не добавлены</Text>
+                      <Text style={styles.stateText}>
+                        Когда команда добавит варианты, они появятся на этом экране.
+                      </Text>
+                    </View>
+                  </GlassCard>
+                ) : (
+                  <View style={styles.optionsBlock}>
+                    {mainOptions.length > 0 ? (
+                      <View style={styles.optionSection}>
+                        <Text style={styles.optionSectionTitle}>Участие</Text>
+                        {mainOptions.map((option) => (
+                          <OptionCard
+                            key={option.id}
+                            kind="main"
+                            option={option}
+                            selected={selectedIdSet.has(option.id)}
+                            quantity={getOptionQuantity(option, quantities)}
+                            onPress={() => toggleOption(option)}
+                            onDecrease={() => updateQuantity(option, -1)}
+                            onIncrease={() => updateQuantity(option, 1)}
+                          />
+                        ))}
+                      </View>
+                    ) : null}
+
+                    {donationOptions.length > 0 ? (
+                      <View style={styles.optionSection}>
+                        <Text style={styles.optionSectionTitle}>Дополнительно</Text>
+                        {donationOptions.map((option) => (
+                          <OptionCard
+                            key={option.id}
+                            kind="donation"
+                            option={option}
+                            selected={selectedIdSet.has(option.id)}
+                            quantity={getOptionQuantity(option, quantities)}
+                            onPress={() => toggleOption(option)}
+                            onDecrease={() => updateQuantity(option, -1)}
+                            onIncrease={() => updateQuantity(option, 1)}
+                          />
+                        ))}
+                      </View>
+                    ) : null}
                   </View>
-                ) : null}
-              </View>
-            )}
+                )}
+              </>
+            ) : null}
           </>
         ) : null}
       </Screen>
 
-      {!loading && !error && event && options.length > 0 ? (
+      {showStickyPanel ? (
         <View pointerEvents="box-none" style={[styles.stickyWrap, { bottom: bottomOffset }]}>
           <GlassCard style={styles.stickyCard} contentStyle={styles.stickyContent}>
             <View style={styles.totalSummary}>
@@ -762,15 +848,23 @@ export default function PaidOptionsScreen() {
               <View style={styles.totalTextBlock}>
                 <Text style={styles.totalLabel}>Итого</Text>
                 <Text style={styles.totalText}>
-                  {formatMoney(totals.amount, summaryCurrency)}
+                  {formatMoney(displayedTotals.amount, summaryCurrency)}
                 </Text>
                 <Text style={styles.seatsText}>
-                  {totals.seats > 0 ? `Мест: ${totals.seats}` : 'Места не выбраны'}
+                  {registrationFlowBlocked
+                    ? 'Регистрация сейчас недоступна'
+                    : displayedTotals.seats > 0
+                      ? `Мест: ${displayedTotals.seats}`
+                      : 'Места не выбраны'}
                 </Text>
               </View>
             </View>
             <PrimaryButton
-              title={submitting ? 'Создаём запись...' : 'Имитировать оплату и записаться'}
+              title={registrationFlowBlocked
+                ? 'Регистрация сейчас недоступна'
+                : submitting
+                  ? 'Создаём запись...'
+                  : 'Имитировать оплату и записаться'}
               disabled={!canContinue}
               onPress={handleContinue}
               buttonStyle={styles.stickyButton}
@@ -908,11 +1002,31 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 10,
   },
+  unavailableCardContent: {
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  warningTextBlock: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  warningTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '800',
+    lineHeight: 20,
+  },
   warningText: {
     flex: 1,
     color: colors.textMuted,
     fontSize: 13,
     lineHeight: 19,
+  },
+  nearestSessionText: {
+    color: colors.textDim,
+    fontSize: 12,
+    lineHeight: 17,
   },
   infoRow: {
     flexDirection: 'row',
@@ -965,6 +1079,9 @@ const styles = StyleSheet.create({
     borderColor: colors.accent.orangeBorder,
     backgroundColor: colors.accent.orangeBg,
   },
+  occurrenceChoiceCardDisabled: {
+    opacity: 0.62,
+  },
   occurrenceChoiceTextBlock: {
     flex: 1,
     minWidth: 0,
@@ -980,6 +1097,21 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 13,
     lineHeight: 18,
+  },
+  occurrenceChoiceStatus: {
+    color: colors.textDim,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  occurrenceChoiceStatusOpen: {
+    color: colors.success,
+    fontWeight: '700',
+  },
+  unavailableSectionTitle: {
+    color: colors.textMuted,
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0,
   },
   optionSection: {
     gap: 10,
@@ -1005,6 +1137,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.24,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
+  },
+  optionCardDisabled: {
+    opacity: 0.58,
   },
   pressed: {
     opacity: 0.84,

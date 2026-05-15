@@ -16,10 +16,10 @@ Participation options remain event-level in
 `event_participation_options`. A course or holiday can keep one shared option
 set while each occurrence tracks its own capacity.
 
-Registrations can now store `event_registrations.occurrence_id`, but the
-current mobile registration flow is intentionally unchanged. Future
-registration RPCs should attach registrations to an occurrence and count
-capacity per occurrence.
+Registrations can now store `event_registrations.occurrence_id`. The mobile
+`internal_paid` simulation flow passes an occurrence when the event has
+occurrences, while `internal_free` still uses the existing event-level
+`register_for_event` flow.
 
 ## Event kinds
 
@@ -88,6 +88,29 @@ The RPC layer follows the same visibility checks:
 keys. It raises `Cannot delete occurrence with registrations` if a replace
 payload omits an existing occurrence that already has registrations.
 
+## Mobile registration windows
+
+The mobile UI treats event visibility and registration availability as separate
+states. A parent event can be `published` and visible in the app while
+registration for every concrete occurrence is closed or not yet open.
+
+For `internal_paid` events with occurrences, the detail screen loads active
+occurrences and evaluates each occurrence's `registration_opens_at` /
+`registration_closes_at` window:
+
+- if at least one occurrence is open, the event CTA remains active and opens
+  the paid participation flow;
+- if no occurrence is open, the event remains visible, but the registration CTA
+  is disabled and explains whether registration opens later, the nearest
+  session is closed, or no sessions are available;
+- the paid options screen only auto-selects an open occurrence, shows
+  unavailable sessions as disabled schedule context, and does not call
+  `register_for_paid_event_simulated` when no open occurrence can be selected.
+
+Missing registration window fields are treated as open for active occurrences
+in the user-facing UI. Backend validation remains the source of truth for the
+final registration attempt.
+
 ## Examples
 
 ### Course
@@ -137,5 +160,5 @@ This PR does not introduce a separate news module.
 
 ## Out of scope
 
-This PR does not change mobile registration, does not add scheduled generation,
-does not add a payment gateway, and does not change `register_for_event`.
+This PR does not add scheduled generation, does not add a payment gateway, and
+does not change `register_for_event`.
