@@ -160,6 +160,7 @@ function mapEvent(
 
 function friendlyRegistrationError(error: unknown): string {
   const message = error instanceof Error ? error.message : 'Не удалось выполнить действие.';
+  const normalized = message.toLowerCase();
 
   if (message === 'Auth required') {
     return 'Нужен вход';
@@ -171,6 +172,33 @@ function friendlyRegistrationError(error: unknown): string {
     || message.includes('already registered')
   ) {
     return 'Вы уже записаны';
+  }
+
+  if (normalized.includes('occurrenceid is required')) {
+    return 'Выберите дату или сеанс события';
+  }
+
+  if (
+    normalized.includes('registration closed')
+    || normalized.includes('registration is closed')
+    || normalized.includes('registration not open')
+    || normalized.includes('registration is not open')
+    || normalized.includes('not yet open')
+    || normalized.includes('outside registration window')
+    || normalized.includes('occurrence not found')
+  ) {
+    return 'Регистрация сейчас недоступна';
+  }
+
+  if (normalized.includes('no seats')) {
+    return 'Свободных мест нет';
+  }
+
+  if (
+    normalized.includes('select at least one participation option')
+    || normalized.includes('select at least one option that reserves a seat')
+  ) {
+    return 'Выберите вариант участия';
   }
 
   return message;
