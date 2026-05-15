@@ -62,6 +62,13 @@ function showActionError(error: unknown) {
   }
 
   if (
+    message.includes('Вы уже записаны на этот сеанс')
+  ) {
+    Alert.alert('Вы уже записаны', 'Вы уже записаны на этот сеанс.');
+    return;
+  }
+
+  if (
     message.includes('Вы уже записаны')
     || message.includes('duplicate key')
     || message.includes('event_registrations_event_id_user_id_key')

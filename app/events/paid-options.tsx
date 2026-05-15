@@ -25,7 +25,11 @@ import {
 } from '@/lib/registrationWindow';
 import { listEventOccurrences } from '@/services/eventOccurrencesService';
 import { listEventParticipationOptions } from '@/services/participationOptionsService';
-import { useEventsStore } from '@/store/useEventsStore';
+import { useAuthStore } from '@/store/useAuthStore';
+import {
+  findActiveRegistrationForTarget,
+  useEventsStore,
+} from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
 import type { EventItem } from '@/types/event';
 import type { EventOccurrence } from '@/types/eventOccurrence';
@@ -303,7 +307,10 @@ export default function PaidOptionsScreen() {
   }>();
   const eventId = firstParam(params.eventId);
   const occurrenceId = firstParam(params.occurrenceId);
+  const authUser = useAuthStore((state) => state.user);
   const loadEventById = useEventsStore((state) => state.loadEventById);
+  const loadMyRegistrations = useEventsStore((state) => state.loadMyRegistrations);
+  const myRegistrations = useEventsStore((state) => state.myRegistrations);
   const registerForPaidEventSimulated = useEventsStore(
     (state) => state.registerForPaidEventSimulated,
   );
@@ -389,6 +396,14 @@ export default function PaidOptionsScreen() {
   }, [loadData]);
 
   useEffect(() => {
+    if (!authUser) {
+      return;
+    }
+
+    void loadMyRegistrations().catch(() => undefined);
+  }, [authUser, loadMyRegistrations]);
+
+  useEffect(() => {
     setHeroImageFailed(false);
   }, [event?.imageUrl]);
 
@@ -413,6 +428,17 @@ export default function PaidOptionsScreen() {
     () => openOccurrences.find((item) => item.id === selectedOccurrenceId) ?? null,
     [openOccurrences, selectedOccurrenceId],
   );
+  const existingRegistrationForSelectedTarget = useMemo(() => {
+    if (!eventId || !selectedOccurrence) {
+      return null;
+    }
+
+    return findActiveRegistrationForTarget(
+      myRegistrations,
+      eventId,
+      selectedOccurrence.id,
+    );
+  }, [eventId, myRegistrations, selectedOccurrence]);
   const shouldRedirectToOccurrenceStep = Boolean(
     event?.id === eventId && !occurrenceId && openOccurrences.length > 1,
   );
@@ -459,7 +485,8 @@ export default function PaidOptionsScreen() {
   const canContinue = totals.seats > 0
     && !submitting
     && !registrationFlowBlocked
-    && selectedOccurrenceOpen;
+    && selectedOccurrenceOpen
+    && !existingRegistrationForSelectedTarget;
   const displayedTotals = registrationFlowBlocked ? { amount: 0, seats: 0 } : totals;
   const showParticipationControls = !registrationFlowBlocked && !shouldRedirectToOccurrenceStep;
   const showStickyPanel = Boolean(
@@ -527,6 +554,11 @@ export default function PaidOptionsScreen() {
       return;
     }
 
+    if (existingRegistrationForSelectedTarget) {
+      Alert.alert('Вы уже записаны', 'Вы уже записаны на этот сеанс.');
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -559,6 +591,7 @@ export default function PaidOptionsScreen() {
     quantities,
     registerForPaidEventSimulated,
     router,
+    existingRegistrationForSelectedTarget,
     selectedOccurrence,
     selectedOptions,
     totals.seats,
@@ -578,11 +611,16 @@ export default function PaidOptionsScreen() {
       return;
     }
 
+    if (existingRegistrationForSelectedTarget) {
+      Alert.alert('Вы уже записаны', 'Вы уже записаны на этот сеанс.');
+      return;
+    }
+
     Alert.alert(paymentSimulationTitle, paymentSimulationText, [
       { text: 'Отмена', style: 'cancel' },
       { text: 'Продолжить', onPress: () => { void submitRegistration(); } },
     ]);
-  }, [selectedOccurrence, submitRegistration, totals.seats]);
+  }, [existingRegistrationForSelectedTarget, selectedOccurrence, submitRegistration, totals.seats]);
 
   const showHeroImage = Boolean(event?.imageUrl && !heroImageFailed);
   const bottomOffset = Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 12);
@@ -686,6 +724,20 @@ export default function PaidOptionsScreen() {
               </GlassCard>
             ) : null}
 
+            {existingRegistrationForSelectedTarget ? (
+              <GlassCard>
+                <View style={styles.duplicateCardContent}>
+                  <Ionicons name="checkmark-circle-outline" size={18} color={colors.success} />
+                  <View style={styles.duplicateTextBlock}>
+                    <Text style={styles.duplicateTitle}>Вы уже записаны на этот сеанс</Text>
+                    <Text style={styles.duplicateText}>
+                      Можно выбрать другую дату этого события, если регистрация на неё открыта.
+                    </Text>
+                  </View>
+                </View>
+              </GlassCard>
+            ) : null}
+
             {showParticipationControls ? (
               <>
                 <GlassCard>
@@ -783,7 +835,9 @@ export default function PaidOptionsScreen() {
                 ? 'Регистрация сейчас недоступна'
                 : submitting
                   ? 'Создаём запись...'
-                  : 'Имитировать оплату и записаться'}
+                  : existingRegistrationForSelectedTarget
+                    ? 'Вы уже записаны на этот сеанс'
+                    : 'Имитировать оплату и записаться'}
               disabled={!canContinue}
               onPress={handleContinue}
               buttonStyle={styles.stickyButton}
@@ -919,6 +973,27 @@ const styles = StyleSheet.create({
   unavailableCardContent: {
     alignItems: 'flex-start',
     gap: 8,
+  },
+  duplicateCardContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  duplicateTextBlock: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  duplicateTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '800',
+    lineHeight: 20,
+  },
+  duplicateText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 19,
   },
   warningTitle: {
     color: colors.text,

@@ -12,6 +12,7 @@ import {
 import { useAuthStore } from '@/store/useAuthStore';
 import {
   ACTIVE_EVENT_REGISTRATION_STATUSES,
+  DUPLICATE_BLOCKING_EVENT_REGISTRATION_STATUSES,
   type Event,
   type EventItem,
   type EventRegistration,
@@ -45,6 +46,7 @@ type EventsState = {
 };
 
 const activeRegistrationStatuses = new Set(ACTIVE_EVENT_REGISTRATION_STATUSES);
+const duplicateBlockingRegistrationStatuses = new Set(DUPLICATE_BLOCKING_EVENT_REGISTRATION_STATUSES);
 
 const FALLBACK_CATEGORY = {
   title: 'Событие',
@@ -56,6 +58,39 @@ export function isActiveEventRegistration(
   registration: EventRegistration | null | undefined,
 ): registration is EventRegistration {
   return Boolean(registration && activeRegistrationStatuses.has(registration.status));
+}
+
+export function isDuplicateBlockingEventRegistration(
+  registration: EventRegistration | null | undefined,
+): registration is EventRegistration {
+  return Boolean(registration && duplicateBlockingRegistrationStatuses.has(registration.status));
+}
+
+export function isSameRegistrationTarget(
+  registration: EventRegistration,
+  eventId: string,
+  occurrenceId?: string | null,
+): boolean {
+  if (registration.eventId !== eventId) {
+    return false;
+  }
+
+  const targetOccurrenceId = occurrenceId ?? null;
+
+  return targetOccurrenceId
+    ? registration.occurrenceId === targetOccurrenceId
+    : !registration.occurrenceId;
+}
+
+export function findActiveRegistrationForTarget(
+  registrations: EventRegistration[],
+  eventId: string,
+  occurrenceId?: string | null,
+): EventRegistration | null {
+  return registrations.find((registration) => (
+    isDuplicateBlockingEventRegistration(registration)
+    && isSameRegistrationTarget(registration, eventId, occurrenceId)
+  )) ?? null;
 }
 
 function formatEventDate(value: string | null | undefined): string | undefined {
@@ -167,8 +202,15 @@ function friendlyRegistrationError(error: unknown): string {
   }
 
   if (
+    message.includes('event_registrations_event_user_occurrence_active_unique')
+  ) {
+    return 'Вы уже записаны на этот сеанс';
+  }
+
+  if (
     message.includes('duplicate key')
     || message.includes('event_registrations_event_id_user_id_key')
+    || message.includes('event_registrations_event_user_no_occurrence_active_unique')
     || message.includes('already registered')
   ) {
     return 'Вы уже записаны';
@@ -215,9 +257,16 @@ function upsertRegistration(
   registration: EventRegistration,
 ): EventRegistration[] {
   const existingRegistration = registrations.find((item) => item.id === registration.id);
-  const nextRegistration = registration.event || !existingRegistration?.event
-    ? registration
-    : { ...registration, event: existingRegistration.event };
+  const nextRegistration: EventRegistration = {
+    ...registration,
+    event: registration.event ?? existingRegistration?.event,
+    occurrence: registration.occurrence ?? existingRegistration?.occurrence,
+    selectedOptions: registration.selectedOptions.length > 0
+      ? registration.selectedOptions
+      : existingRegistration?.selectedOptions ?? [],
+    totalAmount: registration.totalAmount ?? existingRegistration?.totalAmount ?? null,
+    totalCurrency: registration.totalCurrency ?? existingRegistration?.totalCurrency ?? null,
+  };
 
   return sortRegistrations([
     nextRegistration,
@@ -232,6 +281,17 @@ function findRegistrationForEvent(
   const eventRegistrations = registrations.filter((registration) => registration.eventId === eventId);
 
   return eventRegistrations.find(isActiveEventRegistration) ?? eventRegistrations[0] ?? null;
+}
+
+function findRegistrationForPaidInput(
+  registrations: EventRegistration[],
+  input: RegisterForPaidEventSimulatedInput,
+): EventRegistration | null {
+  return findActiveRegistrationForTarget(
+    registrations,
+    input.eventId,
+    input.occurrenceId ?? null,
+  );
 }
 
 function findLoadedEvent(
@@ -399,7 +459,7 @@ export const useEventsStore = create<EventsState>((set, get) => ({
     } catch (error) {
       const message = friendlyRegistrationError(error);
 
-      if (message === 'Вы уже записаны') {
+      if (message === 'Вы уже записаны' || message === 'Вы уже записаны на этот сеанс') {
         await get().loadMyRegistrations();
       } else {
         set({ registrationsLoading: false, error: message });
@@ -410,10 +470,10 @@ export const useEventsStore = create<EventsState>((set, get) => ({
   },
 
   registerForPaidEventSimulated: async (input: RegisterForPaidEventSimulatedInput) => {
-    const existingRegistration = findRegistrationForEvent(get().myRegistrations, input.eventId);
+    const existingRegistration = findRegistrationForPaidInput(get().myRegistrations, input);
 
-    if (isActiveEventRegistration(existingRegistration)) {
-      return existingRegistration;
+    if (existingRegistration) {
+      throw new Error(input.occurrenceId ? 'Вы уже записаны на этот сеанс' : 'Вы уже записаны');
     }
 
     set({ registrationsLoading: true, error: null });
@@ -431,7 +491,7 @@ export const useEventsStore = create<EventsState>((set, get) => ({
     } catch (error) {
       const message = friendlyRegistrationError(error);
 
-      if (message === 'Вы уже записаны') {
+      if (message === 'Вы уже записаны' || message === 'Вы уже записаны на этот сеанс') {
         await get().loadMyRegistrations();
       } else {
         set({ registrationsLoading: false, error: message });
