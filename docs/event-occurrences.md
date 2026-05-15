@@ -21,6 +21,12 @@ Registrations can now store `event_registrations.occurrence_id`. The mobile
 occurrences, while `internal_free` still uses the existing event-level
 `register_for_event` flow.
 
+Database uniqueness is occurrence-aware: active registrations (`pending`,
+`confirmed`, `waitlisted`, `attended`) are unique per
+`event_id + user_id + occurrence_id`, while events without an occurrence remain
+unique per `event_id + user_id`. Cancelled, rejected, and no-show rows do not
+block a new registration target.
+
 ## Event kinds
 
 `events.event_kind` classifies the parent event:
@@ -110,6 +116,26 @@ occurrences and evaluates each occurrence's `registration_opens_at` /
 Missing registration window fields are treated as open for active occurrences
 in the user-facing UI. Backend validation remains the source of truth for the
 final registration attempt.
+
+## Mobile "My registrations"
+
+The profile screen groups "My registrations" by the parent `events.id`.
+Recurring courses, Shabbat series, holiday sessions, and other multi-date
+events therefore appear as one event card instead of one top-level card per
+occurrence.
+
+Inside a grouped event, the mobile UI shows occurrence-level registrations:
+date/time, optional occurrence title, registration status, seat count, guests,
+comment, and registration timestamp. Paid registration option snapshots from
+`event_registration_option_selections` are shown to the user with their saved
+title, quantity, unit amount, line total, currency, capacity flags, and donation
+flag. The screen calculates registration and group totals from those snapshots
+when a single currency is available.
+
+The temporary paid simulation remains visible as test-only payment metadata:
+registrations whose `payment_id` starts with `simulated:` are displayed as
+`Test payment` / `Тестовая оплата`. This is only a UI label for the existing
+MVP simulation and does not add a production payment gateway.
 
 ## Examples
 

@@ -31,6 +31,13 @@ export const ACTIVE_EVENT_REGISTRATION_STATUSES: EventRegistrationStatus[] = [
   'waitlisted',
 ];
 
+export const DUPLICATE_BLOCKING_EVENT_REGISTRATION_STATUSES: EventRegistrationStatus[] = [
+  'pending',
+  'confirmed',
+  'waitlisted',
+  'attended',
+];
+
 export interface Event {
   id: string;
   communityId: string;
@@ -64,9 +71,37 @@ export interface Event {
   isPermanent: boolean;
 }
 
+export interface EventRegistrationOccurrence {
+  id: string;
+  eventId: string;
+  title: string | null;
+  startsAt: string;
+  endsAt: string | null;
+  timezone: string | null;
+}
+
+export interface EventRegistrationSelectedOptionSnapshot {
+  id: string;
+  optionId: string | null;
+  title: string;
+  name: string;
+  description: string | null;
+  optionType: string;
+  quantity: number;
+  unitAmount: number;
+  unitPriceAmount: number;
+  totalAmount: number;
+  currency: string;
+  countsTowardCapacity: boolean;
+  seatsCount: number;
+  isDonation: boolean;
+  createdAt: string | null;
+}
+
 export interface EventRegistration {
   id: string;
   eventId: string;
+  occurrenceId: string | null;
   userId: string;
   status: EventRegistrationStatus;
   seatsCount: number;
@@ -80,6 +115,10 @@ export interface EventRegistration {
   createdAt: string;
   updatedAt: string;
   event?: Event;
+  occurrence?: EventRegistrationOccurrence;
+  selectedOptions: EventRegistrationSelectedOptionSnapshot[];
+  totalAmount: number | null;
+  totalCurrency: string | null;
 }
 
 export interface EventItem {

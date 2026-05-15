@@ -26,9 +26,14 @@ import {
   getOpenOccurrences,
   getUnavailableRegistrationText,
 } from '@/lib/registrationWindow';
+import { formatRegistrationCount } from '@/lib/registrationGroups';
 import { listEventOccurrences } from '@/services/eventOccurrencesService';
 import { useAuthStore } from '@/store/useAuthStore';
-import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStore';
+import {
+  isActiveEventRegistration,
+  isDuplicateBlockingEventRegistration,
+  useEventsStore,
+} from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
 import type { EventItem, EventRegistration } from '@/types/event';
 import type { EventOccurrence } from '@/types/eventOccurrence';
@@ -261,6 +266,7 @@ function InfoRow({ icon, text }: InfoRowProps) {
 }
 
 type RegistrationBlockProps = {
+  activeRegistrationCount: number;
   cancelling: boolean;
   event: EventItem;
   hasSession: boolean;
@@ -273,6 +279,7 @@ type RegistrationBlockProps = {
 };
 
 function RegistrationBlock({
+  activeRegistrationCount,
   cancelling,
   event,
   hasSession,
@@ -333,6 +340,11 @@ function RegistrationBlock({
         {paidRegistrationAvailability?.unavailableReason ? (
           <Text style={styles.mutedNote}>
             {paidRegistrationAvailability.unavailableReason}
+          </Text>
+        ) : null}
+        {activeRegistrationCount > 0 ? (
+          <Text style={styles.mutedNote}>
+            У вас {formatRegistrationCount(activeRegistrationCount)} на это событие.
           </Text>
         ) : null}
         <PrimaryButton
@@ -540,6 +552,16 @@ export default function EventDetailScreen() {
     return eventRegistrations.find(isActiveEventRegistration) ?? eventRegistrations[0] ?? null;
   }, [eventId, myRegistrations]);
 
+  const activeRegistrationCount = useMemo(() => {
+    if (!eventId) {
+      return 0;
+    }
+
+    return myRegistrations.filter((item) => (
+      item.eventId === eventId && isDuplicateBlockingEventRegistration(item)
+    )).length;
+  }, [eventId, myRegistrations]);
+
   const handleBack = useCallback(() => {
     if (router.canGoBack()) {
       router.back();
@@ -736,6 +758,7 @@ export default function EventDetailScreen() {
             </GlassCard>
 
             <RegistrationBlock
+              activeRegistrationCount={activeRegistrationCount}
               event={event}
               registration={registration}
               hasSession={Boolean(session)}

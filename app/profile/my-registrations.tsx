@@ -1,319 +1,27 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
-  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
+import { RegistrationGroupCard } from '@/components/events/MyRegistrationCards';
 import { GlassCard } from '@/components/glass/GlassCard';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { SubHeader } from '@/components/ui/SubHeader';
 import { useEventRegistrationAction } from '@/hooks/useEventRegistrationAction';
+import {
+  buildMyRegistrationGroups,
+  type MyRegistrationGroup,
+} from '@/lib/registrationGroups';
 import { useAuthStore } from '@/store/useAuthStore';
-import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStore';
+import { useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
-import type { Event, EventRegistration, EventRegistrationStatus } from '@/types/event';
-
-const inactiveStatuses = new Set<EventRegistrationStatus>([
-  'cancelled',
-  'rejected',
-  'attended',
-  'no_show',
-]);
-
-const statusTitles: Record<EventRegistrationStatus, string> = {
-  confirmed: 'Вы записаны',
-  pending: 'Заявка отправлена',
-  waitlisted: 'Вы в листе ожидания',
-  cancelled: 'Запись отменена',
-  rejected: 'Заявка отклонена',
-  attended: 'Вы посетили событие',
-  no_show: 'Не посетили',
-};
-
-const statusTones: Record<EventRegistrationStatus, {
-  backgroundColor: string;
-  borderColor: string;
-  color: string;
-}> = {
-  confirmed: {
-    backgroundColor: colors.accent.greenBg,
-    borderColor: colors.accent.greenBorder,
-    color: colors.success,
-  },
-  pending: {
-    backgroundColor: colors.accent.goldBg,
-    borderColor: colors.accent.goldBorder,
-    color: colors.warning,
-  },
-  waitlisted: {
-    backgroundColor: colors.accent.blueBg,
-    borderColor: colors.accent.blueBorder,
-    color: colors.blueSoft,
-  },
-  cancelled: {
-    backgroundColor: colors.glass.w06,
-    borderColor: colors.glass.w12,
-    color: colors.textDim,
-  },
-  rejected: {
-    backgroundColor: colors.accent.redBg,
-    borderColor: colors.accent.redBorder,
-    color: colors.danger,
-  },
-  attended: {
-    backgroundColor: colors.accent.greenBg,
-    borderColor: colors.accent.greenBorder,
-    color: colors.success,
-  },
-  no_show: {
-    backgroundColor: colors.glass.w06,
-    borderColor: colors.glass.w12,
-    color: colors.textDim,
-  },
-};
-
-function parseDate(value: string | null | undefined): number | null {
-  if (!value) {
-    return null;
-  }
-
-  const time = new Date(value).getTime();
-
-  return Number.isNaN(time) ? null : time;
-}
-
-function getEventSortTime(registration: EventRegistration): number | null {
-  return parseDate(registration.event?.startsAt);
-}
-
-function hasEventPassed(event: Event | undefined, now: number): boolean {
-  const eventTime = parseDate(event?.endsAt) ?? parseDate(event?.startsAt);
-
-  return eventTime !== null && eventTime < now;
-}
-
-function isUpcomingActiveRegistration(registration: EventRegistration, now: number): boolean {
-  const startsAt = getEventSortTime(registration);
-
-  return isActiveEventRegistration(registration) && startsAt !== null && startsAt >= now;
-}
-
-function getFallbackSortTime(registration: EventRegistration): number {
-  return getEventSortTime(registration) ?? parseDate(registration.registeredAt) ?? 0;
-}
-
-function sortRegistrations(registrations: EventRegistration[]): EventRegistration[] {
-  const now = Date.now();
-
-  return [...registrations].sort((first, second) => {
-    const firstUpcoming = isUpcomingActiveRegistration(first, now);
-    const secondUpcoming = isUpcomingActiveRegistration(second, now);
-
-    if (firstUpcoming !== secondUpcoming) {
-      return firstUpcoming ? -1 : 1;
-    }
-
-    if (firstUpcoming && secondUpcoming) {
-      return getFallbackSortTime(first) - getFallbackSortTime(second);
-    }
-
-    const firstInactive = inactiveStatuses.has(first.status) || hasEventPassed(first.event, now);
-    const secondInactive = inactiveStatuses.has(second.status) || hasEventPassed(second.event, now);
-
-    if (firstInactive !== secondInactive) {
-      return firstInactive ? 1 : -1;
-    }
-
-    return getFallbackSortTime(second) - getFallbackSortTime(first);
-  });
-}
-
-function formatDateTime(value: string, timeZone?: string | null, includeDate = true): string {
-  const date = new Date(value);
-  const options: Intl.DateTimeFormatOptions = includeDate
-    ? {
-      day: 'numeric',
-      month: 'long',
-      hour: '2-digit',
-      minute: '2-digit',
-    }
-    : {
-      hour: '2-digit',
-      minute: '2-digit',
-    };
-
-  if (timeZone) {
-    options.timeZone = timeZone;
-  }
-
-  try {
-    return new Intl.DateTimeFormat('ru-RU', options).format(date);
-  } catch {
-    delete options.timeZone;
-    return new Intl.DateTimeFormat('ru-RU', options).format(date);
-  }
-}
-
-function isSameCalendarDay(first: string, second: string, timeZone?: string | null): boolean {
-  const options: Intl.DateTimeFormatOptions = {
-    day: 'numeric',
-    month: 'numeric',
-    year: 'numeric',
-  };
-
-  if (timeZone) {
-    options.timeZone = timeZone;
-  }
-
-  try {
-    const formatter = new Intl.DateTimeFormat('ru-RU', options);
-
-    return formatter.format(new Date(first)) === formatter.format(new Date(second));
-  } catch {
-    delete options.timeZone;
-    const formatter = new Intl.DateTimeFormat('ru-RU', options);
-
-    return formatter.format(new Date(first)) === formatter.format(new Date(second));
-  }
-}
-
-function formatEventDate(event: Event | undefined, registeredAt: string): string {
-  if (!event?.startsAt) {
-    return formatDateTime(registeredAt);
-  }
-
-  const start = formatDateTime(event.startsAt, event.timezone);
-
-  if (!event.endsAt) {
-    return start;
-  }
-
-  const end = isSameCalendarDay(event.startsAt, event.endsAt, event.timezone)
-    ? formatDateTime(event.endsAt, event.timezone, false)
-    : formatDateTime(event.endsAt, event.timezone);
-
-  return `${start} - ${end}`;
-}
-
-function getPlace(event: Event | undefined): string {
-  if (event?.locationName && event.address) {
-    return `${event.locationName}, ${event.address}`;
-  }
-
-  return event?.locationName ?? event?.address ?? 'Место уточняется';
-}
-
-type RegistrationCardProps = {
-  cancelling: boolean;
-  onCancel: (registration: EventRegistration) => void;
-  onOpen: (eventId: string) => void;
-  registration: EventRegistration;
-};
-
-function RegistrationCard({ cancelling, onCancel, onOpen, registration }: RegistrationCardProps) {
-  const event = registration.event;
-  const now = Date.now();
-  const canCancel = isActiveEventRegistration(registration) && !hasEventPassed(event, now);
-  const statusTone = statusTones[registration.status];
-  const [imageFailed, setImageFailed] = useState(false);
-  const showThumbnail = Boolean(event?.imageUrl && !imageFailed);
-
-  useEffect(() => {
-    setImageFailed(false);
-  }, [event?.imageUrl]);
-
-  const cardContent = (
-    <>
-      <View style={styles.cardHeader}>
-        <View style={styles.cardTopRow}>
-          {showThumbnail ? (
-            <Image
-              source={{ uri: event?.imageUrl ?? '' }}
-              resizeMode="cover"
-              style={styles.thumbnail}
-              onError={() => setImageFailed(true)}
-            />
-          ) : null}
-          <View style={styles.cardTitleBlock}>
-            <View style={styles.cardTitleRow}>
-              <Text style={styles.cardTitle}>{event?.title ?? 'Событие'}</Text>
-              {event?.id ? (
-                <Ionicons name="chevron-forward" size={17} color="rgba(255,255,255,0.3)" />
-              ) : null}
-            </View>
-            <View
-              style={[
-                styles.statusPill,
-                {
-                  backgroundColor: statusTone.backgroundColor,
-                  borderColor: statusTone.borderColor,
-                },
-              ]}
-            >
-              <Text style={[styles.statusText, { color: statusTone.color }]}>
-                {statusTitles[registration.status]}
-              </Text>
-            </View>
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.metaBlock}>
-        <View style={styles.metaRow}>
-          <Ionicons name="calendar-outline" size={15} color={colors.textDim} />
-          <Text style={styles.metaText}>{formatEventDate(event, registration.registeredAt)}</Text>
-        </View>
-        <View style={styles.metaRow}>
-          <Ionicons name="location-outline" size={15} color={colors.textDim} />
-          <Text style={styles.metaText}>{getPlace(event)}</Text>
-        </View>
-        {registration.seatsCount > 1 ? (
-          <View style={styles.metaRow}>
-            <Ionicons name="people-outline" size={15} color={colors.textDim} />
-            <Text style={styles.metaText}>Мест: {registration.seatsCount}</Text>
-          </View>
-        ) : null}
-      </View>
-    </>
-  );
-
-  return (
-    <GlassCard style={!canCancel && inactiveStatuses.has(registration.status) ? styles.inactiveCard : undefined}>
-      {event?.id ? (
-        <Pressable
-          onPress={() => onOpen(event.id)}
-          style={({ pressed }) => [pressed && styles.pressed]}
-        >
-          {cardContent}
-        </Pressable>
-      ) : cardContent}
-
-      {canCancel ? (
-        <Pressable
-          disabled={cancelling}
-          onPress={() => onCancel(registration)}
-          style={({ pressed }) => [
-            styles.cancelButton,
-            cancelling && styles.cancelButtonDisabled,
-            pressed && !cancelling && styles.cancelButtonPressed,
-          ]}
-        >
-          <Text style={styles.cancelButtonText}>
-            {cancelling ? 'Отменяем...' : 'Отменить запись'}
-          </Text>
-        </Pressable>
-      ) : null}
-    </GlassCard>
-  );
-}
 
 export default function MyRegistrationsScreen() {
   const router = useRouter();
@@ -349,8 +57,8 @@ export default function MyRegistrationsScreen() {
     }, [authUser, loadMyRegistrations]),
   );
 
-  const sortedRegistrations = useMemo(
-    () => sortRegistrations(myRegistrations),
+  const registrationGroups = useMemo(
+    () => buildMyRegistrationGroups(myRegistrations),
     [myRegistrations],
   );
 
@@ -374,14 +82,22 @@ export default function MyRegistrationsScreen() {
     router.push('/events');
   }, [router]);
 
-  const openEventDetails = useCallback((eventId: string) => {
-    router.push({ pathname: '/events/[id]', params: { id: eventId } });
+  const openRegistrationGroup = useCallback((group: MyRegistrationGroup) => {
+    if (group.totalRegistrationsCount === 1 && group.event?.id) {
+      router.push({ pathname: '/events/[id]', params: { id: group.event.id } });
+      return;
+    }
+
+    router.push({
+      pathname: '/profile/registration-groups/[eventId]',
+      params: { eventId: group.eventId },
+    });
   }, [router]);
 
-  const showInitialLoading = authUser && registrationsLoading && sortedRegistrations.length === 0;
-  const showBlockingError = authUser && Boolean(error) && !registrationsLoading && sortedRegistrations.length === 0;
-  const showInlineError = authUser && Boolean(error) && !registrationsLoading && sortedRegistrations.length > 0;
-  const showEmpty = authUser && !registrationsLoading && !error && sortedRegistrations.length === 0;
+  const showInitialLoading = authUser && registrationsLoading && registrationGroups.length === 0;
+  const showBlockingError = authUser && Boolean(error) && !registrationsLoading && registrationGroups.length === 0;
+  const showInlineError = authUser && Boolean(error) && !registrationsLoading && registrationGroups.length > 0;
+  const showEmpty = authUser && !registrationsLoading && !error && registrationGroups.length === 0;
 
   return (
     <>
@@ -441,15 +157,15 @@ export default function MyRegistrationsScreen() {
           </GlassCard>
         ) : null}
 
-        {authUser && !showInitialLoading && !showBlockingError && sortedRegistrations.length > 0 ? (
+        {authUser && !showInitialLoading && !showBlockingError && registrationGroups.length > 0 ? (
           <View style={styles.list}>
-            {sortedRegistrations.map((registration) => (
-              <RegistrationCard
-                key={registration.id}
-                registration={registration}
-                cancelling={cancellingRegistrationId === registration.id}
+            {registrationGroups.map((group) => (
+              <RegistrationGroupCard
+                key={group.eventId}
+                group={group}
+                cancellingRegistrationId={cancellingRegistrationId}
                 onCancel={handleCancelRegistration}
-                onOpen={openEventDetails}
+                onOpen={openRegistrationGroup}
               />
             ))}
           </View>
@@ -465,89 +181,6 @@ const styles = StyleSheet.create({
   },
   list: {
     gap: 12,
-  },
-  cardHeader: {
-    gap: 10,
-  },
-  cardTopRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  thumbnail: {
-    width: 72,
-    height: 72,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-  },
-  cardTitleBlock: {
-    flex: 1,
-    gap: 9,
-  },
-  cardTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  cardTitle: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 17,
-    fontWeight: '700',
-    lineHeight: 23,
-  },
-  inactiveCard: {
-    opacity: 0.72,
-  },
-  statusPill: {
-    alignSelf: 'flex-start',
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '700',
-    includeFontPadding: false,
-  },
-  metaBlock: {
-    gap: 8,
-    marginTop: 14,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 7,
-  },
-  metaText: {
-    flex: 1,
-    color: colors.textDim,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  cancelButton: {
-    minHeight: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.accent.redBorder,
-    backgroundColor: colors.accent.redBg,
-    marginTop: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-  },
-  cancelButtonPressed: {
-    opacity: 0.78,
-  },
-  cancelButtonDisabled: {
-    opacity: 0.55,
-  },
-  cancelButtonText: {
-    color: colors.danger,
-    fontSize: 13,
-    fontWeight: '700',
   },
   stateCard: {
     alignItems: 'center',
@@ -578,8 +211,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     textAlign: 'center',
-  },
-  pressed: {
-    opacity: 0.78,
   },
 });
