@@ -600,9 +600,33 @@ a {
   color: #1d1506;
 }
 
+.button--success {
+  border-color: rgba(53, 199, 89, 0.42);
+  background: #35c759;
+  color: #07150b;
+  box-shadow: 0 10px 22px rgba(53, 199, 89, 0.2);
+}
+
+.button--success:hover {
+  border-color: rgba(79, 224, 112, 0.62);
+  background: #4fe070;
+}
+
+.button--success:disabled {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  box-shadow: none;
+  opacity: 1;
+}
+
 .button:disabled {
   cursor: not-allowed;
   opacity: 0.58;
+}
+
+.button.button--success:disabled {
+  opacity: 1;
 }
 
 .badge {
@@ -1468,10 +1492,41 @@ a {
   overflow: hidden;
 }
 
+.event-create-card--sticky-actions {
+  overflow: visible;
+}
+
 .event-create-form {
   display: grid;
   gap: 20px;
   padding: 18px;
+}
+
+.event-form-sticky-actions {
+  position: sticky;
+  z-index: 35;
+  top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -18px -18px 0;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(22px) saturate(130%);
+  -webkit-backdrop-filter: blur(22px) saturate(130%);
+}
+
+.event-form-sticky-actions__back {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.event-form-sticky-actions__submit {
+  min-width: 190px;
 }
 
 .event-form-section {
@@ -4944,9 +4999,17 @@ a {
   }
 
   .event-create-actions,
+  .event-form-sticky-actions .button,
   .event-action-dialog__actions .button,
   .event-create-success .button {
     width: 100%;
+  }
+
+  .event-form-sticky-actions {
+    align-items: stretch;
+    flex-direction: column;
+    top: 0;
+    padding: 12px;
   }
 
   .import-review-item__created {

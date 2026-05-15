@@ -32,6 +32,7 @@ const DEFAULT_TIMEZONE = "Europe/Moscow";
 const DEFAULT_PRICE_CURRENCY = "RUB";
 
 type EventFormMode = "create" | "edit";
+type EventFormActionsPlacement = "bottom" | "stickyTop";
 
 type RegistrationModeSlotContext = {
   registrationMode: string;
@@ -75,6 +76,7 @@ type FormErrorKey = StringFormField | "isPermanent" | "waitlistEnabled" | "requi
 type FormErrors = Partial<Record<FormErrorKey, string>>;
 
 type EventFormProps = {
+  actionsPlacement?: EventFormActionsPlacement;
   cancelLabel?: string;
   categories?: AdminEventCategory[];
   categoriesLoading?: boolean;
@@ -150,6 +152,7 @@ const registrationModeOptions = ADMIN_EVENT_REGISTRATION_MODES.map((value) => ({
 }));
 
 export function EventForm({
+  actionsPlacement = "bottom",
   cancelLabel,
   categories = [],
   categoriesLoading = false,
@@ -211,7 +214,10 @@ export function EventForm({
     : isSavedEditState
       ? "Изменения сохранены"
       : resolvedSubmitLabel;
-  const isSubmitDisabled = disabled || submitting || isSavedEditState;
+  const isSubmitDisabled =
+    disabled || submitting || isSavedEditState || (mode === "edit" && !isDirty);
+  const hasActiveEditSave = mode === "edit" && isDirty && !isSubmitDisabled;
+  const submitButtonVariant = hasActiveEditSave ? "success" : "secondary";
 
   const currentCategorySlug = form.category.trim();
 
@@ -319,6 +325,27 @@ export function EventForm({
 
   return (
     <form className="event-create-form" noValidate onSubmit={handleSubmit}>
+      {actionsPlacement === "stickyTop" ? (
+        <div className="event-form-sticky-actions">
+          <Button
+            className="event-form-sticky-actions__back"
+            disabled={submitting}
+            onClick={onCancel}
+            variant="secondary"
+          >
+            {resolvedCancelLabel}
+          </Button>
+          <Button
+            className="event-form-sticky-actions__submit"
+            disabled={isSubmitDisabled}
+            type="submit"
+            variant={submitButtonVariant}
+          >
+            {submitButtonLabel}
+          </Button>
+        </div>
+      ) : null}
+
       {disabledMessage ? (
         <div className="form-error" role="alert">
           {disabledMessage}
@@ -575,14 +602,16 @@ export function EventForm({
         </div>
       ) : null}
 
-      <div className="event-create-actions">
-        <Button disabled={submitting} onClick={onCancel} variant="ghost">
-          {resolvedCancelLabel}
-        </Button>
-        <Button disabled={isSubmitDisabled} type="submit" variant="primary">
-          {submitButtonLabel}
-        </Button>
-      </div>
+      {actionsPlacement === "bottom" ? (
+        <div className="event-create-actions">
+          <Button disabled={submitting} onClick={onCancel} variant="ghost">
+            {resolvedCancelLabel}
+          </Button>
+          <Button disabled={isSubmitDisabled} type="submit" variant="primary">
+            {submitButtonLabel}
+          </Button>
+        </div>
+      ) : null}
     </form>
   );
 }
