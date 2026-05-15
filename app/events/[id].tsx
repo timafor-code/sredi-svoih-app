@@ -393,23 +393,10 @@ export default function EventDetailScreen() {
   }, [eventId, loadEventById]);
 
   const handleOpenPaidRegistration = useCallback((targetEvent: EventItem) => {
-    switch (targetEvent.eventKind) {
-      case 'shabbat':
-      case 'single':
-        router.push({
-          pathname: '/events/paid-options',
-          params: { eventId: targetEvent.id },
-        });
-        return;
-      case 'course':
-      case 'sunday_school':
-      case 'holiday':
-      default:
-        router.push({
-          pathname: '/events/paid-occurrences',
-          params: { eventId: targetEvent.id },
-        });
-    }
+    router.push({
+      pathname: '/events/paid-options',
+      params: { eventId: targetEvent.id },
+    });
   }, [router]);
 
   const conditionRows = useMemo(() => {

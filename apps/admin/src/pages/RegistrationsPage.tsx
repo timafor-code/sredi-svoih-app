@@ -913,6 +913,9 @@ function RegistrationsTable({
               </div>
               <div className="registration-table-stack" role="cell">
                 <span>{formatPaymentStatus(registration.paymentStatus)}</span>
+                {isSimulatedPaymentId(registration.paymentId) ? (
+                  <Badge tone="gold">Тестовая оплата</Badge>
+                ) : null}
                 <small>{formatRegistrationAmount(registration)}</small>
               </div>
               <span role="cell">{formatDateTime(registration.registeredAt)}</span>
@@ -1103,6 +1106,14 @@ function RegistrationDetailPanel({
 
       <DetailSection title="Оплата">
         <DetailRow label="Статус" value={formatPaymentStatus(registration.paymentStatus)} />
+        {isSimulatedPaymentId(registration.paymentId) ? (
+          <div className="registration-detail-row">
+            <span>Тип оплаты</span>
+            <strong>
+              <Badge tone="gold">Тестовая оплата</Badge>
+            </strong>
+          </div>
+        ) : null}
         <DetailRow label="Сумма" value={formatRegistrationAmount(registration)} />
         <DetailRow label="Payment ID" value={registration.paymentId ?? "Не указан"} />
       </DetailSection>
@@ -1396,9 +1407,14 @@ function formatPaymentStatus(status: string): string {
     paid: "Оплачено",
     pending: "Ожидает оплаты",
     refunded: "Возврат",
+    succeeded: "Оплачено",
   };
 
   return labels[status] ?? status;
+}
+
+function isSimulatedPaymentId(paymentId: string | null): boolean {
+  return paymentId?.startsWith("simulated:") === true;
 }
 
 function getRegistrationStatusLabel(status: string): string {

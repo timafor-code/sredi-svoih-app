@@ -5,7 +5,9 @@ import { getEventById, listPublishedEvents } from '@/services/eventsService';
 import {
   cancelRegistration as cancelRegistrationService,
   loadMyRegistrations as loadMyRegistrationsService,
+  registerForPaidEventSimulated as registerForPaidEventSimulatedService,
   registerForEvent as registerForEventService,
+  type RegisterForPaidEventSimulatedInput,
 } from '@/services/registrationService';
 import { useAuthStore } from '@/store/useAuthStore';
 import {
@@ -34,6 +36,9 @@ type EventsState = {
   loadEventById: (eventId: string, options?: LoadEventOptions) => Promise<EventItem | null>;
   loadMyRegistrations: () => Promise<void>;
   registerForEvent: (eventId: string) => Promise<EventRegistration>;
+  registerForPaidEventSimulated: (
+    input: RegisterForPaidEventSimulatedInput,
+  ) => Promise<EventRegistration>;
   cancelRegistration: (registrationId: string) => Promise<EventRegistration>;
   getRegistrationForEvent: (eventId: string) => EventRegistration | null;
   resetPrivateState: () => void;
@@ -355,6 +360,38 @@ export const useEventsStore = create<EventsState>((set, get) => ({
 
     try {
       const registration = await registerForEventService(eventId, 1, null);
+
+      set((state) => ({
+        myRegistrations: upsertRegistration(state.myRegistrations, registration),
+        registrationsLoading: false,
+        error: null,
+      }));
+
+      return registration;
+    } catch (error) {
+      const message = friendlyRegistrationError(error);
+
+      if (message === 'Вы уже записаны') {
+        await get().loadMyRegistrations();
+      } else {
+        set({ registrationsLoading: false, error: message });
+      }
+
+      throw new Error(message);
+    }
+  },
+
+  registerForPaidEventSimulated: async (input: RegisterForPaidEventSimulatedInput) => {
+    const existingRegistration = findRegistrationForEvent(get().myRegistrations, input.eventId);
+
+    if (isActiveEventRegistration(existingRegistration)) {
+      return existingRegistration;
+    }
+
+    set({ registrationsLoading: true, error: null });
+
+    try {
+      const registration = await registerForPaidEventSimulatedService(input);
 
       set((state) => ({
         myRegistrations: upsertRegistration(state.myRegistrations, registration),
