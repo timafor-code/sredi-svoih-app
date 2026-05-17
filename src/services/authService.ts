@@ -42,6 +42,13 @@ export type ProfileUpsert = Partial<Omit<Profile, 'created_at' | 'updated_at'>> 
   id?: string;
 };
 
+export type EmailSignUpResult = {
+  session: Session | null;
+  user: User | null;
+  profile: Profile | null;
+  needsEmailConfirmation: boolean;
+};
+
 const PROFILE_FIELDS = `
   id,
   community_id,
@@ -141,6 +148,68 @@ export async function signIn(email: string, password: string): Promise<Session> 
   }
 
   throw new Error(signInResult.error?.message ?? 'Не удалось войти. Проверьте email и пароль.');
+}
+
+export async function signUpWithEmail(email: string, password: string): Promise<EmailSignUpResult> {
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!normalizedEmail || !password.trim()) {
+    throw new Error('Введите email и пароль для регистрации.');
+  }
+
+  const { data, error } = await supabase.auth.signUp({
+    email: normalizedEmail,
+    password,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const session = data.session ?? null;
+  let profile: Profile | null = null;
+
+  if (session) {
+    profile = await upsertProfile({ email: normalizedEmail });
+  }
+
+  return {
+    session,
+    user: data.user ?? session?.user ?? null,
+    profile,
+    needsEmailConfirmation: !session,
+  };
+}
+
+export async function resendConfirmationEmail(email: string): Promise<void> {
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!normalizedEmail) {
+    throw new Error('Введите email для повторной отправки письма.');
+  }
+
+  const { error } = await supabase.auth.resend({
+    type: 'signup',
+    email: normalizedEmail,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function resetPasswordForEmail(email: string): Promise<void> {
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!normalizedEmail) {
+    throw new Error('Введите email для восстановления пароля.');
+  }
+
+  const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail);
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }
 
 export async function signOut(): Promise<void> {

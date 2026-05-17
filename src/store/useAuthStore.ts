@@ -4,9 +4,13 @@ import { create } from 'zustand';
 import {
   getSession,
   loadProfile as loadProfileService,
+  resendConfirmationEmail as resendConfirmationEmailService,
+  resetPasswordForEmail as resetPasswordForEmailService,
   signIn as signInService,
   signOut as signOutService,
+  signUpWithEmail as signUpWithEmailService,
   upsertProfile,
+  type EmailSignUpResult,
   type Profile,
   type ProfileUpsert,
 } from '@/services/authService';
@@ -29,25 +33,61 @@ type AuthState = {
   loadMembership: () => Promise<void>;
   acceptInvite: (code: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string) => Promise<EmailSignUpResult>;
+  resendConfirmationEmail: (email: string) => Promise<void>;
+  resetPasswordForEmail: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
+function includesAny(message: string, phrases: string[]): boolean {
+  return phrases.some((phrase) => message.includes(phrase));
+}
+
 function friendlyAuthError(error: unknown): string {
   const message = error instanceof Error ? error.message : 'Не удалось выполнить действие.';
+  const normalizedMessage = message.toLowerCase();
 
   if (message === 'Auth required') {
     return 'Чтобы продолжить, войдите в приложение.';
   }
 
-  if (message.includes('Invalid login credentials')) {
+  if (normalizedMessage.includes('invalid login credentials')) {
     return 'Не удалось войти. Проверьте email и пароль.';
   }
 
-  if (message.includes('User already registered')) {
-    return 'Этот email уже зарегистрирован с другим способом входа.';
+  if (
+    includesAny(normalizedMessage, [
+      'already registered',
+      'already been registered',
+      'user already exists',
+    ])
+  ) {
+    return 'Этот email уже зарегистрирован. Войдите или восстановите пароль.';
   }
 
-  if (message.includes('Invalid or expired invite code')) {
+  if (
+    normalizedMessage.includes('password') &&
+    includesAny(normalizedMessage, ['weak', 'too short', 'at least', 'minimum'])
+  ) {
+    return 'Пароль слишком слабый. Используйте более длинный пароль.';
+  }
+
+  if (includesAny(normalizedMessage, ['email not confirmed', 'email is not confirmed'])) {
+    return 'Email ещё не подтверждён. Проверьте почту и перейдите по ссылке из письма.';
+  }
+
+  if (
+    includesAny(normalizedMessage, [
+      'rate limit',
+      'too many requests',
+      'email send rate',
+      'security purposes',
+    ])
+  ) {
+    return 'Слишком много попыток. Попробуйте ещё раз немного позже.';
+  }
+
+  if (normalizedMessage.includes('invalid or expired invite code')) {
     return 'Код приглашения недействителен или истёк.';
   }
 
@@ -191,6 +231,72 @@ export const useAuthStore = create<AuthState>((set) => ({
         loading: false,
         error: null,
       });
+    } catch (error) {
+      const message = friendlyAuthError(error);
+
+      set({ loading: false, error: message });
+      throw new Error(message);
+    }
+  },
+
+  signUpWithEmail: async (email: string, password: string) => {
+    set({ loading: true, error: null });
+
+    try {
+      const result = await signUpWithEmailService(email, password);
+
+      if (!result.session) {
+        set({
+          session: null,
+          user: null,
+          profile: null,
+          membership: null,
+          loading: false,
+          error: null,
+        });
+        return result;
+      }
+
+      set({
+        session: result.session,
+        user: result.session.user,
+        profile: result.profile,
+        membership: null,
+        loading: false,
+        error: null,
+      });
+
+      return result;
+    } catch (error) {
+      const message = friendlyAuthError(error);
+
+      set({ loading: false, error: message });
+      throw new Error(message);
+    }
+  },
+
+  resendConfirmationEmail: async (email: string) => {
+    set({ loading: true, error: null });
+
+    try {
+      await resendConfirmationEmailService(email);
+
+      set({ loading: false, error: null });
+    } catch (error) {
+      const message = friendlyAuthError(error);
+
+      set({ loading: false, error: message });
+      throw new Error(message);
+    }
+  },
+
+  resetPasswordForEmail: async (email: string) => {
+    set({ loading: true, error: null });
+
+    try {
+      await resetPasswordForEmailService(email);
+
+      set({ loading: false, error: null });
     } catch (error) {
       const message = friendlyAuthError(error);
 
