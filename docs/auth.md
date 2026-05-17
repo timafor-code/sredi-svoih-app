@@ -43,6 +43,14 @@ Email sign-up не создаёт membership автоматически.
 
 Registration != membership: Supabase Auth создаёт технический аккаунт и сессию, а доступ к закрытым функциям общины по-прежнему открывается только через invite / `community_memberships`.
 
+## PR3: Profile completion / onboarding
+
+После регистрации или входа приложение проверяет `profiles.onboarding_completed`. Если значение не равно `true`, экран профиля показывает мягкую карточку «Завершите профиль» с переходом на `/profile/onboarding`.
+
+Onboarding заполняет только базовые поля профиля: `display_name`, `first_name`, `last_name`, `city`, `nusach`, а после сохранения выставляет `onboarding_completed: true`. Эти данные относятся к пользовательскому профилю и не являются признаком членства в общине.
+
+Завершённый профиль не создаёт `community_memberships`, не принимает invite-код автоматически и не даёт доступ к закрытым функциям без активного invite / membership. Пользователь без membership по-прежнему видит существующий блок invite-кода «Присоединиться к общине».
+
 ## Next PRs
 
 Google и Apple sign-in будут добавлены отдельными PR. В этом PR они не реализуются и не меняют текущую модель доступа.

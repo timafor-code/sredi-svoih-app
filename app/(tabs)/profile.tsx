@@ -24,6 +24,7 @@ const prayerTrackerHref = '/profile/prayer-tracker' as Href;
 const notificationsHref = '/profile/notifications' as Href;
 const prayersSettingsHref = '/profile/prayers-settings' as Href;
 const editProfileHref = '/profile/edit' as Href;
+const onboardingHref = '/profile/onboarding' as Href;
 const securityHref = '/profile/security' as Href;
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
@@ -214,6 +215,7 @@ export default function ProfileScreen() {
   const membershipRoleLabel = isActiveMember ? roleTitles[membership.role] : null;
   const isAcceptingInvite = pendingAction === 'invite';
   const isSigningOut = pendingAction === 'signOut';
+  const needsProfileOnboarding = Boolean(authUser && profile && profile.onboarding_completed !== true);
   const inviteError = localError?.startsWith('Не удалось принять приглашение') ? localError : null;
   const signOutError = localError?.startsWith('Не удалось выйти') ? localError : null;
   const activeRegistrationsCount = useMemo(
@@ -266,6 +268,14 @@ export default function ProfileScreen() {
 
     router.push(editProfileHref);
   }, [authUser, router]);
+
+  const handleOpenProfileOnboarding = useCallback(() => {
+    if (!authUser || !profile) {
+      return;
+    }
+
+    router.push(onboardingHref);
+  }, [authUser, profile, router]);
 
   const handleOpenSecurity = useCallback(() => {
     router.push(securityHref);
@@ -368,6 +378,27 @@ export default function ProfileScreen() {
           {signOutError ? <Text style={styles.errorText}>{signOutError}</Text> : null}
         </GlassCard>
       )}
+
+      {needsProfileOnboarding ? (
+        <GlassCard style={styles.onboardingCard}>
+          <View style={styles.onboardingHeader}>
+            <View style={styles.onboardingIcon}>
+              <Ionicons name="person-circle-outline" size={22} color={colors.orange} />
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.cardTitle}>Завершите профиль</Text>
+              <Text style={styles.cardText}>
+                Заполните имя, город и нусах, чтобы приложение точнее показывало настройки и личные сценарии.
+              </Text>
+            </View>
+          </View>
+          <PrimaryButton
+            title="Завершить профиль"
+            buttonStyle={styles.onboardingButton}
+            onPress={handleOpenProfileOnboarding}
+          />
+        </GlassCard>
+      ) : null}
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Быстрые действия</Text>
@@ -523,6 +554,28 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: 12,
+  },
+  onboardingCard: {
+    borderColor: colors.accent.orangeBorder,
+  },
+  onboardingHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 14,
+  },
+  onboardingIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.accent.orangeBorder,
+    backgroundColor: colors.accent.orangeBg,
+  },
+  onboardingButton: {
+    minHeight: 44,
   },
   accountHeader: {
     flexDirection: 'row',

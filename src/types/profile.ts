@@ -2,11 +2,20 @@ export const PROFILE_TRIBE_STATUSES = ['kohen', 'levi', 'israel'] as const;
 export const PROFILE_MARITAL_STATUSES = ['single', 'married', 'divorced', 'widowed', 'other'] as const;
 export const PROFILE_VISIBILITIES = ['rabbi_only', 'members', 'public'] as const;
 export const PROFILE_BIRTH_TIME_CONTEXTS = ['before_sunset', 'after_sunset', 'unknown'] as const;
+export const PROFILE_NUSACH_VALUES = ['chabad', 'sephardi', 'ashkenaz', 'common'] as const;
 
 export type ProfileTribeStatus = (typeof PROFILE_TRIBE_STATUSES)[number];
 export type ProfileMaritalStatus = (typeof PROFILE_MARITAL_STATUSES)[number];
 export type ProfileVisibility = (typeof PROFILE_VISIBILITIES)[number];
 export type ProfileBirthTimeContext = (typeof PROFILE_BIRTH_TIME_CONTEXTS)[number];
+export type ProfileNusach = (typeof PROFILE_NUSACH_VALUES)[number];
+
+export const PROFILE_NUSACH_OPTIONS: readonly { label: string; value: ProfileNusach }[] = [
+  { label: 'Хабад', value: 'chabad' },
+  { label: 'Сфарди', value: 'sephardi' },
+  { label: 'Ашкеназ', value: 'ashkenaz' },
+  { label: 'Пока не выбрано', value: 'common' },
+] as const;
 
 export const PROFILE_BIRTH_TIME_CONTEXT_LABELS: Record<ProfileBirthTimeContext, string> = {
   before_sunset: 'До захода солнца / днём',
@@ -72,4 +81,24 @@ export function isProfileVisibility(value: unknown): value is ProfileVisibility 
 
 export function isProfileBirthTimeContext(value: unknown): value is ProfileBirthTimeContext {
   return PROFILE_BIRTH_TIME_CONTEXTS.includes(value as ProfileBirthTimeContext);
+}
+
+export function isProfileNusach(value: unknown): value is ProfileNusach {
+  return PROFILE_NUSACH_VALUES.includes(value as ProfileNusach);
+}
+
+export function normalizeProfileNusach(value: string | null | undefined): ProfileNusach {
+  if (isProfileNusach(value)) {
+    return value;
+  }
+
+  if (value === 'sephard' || value === 'beit_sefaradi') {
+    return 'sephardi';
+  }
+
+  if (value === 'ashkenazi') {
+    return 'ashkenaz';
+  }
+
+  return 'common';
 }
