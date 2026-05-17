@@ -115,6 +115,31 @@ type ModalState =
       errors: DraftErrors;
     };
 
+type OccurrenceGroupKey =
+  | "attention"
+  | "future-active"
+  | "hidden-cancelled"
+  | "archive";
+
+type OccurrenceGroupItem = {
+  draft: DraftOccurrence;
+  index: number;
+};
+
+type OccurrenceGroup = {
+  count: number;
+  hint?: string;
+  items: OccurrenceGroupItem[];
+  key: OccurrenceGroupKey;
+  title: string;
+};
+
+type ArchiveToastState = {
+  id: number;
+  message: string;
+  undoDrafts: DraftOccurrence[] | null;
+};
+
 type DraftValidation =
   | { ok: true; input: AdminEventOccurrenceInput }
   | { ok: false; errors: DraftErrors };
@@ -218,8 +243,76 @@ function isPastActiveOccurrenceDraft(
   return draft.status === "active" && isPastOccurrenceDraft(draft, nowTimestamp);
 }
 
+function buildOccurrenceGroups(
+  drafts: DraftOccurrence[],
+  nowTimestamp: number,
+): OccurrenceGroup[] {
+  const attention: OccurrenceGroupItem[] = [];
+  const futureActive: OccurrenceGroupItem[] = [];
+  const hiddenCancelled: OccurrenceGroupItem[] = [];
+  const archive: OccurrenceGroupItem[] = [];
+
+  drafts.forEach((draft, index) => {
+    const item = { draft, index };
+
+    if (isPastActiveOccurrenceDraft(draft, nowTimestamp)) {
+      attention.push(item);
+      return;
+    }
+
+    if (draft.status === "active") {
+      futureActive.push(item);
+      return;
+    }
+
+    if (draft.status === "hidden" || draft.status === "cancelled") {
+      hiddenCancelled.push(item);
+      return;
+    }
+
+    if (draft.status === "archived") {
+      archive.push(item);
+    }
+  });
+
+  const groups: OccurrenceGroup[] = [
+    {
+      count: attention.length,
+      hint:
+        "Эти сеансы уже прошли, но ещё числятся активными. Перенесите их в архив, чтобы они не мешали работе с будущими датами.",
+      items: attention,
+      key: "attention",
+      title: "Требуют внимания",
+    },
+    {
+      count: futureActive.length,
+      items: futureActive,
+      key: "future-active",
+      title: "Активные будущие",
+    },
+    {
+      count: hiddenCancelled.length,
+      items: hiddenCancelled,
+      key: "hidden-cancelled",
+      title: "Скрытые и отменённые",
+    },
+    {
+      count: archive.length,
+      items: archive,
+      key: "archive",
+      title: "Архив",
+    },
+  ];
+
+  return groups.filter((group) => group.count > 0);
+}
+
 function withSequentialSortOrder(drafts: DraftOccurrence[]): DraftOccurrence[] {
   return drafts.map((draft, index) => ({ ...draft, sortOrder: String(index) }));
+}
+
+function cloneDrafts(drafts: DraftOccurrence[]): DraftOccurrence[] {
+  return drafts.map((draft) => ({ ...draft }));
 }
 
 function buildDraftFromOccurrence(
@@ -784,16 +877,33 @@ export function EventOccurrencesConstructor({
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [modalState, setModalState] = useState<ModalState>({ kind: "closed" });
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [archiveExpanded, setArchiveExpanded] = useState(false);
+  const [archiveToast, setArchiveToast] = useState<ArchiveToastState | null>(null);
   const [nowTimestamp, setNowTimestamp] = useState(() => Date.now());
   const [generatorForm, setGeneratorForm] = useState<OccurrenceGeneratorForm>(() =>
     buildDefaultGeneratorForm(resolveDefaultGeneratorPreset(eventKind)),
   );
   const saveInFlightRef = useRef(false);
+  const archiveToastIdRef = useRef(0);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNowTimestamp(Date.now()), 60_000);
     return () => window.clearInterval(intervalId);
   }, []);
+
+  useEffect(() => {
+    if (!archiveToast) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setArchiveToast((current) =>
+        current?.id === archiveToast.id ? null : current,
+      );
+    }, 6000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [archiveToast]);
 
   useEffect(() => {
     let cancelled = false;
@@ -802,6 +912,8 @@ export function EventOccurrencesConstructor({
     setLoadError(null);
     setSaveError(null);
     setSavedAt(null);
+    setArchiveToast(null);
+    setArchiveExpanded(false);
 
     listAdminEventOccurrences(eventId)
       .then((occurrences) => {
@@ -835,6 +947,10 @@ export function EventOccurrencesConstructor({
     eventCapacity,
     nowTimestamp,
   ]);
+  const occurrenceGroups = useMemo(
+    () => buildOccurrenceGroups(drafts, nowTimestamp),
+    [drafts, nowTimestamp],
+  );
   const generatorPreview = useMemo(
     () => buildGeneratorPreview(generatorForm, drafts, fallbackTimezone, eventCapacity),
     [drafts, eventCapacity, fallbackTimezone, generatorForm],
@@ -842,7 +958,21 @@ export function EventOccurrencesConstructor({
   const disabled = loading || saving || Boolean(loadError);
   const hasPastActiveDrafts = summary.pastActiveCount > 0;
 
-  const persistDrafts = async (nextDrafts: DraftOccurrence[]) => {
+  const showArchiveToast = (
+    message: string,
+    undoDrafts: DraftOccurrence[] | null,
+  ) => {
+    archiveToastIdRef.current += 1;
+    setArchiveToast({
+      id: archiveToastIdRef.current,
+      message,
+      undoDrafts,
+    });
+  };
+
+  const persistDrafts = async (
+    nextDrafts: DraftOccurrence[],
+  ): Promise<boolean> => {
     setSaveError(null);
     setSavedAt(null);
 
@@ -851,7 +981,7 @@ export function EventOccurrencesConstructor({
       setSaveError(
         "В одной из дат есть ошибки. Откройте дату и исправьте поля.",
       );
-      return;
+      return false;
     }
 
     saveInFlightRef.current = true;
@@ -862,12 +992,14 @@ export function EventOccurrencesConstructor({
       setDrafts(sortDrafts(saved.map(buildDraftFromOccurrence)));
       setSaveError(null);
       setSavedAt(new Date().toISOString());
+      return true;
     } catch (error) {
       setSaveError(
         error instanceof Error
           ? error.message
           : "Не удалось сохранить даты и сеансы события.",
       );
+      return false;
     } finally {
       saveInFlightRef.current = false;
       setSaving(false);
@@ -884,6 +1016,7 @@ export function EventOccurrencesConstructor({
       return;
     }
 
+    setArchiveToast(null);
     setDrafts(nextDrafts);
     void persistDrafts(nextDrafts);
   };
@@ -963,7 +1096,33 @@ export function EventOccurrencesConstructor({
   };
 
   const handleArchivePastOccurrence = (draftId: string) => {
-    handleStatusChange(draftId, "archived");
+    if (disabled || saveInFlightRef.current) {
+      return;
+    }
+
+    const archiveTimestamp = Date.now();
+    const target = drafts.find((draft) => draft.draftId === draftId);
+    if (!target || !isPastActiveOccurrenceDraft(target, archiveTimestamp)) {
+      return;
+    }
+
+    const archivedStatus: AdminEventOccurrenceStatus = "archived";
+    const previousDrafts = cloneDrafts(drafts);
+    const nextDrafts = drafts.map((draft) =>
+      draft.draftId === draftId ? { ...draft, status: archivedStatus } : draft,
+    );
+
+    setNowTimestamp(archiveTimestamp);
+    setArchiveToast(null);
+    setDrafts(nextDrafts);
+    void persistDrafts(nextDrafts).then((saved) => {
+      if (saved) {
+        showArchiveToast(
+          "Сеанс перенесён в архив. Регистрации сохранены.",
+          previousDrafts,
+        );
+      }
+    });
   };
 
   const openArchivePastConfirm = () => {
@@ -988,22 +1147,45 @@ export function EventOccurrencesConstructor({
     }
 
     const archiveTimestamp = Date.now();
+    let archivedCount = 0;
+    const archivedStatus: AdminEventOccurrenceStatus = "archived";
+    const previousDrafts = cloneDrafts(drafts);
+    const nextDrafts = drafts.map((draft) => {
+      if (!isPastActiveOccurrenceDraft(draft, archiveTimestamp)) {
+        return draft;
+      }
+
+      archivedCount += 1;
+      return { ...draft, status: archivedStatus };
+    });
+
+    if (archivedCount === 0) {
+      return;
+    }
+
     setNowTimestamp(archiveTimestamp);
     setArchiveConfirmOpen(false);
-    applyAndPersist((current) => {
-      let changed = false;
-      const archivedStatus: AdminEventOccurrenceStatus = "archived";
-      const next = current.map((draft) => {
-        if (!isPastActiveOccurrenceDraft(draft, archiveTimestamp)) {
-          return draft;
-        }
-
-        changed = true;
-        return { ...draft, status: archivedStatus };
-      });
-
-      return changed ? next : current;
+    setArchiveToast(null);
+    setDrafts(nextDrafts);
+    void persistDrafts(nextDrafts).then((saved) => {
+      if (saved) {
+        showArchiveToast(
+          `${archivedCount} прошедших сеансов перенесены в архив. Регистрации сохранены.`,
+          previousDrafts,
+        );
+      }
     });
+  };
+
+  const handleUndoArchive = () => {
+    if (disabled || saveInFlightRef.current || !archiveToast?.undoDrafts) {
+      return;
+    }
+
+    const restoredDrafts = cloneDrafts(archiveToast.undoDrafts);
+    setArchiveToast(null);
+    setDrafts(restoredDrafts);
+    void persistDrafts(restoredDrafts);
   };
 
   const handleDelete = (draftId: string) => {
@@ -1070,6 +1252,23 @@ export function EventOccurrencesConstructor({
     void persistDrafts(nextDrafts);
   };
 
+  const renderOccurrenceRow = ({ draft, index }: OccurrenceGroupItem) => (
+    <OccurrenceRow
+      disabled={disabled}
+      draft={draft}
+      index={index}
+      isPastActive={isPastActiveOccurrenceDraft(draft, nowTimestamp)}
+      key={draft.draftId}
+      onArchive={() => handleArchivePastOccurrence(draft.draftId)}
+      onDelete={() => handleDelete(draft.draftId)}
+      onEdit={() => openEditModal(draft.draftId)}
+      onMoveDown={() => handleMove(draft.draftId, 1)}
+      onMoveUp={() => handleMove(draft.draftId, -1)}
+      onStatusChange={(status) => handleStatusChange(draft.draftId, status)}
+      total={drafts.length}
+    />
+  );
+
   return (
     <section className="event-occurrences-constructor">
       <header className="event-occurrences-constructor__head">
@@ -1081,13 +1280,11 @@ export function EventOccurrencesConstructor({
           </p>
         </div>
         <div className="event-occurrences-constructor__head-actions">
-          <Button
-            disabled={disabled || !hasPastActiveDrafts}
-            onClick={openArchivePastConfirm}
-            variant="gold"
-          >
-            Архивировать прошедшие
-          </Button>
+          {hasPastActiveDrafts ? (
+            <Button disabled={disabled} onClick={openArchivePastConfirm} variant="gold">
+              Архивировать прошедшие
+            </Button>
+          ) : null}
           <Button disabled={disabled} onClick={openAddModal} variant="secondary">
             + Добавить дату
           </Button>
@@ -1114,6 +1311,21 @@ export function EventOccurrencesConstructor({
         preview={generatorPreview}
       />
 
+      {archiveToast ? (
+        <div className="event-occurrences-toast" role="status">
+          <span>{archiveToast.message}</span>
+          {archiveToast.undoDrafts ? (
+            <button
+              disabled={disabled}
+              onClick={handleUndoArchive}
+              type="button"
+            >
+              Отменить
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="event-occurrences-constructor__layout">
         <div className="event-occurrences-constructor__main">
           {loading ? (
@@ -1134,26 +1346,38 @@ export function EventOccurrencesConstructor({
             </div>
           ) : (
             <div className="event-occurrence-list-stack">
-              <ul className="event-occurrence-rows">
-                {drafts.map((draft, index) => (
-                  <OccurrenceRow
-                    disabled={disabled}
-                    draft={draft}
-                    index={index}
-                    isPastActive={isPastActiveOccurrenceDraft(draft, nowTimestamp)}
-                    onArchive={() => handleArchivePastOccurrence(draft.draftId)}
-                    key={draft.draftId}
-                    onDelete={() => handleDelete(draft.draftId)}
-                    onEdit={() => openEditModal(draft.draftId)}
-                    onMoveDown={() => handleMove(draft.draftId, 1)}
-                    onMoveUp={() => handleMove(draft.draftId, -1)}
-                    onStatusChange={(status) =>
-                      handleStatusChange(draft.draftId, status)
-                    }
-                    total={drafts.length}
-                  />
-                ))}
-              </ul>
+              {occurrenceGroups.map((group) => {
+                const isArchive = group.key === "archive";
+                const archiveCollapsed = isArchive && !archiveExpanded;
+
+                return (
+                  <section
+                    className={`event-occurrence-group event-occurrence-group--${group.key}`}
+                    key={group.key}
+                  >
+                    <header className="event-occurrence-group__head">
+                      <div>
+                        <h3>{`${group.title} · ${group.count}`}</h3>
+                        {group.hint ? <p>{group.hint}</p> : null}
+                      </div>
+                      {isArchive ? (
+                        <button
+                          className="event-occurrence-group__toggle"
+                          onClick={() => setArchiveExpanded((current) => !current)}
+                          type="button"
+                        >
+                          {archiveExpanded ? "Скрыть архив" : "Показать архив"}
+                        </button>
+                      ) : null}
+                    </header>
+                    {archiveCollapsed ? null : (
+                      <ul className="event-occurrence-rows">
+                        {group.items.map(renderOccurrenceRow)}
+                      </ul>
+                    )}
+                  </section>
+                );
+              })}
               <button
                 className="event-occurrences-add-btn event-occurrences-add-btn--below"
                 disabled={disabled}
@@ -1545,11 +1769,6 @@ function OccurrenceRow({
         <div className="event-occurrence-row__title">
           {title ? title : "Без подписи"}
         </div>
-        {isPastActive ? (
-          <span className="event-occurrence-row__past-badge">
-            Прошёл · нужно архивировать
-          </span>
-        ) : null}
         <div className="event-occurrence-row__meta">
           <span>{formatRegistrationWindow(draft)}</span>
           <span>{formatCapacity(draft)}</span>
@@ -1633,13 +1852,20 @@ function OccurrenceRow({
           ×
         </button>
       </div>
+
+      {isPastActive ? (
+        <span className="event-occurrence-row__past-badge">
+          Прошёл · нужно архивировать
+        </span>
+      ) : null}
     </li>
   );
 }
 
 type Summary = {
-  activeCount: number;
+  archivedCount: number;
   capacityText: string;
+  futureActiveCount: number;
   hasClosedRegistration: boolean;
   nextActiveLabel: string;
   pastActiveCount: number;
@@ -1652,7 +1878,10 @@ function buildSummary(
 ): Summary {
   const now = nowTimestamp;
   const activeDrafts = drafts.filter((draft) => draft.status === "active");
-  const futureActiveDrafts = activeDrafts
+  const futureActiveDrafts = activeDrafts.filter(
+    (draft) => !isPastOccurrenceDraft(draft, now),
+  );
+  const futureActiveWithStart = futureActiveDrafts
     .map((draft) => ({ draft, timestamp: draftStartIsoTimestamp(draft) }))
     .filter(
       (entry): entry is { draft: DraftOccurrence; timestamp: number } =>
@@ -1662,6 +1891,7 @@ function buildSummary(
   const pastActiveCount = activeDrafts.filter((draft) =>
     isPastOccurrenceDraft(draft, now),
   ).length;
+  const archivedCount = drafts.filter((draft) => draft.status === "archived").length;
   const withOwnCapacity = activeDrafts.filter((draft) => draft.capacity.trim()).length;
   const inheritedCapacity = activeDrafts.length - withOwnCapacity;
   const capacityText =
@@ -1678,11 +1908,12 @@ function buildSummary(
   });
 
   return {
-    activeCount: activeDrafts.length,
+    archivedCount,
     capacityText,
+    futureActiveCount: futureActiveDrafts.length,
     hasClosedRegistration,
-    nextActiveLabel: futureActiveDrafts[0]
-      ? formatDraftDateTime(futureActiveDrafts[0].draft)
+    nextActiveLabel: futureActiveWithStart[0]
+      ? formatDraftDateTime(futureActiveWithStart[0].draft)
       : "Нет будущих активных дат",
     pastActiveCount,
   };
@@ -1698,15 +1929,19 @@ function SummaryPanel({ summary }: { summary: Summary }) {
           <dd>{summary.nextActiveLabel}</dd>
         </div>
         <div>
-          <dt>Активных дат</dt>
-          <dd>{summary.activeCount}</dd>
+          <dt>Будущих активных</dt>
+          <dd>{summary.futureActiveCount}</dd>
         </div>
         {summary.pastActiveCount > 0 ? (
           <div className="event-occurrences-summary__warning">
-            <dt>Прошедших активных</dt>
-            <dd>{summary.pastActiveCount} нужно архивировать</dd>
+            <dt>Требуют архивации</dt>
+            <dd>{summary.pastActiveCount}</dd>
           </div>
         ) : null}
+        <div>
+          <dt>В архиве</dt>
+          <dd>{summary.archivedCount}</dd>
+        </div>
         <div>
           <dt>Регистрация</dt>
           <dd>
@@ -1763,7 +1998,7 @@ function ArchivePastConfirmModal({
         role="dialog"
       >
         <header className="participation-modal__head">
-          <h3>Архивировать прошедшие даты?</h3>
+          <h3>Архивировать прошедшие сеансы?</h3>
           <button
             aria-label="Закрыть"
             className="participation-modal__close"
@@ -1777,10 +2012,10 @@ function ArchivePastConfirmModal({
 
         <div className="participation-modal__body event-occurrence-archive-modal__body">
           <p>
-            Это не удалит даты и регистрации, а только уберёт прошедшие сеансы
-            из активных.
+            Мы перенесём {count} прошедших сеансов в архив. Они исчезнут из
+            активного списка, но останутся в истории события. Регистрации,
+            оплаты и посещаемость не будут удалены.
           </p>
-          <span>{count} будет переведено в архив.</span>
         </div>
 
         <footer className="participation-modal__footer">
@@ -1788,7 +2023,7 @@ function ArchivePastConfirmModal({
             Отмена
           </Button>
           <Button disabled={saving} onClick={onConfirm} variant="gold">
-            {saving ? "Архивируем..." : "Архивировать"}
+            {saving ? "Архивируем..." : `Архивировать ${count} сеансов`}
           </Button>
         </footer>
       </div>
