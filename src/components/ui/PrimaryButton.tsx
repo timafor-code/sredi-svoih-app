@@ -12,6 +12,7 @@ import {
 type PrimaryButtonProps = PressableProps & {
   title: string;
   buttonStyle?: StyleProp<ViewStyle>;
+  textNumberOfLines?: number;
   textStyle?: StyleProp<TextStyle>;
 };
 
@@ -21,6 +22,7 @@ export function PrimaryButton({
   disabled,
   onPress,
   style,
+  textNumberOfLines = 1,
   textStyle,
   ...props
 }: PrimaryButtonProps) {
@@ -37,7 +39,7 @@ export function PrimaryButton({
       {...props}
     >
       <LinearGradient colors={['#F07A2A', '#E05A10']} style={[styles.gradient, buttonStyle]}>
-        <Text numberOfLines={1} style={[styles.text, textStyle]}>
+        <Text numberOfLines={textNumberOfLines} style={[styles.text, textStyle]}>
           {title}
         </Text>
       </LinearGradient>

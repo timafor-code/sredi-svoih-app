@@ -62,18 +62,18 @@ function friendlyAuthError(error: unknown): string {
       'user already exists',
     ])
   ) {
-    return 'Этот email уже зарегистрирован. Войдите или восстановите пароль.';
+    return 'Этот email уже зарегистрирован. Попробуйте войти.';
   }
 
   if (
     normalizedMessage.includes('password') &&
     includesAny(normalizedMessage, ['weak', 'too short', 'at least', 'minimum'])
   ) {
-    return 'Пароль слишком слабый. Используйте более длинный пароль.';
+    return 'Пароль слишком простой. Используйте минимум 6 символов.';
   }
 
   if (includesAny(normalizedMessage, ['email not confirmed', 'email is not confirmed'])) {
-    return 'Email ещё не подтверждён. Проверьте почту и перейдите по ссылке из письма.';
+    return 'Email ещё не подтверждён. Проверьте почту.';
   }
 
   if (
@@ -84,7 +84,7 @@ function friendlyAuthError(error: unknown): string {
       'security purposes',
     ])
   ) {
-    return 'Слишком много попыток. Попробуйте ещё раз немного позже.';
+    return 'Слишком много попыток. Попробуйте позже.';
   }
 
   if (normalizedMessage.includes('invalid or expired invite code')) {
