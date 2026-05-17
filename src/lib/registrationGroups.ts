@@ -21,6 +21,12 @@ export type MyRegistrationGroup = RegistrationAmountSummary & {
   totalRegistrationsCount: number;
 };
 
+export type MyRegistrationPeriod = 'all' | 'active' | 'past';
+
+type BuildMyRegistrationGroupsOptions = {
+  period?: MyRegistrationPeriod;
+};
+
 type RegistrationDateMatch = {
   registration: EventRegistration;
   time: number;
@@ -82,6 +88,11 @@ export function getRegistrationEndsAt(registration: EventRegistration): string |
   return registration.occurrence?.endsAt ?? registration.event?.endsAt ?? null;
 }
 
+function getRegistrationPassedBoundaryTime(registration: EventRegistration): number | null {
+  return parseRegistrationDate(getRegistrationEndsAt(registration))
+    ?? parseRegistrationDate(getRegistrationStartsAt(registration));
+}
+
 export function getRegistrationTimezone(registration: EventRegistration): string | null | undefined {
   return registration.occurrence?.timezone ?? registration.event?.timezone;
 }
@@ -91,10 +102,20 @@ export function getRegistrationSessionTitle(registration: EventRegistration): st
 }
 
 export function hasRegistrationPassed(registration: EventRegistration, now = Date.now()): boolean {
-  const time = parseRegistrationDate(getRegistrationEndsAt(registration))
-    ?? parseRegistrationDate(getRegistrationStartsAt(registration));
+  const time = getRegistrationPassedBoundaryTime(registration);
 
   return time !== null && time < now;
+}
+
+export function isRegistrationPast(registration: EventRegistration, now = Date.now()): boolean {
+  return hasRegistrationPassed(registration, now);
+}
+
+export function isRegistrationUpcomingOrCurrent(
+  registration: EventRegistration,
+  now = Date.now(),
+): boolean {
+  return isActiveRegistrationStatus(registration.status) && !hasRegistrationPassed(registration, now);
 }
 
 export function getRegistrationSortTime(registration: EventRegistration): number | null {
@@ -146,7 +167,7 @@ function pickNextRegistration(
 ): EventRegistration | null {
   const datedRegistrations = getDatedRegistrations(registrations);
   const futureActive = datedRegistrations
-    .filter((item) => item.time >= now && isActiveRegistrationStatus(item.registration.status))
+    .filter((item) => isRegistrationUpcomingOrCurrent(item.registration, now))
     .sort((first, second) => first.time - second.time);
 
   if (futureActive[0]) {
@@ -154,7 +175,7 @@ function pickNextRegistration(
   }
 
   const futureAny = datedRegistrations
-    .filter((item) => item.time >= now)
+    .filter((item) => !hasRegistrationPassed(item.registration, now))
     .sort((first, second) => first.time - second.time);
 
   if (futureAny[0]) {
@@ -169,7 +190,7 @@ function pickNextRegistration(
 function getGroupSortProfile(registrations: EventRegistration[], now: number) {
   const datedRegistrations = getDatedRegistrations(registrations);
   const future = datedRegistrations
-    .filter((item) => item.time >= now)
+    .filter((item) => !hasRegistrationPassed(item.registration, now))
     .sort((first, second) => first.time - second.time);
 
   if (future[0]) {
@@ -180,7 +201,7 @@ function getGroupSortProfile(registrations: EventRegistration[], now: number) {
   }
 
   const past = datedRegistrations
-    .filter((item) => item.time < now)
+    .filter((item) => hasRegistrationPassed(item.registration, now))
     .sort((first, second) => second.time - first.time);
 
   if (past[0]) {
@@ -223,11 +244,7 @@ function getRegistrationAmount(registration: EventRegistration): RegistrationAmo
 }
 
 function getAmountSummary(registrations: EventRegistration[]): RegistrationAmountSummary {
-  const activeRegistrations = registrations.filter((registration) => (
-    isActiveRegistrationStatus(registration.status)
-  ));
-  const amountSource = activeRegistrations.length > 0 ? activeRegistrations : registrations;
-  const amounts = amountSource
+  const amounts = registrations
     .map(getRegistrationAmount)
     .filter((item): item is KnownRegistrationAmount => (
       item.totalAmount !== null && item.totalCurrency !== null
@@ -255,17 +272,49 @@ function getAmountSummary(registrations: EventRegistration[]): RegistrationAmoun
   };
 }
 
+function isRegistrationInPeriod(
+  registration: EventRegistration,
+  period: MyRegistrationPeriod,
+  now: number,
+): boolean {
+  switch (period) {
+    case 'active':
+      return isRegistrationUpcomingOrCurrent(registration, now);
+    case 'past':
+      return isRegistrationPast(registration, now);
+    case 'all':
+    default:
+      return true;
+  }
+}
+
+export function filterMyRegistrationGroupsByPeriod(
+  groups: MyRegistrationGroup[],
+  period: MyRegistrationPeriod,
+  now = Date.now(),
+): MyRegistrationGroup[] {
+  return buildMyRegistrationGroups(
+    groups.flatMap((group) => group.registrations),
+    now,
+    { period },
+  );
+}
+
 export function buildMyRegistrationGroups(
   registrations: EventRegistration[],
   now = Date.now(),
+  options: BuildMyRegistrationGroupsOptions = {},
 ): MyRegistrationGroup[] {
   const grouped = new Map<string, EventRegistration[]>();
+  const period = options.period ?? 'all';
 
-  registrations.forEach((registration) => {
-    const current = grouped.get(registration.eventId) ?? [];
-    current.push(registration);
-    grouped.set(registration.eventId, current);
-  });
+  registrations
+    .filter((registration) => isRegistrationInPeriod(registration, period, now))
+    .forEach((registration) => {
+      const current = grouped.get(registration.eventId) ?? [];
+      current.push(registration);
+      grouped.set(registration.eventId, current);
+    });
 
   return Array.from(grouped.entries())
     .map(([eventId, groupRegistrations]) => {

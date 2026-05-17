@@ -3,7 +3,6 @@ import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
@@ -15,7 +14,6 @@ import { GlassCard } from '@/components/glass/GlassCard';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { SubHeader } from '@/components/ui/SubHeader';
-import { useEventRegistrationAction } from '@/hooks/useEventRegistrationAction';
 import {
   buildMyRegistrationGroups,
   type MyRegistrationGroup,
@@ -24,7 +22,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
 
-export default function MyRegistrationsScreen() {
+export default function PastRegistrationsScreen() {
   const router = useRouter();
   const authUser = useAuthStore((state) => state.user);
   const loadSession = useAuthStore((state) => state.loadSession);
@@ -34,10 +32,6 @@ export default function MyRegistrationsScreen() {
     myRegistrations,
     registrationsLoading,
   } = useEventsStore();
-  const {
-    cancellingRegistrationId,
-    handleCancelRegistration,
-  } = useEventRegistrationAction();
   const [refreshing, setRefreshing] = useState(false);
 
   useFocusEffect(
@@ -58,19 +52,10 @@ export default function MyRegistrationsScreen() {
     }, [authUser, loadMyRegistrations]),
   );
 
-  const {
-    activeRegistrationGroups,
-    pastRegistrationGroups,
-  } = useMemo(() => {
-    const now = Date.now();
-
-    return {
-      activeRegistrationGroups: buildMyRegistrationGroups(myRegistrations, now, { period: 'active' }),
-      pastRegistrationGroups: buildMyRegistrationGroups(myRegistrations, now, { period: 'past' }),
-    };
-  }, [myRegistrations]);
-  const registrationGroups = activeRegistrationGroups;
-  const hasPastRegistrationGroups = pastRegistrationGroups.length > 0;
+  const registrationGroups = useMemo(
+    () => buildMyRegistrationGroups(myRegistrations, Date.now(), { period: 'past' }),
+    [myRegistrations],
+  );
 
   const handleRefresh = useCallback(async () => {
     if (!authUser) {
@@ -88,25 +73,16 @@ export default function MyRegistrationsScreen() {
     }
   }, [authUser, loadMyRegistrations]);
 
-  const openEvents = useCallback(() => {
-    router.push('/events');
-  }, [router]);
-
-  const openPastRegistrations = useCallback(() => {
-    router.push('/profile/past-registrations');
-  }, [router]);
-
   const openRegistrationGroup = useCallback((group: MyRegistrationGroup) => {
     router.push({
       pathname: '/profile/registration-groups/[eventId]',
-      params: { eventId: group.eventId, period: 'active' },
+      params: { eventId: group.eventId, period: 'past' },
     });
   }, [router]);
 
-  const hasAnyRegistrationGroups = registrationGroups.length > 0 || hasPastRegistrationGroups;
-  const showInitialLoading = authUser && registrationsLoading && !hasAnyRegistrationGroups;
-  const showBlockingError = authUser && Boolean(error) && !registrationsLoading && !hasAnyRegistrationGroups;
-  const showInlineError = authUser && Boolean(error) && !registrationsLoading && hasAnyRegistrationGroups;
+  const showInitialLoading = authUser && registrationsLoading && registrationGroups.length === 0;
+  const showBlockingError = authUser && Boolean(error) && !registrationsLoading && registrationGroups.length === 0;
+  const showInlineError = authUser && Boolean(error) && !registrationsLoading && registrationGroups.length > 0;
   const showEmpty = authUser && !registrationsLoading && !error && registrationGroups.length === 0;
 
   return (
@@ -125,7 +101,11 @@ export default function MyRegistrationsScreen() {
           ) : undefined
         }
       >
-        <SubHeader title="Мои записи" subtitle="Ваши регистрации на события" />
+        <SubHeader
+          backLabel="Назад"
+          title="Прошедшие события"
+          subtitle="История ваших записей"
+        />
 
         {!authUser ? (
           <GlassCard>
@@ -140,7 +120,7 @@ export default function MyRegistrationsScreen() {
           <GlassCard>
             <View style={styles.stateCard}>
               <ActivityIndicator color={colors.orange} />
-              <Text style={styles.stateText}>Загружаем ваши записи...</Text>
+              <Text style={styles.stateText}>Загружаем историю записей...</Text>
             </View>
           </GlassCard>
         ) : null}
@@ -161,8 +141,7 @@ export default function MyRegistrationsScreen() {
           <GlassCard>
             <View style={styles.stateCard}>
               <Ionicons name="calendar-clear-outline" size={24} color={colors.textDim} />
-              <Text style={styles.stateTitle}>У вас пока нет активных записей на ближайшие события.</Text>
-              <PrimaryButton title="Посмотреть события" onPress={openEvents} />
+              <Text style={styles.stateTitle}>У вас пока нет прошедших записей.</Text>
             </View>
           </GlassCard>
         ) : null}
@@ -173,32 +152,14 @@ export default function MyRegistrationsScreen() {
               <RegistrationGroupCard
                 key={group.eventId}
                 group={group}
-                cancellingRegistrationId={cancellingRegistrationId}
-                onCancel={handleCancelRegistration}
+                cancellingRegistrationId={null}
+                muted
+                onCancel={() => undefined}
                 onOpen={openRegistrationGroup}
+                showCancelAction={false}
               />
             ))}
           </View>
-        ) : null}
-
-        {authUser && !showInitialLoading && !showBlockingError && hasPastRegistrationGroups ? (
-          <GlassCard>
-            <Pressable
-              onPress={openPastRegistrations}
-              style={({ pressed }) => [styles.pastLink, pressed && styles.pressed]}
-            >
-              <View style={styles.pastLinkIcon}>
-                <Ionicons name="time-outline" size={20} color={colors.orange} />
-              </View>
-              <View style={styles.pastLinkTextBlock}>
-                <Text style={styles.pastLinkTitle}>Прошедшие события</Text>
-                <Text style={styles.pastLinkSubtitle}>
-                  Посмотреть записи на события, которые уже прошли
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.36)" />
-            </Pressable>
-          </GlassCard>
         ) : null}
       </Screen>
     </>
@@ -211,41 +172,6 @@ const styles = StyleSheet.create({
   },
   list: {
     gap: 12,
-  },
-  pastLink: {
-    minHeight: 56,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  pastLinkIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accent.orangeBg,
-    borderWidth: 1,
-    borderColor: colors.accent.orangeBorder,
-  },
-  pastLinkTextBlock: {
-    flex: 1,
-    minWidth: 0,
-    gap: 3,
-  },
-  pastLinkTitle: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: '800',
-    lineHeight: 20,
-  },
-  pastLinkSubtitle: {
-    color: colors.textDim,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  pressed: {
-    opacity: 0.78,
   },
   stateCard: {
     alignItems: 'center',

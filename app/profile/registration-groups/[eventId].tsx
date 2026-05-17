@@ -22,6 +22,7 @@ import {
   buildMyRegistrationGroups,
   formatGroupStatusSummary,
   formatRegistrationCount,
+  type MyRegistrationPeriod,
 } from '@/lib/registrationGroups';
 import { useEventRegistrationAction } from '@/hooks/useEventRegistrationAction';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -32,10 +33,17 @@ function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
+type RegistrationDetailPeriod = Extract<MyRegistrationPeriod, 'active' | 'past'>;
+
+function getDetailPeriod(value: string | string[] | undefined): RegistrationDetailPeriod {
+  return firstParam(value) === 'past' ? 'past' : 'active';
+}
+
 export default function RegistrationGroupDetailScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ eventId?: string | string[] }>();
+  const params = useLocalSearchParams<{ eventId?: string | string[]; period?: string | string[] }>();
   const eventId = firstParam(params.eventId);
+  const period = getDetailPeriod(params.period);
   const authUser = useAuthStore((state) => state.user);
   const loadSession = useAuthStore((state) => state.loadSession);
   const {
@@ -74,12 +82,15 @@ export default function RegistrationGroupDetailScreen() {
       return null;
     }
 
-    return buildMyRegistrationGroups(myRegistrations).find((item) => item.eventId === eventId) ?? null;
-  }, [eventId, myRegistrations]);
+    return buildMyRegistrationGroups(myRegistrations, Date.now(), { period })
+      .find((item) => item.eventId === eventId) ?? null;
+  }, [eventId, myRegistrations, period]);
 
   const event = group?.event;
   const statusSummary = group ? formatGroupStatusSummary(group.statusesSummary) : '';
   const amount = group ? formatMoney(group.totalAmount, group.totalCurrency) : null;
+  const modeTitle = period === 'past' ? 'Прошедшие записи' : 'Ваши записи на ближайшие даты';
+  const amountDescription = period === 'past' ? 'По прошедшим записям' : 'По активным записям';
   const showImage = Boolean(event?.imageUrl && !imageFailed);
 
   useEffect(() => {
@@ -92,8 +103,12 @@ export default function RegistrationGroupDetailScreen() {
       return;
     }
 
-    router.push('/profile/my-registrations');
-  }, [router]);
+    router.push(period === 'past' ? '/profile/past-registrations' : '/profile/my-registrations');
+  }, [period, router]);
+
+  const openFallbackList = useCallback(() => {
+    router.push(period === 'past' ? '/profile/past-registrations' : '/profile/my-registrations');
+  }, [period, router]);
 
   const handleRefresh = useCallback(async () => {
     if (!authUser) {
@@ -169,7 +184,10 @@ export default function RegistrationGroupDetailScreen() {
             <View style={styles.stateCard}>
               <Ionicons name="calendar-clear-outline" size={24} color={colors.textDim} />
               <Text style={styles.stateTitle}>Записи на это событие не найдены.</Text>
-              <PrimaryButton title="К моим записям" onPress={() => router.push('/profile/my-registrations')} />
+              <PrimaryButton
+                title={period === 'past' ? 'К прошедшим событиям' : 'К моим записям'}
+                onPress={openFallbackList}
+              />
             </View>
           </GlassCard>
         ) : null}
@@ -199,6 +217,7 @@ export default function RegistrationGroupDetailScreen() {
 
             <GlassCard>
               <View style={styles.summaryBlock}>
+                <Text style={styles.modeTitle}>{modeTitle}</Text>
                 <View style={styles.summaryRow}>
                   <View style={styles.summaryIcon}>
                     <Ionicons name="ticket-outline" size={18} color={colors.orange} />
@@ -217,9 +236,7 @@ export default function RegistrationGroupDetailScreen() {
                     </View>
                     <View style={styles.summaryTextBlock}>
                       <Text style={styles.summaryTitle}>Итого: {amount}</Text>
-                      <Text style={styles.summaryText}>
-                        {group.activeRegistrationsCount > 0 ? 'По активным записям' : 'По всем записям'}
-                      </Text>
+                      <Text style={styles.summaryText}>{amountDescription}</Text>
                     </View>
                   </View>
                 ) : null}
@@ -233,6 +250,7 @@ export default function RegistrationGroupDetailScreen() {
                   registration={registration}
                   cancelling={cancellingRegistrationId === registration.id}
                   onCancel={handleCancelRegistration}
+                  showCancelAction={period === 'active'}
                 />
               ))}
             </View>
@@ -300,6 +318,12 @@ const styles = StyleSheet.create({
   },
   summaryBlock: {
     gap: 12,
+  },
+  modeTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '800',
+    lineHeight: 20,
   },
   summaryRow: {
     flexDirection: 'row',
