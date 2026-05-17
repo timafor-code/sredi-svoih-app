@@ -2,11 +2,15 @@ import type { Session, User } from '@supabase/supabase-js';
 import { create } from 'zustand';
 
 import {
+  GOOGLE_OAUTH_CANCELLED_MESSAGE,
+  GOOGLE_OAUTH_GENERIC_MESSAGE,
+  GOOGLE_OAUTH_NOT_CONFIGURED_MESSAGE,
   getSession,
   loadProfile as loadProfileService,
   resendConfirmationEmail as resendConfirmationEmailService,
   resetPasswordForEmail as resetPasswordForEmailService,
   signIn as signInService,
+  signInWithGoogle as signInWithGoogleService,
   signOut as signOutService,
   signUpWithEmail as signUpWithEmailService,
   upsertProfile,
@@ -33,6 +37,7 @@ type AuthState = {
   loadMembership: () => Promise<void>;
   acceptInvite: (code: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signUpWithEmail: (email: string, password: string) => Promise<EmailSignUpResult>;
   resendConfirmationEmail: (email: string) => Promise<void>;
   resetPasswordForEmail: (email: string) => Promise<void>;
@@ -49,6 +54,18 @@ function friendlyAuthError(error: unknown): string {
 
   if (message === 'Auth required') {
     return 'Чтобы продолжить, войдите в приложение.';
+  }
+
+  if (message === GOOGLE_OAUTH_CANCELLED_MESSAGE) {
+    return GOOGLE_OAUTH_CANCELLED_MESSAGE;
+  }
+
+  if (message === GOOGLE_OAUTH_NOT_CONFIGURED_MESSAGE) {
+    return GOOGLE_OAUTH_NOT_CONFIGURED_MESSAGE;
+  }
+
+  if (message === GOOGLE_OAUTH_GENERIC_MESSAGE) {
+    return GOOGLE_OAUTH_GENERIC_MESSAGE;
   }
 
   if (normalizedMessage.includes('invalid login credentials')) {
@@ -218,6 +235,38 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     try {
       const session = await signInService(email, password);
+      const [profile, membership] = await Promise.all([
+        loadProfileOrCreate(),
+        loadMyMembership(),
+      ]);
+
+      set({
+        session,
+        user: session.user,
+        profile,
+        membership,
+        loading: false,
+        error: null,
+      });
+    } catch (error) {
+      const message = friendlyAuthError(error);
+
+      set({ loading: false, error: message });
+      throw new Error(message);
+    }
+  },
+
+  signInWithGoogle: async () => {
+    set({ loading: true, error: null });
+
+    try {
+      const session = await signInWithGoogleService();
+
+      if (!session) {
+        set({ loading: false, error: GOOGLE_OAUTH_CANCELLED_MESSAGE });
+        throw new Error(GOOGLE_OAUTH_CANCELLED_MESSAGE);
+      }
+
       const [profile, membership] = await Promise.all([
         loadProfileOrCreate(),
         loadMyMembership(),

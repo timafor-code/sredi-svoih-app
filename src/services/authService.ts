@@ -1,4 +1,7 @@
 import type { Session, User } from '@supabase/supabase-js';
+import { makeRedirectUri } from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
+import { Platform } from 'react-native';
 
 import type {
   HebrewBirthDateProfile,
@@ -9,6 +12,10 @@ import type {
   ProfileVisibility,
 } from '@/types/profile';
 import { supabase } from './supabaseClient';
+
+if (Platform.OS === 'web') {
+  WebBrowser.maybeCompleteAuthSession();
+}
 
 export type Profile = {
   id: string;
@@ -48,6 +55,10 @@ export type EmailSignUpResult = {
   profile: Profile | null;
   needsEmailConfirmation: boolean;
 };
+
+export const GOOGLE_OAUTH_CANCELLED_MESSAGE = 'Вход через Google отменён.';
+export const GOOGLE_OAUTH_NOT_CONFIGURED_MESSAGE = 'Google-вход пока не настроен для этого окружения.';
+export const GOOGLE_OAUTH_GENERIC_MESSAGE = 'Не удалось войти через Google. Попробуйте ещё раз.';
 
 const PROFILE_FIELDS = `
   id,
@@ -89,6 +100,81 @@ function cleanPayload<T extends Record<string, unknown>>(payload: T): T {
 
 function hasOwnField<T extends object>(value: T, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function includesAny(message: string, phrases: string[]): boolean {
+  return phrases.some((phrase) => message.includes(phrase));
+}
+
+function getOAuthRedirectTo(): string {
+  return makeRedirectUri({
+    scheme: 'sredi-svoih',
+    path: 'auth/callback',
+  });
+}
+
+function getGoogleOAuthErrorMessage(message: string): string {
+  const normalizedMessage = message.toLowerCase();
+
+  if (includesAny(normalizedMessage, ['access_denied', 'cancel', 'cancelled', 'dismiss'])) {
+    return GOOGLE_OAUTH_CANCELLED_MESSAGE;
+  }
+
+  if (
+    includesAny(normalizedMessage, [
+      'provider is not enabled',
+      'provider not enabled',
+      'unsupported provider',
+      'invalid_client',
+      'invalid client',
+      'oauth client',
+      'redirect_uri_mismatch',
+      'redirect uri',
+      'unauthorized_client',
+      'client not found',
+      'client_id',
+      'client secret',
+    ])
+  ) {
+    return GOOGLE_OAUTH_NOT_CONFIGURED_MESSAGE;
+  }
+
+  return GOOGLE_OAUTH_GENERIC_MESSAGE;
+}
+
+function readOAuthParams(url: string): URLSearchParams {
+  const params = new URLSearchParams();
+
+  try {
+    const parsedUrl = new URL(url);
+
+    parsedUrl.searchParams.forEach((value, key) => {
+      params.set(key, value);
+    });
+
+    const hash = parsedUrl.hash.startsWith('#') ? parsedUrl.hash.slice(1) : parsedUrl.hash;
+    const hashParams = new URLSearchParams(hash);
+
+    hashParams.forEach((value, key) => {
+      if (!params.has(key)) {
+        params.set(key, value);
+      }
+    });
+  } catch {
+    const [, query = ''] = url.split('?');
+    const [queryWithoutHash = '', hash = ''] = query.split('#');
+
+    new URLSearchParams(queryWithoutHash).forEach((value, key) => {
+      params.set(key, value);
+    });
+    new URLSearchParams(hash).forEach((value, key) => {
+      if (!params.has(key)) {
+        params.set(key, value);
+      }
+    });
+  }
+
+  return params;
 }
 
 function warnPasswordSignInError(error: { code?: string; message: string; status?: number }): void {
@@ -148,6 +234,84 @@ export async function signIn(email: string, password: string): Promise<Session> 
   }
 
   throw new Error(signInResult.error?.message ?? 'Не удалось войти. Проверьте email и пароль.');
+}
+
+export async function handleOAuthCallback(url: string): Promise<Session | null> {
+  const params = readOAuthParams(url);
+  const callbackError = params.get('error_description')
+    ?? params.get('error')
+    ?? params.get('error_code');
+
+  if (callbackError) {
+    throw new Error(getGoogleOAuthErrorMessage(callbackError));
+  }
+
+  const code = params.get('code');
+
+  if (code) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+
+    if (error) {
+      throw new Error(getGoogleOAuthErrorMessage(error.message));
+    }
+
+    return data.session ?? getSession();
+  }
+
+  const accessToken = params.get('access_token');
+  const refreshToken = params.get('refresh_token');
+
+  if (accessToken && refreshToken) {
+    const { data, error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    if (error) {
+      throw new Error(getGoogleOAuthErrorMessage(error.message));
+    }
+
+    return data.session ?? getSession();
+  }
+
+  const session = await getSession();
+
+  if (session) {
+    return session;
+  }
+
+  throw new Error(GOOGLE_OAUTH_GENERIC_MESSAGE);
+}
+
+export async function signInWithGoogle(): Promise<Session | null> {
+  const redirectTo = getOAuthRedirectTo();
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo,
+      skipBrowserRedirect: true,
+    },
+  });
+
+  if (error) {
+    throw new Error(getGoogleOAuthErrorMessage(error.message));
+  }
+
+  if (!data.url) {
+    throw new Error(GOOGLE_OAUTH_NOT_CONFIGURED_MESSAGE);
+  }
+
+  const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+
+  if (result.type === 'success') {
+    return handleOAuthCallback(result.url);
+  }
+
+  if (result.type === 'cancel' || result.type === 'dismiss') {
+    return null;
+  }
+
+  throw new Error(GOOGLE_OAUTH_GENERIC_MESSAGE);
 }
 
 export async function signUpWithEmail(email: string, password: string): Promise<EmailSignUpResult> {
