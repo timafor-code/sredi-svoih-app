@@ -367,21 +367,26 @@ function RegistrationThumbnail({ event }: { event: Event | undefined }) {
 type RegistrationGroupCardProps = {
   cancellingRegistrationId: string | null;
   group: MyRegistrationGroup;
+  muted?: boolean;
   onCancel: (registration: EventRegistration) => void;
   onOpen: (group: MyRegistrationGroup) => void;
+  showCancelAction?: boolean;
 };
 
 export function RegistrationGroupCard({
   cancellingRegistrationId,
   group,
+  muted = false,
   onCancel,
   onOpen,
+  showCancelAction = true,
 }: RegistrationGroupCardProps) {
   const event = group.event;
   const isSingle = group.totalRegistrationsCount === 1;
   const registration = group.registrations[0] ?? null;
   const canCancel = Boolean(
-    isSingle
+    showCancelAction
+      && isSingle
       && registration
       && isActiveRegistrationStatus(registration.status)
       && !hasRegistrationPassed(registration),
@@ -395,7 +400,7 @@ export function RegistrationGroupCard({
   }
 
   return (
-    <GlassCard style={group.activeRegistrationsCount === 0 ? styles.inactiveCard : undefined}>
+    <GlassCard style={muted || group.activeRegistrationsCount === 0 ? styles.inactiveCard : undefined}>
       <Pressable
         onPress={() => onOpen(group)}
         style={({ pressed }) => [pressed && styles.pressed]}
@@ -490,18 +495,22 @@ type RegistrationDetailCardProps = {
   cancelling: boolean;
   onCancel: (registration: EventRegistration) => void;
   registration: EventRegistration;
+  showCancelAction?: boolean;
 };
 
 export function RegistrationDetailCard({
   cancelling,
   onCancel,
   registration,
+  showCancelAction = true,
 }: RegistrationDetailCardProps) {
   const sessionTitle = getRegistrationSessionTitle(registration);
   const amount = formatMoney(registration.totalAmount, registration.totalCurrency);
   const paymentTitle = getPaymentStatusTitle(registration);
   const guestNames = formatGuestNames(registration.guestNames);
-  const canCancel = isActiveRegistrationStatus(registration.status) && !hasRegistrationPassed(registration);
+  const canCancel = showCancelAction
+    && isActiveRegistrationStatus(registration.status)
+    && !hasRegistrationPassed(registration);
   const isInactive = INACTIVE_EVENT_REGISTRATION_STATUSES.has(registration.status);
 
   return (
