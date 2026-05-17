@@ -2649,6 +2649,17 @@ a {
   line-height: 1.55;
 }
 
+.event-occurrences-constructor__head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.event-occurrences-constructor__head-actions .button {
+  white-space: nowrap;
+}
+
 .event-occurrences-constructor__hint {
   border-left: 3px solid var(--gold);
   padding: 10px 12px;
@@ -2936,12 +2947,19 @@ a {
 
 .event-occurrence-row--hidden,
 .event-occurrence-row--archived {
-  opacity: 0.66;
+  opacity: 0.58;
+  filter: saturate(0.72);
 }
 
 .event-occurrence-row--cancelled {
   border-color: rgba(229, 44, 54, 0.24);
   background: rgba(229, 44, 54, 0.06);
+}
+
+.event-occurrence-row--past-active {
+  border-color: rgba(242, 184, 75, 0.58);
+  background: rgba(242, 184, 75, 0.09);
+  box-shadow: inset 3px 0 0 rgba(242, 184, 75, 0.72);
 }
 
 .event-occurrence-row__date,
@@ -2975,6 +2993,20 @@ a {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 12px;
+}
+
+.event-occurrence-row__past-badge {
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid rgba(242, 184, 75, 0.42);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(242, 184, 75, 0.13);
+  color: var(--gold);
+  font-size: 10px;
+  font-weight: 850;
+  line-height: 1.2;
+  white-space: normal;
 }
 
 .event-occurrence-row__status {
@@ -3062,6 +3094,27 @@ a {
   color: var(--text-muted);
 }
 
+.event-occurrence-row__archive-btn {
+  min-height: 28px;
+  border: 1px solid rgba(242, 184, 75, 0.42);
+  border-radius: 6px;
+  padding: 0 9px;
+  background: rgba(242, 184, 75, 0.1);
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.event-occurrence-row__archive-btn:hover:not(:disabled) {
+  background: rgba(242, 184, 75, 0.18);
+}
+
+.event-occurrence-row__archive-btn:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
 .event-occurrence-row__action--danger:hover {
   background: var(--red-soft);
   color: #ff9ca2;
@@ -3118,6 +3171,16 @@ a {
   line-height: 1.45;
 }
 
+.event-occurrences-summary__warning {
+  border-left: 3px solid rgba(242, 184, 75, 0.72);
+  background: rgba(242, 184, 75, 0.08);
+}
+
+.event-occurrences-summary__warning dd {
+  color: var(--gold);
+  font-weight: 800;
+}
+
 .event-occurrences-constructor__footer {
   min-height: 18px;
 }
@@ -3143,6 +3206,27 @@ a {
 
 .event-occurrence-modal {
   width: min(720px, 100%);
+}
+
+.event-occurrence-archive-modal {
+  width: min(460px, 100%);
+}
+
+.event-occurrence-archive-modal__body {
+  gap: 8px;
+}
+
+.event-occurrence-archive-modal__body p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.event-occurrence-archive-modal__body span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 @media (max-width: 1100px) {
@@ -3185,6 +3269,11 @@ a {
 
   .event-occurrence-row__actions {
     justify-self: end;
+  }
+
+  .event-occurrences-constructor__head-actions,
+  .event-occurrences-constructor__head-actions .button {
+    width: 100%;
   }
 }
 

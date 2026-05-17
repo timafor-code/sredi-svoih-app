@@ -183,6 +183,41 @@ function draftStartTimestamp(draft: DraftOccurrence): number {
   return Number.isNaN(parsed) ? Number.MAX_SAFE_INTEGER : parsed;
 }
 
+function draftStartIsoTimestamp(draft: DraftOccurrence): number | null {
+  const startsAt = buildDraftStartIso(draft);
+  if (!startsAt) {
+    return null;
+  }
+
+  const timestamp = new Date(startsAt).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function draftPastBoundaryTimestamp(draft: DraftOccurrence): number | null {
+  const boundaryIso = buildDraftEndIso(draft) ?? buildDraftStartIso(draft);
+  if (!boundaryIso) {
+    return null;
+  }
+
+  const timestamp = new Date(boundaryIso).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isPastOccurrenceDraft(
+  draft: DraftOccurrence,
+  nowTimestamp: number,
+): boolean {
+  const boundaryTimestamp = draftPastBoundaryTimestamp(draft);
+  return boundaryTimestamp !== null && boundaryTimestamp < nowTimestamp;
+}
+
+function isPastActiveOccurrenceDraft(
+  draft: DraftOccurrence,
+  nowTimestamp: number,
+): boolean {
+  return draft.status === "active" && isPastOccurrenceDraft(draft, nowTimestamp);
+}
+
 function withSequentialSortOrder(drafts: DraftOccurrence[]): DraftOccurrence[] {
   return drafts.map((draft, index) => ({ ...draft, sortOrder: String(index) }));
 }
@@ -748,10 +783,17 @@ export function EventOccurrencesConstructor({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [modalState, setModalState] = useState<ModalState>({ kind: "closed" });
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [nowTimestamp, setNowTimestamp] = useState(() => Date.now());
   const [generatorForm, setGeneratorForm] = useState<OccurrenceGeneratorForm>(() =>
     buildDefaultGeneratorForm(resolveDefaultGeneratorPreset(eventKind)),
   );
   const saveInFlightRef = useRef(false);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNowTimestamp(Date.now()), 60_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -788,14 +830,17 @@ export function EventOccurrencesConstructor({
     setGeneratorForm(buildDefaultGeneratorForm(resolveDefaultGeneratorPreset(eventKind)));
   }, [eventId, eventKind]);
 
-  const summary = useMemo(() => buildSummary(drafts, eventCapacity), [
+  const summary = useMemo(() => buildSummary(drafts, eventCapacity, nowTimestamp), [
     drafts,
     eventCapacity,
+    nowTimestamp,
   ]);
   const generatorPreview = useMemo(
     () => buildGeneratorPreview(generatorForm, drafts, fallbackTimezone, eventCapacity),
     [drafts, eventCapacity, fallbackTimezone, generatorForm],
   );
+  const disabled = loading || saving || Boolean(loadError);
+  const hasPastActiveDrafts = summary.pastActiveCount > 0;
 
   const persistDrafts = async (nextDrafts: DraftOccurrence[]) => {
     setSaveError(null);
@@ -917,6 +962,50 @@ export function EventOccurrencesConstructor({
     );
   };
 
+  const handleArchivePastOccurrence = (draftId: string) => {
+    handleStatusChange(draftId, "archived");
+  };
+
+  const openArchivePastConfirm = () => {
+    if (disabled || !hasPastActiveDrafts) {
+      return;
+    }
+
+    setArchiveConfirmOpen(true);
+  };
+
+  const closeArchivePastConfirm = () => {
+    if (saving) {
+      return;
+    }
+
+    setArchiveConfirmOpen(false);
+  };
+
+  const confirmArchivePastOccurrences = () => {
+    if (disabled || !hasPastActiveDrafts) {
+      return;
+    }
+
+    const archiveTimestamp = Date.now();
+    setNowTimestamp(archiveTimestamp);
+    setArchiveConfirmOpen(false);
+    applyAndPersist((current) => {
+      let changed = false;
+      const archivedStatus: AdminEventOccurrenceStatus = "archived";
+      const next = current.map((draft) => {
+        if (!isPastActiveOccurrenceDraft(draft, archiveTimestamp)) {
+          return draft;
+        }
+
+        changed = true;
+        return { ...draft, status: archivedStatus };
+      });
+
+      return changed ? next : current;
+    });
+  };
+
   const handleDelete = (draftId: string) => {
     applyAndPersist((current) =>
       withSequentialSortOrder(current.filter((draft) => draft.draftId !== draftId)),
@@ -981,8 +1070,6 @@ export function EventOccurrencesConstructor({
     void persistDrafts(nextDrafts);
   };
 
-  const disabled = loading || saving || Boolean(loadError);
-
   return (
     <section className="event-occurrences-constructor">
       <header className="event-occurrences-constructor__head">
@@ -993,9 +1080,18 @@ export function EventOccurrencesConstructor({
             общими, а лимит мест можно задать отдельно для каждой даты.
           </p>
         </div>
-        <Button disabled={disabled} onClick={openAddModal} variant="secondary">
-          + Добавить дату
-        </Button>
+        <div className="event-occurrences-constructor__head-actions">
+          <Button
+            disabled={disabled || !hasPastActiveDrafts}
+            onClick={openArchivePastConfirm}
+            variant="gold"
+          >
+            Архивировать прошедшие
+          </Button>
+          <Button disabled={disabled} onClick={openAddModal} variant="secondary">
+            + Добавить дату
+          </Button>
+        </div>
       </header>
 
       <div className="event-occurrences-constructor__hint">
@@ -1044,6 +1140,8 @@ export function EventOccurrencesConstructor({
                     disabled={disabled}
                     draft={draft}
                     index={index}
+                    isPastActive={isPastActiveOccurrenceDraft(draft, nowTimestamp)}
+                    onArchive={() => handleArchivePastOccurrence(draft.draftId)}
                     key={draft.draftId}
                     onDelete={() => handleDelete(draft.draftId)}
                     onEdit={() => openEditModal(draft.draftId)}
@@ -1095,6 +1193,18 @@ export function EventOccurrencesConstructor({
               onSubmit={submitModal}
               saving={saving}
               state={modalState}
+            />,
+            document.body,
+          )
+        : null}
+
+      {archiveConfirmOpen && hasPastActiveDrafts
+        ? createPortal(
+            <ArchivePastConfirmModal
+              count={summary.pastActiveCount}
+              onClose={closeArchivePastConfirm}
+              onConfirm={confirmArchivePastOccurrences}
+              saving={saving}
             />,
             document.body,
           )
@@ -1391,6 +1501,8 @@ function OccurrenceRow({
   disabled,
   draft,
   index,
+  isPastActive,
+  onArchive,
   onDelete,
   onEdit,
   onMoveDown,
@@ -1401,6 +1513,8 @@ function OccurrenceRow({
   disabled: boolean;
   draft: DraftOccurrence;
   index: number;
+  isPastActive: boolean;
+  onArchive: () => void;
   onDelete: () => void;
   onEdit: () => void;
   onMoveDown: () => void;
@@ -1412,11 +1526,16 @@ function OccurrenceRow({
   const timeLabel = formatDraftTimeRange(draft);
   const title = draft.title.trim();
   const statusLabel = STATUS_LABELS[draft.status];
+  const rowClassName = [
+    "event-occurrence-row",
+    `event-occurrence-row--${draft.status}`,
+    isPastActive ? "event-occurrence-row--past-active" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <li
-      className={`event-occurrence-row event-occurrence-row--${draft.status}`}
-    >
+    <li className={rowClassName}>
       <div className="event-occurrence-row__date">
         <strong>{dateLabel}</strong>
         <span>{timeLabel}</span>
@@ -1426,6 +1545,11 @@ function OccurrenceRow({
         <div className="event-occurrence-row__title">
           {title ? title : "Без подписи"}
         </div>
+        {isPastActive ? (
+          <span className="event-occurrence-row__past-badge">
+            Прошёл · нужно архивировать
+          </span>
+        ) : null}
         <div className="event-occurrence-row__meta">
           <span>{formatRegistrationWindow(draft)}</span>
           <span>{formatCapacity(draft)}</span>
@@ -1457,6 +1581,17 @@ function OccurrenceRow({
       </select>
 
       <div className="event-occurrence-row__actions">
+        {isPastActive ? (
+          <button
+            aria-label="Архивировать прошедшую дату"
+            className="event-occurrence-row__archive-btn"
+            disabled={disabled}
+            onClick={onArchive}
+            type="button"
+          >
+            Архивировать
+          </button>
+        ) : null}
         <button
           aria-label="Редактировать дату"
           className="event-occurrence-row__action"
@@ -1507,18 +1642,26 @@ type Summary = {
   capacityText: string;
   hasClosedRegistration: boolean;
   nextActiveLabel: string;
+  pastActiveCount: number;
 };
 
 function buildSummary(
   drafts: DraftOccurrence[],
   eventCapacity: number | null,
+  nowTimestamp: number,
 ): Summary {
-  const now = Date.now();
+  const now = nowTimestamp;
   const activeDrafts = drafts.filter((draft) => draft.status === "active");
   const futureActiveDrafts = activeDrafts
-    .map((draft) => ({ draft, timestamp: draftStartTimestamp(draft) }))
-    .filter((entry) => entry.timestamp >= now)
+    .map((draft) => ({ draft, timestamp: draftStartIsoTimestamp(draft) }))
+    .filter(
+      (entry): entry is { draft: DraftOccurrence; timestamp: number } =>
+        entry.timestamp !== null && entry.timestamp >= now,
+    )
     .sort((left, right) => left.timestamp - right.timestamp);
+  const pastActiveCount = activeDrafts.filter((draft) =>
+    isPastOccurrenceDraft(draft, now),
+  ).length;
   const withOwnCapacity = activeDrafts.filter((draft) => draft.capacity.trim()).length;
   const inheritedCapacity = activeDrafts.length - withOwnCapacity;
   const capacityText =
@@ -1541,6 +1684,7 @@ function buildSummary(
     nextActiveLabel: futureActiveDrafts[0]
       ? formatDraftDateTime(futureActiveDrafts[0].draft)
       : "Нет будущих активных дат",
+    pastActiveCount,
   };
 }
 
@@ -1557,6 +1701,12 @@ function SummaryPanel({ summary }: { summary: Summary }) {
           <dt>Активных дат</dt>
           <dd>{summary.activeCount}</dd>
         </div>
+        {summary.pastActiveCount > 0 ? (
+          <div className="event-occurrences-summary__warning">
+            <dt>Прошедших активных</dt>
+            <dd>{summary.pastActiveCount} нужно архивировать</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Регистрация</dt>
           <dd>
@@ -1571,6 +1721,78 @@ function SummaryPanel({ summary }: { summary: Summary }) {
         </div>
       </dl>
     </aside>
+  );
+}
+
+function ArchivePastConfirmModal({
+  count,
+  onClose,
+  onConfirm,
+  saving,
+}: {
+  count: number;
+  onClose: () => void;
+  onConfirm: () => void;
+  saving: boolean;
+}) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !saving) {
+        onClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, saving]);
+
+  return (
+    <div
+      className="participation-modal-overlay"
+      onClick={() => {
+        if (!saving) {
+          onClose();
+        }
+      }}
+      role="presentation"
+    >
+      <div
+        aria-modal="true"
+        className="participation-modal event-occurrence-archive-modal"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <header className="participation-modal__head">
+          <h3>Архивировать прошедшие даты?</h3>
+          <button
+            aria-label="Закрыть"
+            className="participation-modal__close"
+            disabled={saving}
+            onClick={onClose}
+            type="button"
+          >
+            ×
+          </button>
+        </header>
+
+        <div className="participation-modal__body event-occurrence-archive-modal__body">
+          <p>
+            Это не удалит даты и регистрации, а только уберёт прошедшие сеансы
+            из активных.
+          </p>
+          <span>{count} будет переведено в архив.</span>
+        </div>
+
+        <footer className="participation-modal__footer">
+          <Button disabled={saving} onClick={onClose} variant="ghost">
+            Отмена
+          </Button>
+          <Button disabled={saving} onClick={onConfirm} variant="gold">
+            {saving ? "Архивируем..." : "Архивировать"}
+          </Button>
+        </footer>
+      </div>
+    </div>
   );
 }
 
