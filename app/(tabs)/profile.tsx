@@ -5,6 +5,7 @@ import type { ComponentProps } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { AuthCard } from '@/components/auth/AuthCard';
 import { GlassCard } from '@/components/glass/GlassCard';
 import { Avatar } from '@/components/ui/Avatar';
 import { HeaderButton, Logo } from '@/components/ui/BrandHeader';
@@ -157,9 +158,7 @@ const roleTitles: Record<CommunityMembershipRole, string> = {
   admin: 'Администратор',
 };
 
-type PendingAction = 'signIn' | 'invite' | 'signOut' | null;
-
-const SIGN_IN_ERROR_MESSAGE = 'Не удалось войти. Проверьте email и пароль.';
+type PendingAction = 'invite' | 'signOut' | null;
 
 function getInitials(name: string): string {
   return name
@@ -172,8 +171,6 @@ function getInitials(name: string): string {
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -181,10 +178,7 @@ export default function ProfileScreen() {
   const authUser = useAuthStore((state) => state.user);
   const profile = useAuthStore((state) => state.profile);
   const membership = useAuthStore((state) => state.membership);
-  const loading = useAuthStore((state) => state.loading);
-  const error = useAuthStore((state) => state.error);
   const loadSession = useAuthStore((state) => state.loadSession);
-  const signIn = useAuthStore((state) => state.signIn);
   const signOut = useAuthStore((state) => state.signOut);
   const acceptInvite = useAuthStore((state) => state.acceptInvite);
   const loadEvents = useEventsStore((state) => state.loadEvents);
@@ -195,12 +189,6 @@ export default function ProfileScreen() {
   useEffect(() => {
     void loadSession().catch(() => undefined);
   }, [loadSession]);
-
-  useEffect(() => {
-    if (authUser?.email) {
-      setEmail(authUser.email);
-    }
-  }, [authUser?.email]);
 
   useEffect(() => {
     if (!authUser) {
@@ -224,11 +212,8 @@ export default function ProfileScreen() {
   const isActiveMember = membership?.status === 'active';
   const membershipStatusLabel = isActiveMember ? 'Участник общины' : 'Доступ не активирован';
   const membershipRoleLabel = isActiveMember ? roleTitles[membership.role] : null;
-  const isSigningIn = pendingAction === 'signIn' || (!authUser && loading);
   const isAcceptingInvite = pendingAction === 'invite';
   const isSigningOut = pendingAction === 'signOut';
-  const visibleError = localError ?? error;
-  const signInError = !authUser ? visibleError : null;
   const inviteError = localError?.startsWith('Не удалось принять приглашение') ? localError : null;
   const signOutError = localError?.startsWith('Не удалось выйти') ? localError : null;
   const activeRegistrationsCount = useMemo(
@@ -242,29 +227,6 @@ export default function ProfileScreen() {
       loadMyRegistrations(),
     ]);
   }, [loadEvents, loadMyRegistrations]);
-
-  const handleSignIn = useCallback(async () => {
-    setLocalError(null);
-
-    const normalizedEmail = email.trim();
-
-    if (!normalizedEmail || !password) {
-      setLocalError(SIGN_IN_ERROR_MESSAGE);
-      return;
-    }
-
-    setPendingAction('signIn');
-
-    try {
-      await signIn(normalizedEmail, password);
-      await syncSignedInState();
-      setPassword('');
-    } catch {
-      setLocalError(SIGN_IN_ERROR_MESSAGE);
-    } finally {
-      setPendingAction(null);
-    }
-  }, [email, password, signIn, syncSignedInState]);
 
   const handleAcceptInvite = useCallback(async () => {
     setLocalError(null);
@@ -290,7 +252,6 @@ export default function ProfileScreen() {
       resetEventPrivateState();
       await loadEvents();
       setInviteCode('');
-      setPassword('');
     } catch {
       setLocalError('Не удалось выйти. Попробуйте ещё раз.');
     } finally {
@@ -337,38 +298,7 @@ export default function ProfileScreen() {
       </View>
 
       {!authUser ? (
-        <GlassCard>
-          <View style={styles.signedOutHeader}>
-            <View style={styles.signedOutIcon}>
-              <Ionicons name="person-circle-outline" size={30} color={colors.orange} />
-            </View>
-            <View style={styles.flex}>
-              <Text style={styles.cardTitle}>Войдите в профиль</Text>
-              <Text style={styles.cardText}>
-                Вход нужен, чтобы открыть личный кабинет, мои записи, аватар и настройки уведомлений.
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.form}>
-            <FormField
-              label="Email"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              placeholder="name@example.com"
-            />
-            <FormField
-              label="Пароль"
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Пароль"
-              secureTextEntry
-            />
-            <PrimaryButton title={isSigningIn ? 'Входим...' : 'Войти'} disabled={isSigningIn} onPress={handleSignIn} />
-            {signInError ? <Text style={styles.errorText}>{signInError}</Text> : null}
-          </View>
-        </GlassCard>
+        <AuthCard onSignedIn={syncSignedInState} />
       ) : (
         <GlassCard style={styles.heroCard}>
           <View style={styles.accountHeader}>
@@ -576,22 +506,6 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     fontSize: 13,
     lineHeight: 18,
-  },
-  signedOutHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 16,
-  },
-  signedOutIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.accent.orangeBorder,
-    backgroundColor: colors.accent.orangeBg,
   },
   heroCard: {
     borderColor: colors.borderStrong,

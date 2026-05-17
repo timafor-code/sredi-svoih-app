@@ -29,6 +29,20 @@ Supabase Auth отвечает только за технический вход
 
 Email sign-up не создаёт membership автоматически.
 
+## PR2: Email sign-up UI
+
+Экран профиля для гостя показывает `AuthCard` с тремя состояниями:
+
+- `Sign in`: вход по email/password через `useAuthStore.signIn`.
+- `Sign up`: регистрация по email/password через `useAuthStore.signUpWithEmail`.
+- `Forgot password`: отправка ссылки восстановления через `useAuthStore.resetPasswordForEmail`.
+
+Если `signUpWithEmail` возвращает `needsEmailConfirmation`, UI показывает состояние «Проверьте почту» и даёт повторно отправить письмо через `resendConfirmationEmail`.
+
+Если регистрация сразу возвращает `session`, foundation-слой создаёт или обновляет `profiles`, но membership не создаётся. Пользователь без активного `community_memberships` после входа видит существующий блок invite-кода «Присоединиться к общине».
+
+Registration != membership: Supabase Auth создаёт технический аккаунт и сессию, а доступ к закрытым функциям общины по-прежнему открывается только через invite / `community_memberships`.
+
 ## Next PRs
 
 Google и Apple sign-in будут добавлены отдельными PR. В этом PR они не реализуются и не меняют текущую модель доступа.
