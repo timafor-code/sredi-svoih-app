@@ -7,7 +7,7 @@ import { SegmentControl } from '@/components/ui/SegmentControl';
 import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
 
-import { getAuthErrorMessage } from './authErrorMessages';
+import { getAuthErrorMessage, isAuthCancellationMessage } from './authErrorMessages';
 import { EmailSignInForm } from './EmailSignInForm';
 import { EmailSignUpForm } from './EmailSignUpForm';
 import { ForgotPasswordForm } from './ForgotPasswordForm';
@@ -31,6 +31,7 @@ export function AuthCard({ onSignedIn }: AuthCardProps) {
   const signInWithApple = useAuthStore((state) => state.signInWithApple);
   const signInWithGoogle = useAuthStore((state) => state.signInWithGoogle);
   const isOAuthSubmitting = isAppleSubmitting || isGoogleSubmitting;
+  const isOAuthCancelMessage = isAuthCancellationMessage(oauthError);
 
   const handleSwitchToSignIn = useCallback((nextEmail?: string) => {
     if (nextEmail) {
@@ -135,7 +136,11 @@ export function AuthCard({ onSignedIn }: AuthCardProps) {
               </Text>
             </Pressable>
           ) : null}
-          {oauthError ? <Text style={styles.errorText}>{oauthError}</Text> : null}
+          {oauthError ? (
+            <Text style={[styles.messageText, isOAuthCancelMessage ? styles.helperText : styles.errorText]}>
+              {oauthError}
+            </Text>
+          ) : null}
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
             <Text style={styles.dividerText}>или</Text>
@@ -269,11 +274,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     includeFontPadding: false,
   },
-  errorText: {
-    color: colors.danger,
+  messageText: {
     fontSize: 12,
     lineHeight: 17,
     textAlign: 'center',
+  },
+  helperText: {
+    color: colors.textGhost,
+  },
+  errorText: {
+    color: colors.danger,
   },
   pressed: {
     opacity: 0.78,
