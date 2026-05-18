@@ -87,7 +87,7 @@ export type AdminMemberListFilters = {
   communityId?: string | null;
   search?: string | null;
   role?: AdminMemberMembershipRole | "all" | null;
-  status?: AdminMemberMembershipStatus | "all" | null;
+  membershipStatus?: AdminMemberMembershipStatus | "all" | null;
   limit?: number | null;
   offset?: number | null;
 };

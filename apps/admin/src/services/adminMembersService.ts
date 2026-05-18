@@ -296,7 +296,8 @@ function buildListAdminUsersPayload(filters: AdminMemberListFilters): AdminMembe
     communityId: filters.communityId,
     search: filters.search,
     role: filters.role === "all" ? undefined : filters.role,
-    status: filters.status === "all" ? undefined : filters.status,
+    membershipStatus:
+      filters.membershipStatus === "all" ? undefined : filters.membershipStatus,
     limit: filters.limit,
     offset: filters.offset,
   } satisfies Record<string, string | number | null | undefined>;
