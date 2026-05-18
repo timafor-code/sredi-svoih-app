@@ -117,6 +117,10 @@ The drawer shows:
 - profile fields from the selected user's profile card;
 - community membership fields when the user belongs to the community;
 - registration counters and registration history for events in the community;
+- Russian labels for profile, membership, and registration fields instead of
+  technical camelCase names;
+- Hebrew birth date as a human-readable Russian date, for example
+  `10 Хешвана 5746`, instead of raw JSON;
 - an empty state when the user has no event registrations.
 
 Invite creation, messaging, exports, and participation insights remain separate
