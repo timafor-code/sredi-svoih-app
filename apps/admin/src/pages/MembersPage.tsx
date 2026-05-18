@@ -58,10 +58,10 @@ const MEMBERSHIP_STATUS_FILTERS: Array<{
 ];
 
 const ROLE_FILTERS: Array<{ label: string; value: RoleFilter }> = [
-  { value: "all", label: "all" },
-  { value: "member", label: "member" },
-  { value: "event_manager", label: "event_manager" },
-  { value: "admin", label: "admin" },
+  { value: "all", label: "Все" },
+  { value: "member", label: "Участник" },
+  { value: "event_manager", label: "Менеджер событий" },
+  { value: "admin", label: "Администратор" },
 ];
 
 const ROLE_TONES: Record<string, AdminBadgeTone> = {
@@ -69,6 +69,48 @@ const ROLE_TONES: Record<string, AdminBadgeTone> = {
   event_manager: "gold",
   member: "blue",
 };
+
+const MEMBERSHIP_ROLE_LABELS: Record<AdminMemberMembershipRole, string> = {
+  admin: "Администратор",
+  event_manager: "Менеджер событий",
+  member: "Участник",
+};
+
+const MEMBERSHIP_STATUS_LABELS: Record<AdminMemberMembershipStatus, string> = {
+  active: "Активный",
+  left: "Исключён / покинул",
+  pending: "Ожидает",
+  suspended: "Приостановлен",
+};
+
+const REGISTRATION_STATUS_LABELS: Record<string, string> = {
+  attended: "Пришёл",
+  cancelled: "Отменена",
+  confirmed: "Подтверждена",
+  no_show: "Не пришёл",
+  pending: "Заявка",
+  rejected: "Отклонена",
+  waitlisted: "Лист ожидания",
+};
+
+const HEBREW_MONTH_GENITIVE_LABELS: Record<string, string> = {
+  "Адар I": "Адара I",
+  "Адар II": "Адара II",
+  Ав: "Ава",
+  Адар: "Адара",
+  Ияр: "Ияра",
+  Кислев: "Кислева",
+  Нисан: "Нисана",
+  Сиван: "Сивана",
+  Таммуз: "Таммуза",
+  Тевет: "Тевета",
+  Тишрей: "Тишрея",
+  Хешван: "Хешвана",
+  Шват: "Швата",
+  Элул: "Элула",
+};
+
+const HEBREW_DATE_MAX_LABEL_LENGTH = 80;
 
 const MEMBERSHIP_ROLE_OPTIONS = ADMIN_MEMBER_MEMBERSHIP_ROLES;
 const MEMBERSHIP_STATUS_OPTIONS = ADMIN_MEMBER_MEMBERSHIP_STATUSES;
@@ -695,46 +737,48 @@ function MemberProfileSection({
   return (
     <MemberDetailSection title="Профиль">
       <div className="member-detail-grid">
-        <MemberDetailField label="fullName">
+        <MemberDetailField label="Полное имя">
           {formatTextOrDash(profile?.fullName)}
         </MemberDetailField>
-        <MemberDetailField label="firstName">
+        <MemberDetailField label="Имя">
           {formatTextOrDash(detail.firstName)}
         </MemberDetailField>
-        <MemberDetailField label="lastName">
+        <MemberDetailField label="Фамилия">
           {formatTextOrDash(detail.lastName)}
         </MemberDetailField>
-        <MemberDetailField label="displayName">
+        <MemberDetailField label="Отображаемое имя">
           {formatTextOrDash(detail.displayName)}
         </MemberDetailField>
-        <MemberDetailField label="hebrewName">
+        <MemberDetailField label="Еврейское имя">
           {formatTextOrDash(profile?.hebrewName)}
         </MemberDetailField>
-        <MemberDetailField label="email">{formatTextOrDash(detail.email)}</MemberDetailField>
-        <MemberDetailField label="phone">{formatTextOrDash(detail.phone)}</MemberDetailField>
-        <MemberDetailField label="city">{formatTextOrDash(detail.city)}</MemberDetailField>
-        <MemberDetailField label="birthDate">
+        <MemberDetailField label="Email">{formatTextOrDash(detail.email)}</MemberDetailField>
+        <MemberDetailField label="Телефон">
+          {formatTextOrDash(detail.phone)}
+        </MemberDetailField>
+        <MemberDetailField label="Город">{formatTextOrDash(detail.city)}</MemberDetailField>
+        <MemberDetailField label="Дата рождения">
           {formatDateOrDash(detail.birthDate)}
         </MemberDetailField>
-        <MemberDetailField label="hebrewBirthDate" wide>
-          {formatJsonOrDash(detail.hebrewBirthDate)}
+        <MemberDetailField label="Еврейская дата рождения" wide>
+          {formatHebrewDateOrDash(detail.hebrewBirthDate)}
         </MemberDetailField>
-        <MemberDetailField label="birthTimeContext">
+        <MemberDetailField label="Время рождения">
           {formatTextOrDash(profile?.birthTimeContext)}
         </MemberDetailField>
-        <MemberDetailField label="nusach">
+        <MemberDetailField label="Нусах">
           {formatTextOrDash(detail.nusach)}
         </MemberDetailField>
-        <MemberDetailField label="tribeStatus">
+        <MemberDetailField label="Статус происхождения">
           {formatTextOrDash(profile?.tribeStatus)}
         </MemberDetailField>
-        <MemberDetailField label="maritalStatus">
+        <MemberDetailField label="Семейное положение">
           {formatTextOrDash(profile?.maritalStatus)}
         </MemberDetailField>
-        <MemberDetailField label="about" multiline wide>
+        <MemberDetailField label="О себе" multiline wide>
           {formatTextOrDash(profile?.about)}
         </MemberDetailField>
-        <MemberDetailField label="onboardingCompleted">
+        <MemberDetailField label="Онбординг завершён">
           {formatBoolean(detail.onboardingCompleted)}
         </MemberDetailField>
       </div>
@@ -760,25 +804,25 @@ function MemberMembershipSection({
         </p>
       ) : (
         <div className="member-detail-grid">
-          <MemberDetailField label="membershipId">
+          <MemberDetailField label="ID членства">
             {formatTextOrDash(detail.membershipId)}
           </MemberDetailField>
-          <MemberDetailField label="membershipCommunityId / communityId">
+          <MemberDetailField label="ID общины">
             {formatTextOrDash(profile?.membershipCommunityId ?? detail.communityId)}
           </MemberDetailField>
-          <MemberDetailField label="membershipRole">
-            {formatTextOrDash(detail.membershipRole)}
+          <MemberDetailField label="Роль">
+            {getMembershipRoleLabel(detail.membershipRole)}
           </MemberDetailField>
-          <MemberDetailField label="membershipStatus">
-            {formatTextOrDash(detail.membershipStatus)}
+          <MemberDetailField label="Статус">
+            {getMembershipStatusValueLabel(detail.membershipStatus)}
           </MemberDetailField>
-          <MemberDetailField label="joinedAt">
+          <MemberDetailField label="Дата вступления">
             {formatDateTimeOrDash(detail.joinedAt)}
           </MemberDetailField>
-          <MemberDetailField label="invitedBy">
+          <MemberDetailField label="Кто пригласил">
             {formatTextOrDash(detail.invitedBy)}
           </MemberDetailField>
-          <MemberDetailField label="membershipCreatedAt">
+          <MemberDetailField label="Членство создано">
             {formatDateTimeOrDash(profile?.membershipCreatedAt ?? null)}
           </MemberDetailField>
         </div>
@@ -870,7 +914,7 @@ function MemberMembershipActions({
               >
                 {MEMBERSHIP_ROLE_OPTIONS.map((role) => (
                   <option key={role} value={role}>
-                    {role}
+                    {getMembershipRoleLabel(role)}
                   </option>
                 ))}
               </select>
@@ -889,7 +933,7 @@ function MemberMembershipActions({
               >
                 {MEMBERSHIP_STATUS_OPTIONS.map((status) => (
                   <option key={status} value={status}>
-                    {status}
+                    {getMembershipStatusValueLabel(status)}
                   </option>
                 ))}
               </select>
@@ -1012,11 +1056,11 @@ function MemberRegistrationsSection({
     <MemberDetailSection title="Регистрации">
       {profile ? (
         <div className="member-detail-counters" aria-label="Сводка регистраций">
-          <MemberDetailCounter label="total" value={profile.registrationsTotal} />
-          <MemberDetailCounter label="upcoming" value={profile.registrationsUpcoming} />
-          <MemberDetailCounter label="past" value={profile.registrationsPast} />
+          <MemberDetailCounter label="Всего" value={profile.registrationsTotal} />
+          <MemberDetailCounter label="Будущие" value={profile.registrationsUpcoming} />
+          <MemberDetailCounter label="Прошедшие" value={profile.registrationsPast} />
           <MemberDetailCounter
-            label="cancelled"
+            label="Отменены"
             value={profile.registrationsCancelled}
           />
         </div>
@@ -1055,25 +1099,25 @@ function MemberRegistrationCard({
           ) : null}
         </div>
         <Badge tone={getRegistrationStatusTone(registration.registrationStatus)}>
-          {registration.registrationStatus}
+          {getRegistrationStatusLabel(registration.registrationStatus)}
         </Badge>
       </div>
 
       <div className="member-detail-grid member-detail-grid--compact">
-        <MemberDetailField label="occurrenceStartsAt">
+        <MemberDetailField label="Дата события">
           {formatDateTimeOrDash(registration.occurrenceStartsAt)}
         </MemberDetailField>
-        <MemberDetailField label="seatsCount">
+        <MemberDetailField label="Мест">
           {String(registration.seatsCount)}
         </MemberDetailField>
-        <MemberDetailField label="paymentStatus">
+        <MemberDetailField label="Статус оплаты">
           {formatTextOrDash(registration.paymentStatus)}
         </MemberDetailField>
-        <MemberDetailField label="registeredAt">
+        <MemberDetailField label="Дата записи">
           {formatDateTimeOrDash(registration.registeredAt)}
         </MemberDetailField>
         {selectedOptions ? (
-          <MemberDetailField label="selectedOptions" wide>
+          <MemberDetailField label="Выбранные варианты" wide>
             {selectedOptions}
           </MemberDetailField>
         ) : null}
@@ -1182,12 +1226,36 @@ function renderRoleBadge(
   }
 
   return (
-    <Badge tone={getRoleTone(member.membershipRole)}>{member.membershipRole}</Badge>
+    <Badge tone={getRoleTone(member.membershipRole)}>
+      {getMembershipRoleLabel(member.membershipRole)}
+    </Badge>
   );
 }
 
 function getRoleTone(role: string): AdminBadgeTone {
   return ROLE_TONES[role] ?? "muted";
+}
+
+function getMembershipRoleLabel(role: string | null | undefined): string {
+  if (!role) {
+    return "—";
+  }
+
+  return MEMBERSHIP_ROLE_LABELS[role as AdminMemberMembershipRole] ?? role;
+}
+
+function getMembershipStatusValueLabel(status: string | null | undefined): string {
+  if (!status) {
+    return "—";
+  }
+
+  return (
+    MEMBERSHIP_STATUS_LABELS[status as AdminMemberMembershipStatus] ?? status
+  );
+}
+
+function getRegistrationStatusLabel(status: string): string {
+  return REGISTRATION_STATUS_LABELS[status] ?? status;
 }
 
 function normalizeMembershipRole(
@@ -1211,14 +1279,7 @@ function getMembershipStatusLabel(member: AdminMemberListRow): string {
     return "Пользователь приложения";
   }
 
-  const labels: Record<string, string> = {
-    active: "Участник",
-    left: "Покинул",
-    pending: "Ожидает",
-    suspended: "Приостановлен",
-  };
-
-  return labels[member.membershipStatus ?? ""] ?? member.membershipStatus ?? "—";
+  return getMembershipStatusValueLabel(member.membershipStatus);
 }
 
 function getMembershipStatusTone(member: AdminMemberListRow): AdminBadgeTone {
@@ -1302,12 +1363,95 @@ function formatTextOrDash(value: string | null | undefined): string {
   return value;
 }
 
-function formatJsonOrDash(value: Record<string, unknown> | null): string {
-  if (!value) {
+function formatHebrewDateOrDash(value: unknown): string {
+  if (value == null) {
     return "—";
   }
 
-  return JSON.stringify(value);
+  if (typeof value === "string") {
+    return formatHebrewDateStringOrDash(value);
+  }
+
+  if (!isRecord(value)) {
+    return "—";
+  }
+
+  const labelRu = readNonEmptyString(value.labelRu);
+
+  if (labelRu) {
+    return formatHebrewDateStringOrDash(labelRu);
+  }
+
+  const day = readHebrewDateNumber(value.day);
+  const monthNameRu = readNonEmptyString(value.monthNameRu);
+  const year = readHebrewDateNumber(value.year);
+
+  if (!day || !monthNameRu || !year) {
+    return "—";
+  }
+
+  return `${day} ${formatHebrewMonthGenitive(monthNameRu)} ${year}`;
+}
+
+function formatHebrewDateStringOrDash(value: string): string {
+  const formatted = normalizeHebrewDateLabelRu(value.trim());
+
+  if (
+    formatted.length === 0 ||
+    formatted.length > HEBREW_DATE_MAX_LABEL_LENGTH ||
+    formatted.startsWith("{") ||
+    formatted.startsWith("[")
+  ) {
+    return "—";
+  }
+
+  return formatted;
+}
+
+function normalizeHebrewDateLabelRu(value: string): string {
+  const match = value.match(/^(\d{1,2})\s+(.+?)\s+(\d{3,4})$/u);
+
+  if (!match) {
+    return value;
+  }
+
+  const [, day, monthNameRu, year] = match;
+
+  return `${day} ${formatHebrewMonthGenitive(monthNameRu)} ${year}`;
+}
+
+function formatHebrewMonthGenitive(monthNameRu: string): string {
+  const normalized = monthNameRu.trim().replace(/\s+/g, " ");
+
+  return HEBREW_MONTH_GENITIVE_LABELS[normalized] ?? normalized;
+}
+
+function readHebrewDateNumber(value: unknown): string | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+
+  return /^\d+$/.test(normalized) ? normalized : null;
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+
+  return normalized.length > 0 ? normalized : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function formatBoolean(value: boolean): string {
