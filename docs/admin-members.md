@@ -103,8 +103,25 @@ The first UI pass includes:
 - a table with profile, membership, registration counters, and last
   registration timestamp.
 
-Detail drawer, membership actions, invites/messages, and participation insights
-remain separate PRs.
+Membership actions, invites/messages, and participation insights remain separate
+PRs.
+
+## Member Detail Drawer
+
+The web-admin "Участники" list now opens a read-only side drawer when an admin
+clicks a user row. The drawer calls `admin_get_user_profile` and
+`admin_list_user_registrations` for the selected profile in the current
+community.
+
+The drawer intentionally has no mutation controls. It only shows:
+
+- profile fields from the selected user's profile card;
+- community membership fields when the user belongs to the community;
+- registration counters and registration history for events in the community;
+- an empty state when the user has no event registrations.
+
+Membership status changes, invite creation, messaging, exports, and
+participation insights remain separate PRs.
 
 ## Future UI Actions
 
