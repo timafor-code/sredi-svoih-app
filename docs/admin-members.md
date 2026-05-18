@@ -67,6 +67,29 @@ registration aggregates or history for the selected community.
 `admin_set_user_membership` does not remove users. Future "exclude from
 community" actions should set `status` to `left` or `suspended`.
 
+## Admin Web Service Layer
+
+The web-admin service layer for this backend foundation lives in:
+
+- `apps/admin/src/types/members.ts`
+- `apps/admin/src/services/adminMembersService.ts`
+
+The service layer provides typed wrappers around the admin members RPCs:
+
+- `listAdminUsers(filters)` calls `admin_list_users`.
+- `getAdminUserProfile(userId, communityId)` calls `admin_get_user_profile`.
+- `listAdminUserRegistrations(userId, communityId)` calls
+  `admin_list_user_registrations`.
+- `setAdminUserMembership(input)` calls `admin_set_user_membership`.
+
+RPC rows are normalized from `snake_case` to `camelCase` for React usage.
+The service also converts missing-RPC and access-denied errors into friendly
+messages for the future UI.
+
+This service-layer PR still does not add routes, sidebar entries, tables,
+drawers, or member-management UI. The next PR should implement the members list
+screen using this service layer.
+
 ## Future UI Actions
 
 Future web-admin work can build on these RPCs for:
