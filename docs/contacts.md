@@ -6,9 +6,18 @@
 
 Community contacts должны приходить из Supabase через backend RPC, а не через прямой клиентский `select` из `profiles`, `community_memberships` или `profile_contact_visibility`.
 
+Source of truth для каталога общины теперь живет в `public.profiles`:
+
+- `profile_visibility` управляет попаданием строки в каталог. Обычный active member видит `members` и `public`; `rabbi_only` видят только `admin`/`event_manager` как MVP-раввинский доступ.
+- `birthday_visibility` управляет `birth_date` и `hebrew_birth_date`.
+- `phone_visibility` управляет `phone`.
+- `city` и `hebrew_name` на MVP следуют за `profile_visibility`: если viewer видит profile row, RPC может вернуть эти поля.
+
 ### `profile_contact_visibility`
 
-`public.profile_contact_visibility` хранит явное согласие пользователя на показ в каталоге общины и отдельные разрешения на поля:
+`public.profile_contact_visibility` остается legacy/deprecated таблицей для старого экрана настроек. `list_community_contacts` больше не использует ее для community directory privacy.
+
+Исторически таблица хранила явное согласие пользователя на показ в каталоге общины и отдельные разрешения на поля:
 
 - `show_in_community_directory`
 - `share_phone`
@@ -19,7 +28,7 @@ Community contacts должны приходить из Supabase через back
 - `share_hebrew_name`
 - `birthday_reminders_enabled`
 
-Все значения по умолчанию `false`. Это значит, что пользователь не появляется в каталоге и не раскрывает поля, пока сам не включит sharing.
+Все значения по умолчанию `false`. Это больше не влияет на текущий каталог общины: пользователь управляет видимостью через Profile → Edit profile.
 
 RLS разрешает пользователю читать, создавать и обновлять только свою строку. Админ общины может читать строки visibility для active members своей общины для будущей админки. Обычные участники не должны напрямую читать чужие visibility settings.
 
@@ -31,7 +40,9 @@ RLS разрешает пользователю читать, создавать
 
 `list_community_contacts(p_community_id uuid default null)` возвращает directory rows только для active members. Если `p_community_id` не передан, backend выбирает первую active community пользователя. Вызывающий пользователь должен быть active member выбранной общины.
 
-RPC возвращает только active members, у которых `show_in_community_directory = true`. `display_name`, `first_name`, `last_name`, `role`, `membership_status`, `joined_at` и `avatar_url` доступны для опубликованной directory row. `phone`, `email`, `birth_date`, `hebrew_birth_date`, `city` и `hebrew_name` возвращаются только при соответствующем `share_* = true`; иначе backend возвращает `NULL`.
+RPC возвращает active members по `profiles.profile_visibility`: обычные участники видят `members`/`public`, а `admin`/`event_manager` видят также `rabbi_only`. `display_name`, `first_name`, `last_name`, `role`, `membership_status`, `joined_at` и `avatar_url` доступны для видимой profile row. `phone`, `birth_date` и `hebrew_birth_date` возвращаются только когда соответствующая `profiles.*_visibility` разрешает viewer доступ; иначе backend возвращает `NULL`.
+
+Для совместимости RPC сохраняет старые boolean-поля `show_in_community_directory`, `share_phone`, `share_birth_date`, `share_hebrew_birth_date`, `share_city` и `share_hebrew_name`, но вычисляет их из `profiles.*_visibility`. Legacy `email/share_email` остаются в форме ответа, но не управляют новой privacy-моделью.
 
 Field-level privacy живет на backend-слое. UI не должен получать скрытые значения и самостоятельно решать, показывать их или нет.
 
@@ -45,9 +56,9 @@ PR3 подключает локальные iPhone contacts во вкладке 
 
 PR4 разделяет detail screens по источнику данных. Community contacts открываются через `/contacts/community/[id]`, а legacy mock fallback используется только если id реально есть в `mockContacts`. Local iPhone contacts открываются через `/contacts/iphone/[id]`, читаются только из уже загруженного `useContactsStore.localContacts`, не запрашивают permission автоматически на detail screen и не отправляются в Supabase. Если local contact не найден после рестарта или до загрузки вкладки "Мои контакты", экран показывает clean "Контакт не найден" state без permission prompt.
 
-PR5 подключает экран Profile → Contacts and birthdays settings к backend visibility RPC: `get_my_contact_visibility()` для загрузки и `upsert_my_contact_visibility(...)` для сохранения. Настройки публикации в каталоге общины теперь backend-backed, а настройки iPhone contacts остаются local-only. Экран настроек не загружает iPhone contacts в Supabase, не сохраняет всю адресную книгу в AsyncStorage/SecureStore и не подключает вкладку Contacts к `list_community_contacts`.
+PR5 подключал экран Profile → Contacts and birthdays settings к legacy visibility RPC: `get_my_contact_visibility()` для загрузки и `upsert_my_contact_visibility(...)` для сохранения. Этот экран больше не является пользовательским flow для каталога общины; настройки каталога теперь находятся в Profile → Edit profile.
 
-PR6 подключает вкладку Contacts → "Община" к backend RPC `list_community_contacts` через `contactsService.listCommunityContacts()`. UI показывает только opt-in members, для которых backend вернул `show_in_community_directory = true`; если каталог пустой, это считается нормальным состоянием. Скрытые поля приходят из backend как `NULL`, мапятся в `undefined` и не рисуются в списке, birthday preview или detail screen. Community detail сначала ищет контакт в `useContactsStore.communityContacts` и показывает только backend-returned `phone`, `email`, `city`, `hebrew_name`, `birth_date` или `hebrew_birth_date`; если backend contact не найден, fallback на `mockContacts` разрешен только по совпавшему legacy id. Вкладка "Мои контакты" остается local-only iPhone flow: permission prompt открывается только по явной кнопке, контакты не загружаются в Supabase и не сохраняются как вся адресная книга в persistent storage.
+PR6 подключает вкладку Contacts → "Община" к backend RPC `list_community_contacts` через `contactsService.listCommunityContacts()`. UI показывает только rows, которые backend вернул как видимые по `profiles.profile_visibility`; если каталог пустой, это считается нормальным состоянием. Скрытые поля приходят из backend как `NULL`, мапятся в `undefined` и не рисуются в списке, birthday preview или detail screen. Community detail сначала ищет контакт в `useContactsStore.communityContacts` и показывает только backend-returned `phone`, `city`, `hebrew_name`, `birth_date` или `hebrew_birth_date`; если backend contact не найден, fallback на `mockContacts` разрешен только по совпавшему legacy id. Вкладка "Мои контакты" остается local-only iPhone flow: permission prompt открывается только по явной кнопке, контакты не загружаются в Supabase и не сохраняются как вся адресная книга в persistent storage.
 
 ## Birthday layer
 
@@ -57,9 +68,9 @@ Birthday layer объединяет дни рождения из community conta
 
 ## Planned PRs
 
-1. Community contact sharing backend: done in PR2 via `profile_contact_visibility` and backend privacy RPC.
+1. Community contact sharing backend: PR2 introduced `profile_contact_visibility`; current community directory privacy is driven by `profiles.*_visibility`.
 2. iPhone contacts UI: done in PR3 with explicit permission action, local birthday contacts list, empty/denied states, and no Supabase upload.
 3. Contact detail real data: done in PR4 with explicit community and iPhone detail routes, no mock fallback, and local-only iPhone detail.
-4. Contact sharing settings UI: done in PR5 via Profile → Contacts and birthdays settings, visibility RPC, backend-backed community sharing toggles, and local-only iPhone settings.
-5. Community contacts backend UI: done in PR6 via `list_community_contacts`, opt-in directory rows, backend field-level masking, and local-only iPhone tab preservation.
+4. Contact sharing settings UI: done in Profile → Edit profile via `profile_visibility`, `birthday_visibility`, and `phone_visibility`; legacy contacts settings are deprecated.
+5. Community contacts backend UI: done via `list_community_contacts`, profile visibility rows, backend field-level masking, and local-only iPhone tab preservation.
 6. Birthday reminders settings: настройки локальных уведомлений и расписание reminder occurrences.
