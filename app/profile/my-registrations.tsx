@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -23,6 +23,31 @@ import {
 import { useAuthStore } from '@/store/useAuthStore';
 import { useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
+
+const MY_REGISTRATIONS_DEBUG_TAG = '[mobile registrations]';
+const MY_REGISTRATIONS_DEBUG_EVENT_TITLE = 'Шаббат открыто';
+
+function summarizeDebugGroup(group: MyRegistrationGroup | undefined) {
+  if (!group) {
+    return null;
+  }
+
+  return {
+    eventId: group.eventId,
+    totalRegistrationsCount: group.totalRegistrationsCount,
+    registrationIds: group.registrations.map((registration) => registration.id),
+    occurrenceIds: group.registrations.map((registration) => registration.occurrenceId),
+    selectedOptionTitles: group.registrations.map((registration) => ({
+      registrationId: registration.id,
+      titles: registration.selectedOptions.map((option) => ({
+        title: option.title,
+        quantity: option.quantity,
+        seatsCount: option.seatsCount,
+        isDonation: option.isDonation,
+      })),
+    })),
+  };
+}
 
 export default function MyRegistrationsScreen() {
   const router = useRouter();
@@ -71,6 +96,42 @@ export default function MyRegistrationsScreen() {
   }, [myRegistrations]);
   const registrationGroups = activeRegistrationGroups;
   const hasPastRegistrationGroups = pastRegistrationGroups.length > 0;
+
+  useEffect(() => {
+    if (!__DEV__ || !authUser) {
+      return;
+    }
+
+    const debugGroup = registrationGroups.find((group) => (
+      group.event?.title === MY_REGISTRATIONS_DEBUG_EVENT_TITLE
+    ));
+
+    console.info(`${MY_REGISTRATIONS_DEBUG_TAG} my-registrations groups`, {
+      supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? null,
+      authUser: {
+        id: authUser.id,
+        email: authUser.email ?? null,
+      },
+      sourceRegistrationsCount: myRegistrations.length,
+      activeGroupsCount: registrationGroups.length,
+      pastGroupsCount: pastRegistrationGroups.length,
+      activeRegistrationRowsAfterBuildMyRegistrationGroups: registrationGroups.reduce(
+        (sum, group) => sum + group.totalRegistrationsCount,
+        0,
+      ),
+      pastRegistrationRowsAfterBuildMyRegistrationGroups: pastRegistrationGroups.reduce(
+        (sum, group) => sum + group.totalRegistrationsCount,
+        0,
+      ),
+      debugEventTitle: MY_REGISTRATIONS_DEBUG_EVENT_TITLE,
+      debugEventGroup: summarizeDebugGroup(debugGroup),
+    });
+  }, [
+    authUser,
+    myRegistrations.length,
+    pastRegistrationGroups,
+    registrationGroups,
+  ]);
 
   const handleRefresh = useCallback(async () => {
     if (!authUser) {

@@ -29,6 +29,8 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
 
+const MY_REGISTRATIONS_DEBUG_TAG = '[mobile registrations]';
+
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
@@ -96,6 +98,30 @@ export default function RegistrationGroupDetailScreen() {
   useEffect(() => {
     setImageFailed(false);
   }, [event?.imageUrl]);
+
+  useEffect(() => {
+    if (!__DEV__ || !authUser || !eventId) {
+      return;
+    }
+
+    console.info(`${MY_REGISTRATIONS_DEBUG_TAG} registration-group detail`, {
+      supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? null,
+      authUser: {
+        id: authUser.id,
+        email: authUser.email ?? null,
+      },
+      eventId,
+      period,
+      registrationsInStore: myRegistrations.length,
+      totalRegistrationsCount: group?.totalRegistrationsCount ?? 0,
+      registrationIds: group?.registrations.map((registration) => registration.id) ?? [],
+      occurrenceIds: group?.registrations.map((registration) => registration.occurrenceId) ?? [],
+      selectedOptionTitles: group?.registrations.map((registration) => ({
+        registrationId: registration.id,
+        titles: registration.selectedOptions.map((option) => option.title),
+      })) ?? [],
+    });
+  }, [authUser, eventId, group, myRegistrations.length, period]);
 
   const handleBack = useCallback(() => {
     if (router.canGoBack()) {

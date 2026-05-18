@@ -54,6 +54,16 @@ function friendlyAuthError(error: unknown): string {
   return getAuthErrorMessage(error, AUTH_ERROR_MESSAGES.actionFailed);
 }
 
+async function resetEventPrivateState(): Promise<void> {
+  try {
+    const { useEventsStore } = await import('@/store/useEventsStore');
+
+    useEventsStore.getState().resetPrivateState();
+  } catch {
+    // Auth state must still settle if the events store is unavailable during startup.
+  }
+}
+
 async function loadProfileOrCreate(): Promise<Profile | null> {
   const profile = await loadProfileService();
 
@@ -189,7 +199,7 @@ async function saveAppleProfileIfAvailable(
   return upsertProfile(profileUpdate);
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   session: null,
   user: null,
   profile: null,
@@ -204,6 +214,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       const session = await getSession();
 
       if (!session) {
+        await resetEventPrivateState();
+
         set({
           session: null,
           user: null,
@@ -213,6 +225,10 @@ export const useAuthStore = create<AuthState>((set) => ({
           error: null,
         });
         return;
+      }
+
+      if (get().user?.id && get().user?.id !== session.user.id) {
+        await resetEventPrivateState();
       }
 
       const [profile, membership] = await Promise.all([
@@ -308,6 +324,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         loadMyMembership(),
       ]);
 
+      await resetEventPrivateState();
+
       set({
         session,
         user: session.user,
@@ -343,6 +361,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       );
       const membership = await loadMyMembership();
 
+      await resetEventPrivateState();
+
       set({
         session: result.session,
         user: result.session.user,
@@ -375,6 +395,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         loadMyMembership(),
       ]);
 
+      await resetEventPrivateState();
+
       set({
         session,
         user: session.user,
@@ -398,6 +420,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       const result = await signUpWithEmailService(email, password);
 
       if (!result.session) {
+        await resetEventPrivateState();
+
         set({
           session: null,
           user: null,
@@ -410,6 +434,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       const membership = await loadMyMembership();
+
+      await resetEventPrivateState();
 
       set({
         session: result.session,
@@ -464,6 +490,8 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     try {
       await signOutService();
+
+      await resetEventPrivateState();
 
       set({
         session: null,
