@@ -2,6 +2,11 @@ import type { Session, User } from '@supabase/supabase-js';
 import { create } from 'zustand';
 
 import {
+  APPLE_SIGN_IN_CANCELLED_MESSAGE,
+  APPLE_SIGN_IN_GENERIC_MESSAGE,
+  APPLE_SIGN_IN_MISSING_TOKEN_MESSAGE,
+  APPLE_SIGN_IN_NOT_CONFIGURED_MESSAGE,
+  APPLE_SIGN_IN_UNAVAILABLE_MESSAGE,
   GOOGLE_OAUTH_CANCELLED_MESSAGE,
   GOOGLE_OAUTH_GENERIC_MESSAGE,
   GOOGLE_OAUTH_NOT_CONFIGURED_MESSAGE,
@@ -10,10 +15,12 @@ import {
   resendConfirmationEmail as resendConfirmationEmailService,
   resetPasswordForEmail as resetPasswordForEmailService,
   signIn as signInService,
+  signInWithApple as signInWithAppleService,
   signInWithGoogle as signInWithGoogleService,
   signOut as signOutService,
   signUpWithEmail as signUpWithEmailService,
   upsertProfile,
+  type AppleSignInResult,
   type EmailSignUpResult,
   type Profile,
   type ProfileUpsert,
@@ -37,6 +44,7 @@ type AuthState = {
   loadMembership: () => Promise<void>;
   acceptInvite: (code: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithApple: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signUpWithEmail: (email: string, password: string) => Promise<EmailSignUpResult>;
   resendConfirmationEmail: (email: string) => Promise<void>;
@@ -66,6 +74,26 @@ function friendlyAuthError(error: unknown): string {
 
   if (message === GOOGLE_OAUTH_GENERIC_MESSAGE) {
     return GOOGLE_OAUTH_GENERIC_MESSAGE;
+  }
+
+  if (message === APPLE_SIGN_IN_CANCELLED_MESSAGE) {
+    return APPLE_SIGN_IN_CANCELLED_MESSAGE;
+  }
+
+  if (message === APPLE_SIGN_IN_UNAVAILABLE_MESSAGE) {
+    return APPLE_SIGN_IN_UNAVAILABLE_MESSAGE;
+  }
+
+  if (message === APPLE_SIGN_IN_MISSING_TOKEN_MESSAGE) {
+    return APPLE_SIGN_IN_MISSING_TOKEN_MESSAGE;
+  }
+
+  if (message === APPLE_SIGN_IN_NOT_CONFIGURED_MESSAGE) {
+    return APPLE_SIGN_IN_NOT_CONFIGURED_MESSAGE;
+  }
+
+  if (message === APPLE_SIGN_IN_GENERIC_MESSAGE) {
+    return APPLE_SIGN_IN_GENERIC_MESSAGE;
   }
 
   if (normalizedMessage.includes('invalid login credentials')) {
@@ -119,6 +147,131 @@ async function loadProfileOrCreate(): Promise<Profile | null> {
   }
 
   return upsertProfile();
+}
+
+function cleanProfileText(value: string | null | undefined): string | null {
+  const trimmedValue = value?.trim();
+
+  return trimmedValue ? trimmedValue : null;
+}
+
+function hasProfileText(value: string | null | undefined): boolean {
+  return cleanProfileText(value) !== null;
+}
+
+function emailPrefix(email: string | null | undefined): string | null {
+  const normalizedEmail = cleanProfileText(email)?.toLowerCase();
+
+  return normalizedEmail?.split('@')[0] ?? null;
+}
+
+function emailsMatch(firstEmail: string | null | undefined, secondEmail: string | null | undefined): boolean {
+  const first = cleanProfileText(firstEmail)?.toLowerCase();
+  const second = cleanProfileText(secondEmail)?.toLowerCase();
+
+  return Boolean(first && second && first === second);
+}
+
+function isGeneratedDisplayName(profile: Profile, userEmail: string | null | undefined): boolean {
+  const displayName = cleanProfileText(profile.display_name)?.toLowerCase();
+
+  if (!displayName) {
+    return false;
+  }
+
+  return [emailPrefix(profile.email), emailPrefix(userEmail)]
+    .filter(Boolean)
+    .includes(displayName);
+}
+
+function buildAppleProfileUpsert(
+  profile: Profile,
+  appleProfile: AppleSignInResult['appleProfile'],
+  userEmail: string | null | undefined,
+): ProfileUpsert | null {
+  if (!appleProfile) {
+    return null;
+  }
+
+  const appleEmail = cleanProfileText(appleProfile.email);
+  const appleFullName = cleanProfileText(appleProfile.fullName);
+  const appleGivenName = cleanProfileText(appleProfile.givenName);
+  const appleFamilyName = cleanProfileText(appleProfile.familyName);
+  const appleDisplayName = appleFullName ?? appleGivenName ?? appleFamilyName;
+  const hasProfileName = (
+    hasProfileText(profile.full_name) ||
+    hasProfileText(profile.first_name) ||
+    hasProfileText(profile.last_name)
+  );
+  const profileUpdate: ProfileUpsert = {};
+  let hasChanges = false;
+
+  if (!hasProfileText(profile.full_name) && appleFullName) {
+    profileUpdate.full_name = appleFullName;
+    hasChanges = true;
+  }
+
+  if (!hasProfileText(profile.first_name) && appleGivenName) {
+    profileUpdate.first_name = appleGivenName;
+    hasChanges = true;
+  }
+
+  if (!hasProfileText(profile.last_name) && appleFamilyName) {
+    profileUpdate.last_name = appleFamilyName;
+    hasChanges = true;
+  }
+
+  if (
+    appleDisplayName &&
+    (
+      !hasProfileText(profile.display_name) ||
+      (!profile.onboarding_completed && !hasProfileName && isGeneratedDisplayName(profile, userEmail))
+    )
+  ) {
+    profileUpdate.display_name = appleDisplayName;
+    hasChanges = true;
+  }
+
+  if (
+    !hasProfileText(profile.email) &&
+    appleEmail &&
+    (!userEmail || emailsMatch(appleEmail, userEmail))
+  ) {
+    profileUpdate.email = appleEmail;
+    hasChanges = true;
+  }
+
+  if (!hasChanges) {
+    return null;
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(profileUpdate, 'display_name') && profile.display_name !== null) {
+    profileUpdate.display_name = profile.display_name;
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(profileUpdate, 'email') && profile.email !== null) {
+    profileUpdate.email = profile.email;
+  }
+
+  return profileUpdate;
+}
+
+async function saveAppleProfileIfAvailable(
+  profile: Profile | null,
+  appleProfile: AppleSignInResult['appleProfile'],
+  userEmail: string | null | undefined,
+): Promise<Profile | null> {
+  if (!profile) {
+    return profile;
+  }
+
+  const profileUpdate = buildAppleProfileUpsert(profile, appleProfile, userEmail);
+
+  if (!profileUpdate) {
+    return profile;
+  }
+
+  return upsertProfile(profileUpdate);
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -244,6 +397,41 @@ export const useAuthStore = create<AuthState>((set) => ({
         session,
         user: session.user,
         profile,
+        membership,
+        loading: false,
+        error: null,
+      });
+    } catch (error) {
+      const message = friendlyAuthError(error);
+
+      set({ loading: false, error: message });
+      throw new Error(message);
+    }
+  },
+
+  signInWithApple: async () => {
+    set({ loading: true, error: null });
+
+    try {
+      const result = await signInWithAppleService();
+
+      if (!result) {
+        set({ loading: false, error: APPLE_SIGN_IN_CANCELLED_MESSAGE });
+        throw new Error(APPLE_SIGN_IN_CANCELLED_MESSAGE);
+      }
+
+      const profile = await loadProfileOrCreate();
+      const profileWithAppleData = await saveAppleProfileIfAvailable(
+        profile,
+        result.appleProfile,
+        result.session.user.email,
+      );
+      const membership = await loadMyMembership();
+
+      set({
+        session: result.session,
+        user: result.session.user,
+        profile: profileWithAppleData,
         membership,
         loading: false,
         error: null,

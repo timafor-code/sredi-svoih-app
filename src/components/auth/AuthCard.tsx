@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { SegmentControl } from '@/components/ui/SegmentControl';
@@ -25,9 +25,12 @@ export function AuthCard({ onSignedIn }: AuthCardProps) {
   const [mode, setMode] = useState<AuthMode>('Войти');
   const [email, setEmail] = useState('');
   const [oauthError, setOAuthError] = useState<string | null>(null);
+  const [isAppleSubmitting, setIsAppleSubmitting] = useState(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
 
+  const signInWithApple = useAuthStore((state) => state.signInWithApple);
   const signInWithGoogle = useAuthStore((state) => state.signInWithGoogle);
+  const isOAuthSubmitting = isAppleSubmitting || isGoogleSubmitting;
 
   const handleSwitchToSignIn = useCallback((nextEmail?: string) => {
     if (nextEmail) {
@@ -62,6 +65,20 @@ export function AuthCard({ onSignedIn }: AuthCardProps) {
     }
   }, [onSignedIn, signInWithGoogle]);
 
+  const handleAppleSignIn = useCallback(async () => {
+    setOAuthError(null);
+    setIsAppleSubmitting(true);
+
+    try {
+      await signInWithApple();
+      await onSignedIn();
+    } catch (error) {
+      setOAuthError(getAuthErrorMessage(error, 'Не удалось войти через Apple. Попробуйте ещё раз.'));
+    } finally {
+      setIsAppleSubmitting(false);
+    }
+  }, [onSignedIn, signInWithApple]);
+
   return (
     <GlassCard style={styles.card}>
       <View style={styles.header}>
@@ -86,21 +103,38 @@ export function AuthCard({ onSignedIn }: AuthCardProps) {
         <View style={styles.oauthBlock}>
           <Pressable
             accessibilityRole="button"
-            disabled={isGoogleSubmitting}
+            disabled={isOAuthSubmitting}
             onPress={handleGoogleSignIn}
             style={({ pressed }) => [
-              styles.googleButton,
-              isGoogleSubmitting && styles.googleButtonDisabled,
-              pressed && !isGoogleSubmitting && styles.pressed,
+              styles.oauthButton,
+              isOAuthSubmitting && styles.oauthButtonDisabled,
+              pressed && !isOAuthSubmitting && styles.pressed,
             ]}
           >
             <View style={styles.googleIcon}>
               <Text style={styles.googleIconText}>G</Text>
             </View>
-            <Text numberOfLines={1} style={styles.googleButtonText}>
+            <Text numberOfLines={1} style={styles.oauthButtonText}>
               {isGoogleSubmitting ? 'Открываем Google...' : 'Продолжить с Google'}
             </Text>
           </Pressable>
+          {Platform.OS === 'ios' ? (
+            <Pressable
+              accessibilityRole="button"
+              disabled={isOAuthSubmitting}
+              onPress={handleAppleSignIn}
+              style={({ pressed }) => [
+                styles.oauthButton,
+                isOAuthSubmitting && styles.oauthButtonDisabled,
+                pressed && !isOAuthSubmitting && styles.pressed,
+              ]}
+            >
+              <Ionicons name="logo-apple" size={20} color={colors.text} />
+              <Text numberOfLines={1} style={styles.oauthButtonText}>
+                {isAppleSubmitting ? 'Открываем Apple...' : 'Продолжить с Apple'}
+              </Text>
+            </Pressable>
+          ) : null}
           {oauthError ? <Text style={styles.errorText}>{oauthError}</Text> : null}
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
@@ -181,7 +215,7 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 14,
   },
-  googleButton: {
+  oauthButton: {
     minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
@@ -194,7 +228,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  googleButtonDisabled: {
+  oauthButtonDisabled: {
     opacity: 0.55,
   },
   googleIcon: {
@@ -213,7 +247,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     includeFontPadding: false,
   },
-  googleButtonText: {
+  oauthButtonText: {
     color: colors.text,
     fontSize: 14,
     fontWeight: '800',

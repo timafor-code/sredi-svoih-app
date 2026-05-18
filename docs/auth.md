@@ -68,10 +68,10 @@ Google-вход в мобильном приложении использует 
 http://127.0.0.1:54321/auth/v1/callback
 ```
 
-3. В локальном окружении Supabase задайте client secret через env-переменную без коммита значения:
+3. В локальном окружении Supabase задайте client secret через свою env-переменную без коммита значения:
 
 ```text
-SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET=
+MY_LOCAL_GOOGLE_PROVIDER_SECRET=
 ```
 
 4. В `supabase/config.toml` для локальной разработки добавьте provider block только в своём окружении, когда есть реальные локальные значения:
@@ -80,7 +80,7 @@ SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET=
 [auth.external.google]
 enabled = true
 client_id = "..."
-secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET)"
+secret = "env(MY_LOCAL_GOOGLE_PROVIDER_SECRET)"
 ```
 
 Не коммитьте реальные Google client IDs/secrets. Google Client Secret нельзя добавлять в mobile client code, web-admin client code, `.env.example` или любые публичные `EXPO_PUBLIC_*` переменные.
@@ -98,6 +98,39 @@ Redirect URI приложения формируется через Expo AuthSes
 - Для пользователя без membership проверить, что виден invite-code блок «Присоединиться к общине».
 - Повторить кнопку «Продолжить с Google» в режиме «Регистрация».
 
+## PR5: Apple Sign-In foundation
+
+После появления Google login в мобильном приложении нужен Apple Sign-In для соответствия App Store guideline по сторонним login services на iOS. Этот PR добавляет foundation-слой, а не production hardening.
+
+Мобильный клиент использует native flow через `expo-apple-authentication`: проверяет `AppleAuthentication.isAvailableAsync()`, генерирует nonce через `expo-crypto`, запрашивает `FULL_NAME` и `EMAIL`, получает `identityToken` и передаёт его в Supabase через `supabase.auth.signInWithIdToken({ provider: 'apple', token, nonce })`. Web OAuth redirect flow для Apple не используется.
+
+Nonce передаётся в Apple request и затем тем же raw value передаётся в Supabase. Клиент не хранит Apple provider token, не использует service-role ключи и не обращается к Admin API.
+
+Apple `fullName` и `email` могут прийти только при первом входе пользователя в приложение. Если эти значения пришли, приложение сохраняет их в `profiles`, но не затирает уже заполненные пользователем `display_name`, `first_name`, `last_name` и `full_name`. Для `email` значение сохраняется только когда оно не конфликтует с `session.user.email`.
+
+Apple Sign-In создаёт или загружает Supabase Auth user/session и `profiles` запись, но не создаёт membership. Доступ к закрытым функциям по-прежнему требует активный invite / `community_memberships`, а пользователь без membership видит invite-code блок «Присоединиться к общине». Onboarding CTA остаётся видимым, пока `profiles.onboarding_completed !== true`.
+
+### Local limitations
+
+- `app.json` включает `ios.usesAppleSignIn` и config plugin `expo-apple-authentication`; существующая scheme-конфигурация `sredi-svoih` остаётся для Google flow.
+- Expo Go может позволить проверить Apple sheet на устройстве, но полноценная production-конфигурация требует Apple Developer account и Sign in with Apple capability.
+- Для TestFlight/App Store нужно настроить Apple Developer capabilities и Supabase Apple provider, если окружение требует отдельной provider-конфигурации.
+- Не коммитьте Apple provider secrets, локальные env-файлы или реальные значения provider-конфигурации.
+
+### Manual smoke checklist
+
+- Открыть Profile как guest.
+- Убедиться, что «Продолжить с Apple» показывается на iOS.
+- Нажать Apple sign-in.
+- Отменить Apple sheet и убедиться, что показано «Вход через Apple отменён.».
+- Повторить Apple sign-in и завершить flow, если локальная/device setup позволяет.
+- Убедиться, что появился Supabase Auth user.
+- Убедиться, что `profiles` запись создана или загружена.
+- Убедиться, что первый Apple `fullName`/`email` сохранены только если доступны и не перетирают уже заполненные поля профиля.
+- Убедиться, что `community_memberships` не создаётся автоматически.
+- Для пользователя без membership проверить, что виден invite-code блок.
+- Убедиться, что onboarding CTA всё ещё появляется, если `profile.onboarding_completed !== true`.
+
 ## Next PRs
 
-Apple Sign-In будет добавлен отдельным PR. Production OAuth domain setup и auth hardening остаются вне PR4.
+Production OAuth domain setup, account deletion и auth hardening остаются вне PR5.
