@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient';
 
-export type CommunityMembershipRole = 'member' | 'event_manager' | 'admin';
+export type CommunityMembershipRole = 'member' | 'event_manager' | 'admin' | 'rabbi';
 
 export type CommunityMembershipStatus = 'pending' | 'active' | 'suspended' | 'left';
 
