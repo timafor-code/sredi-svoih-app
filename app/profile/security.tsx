@@ -1,3 +1,4 @@
+import type { User } from '@supabase/supabase-js';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
@@ -15,11 +16,21 @@ import type {
   CommunityMembershipRole,
   CommunityMembershipStatus,
 } from '@/services/inviteService';
+import { getAuthErrorMessage } from '@/services/authErrorMessages';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
 
 const profileHref = '/profile' as Href;
+
+type AuthProvider = 'email' | 'google' | 'apple' | 'unknown';
+
+const providerLabels: Record<AuthProvider, string> = {
+  email: 'Email и пароль',
+  google: 'Google',
+  apple: 'Apple ID',
+  unknown: 'Неизвестный способ входа',
+};
 
 const roleTitles: Record<CommunityMembershipRole, string> = {
   member: 'Участник',
@@ -47,28 +58,83 @@ function compactUserId(userId: string): string {
   return userId.length > 8 ? `${userId.slice(0, 8)}...` : userId;
 }
 
-function getProviderLabel(provider: unknown): string | null {
-  return typeof provider === 'string' && provider.trim() ? provider.trim() : null;
-}
+function normalizeAuthProvider(provider: unknown): AuthProvider {
+  const normalizedProvider = typeof provider === 'string' ? provider.trim().toLowerCase() : '';
 
-function getSessionSource(localMvp: unknown, provider: string | null): string {
-  if (localMvp === true || !provider) {
-    return 'Локальный MVP вход';
+  if (normalizedProvider === 'email' || normalizedProvider === 'google' || normalizedProvider === 'apple') {
+    return normalizedProvider;
   }
 
-  return provider;
+  return 'unknown';
+}
+
+function getAuthProvider(user: User | null): AuthProvider {
+  const appMetadataProvider = normalizeAuthProvider(user?.app_metadata?.provider);
+
+  if (appMetadataProvider !== 'unknown') {
+    return appMetadataProvider;
+  }
+
+  const identityProvider = user?.identities
+    ?.map((identity) => normalizeAuthProvider(identity.provider))
+    .find((provider) => provider !== 'unknown');
+
+  return identityProvider ?? 'unknown';
+}
+
+function getEmailConfirmationLabel(
+  user: User | null,
+  provider: AuthProvider,
+  accountEmail: string,
+): string | null {
+  if (!accountEmail) {
+    return null;
+  }
+
+  const userWithConfirmation = user as (User & {
+    confirmed_at?: string | null;
+    email_confirmed_at?: string | null;
+  }) | null;
+  const confirmedAt = userWithConfirmation?.email_confirmed_at ?? userWithConfirmation?.confirmed_at ?? null;
+  const canDetermineConfirmation = Boolean(
+    userWithConfirmation &&
+    ('email_confirmed_at' in userWithConfirmation || 'confirmed_at' in userWithConfirmation),
+  );
+
+  if (confirmedAt) {
+    return 'Email подтверждён';
+  }
+
+  return provider === 'email' && canDetermineConfirmation ? 'Email не подтверждён' : null;
+}
+
+function getPasswordRowSubtitle(provider: AuthProvider, hasEmail: boolean): string {
+  if (provider === 'email') {
+    return hasEmail
+      ? 'Отправим письмо для смены пароля'
+      : 'Email не указан, отправить письмо нельзя';
+  }
+
+  if (provider === 'google' || provider === 'apple') {
+    return `Пароль управляется через ${providerLabels[provider]}`;
+  }
+
+  return 'Смена пароля доступна только для email и пароля';
 }
 
 export default function ProfileSecurityScreen() {
   const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [isPasswordResetSending, setIsPasswordResetSending] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [passwordResetStatus, setPasswordResetStatus] = useState<string | null>(null);
 
   const user = useAuthStore((state) => state.user);
   const profile = useAuthStore((state) => state.profile);
   const membership = useAuthStore((state) => state.membership);
   const loading = useAuthStore((state) => state.loading);
   const loadSession = useAuthStore((state) => state.loadSession);
+  const resetPasswordForEmail = useAuthStore((state) => state.resetPasswordForEmail);
   const signOut = useAuthStore((state) => state.signOut);
   const loadEvents = useEventsStore((state) => state.loadEvents);
   const resetEventPrivateState = useEventsStore((state) => state.resetPrivateState);
@@ -92,8 +158,10 @@ export default function ProfileSecurityScreen() {
 
   const accountEmail = profile?.email || user?.email || '';
   const displayName = profileName || (accountEmail ? accountEmail.split('@')[0] : 'Аккаунт');
-  const providerLabel = getProviderLabel(user?.app_metadata?.provider);
-  const sessionSource = getSessionSource(user?.user_metadata?.local_mvp, providerLabel);
+  const authProvider = getAuthProvider(user);
+  const authProviderLabel = providerLabels[authProvider];
+  const emailConfirmationLabel = getEmailConfirmationLabel(user, authProvider, accountEmail);
+  const canRequestPasswordReset = authProvider === 'email' && Boolean(accountEmail);
   const membershipLabel = membership
     ? `${roleTitles[membership.role]} · ${membershipStatusTitles[membership.status]}`
     : null;
@@ -102,12 +170,27 @@ export default function ProfileSecurityScreen() {
     router.replace(profileHref);
   }, [router]);
 
-  const handleChangePassword = useCallback(() => {
-    Alert.alert(
-      'Смена пароля',
-      'Смена пароля будет добавлена после перехода с dev-входа на production auth.',
-    );
-  }, []);
+  const handleChangePassword = useCallback(async () => {
+    if (!canRequestPasswordReset) {
+      return;
+    }
+
+    setLocalError(null);
+    setPasswordResetStatus(null);
+    setIsPasswordResetSending(true);
+
+    try {
+      await resetPasswordForEmail(accountEmail);
+      setPasswordResetStatus('Письмо для смены пароля отправлено, если этот email зарегистрирован.');
+    } catch (error) {
+      setLocalError(getAuthErrorMessage(
+        error,
+        'Не удалось отправить письмо для смены пароля. Попробуйте позже.',
+      ));
+    } finally {
+      setIsPasswordResetSending(false);
+    }
+  }, [accountEmail, canRequestPasswordReset, resetPasswordForEmail]);
 
   const handleSignOutEverywhere = useCallback(() => {
     Alert.alert('Выйти со всех устройств', 'Будет добавлено позже.');
@@ -122,6 +205,7 @@ export default function ProfileSecurityScreen() {
 
   const handleSignOut = useCallback(async () => {
     setLocalError(null);
+    setPasswordResetStatus(null);
     setIsSigningOut(true);
 
     try {
@@ -193,7 +277,7 @@ export default function ProfileSecurityScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <Screen contentContainerStyle={styles.content}>
-        <SubHeader title="Аккаунт и безопасность" subtitle="Сессия, email и будущие настройки входа" />
+        <SubHeader title="Аккаунт и безопасность" subtitle="Сессия, email и настройки входа" />
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Аккаунт</Text>
@@ -227,21 +311,31 @@ export default function ProfileSecurityScreen() {
           <Text style={styles.sectionTitle}>Безопасность</Text>
           <IOSGroup>
             <ListRow
-              icon="✉️"
-              title="Email для входа"
-              rightText={accountEmail || 'Не указан'}
+              icon="🧭"
+              title="Способ входа"
+              rightText={authProviderLabel}
             />
+            <ListRow icon="✉️" title="Email аккаунта" rightText={accountEmail || 'Не указан'} />
+            {emailConfirmationLabel ? (
+              <ListRow
+                icon="✅"
+                title="Подтверждение email"
+                rightText={emailConfirmationLabel}
+              />
+            ) : null}
             <ListRow
               icon="🔑"
               title="Сменить пароль"
-              subtitle="Будет доступно после production auth"
-              rightText="Позже"
-              onPress={handleChangePassword}
+              subtitle={getPasswordRowSubtitle(authProvider, Boolean(accountEmail))}
+              rightText={canRequestPasswordReset
+                ? (isPasswordResetSending ? 'Отправляем' : 'Отправить')
+                : 'Недоступно'}
+              onPress={canRequestPasswordReset && !isPasswordResetSending ? handleChangePassword : undefined}
             />
             <ListRow
               icon="📵"
               title="Выйти со всех устройств"
-              subtitle="Будущая настройка безопасности"
+              subtitle="Будет добавлено позже"
               rightText="Позже"
               onPress={handleSignOutEverywhere}
             />
@@ -249,25 +343,23 @@ export default function ProfileSecurityScreen() {
               danger
               icon="🗑️"
               title="Удалить аккаунт"
-              subtitle="Пока только безопасный placeholder"
+              subtitle="Только через безопасную серверную функцию"
               rightText="Позже"
               isLast
               onPress={handleDeleteAccount}
             />
           </IOSGroup>
+          {passwordResetStatus ? <Text style={styles.infoText}>{passwordResetStatus}</Text> : null}
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Текущая сессия</Text>
           <IOSGroup>
             <ListRow icon="🪪" title="ID пользователя" rightText={compactUserId(user.id)} />
-            {providerLabel ? (
-              <ListRow icon="🧭" title="Провайдер" rightText={providerLabel} />
-            ) : null}
             <ListRow
               icon="📱"
-              title="Источник входа"
-              rightText={sessionSource}
+              title="Статус сессии"
+              rightText="Активна"
               isLast
             />
           </IOSGroup>
@@ -415,6 +507,12 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontSize: 13,
     lineHeight: 18,
+    textAlign: 'center',
+  },
+  infoText: {
+    color: colors.textDim,
+    fontSize: 12,
+    lineHeight: 17,
     textAlign: 'center',
   },
 });

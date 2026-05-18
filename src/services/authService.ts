@@ -13,6 +13,16 @@ import type {
   ProfileTribeStatus,
   ProfileVisibility,
 } from '@/types/profile';
+import {
+  APPLE_SIGN_IN_GENERIC_MESSAGE,
+  APPLE_SIGN_IN_MISSING_TOKEN_MESSAGE,
+  APPLE_SIGN_IN_UNAVAILABLE_MESSAGE,
+  GOOGLE_OAUTH_GENERIC_MESSAGE,
+  GOOGLE_OAUTH_NOT_CONFIGURED_MESSAGE,
+  GOOGLE_OAUTH_SESSION_FAILED_MESSAGE,
+  getAppleSignInErrorMessage,
+  getGoogleOAuthErrorMessage,
+} from './authErrorMessages';
 import { supabase } from './supabaseClient';
 
 if (Platform.OS === 'web') {
@@ -67,15 +77,6 @@ export type AppleSignInResult = {
     familyName?: string | null;
   };
 };
-
-export const GOOGLE_OAUTH_CANCELLED_MESSAGE = 'Вход через Google отменён.';
-export const GOOGLE_OAUTH_NOT_CONFIGURED_MESSAGE = 'Google-вход пока не настроен для этого окружения.';
-export const GOOGLE_OAUTH_GENERIC_MESSAGE = 'Не удалось войти через Google. Попробуйте ещё раз.';
-export const APPLE_SIGN_IN_CANCELLED_MESSAGE = 'Вход через Apple отменён.';
-export const APPLE_SIGN_IN_UNAVAILABLE_MESSAGE = 'Apple-вход недоступен на этом устройстве.';
-export const APPLE_SIGN_IN_MISSING_TOKEN_MESSAGE = 'Apple не вернул токен входа.';
-export const APPLE_SIGN_IN_NOT_CONFIGURED_MESSAGE = 'Apple-вход пока не настроен для этого окружения.';
-export const APPLE_SIGN_IN_GENERIC_MESSAGE = 'Не удалось войти через Apple. Попробуйте ещё раз.';
 
 const PROFILE_FIELDS = `
   id,
@@ -134,73 +135,6 @@ function getOAuthRedirectTo(): string {
     scheme: 'sredi-svoih',
     path: 'auth/callback',
   });
-}
-
-function getGoogleOAuthErrorMessage(message: string): string {
-  const normalizedMessage = message.toLowerCase();
-
-  if (includesAny(normalizedMessage, ['access_denied', 'cancel', 'cancelled', 'dismiss'])) {
-    return GOOGLE_OAUTH_CANCELLED_MESSAGE;
-  }
-
-  if (
-    includesAny(normalizedMessage, [
-      'provider is not enabled',
-      'provider not enabled',
-      'unsupported provider',
-      'invalid_client',
-      'invalid client',
-      'oauth client',
-      'redirect_uri_mismatch',
-      'redirect uri',
-      'unauthorized_client',
-      'client not found',
-      'client_id',
-      'client secret',
-    ])
-  ) {
-    return GOOGLE_OAUTH_NOT_CONFIGURED_MESSAGE;
-  }
-
-  return GOOGLE_OAUTH_GENERIC_MESSAGE;
-}
-
-function getAppleSignInErrorMessage(message: string): string {
-  const normalizedMessage = message.toLowerCase();
-
-  if (
-    message === APPLE_SIGN_IN_CANCELLED_MESSAGE ||
-    includesAny(normalizedMessage, ['err_request_canceled', 'err_request_cancelled'])
-  ) {
-    return APPLE_SIGN_IN_CANCELLED_MESSAGE;
-  }
-
-  if (message === APPLE_SIGN_IN_UNAVAILABLE_MESSAGE) {
-    return APPLE_SIGN_IN_UNAVAILABLE_MESSAGE;
-  }
-
-  if (message === APPLE_SIGN_IN_MISSING_TOKEN_MESSAGE) {
-    return APPLE_SIGN_IN_MISSING_TOKEN_MESSAGE;
-  }
-
-  if (
-    includesAny(normalizedMessage, [
-      'provider is not enabled',
-      'provider not enabled',
-      'unsupported provider',
-      'invalid_client',
-      'invalid client',
-      'oauth client',
-      'client not found',
-      'client_id',
-      'audience',
-      'not configured',
-    ])
-  ) {
-    return APPLE_SIGN_IN_NOT_CONFIGURED_MESSAGE;
-  }
-
-  return APPLE_SIGN_IN_GENERIC_MESSAGE;
 }
 
 function isAppleSignInCancelError(error: unknown): boolean {
@@ -350,7 +284,7 @@ export async function handleOAuthCallback(url: string): Promise<Session | null> 
     ?? params.get('error_code');
 
   if (callbackError) {
-    throw new Error(getGoogleOAuthErrorMessage(callbackError));
+    throw new Error(getGoogleOAuthErrorMessage(callbackError, GOOGLE_OAUTH_SESSION_FAILED_MESSAGE));
   }
 
   const code = params.get('code');
@@ -359,7 +293,7 @@ export async function handleOAuthCallback(url: string): Promise<Session | null> 
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (error) {
-      throw new Error(getGoogleOAuthErrorMessage(error.message));
+      throw new Error(getGoogleOAuthErrorMessage(error.message, GOOGLE_OAUTH_SESSION_FAILED_MESSAGE));
     }
 
     return data.session ?? getSession();
@@ -375,7 +309,7 @@ export async function handleOAuthCallback(url: string): Promise<Session | null> 
     });
 
     if (error) {
-      throw new Error(getGoogleOAuthErrorMessage(error.message));
+      throw new Error(getGoogleOAuthErrorMessage(error.message, GOOGLE_OAUTH_SESSION_FAILED_MESSAGE));
     }
 
     return data.session ?? getSession();
@@ -387,7 +321,7 @@ export async function handleOAuthCallback(url: string): Promise<Session | null> 
     return session;
   }
 
-  throw new Error(GOOGLE_OAUTH_GENERIC_MESSAGE);
+  throw new Error(GOOGLE_OAUTH_SESSION_FAILED_MESSAGE);
 }
 
 export async function signInWithGoogle(): Promise<Session | null> {

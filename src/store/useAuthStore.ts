@@ -3,13 +3,11 @@ import { create } from 'zustand';
 
 import {
   APPLE_SIGN_IN_CANCELLED_MESSAGE,
-  APPLE_SIGN_IN_GENERIC_MESSAGE,
-  APPLE_SIGN_IN_MISSING_TOKEN_MESSAGE,
-  APPLE_SIGN_IN_NOT_CONFIGURED_MESSAGE,
-  APPLE_SIGN_IN_UNAVAILABLE_MESSAGE,
+  AUTH_ERROR_MESSAGES,
   GOOGLE_OAUTH_CANCELLED_MESSAGE,
-  GOOGLE_OAUTH_GENERIC_MESSAGE,
-  GOOGLE_OAUTH_NOT_CONFIGURED_MESSAGE,
+  getAuthErrorMessage,
+} from '@/services/authErrorMessages';
+import {
   getSession,
   loadProfile as loadProfileService,
   resendConfirmationEmail as resendConfirmationEmailService,
@@ -52,91 +50,8 @@ type AuthState = {
   signOut: () => Promise<void>;
 };
 
-function includesAny(message: string, phrases: string[]): boolean {
-  return phrases.some((phrase) => message.includes(phrase));
-}
-
 function friendlyAuthError(error: unknown): string {
-  const message = error instanceof Error ? error.message : 'Не удалось выполнить действие.';
-  const normalizedMessage = message.toLowerCase();
-
-  if (message === 'Auth required') {
-    return 'Чтобы продолжить, войдите в приложение.';
-  }
-
-  if (message === GOOGLE_OAUTH_CANCELLED_MESSAGE) {
-    return GOOGLE_OAUTH_CANCELLED_MESSAGE;
-  }
-
-  if (message === GOOGLE_OAUTH_NOT_CONFIGURED_MESSAGE) {
-    return GOOGLE_OAUTH_NOT_CONFIGURED_MESSAGE;
-  }
-
-  if (message === GOOGLE_OAUTH_GENERIC_MESSAGE) {
-    return GOOGLE_OAUTH_GENERIC_MESSAGE;
-  }
-
-  if (message === APPLE_SIGN_IN_CANCELLED_MESSAGE) {
-    return APPLE_SIGN_IN_CANCELLED_MESSAGE;
-  }
-
-  if (message === APPLE_SIGN_IN_UNAVAILABLE_MESSAGE) {
-    return APPLE_SIGN_IN_UNAVAILABLE_MESSAGE;
-  }
-
-  if (message === APPLE_SIGN_IN_MISSING_TOKEN_MESSAGE) {
-    return APPLE_SIGN_IN_MISSING_TOKEN_MESSAGE;
-  }
-
-  if (message === APPLE_SIGN_IN_NOT_CONFIGURED_MESSAGE) {
-    return APPLE_SIGN_IN_NOT_CONFIGURED_MESSAGE;
-  }
-
-  if (message === APPLE_SIGN_IN_GENERIC_MESSAGE) {
-    return APPLE_SIGN_IN_GENERIC_MESSAGE;
-  }
-
-  if (normalizedMessage.includes('invalid login credentials')) {
-    return 'Не удалось войти. Проверьте email и пароль.';
-  }
-
-  if (
-    includesAny(normalizedMessage, [
-      'already registered',
-      'already been registered',
-      'user already exists',
-    ])
-  ) {
-    return 'Этот email уже зарегистрирован. Попробуйте войти.';
-  }
-
-  if (
-    normalizedMessage.includes('password') &&
-    includesAny(normalizedMessage, ['weak', 'too short', 'at least', 'minimum'])
-  ) {
-    return 'Пароль слишком простой. Используйте минимум 6 символов.';
-  }
-
-  if (includesAny(normalizedMessage, ['email not confirmed', 'email is not confirmed'])) {
-    return 'Email ещё не подтверждён. Проверьте почту.';
-  }
-
-  if (
-    includesAny(normalizedMessage, [
-      'rate limit',
-      'too many requests',
-      'email send rate',
-      'security purposes',
-    ])
-  ) {
-    return 'Слишком много попыток. Попробуйте позже.';
-  }
-
-  if (normalizedMessage.includes('invalid or expired invite code')) {
-    return 'Код приглашения недействителен или истёк.';
-  }
-
-  return message;
+  return getAuthErrorMessage(error, AUTH_ERROR_MESSAGES.actionFailed);
 }
 
 async function loadProfileOrCreate(): Promise<Profile | null> {
@@ -494,11 +409,13 @@ export const useAuthStore = create<AuthState>((set) => ({
         return result;
       }
 
+      const membership = await loadMyMembership();
+
       set({
         session: result.session,
         user: result.session.user,
         profile: result.profile,
-        membership: null,
+        membership,
         loading: false,
         error: null,
       });
