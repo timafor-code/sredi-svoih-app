@@ -977,6 +977,58 @@ a {
   font-weight: 750;
 }
 
+.members-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.members-summary-card {
+  display: grid;
+  min-width: 0;
+  min-height: 82px;
+  align-content: start;
+  gap: 8px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.members-summary-card span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.members-summary-card strong {
+  color: var(--text);
+  font-size: 28px;
+  line-height: 1;
+}
+
+.members-summary-card--blue {
+  border-color: rgba(107, 127, 212, 0.28);
+}
+
+.members-summary-card--green {
+  border-color: rgba(53, 199, 89, 0.23);
+}
+
+.members-summary-card--gold {
+  border-color: rgba(242, 184, 75, 0.24);
+}
+
+.members-summary-card--muted {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.members-filters {
+  grid-template-columns: minmax(240px, 1.35fr) repeat(2, minmax(160px, 0.75fr));
+}
+
 .events-state {
   display: grid;
   min-height: 220px;
@@ -1066,7 +1118,51 @@ a {
 }
 
 .data-table--members .data-table__row {
-  grid-template-columns: minmax(150px, 1fr) minmax(220px, 1.4fr) minmax(140px, 0.7fr) minmax(150px, 0.8fr);
+  grid-template-columns:
+    minmax(0, 1.25fr) minmax(0, 0.9fr) minmax(0, 0.85fr)
+    minmax(0, 0.64fr) minmax(0, 1.1fr) minmax(0, 0.86fr);
+  gap: 10px;
+}
+
+.data-table--members {
+  min-width: 940px;
+  background: rgba(36, 36, 58, 0.76);
+}
+
+.data-table--members .data-table__row > [role="cell"] {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.member-table-stack {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.member-table-stack strong,
+.member-table-stack span,
+.data-table--members .data-table__row > [role="cell"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.member-table-stack strong,
+.member-table-stack span {
+  white-space: nowrap;
+}
+
+.member-table-stack small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-table-muted {
+  color: var(--text-muted);
 }
 
 .data-table--events {
@@ -5159,6 +5255,10 @@ a {
     min-width: 0;
   }
 
+  .data-table--members {
+    min-width: 0;
+  }
+
   .data-table__row--head {
     display: none;
   }
@@ -5176,6 +5276,7 @@ a {
   }
 
   .events-filters,
+  .members-summary-grid,
   .registrations-workspace,
   .registration-summary-grid,
   .registration-detail-row,
