@@ -22,6 +22,11 @@ export type AdminMemberMembershipRole =
 export type AdminMemberMembershipStatus =
   (typeof ADMIN_MEMBER_MEMBERSHIP_STATUSES)[number];
 
+export type AdminMemberMembershipStatusFilter =
+  | AdminMemberMembershipStatus
+  | "all"
+  | "no_membership";
+
 export type AdminMemberListRow = {
   userId: string;
   displayName: string;
@@ -87,7 +92,7 @@ export type AdminMemberListFilters = {
   communityId?: string | null;
   search?: string | null;
   role?: AdminMemberMembershipRole | "all" | null;
-  membershipStatus?: AdminMemberMembershipStatus | "all" | null;
+  membershipStatus?: AdminMemberMembershipStatusFilter | null;
   limit?: number | null;
   offset?: number | null;
 };

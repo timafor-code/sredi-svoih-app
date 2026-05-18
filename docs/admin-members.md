@@ -86,9 +86,25 @@ RPC rows are normalized from `snake_case` to `camelCase` for React usage.
 The service also converts missing-RPC and access-denied errors into friendly
 messages for the future UI.
 
-This service-layer PR still does not add routes, sidebar entries, tables,
-drawers, or member-management UI. The next PR should implement the members list
-screen using this service layer.
+## Members List UI
+
+The web-admin "Участники" page now uses `adminMembersService.listAdminUsers`
+instead of mock data. The list is scoped to the current admin membership's
+`community_id` and calls `admin_list_users` through the regular authenticated
+Supabase session.
+
+The first UI pass includes:
+
+- summary counts calculated from the loaded rows;
+- search by name, email, phone, or city;
+- membership-status filters including `no_membership`;
+- role filters for `member`, `event_manager`, and `admin`;
+- loading, error, retry, and empty states;
+- a table with profile, membership, registration counters, and last
+  registration timestamp.
+
+Detail drawer, membership actions, invites/messages, and participation insights
+remain separate PRs.
 
 ## Future UI Actions
 
