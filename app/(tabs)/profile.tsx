@@ -132,12 +132,6 @@ const menuSections: { title: string; items: MenuItem[] }[] = [
         sub: 'Ваши регистрации на события',
       },
       {
-        href: '/profile/contacts-settings' as Href,
-        icon: '👥',
-        label: 'Контакты и дни рождения',
-        sub: 'Синхронизация, еврейская дата, напоминания',
-      },
-      {
         href: '/profile/support' as Href,
         icon: '❤️',
         label: 'Поддержать общину',
