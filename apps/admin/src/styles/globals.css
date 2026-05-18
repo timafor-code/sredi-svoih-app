@@ -1381,6 +1381,100 @@ a {
   line-height: 1.6;
 }
 
+.member-membership-action-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 11px;
+  background: rgba(0, 0, 0, 0.13);
+}
+
+.member-membership-action-panel div,
+.member-membership-editor,
+.member-membership-field {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.member-membership-action-panel strong {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.member-membership-action-panel p,
+.member-membership-feedback {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.member-membership-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.member-membership-field span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.member-membership-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  outline: 0;
+  padding: 0 11px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.member-membership-field select:focus {
+  border-color: rgba(242, 184, 75, 0.62);
+}
+
+.member-membership-field select:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.member-membership-actions,
+.member-membership-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.member-membership-feedback {
+  border-left: 3px solid var(--gold);
+  padding: 8px 10px;
+  background: rgba(242, 184, 75, 0.08);
+}
+
+.member-membership-feedback--error {
+  border-left-color: var(--red);
+  background: var(--red-soft);
+  color: #ff9ca2;
+}
+
+.member-membership-feedback--success {
+  border-left-color: var(--green);
+  background: var(--green-soft);
+  color: var(--green);
+}
+
 .member-detail-counters {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -5572,6 +5666,9 @@ a {
   .event-action-dialog__actions,
   .events-summary,
   .event-create-success,
+  .member-membership-action-panel,
+  .member-membership-actions,
+  .member-membership-quick-actions,
   .import-review-item__head,
   .import-notice {
     align-items: flex-start;
@@ -5583,6 +5680,7 @@ a {
   .member-detail-grid,
   .member-detail-grid--compact,
   .member-detail-counters,
+  .member-membership-fields,
   .registrations-workspace,
   .registration-summary-grid,
   .registration-detail-row,
@@ -5606,6 +5704,9 @@ a {
 
   .registrations-main-actions .button,
   .registrations-pagination .button,
+  .member-membership-action-panel .button,
+  .member-membership-actions .button,
+  .member-membership-quick-actions .button,
   .registration-detail-actions .button {
     flex: 1;
   }
@@ -5645,6 +5746,12 @@ a {
   .import-review-item__actions {
     width: 100%;
     justify-items: stretch;
+  }
+
+  .member-membership-action-panel,
+  .member-membership-actions,
+  .member-membership-quick-actions {
+    align-items: stretch;
   }
 
   .import-review-grid,

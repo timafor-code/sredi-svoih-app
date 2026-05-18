@@ -103,25 +103,47 @@ The first UI pass includes:
 - a table with profile, membership, registration counters, and last
   registration timestamp.
 
-Membership actions, invites/messages, and participation insights remain separate
-PRs.
+Invite creation, messages, and participation insights remain separate PRs.
 
 ## Member Detail Drawer
 
-The web-admin "Участники" list now opens a read-only side drawer when an admin
+The web-admin "Участники" list now opens a read/write side drawer when an admin
 clicks a user row. The drawer calls `admin_get_user_profile` and
 `admin_list_user_registrations` for the selected profile in the current
 community.
 
-The drawer intentionally has no mutation controls. It only shows:
+The drawer shows:
 
 - profile fields from the selected user's profile card;
 - community membership fields when the user belongs to the community;
 - registration counters and registration history for events in the community;
 - an empty state when the user has no event registrations.
 
-Membership status changes, invite creation, messaging, exports, and
-participation insights remain separate PRs.
+Invite creation, messaging, exports, and participation insights remain separate
+PRs.
+
+## Membership Actions
+
+The member detail drawer now includes focused membership actions for the current
+community. These actions use `adminMembersService.setAdminUserMembership`, which
+calls the `admin_set_user_membership` RPC through the regular authenticated
+Supabase client.
+
+The web-admin can:
+
+- make an app user a community member with `role: "member"` and
+  `status: "active"`;
+- update membership role to `member`, `event_manager`, or `admin`;
+- update membership status to `pending`, `active`, `suspended`, or `left`;
+- quickly suspend, restore, or exclude a user from the community.
+
+These actions never delete from `auth.users`, never delete `public.profiles`,
+and do not use the Supabase Admin API or service-role credentials in the
+browser. "Exclude from community" is represented as a membership status change
+such as `left` or `suspended`; the person remains an app user.
+
+Invite creation, message sending, notifications, exports, audit logs, and
+member insights/statistics are intentionally left for separate PRs.
 
 ## Future UI Actions
 
@@ -129,9 +151,8 @@ Future web-admin work can build on these RPCs for:
 
 - invites;
 - messages;
-- membership role and status actions;
 - registration and participation insights;
 - member detail views.
 
-This foundation intentionally stops at the RPC layer so the next PR can design
-the members experience on top of a stable backend contract.
+Future PRs should continue to add one focused members workflow at a time on top
+of the existing RPC and RLS boundary.
