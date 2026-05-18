@@ -1,5 +1,7 @@
 import type { Session, User } from '@supabase/supabase-js';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { makeRedirectUri } from 'expo-auth-session';
+import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 
@@ -56,9 +58,24 @@ export type EmailSignUpResult = {
   needsEmailConfirmation: boolean;
 };
 
+export type AppleSignInResult = {
+  session: Session;
+  appleProfile?: {
+    email?: string | null;
+    fullName?: string | null;
+    givenName?: string | null;
+    familyName?: string | null;
+  };
+};
+
 export const GOOGLE_OAUTH_CANCELLED_MESSAGE = 'Вход через Google отменён.';
 export const GOOGLE_OAUTH_NOT_CONFIGURED_MESSAGE = 'Google-вход пока не настроен для этого окружения.';
 export const GOOGLE_OAUTH_GENERIC_MESSAGE = 'Не удалось войти через Google. Попробуйте ещё раз.';
+export const APPLE_SIGN_IN_CANCELLED_MESSAGE = 'Вход через Apple отменён.';
+export const APPLE_SIGN_IN_UNAVAILABLE_MESSAGE = 'Apple-вход недоступен на этом устройстве.';
+export const APPLE_SIGN_IN_MISSING_TOKEN_MESSAGE = 'Apple не вернул токен входа.';
+export const APPLE_SIGN_IN_NOT_CONFIGURED_MESSAGE = 'Apple-вход пока не настроен для этого окружения.';
+export const APPLE_SIGN_IN_GENERIC_MESSAGE = 'Не удалось войти через Apple. Попробуйте ещё раз.';
 
 const PROFILE_FIELDS = `
   id,
@@ -106,6 +123,12 @@ function includesAny(message: string, phrases: string[]): boolean {
   return phrases.some((phrase) => message.includes(phrase));
 }
 
+function cleanOptionalString(value: string | null | undefined): string | null {
+  const trimmedValue = value?.trim();
+
+  return trimmedValue ? trimmedValue : null;
+}
+
 function getOAuthRedirectTo(): string {
   return makeRedirectUri({
     scheme: 'sredi-svoih',
@@ -140,6 +163,90 @@ function getGoogleOAuthErrorMessage(message: string): string {
   }
 
   return GOOGLE_OAUTH_GENERIC_MESSAGE;
+}
+
+function getAppleSignInErrorMessage(message: string): string {
+  const normalizedMessage = message.toLowerCase();
+
+  if (
+    message === APPLE_SIGN_IN_CANCELLED_MESSAGE ||
+    includesAny(normalizedMessage, ['err_request_canceled', 'err_request_cancelled'])
+  ) {
+    return APPLE_SIGN_IN_CANCELLED_MESSAGE;
+  }
+
+  if (message === APPLE_SIGN_IN_UNAVAILABLE_MESSAGE) {
+    return APPLE_SIGN_IN_UNAVAILABLE_MESSAGE;
+  }
+
+  if (message === APPLE_SIGN_IN_MISSING_TOKEN_MESSAGE) {
+    return APPLE_SIGN_IN_MISSING_TOKEN_MESSAGE;
+  }
+
+  if (
+    includesAny(normalizedMessage, [
+      'provider is not enabled',
+      'provider not enabled',
+      'unsupported provider',
+      'invalid_client',
+      'invalid client',
+      'oauth client',
+      'client not found',
+      'client_id',
+      'audience',
+      'not configured',
+    ])
+  ) {
+    return APPLE_SIGN_IN_NOT_CONFIGURED_MESSAGE;
+  }
+
+  return APPLE_SIGN_IN_GENERIC_MESSAGE;
+}
+
+function isAppleSignInCancelError(error: unknown): boolean {
+  const code = typeof error === 'object' && error !== null && 'code' in error
+    ? String(error.code)
+    : '';
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === 'string'
+      ? error
+      : '';
+  const normalizedMessage = message.toLowerCase();
+
+  return (
+    code === 'ERR_REQUEST_CANCELED' ||
+    includesAny(normalizedMessage, ['err_request_canceled', 'err_request_cancelled'])
+  );
+}
+
+function getAppleProfile(
+  credential: AppleAuthentication.AppleAuthenticationCredential,
+): AppleSignInResult['appleProfile'] | undefined {
+  const givenName = cleanOptionalString(credential.fullName?.givenName);
+  const familyName = cleanOptionalString(credential.fullName?.familyName);
+  const fullName = cleanOptionalString(
+    [
+      credential.fullName?.givenName,
+      credential.fullName?.middleName,
+      credential.fullName?.familyName,
+    ]
+      .map(cleanOptionalString)
+      .filter(Boolean)
+      .join(' '),
+  );
+  const email = cleanOptionalString(credential.email);
+
+  if (!email && !fullName && !givenName && !familyName) {
+    return undefined;
+  }
+
+  return {
+    email,
+    fullName,
+    givenName,
+    familyName,
+  };
 }
 
 function readOAuthParams(url: string): URLSearchParams {
@@ -312,6 +419,62 @@ export async function signInWithGoogle(): Promise<Session | null> {
   }
 
   throw new Error(GOOGLE_OAUTH_GENERIC_MESSAGE);
+}
+
+export async function signInWithApple(): Promise<AppleSignInResult | null> {
+  let isAvailable = false;
+
+  try {
+    isAvailable = Platform.OS === 'ios' && await AppleAuthentication.isAvailableAsync();
+  } catch {
+    isAvailable = false;
+  }
+
+  if (!isAvailable) {
+    throw new Error(APPLE_SIGN_IN_UNAVAILABLE_MESSAGE);
+  }
+
+  const nonce = Crypto.randomUUID();
+  let credential: AppleAuthentication.AppleAuthenticationCredential;
+
+  try {
+    credential = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+      nonce,
+    });
+  } catch (error) {
+    if (isAppleSignInCancelError(error)) {
+      return null;
+    }
+
+    throw new Error(getAppleSignInErrorMessage(error instanceof Error ? error.message : String(error)));
+  }
+
+  if (!credential.identityToken) {
+    throw new Error(APPLE_SIGN_IN_MISSING_TOKEN_MESSAGE);
+  }
+
+  const { data, error } = await supabase.auth.signInWithIdToken({
+    provider: 'apple',
+    token: credential.identityToken,
+    nonce,
+  });
+
+  if (error) {
+    throw new Error(getAppleSignInErrorMessage(error.message));
+  }
+
+  if (!data.session) {
+    throw new Error(APPLE_SIGN_IN_GENERIC_MESSAGE);
+  }
+
+  return {
+    session: data.session,
+    appleProfile: getAppleProfile(credential),
+  };
 }
 
 export async function signUpWithEmail(email: string, password: string): Promise<EmailSignUpResult> {
