@@ -216,6 +216,34 @@ comment, payment status/id, registration timestamps, occurrence
 starts/ends/title, selected participation options as a JSONB array, and
 `total_amount` when it can be summed from option selections.
 
+### Occurrence IDs And Legacy Registrations
+
+`event_registrations.id` is the source of truth for one registration row.
+For events with concrete dates in `event_occurrences`, current registration
+flows store the selected session in `event_registrations.occurrence_id`.
+Web-admin and Excel selected-occurrence views filter by that `occurrence_id`.
+
+Older rows may have `occurrence_id is null` because they were created before
+the occurrence model existed. Mobile can still show those rows under the parent
+event because it reads `event_registrations` directly and can fall back to the
+parent `events.starts_at` date. A selected-occurrence admin/export request is
+stricter: it returns rows whose normalized `occurrence_id` is the selected
+occurrence.
+
+Migration
+`20260518193000_backfill_legacy_registration_occurrences.sql` normalizes only
+legacy rows that can be matched safely:
+
+- the event has exactly one `event_occurrences` row; or
+- exactly one occurrence has `event_occurrences.starts_at = events.starts_at`.
+
+Rows with multiple possible occurrences, no timestamp match, or otherwise
+ambiguous evidence are not updated automatically. This avoids turning one
+uncertain legacy row into a false selected-occurrence registration. After this
+normalization, selected-occurrence export contains only registration rows for
+the selected occurrence; ambiguous legacy rows remain event-level until they
+are reviewed and corrected deliberately.
+
 Status transitions:
 
 ```text
@@ -346,9 +374,10 @@ status/search filters are not applied.
 
 If a concrete occurrence is selected in the registrations screen, Excel export
 passes that `occurrenceId` to the RPC. The workbook's "Все регистрации" sheet
-then contains only registration rows for that selected occurrence/date, and the
-workbook does not add per-occurrence sheets. This is the default path for
-recurring/series events while the admin is working inside one selected session.
+then contains only registration rows whose normalized `occurrence_id` is that
+selected occurrence/date, and the workbook does not add per-occurrence sheets.
+This is the default path for recurring/series events while the admin is working
+inside one selected session.
 
 If no occurrence is selected or the event does not use occurrences, export stays
 event-level: the workbook contains all registration rows for the selected event.
@@ -358,3 +387,251 @@ workbook also includes safe Excel sheet names for each occurrence, capped to
 Excel's 31-character sheet name limit. A future PR may add an explicit
 "export all dates" action for series events. No backend storage, migrations, or
 additional RPCs are required for the export.
+
+## Registration Occurrence Diagnostics
+
+Use these SQL checks when investigating mismatches between mobile
+event-level registrations and web-admin selected-occurrence registrations.
+They read only public event/profile/registration tables and do not require
+Supabase Admin API access.
+
+Find legacy rows without `occurrence_id` for events that already have
+occurrences:
+
+```sql
+select
+  r.id,
+  r.event_id,
+  e.title,
+  e.starts_at as event_starts_at,
+  r.occurrence_id,
+  r.user_id,
+  p.display_name,
+  p.email,
+  r.status,
+  r.registered_at,
+  r.created_at
+from public.event_registrations r
+join public.events e on e.id = r.event_id
+left join public.profiles p on p.id = r.user_id
+where r.occurrence_id is null
+  and exists (
+    select 1
+    from public.event_occurrences eo
+    where eo.event_id = r.event_id
+  )
+order by r.registered_at desc, r.created_at desc;
+```
+
+Compare all registration rows for Shabbat-like events by `event_id` and
+`occurrence_id`:
+
+```sql
+select
+  r.id,
+  r.event_id,
+  r.occurrence_id,
+  eo.starts_at as occurrence_starts_at,
+  e.starts_at as event_starts_at,
+  p.display_name,
+  p.email,
+  r.status,
+  r.seats_count,
+  r.registered_at,
+  r.created_at
+from public.event_registrations r
+join public.events e on e.id = r.event_id
+left join public.event_occurrences eo on eo.id = r.occurrence_id
+left join public.profiles p on p.id = r.user_id
+where e.title ilike '%Шаб%'
+order by p.display_name nulls last, r.registered_at desc;
+```
+
+Compare the known problematic/control people if those rows exist locally:
+
+```sql
+select
+  p.display_name,
+  p.email,
+  r.id,
+  r.event_id,
+  e.title,
+  r.occurrence_id,
+  eo.starts_at as occurrence_starts_at,
+  e.starts_at as event_starts_at,
+  r.status,
+  r.seats_count,
+  r.payment_status,
+  r.payment_id,
+  r.registered_at,
+  r.created_at,
+  r.updated_at
+from public.event_registrations r
+join public.events e on e.id = r.event_id
+left join public.event_occurrences eo on eo.id = r.occurrence_id
+left join public.profiles p on p.id = r.user_id
+where e.title ilike '%Шаб%'
+  and (
+    p.display_name ilike '%Давид%'
+    or p.display_name ilike '%Лисус%'
+    or p.display_name ilike '%Рувен%'
+    or p.display_name ilike '%Колин%'
+    or p.email ilike '%timafor%'
+  )
+order by p.display_name, r.registered_at desc, r.created_at desc;
+```
+
+Check selected participation options for the same event family:
+
+```sql
+select
+  p.display_name,
+  p.email,
+  r.id as registration_id,
+  r.occurrence_id,
+  eo.starts_at as occurrence_starts_at,
+  r.status,
+  r.seats_count,
+  r.registered_at,
+  os.title_snapshot,
+  os.quantity,
+  os.unit_price_amount,
+  os.total_amount,
+  os.seats_count as option_seats_count,
+  os.is_donation
+from public.event_registrations r
+join public.events e on e.id = r.event_id
+left join public.event_occurrences eo on eo.id = r.occurrence_id
+left join public.profiles p on p.id = r.user_id
+left join public.event_registration_option_selections os on os.registration_id = r.id
+where e.title ilike '%Шаб%'
+order by p.display_name, r.registered_at desc, os.created_at asc;
+```
+
+Compare rows mobile can show for a user/event with rows web-admin returns for
+a selected occurrence:
+
+```sql
+with params as (
+  select
+    '<user uuid>'::uuid as user_id,
+    '<event uuid>'::uuid as event_id,
+    '<occurrence uuid>'::uuid as occurrence_id
+),
+mobile_visible as (
+  select
+    'mobile_event_rows' as source,
+    r.id,
+    r.event_id,
+    r.occurrence_id,
+    r.user_id,
+    r.status,
+    r.seats_count,
+    r.registered_at,
+    r.created_at
+  from public.event_registrations r
+  join params p
+    on p.user_id = r.user_id
+   and p.event_id = r.event_id
+),
+admin_visible as (
+  select
+    'admin_occurrence_rows' as source,
+    r.id,
+    r.event_id,
+    r.occurrence_id,
+    r.user_id,
+    r.status,
+    r.seats_count,
+    r.registered_at,
+    r.created_at
+  from public.event_registrations r
+  join params p
+    on p.event_id = r.event_id
+   and p.occurrence_id = r.occurrence_id
+)
+select *
+from mobile_visible
+union all
+select *
+from admin_visible
+order by source, registered_at desc, created_at desc;
+```
+
+Preview which legacy rows the backfill can normalize and which rows stay
+ambiguous:
+
+```sql
+with legacy_rows as (
+  select
+    r.id as registration_id,
+    r.event_id,
+    e.title,
+    e.starts_at as event_starts_at,
+    p.display_name,
+    p.email,
+    r.status,
+    r.registered_at,
+    r.created_at
+  from public.event_registrations r
+  join public.events e on e.id = r.event_id
+  left join public.profiles p on p.id = r.user_id
+  where r.occurrence_id is null
+    and exists (
+      select 1
+      from public.event_occurrences eo
+      where eo.event_id = r.event_id
+    )
+),
+occurrence_counts as (
+  select
+    eo.event_id,
+    count(*)::integer as occurrence_count
+  from public.event_occurrences eo
+  group by eo.event_id
+),
+candidates as (
+  select
+    lr.registration_id,
+    eo.id as occurrence_id,
+    eo.starts_at as occurrence_starts_at,
+    case
+      when oc.occurrence_count = 1 then 'single_occurrence'
+      when eo.starts_at = lr.event_starts_at then 'event_starts_at'
+      else null
+    end as match_reason
+  from legacy_rows lr
+  join occurrence_counts oc on oc.event_id = lr.event_id
+  join public.event_occurrences eo on eo.event_id = lr.event_id
+  where oc.occurrence_count = 1
+    or eo.starts_at = lr.event_starts_at
+),
+summary as (
+  select
+    lr.registration_id,
+    count(distinct c.occurrence_id)::integer as candidate_occurrence_count,
+    (
+      array_agg(distinct c.occurrence_id)
+        filter (where c.occurrence_id is not null)
+    )[1] as matched_occurrence_id,
+    min(c.occurrence_starts_at) as matched_occurrence_starts_at
+  from legacy_rows lr
+  left join candidates c on c.registration_id = lr.registration_id
+  group by lr.registration_id
+)
+select
+  lr.*,
+  case
+    when s.candidate_occurrence_count = 1 then s.matched_occurrence_id
+    else null
+  end as safe_occurrence_id,
+  case
+    when s.candidate_occurrence_count = 1 then s.matched_occurrence_starts_at
+    else null
+  end as safe_occurrence_starts_at,
+  s.candidate_occurrence_count,
+  s.candidate_occurrence_count <> 1 as stays_ambiguous
+from legacy_rows lr
+join summary s on s.registration_id = lr.registration_id
+order by stays_ambiguous desc, lr.registered_at desc, lr.created_at desc;
+```
