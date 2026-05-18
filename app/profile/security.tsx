@@ -36,6 +36,7 @@ const roleTitles: Record<CommunityMembershipRole, string> = {
   member: 'Участник',
   event_manager: 'Менеджер событий',
   admin: 'Администратор',
+  rabbi: 'Раввин',
 };
 
 const membershipStatusTitles: Record<CommunityMembershipStatus, string> = {

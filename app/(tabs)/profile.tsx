@@ -151,6 +151,7 @@ const roleTitles: Record<CommunityMembershipRole, string> = {
   member: 'Участник',
   event_manager: 'Менеджер событий',
   admin: 'Администратор',
+  rabbi: 'Раввин',
 };
 
 type PendingAction = 'invite' | 'signOut' | null;
