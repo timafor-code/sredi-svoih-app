@@ -15,14 +15,19 @@ import {
   getAdminUserProfile,
   listAdminUserRegistrations,
   listAdminUsers,
+  setAdminUserMembership,
 } from "../services/adminMembersService";
 import { useAdminAuth } from "../store/useAdminAuth";
 import type { AdminBadgeTone } from "../types/admin";
-import type {
-  AdminMemberListFilters,
-  AdminMemberListRow,
-  AdminMemberProfile,
-  AdminMemberRegistrationRow,
+import {
+  ADMIN_MEMBER_MEMBERSHIP_ROLES,
+  ADMIN_MEMBER_MEMBERSHIP_STATUSES,
+  type AdminMemberMembershipRole,
+  type AdminMemberMembershipStatus,
+  type AdminMemberListFilters,
+  type AdminMemberListRow,
+  type AdminMemberProfile,
+  type AdminMemberRegistrationRow,
 } from "../types/members";
 
 type MembershipStatusFilter = NonNullable<AdminMemberListFilters["membershipStatus"]>;
@@ -64,6 +69,11 @@ const ROLE_TONES: Record<string, AdminBadgeTone> = {
   event_manager: "gold",
   member: "blue",
 };
+
+const MEMBERSHIP_ROLE_OPTIONS = ADMIN_MEMBER_MEMBERSHIP_ROLES;
+const MEMBERSHIP_STATUS_OPTIONS = ADMIN_MEMBER_MEMBERSHIP_STATUSES;
+const MEMBERSHIP_LEFT_CONFIRM_MESSAGE =
+  "Пользователь останется пользователем приложения, но потеряет членство в общине. Продолжить?";
 
 export function MembersPage() {
   const auth = useAdminAuth();
@@ -197,6 +207,68 @@ export function MembersPage() {
     }
   }, [loadMemberDetails, selectedMember]);
 
+  const refreshMemberMembershipData = useCallback(
+    async (member: AdminMemberListRow) => {
+      if (!communityId) {
+        throw new Error(COMMUNITY_ID_ERROR);
+      }
+
+      const detailRequestId = detailRequestSeq.current + 1;
+      const listRequestId = requestSeq.current + 1;
+      detailRequestSeq.current = detailRequestId;
+      requestSeq.current = listRequestId;
+      setDetailError(null);
+
+      try {
+        const [profile, registrations, nextMembers] = await Promise.all([
+          getAdminUserProfile(member.userId, communityId),
+          listAdminUserRegistrations(member.userId, communityId),
+          listAdminUsers({
+            communityId,
+            search: search.trim() || null,
+            membershipStatus,
+            role,
+            limit: MEMBERS_PAGE_SIZE,
+            offset: 0,
+          }),
+        ]);
+
+        if (detailRequestId === detailRequestSeq.current) {
+          const refreshedMember =
+            nextMembers.find((nextMember) => nextMember.userId === member.userId) ??
+            profile;
+
+          setSelectedMember((currentMember) =>
+            currentMember?.userId === member.userId ? refreshedMember : currentMember,
+          );
+          setSelectedProfile(profile);
+          setSelectedRegistrations(registrations);
+        }
+
+        if (listRequestId === requestSeq.current) {
+          setMembers(nextMembers);
+          setError(null);
+          setLoading(false);
+        }
+      } catch (nextError) {
+        if (detailRequestId === detailRequestSeq.current) {
+          setDetailError(
+            nextError instanceof Error
+              ? nextError.message
+              : "Не удалось обновить карточку участника.",
+          );
+        }
+
+        if (listRequestId === requestSeq.current) {
+          setLoading(false);
+        }
+
+        throw nextError;
+      }
+    },
+    [communityId, membershipStatus, role, search],
+  );
+
   const summary = useMemo<MembersSummary>(
     () => ({
       active: members.filter((member) => member.membershipStatus === "active").length,
@@ -322,10 +394,12 @@ export function MembersPage() {
 
       {selectedMember ? (
         <MemberDetailDrawer
+          communityId={communityId}
           detailError={detailError}
           detailLoading={detailLoading}
           member={selectedMember}
           onClose={closeMemberDetails}
+          onMembershipChanged={refreshMemberMembershipData}
           onRetry={retryMemberDetails}
           profile={selectedProfile}
           registrations={selectedRegistrations}
@@ -423,23 +497,97 @@ function handleMemberRowKeyDown(
 }
 
 function MemberDetailDrawer({
+  communityId,
   detailError,
   detailLoading,
   member,
   onClose,
+  onMembershipChanged,
   onRetry,
   profile,
   registrations,
 }: {
+  communityId: string | null;
   detailError: string | null;
   detailLoading: boolean;
   member: AdminMemberListRow;
   onClose: () => void;
+  onMembershipChanged: (member: AdminMemberListRow) => Promise<void>;
   onRetry: () => void;
   profile: AdminMemberProfile | null;
   registrations: AdminMemberRegistrationRow[];
 }) {
   const detail = profile ?? member;
+  const currentMembershipRole = normalizeMembershipRole(detail.membershipRole);
+  const currentMembershipStatus = normalizeMembershipStatus(
+    detail.membershipStatus,
+  );
+  const [membershipRole, setMembershipRole] =
+    useState<AdminMemberMembershipRole>(() => currentMembershipRole);
+  const [membershipStatusValue, setMembershipStatusValue] =
+    useState<AdminMemberMembershipStatus>(() => currentMembershipStatus);
+  const [membershipSaving, setMembershipSaving] = useState(false);
+  const [membershipError, setMembershipError] = useState<string | null>(null);
+  const [membershipSuccess, setMembershipSuccess] = useState<string | null>(null);
+  const hasMembershipChanges =
+    Boolean(detail.membershipId) &&
+    (membershipRole !== currentMembershipRole ||
+      membershipStatusValue !== currentMembershipStatus);
+
+  useEffect(() => {
+    setMembershipRole(currentMembershipRole);
+    setMembershipStatusValue(currentMembershipStatus);
+  }, [currentMembershipRole, currentMembershipStatus, detail.userId]);
+
+  useEffect(() => {
+    setMembershipSaving(false);
+    setMembershipError(null);
+    setMembershipSuccess(null);
+  }, [detail.userId]);
+
+  const saveMembership = useCallback(
+    async ({
+      role,
+      status,
+      successMessage,
+    }: {
+      role: AdminMemberMembershipRole;
+      status: AdminMemberMembershipStatus;
+      successMessage: string;
+    }) => {
+      if (!communityId) {
+        setMembershipError(COMMUNITY_ID_ERROR);
+        return;
+      }
+
+      setMembershipSaving(true);
+      setMembershipError(null);
+      setMembershipSuccess(null);
+
+      try {
+        await setAdminUserMembership({
+          userId: detail.userId,
+          communityId,
+          role,
+          status,
+        });
+
+        setMembershipRole(role);
+        setMembershipStatusValue(status);
+        await onMembershipChanged(detail);
+        setMembershipSuccess(successMessage);
+      } catch (nextError) {
+        setMembershipError(
+          nextError instanceof Error
+            ? nextError.message
+            : "Не удалось сохранить членство.",
+        );
+      } finally {
+        setMembershipSaving(false);
+      }
+    },
+    [communityId, detail, onMembershipChanged],
+  );
 
   return (
     <div className="member-detail-backdrop" onClick={onClose}>
@@ -488,6 +636,41 @@ function MemberDetailDrawer({
             <>
               <MemberProfileSection member={member} profile={profile} />
               <MemberMembershipSection member={member} profile={profile} />
+              {communityId ? (
+                <MemberMembershipActions
+                  currentMembershipStatus={currentMembershipStatus}
+                  hasMembershipChanges={hasMembershipChanges}
+                  member={detail}
+                  membershipError={membershipError}
+                  membershipRole={membershipRole}
+                  membershipSaving={membershipSaving}
+                  membershipStatus={membershipStatusValue}
+                  membershipSuccess={membershipSuccess}
+                  onCreateMembership={() =>
+                    void saveMembership({
+                      role: "member",
+                      status: "active",
+                      successMessage: "Пользователь стал участником общины.",
+                    })
+                  }
+                  onMembershipRoleChange={setMembershipRole}
+                  onMembershipStatusChange={setMembershipStatusValue}
+                  onQuickStatusChange={(status, successMessage) =>
+                    void saveMembership({
+                      role: currentMembershipRole,
+                      status,
+                      successMessage,
+                    })
+                  }
+                  onSaveMembership={() =>
+                    void saveMembership({
+                      role: membershipRole,
+                      status: membershipStatusValue,
+                      successMessage: "Изменения членства сохранены.",
+                    })
+                  }
+                />
+              ) : null}
               <MemberRegistrationsSection
                 profile={profile}
                 registrations={registrations}
@@ -602,6 +785,220 @@ function MemberMembershipSection({
       )}
     </MemberDetailSection>
   );
+}
+
+function MemberMembershipActions({
+  currentMembershipStatus,
+  hasMembershipChanges,
+  member,
+  membershipError,
+  membershipRole,
+  membershipSaving,
+  membershipStatus,
+  membershipSuccess,
+  onCreateMembership,
+  onMembershipRoleChange,
+  onMembershipStatusChange,
+  onQuickStatusChange,
+  onSaveMembership,
+}: {
+  currentMembershipStatus: AdminMemberMembershipStatus;
+  hasMembershipChanges: boolean;
+  member: AdminMemberListRow;
+  membershipError: string | null;
+  membershipRole: AdminMemberMembershipRole;
+  membershipSaving: boolean;
+  membershipStatus: AdminMemberMembershipStatus;
+  membershipSuccess: string | null;
+  onCreateMembership: () => void;
+  onMembershipRoleChange: (role: AdminMemberMembershipRole) => void;
+  onMembershipStatusChange: (status: AdminMemberMembershipStatus) => void;
+  onQuickStatusChange: (
+    status: AdminMemberMembershipStatus,
+    successMessage: string,
+  ) => void;
+  onSaveMembership: () => void;
+}) {
+  const handleExcludeFromCommunity = () => {
+    if (window.confirm(MEMBERSHIP_LEFT_CONFIRM_MESSAGE)) {
+      onQuickStatusChange(
+        "left",
+        "Пользователь исключён из общины, но профиль сохранён.",
+      );
+    }
+  };
+  const canActivate = currentMembershipStatus === "pending";
+  const canRestore =
+    currentMembershipStatus === "suspended" || currentMembershipStatus === "left";
+  const canSuspend =
+    currentMembershipStatus === "active" || currentMembershipStatus === "pending";
+  const canExclude =
+    currentMembershipStatus === "active" ||
+    currentMembershipStatus === "pending" ||
+    currentMembershipStatus === "suspended";
+
+  return (
+    <MemberDetailSection title="Действия с членством">
+      {!member.membershipId ? (
+        <div className="member-membership-action-panel">
+          <div>
+            <strong>Пользователь приложения</strong>
+            <p>
+              Этот пользователь зарегистрирован в приложении, но ещё не является
+              членом общины.
+            </p>
+          </div>
+          <Button
+            disabled={membershipSaving}
+            onClick={onCreateMembership}
+            variant="primary"
+          >
+            {membershipSaving ? "Сохраняем..." : "Сделать участником"}
+          </Button>
+        </div>
+      ) : (
+        <div className="member-membership-editor">
+          <div className="member-membership-fields">
+            <label className="member-membership-field">
+              <span>Роль</span>
+              <select
+                disabled={membershipSaving}
+                onChange={(event) =>
+                  onMembershipRoleChange(event.target.value as AdminMemberMembershipRole)
+                }
+                value={membershipRole}
+              >
+                {MEMBERSHIP_ROLE_OPTIONS.map((role) => (
+                  <option key={role} value={role}>
+                    {role}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="member-membership-field">
+              <span>Статус</span>
+              <select
+                disabled={membershipSaving}
+                onChange={(event) =>
+                  onMembershipStatusChange(
+                    event.target.value as AdminMemberMembershipStatus,
+                  )
+                }
+                value={membershipStatus}
+              >
+                {MEMBERSHIP_STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="member-membership-actions">
+            <Button
+              disabled={membershipSaving || !hasMembershipChanges}
+              onClick={onSaveMembership}
+              variant="primary"
+            >
+              {membershipSaving ? "Сохраняем..." : "Сохранить изменения"}
+            </Button>
+          </div>
+
+          <div className="member-membership-quick-actions" aria-label="Быстрые действия с членством">
+            {canActivate ? (
+              <Button
+                disabled={membershipSaving}
+                onClick={() =>
+                  onQuickStatusChange("active", "Членство восстановлено.")
+                }
+                size="sm"
+                variant="success"
+              >
+                Активировать
+              </Button>
+            ) : null}
+            {canRestore ? (
+              <Button
+                disabled={membershipSaving}
+                onClick={() =>
+                  onQuickStatusChange("active", "Членство восстановлено.")
+                }
+                size="sm"
+                variant="success"
+              >
+                Восстановить
+              </Button>
+            ) : null}
+            {canSuspend ? (
+              <Button
+                disabled={membershipSaving}
+                onClick={() =>
+                  onQuickStatusChange("suspended", "Членство приостановлено.")
+                }
+                size="sm"
+              >
+                Приостановить
+              </Button>
+            ) : null}
+            {canExclude ? (
+              <Button
+                disabled={membershipSaving}
+                onClick={handleExcludeFromCommunity}
+                size="sm"
+                variant="primary"
+              >
+                Исключить из общины
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      <MemberMembershipFeedback
+        error={membershipError}
+        saving={membershipSaving}
+        success={membershipSuccess}
+      />
+    </MemberDetailSection>
+  );
+}
+
+function MemberMembershipFeedback({
+  error,
+  saving,
+  success,
+}: {
+  error: string | null;
+  saving: boolean;
+  success: string | null;
+}) {
+  if (saving) {
+    return (
+      <p className="member-membership-feedback" role="status">
+        Сохраняем...
+      </p>
+    );
+  }
+
+  if (error) {
+    return (
+      <p className="member-membership-feedback member-membership-feedback--error" role="alert">
+        {error}
+      </p>
+    );
+  }
+
+  if (success) {
+    return (
+      <p className="member-membership-feedback member-membership-feedback--success" role="status">
+        {success}
+      </p>
+    );
+  }
+
+  return null;
 }
 
 function MemberRegistrationsSection({
@@ -791,6 +1188,22 @@ function renderRoleBadge(
 
 function getRoleTone(role: string): AdminBadgeTone {
   return ROLE_TONES[role] ?? "muted";
+}
+
+function normalizeMembershipRole(
+  role: AdminMemberListRow["membershipRole"],
+): AdminMemberMembershipRole {
+  return MEMBERSHIP_ROLE_OPTIONS.some((option) => option === role)
+    ? (role as AdminMemberMembershipRole)
+    : "member";
+}
+
+function normalizeMembershipStatus(
+  status: AdminMemberListRow["membershipStatus"],
+): AdminMemberMembershipStatus {
+  return MEMBERSHIP_STATUS_OPTIONS.some((option) => option === status)
+    ? (status as AdminMemberMembershipStatus)
+    : "active";
 }
 
 function getMembershipStatusLabel(member: AdminMemberListRow): string {
