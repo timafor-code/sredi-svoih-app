@@ -28,6 +28,7 @@ type EventsState = {
   categories: EventCategory[];
   selectedEvent: EventItem | null;
   myRegistrations: EventRegistration[];
+  myRegistrationsUserId: string | null;
   loading: boolean;
   selectedEventLoading: boolean;
   registrationsLoading: boolean;
@@ -47,6 +48,8 @@ type EventsState = {
 
 const activeRegistrationStatuses = new Set(ACTIVE_EVENT_REGISTRATION_STATUSES);
 const duplicateBlockingRegistrationStatuses = new Set(DUPLICATE_BLOCKING_EVENT_REGISTRATION_STATUSES);
+const MY_REGISTRATIONS_DEBUG_TAG = '[mobile registrations]';
+const MY_REGISTRATIONS_DEBUG_EVENT_TITLE = 'Шаббат открыто';
 
 const FALLBACK_CATEGORY = {
   title: 'Событие',
@@ -252,6 +255,101 @@ function sortRegistrations(registrations: EventRegistration[]): EventRegistratio
   ));
 }
 
+function getCurrentAuthUser() {
+  return useAuthStore.getState().user;
+}
+
+function summarizeRegistrationForDebug(registration: EventRegistration) {
+  return {
+    id: registration.id,
+    eventId: registration.eventId,
+    occurrenceId: registration.occurrenceId,
+    status: registration.status,
+    registeredAt: registration.registeredAt,
+    title: registration.event?.title ?? null,
+  };
+}
+
+function summarizeDebugEventRegistrations(registrations: EventRegistration[]) {
+  const eventRegistrations = registrations.filter((registration) => (
+    registration.event?.title === MY_REGISTRATIONS_DEBUG_EVENT_TITLE
+  ));
+
+  if (eventRegistrations.length === 0) {
+    return null;
+  }
+
+  return {
+    eventIds: Array.from(new Set(eventRegistrations.map((registration) => registration.eventId))),
+    totalRegistrationsCount: eventRegistrations.length,
+    registrationIds: eventRegistrations.map((registration) => registration.id),
+    occurrenceIds: eventRegistrations.map((registration) => registration.occurrenceId),
+    selectedOptions: eventRegistrations.map((registration) => ({
+      registrationId: registration.id,
+      titles: registration.selectedOptions.map((option) => ({
+        title: option.title,
+        quantity: option.quantity,
+        seatsCount: option.seatsCount,
+        isDonation: option.isDonation,
+      })),
+    })),
+  };
+}
+
+function logMyRegistrationsLoadDebug(
+  user: NonNullable<ReturnType<typeof getCurrentAuthUser>>,
+  registrations: EventRegistration[],
+): void {
+  if (!__DEV__) {
+    return;
+  }
+
+  console.info(`${MY_REGISTRATIONS_DEBUG_TAG} loadMyRegistrationsService result`, {
+    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? null,
+    authUser: {
+      id: user.id,
+      email: user.email ?? null,
+    },
+    registrationsCount: registrations.length,
+    registrations: registrations.map(summarizeRegistrationForDebug),
+    debugEventTitle: MY_REGISTRATIONS_DEBUG_EVENT_TITLE,
+    debugEventGroup: summarizeDebugEventRegistrations(registrations),
+  });
+}
+
+function logMyRegistrationsLoadErrorDebug(
+  user: NonNullable<ReturnType<typeof getCurrentAuthUser>>,
+  message: string,
+): void {
+  if (!__DEV__) {
+    return;
+  }
+
+  console.warn(`${MY_REGISTRATIONS_DEBUG_TAG} loadMyRegistrationsService failed`, {
+    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? null,
+    authUser: {
+      id: user.id,
+      email: user.email ?? null,
+    },
+    message,
+  });
+}
+
+function clearRegistrationsForUserSwitch(
+  state: EventsState,
+  userId: string,
+): Pick<EventsState, 'myRegistrations' | 'myRegistrationsUserId'> {
+  return state.myRegistrationsUserId === userId
+    ? {
+      myRegistrations: state.myRegistrations,
+      myRegistrationsUserId: userId,
+    }
+    : {
+      myRegistrations: [],
+      myRegistrationsUserId: userId,
+    };
+}
+
 function upsertRegistration(
   registrations: EventRegistration[],
   registration: EventRegistration,
@@ -305,6 +403,7 @@ export const useEventsStore = create<EventsState>((set, get) => ({
   categories: [],
   selectedEvent: null,
   myRegistrations: [],
+  myRegistrationsUserId: null,
   loading: false,
   selectedEventLoading: false,
   registrationsLoading: false,
@@ -331,7 +430,7 @@ export const useEventsStore = create<EventsState>((set, get) => ({
       if (useAuthStore.getState().user) {
         void get().loadMyRegistrations().catch(() => undefined);
       } else {
-        set({ myRegistrations: [], registrationsLoading: false });
+        set({ myRegistrations: [], myRegistrationsUserId: null, registrationsLoading: false });
       }
     } catch (error) {
       set({
@@ -399,47 +498,104 @@ export const useEventsStore = create<EventsState>((set, get) => ({
   },
 
   loadMyRegistrations: async () => {
-    if (!useAuthStore.getState().user) {
-      set({ myRegistrations: [], registrationsLoading: false });
+    const requestedUser = getCurrentAuthUser();
+
+    if (!requestedUser) {
+      set({ myRegistrations: [], myRegistrationsUserId: null, registrationsLoading: false });
       return;
     }
 
-    set({ registrationsLoading: true, error: null });
+    const requestedUserId = requestedUser.id;
+
+    set((state) => ({
+      ...clearRegistrationsForUserSwitch(state, requestedUserId),
+      registrationsLoading: true,
+      error: null,
+    }));
 
     try {
       const registrations = await loadMyRegistrationsService();
+      const currentUser = getCurrentAuthUser();
+
+      if (!currentUser || currentUser.id !== requestedUserId) {
+        set({
+          myRegistrations: [],
+          myRegistrationsUserId: currentUser?.id ?? null,
+          registrationsLoading: false,
+        });
+        return;
+      }
+
+      const sortedRegistrations = sortRegistrations(registrations);
+
+      logMyRegistrationsLoadDebug(currentUser, sortedRegistrations);
 
       set({
-        myRegistrations: sortRegistrations(registrations),
+        myRegistrations: sortedRegistrations,
+        myRegistrationsUserId: currentUser.id,
         registrationsLoading: false,
         error: null,
       });
     } catch (error) {
       const message = friendlyRegistrationError(error);
 
+      logMyRegistrationsLoadErrorDebug(requestedUser, message);
+
+      const currentUser = getCurrentAuthUser();
+
       set({
         myRegistrations: [],
+        myRegistrationsUserId: currentUser?.id ?? null,
         registrationsLoading: false,
-        error: message,
+        error: currentUser ? message : null,
       });
       throw new Error(message);
     }
   },
 
   registerForEvent: async (eventId: string) => {
-    const existingRegistration = findRegistrationForEvent(get().myRegistrations, eventId);
+    const requestedUser = getCurrentAuthUser();
+
+    if (!requestedUser) {
+      throw new Error('Auth required');
+    }
+
+    const requestedUserId = requestedUser.id;
+    const currentState = get();
+    const existingRegistration = findRegistrationForEvent(
+      currentState.myRegistrationsUserId === requestedUserId ? currentState.myRegistrations : [],
+      eventId,
+    );
 
     if (isActiveEventRegistration(existingRegistration)) {
       return existingRegistration;
     }
 
-    set({ registrationsLoading: true, error: null });
+    set((state) => ({
+      ...clearRegistrationsForUserSwitch(state, requestedUserId),
+      registrationsLoading: true,
+      error: null,
+    }));
 
     try {
       const registration = await registerForEventService(eventId, 1, null);
+      const currentUser = getCurrentAuthUser();
+
+      if (!currentUser || currentUser.id !== requestedUserId) {
+        set({
+          myRegistrations: [],
+          myRegistrationsUserId: currentUser?.id ?? null,
+          registrationsLoading: false,
+        });
+        return registration;
+      }
 
       set((state) => ({
-        myRegistrations: upsertRegistration(state.myRegistrations, registration),
+        myRegistrations: upsertRegistration(
+          state.myRegistrationsUserId === currentUser.id ? state.myRegistrations : [],
+          registration,
+        ),
+        myRegistrationsUserId: currentUser.id,
         registrationsLoading: false,
         error: null,
       }));
@@ -459,10 +615,32 @@ export const useEventsStore = create<EventsState>((set, get) => ({
   },
 
   registerForPaidEventSimulated: async (input: RegisterForPaidEventSimulatedInput) => {
-    set({ registrationsLoading: true, error: null });
+    const requestedUser = getCurrentAuthUser();
+
+    if (!requestedUser) {
+      throw new Error('Auth required');
+    }
+
+    const requestedUserId = requestedUser.id;
+
+    set((state) => ({
+      ...clearRegistrationsForUserSwitch(state, requestedUserId),
+      registrationsLoading: true,
+      error: null,
+    }));
 
     try {
       const registration = await registerForPaidEventSimulatedService(input);
+      const currentUserAfterRegistration = getCurrentAuthUser();
+
+      if (!currentUserAfterRegistration || currentUserAfterRegistration.id !== requestedUserId) {
+        set({
+          myRegistrations: [],
+          myRegistrationsUserId: currentUserAfterRegistration?.id ?? null,
+          registrationsLoading: false,
+        });
+        return registration;
+      }
 
       // Always reload the full server list. Repeat paid registrations on the
       // same (event, occurrence) produce separate rows with new ids; merging by
@@ -471,21 +649,41 @@ export const useEventsStore = create<EventsState>((set, get) => ({
       // refetch and let the server be the source of truth.
       try {
         const registrations = await loadMyRegistrationsService();
+        const currentUserAfterReload = getCurrentAuthUser();
+
+        if (!currentUserAfterReload || currentUserAfterReload.id !== requestedUserId) {
+          set({
+            myRegistrations: [],
+            myRegistrationsUserId: currentUserAfterReload?.id ?? null,
+            registrationsLoading: false,
+          });
+          return registration;
+        }
+
+        const sortedRegistrations = sortRegistrations(registrations);
         const hydrated = registrations.find((item) => item.id === registration.id);
 
+        logMyRegistrationsLoadDebug(currentUserAfterReload, sortedRegistrations);
+
         set({
-          myRegistrations: sortRegistrations(registrations),
+          myRegistrations: sortedRegistrations,
+          myRegistrationsUserId: currentUserAfterReload.id,
           registrationsLoading: false,
           error: null,
         });
 
         return hydrated ?? registration;
-      } catch {
-        set((state) => ({
-          myRegistrations: upsertRegistration(state.myRegistrations, registration),
+      } catch (reloadError) {
+        const message = friendlyRegistrationError(reloadError);
+
+        logMyRegistrationsLoadErrorDebug(requestedUser, message);
+
+        set({
+          myRegistrations: [],
+          myRegistrationsUserId: getCurrentAuthUser()?.id ?? null,
           registrationsLoading: false,
-          error: null,
-        }));
+          error: message,
+        });
 
         return registration;
       }
@@ -499,13 +697,39 @@ export const useEventsStore = create<EventsState>((set, get) => ({
   },
 
   cancelRegistration: async (registrationId: string) => {
-    set({ registrationsLoading: true, error: null });
+    const requestedUser = getCurrentAuthUser();
+
+    if (!requestedUser) {
+      throw new Error('Auth required');
+    }
+
+    const requestedUserId = requestedUser.id;
+
+    set((state) => ({
+      ...clearRegistrationsForUserSwitch(state, requestedUserId),
+      registrationsLoading: true,
+      error: null,
+    }));
 
     try {
       const registration = await cancelRegistrationService(registrationId);
+      const currentUser = getCurrentAuthUser();
+
+      if (!currentUser || currentUser.id !== requestedUserId) {
+        set({
+          myRegistrations: [],
+          myRegistrationsUserId: currentUser?.id ?? null,
+          registrationsLoading: false,
+        });
+        return registration;
+      }
 
       set((state) => ({
-        myRegistrations: upsertRegistration(state.myRegistrations, registration),
+        myRegistrations: upsertRegistration(
+          state.myRegistrationsUserId === currentUser.id ? state.myRegistrations : [],
+          registration,
+        ),
+        myRegistrationsUserId: currentUser.id,
         registrationsLoading: false,
         error: null,
       }));
@@ -519,13 +743,23 @@ export const useEventsStore = create<EventsState>((set, get) => ({
     }
   },
 
-  getRegistrationForEvent: (eventId: string) => findRegistrationForEvent(get().myRegistrations, eventId),
+  getRegistrationForEvent: (eventId: string) => {
+    const currentUser = getCurrentAuthUser();
+    const state = get();
+
+    if (!currentUser || state.myRegistrationsUserId !== currentUser.id) {
+      return null;
+    }
+
+    return findRegistrationForEvent(state.myRegistrations, eventId);
+  },
 
   resetPrivateState: () => {
     set((state) => ({
       events: state.events.filter((event) => event.visibility === 'public'),
       selectedEvent: state.selectedEvent?.visibility === 'public' ? state.selectedEvent : null,
       myRegistrations: [],
+      myRegistrationsUserId: null,
       error: null,
       selectedEventError: null,
       selectedEventLoading: false,

@@ -412,9 +412,22 @@ export async function registerForPaidEventSimulated(
 }
 
 export async function loadMyRegistrations(): Promise<EventRegistration[]> {
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+
+  if (authError) {
+    throw new Error(authError.message);
+  }
+
+  const userId = authData.user?.id;
+
+  if (!userId) {
+    throw new Error('Auth required');
+  }
+
   const { data, error } = await supabase
     .from('event_registrations')
     .select(REGISTRATION_FIELDS)
+    .eq('user_id', userId)
     .order('registered_at', { ascending: false });
 
   if (error) {

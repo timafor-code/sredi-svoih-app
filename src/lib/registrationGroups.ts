@@ -288,6 +288,19 @@ function isRegistrationInPeriod(
   }
 }
 
+function uniqueRegistrationsById(registrations: EventRegistration[]): EventRegistration[] {
+  const seen = new Set<string>();
+
+  return registrations.filter((registration) => {
+    if (seen.has(registration.id)) {
+      return false;
+    }
+
+    seen.add(registration.id);
+    return true;
+  });
+}
+
 export function filterMyRegistrationGroupsByPeriod(
   groups: MyRegistrationGroup[],
   period: MyRegistrationPeriod,
@@ -308,7 +321,7 @@ export function buildMyRegistrationGroups(
   const grouped = new Map<string, EventRegistration[]>();
   const period = options.period ?? 'all';
 
-  registrations
+  uniqueRegistrationsById(registrations)
     .filter((registration) => isRegistrationInPeriod(registration, period, now))
     .forEach((registration) => {
       const current = grouped.get(registration.eventId) ?? [];
