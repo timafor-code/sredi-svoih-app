@@ -1,8 +1,8 @@
-import type {
-  Cell,
-  Feature,
-  Sheet,
-  SheetData,
+import writeXlsxFile, {
+  type Cell,
+  type Feature,
+  type Sheet,
+  type SheetData,
 } from "write-excel-file/browser";
 import {
   getOrderOfSiblings,
@@ -10,6 +10,7 @@ import {
 } from "write-excel-file/utility";
 
 import { listEventRegistrations } from "./adminEventsService";
+import type { AdminEventOccurrence } from "../types/eventOccurrences";
 import type {
   AdminEventRegistrationRow,
   AdminRegistrationEventSummary,
@@ -17,6 +18,19 @@ import type {
 } from "../types/registrations";
 
 type BrowserFileContent = File | Blob | ArrayBuffer;
+
+type RegistrationExcelExportOccurrence = Pick<
+  AdminEventOccurrence,
+  "id" | "startsAt" | "title"
+>;
+
+export type RegistrationExcelExportOptions = {
+  occurrence?: RegistrationExcelExportOccurrence | null;
+};
+
+type RegistrationExcelExportScope = {
+  occurrence: RegistrationExcelExportOccurrence | null;
+};
 
 type RegistrationExportColumn = {
   header: string;
@@ -103,20 +117,20 @@ const STATUS_BACKGROUND_COLORS: Record<string, string> = {
 
 export async function exportEventRegistrationsToExcel(
   event: AdminRegistrationEventSummary,
+  options: RegistrationExcelExportOptions = {},
 ): Promise<RegistrationExcelExportResult> {
-  const [registrations, writeExcelModule] = await Promise.all([
-    fetchAllEventRegistrations(event.eventId),
-    import("write-excel-file/browser"),
-  ]);
-  const sheets = createRegistrationSheets(event, registrations);
-  const blob = await writeExcelModule
-    .default(sheets, {
-      features: [createAutoFilterFeature()],
-      fontFamily: "Calibri",
-      fontSize: 11,
-    })
+  const scope: RegistrationExcelExportScope = {
+    occurrence: options.occurrence ?? null,
+  };
+  const registrations = await fetchAllEventRegistrations(event.eventId, scope);
+  const sheets = createRegistrationSheets(event, registrations, scope);
+  const blob = await writeXlsxFile(sheets, {
+    features: [createAutoFilterFeature()],
+    fontFamily: "Calibri",
+    fontSize: 11,
+  })
     .toBlob();
-  const fileName = buildExportFileName(event.title);
+  const fileName = buildExportFileName(event.title, scope);
 
   downloadBlob(blob, fileName);
 
@@ -128,6 +142,7 @@ export async function exportEventRegistrationsToExcel(
 
 async function fetchAllEventRegistrations(
   eventId: string,
+  scope: RegistrationExcelExportScope,
 ): Promise<AdminEventRegistrationRow[]> {
   const registrations: AdminEventRegistrationRow[] = [];
   let offset = 0;
@@ -135,6 +150,7 @@ async function fetchAllEventRegistrations(
   while (true) {
     const page = await listEventRegistrations({
       eventId,
+      occurrenceId: scope.occurrence?.id ?? null,
       limit: EXPORT_PAGE_SIZE,
       offset,
     });
@@ -152,10 +168,16 @@ async function fetchAllEventRegistrations(
 function createRegistrationSheets(
   event: AdminRegistrationEventSummary,
   registrations: AdminEventRegistrationRow[],
+  scope: RegistrationExcelExportScope,
 ): Array<Sheet<BrowserFileContent>> {
   const sheets: Array<Sheet<BrowserFileContent>> = [
     createRegistrationSheet(ALL_REGISTRATIONS_SHEET_NAME, event, registrations),
   ];
+
+  if (scope.occurrence) {
+    return sheets;
+  }
+
   const usedSheetNames = new Set([ALL_REGISTRATIONS_SHEET_NAME]);
 
   for (const group of groupRegistrationsByOccurrence(registrations)) {
@@ -461,10 +483,21 @@ function downloadBlob(blob: Blob, fileName: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-function buildExportFileName(eventTitle: string): string {
-  return `registrations_${sanitizeFileNamePart(eventTitle)}_${formatDateForFileName(
-    new Date(),
-  )}.xlsx`;
+function buildExportFileName(
+  eventTitle: string,
+  scope: RegistrationExcelExportScope,
+): string {
+  const occurrencePart = scope.occurrence
+    ? formatOccurrenceForFileName(scope.occurrence)
+    : null;
+  const parts = [
+    "registrations",
+    sanitizeFileNamePart(eventTitle),
+    occurrencePart,
+    formatDateForFileName(new Date()),
+  ].filter((part): part is string => Boolean(part));
+
+  return `${parts.join("_")}.xlsx`;
 }
 
 function sanitizeFileNamePart(value: string): string {
@@ -485,6 +518,34 @@ function formatDateForFileName(date: Date): string {
   const day = String(date.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
+}
+
+function formatOccurrenceForFileName(
+  occurrence: RegistrationExcelExportOccurrence,
+): string {
+  const startsAt = parseDate(occurrence.startsAt);
+
+  if (startsAt) {
+    const year = startsAt.getFullYear();
+    const month = String(startsAt.getMonth() + 1).padStart(2, "0");
+    const day = String(startsAt.getDate()).padStart(2, "0");
+    const hours = String(startsAt.getHours()).padStart(2, "0");
+    const minutes = String(startsAt.getMinutes()).padStart(2, "0");
+
+    return `${year}-${month}-${day}_${hours}-${minutes}`;
+  }
+
+  return sanitizeFileNamePart(occurrence.title ?? occurrence.id);
+}
+
+function parseDate(value: string | null): Date | null {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function makeUniqueSheetName(name: string, usedNames: Set<string>): string {

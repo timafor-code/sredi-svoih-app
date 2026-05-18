@@ -205,6 +205,11 @@ event and occurrence keys:
 `search`, `limit`, and `offset` are optional. `status: "all"` is treated as no
 status filter. The RPC clamps `limit` to `1..200`.
 
+Registration rows are row-based: each `event_registrations.id` returned by the
+RPC is one UI/export row. The RPC must not collapse multiple rows for the same
+`user_id`, `event_id`, `occurrence_id`, email, or profile. When `occurrenceId`
+is passed, the RPC returns every registration row for that occurrence.
+
 Registration rows include the registration id, event and occurrence ids,
 participant profile display name, email, phone, status, seat count, guest names,
 comment, payment status/id, registration timestamps, occurrence
@@ -313,8 +318,11 @@ authenticated Supabase client session and does not use service-role keys,
 Supabase Admin API, or direct database credentials.
 
 The UI loads event counters with `listRegistrationEvents()`, filters the event
-list client-side, and loads the selected event's registrations with
-`listEventRegistrations({ eventId, status, search, limit, offset })`.
+list client-side, and loads registrations with
+`listEventRegistrations({ eventId, occurrenceId, status, search, limit,
+offset })`. When a concrete occurrence/date is selected, the table is scoped to
+that occurrence and renders each returned `event_registrations.id` as its own
+row. Selected-date counters count registration rows, not unique users.
 Registration rows show participant contacts, status, occurrence date/title,
 seat count, selected participation options, payment status/amount, registration
 time, and an actions menu.
@@ -328,17 +336,25 @@ changes (`cancelled`, `rejected`, `no_show`) require confirmation in the UI.
 
 ## Web Admin Registrations Excel Export
 
-`apps/admin` exports registrations for the currently selected event as an Excel
-`.xlsx` workbook. CSV is intentionally not used in web-admin.
+`apps/admin` exports registrations as an Excel `.xlsx` workbook. CSV is
+intentionally not used in web-admin.
 
 The export button calls `admin_list_event_registrations` through
 `listEventRegistrations(...)` with pagination: `limit` is `200`, `offset` starts
 at `0`, and fetching continues while the RPC returns a full page. Current table
-status/search filters are not applied, so the workbook contains all
-registrations for the selected event.
+status/search filters are not applied.
 
-The workbook always contains a sheet named "Все регистрации". If returned rows
-include `occurrence_id` or `occurrence_starts_at`, the workbook also includes
-safe Excel sheet names for each occurrence, capped to Excel's 31-character sheet
-name limit. No backend storage, migrations, or additional RPCs are required for
-the export.
+If a concrete occurrence is selected in the registrations screen, Excel export
+passes that `occurrenceId` to the RPC. The workbook's "Все регистрации" sheet
+then contains only registration rows for that selected occurrence/date, and the
+workbook does not add per-occurrence sheets. This is the default path for
+recurring/series events while the admin is working inside one selected session.
+
+If no occurrence is selected or the event does not use occurrences, export stays
+event-level: the workbook contains all registration rows for the selected event.
+The workbook always contains a sheet named "Все регистрации". In event-level
+export, if returned rows include `occurrence_id` or `occurrence_starts_at`, the
+workbook also includes safe Excel sheet names for each occurrence, capped to
+Excel's 31-character sheet name limit. A future PR may add an explicit
+"export all dates" action for series events. No backend storage, migrations, or
+additional RPCs are required for the export.

@@ -5038,6 +5038,13 @@ a {
   white-space: nowrap;
 }
 
+.registration-table-stack--options span,
+.registration-table-stack--options small {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .registration-avatar {
   display: grid;
   width: 34px;
