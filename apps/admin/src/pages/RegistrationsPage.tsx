@@ -453,6 +453,11 @@ export function RegistrationsPage() {
       occurrences.find((occurrence) => occurrence.id === selectedOccurrenceId) ?? null,
     [occurrences, selectedOccurrenceId],
   );
+  const exportOccurrence =
+    eventHasOccurrences && selectedOccurrence ? selectedOccurrence : null;
+  const exportHint = exportOccurrence
+    ? "Экспорт выбранного сеанса"
+    : "Экспорт всех записей события";
 
   const filteredEvents = useMemo(() => {
     const normalizedQuery = eventQuery.trim().toLocaleLowerCase("ru");
@@ -610,20 +615,21 @@ export function RegistrationsPage() {
 
     setExcelExportLoading(true);
 
-    void exportEventRegistrationsToExcel(selectedEvent)
+    void exportEventRegistrationsToExcel(selectedEvent, { occurrence: exportOccurrence })
       .then((result) => {
         pushToast("success", `Excel готов: ${formatRegistrationCount(result.rowCount)}.`);
       })
       .catch((nextError) => {
+        console.error("Failed to export event registrations Excel.", nextError);
         pushToast(
           "error",
-          nextError instanceof Error ? nextError.message : "Не удалось подготовить Excel.",
+          "Не удалось сформировать Excel-файл. Обновите страницу и попробуйте снова.",
         );
       })
       .finally(() => {
         setExcelExportLoading(false);
       });
-  }, [excelExportLoading, pushToast, selectedEvent]);
+  }, [excelExportLoading, exportOccurrence, pushToast, selectedEvent]);
 
   return (
     <div className="page-stack page-stack--registrations">
@@ -723,11 +729,7 @@ export function RegistrationsPage() {
                     >
                       {excelExportLoading ? "Готовим Excel..." : "Экспорт Excel"}
                     </Button>
-                    {eventHasOccurrences ? (
-                      <small className="registrations-export-hint">
-                        Экспортирует все даты события
-                      </small>
-                    ) : null}
+                    <small className="registrations-export-hint">{exportHint}</small>
                   </div>
                   <Button
                     disabled={registrationsLoading || eventsLoading}
@@ -1194,6 +1196,7 @@ function RegistrationsTable({
 
         {registrations.map((registration) => {
           const isSelected = registration.id === selectedRegistrationId;
+          const fullOptionsLabel = formatOptionsFull(registration.selectedOptions);
 
           return (
             <div
@@ -1236,7 +1239,12 @@ function RegistrationsTable({
                 {registration.occurrenceTitle ? <small>{registration.occurrenceTitle}</small> : null}
               </div>
               <span role="cell">{registration.seatsCount}</span>
-              <div className="registration-table-stack" role="cell">
+              <div
+                aria-label={`Опции: ${fullOptionsLabel}`}
+                className="registration-table-stack registration-table-stack--options"
+                role="cell"
+                title={fullOptionsLabel}
+              >
                 <span>{formatOptionsCompact(registration.selectedOptions)}</span>
                 {registration.selectedOptions.length > 2 ? (
                   <small>+{registration.selectedOptions.length - 2} ещё</small>
@@ -1685,6 +1693,25 @@ function formatOptionsCompact(options: AdminRegistrationOptionSelectionSummary[]
       return `${title} × ${option.quantity}${amount}`;
     })
     .join(", ");
+}
+
+function formatOptionsFull(options: AdminRegistrationOptionSelectionSummary[]): string {
+  if (options.length === 0) {
+    return "Без опций";
+  }
+
+  return options
+    .map((option) => {
+      const title = option.isDonation ? `Пожертвование: ${option.title}` : option.title;
+      const amount =
+        option.totalAmount > 0
+          ? ` · ${formatMoney(option.totalAmount, option.currency)}`
+          : "";
+      const seats = option.isDonation ? "не место" : `${option.seatsCount} мест`;
+
+      return `${title} × ${option.quantity}${amount} · ${seats}`;
+    })
+    .join("\n");
 }
 
 function formatRegistrationAmount(registration: AdminEventRegistrationRow): string {
