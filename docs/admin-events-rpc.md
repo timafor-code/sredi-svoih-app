@@ -52,6 +52,10 @@ Supabase admin API, and must not freely write to `events` for admin workflows.
   reason text default null)` moves a registration between queue/review states.
 - `admin_mark_registration_attendance(registration_id uuid, attendance_status
   text)` marks a registration as attended or no-show.
+- `register_for_event_occurrence_with_options(p_event_id uuid,
+  p_occurrence_id uuid, p_option_selections jsonb, p_comment text)` creates an
+  authenticated registration for one concrete occurrence and stores selected
+  option snapshots.
 - `register_for_paid_event_simulated(payload jsonb)` creates an authenticated
   MVP/dev-only paid registration simulation for `internal_paid` events.
 - `admin_list_community_locations()` returns community event locations visible
@@ -278,6 +282,76 @@ registration event's community through `has_community_role(...)` with
 CSV export is intentionally not part of this foundation. Web-admin uses Excel
 `.xlsx` for registration exports.
 
+## Occurrence Options Registration RPC
+
+`register_for_event_occurrence_with_options(
+p_event_id uuid,
+p_occurrence_id uuid,
+p_option_selections jsonb default '[]'::jsonb,
+p_comment text default null
+)` registers the authenticated user for one concrete active occurrence and
+saves selected participation option snapshots. It is the backend foundation for
+future mobile occurrence/options registration, but this PR does not connect it
+to mobile buttons or screens.
+
+The RPC requires `auth.uid()`, checks that the event exists, is `published`,
+uses `internal_free` or `internal_paid`, and is visible to the caller. Public
+events are allowed; `members_only` events require `is_active_member(...)`.
+`external_link`, `none`, hidden, unpublished, missing, and inactive occurrence
+targets are rejected without creating an internal registration.
+
+`p_occurrence_id` is required and must belong to `p_event_id` with
+`event_occurrences.status = 'active'`. Occurrence registration windows are
+enforced on the backend:
+
+- `registration_opens_at` in the future rejects the registration.
+- `registration_closes_at` in the past rejects the registration.
+- if both timestamps are `null`, registration is treated as open.
+
+`p_option_selections` is a JSON array:
+
+```json
+[
+  { "optionId": "participation option uuid", "quantity": 1 }
+]
+```
+
+The RPC also accepts `option_id` inside each selection. Selected options must
+belong to the event, be active, be unique in the payload, and satisfy the
+stored quantity rules. Donation options are saved in
+`event_registration_option_selections`, but always store `seats_count = 0` and
+do not consume occurrence capacity. `internal_paid` requires at least one
+active non-donation option that reserves a seat. `internal_free` may omit
+options; when no selected option reserves seats, it falls back to
+`seats_count = 1`.
+
+Capacity priority is:
+
+1. `event_occurrences.capacity`
+2. `events.capacity`
+3. unlimited when both are `null`
+
+Capacity is counted independently per occurrence from
+`event_registrations` rows with the same `occurrence_id` and status in
+`confirmed`, `pending`, or `waitlisted`. Cancelled and rejected rows do not
+consume seats. If the requested seats would exceed capacity, the RPC raises
+`No seats available for this occurrence`; it does not create waitlist rows.
+
+New `internal_free` registrations are created as `confirmed` with
+`payment_status = 'not_required'`. New `internal_paid` registrations are
+created as `pending` with `payment_status = 'pending'` because no production
+payment gateway is implemented in this PR. `payment_id` remains `null`.
+
+Idempotency: if the same authenticated user already has an active
+`pending` / `confirmed` / `waitlisted` registration for the same
+`event_id + occurrence_id`, the RPC returns that existing row and does not
+insert a duplicate or rewrite saved option snapshots. The event and occurrence
+rows are locked during the transaction, so capacity check and insert happen
+atomically for concurrent callers.
+
+The legacy `register_for_event(event_id, seats_count, comment)` remains
+unchanged for backward compatibility.
+
 ## Paid Registration Simulation RPC
 
 `register_for_paid_event_simulated(payload jsonb)` is a temporary MVP/dev flow
@@ -364,7 +438,7 @@ Capacity currently spans three layers:
 - `event_participation_options` define price/type/quantity choices and may have
   option-level `seat_limit` values. These option limits are not a replacement
   for total occurrence capacity.
-- Donation options do not consume seats. In the paid simulation RPC,
+- Donation options do not consume seats. In occurrence/options registration,
   `is_donation = true` forces selected option `seats_count = 0`, even if the
   option's stored capacity flag is true.
 
@@ -373,10 +447,13 @@ Current enforcement:
 - `register_for_event(event_id, seats_count, comment)` is the legacy internal
   free registration RPC. It checks only `events.capacity`, stores no
   `occurrence_id`, and is not occurrence-aware.
-- `register_for_paid_event_simulated(payload)` is occurrence-aware for
-  `internal_paid`: when an event has occurrences, `occurrenceId` is required,
-  and capacity is checked against `coalesce(event_occurrences.capacity,
+- `register_for_event_occurrence_with_options(...)` is occurrence-aware for
+  `internal_free` and `internal_paid`: it requires an active occurrence and
+  checks capacity against `coalesce(event_occurrences.capacity,
   events.capacity)`.
+- `register_for_paid_event_simulated(payload)` is occurrence-aware for
+  `internal_paid`, but remains a temporary test/dev flow and is not a
+  production payment gateway.
 - Admin registration UI reads `occurrence_id`, occurrence title/date, and
   selected participation option snapshots, but it does not create new
   capacity rules.
@@ -384,12 +461,9 @@ Current enforcement:
   current backend does not fully enforce aggregate per-option limits during
   registration.
 
-Known limitation: recurring event capacity is only fully correct for the
-existing `internal_paid` simulated registration path. `internal_free` recurring
-registration still needs a follow-up RPC that accepts an occurrence and option
-selections consistently. The next PR should normalize registration around a
-concrete occurrence target and enforce occurrence total capacity plus
-option-level limits without changing mobile behavior in this PR.
+Payment gateway integration remains out of scope. The new occurrence/options
+RPC stores `internal_paid` rows as `pending` with `payment_status = 'pending'`
+and no `payment_id`.
 
 ## Client Service
 

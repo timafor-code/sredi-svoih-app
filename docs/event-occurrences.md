@@ -31,16 +31,19 @@ Participation options remain event-level in
 `event_participation_options`. A course or holiday can keep one shared option
 set while each occurrence tracks its own capacity.
 
-Registrations can now store `event_registrations.occurrence_id`. The mobile
-`internal_paid` simulation flow passes an occurrence when the event has
-occurrences, while `internal_free` still uses the existing event-level
-`register_for_event` flow.
+Registrations can store `event_registrations.occurrence_id`.
+`register_for_event_occurrence_with_options` is the backend foundation for
+creating one authenticated registration against a concrete occurrence with
+selected participation option snapshots. Existing mobile UI wiring is
+unchanged in this PR: the current `internal_paid` simulation flow still passes
+an occurrence when the event has occurrences, while `internal_free` still uses
+the legacy event-level `register_for_event` flow.
 
-Database uniqueness is occurrence-aware: active registrations (`pending`,
-`confirmed`, `waitlisted`, `attended`) are unique per
-`event_id + user_id + occurrence_id`, while events without an occurrence remain
-unique per `event_id + user_id`. Cancelled, rejected, and no-show rows do not
-block a new registration target.
+The new occurrence/options RPC enforces idempotency in the transaction: if the
+same user already has an active `pending`, `confirmed`, or `waitlisted`
+registration for the same `event_id + occurrence_id`, it returns that row
+instead of creating a duplicate. The temporary paid simulation flow remains a
+test/dev path and can create multiple rows by design.
 
 ## Event kinds
 
@@ -111,10 +114,42 @@ The RPC layer follows the same visibility checks:
 - `admin_replace_event_occurrences(p_event_id, p_occurrences)` replaces the
   occurrence list for one event without touching participation options or
   existing registrations
+- `register_for_event_occurrence_with_options(...)` creates an authenticated
+  registration for one active occurrence and stores selected participation
+  option snapshots without changing the legacy `register_for_event` flow
 
 `admin_replace_event_occurrences` accepts both camelCase and snake_case payload
 keys. It raises `Cannot delete occurrence with registrations` if a replace
 payload omits an existing occurrence that already has registrations.
+
+## Occurrence Registration Backend
+
+`register_for_event_occurrence_with_options` requires a published event, an
+active occurrence that belongs to that event, and a caller who can see the
+event. `external_link` and `none` registration modes are rejected because they
+do not create internal rows.
+
+The capacity order for recurring events is:
+
+1. `event_occurrences.capacity`
+2. `events.capacity`
+3. unlimited if both values are `null`
+
+Capacity is counted per `occurrence_id`, so two occurrences of the same parent
+event have independent totals. The RPC counts existing `confirmed`, `pending`,
+and `waitlisted` rows for that occurrence, then inserts the new row inside the
+same database transaction while the event and occurrence rows are locked.
+
+Participation options remain event-level. Selected option quantities become
+registration seats only when the selected option is not a donation and
+`counts_toward_capacity = true`. Donation selections are still saved in
+`event_registration_option_selections`, but they store `seats_count = 0`.
+
+For `internal_free`, empty selections or donation-only selections fall back to
+one reserved seat. For `internal_paid`, the RPC requires at least one active
+non-donation option that reserves a seat, creates the registration as
+`pending`, and stores `payment_status = 'pending'`. No Stripe, PayPlus,
+Tranzila, checkout, or other payment gateway is implemented here.
 
 ## Mobile registration windows
 
@@ -180,7 +215,8 @@ Occurrences:
 - May 26, 19:30
 
 Participation options are shared by the parent event. Capacity should be
-counted separately for each occurrence in a future registration RPC.
+counted separately for each occurrence by
+`register_for_event_occurrence_with_options`.
 
 ### Sunday school
 
