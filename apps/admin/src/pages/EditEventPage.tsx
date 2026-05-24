@@ -7,9 +7,11 @@ import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
 import { updateAdminEvent } from "../services/adminEventsService";
+import { listAdminCommunityLocations } from "../services/communityLocationsService";
 import { listAdminEventCategories } from "../services/eventCategoriesService";
 import { getEventStatusLabel, getEventVisibilityLabel } from "../types/events";
 import type { AdminEvent, AdminEventMutationInput } from "../types/events";
+import type { AdminCommunityLocation } from "../types/communityLocations";
 import type { AdminEventCategory } from "../types/eventCategories";
 
 type EditEventPageProps = {
@@ -27,6 +29,9 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
   const [categories, setCategories] = useState<AdminEventCategory[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [categoriesError, setCategoriesError] = useState<string | null>(null);
+  const [communityLocations, setCommunityLocations] = useState<AdminCommunityLocation[]>([]);
+  const [communityLocationsLoading, setCommunityLocationsLoading] = useState(false);
+  const [communityLocationsError, setCommunityLocationsError] = useState<string | null>(null);
 
   const loadCategories = useCallback(async () => {
     if (!communityId) {
@@ -57,6 +62,34 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
   useEffect(() => {
     void loadCategories();
   }, [loadCategories]);
+
+  const loadCommunityLocations = useCallback(async () => {
+    if (!communityId) {
+      setCommunityLocations([]);
+      setCommunityLocationsLoading(false);
+      setCommunityLocationsError(null);
+      return;
+    }
+
+    setCommunityLocationsLoading(true);
+    setCommunityLocationsError(null);
+
+    try {
+      const nextLocations = await listAdminCommunityLocations(communityId);
+      setCommunityLocations(nextLocations);
+    } catch (error) {
+      setCommunityLocations([]);
+      setCommunityLocationsError(
+        error instanceof Error ? error.message : "Не удалось загрузить адреса общины.",
+      );
+    } finally {
+      setCommunityLocationsLoading(false);
+    }
+  }, [communityId]);
+
+  useEffect(() => {
+    void loadCommunityLocations();
+  }, [loadCommunityLocations]);
 
 
   useEffect(() => {
@@ -122,20 +155,17 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
           categories={categories}
           categoriesError={categoriesError}
           categoriesLoading={categoriesLoading}
+          communityLocations={communityLocations}
+          communityLocationsError={communityLocationsError}
+          communityLocationsLoading={communityLocationsLoading}
           onCancel={onBackToList}
-          registrationModeSlot={({
-            registrationMode,
-            requiresApproval,
-            setRequiresApproval,
-          }) =>
+          registrationModeSlot={({ registrationMode }) =>
             registrationMode === "internal_paid" ? (
               <div className="event-form-participation-slot">
                 <ParticipationOptionsConstructor
                   defaultPriceCurrency={currentEvent.priceCurrency}
                   eventCapacity={currentEvent.capacity}
                   eventId={currentEvent.id}
-                  onRequiresApprovalChange={setRequiresApproval}
-                  requiresApproval={requiresApproval}
                 />
               </div>
             ) : null

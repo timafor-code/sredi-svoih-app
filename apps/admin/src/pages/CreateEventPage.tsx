@@ -5,10 +5,12 @@ import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
 import { createAdminEvent } from "../services/adminEventsService";
+import { listAdminCommunityLocations } from "../services/communityLocationsService";
 import { listAdminEventCategories } from "../services/eventCategoriesService";
 import { useAdminAuth } from "../store/useAdminAuth";
 import { getEventStatusLabel, getEventVisibilityLabel } from "../types/events";
 import type { AdminEvent, AdminEventMutationInput } from "../types/events";
+import type { AdminCommunityLocation } from "../types/communityLocations";
 import type { AdminEventCategory } from "../types/eventCategories";
 
 type CreateEventPageProps = {
@@ -28,6 +30,9 @@ export function CreateEventPage({ onBackToList, onCreated }: CreateEventPageProp
   const [categories, setCategories] = useState<AdminEventCategory[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [categoriesError, setCategoriesError] = useState<string | null>(null);
+  const [communityLocations, setCommunityLocations] = useState<AdminCommunityLocation[]>([]);
+  const [communityLocationsLoading, setCommunityLocationsLoading] = useState(false);
+  const [communityLocationsError, setCommunityLocationsError] = useState<string | null>(null);
 
   const loadCategories = useCallback(async () => {
     if (!communityId) {
@@ -58,6 +63,34 @@ export function CreateEventPage({ onBackToList, onCreated }: CreateEventPageProp
   useEffect(() => {
     void loadCategories();
   }, [loadCategories]);
+
+  const loadCommunityLocations = useCallback(async () => {
+    if (!communityId) {
+      setCommunityLocations([]);
+      setCommunityLocationsLoading(false);
+      setCommunityLocationsError(null);
+      return;
+    }
+
+    setCommunityLocationsLoading(true);
+    setCommunityLocationsError(null);
+
+    try {
+      const nextLocations = await listAdminCommunityLocations(communityId);
+      setCommunityLocations(nextLocations);
+    } catch (error) {
+      setCommunityLocations([]);
+      setCommunityLocationsError(
+        error instanceof Error ? error.message : "Не удалось загрузить адреса общины.",
+      );
+    } finally {
+      setCommunityLocationsLoading(false);
+    }
+  }, [communityId]);
+
+  useEffect(() => {
+    void loadCommunityLocations();
+  }, [loadCommunityLocations]);
 
 
   const handleSubmit = async (input: AdminEventMutationInput) => {
@@ -134,6 +167,9 @@ export function CreateEventPage({ onBackToList, onCreated }: CreateEventPageProp
           categories={categories}
           categoriesError={categoriesError}
           categoriesLoading={categoriesLoading}
+          communityLocations={communityLocations}
+          communityLocationsError={communityLocationsError}
+          communityLocationsLoading={communityLocationsLoading}
           mode="create"
           notice={
             <div className="event-form-notice">

@@ -54,6 +54,14 @@ Supabase admin API, and must not freely write to `events` for admin workflows.
   text)` marks a registration as attended or no-show.
 - `register_for_paid_event_simulated(payload jsonb)` creates an authenticated
   MVP/dev-only paid registration simulation for `internal_paid` events.
+- `admin_list_community_locations()` returns community event locations visible
+  to the authenticated caller. `admin` receives active and archived rows for
+  their communities; `event_manager` receives active rows only.
+- `admin_create_community_location(payload jsonb)`,
+  `admin_update_community_location(location_id uuid, payload jsonb)`, and
+  `admin_archive_community_location(location_id uuid)` manage the event
+  location dictionary for callers with an active `admin` role in that
+  community.
 - `admin_publish_import_item(import_item_id uuid, payload jsonb)` creates or
   updates/links an event from a reviewed import item with
   `source_type = 'website_scrape'` and `manual_override = true`.
@@ -315,6 +323,73 @@ For the simulation, the registration is marked with
 The `payment_id` on `event_registrations` is text so web-admin and Excel export
 can display the simulated marker directly. This value is not a row in
 `payments`.
+
+## Community Event Locations
+
+`community_event_locations` is the DB-backed dictionary for web-admin event
+location selection. It replaces manual typing in the event create/edit form
+without removing the legacy `events.location_name` and `events.address`
+columns.
+
+Each row belongs to one `community_id` and stores `title`, `address`,
+`is_default`, `is_active`, `sort_order`, and timestamps. At most one row per
+community can be marked default. A dev/test fallback row is inserted for
+communities that have no locations yet; it is deliberately labelled as a
+placeholder and must be replaced by an admin in Settings.
+
+The web-admin form reads locations through `admin_list_community_locations()`
+using the normal authenticated Supabase client. On save, the selected location
+is copied into the event payload as:
+
+```text
+locationName = community_event_locations.title
+address = community_event_locations.address
+```
+
+Archived locations are not offered for new selections. If an existing event has
+legacy `locationName` / `address` values that do not match an active dictionary
+row, the UI shows a fallback option named "Текущее место из события" so the old
+data is not lost before an admin chooses a new dictionary address.
+
+## Capacity Model
+
+Capacity currently spans three layers:
+
+- `events.capacity` is the event-level fallback/default. For a single event it
+  is the only total event capacity. For recurring parents it is the parent
+  default used when a concrete occurrence does not set its own capacity.
+- `event_occurrences.capacity` is the correct total limit for a concrete
+  Shabbat, course session, holiday session, or other dated occurrence. If it is
+  `null`, registration code should fall back to `events.capacity`.
+- `event_participation_options` define price/type/quantity choices and may have
+  option-level `seat_limit` values. These option limits are not a replacement
+  for total occurrence capacity.
+- Donation options do not consume seats. In the paid simulation RPC,
+  `is_donation = true` forces selected option `seats_count = 0`, even if the
+  option's stored capacity flag is true.
+
+Current enforcement:
+
+- `register_for_event(event_id, seats_count, comment)` is the legacy internal
+  free registration RPC. It checks only `events.capacity`, stores no
+  `occurrence_id`, and is not occurrence-aware.
+- `register_for_paid_event_simulated(payload)` is occurrence-aware for
+  `internal_paid`: when an event has occurrences, `occurrenceId` is required,
+  and capacity is checked against `coalesce(event_occurrences.capacity,
+  events.capacity)`.
+- Admin registration UI reads `occurrence_id`, occurrence title/date, and
+  selected participation option snapshots, but it does not create new
+  capacity rules.
+- Option-level `seat_limit` is stored and shown in admin constructors, but the
+  current backend does not fully enforce aggregate per-option limits during
+  registration.
+
+Known limitation: recurring event capacity is only fully correct for the
+existing `internal_paid` simulated registration path. `internal_free` recurring
+registration still needs a follow-up RPC that accepts an occurrence and option
+selections consistently. The next PR should normalize registration around a
+concrete occurrence target and enforce occurrence total capacity plus
+option-level limits without changing mobile behavior in this PR.
 
 ## Client Service
 
