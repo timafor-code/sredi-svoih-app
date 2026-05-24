@@ -2178,6 +2178,29 @@ a {
   line-height: 1.55;
 }
 
+.event-form-selected-location {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(53, 199, 89, 0.18);
+  border-radius: var(--radius);
+  padding: 11px 13px;
+  background: rgba(53, 199, 89, 0.07);
+}
+
+.event-form-selected-location span {
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.event-form-selected-location strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .event-create-actions {
   display: flex;
   flex-wrap: wrap;
@@ -5297,6 +5320,100 @@ a {
   text-align: right;
 }
 
+.settings-locations {
+  display: grid;
+  max-width: 940px;
+  gap: 16px;
+}
+
+.settings-locations__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.settings-locations__head div {
+  display: grid;
+  gap: 5px;
+}
+
+.settings-locations__head span {
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.settings-locations__head h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.settings-location-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 160px) auto auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.settings-location-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-location-list {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-location-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 58px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 11px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.settings-location-row__main {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.settings-location-row__main strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-location-row__main span {
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-location-row__badges,
+.settings-location-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
 .empty-state {
   display: grid;
   width: min(100%, 520px);
@@ -5694,7 +5811,9 @@ a {
   .registration-option-row,
   .event-action-dialog__states,
   .event-form-grid--two,
-  .event-form-grid--time {
+  .event-form-grid--time,
+  .settings-location-form,
+  .settings-location-row {
     grid-template-columns: 1fr;
   }
 
@@ -5734,7 +5853,9 @@ a {
   .event-create-actions,
   .event-form-sticky-actions .button,
   .event-action-dialog__actions .button,
-  .event-create-success .button {
+  .event-create-success .button,
+  .settings-location-form__actions .button,
+  .settings-location-row__actions .button {
     width: 100%;
   }
 
@@ -5773,10 +5894,16 @@ a {
 
   .option-list__item,
   .settings-list__row,
+  .settings-locations__head,
   .invite-card div,
   .registration-card__head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .settings-location-row__badges,
+  .settings-location-row__actions {
+    justify-content: flex-start;
   }
 }
 

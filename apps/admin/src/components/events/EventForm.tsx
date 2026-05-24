@@ -26,18 +26,18 @@ import {
   EVENT_VISIBILITY_LABELS,
   REGISTRATION_MODE_LABELS,
 } from "../../types/events";
+import type { AdminCommunityLocation } from "../../types/communityLocations";
 import type { AdminEventCategory } from "../../types/eventCategories";
 
 const DEFAULT_TIMEZONE = "Europe/Moscow";
 const DEFAULT_PRICE_CURRENCY = "RUB";
+const LEGACY_LOCATION_VALUE = "__current_event_location__";
 
 type EventFormMode = "create" | "edit";
 type EventFormActionsPlacement = "bottom" | "stickyTop";
 
 type RegistrationModeSlotContext = {
   registrationMode: string;
-  requiresApproval: boolean;
-  setRequiresApproval: (value: boolean) => void;
 };
 
 type EventFormState = {
@@ -62,17 +62,13 @@ type EventFormState = {
   registrationMode: string;
   registrationUrl: string;
   capacity: string;
-  waitlistEnabled: boolean;
-  requiresApproval: boolean;
-  priceAmount: string;
-  priceCurrency: string;
 };
 
 type StringFormField = {
   [Field in keyof EventFormState]: EventFormState[Field] extends string ? Field : never;
 }[keyof EventFormState];
 
-type FormErrorKey = StringFormField | "isPermanent" | "waitlistEnabled" | "requiresApproval" | "form";
+type FormErrorKey = StringFormField | "isPermanent" | "form";
 type FormErrors = Partial<Record<FormErrorKey, string>>;
 
 type EventFormProps = {
@@ -81,6 +77,9 @@ type EventFormProps = {
   categories?: AdminEventCategory[];
   categoriesLoading?: boolean;
   categoriesError?: string | null;
+  communityLocations?: AdminCommunityLocation[];
+  communityLocationsLoading?: boolean;
+  communityLocationsError?: string | null;
   disabled?: boolean;
   disabledMessage?: string | null;
   forceDraftHidden?: boolean;
@@ -120,10 +119,6 @@ const defaultForm: EventFormState = {
   registrationMode: "none",
   registrationUrl: "",
   capacity: "",
-  waitlistEnabled: false,
-  requiresApproval: false,
-  priceAmount: "",
-  priceCurrency: DEFAULT_PRICE_CURRENCY,
 };
 
 const statusOptions = ADMIN_EVENT_STATUSES.map((value) => ({
@@ -157,6 +152,9 @@ export function EventForm({
   categories = [],
   categoriesLoading = false,
   categoriesError = null,
+  communityLocations = [],
+  communityLocationsLoading = false,
+  communityLocationsError = null,
   disabled = false,
   disabledMessage = null,
   forceDraftHidden = false,
@@ -247,6 +245,78 @@ export function EventForm({
 
   const currentCategory = categories.find((category) => category.slug === currentCategorySlug) ?? null;
   const currentCategoryInactive = Boolean(currentCategory && !currentCategory.isActive);
+  const activeCommunityLocations = useMemo(
+    () =>
+      [...communityLocations]
+        .filter((location) => location.isActive)
+        .sort((left, right) => {
+          if (left.isDefault !== right.isDefault) {
+            return left.isDefault ? -1 : 1;
+          }
+
+          return left.sortOrder === right.sortOrder
+            ? left.title.localeCompare(right.title, "ru")
+            : left.sortOrder - right.sortOrder;
+        }),
+    [communityLocations],
+  );
+
+  const currentLocationValue = useMemo(() => {
+    const matchingLocation = activeCommunityLocations.find((location) =>
+      isSameLocation(location, form.locationName, form.address),
+    );
+
+    if (matchingLocation) {
+      return matchingLocation.id;
+    }
+
+    if (cleanString(form.locationName) || cleanString(form.address)) {
+      return LEGACY_LOCATION_VALUE;
+    }
+
+    return "";
+  }, [activeCommunityLocations, form.address, form.locationName]);
+
+  const currentSelectedLocation =
+    activeCommunityLocations.find((location) => location.id === currentLocationValue) ?? null;
+
+  const locationOptions = useMemo(() => {
+    if (communityLocationsLoading) {
+      if (currentLocationValue === LEGACY_LOCATION_VALUE) {
+        return [
+          { label: "Текущее место из события", value: LEGACY_LOCATION_VALUE },
+          { label: "Загружаем адреса...", value: "" },
+        ];
+      }
+
+      return [{ label: "Загружаем адреса...", value: "" }];
+    }
+
+    const options = activeCommunityLocations.map((location) => ({
+      label: `${location.title}${location.isDefault ? " (по умолчанию)" : ""} — ${location.address}`,
+      value: location.id,
+    }));
+
+    if (currentLocationValue === "" && options.length > 0) {
+      options.unshift({
+        label: "Выберите место проведения",
+        value: "",
+      });
+    }
+
+    if (currentLocationValue === LEGACY_LOCATION_VALUE) {
+      options.unshift({
+        label: "Текущее место из события",
+        value: LEGACY_LOCATION_VALUE,
+      });
+    }
+
+    if (options.length === 0) {
+      options.push({ label: "Адреса не добавлены", value: "" });
+    }
+
+    return options;
+  }, [activeCommunityLocations, communityLocationsLoading, currentLocationValue]);
 
   useEffect(() => {
     if (mode !== "create" || form.category || categoryOptions.length === 0) {
@@ -261,6 +331,38 @@ export function EventForm({
     ));
   }, [categoryOptions, form.category, mode]);
 
+  useEffect(() => {
+    if (
+      mode !== "create" ||
+      communityLocationsLoading ||
+      form.locationName ||
+      form.address
+    ) {
+      return;
+    }
+
+    const defaultLocation = activeCommunityLocations.find((location) => location.isDefault);
+    if (!defaultLocation) {
+      return;
+    }
+
+    setForm((current) =>
+      current.locationName || current.address
+        ? current
+        : {
+            ...current,
+            locationName: defaultLocation.title,
+            address: defaultLocation.address,
+          },
+    );
+  }, [
+    activeCommunityLocations,
+    communityLocationsLoading,
+    form.address,
+    form.locationName,
+    mode,
+  ]);
+
   const updateField = <Field extends keyof EventFormState>(
     field: Field,
     value: EventFormState[Field],
@@ -269,12 +371,25 @@ export function EventForm({
       return;
     }
 
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => {
+      const next = { ...current, [field]: value };
+
+      if (
+        field === "registrationMode" &&
+        typeof value === "string" &&
+        value !== "external_link"
+      ) {
+        next.registrationUrl = "";
+      }
+
+      return next;
+    });
     setErrors((current) => ({
       ...current,
       [field]: undefined,
       endDate: field === "isPermanent" && value === true ? undefined : current.endDate,
       endTime: field === "isPermanent" && value === true ? undefined : current.endTime,
+      registrationUrl: field === "registrationMode" ? undefined : current.registrationUrl,
       form: undefined,
     }));
 
@@ -292,10 +407,33 @@ export function EventForm({
     typeof registrationModeSlot === "function"
       ? registrationModeSlot({
           registrationMode: form.registrationMode,
-          requiresApproval: form.requiresApproval,
-          setRequiresApproval: (value) => updateField("requiresApproval", value),
         })
       : registrationModeSlot;
+
+  const handleLocationSelect = (locationId: string) => {
+    if (locationId === LEGACY_LOCATION_VALUE) {
+      return;
+    }
+
+    const location = activeCommunityLocations.find((candidate) => candidate.id === locationId);
+
+    setForm((current) => ({
+      ...current,
+      locationName: location?.title ?? "",
+      address: location?.address ?? "",
+    }));
+    setErrors((current) => ({
+      ...current,
+      locationName: undefined,
+      address: undefined,
+      form: undefined,
+    }));
+
+    if (mode === "edit") {
+      setIsDirty(true);
+      setHasSuccessfulEditSave(false);
+    }
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -489,15 +627,16 @@ export function EventForm({
           <h2>Место и афиша</h2>
         </div>
         <div className="event-form-grid event-form-grid--two">
-          <TextField
-            label="Название места"
-            onChange={(value) => updateField("locationName", value)}
-            value={form.locationName}
-          />
-          <TextField
-            label="Адрес"
-            onChange={(value) => updateField("address", value)}
-            value={form.address}
+          <SelectField
+            disabled={
+              communityLocationsLoading ||
+              (activeCommunityLocations.length === 0 &&
+                currentLocationValue !== LEGACY_LOCATION_VALUE)
+            }
+            label="Место проведения"
+            onChange={handleLocationSelect}
+            options={locationOptions}
+            value={currentLocationValue}
           />
           <TextField
             label="Ссылка на изображение"
@@ -505,6 +644,28 @@ export function EventForm({
             placeholder="https://..."
             value={form.imageUrl}
           />
+          {communityLocationsError ? (
+            <div className="event-form-notice event-form-field--wide" role="alert">
+              {communityLocationsError}
+            </div>
+          ) : null}
+          {!communityLocationsLoading && activeCommunityLocations.length === 0 ? (
+            <div className="event-form-notice event-form-field--wide">
+              Добавьте адрес общины в Настройках
+            </div>
+          ) : null}
+          {currentLocationValue === LEGACY_LOCATION_VALUE ? (
+            <div className="event-form-notice event-form-field--wide">
+              Текущее место из события сохранено как fallback. Выберите адрес из
+              справочника, когда он будет добавлен в Настройках.
+            </div>
+          ) : null}
+          {currentSelectedLocation ? (
+            <div className="event-form-selected-location event-form-field--wide">
+              <span>{currentSelectedLocation.title}</span>
+              <strong>{currentSelectedLocation.address}</strong>
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -544,13 +705,15 @@ export function EventForm({
             options={registrationModeOptions}
             value={form.registrationMode}
           />
-          <TextField
-            error={errors.registrationUrl}
-            label="Ссылка регистрации"
-            onChange={(value) => updateField("registrationUrl", value)}
-            placeholder="https://..."
-            value={form.registrationUrl}
-          />
+          {form.registrationMode === "external_link" ? (
+            <TextField
+              error={errors.registrationUrl}
+              label="Ссылка регистрации"
+              onChange={(value) => updateField("registrationUrl", value)}
+              placeholder="https://..."
+              value={form.registrationUrl}
+            />
+          ) : null}
           <TextField
             error={errors.capacity}
             label="Лимит мест"
@@ -558,32 +721,6 @@ export function EventForm({
             onChange={(value) => updateField("capacity", value)}
             type="number"
             value={form.capacity}
-          />
-          <TextField
-            error={errors.priceAmount}
-            label="Стоимость"
-            min={0}
-            onChange={(value) => updateField("priceAmount", value)}
-            type="number"
-            value={form.priceAmount}
-          />
-          <TextField
-            label="Валюта"
-            onChange={(value) => updateField("priceCurrency", value)}
-            value={form.priceCurrency}
-          />
-        </div>
-
-        <div className="event-form-checks">
-          <CheckboxField
-            checked={form.waitlistEnabled}
-            label="Лист ожидания"
-            onChange={(value) => updateField("waitlistEnabled", value)}
-          />
-          <CheckboxField
-            checked={form.requiresApproval}
-            label="Требует подтверждения"
-            onChange={(value) => updateField("requiresApproval", value)}
           />
         </div>
 
@@ -772,12 +909,8 @@ function buildFormFromEvent(event: AdminEvent): EventFormState {
     status: event.status,
     visibility: event.visibility,
     registrationMode: event.registrationMode,
-    registrationUrl: event.registrationUrl ?? "",
+    registrationUrl: event.registrationMode === "external_link" ? event.registrationUrl ?? "" : "",
     capacity: event.capacity === null ? "" : String(event.capacity),
-    waitlistEnabled: event.waitlistEnabled,
-    requiresApproval: event.requiresApproval,
-    priceAmount: event.priceAmount === null ? "" : String(event.priceAmount),
-    priceCurrency: event.priceCurrency ?? DEFAULT_PRICE_CURRENCY,
   };
 }
 
@@ -874,11 +1007,6 @@ function validateForm(
     errors.capacity = "Лимит мест должен быть положительным целым числом.";
   }
 
-  const priceAmount = parseIntegerField(form.priceAmount, true);
-  if (priceAmount.error) {
-    errors.priceAmount = "Стоимость должна быть нулём или положительным целым числом.";
-  }
-
   if (
     Object.keys(errors).length > 0 ||
     !startsAt ||
@@ -912,14 +1040,30 @@ function validateForm(
       visibility,
       status,
       registrationMode,
-      registrationUrl: cleanString(form.registrationUrl),
+      registrationUrl:
+        registrationMode === "external_link" ? cleanString(form.registrationUrl) : null,
       capacity: capacity.value,
-      waitlistEnabled: form.waitlistEnabled,
-      requiresApproval: form.requiresApproval,
-      priceAmount: priceAmount.value,
-      priceCurrency: cleanString(form.priceCurrency)?.toUpperCase() ?? DEFAULT_PRICE_CURRENCY,
+      waitlistEnabled: false,
+      requiresApproval: false,
+      priceAmount: null,
+      priceCurrency: DEFAULT_PRICE_CURRENCY,
     },
   };
+}
+
+function isSameLocation(
+  location: AdminCommunityLocation,
+  locationName: string,
+  address: string,
+): boolean {
+  return (
+    normalizeLocationText(location.title) === normalizeLocationText(locationName) &&
+    normalizeLocationText(location.address) === normalizeLocationText(address)
+  );
+}
+
+function normalizeLocationText(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("ru");
 }
 
 function cleanString(value: string): string | null {

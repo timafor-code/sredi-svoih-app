@@ -58,8 +58,6 @@ type ParticipationOptionsConstructorProps = {
   eventId: string;
   eventCapacity: number | null;
   defaultPriceCurrency?: string | null;
-  requiresApproval?: boolean;
-  onRequiresApprovalChange?: (value: boolean) => void;
 };
 
 type DraftOption = {
@@ -303,8 +301,6 @@ export function ParticipationOptionsConstructor({
   eventId,
   eventCapacity,
   defaultPriceCurrency,
-  requiresApproval = false,
-  onRequiresApprovalChange,
 }: ParticipationOptionsConstructorProps) {
   const fallbackCurrency =
     defaultPriceCurrency && defaultPriceCurrency.trim()
@@ -648,15 +644,6 @@ export function ParticipationOptionsConstructor({
             <div className="participation-setting-item">
               <ToggleSwitch checked disabled label="Использовать варианты участия" />
               <span>Использовать варианты участия</span>
-            </div>
-            <div className="participation-setting-item">
-              <ToggleSwitch
-                checked={requiresApproval}
-                disabled={!onRequiresApprovalChange}
-                label="Требуется подтверждение"
-                onChange={onRequiresApprovalChange}
-              />
-              <span>Требуется подтверждение</span>
             </div>
             <div className="participation-setting-item participation-setting-item--muted">
               <ToggleSwitch checked={false} disabled label="Разрешить комментарий" />
