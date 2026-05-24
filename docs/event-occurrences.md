@@ -87,6 +87,13 @@ the generator skips existing `starts_at` values, appends only new drafts,
 recalculates `sort_order`, and saves through
 `admin_replace_event_occurrences`.
 
+When the web-admin occurrence constructor opens, it also checks loaded remote
+occurrences and automatically archives active sessions whose `ends_at` (or
+`starts_at` when `ends_at` is missing) is already in the past. This uses the
+same authenticated `admin_replace_event_occurrences` RPC flow as manual admin
+edits. The parent `events` row is not archived, and
+`event_registrations` rows and statuses are not changed.
+
 ## Access
 
 Active occurrences are visible when their parent event is visible:
