@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { getEffectiveEventStartsAt } from '@/lib/eventTime';
 import { listEventCategories } from '@/services/eventCategoriesService';
 import { getEventById, listPublishedEvents } from '@/services/eventsService';
 import {
@@ -158,6 +159,9 @@ function mapEvent(
   position = 1,
 ): EventItem {
   const display = resolveCategoryDisplay(event, index);
+  const effectiveStartsAt = event.effectiveStartsAt ?? event.nextOccurrence?.startsAt ?? null;
+  const effectiveEndsAt = event.effectiveEndsAt ?? event.nextOccurrence?.endsAt ?? null;
+  const dateStartsAt = getEffectiveEventStartsAt(event);
 
   return {
     id: event.id,
@@ -167,10 +171,14 @@ function mapEvent(
     subtitle: event.subtitle ?? undefined,
     shortDescription: event.shortDescription,
     description: event.description,
-    date: formatEventDate(event.startsAt),
+    date: formatEventDate(dateStartsAt),
     featured: position === 0,
     startsAt: event.startsAt,
     endsAt: event.endsAt,
+    nextOccurrence: event.nextOccurrence ?? null,
+    effectiveStartsAt,
+    effectiveEndsAt,
+    hasOccurrences: event.hasOccurrences,
     timezone: event.timezone,
     locationName: event.locationName,
     address: event.address,

@@ -18,7 +18,11 @@ import {
   getRegistrationStatusTitle,
   useEventRegistrationAction,
 } from '@/hooks/useEventRegistrationAction';
-import { isEventPast } from '@/lib/eventTime';
+import {
+  getEffectiveEventEndsAt,
+  getEffectiveEventStartsAt,
+  isEventPast,
+} from '@/lib/eventTime';
 import {
   formatRegistrationWindowLabel,
   getNearestFutureOpening,
@@ -100,21 +104,25 @@ function isSameCalendarDay(first: string, second: string, timeZone?: string | nu
 }
 
 function formatEventDate(event: EventItem): string {
-  if (!event.startsAt) {
+  const startsAt = getEffectiveEventStartsAt(event);
+  const endsAt = getEffectiveEventEndsAt(event);
+  const prefix = event.effectiveStartsAt || event.nextOccurrence ? 'Ближайшая дата: ' : '';
+
+  if (!startsAt) {
     return 'Дата уточняется';
   }
 
-  const start = formatDateTime(event.startsAt, event.timezone);
+  const start = formatDateTime(startsAt, event.timezone);
 
-  if (!event.endsAt) {
-    return start;
+  if (!endsAt) {
+    return `${prefix}${start}`;
   }
 
-  const end = isSameCalendarDay(event.startsAt, event.endsAt, event.timezone)
-    ? formatDateTime(event.endsAt, event.timezone, false)
-    : formatDateTime(event.endsAt, event.timezone);
+  const end = isSameCalendarDay(startsAt, endsAt, event.timezone)
+    ? formatDateTime(endsAt, event.timezone, false)
+    : formatDateTime(endsAt, event.timezone);
 
-  return `${start} - ${end}`;
+  return `${prefix}${start} - ${end}`;
 }
 
 function hasEventPassed(event: EventItem): boolean {

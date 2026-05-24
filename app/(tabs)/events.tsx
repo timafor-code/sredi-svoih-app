@@ -22,7 +22,13 @@ import {
   getEventRegistrationActionTitle,
   useEventRegistrationAction,
 } from '@/hooks/useEventRegistrationAction';
-import { getEventSortTime, isEventPast, parseEventTime } from '@/lib/eventTime';
+import {
+  getEffectiveEventEndsAt,
+  getEffectiveEventStartsAt,
+  getEventSortTime,
+  isEventPast,
+  parseEventTime,
+} from '@/lib/eventTime';
 import { useAuthStore } from '@/store/useAuthStore';
 import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
@@ -105,7 +111,8 @@ function eventMatchesTimeFilter(event: EventItem, filter: EventTimeFilter, now: 
     return past;
   }
 
-  const hasAnyTime = parseEventTime(event.startsAt) !== null || parseEventTime(event.endsAt) !== null;
+  const hasAnyTime = parseEventTime(getEffectiveEventStartsAt(event)) !== null
+    || parseEventTime(getEffectiveEventEndsAt(event)) !== null;
 
   if (!hasAnyTime && event.isPermanent !== true) {
     return false;

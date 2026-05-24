@@ -12,6 +12,21 @@ visibility, registration mode, location defaults, and participation options.
 its own `starts_at`, optional `ends_at`, timezone, optional registration
 window, optional capacity, waitlist/approval flags, status, and sort order.
 
+In mobile feeds, recurring-like parent events do not use the parent
+`events.starts_at` as the user-facing date when active occurrences are
+available. The app loads visible active occurrences for `shabbat`, `course`,
+`sunday_school`, `holiday`, and permanent parent events, then selects the
+nearest occurrence whose `ends_at` (or `starts_at` when `ends_at` is missing) is
+not in the past. That occurrence becomes the event's effective date:
+`effectiveStartsAt`, `effectiveEndsAt`, and `nextOccurrence`.
+
+This is a read-side auto-archiving behavior for the mobile feed: past
+occurrences stop participating in "Upcoming" automatically, without changing
+their database status. If a recurring parent has active occurrences but none in
+the future, the parent card is hidden from "Upcoming". The parent `events` row
+stays `published` because it is the long-lived card/series and may receive new
+future occurrences later.
+
 Participation options remain event-level in
 `event_participation_options`. A course or holiday can keep one shared option
 set while each occurrence tracks its own capacity.
