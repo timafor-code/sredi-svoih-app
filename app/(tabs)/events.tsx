@@ -30,7 +30,11 @@ import {
   parseEventTime,
 } from '@/lib/eventTime';
 import { useAuthStore } from '@/store/useAuthStore';
-import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStore';
+import {
+  findActiveRegistrationForTarget,
+  isActiveEventRegistration,
+  useEventsStore,
+} from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
 import type { EventItem, EventRegistration } from '@/types/event';
 
@@ -141,6 +145,17 @@ function markFirstEventFeatured(events: EventItem[]): EventItem[] {
     ...event,
     featured: index === 0,
   }));
+}
+
+function getRegistrationForEventTarget(
+  registrations: EventRegistration[],
+  event: EventItem,
+): EventRegistration | null {
+  const occurrenceId = event.nextOccurrence?.id ?? null;
+
+  return occurrenceId
+    ? findActiveRegistrationForTarget(registrations, event.id, occurrenceId)
+    : findActiveRegistrationForTarget(registrations, event.id);
 }
 
 type EventFilterChipProps = {
@@ -430,19 +445,15 @@ export default function EventsScreen() {
     );
   }, [events, filter, normalizedSearch, timeFilter]);
 
-  const registrationByEventId = useMemo(() => {
-    const registrationMap = new Map<string, EventRegistration>();
+  const registrationByEventTarget = useMemo(() => {
+    const registrationMap = new Map<string, EventRegistration | null>();
 
-    myRegistrations.forEach((registration) => {
-      const currentRegistration = registrationMap.get(registration.eventId);
-
-      if (!currentRegistration || isActiveEventRegistration(registration)) {
-        registrationMap.set(registration.eventId, registration);
-      }
+    items.forEach((event) => {
+      registrationMap.set(event.id, getRegistrationForEventTarget(myRegistrations, event));
     });
 
     return registrationMap;
-  }, [myRegistrations]);
+  }, [items, myRegistrations]);
 
   const handleOpenEvent = useCallback((event: EventItem) => {
     router.push({ pathname: '/events/[id]', params: { id: event.id } });
@@ -558,9 +569,9 @@ export default function EventsScreen() {
         <View key={event.id}>
           <EventCard
             event={event}
-            registration={registrationByEventId.get(event.id) ?? null}
+            registration={registrationByEventTarget.get(event.id) ?? null}
             registering={registeringEventId === event.id}
-            cancelling={cancellingRegistrationId === registrationByEventId.get(event.id)?.id}
+            cancelling={cancellingRegistrationId === registrationByEventTarget.get(event.id)?.id}
             onRegister={handleRegistrationAction}
             onCancel={handleCancelRegistration}
             onOpen={handleOpenEvent}
