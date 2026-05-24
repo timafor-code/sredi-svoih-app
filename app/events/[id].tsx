@@ -36,6 +36,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import {
   isActiveEventRegistration,
   isDuplicateBlockingEventRegistration,
+  isSameRegistrationTarget,
   useEventsStore,
 } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
@@ -271,6 +272,18 @@ function InfoRow({ icon, text }: InfoRowProps) {
       <Text style={styles.infoText}>{text}</Text>
     </View>
   );
+}
+
+function countActiveRegistrationsForEventTarget(
+  registrations: EventRegistration[],
+  event: EventItem,
+): number {
+  const occurrenceId = event.nextOccurrence?.id ?? null;
+
+  return registrations.filter((registration) => (
+    isDuplicateBlockingEventRegistration(registration)
+    && isSameRegistrationTarget(registration, event.id, occurrenceId)
+  )).length;
 }
 
 type RegistrationBlockProps = {
@@ -561,14 +574,12 @@ export default function EventDetailScreen() {
   }, [eventId, myRegistrations]);
 
   const activeRegistrationCount = useMemo(() => {
-    if (!eventId) {
+    if (!event) {
       return 0;
     }
 
-    return myRegistrations.filter((item) => (
-      item.eventId === eventId && isDuplicateBlockingEventRegistration(item)
-    )).length;
-  }, [eventId, myRegistrations]);
+    return countActiveRegistrationsForEventTarget(myRegistrations, event);
+  }, [event, myRegistrations]);
 
   const handleBack = useCallback(() => {
     if (router.canGoBack()) {
