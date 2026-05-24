@@ -14,9 +14,10 @@ import { IOSGroup } from '@/components/ui/IOSGroup';
 import { ListRow } from '@/components/ui/ListRow';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
+import { isRegistrationUpcomingOrCurrent } from '@/lib/registrationGroups';
 import type { CommunityMembershipRole } from '@/services/inviteService';
 import { useAuthStore } from '@/store/useAuthStore';
-import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStore';
+import { useEventsStore } from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
 
 const myRegistrationsHref = '/profile/my-registrations' as Href;
@@ -214,7 +215,13 @@ export default function ProfileScreen() {
   const inviteError = localError?.startsWith('Не удалось принять приглашение') ? localError : null;
   const signOutError = localError?.startsWith('Не удалось выйти') ? localError : null;
   const activeRegistrationsCount = useMemo(
-    () => myRegistrations.filter(isActiveEventRegistration).length,
+    () => {
+      const now = Date.now();
+
+      return myRegistrations.filter((registration) => (
+        isRegistrationUpcomingOrCurrent(registration, now)
+      )).length;
+    },
     [myRegistrations],
   );
 

@@ -157,6 +157,7 @@ export default function PastRegistrationsScreen() {
                 onCancel={() => undefined}
                 onOpen={openRegistrationGroup}
                 showCancelAction={false}
+                showPastStatus
               />
             ))}
           </View>

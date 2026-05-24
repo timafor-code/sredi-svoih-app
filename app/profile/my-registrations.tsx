@@ -3,7 +3,6 @@ import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
@@ -14,11 +13,13 @@ import { RegistrationGroupCard } from '@/components/events/MyRegistrationCards';
 import { GlassCard } from '@/components/glass/GlassCard';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
+import { SegmentControl } from '@/components/ui/SegmentControl';
 import { SubHeader } from '@/components/ui/SubHeader';
 import { useEventRegistrationAction } from '@/hooks/useEventRegistrationAction';
 import {
   buildMyRegistrationGroups,
   type MyRegistrationGroup,
+  type MyRegistrationPeriod,
 } from '@/lib/registrationGroups';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useEventsStore } from '@/store/useEventsStore';
@@ -26,6 +27,14 @@ import { colors } from '@/theme/colors';
 
 const MY_REGISTRATIONS_DEBUG_TAG = '[mobile registrations]';
 const MY_REGISTRATIONS_DEBUG_EVENT_TITLE = 'Шаббат открыто';
+const registrationTabs = ['Актуальные', 'Прошедшие'] as const;
+
+type RegistrationTab = (typeof registrationTabs)[number];
+type RegistrationListPeriod = Extract<MyRegistrationPeriod, 'active' | 'past'>;
+
+function getRegistrationPeriod(tab: RegistrationTab): RegistrationListPeriod {
+  return tab === 'Прошедшие' ? 'past' : 'active';
+}
 
 function summarizeDebugGroup(group: MyRegistrationGroup | undefined) {
   if (!group) {
@@ -64,6 +73,7 @@ export default function MyRegistrationsScreen() {
     handleCancelRegistration,
   } = useEventRegistrationAction();
   const [refreshing, setRefreshing] = useState(false);
+  const [registrationTab, setRegistrationTab] = useState<RegistrationTab>('Актуальные');
 
   useFocusEffect(
     useCallback(() => {
@@ -94,7 +104,8 @@ export default function MyRegistrationsScreen() {
       pastRegistrationGroups: buildMyRegistrationGroups(myRegistrations, now, { period: 'past' }),
     };
   }, [myRegistrations]);
-  const registrationGroups = activeRegistrationGroups;
+  const selectedPeriod = getRegistrationPeriod(registrationTab);
+  const registrationGroups = selectedPeriod === 'past' ? pastRegistrationGroups : activeRegistrationGroups;
   const hasPastRegistrationGroups = pastRegistrationGroups.length > 0;
 
   useEffect(() => {
@@ -102,7 +113,7 @@ export default function MyRegistrationsScreen() {
       return;
     }
 
-    const debugGroup = registrationGroups.find((group) => (
+    const debugGroup = activeRegistrationGroups.find((group) => (
       group.event?.title === MY_REGISTRATIONS_DEBUG_EVENT_TITLE
     ));
 
@@ -113,9 +124,9 @@ export default function MyRegistrationsScreen() {
         email: authUser.email ?? null,
       },
       sourceRegistrationsCount: myRegistrations.length,
-      activeGroupsCount: registrationGroups.length,
+      activeGroupsCount: activeRegistrationGroups.length,
       pastGroupsCount: pastRegistrationGroups.length,
-      activeRegistrationRowsAfterBuildMyRegistrationGroups: registrationGroups.reduce(
+      activeRegistrationRowsAfterBuildMyRegistrationGroups: activeRegistrationGroups.reduce(
         (sum, group) => sum + group.totalRegistrationsCount,
         0,
       ),
@@ -128,9 +139,9 @@ export default function MyRegistrationsScreen() {
     });
   }, [
     authUser,
+    activeRegistrationGroups,
     myRegistrations.length,
     pastRegistrationGroups,
-    registrationGroups,
   ]);
 
   const handleRefresh = useCallback(async () => {
@@ -153,22 +164,24 @@ export default function MyRegistrationsScreen() {
     router.push('/events');
   }, [router]);
 
-  const openPastRegistrations = useCallback(() => {
-    router.push('/profile/past-registrations');
-  }, [router]);
-
   const openRegistrationGroup = useCallback((group: MyRegistrationGroup) => {
     router.push({
       pathname: '/profile/registration-groups/[eventId]',
-      params: { eventId: group.eventId, period: 'active' },
+      params: { eventId: group.eventId, period: selectedPeriod },
     });
-  }, [router]);
+  }, [router, selectedPeriod]);
 
-  const hasAnyRegistrationGroups = registrationGroups.length > 0 || hasPastRegistrationGroups;
+  const hasActiveRegistrationGroups = activeRegistrationGroups.length > 0;
+  const hasAnyRegistrationGroups = hasActiveRegistrationGroups || hasPastRegistrationGroups;
   const showInitialLoading = authUser && registrationsLoading && !hasAnyRegistrationGroups;
   const showBlockingError = authUser && Boolean(error) && !registrationsLoading && !hasAnyRegistrationGroups;
   const showInlineError = authUser && Boolean(error) && !registrationsLoading && hasAnyRegistrationGroups;
   const showEmpty = authUser && !registrationsLoading && !error && registrationGroups.length === 0;
+  const showTabs = authUser && !showInitialLoading && !showBlockingError && hasAnyRegistrationGroups;
+  const isPastTab = selectedPeriod === 'past';
+  const emptyStateTitle = isPastTab
+    ? 'У вас пока нет прошедших записей.'
+    : 'У вас пока нет актуальных записей на ближайшие события.';
 
   return (
     <>
@@ -218,12 +231,22 @@ export default function MyRegistrationsScreen() {
 
         {showInlineError ? <Text style={styles.inlineErrorText}>{error}</Text> : null}
 
+        {showTabs ? (
+          <SegmentControl
+            items={registrationTabs}
+            value={registrationTab}
+            onChange={setRegistrationTab}
+          />
+        ) : null}
+
         {showEmpty ? (
           <GlassCard>
             <View style={styles.stateCard}>
               <Ionicons name="calendar-clear-outline" size={24} color={colors.textDim} />
-              <Text style={styles.stateTitle}>У вас пока нет активных записей на ближайшие события.</Text>
-              <PrimaryButton title="Посмотреть события" onPress={openEvents} />
+              <Text style={styles.stateTitle}>{emptyStateTitle}</Text>
+              {!isPastTab ? (
+                <PrimaryButton title="Посмотреть события" onPress={openEvents} />
+              ) : null}
             </View>
           </GlassCard>
         ) : null}
@@ -235,31 +258,14 @@ export default function MyRegistrationsScreen() {
                 key={group.eventId}
                 group={group}
                 cancellingRegistrationId={cancellingRegistrationId}
+                muted={isPastTab}
                 onCancel={handleCancelRegistration}
                 onOpen={openRegistrationGroup}
+                showCancelAction={!isPastTab}
+                showPastStatus={isPastTab}
               />
             ))}
           </View>
-        ) : null}
-
-        {authUser && !showInitialLoading && !showBlockingError && hasPastRegistrationGroups ? (
-          <GlassCard>
-            <Pressable
-              onPress={openPastRegistrations}
-              style={({ pressed }) => [styles.pastLink, pressed && styles.pressed]}
-            >
-              <View style={styles.pastLinkIcon}>
-                <Ionicons name="time-outline" size={20} color={colors.orange} />
-              </View>
-              <View style={styles.pastLinkTextBlock}>
-                <Text style={styles.pastLinkTitle}>Прошедшие события</Text>
-                <Text style={styles.pastLinkSubtitle}>
-                  Посмотреть записи на события, которые уже прошли
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.36)" />
-            </Pressable>
-          </GlassCard>
         ) : null}
       </Screen>
     </>
@@ -272,41 +278,6 @@ const styles = StyleSheet.create({
   },
   list: {
     gap: 12,
-  },
-  pastLink: {
-    minHeight: 56,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  pastLinkIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accent.orangeBg,
-    borderWidth: 1,
-    borderColor: colors.accent.orangeBorder,
-  },
-  pastLinkTextBlock: {
-    flex: 1,
-    minWidth: 0,
-    gap: 3,
-  },
-  pastLinkTitle: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: '800',
-    lineHeight: 20,
-  },
-  pastLinkSubtitle: {
-    color: colors.textDim,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  pressed: {
-    opacity: 0.78,
   },
   stateCard: {
     alignItems: 'center',

@@ -277,6 +277,7 @@ export default function RegistrationGroupDetailScreen() {
                   cancelling={cancellingRegistrationId === registration.id}
                   onCancel={handleCancelRegistration}
                   showCancelAction={period === 'active'}
+                  showPastStatus={period === 'past'}
                 />
               ))}
             </View>

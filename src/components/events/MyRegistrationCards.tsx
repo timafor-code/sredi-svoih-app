@@ -77,6 +77,7 @@ const statusTones: Record<EventRegistrationStatus, {
 };
 
 type Tone = 'default' | 'danger' | 'success' | 'warning';
+const PAST_REGISTRATION_STATUS_TITLE = 'Прошедшее событие';
 
 function formatDate(
   value: string,
@@ -328,6 +329,31 @@ export function RegistrationStatusBadge({ status }: { status: EventRegistrationS
   );
 }
 
+function shouldShowPastRegistrationStatus(
+  registration: EventRegistration,
+  showPastStatus: boolean,
+): boolean {
+  return showPastStatus && isActiveRegistrationStatus(registration.status);
+}
+
+function RegistrationArchiveBadge() {
+  return <Chip>{PAST_REGISTRATION_STATUS_TITLE}</Chip>;
+}
+
+function RegistrationStatusIndicator({
+  registration,
+  showPastStatus = false,
+}: {
+  registration: EventRegistration;
+  showPastStatus?: boolean;
+}) {
+  if (shouldShowPastRegistrationStatus(registration, showPastStatus)) {
+    return <RegistrationArchiveBadge />;
+  }
+
+  return <RegistrationStatusBadge status={registration.status} />;
+}
+
 function PaymentBadge({ registration }: { registration: EventRegistration }) {
   const paymentTitle = getPaymentStatusTitle(registration);
 
@@ -371,6 +397,7 @@ type RegistrationGroupCardProps = {
   onCancel: (registration: EventRegistration) => void;
   onOpen: (group: MyRegistrationGroup) => void;
   showCancelAction?: boolean;
+  showPastStatus?: boolean;
 };
 
 export function RegistrationGroupCard({
@@ -380,6 +407,7 @@ export function RegistrationGroupCard({
   onCancel,
   onOpen,
   showCancelAction = true,
+  showPastStatus = false,
 }: RegistrationGroupCardProps) {
   const event = group.event;
   const isSingle = group.totalRegistrationsCount === 1;
@@ -394,6 +422,7 @@ export function RegistrationGroupCard({
   const statusSummary = formatGroupStatusSummary(group.statusesSummary);
   const nearestDate = formatNearestRegistrationDate(group.nextRegistration);
   const amount = formatMoney(group.totalAmount, group.totalCurrency);
+  const isPastGroup = showPastStatus || Boolean(registration && hasRegistrationPassed(registration));
 
   if (!registration) {
     return null;
@@ -414,13 +443,18 @@ export function RegistrationGroupCard({
             </View>
             {isSingle ? (
               <View style={styles.badgeRow}>
-                <RegistrationStatusBadge status={registration.status} />
+                <RegistrationStatusIndicator
+                  registration={registration}
+                  showPastStatus={isPastGroup}
+                />
                 <PaymentBadge registration={registration} />
               </View>
             ) : (
               <View style={styles.badgeRow}>
-                <Chip tone="success">{formatRegistrationCount(group.totalRegistrationsCount)}</Chip>
-                {statusSummary ? <Chip>{statusSummary}</Chip> : null}
+                <Chip tone={isPastGroup ? 'default' : 'success'}>
+                  {formatRegistrationCount(group.totalRegistrationsCount)}
+                </Chip>
+                {isPastGroup ? <RegistrationArchiveBadge /> : statusSummary ? <Chip>{statusSummary}</Chip> : null}
               </View>
             )}
           </View>
@@ -496,6 +530,7 @@ type RegistrationDetailCardProps = {
   onCancel: (registration: EventRegistration) => void;
   registration: EventRegistration;
   showCancelAction?: boolean;
+  showPastStatus?: boolean;
 };
 
 export function RegistrationDetailCard({
@@ -503,6 +538,7 @@ export function RegistrationDetailCard({
   onCancel,
   registration,
   showCancelAction = true,
+  showPastStatus = false,
 }: RegistrationDetailCardProps) {
   const sessionTitle = getRegistrationSessionTitle(registration);
   const amount = formatMoney(registration.totalAmount, registration.totalCurrency);
@@ -511,7 +547,8 @@ export function RegistrationDetailCard({
   const canCancel = showCancelAction
     && isActiveRegistrationStatus(registration.status)
     && !hasRegistrationPassed(registration);
-  const isInactive = INACTIVE_EVENT_REGISTRATION_STATUSES.has(registration.status);
+  const isPastRegistration = showPastStatus || hasRegistrationPassed(registration);
+  const isInactive = isPastRegistration || INACTIVE_EVENT_REGISTRATION_STATUSES.has(registration.status);
 
   return (
     <GlassCard style={isInactive ? styles.inactiveCard : undefined}>
@@ -526,7 +563,10 @@ export function RegistrationDetailCard({
       </View>
 
       <View style={styles.badgeRow}>
-        <RegistrationStatusBadge status={registration.status} />
+        <RegistrationStatusIndicator
+          registration={registration}
+          showPastStatus={isPastRegistration}
+        />
         <PaymentBadge registration={registration} />
       </View>
 

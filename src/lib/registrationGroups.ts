@@ -85,12 +85,25 @@ export function getRegistrationStartsAt(registration: EventRegistration): string
 }
 
 export function getRegistrationEndsAt(registration: EventRegistration): string | null {
-  return registration.occurrence?.endsAt ?? registration.event?.endsAt ?? null;
+  if (registration.occurrence) {
+    return registration.occurrence.endsAt ?? null;
+  }
+
+  return registration.event?.endsAt ?? null;
 }
 
 function getRegistrationPassedBoundaryTime(registration: EventRegistration): number | null {
-  return parseRegistrationDate(getRegistrationEndsAt(registration))
-    ?? parseRegistrationDate(getRegistrationStartsAt(registration));
+  if (registration.occurrence) {
+    return parseRegistrationDate(registration.occurrence.endsAt)
+      ?? parseRegistrationDate(registration.occurrence.startsAt);
+  }
+
+  if (registration.event) {
+    return parseRegistrationDate(registration.event.endsAt)
+      ?? parseRegistrationDate(registration.event.startsAt);
+  }
+
+  return null;
 }
 
 export function getRegistrationTimezone(registration: EventRegistration): string | null | undefined {
@@ -128,13 +141,16 @@ function getFallbackSortTime(registration: EventRegistration): number {
 
 export function sortRegistrationsByOccurrence(
   registrations: EventRegistration[],
+  direction: 'asc' | 'desc' = 'asc',
 ): EventRegistration[] {
   return [...registrations].sort((first, second) => {
     const firstStartsAt = getRegistrationSortTime(first);
     const secondStartsAt = getRegistrationSortTime(second);
 
     if (firstStartsAt !== null && secondStartsAt !== null && firstStartsAt !== secondStartsAt) {
-      return firstStartsAt - secondStartsAt;
+      return direction === 'asc'
+        ? firstStartsAt - secondStartsAt
+        : secondStartsAt - firstStartsAt;
     }
 
     if (firstStartsAt !== null && secondStartsAt === null) {
@@ -279,7 +295,7 @@ function isRegistrationInPeriod(
 ): boolean {
   switch (period) {
     case 'active':
-      return isRegistrationUpcomingOrCurrent(registration, now);
+      return !isRegistrationPast(registration, now);
     case 'past':
       return isRegistrationPast(registration, now);
     case 'all':
@@ -331,7 +347,10 @@ export function buildMyRegistrationGroups(
 
   return Array.from(grouped.entries())
     .map(([eventId, groupRegistrations]) => {
-      const sortedRegistrations = sortRegistrationsByOccurrence(groupRegistrations);
+      const sortedRegistrations = sortRegistrationsByOccurrence(
+        groupRegistrations,
+        period === 'past' ? 'desc' : 'asc',
+      );
       const nextRegistration = pickNextRegistration(sortedRegistrations, now);
       const amountSummary = getAmountSummary(sortedRegistrations);
 

@@ -139,6 +139,14 @@ Recurring courses, Shabbat series, holiday sessions, and other multi-date
 events therefore appear as one event card instead of one top-level card per
 occurrence.
 
+The mobile "My registrations" screen separates current and past registrations
+on the client without changing `event_registrations.status`. A registration is
+past when its occurrence `ends_at` or, if missing, `starts_at` is before now.
+Registrations without an occurrence use the parent event `ends_at` / `starts_at`
+fallback. Rows without a usable date stay in the current tab so the UI does not
+hide history by mistake. Past registrations are shown read-only under
+`Прошедшие` and do not expose the active cancel action.
+
 Inside a grouped event, the mobile UI shows occurrence-level registrations:
 date/time, optional occurrence title, registration status, seat count, guests,
 comment, and registration timestamp. Paid registration option snapshots from
