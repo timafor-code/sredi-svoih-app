@@ -104,6 +104,18 @@ export interface EventRegistrationSelectedOptionSnapshot {
   createdAt: string | null;
 }
 
+export interface RegisterForEventOccurrenceOptionSelectionInput {
+  optionId: string;
+  quantity: number;
+}
+
+export interface RegisterForEventOccurrenceWithOptionsInput {
+  eventId: string;
+  occurrenceId: string;
+  optionSelections?: RegisterForEventOccurrenceOptionSelectionInput[] | null;
+  comment?: string | null;
+}
+
 export interface EventRegistration {
   id: string;
   eventId: string;

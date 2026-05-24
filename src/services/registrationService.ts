@@ -10,6 +10,8 @@ import type {
   EventRegistrationOccurrence,
   EventRegistrationSelectedOptionSnapshot,
   EventRegistrationStatus,
+  RegisterForEventOccurrenceOptionSelectionInput,
+  RegisterForEventOccurrenceWithOptionsInput,
 } from '@/types/event';
 
 type EventRegistrationOptionSelectionRow = {
@@ -74,10 +76,7 @@ type EventRegistrationRow = {
   occurrence?: EventRegistrationOccurrenceRow | EventRegistrationOccurrenceRow[] | null;
 };
 
-export type PaidEventOptionSelectionInput = {
-  optionId: string;
-  quantity: number;
-};
+export type PaidEventOptionSelectionInput = RegisterForEventOccurrenceOptionSelectionInput;
 
 export type RegisterForPaidEventSimulatedInput = {
   eventId: string;
@@ -403,6 +402,51 @@ export async function registerForPaidEventSimulated(
       new Date(second.registeredAt).getTime() - new Date(first.registeredAt).getTime()
     ))[0]
     ?? registrations.find((item) => item.eventId === input.eventId);
+
+  if (!fallbackRegistration) {
+    throw new Error('Registration result is empty');
+  }
+
+  return fallbackRegistration;
+}
+
+export async function registerForEventOccurrenceWithOptions(
+  input: RegisterForEventOccurrenceWithOptionsInput,
+): Promise<EventRegistration> {
+  const targetOccurrenceId = input.occurrenceId;
+  const payload = (input.optionSelections ?? []).map((selection) => ({
+    optionId: selection.optionId,
+    quantity: selection.quantity,
+  }));
+  const { data, error } = await supabase.rpc('register_for_event_occurrence_with_options', {
+    p_event_id: input.eventId,
+    p_occurrence_id: targetOccurrenceId,
+    p_option_selections: payload,
+    p_comment: input.comment ?? null,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const registration = normalizeSingleResult(data as EventRegistrationRow | EventRegistrationRow[] | null);
+
+  if (registration) {
+    try {
+      const registrations = await loadMyRegistrations();
+      const hydratedRegistration = registrations.find((item) => item.id === registration.id);
+
+      return hydratedRegistration ?? registration;
+    } catch {
+      return registration;
+    }
+  }
+
+  const registrations = await loadMyRegistrations();
+  const fallbackRegistration = registrations.find((item) => (
+    item.eventId === input.eventId
+    && item.occurrenceId === targetOccurrenceId
+  ));
 
   if (!fallbackRegistration) {
     throw new Error('Registration result is empty');
