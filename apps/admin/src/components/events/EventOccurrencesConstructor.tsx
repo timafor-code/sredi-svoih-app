@@ -144,6 +144,10 @@ type DraftValidation =
   | { ok: true; input: AdminEventOccurrenceInput }
   | { ok: false; errors: DraftErrors };
 
+type PersistDraftsOptions = {
+  failureMessage?: string;
+};
+
 let draftIdCounter = 0;
 
 function nextDraftId(): string {
@@ -880,10 +884,13 @@ export function EventOccurrencesConstructor({
   const [archiveExpanded, setArchiveExpanded] = useState(false);
   const [archiveToast, setArchiveToast] = useState<ArchiveToastState | null>(null);
   const [nowTimestamp, setNowTimestamp] = useState(() => Date.now());
+  const [remoteDraftsLoadToken, setRemoteDraftsLoadToken] = useState(0);
   const [generatorForm, setGeneratorForm] = useState<OccurrenceGeneratorForm>(() =>
     buildDefaultGeneratorForm(resolveDefaultGeneratorPreset(eventKind)),
   );
   const saveInFlightRef = useRef(false);
+  const remoteDraftsLoadTokenRef = useRef(0);
+  const autoArchiveLoadTokenRef = useRef(0);
   const archiveToastIdRef = useRef(0);
 
   useEffect(() => {
@@ -919,6 +926,8 @@ export function EventOccurrencesConstructor({
       .then((occurrences) => {
         if (cancelled) return;
         setDrafts(sortDrafts(occurrences.map(buildDraftFromOccurrence)));
+        remoteDraftsLoadTokenRef.current += 1;
+        setRemoteDraftsLoadToken(remoteDraftsLoadTokenRef.current);
       })
       .catch((error) => {
         if (cancelled) return;
@@ -972,6 +981,7 @@ export function EventOccurrencesConstructor({
 
   const persistDrafts = async (
     nextDrafts: DraftOccurrence[],
+    options: PersistDraftsOptions = {},
   ): Promise<boolean> => {
     setSaveError(null);
     setSavedAt(null);
@@ -979,7 +989,8 @@ export function EventOccurrencesConstructor({
     const { inputs, hasErrors } = buildInputList(nextDrafts);
     if (hasErrors) {
       setSaveError(
-        "В одной из дат есть ошибки. Откройте дату и исправьте поля.",
+        options.failureMessage ??
+          "В одной из дат есть ошибки. Откройте дату и исправьте поля.",
       );
       return false;
     }
@@ -995,9 +1006,10 @@ export function EventOccurrencesConstructor({
       return true;
     } catch (error) {
       setSaveError(
-        error instanceof Error
-          ? error.message
-          : "Не удалось сохранить даты и сеансы события.",
+        options.failureMessage ??
+          (error instanceof Error
+            ? error.message
+            : "Не удалось сохранить даты и сеансы события."),
       );
       return false;
     } finally {
@@ -1005,6 +1017,73 @@ export function EventOccurrencesConstructor({
       setSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (
+      remoteDraftsLoadToken === 0 ||
+      autoArchiveLoadTokenRef.current === remoteDraftsLoadToken ||
+      loading ||
+      loadError
+    ) {
+      return;
+    }
+
+    if (
+      saving ||
+      saveInFlightRef.current ||
+      modalState.kind !== "closed" ||
+      archiveConfirmOpen
+    ) {
+      autoArchiveLoadTokenRef.current = remoteDraftsLoadToken;
+      return;
+    }
+
+    const archiveTimestamp = Date.now();
+    const draftIdsToArchive = new Set(
+      drafts
+        .filter(
+          (draft) =>
+            draft.remoteId !== null &&
+            isPastActiveOccurrenceDraft(draft, archiveTimestamp),
+        )
+        .map((draft) => draft.draftId),
+    );
+
+    autoArchiveLoadTokenRef.current = remoteDraftsLoadToken;
+
+    if (draftIdsToArchive.size === 0) {
+      return;
+    }
+
+    const archivedStatus: AdminEventOccurrenceStatus = "archived";
+    const nextDrafts = drafts.map((draft) =>
+      draftIdsToArchive.has(draft.draftId)
+        ? { ...draft, status: archivedStatus }
+        : draft,
+    );
+
+    setNowTimestamp(archiveTimestamp);
+    setArchiveToast(null);
+    void persistDrafts(nextDrafts, {
+      failureMessage: "Не удалось автоматически архивировать прошедшие сеансы",
+    }).then((saved) => {
+      if (saved) {
+        setArchiveExpanded(true);
+        showArchiveToast(
+          `Архивировано прошедших сеансов: ${draftIdsToArchive.size}`,
+          null,
+        );
+      }
+    });
+  }, [
+    archiveConfirmOpen,
+    drafts,
+    loadError,
+    loading,
+    modalState.kind,
+    remoteDraftsLoadToken,
+    saving,
+  ]);
 
   const applyAndPersist = (updater: (current: DraftOccurrence[]) => DraftOccurrence[]) => {
     if (loading || saveInFlightRef.current) {
