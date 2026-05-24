@@ -1,4 +1,9 @@
 import { supabase } from './supabaseClient';
+import {
+  isRecurringEventKind,
+  selectNextFutureOccurrence,
+} from '@/lib/eventTime';
+import { listEventOccurrences } from '@/services/eventOccurrencesService';
 import type {
   Event,
   EventKind,
@@ -50,6 +55,8 @@ export type CommunityEventRow = {
 
   is_permanent: boolean | null;
 };
+
+type EventOccurrenceLoadResult = Event | null;
 
 export const EVENT_FIELDS = `
   id,
@@ -119,6 +126,72 @@ export function normalizeEventRow(row: CommunityEventRow): Event {
   };
 }
 
+function shouldLoadOccurrences(event: Event): boolean {
+  return isRecurringEventKind(event.eventKind) || event.isPermanent === true;
+}
+
+function shouldUseParentFallback(event: Event): boolean {
+  return event.eventKind === 'single';
+}
+
+function logOccurrenceLoadError(event: Event, error: unknown): void {
+  if (!__DEV__) {
+    return;
+  }
+
+  console.warn('[events] failed to load event occurrences', {
+    eventId: event.id,
+    eventKind: event.eventKind,
+    message: error instanceof Error ? error.message : String(error),
+  });
+}
+
+async function applyEffectiveOccurrence(
+  event: Event,
+  now: number,
+  excludeRecurringWithoutFuture: boolean,
+): Promise<EventOccurrenceLoadResult> {
+  if (!shouldLoadOccurrences(event)) {
+    return event;
+  }
+
+  try {
+    const occurrences = await listEventOccurrences(event.id);
+    const nextOccurrence = selectNextFutureOccurrence(occurrences, now);
+    const hasOccurrences = occurrences.length > 0 || isRecurringEventKind(event.eventKind);
+
+    if (nextOccurrence) {
+      return {
+        ...event,
+        nextOccurrence,
+        effectiveStartsAt: nextOccurrence.startsAt,
+        effectiveEndsAt: nextOccurrence.endsAt,
+        hasOccurrences,
+      };
+    }
+
+    if (excludeRecurringWithoutFuture && hasOccurrences) {
+      return null;
+    }
+
+    return {
+      ...event,
+      nextOccurrence: null,
+      effectiveStartsAt: null,
+      effectiveEndsAt: null,
+      hasOccurrences,
+    };
+  } catch (error) {
+    logOccurrenceLoadError(event, error);
+
+    if (shouldUseParentFallback(event)) {
+      return event;
+    }
+
+    return excludeRecurringWithoutFuture ? null : event;
+  }
+}
+
 export async function listPublishedEvents(): Promise<Event[]> {
   const { data, error } = await supabase
     .from('events')
@@ -130,7 +203,13 @@ export async function listPublishedEvents(): Promise<Event[]> {
     throw new Error(error.message);
   }
 
-  return ((data ?? []) as CommunityEventRow[]).map(normalizeEventRow);
+  const now = Date.now();
+  const events = ((data ?? []) as CommunityEventRow[]).map(normalizeEventRow);
+  const resolvedEvents = await Promise.all(
+    events.map((event) => applyEffectiveOccurrence(event, now, true)),
+  );
+
+  return resolvedEvents.filter((event): event is Event => event !== null);
 }
 
 export async function getEventById(id: string): Promise<Event | null> {
@@ -144,5 +223,9 @@ export async function getEventById(id: string): Promise<Event | null> {
     throw new Error(error.message);
   }
 
-  return data ? normalizeEventRow(data as CommunityEventRow) : null;
+  if (!data) {
+    return null;
+  }
+
+  return applyEffectiveOccurrence(normalizeEventRow(data as CommunityEventRow), Date.now(), false);
 }

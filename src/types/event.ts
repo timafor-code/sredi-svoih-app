@@ -1,3 +1,5 @@
+import type { EventOccurrence } from './eventOccurrence';
+
 export type EventRegistrationMode =
   | 'none'
   | 'external_link'
@@ -69,6 +71,10 @@ export interface Event {
   priceCurrency: string | null;
   publishedAt: string | null;
   isPermanent: boolean;
+  nextOccurrence?: EventOccurrence | null;
+  effectiveStartsAt?: string | null;
+  effectiveEndsAt?: string | null;
+  hasOccurrences?: boolean;
 }
 
 export interface EventRegistrationOccurrence {
@@ -157,4 +163,8 @@ export interface EventItem {
   priceCurrency?: string | null;
   publishedAt?: string | null;
   isPermanent?: boolean;
+  nextOccurrence?: EventOccurrence | null;
+  effectiveStartsAt?: string | null;
+  effectiveEndsAt?: string | null;
+  hasOccurrences?: boolean;
 }
