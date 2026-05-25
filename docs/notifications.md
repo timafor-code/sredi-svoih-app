@@ -3,8 +3,8 @@
 This document fixes the notification domain architecture and tracks the staged
 implementation.
 
-PR #157 created the domain plan only. PR 2
-(`feature/notifications-local-permission-foundation`) adds the minimal runtime
+PR #157 created the domain plan only. PR #158
+(`feature/notifications-local-permission-foundation`) added the minimal runtime
 foundation for local notifications on the device:
 
 - local notification permission status;
@@ -13,10 +13,18 @@ foundation for local notifications on the device:
 - cancellation of scheduled local notifications;
 - a root foreground notification handler.
 
-This PR still must not add Hebcal-based scheduling, birthday reminders, event
+PR 3 (`feature/notifications-schedule-model`) adds the client-side schedule
+model and a compact Profile -> Notifications preview. It introduces
+`NotificationScheduleItem` and a planner service that turns current
+`profile.notification_preferences` into preview rows for all 8 notification
+categories.
+
+PR 3 still must not add Hebcal-based scheduling, birthday reminders, event
 reminders, remote push, Supabase migrations, device token storage, Expo push
 token fetching, Edge Functions, cron/scheduler logic, or changes to events,
-registrations, contacts, prayer tracker, web-admin, or server push.
+registrations, contacts, prayer tracker, web-admin, or server push. Real
+scheduling through `Notifications.scheduleNotificationAsync` remains future
+work for later local reminder PRs.
 
 ## Current preference model
 
@@ -35,8 +43,13 @@ The current user-facing notification settings are stored in
 
 These booleans are category-level user preferences. They are not a schedule
 model, not a delivery log, and not proof that real notifications have been
-scheduled. Missing keys should continue to be treated with existing defaults
-until a later implementation PR introduces a dedicated schedule layer.
+scheduled. Missing keys should continue to be treated with existing defaults.
+
+PR 3 adds a separate client-side schedule preview layer. The preview may mark a
+category as `disabled_by_preferences` when the user preference is off, or
+`unsupported_in_this_pr` when the preference is on but the category-specific
+planner has not been implemented yet. It does not calculate Hebcal dates, read
+contacts, read events, read registrations, or schedule real local reminders.
 
 ## Source boundaries
 
@@ -135,35 +148,42 @@ registrations, profiles, or prayer data.
 
 ## Implementation sequence
 
-1. `feature/notifications-local-permission-foundation`
+1. PR #157 domain architecture document
+   - Add this notification domain plan.
+   - Define source boundaries, privacy rules, and staged implementation.
+2. PR #158 `feature/notifications-local-permission-foundation`
    - Add local notification permission handling and a minimal local test
      foundation.
    - Add a root foreground handler that can show banner/list notifications
      without enabling sound or badge behavior.
    - Do not create device tokens or remote push infrastructure.
-2. `feature/notifications-schedule-model`
-   - Add a client-side schedule model for planned local reminders.
+3. `feature/notifications-schedule-model`
+   - Add a client-side schedule model for planned notification previews.
    - Keep it separate from `profile.notification_preferences`.
-3. `feature/notifications-hebcal-reminders`
+   - Add Profile -> Notifications preview rows without scheduling real iOS
+     reminders.
+4. `feature/notifications-hebcal-reminders`
    - Implement Hebcal-based local reminders for Shabbat, candles, holidays, and
      weekly parsha using selected city and timezone.
-4. `feature/notifications-birthday-reminders`
+5. `feature/notifications-birthday-reminders`
    - Implement local birthday reminders from visible community contacts and
      local-only iPhone contacts.
-5. `feature/notifications-event-reminders-local`
+6. `feature/notifications-event-reminders-local`
    - Implement local event reminders for the current user's existing
      registrations and visible occurrences.
-6. `feature/notifications-settings-advanced`
+7. `feature/notifications-settings-advanced`
    - Add advanced settings such as offsets, quiet hours, and reminder detail
      controls after the core schedule model is stable.
-7. `feature/push-device-tokens-foundation`
+8. `feature/push-device-tokens-foundation`
    - Introduce push token storage and build-only token registration.
    - Validate through EAS development build, TestFlight, or release build, not
      Expo Go.
-8. `feature/server-event-push-notifications`
+9. `feature/server-event-push-notifications`
    - Add server-side push for event lifecycle notifications and news:
      new community event, event changed, event cancelled, registration
      confirmed/rejected, waitlist available, and news.
+
+Next PR: `feature/notifications-hebcal-reminders`.
 
 ## Manual smoke checklist
 
@@ -171,15 +191,13 @@ Manual smoke is performed by the project owner, not by Codex:
 
 1. Open iPhone app in Expo Go.
 2. Open Profile -> Notifications.
-3. Confirm notification permission status is visible.
-4. Tap "Разрешить уведомления".
-5. Confirm iOS permission prompt appears if permission was not granted before.
-6. Confirm status updates after permission request.
-7. Tap "Отправить тестовое уведомление".
-8. Confirm a local notification appears on iPhone.
-9. Tap notification and confirm the app remains stable.
-10. Toggle existing notification settings and save.
-11. Reopen screen and confirm preferences are still saved.
-12. Tap "Отменить локальные уведомления" and confirm there is no crash.
-13. Confirm no events, contacts, birthday or Hebcal reminders were scheduled by
-    this PR.
+3. Confirm existing permission status block still works.
+4. Confirm existing test local notification action still works.
+5. Confirm notification preference toggles still save.
+6. Confirm the new "План уведомлений" block is visible.
+7. Confirm all 8 categories appear in the preview.
+8. Turn off one preference and confirm preview marks it disabled.
+9. Save preferences and reopen the screen.
+10. Confirm preview reflects saved preferences.
+11. Confirm no real Hebcal, birthday, contact, or event reminders were
+    scheduled by this PR.

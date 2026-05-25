@@ -16,12 +16,17 @@ import {
   scheduleTestLocalNotification,
   type NotificationPermissionStatus,
 } from '@/services/notificationsService';
+import {
+  buildNotificationSchedulePreview,
+  normalizeNotificationPreferencesForSchedule,
+} from '@/services/notificationPlannerService';
 import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
   type ProfileNotificationPreferences,
 } from '@/types/profile';
+import type { NotificationScheduleStatus } from '@/types/notification';
 
 const profileHref = '/profile' as Href;
 
@@ -63,30 +68,31 @@ const permissionStatusLabels: Record<NotificationPermissionStatus, string> = {
   unknown: 'Неизвестно',
 };
 
-function normalizeNotificationPreferences(
-  input: ProfileNotificationPreferences | null | undefined,
-): ProfileNotificationPreferences {
-  const source: Partial<ProfileNotificationPreferences> = input ?? {};
-
-  return {
-    ...DEFAULT_NOTIFICATION_PREFERENCES,
-    ...source,
-    prayers: typeof source.prayers === 'boolean' ? source.prayers : DEFAULT_NOTIFICATION_PREFERENCES.prayers,
-    shabbat: typeof source.shabbat === 'boolean' ? source.shabbat : DEFAULT_NOTIFICATION_PREFERENCES.shabbat,
-    holidays: typeof source.holidays === 'boolean' ? source.holidays : DEFAULT_NOTIFICATION_PREFERENCES.holidays,
-    candles: typeof source.candles === 'boolean' ? source.candles : DEFAULT_NOTIFICATION_PREFERENCES.candles,
-    events: typeof source.events === 'boolean' ? source.events : DEFAULT_NOTIFICATION_PREFERENCES.events,
-    birthdays: typeof source.birthdays === 'boolean' ? source.birthdays : DEFAULT_NOTIFICATION_PREFERENCES.birthdays,
-    weekly: typeof source.weekly === 'boolean' ? source.weekly : DEFAULT_NOTIFICATION_PREFERENCES.weekly,
-    news: typeof source.news === 'boolean' ? source.news : DEFAULT_NOTIFICATION_PREFERENCES.news,
-  };
-}
+const scheduleStatusLabels: Record<NotificationScheduleStatus, string> = {
+  candidate: 'включено',
+  disabled_by_preferences: 'выключено',
+  needs_data: 'нужны данные',
+  skipped: 'пропущено',
+  unsupported_in_this_pr: 'будет подключено в следующем PR',
+};
 
 function areNotificationPreferencesEqual(
   left: ProfileNotificationPreferences,
   right: ProfileNotificationPreferences,
 ): boolean {
   return notificationPreferenceKeys.every((key) => left[key] === right[key]);
+}
+
+function getScheduleStatusStyle(status: NotificationScheduleStatus) {
+  if (status === 'candidate') {
+    return styles.scheduleStatusEnabled;
+  }
+
+  if (status === 'disabled_by_preferences') {
+    return styles.scheduleStatusDisabled;
+  }
+
+  return styles.scheduleStatusPending;
 }
 
 export default function NotificationsScreen() {
@@ -110,7 +116,7 @@ export default function NotificationsScreen() {
   const [isCancellingLocalNotifications, setIsCancellingLocalNotifications] = useState(false);
 
   const savedPreferences = useMemo(
-    () => normalizeNotificationPreferences(profile?.notification_preferences),
+    () => normalizeNotificationPreferencesForSchedule(profile?.notification_preferences),
     [profile?.notification_preferences],
   );
   const isDirty = useMemo(
@@ -120,6 +126,10 @@ export default function NotificationsScreen() {
   const permissionStatusLabel = isPermissionStatusLoading
     ? 'Проверяем...'
     : permissionStatusLabels[permissionStatus];
+  const schedulePreview = useMemo(
+    () => buildNotificationSchedulePreview({ preferences }),
+    [preferences],
+  );
 
   useEffect(() => {
     if (user || loading || sessionRequested) {
@@ -185,7 +195,7 @@ export default function NotificationsScreen() {
       return;
     }
 
-    const nextPreferences = normalizeNotificationPreferences(preferences);
+    const nextPreferences = normalizeNotificationPreferencesForSchedule(preferences);
 
     setIsSaving(true);
 
@@ -407,6 +417,31 @@ export default function NotificationsScreen() {
           ) : null}
         </GlassCard>
 
+        <GlassCard>
+          <View style={styles.scheduleHeader}>
+            <Text style={styles.scheduleTitle}>План уведомлений</Text>
+            <Text style={styles.scheduleSummary}>
+              {schedulePreview.enabledCategoryCount} из {notificationRows.length} включено
+            </Text>
+          </View>
+
+          <View style={styles.scheduleList}>
+            {notificationRows.map((row) => {
+              const scheduleItem = schedulePreview.items.find((item) => item.category === row.key);
+              const scheduleStatus = scheduleItem?.status ?? 'unsupported_in_this_pr';
+
+              return (
+                <View key={row.key} style={styles.scheduleRow}>
+                  <Text style={styles.scheduleCategory}>{row.label}</Text>
+                  <Text style={[styles.scheduleStatus, getScheduleStatusStyle(scheduleStatus)]}>
+                    {scheduleStatusLabels[scheduleStatus]}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        </GlassCard>
+
         <IOSGroup>
           {notificationRows.map((item, index) => (
             <ToggleRow
@@ -545,6 +580,62 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginTop: 12,
     textAlign: 'center',
+  },
+  scheduleHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  scheduleTitle: {
+    color: colors.text,
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '800',
+    lineHeight: 21,
+    minWidth: 0,
+  },
+  scheduleSummary: {
+    color: colors.textMuted,
+    flexShrink: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+    textAlign: 'right',
+  },
+  scheduleList: {
+    gap: 8,
+    marginTop: 12,
+  },
+  scheduleRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  scheduleCategory: {
+    color: colors.textDim,
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    minWidth: 0,
+  },
+  scheduleStatus: {
+    flexShrink: 1,
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 17,
+    maxWidth: 170,
+    textAlign: 'right',
+  },
+  scheduleStatusDisabled: {
+    color: colors.textMuted,
+  },
+  scheduleStatusEnabled: {
+    color: colors.success,
+  },
+  scheduleStatusPending: {
+    color: colors.warning,
   },
   statusText: {
     color: colors.textGhost,
