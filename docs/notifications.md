@@ -50,11 +50,25 @@ settings to the existing `profile.notification_preferences` JSON:
 - quiet-hours preview metadata for candidates that fall inside the quiet-hours
   window.
 
-PR 7 still must not schedule real category reminders through
+PR 7 did not schedule real category reminders through
 `Notifications.scheduleNotificationAsync`, create device tokens, fetch Expo
 push tokens, add Supabase migrations, add Edge Functions, add cron/scheduler
 logic, or change prayer tracker privacy. Web-admin, remote push, EAS builds,
-and TestFlight remain out of scope.
+and TestFlight stayed out of scope.
+
+PR 8 (`feature/push-device-tokens-foundation`) adds the safe foundation for
+future remote push registration:
+
+- `public.device_tokens` storage with RLS scoped to the current `auth.uid()`;
+- authenticated RPCs for upserting and deactivating only the current user's
+  Expo push token;
+- a client service that can request/get an Expo push token only after an
+  explicit user action;
+- a Profile -> Notifications device block that reports Expo Go/EAS runtime
+  limitations without sending remote push.
+
+PR 8 still does not send push notifications, add an Edge Function, add server
+fanout, add a queue, add cron/scheduler logic, run EAS, or run TestFlight.
 
 ## Current preference model
 
@@ -126,6 +140,26 @@ The candidate is not moved, rescheduled, or written to iOS scheduling APIs in
 this PR. The Profile -> Notifications screen may show a short "тихие часы" hint
 for such preview candidates.
 
+## Push token foundation added in PR 8
+
+Device token rows belong only to the signed-in user. The table stores:
+
+- `user_id` as the owner, always tied to `auth.uid()` by RPC/RLS;
+- `platform`, `push_provider = 'expo'`, `expo_push_token`, optional
+  `device_id`, app/build versions, and environment;
+- `is_active`, `last_seen_at`, `created_at`, and `updated_at`.
+
+The client uses only the normal authenticated Supabase client. It does not use
+admin credentials and does not write a `user_id` supplied by the app. The
+`upsert_my_device_token(...)` RPC derives `user_id` from `auth.uid()`, upserts
+by `(auth.uid(), expo_push_token)`, marks the row active, and refreshes
+`last_seen_at`. The `deactivate_my_device_token(...)` RPC can deactivate only
+the current user's matching token.
+
+Profile -> Notifications does not request a push token on screen open and does
+not register a token on sign-in. Token registration happens only when the user
+taps "Зарегистрировать это устройство".
+
 ## Source boundaries
 
 Notification planning must use only domain sources that are already allowed for
@@ -165,8 +199,8 @@ scheduled on the device from already-visible data:
 - Event reminders for the current user's existing registrations. PR 6 builds
   these only as preview candidates; real local scheduling remains a later PR.
 
-Remote push is a later implementation track. It is for backend-initiated events
-or community broadcasts:
+Remote push delivery is a later implementation track. It is for
+backend-initiated events or community broadcasts:
 
 - New community event.
 - Event changed.
@@ -176,8 +210,8 @@ or community broadcasts:
 - Waitlist spot available.
 - News.
 
-The first local-notification PRs must not create `device_tokens`, request an
-Expo push token, or add server push functions.
+PR 8 creates only the device token foundation. It does not send remote push and
+does not add server push functions.
 
 ## Expo Go limits
 
@@ -188,10 +222,11 @@ The `expo-notifications` config plugin is included for development/release
 builds. Expo Go can validate the local permission/test foundation, but it may
 not reflect every native config change from app config plugins.
 
-Remote push cannot be fully validated in Expo Go. Push token registration and
-real push delivery require an EAS development build, TestFlight build, or
-release build. Device token work should therefore start only in the later push
-foundation PR.
+Remote push cannot be fully validated in Expo Go. Expo push token registration
+and real push delivery require an EAS development build, TestFlight build, or
+release build. In Expo Go, the app should show a clear unavailable/missing
+runtime status instead of crashing. Real token registration verification belongs
+to EAS development build/TestFlight.
 
 ## Category plan
 
@@ -273,15 +308,20 @@ registrations, profiles, or prayer data.
    - Keep all candidates preview-only. Do not schedule real iOS notifications
      in this PR.
 8. `feature/push-device-tokens-foundation`
-   - Introduce push token storage and build-only token registration.
-   - Validate through EAS development build, TestFlight, or release build, not
-     Expo Go.
+   - Add `device_tokens` storage, RLS, and authenticated RPCs for current-user
+     token upsert/deactivation.
+   - Add a client push token service and explicit Profile -> Notifications
+     device registration action.
+   - Keep remote push sending, Edge Functions, queues, cron/scheduler logic,
+     EAS, and TestFlight out of scope.
+   - Validate real token registration later through EAS development build,
+     TestFlight, or release build, not Expo Go.
 9. `feature/server-event-push-notifications`
    - Add server-side push for event lifecycle notifications and news:
      new community event, event changed, event cancelled, registration
      confirmed/rejected, waitlist available, and news.
 
-Next PR: `feature/push-device-tokens-foundation`.
+Next PR: `feature/server-event-push-notifications`.
 
 ## Manual smoke checklist
 
@@ -289,35 +329,14 @@ Manual smoke is performed by the project owner, not by Codex:
 
 1. Open iPhone app in Expo Go.
 2. Open Profile -> Notifications.
-3. Confirm existing permission status block still works.
-4. Confirm existing test local notification action still works.
-5. Confirm notification preference toggles still save.
-6. Confirm the new "План уведомлений" block is visible.
-7. Confirm candles/shabbat/weekly/holidays show candidate or needs-data states,
-   not generic unsupported where Hebcal data is available.
-8. Confirm birthdays show candidate or needs-data depending on already loaded
-   contacts.
-9. Open Contacts tab and load community/local contacts if needed.
-10. Return to Profile -> Notifications and confirm birthdays preview can use
-    already loaded visible data.
-11. Open Events / My registrations so registrations are loaded if needed.
-12. Return to Profile -> Notifications and confirm events preview can use
-    already loaded current-user registrations.
-13. Confirm event candidates are occurrence-aware when occurrence data is
-    available.
-14. Change candles reminder offset and confirm preview time updates.
-15. Change event primary reminder offset and confirm event preview time updates
-    if event candidates exist.
-16. Change birthday reminder hour and confirm birthday preview time updates if
-    birthday candidates exist.
-17. Enable quiet hours and confirm preview remains stable and shows quiet-hours
-    metadata/hint where relevant.
-18. Turn off events and confirm event preview becomes disabled.
-19. Turn off birthdays and confirm birthday preview becomes disabled.
-20. Save preferences and reopen the screen.
-21. Confirm advanced settings persist.
-22. Confirm no real birthday or event reminders were scheduled automatically.
-23. Confirm no iPhone contacts permission prompt appears from Profile ->
-    Notifications.
-24. Confirm no device tokens, remote push, backend migrations, or prayer
-    activity logs were touched.
+3. Confirm existing local permission/test notification blocks still work.
+4. Confirm "Push-уведомления" / device block is visible.
+5. Confirm no push token is requested automatically on screen open.
+6. Tap "Зарегистрировать это устройство".
+7. In Expo Go, confirm the app does not crash and shows a clear unavailable or
+   missing EAS/projectId status if token registration is not available.
+8. Confirm existing notification preferences and advanced settings still save.
+9. Confirm no remote push is sent.
+10. Confirm no server push Edge Function was added.
+11. Later, in EAS development build/TestFlight, repeat token registration and
+    confirm the token row is created for the current user only.
