@@ -21,12 +21,13 @@ import {
   normalizeNotificationPreferencesForSchedule,
 } from '@/services/notificationPlannerService';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
   type ProfileNotificationPreferences,
 } from '@/types/profile';
-import type { NotificationScheduleStatus } from '@/types/notification';
+import type { NotificationScheduleItem, NotificationScheduleStatus } from '@/types/notification';
 
 const profileHref = '/profile' as Href;
 
@@ -95,6 +96,42 @@ function getScheduleStatusStyle(status: NotificationScheduleStatus) {
   return styles.scheduleStatusPending;
 }
 
+function formatScheduleTriggerAt(item: NotificationScheduleItem) {
+  if (!item.triggerAt) {
+    return null;
+  }
+
+  const date = new Date(item.triggerAt);
+
+  if (!Number.isFinite(date.getTime())) {
+    return null;
+  }
+
+  const timezone = item.timezone ?? undefined;
+  const day = date.toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: timezone,
+  });
+  const time = date.toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: timezone,
+  });
+
+  return `${day}, ${time}`;
+}
+
+function getScheduleCandidateDetail(item: NotificationScheduleItem | undefined) {
+  if (!item || item.status !== 'candidate') {
+    return null;
+  }
+
+  const triggerAt = formatScheduleTriggerAt(item);
+
+  return triggerAt ? `${item.title} · ${triggerAt}` : item.title;
+}
+
 export default function NotificationsScreen() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
@@ -102,6 +139,7 @@ export default function NotificationsScreen() {
   const loading = useAuthStore((state) => state.loading);
   const loadSession = useAuthStore((state) => state.loadSession);
   const updateProfile = useAuthStore((state) => state.updateProfile);
+  const city = useSettingsStore((state) => state.city);
 
   const [preferences, setPreferences] = useState<ProfileNotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
   const [sessionRequested, setSessionRequested] = useState(false);
@@ -127,8 +165,8 @@ export default function NotificationsScreen() {
     ? 'Проверяем...'
     : permissionStatusLabels[permissionStatus];
   const schedulePreview = useMemo(
-    () => buildNotificationSchedulePreview({ preferences }),
-    [preferences],
+    () => buildNotificationSchedulePreview({ city, preferences }),
+    [city, preferences],
   );
 
   useEffect(() => {
@@ -429,10 +467,16 @@ export default function NotificationsScreen() {
             {notificationRows.map((row) => {
               const scheduleItem = schedulePreview.items.find((item) => item.category === row.key);
               const scheduleStatus = scheduleItem?.status ?? 'unsupported_in_this_pr';
+              const candidateDetail = getScheduleCandidateDetail(scheduleItem);
 
               return (
                 <View key={row.key} style={styles.scheduleRow}>
-                  <Text style={styles.scheduleCategory}>{row.label}</Text>
+                  <View style={styles.scheduleCategoryBlock}>
+                    <Text style={styles.scheduleCategory}>{row.label}</Text>
+                    {candidateDetail ? (
+                      <Text numberOfLines={1} style={styles.scheduleCandidateDetail}>{candidateDetail}</Text>
+                    ) : null}
+                  </View>
                   <Text style={[styles.scheduleStatus, getScheduleStatusStyle(scheduleStatus)]}>
                     {scheduleStatusLabels[scheduleStatus]}
                   </Text>
@@ -615,10 +659,18 @@ const styles = StyleSheet.create({
   },
   scheduleCategory: {
     color: colors.textDim,
-    flex: 1,
     fontSize: 13,
     lineHeight: 18,
+  },
+  scheduleCategoryBlock: {
+    flex: 1,
     minWidth: 0,
+  },
+  scheduleCandidateDetail: {
+    color: colors.textMuted,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
   },
   scheduleStatus: {
     flexShrink: 1,

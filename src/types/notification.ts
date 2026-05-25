@@ -1,3 +1,5 @@
+import type { Location } from '@hebcal/core';
+
 import type { ProfileNotificationPreferences } from './profile';
 
 export const NOTIFICATION_CATEGORIES = [
@@ -50,6 +52,9 @@ export type NotificationScheduleItem = {
 };
 
 export type NotificationScheduleBuildInput = {
+  city?: string | null;
+  location?: Location | null;
+  now?: string | Date;
   preferences?: ProfileNotificationPreferences | null;
   timezone?: string | null;
 };
