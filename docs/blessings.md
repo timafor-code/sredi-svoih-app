@@ -143,6 +143,8 @@ The modal keeps the same local catalog boundary as the previous blessings MVP wo
 
 The blessings catalog remains local and offline-first. `profiles.nusach` is used only as the default display preference when opening blessing text; it does not add Supabase blessings tables, migrations, SQLite, remote sync, or backend catalog storage.
 
+Profile -> Prayers settings now writes the selected nusach directly to `profiles.nusach`. The real UI choices there are only `chabad` (Chabad) and `sephardi` (Beit Sefaradi); `ashkenaz`, `common`, missing, and unknown values remain technical legacy/fallback values and are not shown in that UI.
+
 For `sephardi`, the blessings screen opens text with `selectedTextNusach: 'beit_sefaradi'`, `translitNusach: 'sephard'`, and Sephardi transliteration. For `chabad`, `ashkenaz`, `common`, missing, or unknown profile values, it opens with `selectedTextNusach: 'chabad'`, `translitNusach: 'ashkenaz'`, and Ashkenazi transliteration.
 
 If the requested text variant is not available, `getBlessingText()` keeps applying its existing local fallback logic.
