@@ -13,18 +13,28 @@ foundation for local notifications on the device:
 - cancellation of scheduled local notifications;
 - a root foreground notification handler.
 
-PR 3 (`feature/notifications-schedule-model`) adds the client-side schedule
+PR 3 (`feature/notifications-schedule-model`) added the client-side schedule
 model and a compact Profile -> Notifications preview. It introduces
 `NotificationScheduleItem` and a planner service that turns current
 `profile.notification_preferences` into preview rows for all 8 notification
 categories.
 
-PR 3 still must not add Hebcal-based scheduling, birthday reminders, event
-reminders, remote push, Supabase migrations, device token storage, Expo push
-token fetching, Edge Functions, cron/scheduler logic, or changes to events,
-registrations, contacts, prayer tracker, web-admin, or server push. Real
-scheduling through `Notifications.scheduleNotificationAsync` remains future
-work for later local reminder PRs.
+PR 4 (`feature/notifications-hebcal-reminders`) adds preview-only Hebcal-based
+candidate rows for local reminders:
+
+- candle lighting;
+- Shabbat pre-reminders;
+- upcoming holidays and significant Jewish dates;
+- weekly parsha reminders;
+- a conservative prayers preview candidate based on existing zmanim/prayer
+  window helpers when available.
+
+PR 4 still must not schedule real category reminders through
+`Notifications.scheduleNotificationAsync`, add birthday reminders, read
+contacts, read events or registrations, create device tokens, fetch Expo push
+tokens, add Supabase migrations, add Edge Functions, add cron/scheduler logic,
+or change prayer tracker privacy. Birthdays, events, registrations, contacts,
+web-admin, remote push, EAS builds, and TestFlight remain out of scope.
 
 ## Current preference model
 
@@ -45,11 +55,13 @@ These booleans are category-level user preferences. They are not a schedule
 model, not a delivery log, and not proof that real notifications have been
 scheduled. Missing keys should continue to be treated with existing defaults.
 
-PR 3 adds a separate client-side schedule preview layer. The preview may mark a
-category as `disabled_by_preferences` when the user preference is off, or
-`unsupported_in_this_pr` when the preference is on but the category-specific
-planner has not been implemented yet. It does not calculate Hebcal dates, read
-contacts, read events, read registrations, or schedule real local reminders.
+PR 3 added a separate client-side schedule preview layer. PR 4 extends that
+preview layer for Hebcal-backed categories. The preview may mark a category as
+`disabled_by_preferences` when the user preference is off, `candidate` when a
+future local reminder candidate can be calculated safely, `needs_data` when the
+Hebcal/zmanim layer cannot provide enough data, or `unsupported_in_this_pr` for
+categories that still belong to later PRs. It does not read contacts, read
+events, read registrations, or schedule real local reminders.
 
 ## Source boundaries
 
@@ -163,8 +175,10 @@ registrations, profiles, or prayer data.
    - Add Profile -> Notifications preview rows without scheduling real iOS
      reminders.
 4. `feature/notifications-hebcal-reminders`
-   - Implement Hebcal-based local reminders for Shabbat, candles, holidays, and
-     weekly parsha using selected city and timezone.
+   - Add Hebcal-based preview candidates for Shabbat, candles, holidays, weekly
+     parsha, and the cautious prayers layer using selected city/timezone data.
+   - Keep all candidates preview-only. Do not call
+     `Notifications.scheduleNotificationAsync` for these categories yet.
 5. `feature/notifications-birthday-reminders`
    - Implement local birthday reminders from visible community contacts and
      local-only iPhone contacts.
@@ -183,7 +197,7 @@ registrations, profiles, or prayer data.
      new community event, event changed, event cancelled, registration
      confirmed/rejected, waitlist available, and news.
 
-Next PR: `feature/notifications-hebcal-reminders`.
+Next PR: `feature/notifications-birthday-reminders`.
 
 ## Manual smoke checklist
 
@@ -195,9 +209,11 @@ Manual smoke is performed by the project owner, not by Codex:
 4. Confirm existing test local notification action still works.
 5. Confirm notification preference toggles still save.
 6. Confirm the new "План уведомлений" block is visible.
-7. Confirm all 8 categories appear in the preview.
-8. Turn off one preference and confirm preview marks it disabled.
+7. Confirm candles/shabbat/weekly/holidays show candidate or needs-data states,
+   not generic unsupported where Hebcal data is available.
+8. Turn off candles and confirm candle preview becomes disabled.
 9. Save preferences and reopen the screen.
 10. Confirm preview reflects saved preferences.
-11. Confirm no real Hebcal, birthday, contact, or event reminders were
-    scheduled by this PR.
+11. Confirm no real category reminders were scheduled automatically.
+12. Confirm no birthdays, contacts, events, registrations, or prayer activity
+    logs were read/planned by this PR.

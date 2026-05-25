@@ -13,6 +13,10 @@ import {
   type NotificationScheduleStatus,
   type NotificationSource,
 } from '@/types/notification';
+import {
+  buildHebcalNotificationCandidate,
+  isHebcalNotificationCategory,
+} from '@/services/notificationHebcalPlannerService';
 
 type CategoryScheduleDefinition = {
   body: string;
@@ -166,6 +170,10 @@ export function buildCategorySchedulePreview(
 
   if (!preferences[category]) {
     return createDisabledScheduleItem(category, input);
+  }
+
+  if (isHebcalNotificationCategory(category)) {
+    return buildHebcalNotificationCandidate(category, input);
   }
 
   return createUnsupportedScheduleItem(category, input);
