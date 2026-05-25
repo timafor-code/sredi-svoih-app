@@ -139,6 +139,14 @@ The full-text-modal PR adds the shared controlled `BlessingTextModal` for `/pray
 
 The modal keeps the same local catalog boundary as the previous blessings MVP work: it shows only the selected language tab, scrolls inside a dark glass panel for long texts, and displays neutral placeholders when a language is not ready. Dynamic inserts are assembled by the local catalog service before UI rendering.
 
+## Profile nusach defaults
+
+The blessings catalog remains local and offline-first. `profiles.nusach` is used only as the default display preference when opening blessing text; it does not add Supabase blessings tables, migrations, SQLite, remote sync, or backend catalog storage.
+
+For `sephardi`, the blessings screen opens text with `selectedTextNusach: 'beit_sefaradi'`, `translitNusach: 'sephard'`, and Sephardi transliteration. For `chabad`, `ashkenaz`, `common`, missing, or unknown profile values, it opens with `selectedTextNusach: 'chabad'`, `translitNusach: 'ashkenaz'`, and Ashkenazi transliteration.
+
+If the requested text variant is not available, `getBlessingText()` keeps applying its existing local fallback logic.
+
 ## Core short blessing texts
 
 This PR adds short core blessing text blocks for basic before-food and after-food blessings in Hebrew, transliteration, and Russian.
