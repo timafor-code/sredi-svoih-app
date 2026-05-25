@@ -104,6 +104,146 @@ const CATEGORY_SCHEDULE_DEFINITIONS: Record<NotificationCategory, CategorySchedu
   },
 };
 
+type NumericNotificationPreferenceKey = Extract<
+  keyof ProfileNotificationPreferences,
+  | 'candlesReminderOffsetMinutes'
+  | 'shabbatReminderOffsetHours'
+  | 'holidaysReminderHour'
+  | 'weeklyReminderOffsetHours'
+  | 'birthdaysReminderHour'
+  | 'eventsPrimaryReminderOffsetHours'
+  | 'eventsFallbackReminderOffsetHours'
+>;
+
+type NumericNotificationPreferenceRange = {
+  defaultValue: number;
+  max: number;
+  min: number;
+};
+
+const NUMERIC_NOTIFICATION_PREFERENCE_RANGES: Record<
+  NumericNotificationPreferenceKey,
+  NumericNotificationPreferenceRange
+> = {
+  birthdaysReminderHour: { defaultValue: 9, max: 18, min: 6 },
+  candlesReminderOffsetMinutes: { defaultValue: 60, max: 180, min: 15 },
+  eventsFallbackReminderOffsetHours: { defaultValue: 2, max: 12, min: 1 },
+  eventsPrimaryReminderOffsetHours: { defaultValue: 24, max: 72, min: 2 },
+  holidaysReminderHour: { defaultValue: 9, max: 18, min: 6 },
+  shabbatReminderOffsetHours: { defaultValue: 8, max: 24, min: 2 },
+  weeklyReminderOffsetHours: { defaultValue: 8, max: 24, min: 2 },
+};
+
+const QUIET_HOURS_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const DAY_MINUTES = 24 * 60;
+
+function normalizeNumericNotificationPreference(
+  value: unknown,
+  range: NumericNotificationPreferenceRange,
+): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return range.defaultValue;
+  }
+
+  return Math.min(range.max, Math.max(range.min, Math.round(value)));
+}
+
+function normalizeQuietHoursTime(value: unknown, fallback: string): string {
+  if (typeof value === 'string' && QUIET_HOURS_TIME_PATTERN.test(value)) {
+    return value;
+  }
+
+  return fallback;
+}
+
+function parseTimeToMinutes(value: string): number {
+  const [hours, minutes] = value.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function getDateMinutesInTimezone(date: Date, timezone: string | null | undefined): number | null {
+  const options: Intl.DateTimeFormatOptions = {
+    hour: '2-digit',
+    hour12: false,
+    minute: '2-digit',
+  };
+
+  if (timezone) {
+    options.timeZone = timezone;
+  }
+
+  try {
+    const formattedTime = new Intl.DateTimeFormat('en-GB', options).format(date);
+    const match = formattedTime.match(/^(\d{2}):(\d{2})$/);
+
+    if (!match) {
+      return null;
+    }
+
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+      return null;
+    }
+
+    return ((hours * 60 + minutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES;
+  } catch {
+    return null;
+  }
+}
+
+function isDateInsideQuietHours(
+  date: Date,
+  preferences: ProfileNotificationPreferences,
+  timezone: string | null | undefined,
+): boolean {
+  if (!preferences.quietHoursEnabled) {
+    return false;
+  }
+
+  const currentMinutes = getDateMinutesInTimezone(date, timezone);
+
+  if (currentMinutes === null) {
+    return false;
+  }
+
+  const startMinutes = parseTimeToMinutes(preferences.quietHoursStart ?? '22:00');
+  const endMinutes = parseTimeToMinutes(preferences.quietHoursEnd ?? '08:00');
+
+  if (startMinutes === endMinutes) {
+    return false;
+  }
+
+  if (startMinutes < endMinutes) {
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  }
+
+  return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+}
+
+function addQuietHoursMetadata(
+  item: NotificationScheduleItem,
+  input: NotificationScheduleBuildInput,
+  preferences: ProfileNotificationPreferences,
+): NotificationScheduleItem {
+  const triggerAt = item.triggerAt ? new Date(item.triggerAt) : null;
+  const timezone = item.timezone ?? input.timezone ?? null;
+  const isInsideQuietHours = item.status === 'candidate'
+    && triggerAt instanceof Date
+    && Number.isFinite(triggerAt.getTime())
+    && isDateInsideQuietHours(triggerAt, preferences, timezone);
+
+  return {
+    ...item,
+    metadata: {
+      ...item.metadata,
+      isInsideQuietHours,
+      quietHoursEnabled: preferences.quietHoursEnabled === true,
+    },
+  };
+}
+
 export function normalizeNotificationPreferencesForSchedule(
   preferences: ProfileNotificationPreferences | null | undefined,
 ): ProfileNotificationPreferences {
@@ -120,6 +260,45 @@ export function normalizeNotificationPreferencesForSchedule(
     birthdays: typeof source.birthdays === 'boolean' ? source.birthdays : DEFAULT_NOTIFICATION_PREFERENCES.birthdays,
     weekly: typeof source.weekly === 'boolean' ? source.weekly : DEFAULT_NOTIFICATION_PREFERENCES.weekly,
     news: typeof source.news === 'boolean' ? source.news : DEFAULT_NOTIFICATION_PREFERENCES.news,
+    candlesReminderOffsetMinutes: normalizeNumericNotificationPreference(
+      source.candlesReminderOffsetMinutes,
+      NUMERIC_NOTIFICATION_PREFERENCE_RANGES.candlesReminderOffsetMinutes,
+    ),
+    shabbatReminderOffsetHours: normalizeNumericNotificationPreference(
+      source.shabbatReminderOffsetHours,
+      NUMERIC_NOTIFICATION_PREFERENCE_RANGES.shabbatReminderOffsetHours,
+    ),
+    holidaysReminderHour: normalizeNumericNotificationPreference(
+      source.holidaysReminderHour,
+      NUMERIC_NOTIFICATION_PREFERENCE_RANGES.holidaysReminderHour,
+    ),
+    weeklyReminderOffsetHours: normalizeNumericNotificationPreference(
+      source.weeklyReminderOffsetHours,
+      NUMERIC_NOTIFICATION_PREFERENCE_RANGES.weeklyReminderOffsetHours,
+    ),
+    birthdaysReminderHour: normalizeNumericNotificationPreference(
+      source.birthdaysReminderHour,
+      NUMERIC_NOTIFICATION_PREFERENCE_RANGES.birthdaysReminderHour,
+    ),
+    eventsPrimaryReminderOffsetHours: normalizeNumericNotificationPreference(
+      source.eventsPrimaryReminderOffsetHours,
+      NUMERIC_NOTIFICATION_PREFERENCE_RANGES.eventsPrimaryReminderOffsetHours,
+    ),
+    eventsFallbackReminderOffsetHours: normalizeNumericNotificationPreference(
+      source.eventsFallbackReminderOffsetHours,
+      NUMERIC_NOTIFICATION_PREFERENCE_RANGES.eventsFallbackReminderOffsetHours,
+    ),
+    quietHoursEnabled: typeof source.quietHoursEnabled === 'boolean'
+      ? source.quietHoursEnabled
+      : DEFAULT_NOTIFICATION_PREFERENCES.quietHoursEnabled ?? false,
+    quietHoursStart: normalizeQuietHoursTime(
+      source.quietHoursStart,
+      DEFAULT_NOTIFICATION_PREFERENCES.quietHoursStart ?? '22:00',
+    ),
+    quietHoursEnd: normalizeQuietHoursTime(
+      source.quietHoursEnd,
+      DEFAULT_NOTIFICATION_PREFERENCES.quietHoursEnd ?? '08:00',
+    ),
   };
 }
 
@@ -176,24 +355,25 @@ function buildCategorySchedulePreviewItems(
   input: NotificationScheduleBuildInput,
 ): NotificationScheduleItem[] {
   const preferences = normalizeNotificationPreferencesForSchedule(input.preferences);
+  const normalizedInput: NotificationScheduleBuildInput = {
+    ...input,
+    preferences,
+  };
+  let items: NotificationScheduleItem[];
 
   if (!preferences[category]) {
-    return [createDisabledScheduleItem(category, input)];
+    items = [createDisabledScheduleItem(category, normalizedInput)];
+  } else if (isHebcalNotificationCategory(category)) {
+    items = [buildHebcalNotificationCandidate(category, normalizedInput)];
+  } else if (category === 'birthdays') {
+    items = buildBirthdayNotificationCandidates(normalizedInput);
+  } else if (category === 'events') {
+    items = buildEventNotificationCandidates(normalizedInput);
+  } else {
+    items = [createUnsupportedScheduleItem(category, normalizedInput)];
   }
 
-  if (isHebcalNotificationCategory(category)) {
-    return [buildHebcalNotificationCandidate(category, input)];
-  }
-
-  if (category === 'birthdays') {
-    return buildBirthdayNotificationCandidates(input);
-  }
-
-  if (category === 'events') {
-    return buildEventNotificationCandidates(input);
-  }
-
-  return [createUnsupportedScheduleItem(category, input)];
+  return items.map((item) => addQuietHoursMetadata(item, normalizedInput, preferences));
 }
 
 function countItemsByStatus(

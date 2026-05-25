@@ -42,7 +42,15 @@ load registrations from Profile -> Notifications, read event tables directly,
 schedule real iOS reminders, add backend changes, create device tokens, or add
 remote push infrastructure.
 
-PR 6 still must not schedule real category reminders through
+PR 7 (`feature/notifications-settings-advanced`) adds advanced local reminder
+settings to the existing `profile.notification_preferences` JSON:
+
+- reminder offsets and reminder hours for local preview candidates;
+- quiet hours settings;
+- quiet-hours preview metadata for candidates that fall inside the quiet-hours
+  window.
+
+PR 7 still must not schedule real category reminders through
 `Notifications.scheduleNotificationAsync`, create device tokens, fetch Expo
 push tokens, add Supabase migrations, add Edge Functions, add cron/scheduler
 logic, or change prayer tracker privacy. Web-admin, remote push, EAS builds,
@@ -62,10 +70,22 @@ The current user-facing notification settings are stored in
 - `birthdays`
 - `weekly`
 - `news`
+- `candlesReminderOffsetMinutes`
+- `shabbatReminderOffsetHours`
+- `holidaysReminderHour`
+- `weeklyReminderOffsetHours`
+- `birthdaysReminderHour`
+- `eventsPrimaryReminderOffsetHours`
+- `eventsFallbackReminderOffsetHours`
+- `quietHoursEnabled`
+- `quietHoursStart`
+- `quietHoursEnd`
 
-These booleans are category-level user preferences. They are not a schedule
-model, not a delivery log, and not proof that real notifications have been
-scheduled. Missing keys should continue to be treated with existing defaults.
+The booleans are category-level user preferences. Advanced numeric/time fields
+are local preview settings for when a candidate reminder would fire. They are
+not a delivery log, not proof that real notifications have been scheduled, and
+not remote push settings. Missing keys should continue to be treated with
+existing defaults so old saved profiles remain valid.
 
 PR 3 added a separate client-side schedule preview layer. PR 4 extends that
 preview layer for Hebcal-backed categories. PR 5 extends it for birthday
@@ -77,6 +97,34 @@ future local reminder candidate can be calculated safely, `needs_data` when the
 allowed local data cannot provide enough information, or
 `unsupported_in_this_pr` for categories that still belong to later PRs. It does
 not schedule real local reminders.
+
+## Advanced settings added in PR 7
+
+Advanced settings live inside the existing `profile.notification_preferences`
+object. No Supabase migration is required for this PR.
+
+| Field | Default | Normalized range | Used by |
+| --- | ---: | ---: | --- |
+| `candlesReminderOffsetMinutes` | 60 | 15..180 minutes | Candle lighting preview |
+| `shabbatReminderOffsetHours` | 8 | 2..24 hours | Shabbat preview |
+| `holidaysReminderHour` | 9 | 6..18 local hour | Holiday preview |
+| `weeklyReminderOffsetHours` | 8 | 2..24 hours | Weekly parsha preview |
+| `birthdaysReminderHour` | 9 | 6..18 local hour | Birthday preview |
+| `eventsPrimaryReminderOffsetHours` | 24 | 2..72 hours | Event preview primary reminder |
+| `eventsFallbackReminderOffsetHours` | 2 | 1..12 hours | Event preview fallback reminder |
+| `quietHoursEnabled` | `false` | boolean | Preview metadata only |
+| `quietHoursStart` | `22:00` | `HH:mm` | Preview metadata only |
+| `quietHoursEnd` | `08:00` | `HH:mm` | Preview metadata only |
+
+If a preview candidate's `triggerAt` falls inside quiet hours, PR 7 adds
+metadata only:
+
+- `quietHoursEnabled`
+- `isInsideQuietHours`
+
+The candidate is not moved, rescheduled, or written to iOS scheduling APIs in
+this PR. The Profile -> Notifications screen may show a short "тихие часы" hint
+for such preview candidates.
 
 ## Source boundaries
 
@@ -216,8 +264,14 @@ registrations, profiles, or prayer data.
      non-occurrence events.
    - Do not schedule real iOS notifications in this PR.
 7. `feature/notifications-settings-advanced`
-   - Add advanced settings such as offsets, quiet hours, and reminder detail
-     controls after the core schedule model is stable.
+   - Add advanced local notification settings for reminder offsets and quiet
+     hours.
+   - Normalize numeric settings and `HH:mm` quiet-hours values with defaults so
+     old saved profiles remain valid.
+   - Wire advanced settings into Hebcal, birthday, and event preview planners.
+   - Add quiet-hours metadata to preview candidates without rescheduling them.
+   - Keep all candidates preview-only. Do not schedule real iOS notifications
+     in this PR.
 8. `feature/push-device-tokens-foundation`
    - Introduce push token storage and build-only token registration.
    - Validate through EAS development build, TestFlight, or release build, not
@@ -227,7 +281,7 @@ registrations, profiles, or prayer data.
      new community event, event changed, event cancelled, registration
      confirmed/rejected, waitlist available, and news.
 
-Next PR: `feature/notifications-settings-advanced`.
+Next PR: `feature/push-device-tokens-foundation`.
 
 ## Manual smoke checklist
 
@@ -251,11 +305,19 @@ Manual smoke is performed by the project owner, not by Codex:
     already loaded current-user registrations.
 13. Confirm event candidates are occurrence-aware when occurrence data is
     available.
-14. Turn off events and confirm event preview becomes disabled.
-15. Turn off birthdays and confirm birthday preview becomes disabled.
-16. Save preferences and reopen the screen.
-17. Confirm no real birthday or event reminders were scheduled automatically.
-18. Confirm no iPhone contacts permission prompt appears from Profile ->
+14. Change candles reminder offset and confirm preview time updates.
+15. Change event primary reminder offset and confirm event preview time updates
+    if event candidates exist.
+16. Change birthday reminder hour and confirm birthday preview time updates if
+    birthday candidates exist.
+17. Enable quiet hours and confirm preview remains stable and shows quiet-hours
+    metadata/hint where relevant.
+18. Turn off events and confirm event preview becomes disabled.
+19. Turn off birthdays and confirm birthday preview becomes disabled.
+20. Save preferences and reopen the screen.
+21. Confirm advanced settings persist.
+22. Confirm no real birthday or event reminders were scheduled automatically.
+23. Confirm no iPhone contacts permission prompt appears from Profile ->
     Notifications.
-19. Confirm no device tokens, remote push, backend migrations, or prayer
+24. Confirm no device tokens, remote push, backend migrations, or prayer
     activity logs were touched.

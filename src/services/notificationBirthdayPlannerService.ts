@@ -6,6 +6,7 @@ import type {
   NotificationScheduleMetadata,
   NotificationSource,
 } from '@/types/notification';
+import { DEFAULT_NOTIFICATION_PREFERENCES } from '@/types/profile';
 
 type BirthdayRelatedEntityType = 'community_contact' | 'iphone_contact';
 
@@ -26,13 +27,13 @@ export type NormalizeBirthdayReminderSourcesInput = Pick<
 
 export type BuildBirthdayNotificationCandidateInput = Pick<
   NotificationScheduleBuildInput,
-  'timezone'
+  'preferences' | 'timezone'
 > & {
   reminderSource: BirthdayReminderSource;
 };
 
 const BIRTHDAY_CANDIDATE_LIMIT = 3;
-const BIRTHDAY_REMINDER_HOUR = 9;
+const DEFAULT_BIRTHDAY_REMINDER_HOUR = DEFAULT_NOTIFICATION_PREFERENCES.birthdaysReminderHour ?? 9;
 const NO_CONTACTS_REASON =
   'Birthday reminders require visible community contacts or loaded local iPhone contacts.';
 const NO_BIRTHDAY_DATES_REASON =
@@ -74,11 +75,15 @@ function parseDateOnly(value: string): Date | null {
   return date;
 }
 
-function getBirthdayReminderAt(nextDateGregorian: string): Date | null {
+function getBirthdayReminderHour(input: Pick<NotificationScheduleBuildInput, 'preferences'>): number {
+  return input.preferences?.birthdaysReminderHour ?? DEFAULT_BIRTHDAY_REMINDER_HOUR;
+}
+
+function getBirthdayReminderAt(nextDateGregorian: string, reminderHour: number): Date | null {
   const date = parseDateOnly(nextDateGregorian);
   if (!date) return null;
 
-  date.setHours(BIRTHDAY_REMINDER_HOUR, 0, 0, 0);
+  date.setHours(reminderHour, 0, 0, 0);
   return date;
 }
 
@@ -125,6 +130,7 @@ function buildBirthdayBody(birthday: BirthdayOccurrence) {
 
 function buildBirthdayMetadata(
   reminderSource: BirthdayReminderSource,
+  reminderHour: number,
 ): NotificationScheduleMetadata {
   const { birthday, contactSource } = reminderSource;
 
@@ -136,6 +142,7 @@ function buildBirthdayMetadata(
     hebrewDateLabel: birthday.nextDateHebrew.label,
     nextGregorianDate: birthday.nextDateGregorian,
     privacySafe: true,
+    reminderHour,
   };
 }
 
@@ -162,10 +169,12 @@ export function normalizeBirthdayReminderSources({
 }
 
 export function buildBirthdayNotificationCandidate({
+  preferences,
   reminderSource,
   timezone,
 }: BuildBirthdayNotificationCandidateInput): NotificationScheduleItem | null {
-  const triggerAt = getBirthdayReminderAt(reminderSource.birthday.nextDateGregorian);
+  const reminderHour = getBirthdayReminderHour({ preferences });
+  const triggerAt = getBirthdayReminderAt(reminderSource.birthday.nextDateGregorian, reminderHour);
   if (!triggerAt) return null;
 
   return {
@@ -173,7 +182,7 @@ export function buildBirthdayNotificationCandidate({
     body: buildBirthdayBody(reminderSource.birthday),
     category: 'birthdays',
     deliveryKind: 'local',
-    metadata: buildBirthdayMetadata(reminderSource),
+    metadata: buildBirthdayMetadata(reminderSource, reminderHour),
     reason: null,
     relatedEntityId: reminderSource.relatedEntityId,
     relatedEntityType: reminderSource.relatedEntityType,
@@ -203,6 +212,7 @@ export function buildBirthdayNotificationCandidates(
   })
     .map((reminderSource) => buildBirthdayNotificationCandidate({
       reminderSource,
+      preferences: input.preferences,
       timezone: input.timezone,
     }))
     .filter((item): item is NotificationScheduleItem => Boolean(item));

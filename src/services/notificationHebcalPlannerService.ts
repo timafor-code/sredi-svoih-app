@@ -16,6 +16,7 @@ import type {
   NotificationScheduleMetadata,
   NotificationScheduleStatus,
 } from '@/types/notification';
+import { DEFAULT_NOTIFICATION_PREFERENCES } from '@/types/profile';
 
 type HebcalNotificationCategory = Extract<
   NotificationCategory,
@@ -47,12 +48,16 @@ const HEBCAL_NOTIFICATION_CATEGORIES: readonly HebcalNotificationCategory[] = [
   'weekly',
 ];
 
-const CANDLE_REMINDER_OFFSET_MINUTES = 60;
-const PRE_SHABBAT_REMINDER_OFFSET_HOURS = 8;
+const DEFAULT_CANDLE_REMINDER_OFFSET_MINUTES =
+  DEFAULT_NOTIFICATION_PREFERENCES.candlesReminderOffsetMinutes ?? 60;
+const DEFAULT_SHABBAT_REMINDER_OFFSET_HOURS =
+  DEFAULT_NOTIFICATION_PREFERENCES.shabbatReminderOffsetHours ?? 8;
+const DEFAULT_HOLIDAY_REMINDER_HOUR = DEFAULT_NOTIFICATION_PREFERENCES.holidaysReminderHour ?? 9;
+const DEFAULT_WEEKLY_REMINDER_OFFSET_HOURS =
+  DEFAULT_NOTIFICATION_PREFERENCES.weeklyReminderOffsetHours ?? 8;
 const HOUR_MS = 60 * 60 * 1000;
 const MINUTE_MS = 60 * 1000;
 const CANDLE_LOOKAHEAD_DAYS = 60;
-const HOLIDAY_REMINDER_HOUR = 9;
 const CANDLE_EVENT_GRACE_MS = 60 * 1000;
 
 export function isHebcalNotificationCategory(
@@ -165,6 +170,22 @@ function formatShortDateTime(date: Date, timezone: string) {
   return `${formatRuWeekdayDayMonth(date, timezone)} в ${formatRuTime(date, timezone)}`;
 }
 
+function getCandlesReminderOffsetMinutes(input: NotificationScheduleBuildInput): number {
+  return input.preferences?.candlesReminderOffsetMinutes ?? DEFAULT_CANDLE_REMINDER_OFFSET_MINUTES;
+}
+
+function getShabbatReminderOffsetHours(input: NotificationScheduleBuildInput): number {
+  return input.preferences?.shabbatReminderOffsetHours ?? DEFAULT_SHABBAT_REMINDER_OFFSET_HOURS;
+}
+
+function getHolidayReminderHour(input: NotificationScheduleBuildInput): number {
+  return input.preferences?.holidaysReminderHour ?? DEFAULT_HOLIDAY_REMINDER_HOUR;
+}
+
+function getWeeklyReminderOffsetHours(input: NotificationScheduleBuildInput): number {
+  return input.preferences?.weeklyReminderOffsetHours ?? DEFAULT_WEEKLY_REMINDER_OFFSET_HOURS;
+}
+
 function getCandleLightingEvents(context: HebcalPlanningContext) {
   return HebrewCalendar.calendar({
     candlelighting: true,
@@ -194,7 +215,7 @@ function findCandleLightingEvent(
     skipTzeisLighting?: boolean;
   } = {},
 ) {
-  const offsetMinutes = options.offsetMinutes ?? CANDLE_REMINDER_OFFSET_MINUTES;
+  const offsetMinutes = options.offsetMinutes ?? DEFAULT_CANDLE_REMINDER_OFFSET_MINUTES;
 
   return getCandleLightingEvents(context).find((event) => {
     if (options.skipTzeisLighting !== false && isCandleLightingAtTzeis(event)) {
@@ -213,8 +234,9 @@ export function buildCandleLightingCandidate(
   input: NotificationScheduleBuildInput,
 ): NotificationScheduleItem {
   const context = resolvePlanningContext(input);
+  const reminderOffsetMinutes = getCandlesReminderOffsetMinutes(input);
   const event = findCandleLightingEvent(context, {
-    offsetMinutes: CANDLE_REMINDER_OFFSET_MINUTES,
+    offsetMinutes: reminderOffsetMinutes,
     skipTzeisLighting: true,
   });
 
@@ -227,7 +249,7 @@ export function buildCandleLightingCandidate(
     );
   }
 
-  const triggerAt = subtractMinutes(event.eventTime, CANDLE_REMINDER_OFFSET_MINUTES);
+  const triggerAt = subtractMinutes(event.eventTime, reminderOffsetMinutes);
   const eventDay = isSameZonedDay(event.eventTime, context.now, context.timezone)
     ? 'Сегодня'
     : formatRuWeekdayDayMonth(event.eventTime, context.timezone);
@@ -238,7 +260,7 @@ export function buildCandleLightingCandidate(
     metadata: {
       candleLightingAt: event.eventTime.toISOString(),
       hebrewDateRu: getHebrewDateLabel(event.getDate()),
-      reminderOffsetMinutes: CANDLE_REMINDER_OFFSET_MINUTES,
+      reminderOffsetMinutes,
       skipsLightingAtTzeis: true,
     },
     reason: null,
@@ -252,9 +274,10 @@ export function buildShabbatCandidate(
   input: NotificationScheduleBuildInput,
 ): NotificationScheduleItem {
   const context = resolvePlanningContext(input);
+  const reminderOffsetHours = getShabbatReminderOffsetHours(input);
   const event = findCandleLightingEvent(context, {
     fridayOnly: true,
-    offsetMinutes: PRE_SHABBAT_REMINDER_OFFSET_HOURS * 60,
+    offsetMinutes: reminderOffsetHours * 60,
     skipTzeisLighting: true,
   });
 
@@ -267,7 +290,7 @@ export function buildShabbatCandidate(
     );
   }
 
-  const triggerAt = subtractHours(event.eventTime, PRE_SHABBAT_REMINDER_OFFSET_HOURS);
+  const triggerAt = subtractHours(event.eventTime, reminderOffsetHours);
 
   return createHebcalScheduleItem(context, {
     body: `Подготовка к Шаббату: свечи ${formatShortDateTime(event.eventTime, context.timezone)}.`,
@@ -275,7 +298,7 @@ export function buildShabbatCandidate(
     metadata: {
       candleLightingAt: event.eventTime.toISOString(),
       hebrewDateRu: getHebrewDateLabel(event.getDate()),
-      reminderOffsetHours: PRE_SHABBAT_REMINDER_OFFSET_HOURS,
+      reminderOffsetHours,
     },
     reason: null,
     status: 'candidate',
@@ -290,23 +313,24 @@ function setLocalReminderTime(date: Date, hour: number) {
   return reminderAt;
 }
 
-function moveSaturdayReminderToFriday(reminderAt: Date) {
+function moveSaturdayReminderToFriday(reminderAt: Date, reminderHour: number) {
   if (reminderAt.getDay() !== 6) {
     return reminderAt;
   }
 
-  return setLocalReminderTime(addDays(reminderAt, -1), HOLIDAY_REMINDER_HOUR);
+  return setLocalReminderTime(addDays(reminderAt, -1), reminderHour);
 }
 
-function getHolidayReminderAt(holidayDate: Date) {
-  const dayBefore = setLocalReminderTime(addDays(holidayDate, -1), HOLIDAY_REMINDER_HOUR);
-  return moveSaturdayReminderToFriday(dayBefore);
+function getHolidayReminderAt(holidayDate: Date, reminderHour: number) {
+  const dayBefore = setLocalReminderTime(addDays(holidayDate, -1), reminderHour);
+  return moveSaturdayReminderToFriday(dayBefore, reminderHour);
 }
 
 export function buildHolidayCandidate(
   input: NotificationScheduleBuildInput,
 ): NotificationScheduleItem {
   const context = resolvePlanningContext(input);
+  const reminderHour = getHolidayReminderHour(input);
   let cursor = context.now;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -319,7 +343,7 @@ export function buildHolidayCandidate(
       break;
     }
 
-    const triggerAt = getHolidayReminderAt(holiday.date);
+    const triggerAt = getHolidayReminderAt(holiday.date, reminderHour);
 
     if (triggerAt.getTime() > context.now.getTime()) {
       return createHebcalScheduleItem(context, {
@@ -330,6 +354,7 @@ export function buildHolidayCandidate(
           holidayNameEn: holiday.nameEn,
           holidayNameHe: holiday.nameHe,
           holidayNameRu: holiday.nameRu,
+          reminderHour,
         },
         reason: null,
         status: 'candidate',
@@ -353,12 +378,13 @@ export function buildWeeklyParshaCandidate(
   input: NotificationScheduleBuildInput,
 ): NotificationScheduleItem {
   const context = resolvePlanningContext(input);
+  const reminderOffsetHours = getWeeklyReminderOffsetHours(input);
   const events = getCandleLightingEvents(context).filter((event) => {
     if (isCandleLightingAtTzeis(event) || !isFridayCandleLighting(event)) {
       return false;
     }
 
-    return subtractHours(event.eventTime, PRE_SHABBAT_REMINDER_OFFSET_HOURS).getTime() > context.now.getTime();
+    return subtractHours(event.eventTime, reminderOffsetHours).getTime() > context.now.getTime();
   });
 
   for (const event of events) {
@@ -368,7 +394,7 @@ export function buildWeeklyParshaCandidate(
       continue;
     }
 
-    const triggerAt = subtractHours(event.eventTime, PRE_SHABBAT_REMINDER_OFFSET_HOURS);
+    const triggerAt = subtractHours(event.eventTime, reminderOffsetHours);
 
     return createHebcalScheduleItem(context, {
       body: `Недельная глава: ${parsha.ru}.`,
@@ -379,7 +405,7 @@ export function buildWeeklyParshaCandidate(
         parshaEn: parsha.en,
         parshaHe: parsha.he,
         parshaRu: parsha.ru,
-        reminderOffsetHours: PRE_SHABBAT_REMINDER_OFFSET_HOURS,
+        reminderOffsetHours,
       },
       reason: null,
       status: 'candidate',
