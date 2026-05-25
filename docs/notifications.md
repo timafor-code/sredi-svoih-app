@@ -70,6 +70,21 @@ future remote push registration:
 PR 8 still does not send push notifications, add an Edge Function, add server
 fanout, add a queue, add cron/scheduler logic, run EAS, or run TestFlight.
 
+PR 9 (`feature/server-event-push-notifications`) adds the server-side push
+outbox foundation for future event/news remote push:
+
+- `public.push_notification_jobs` as an audit-friendly queue for push jobs;
+- `public.push_notification_deliveries` as per-device delivery rows sourced
+  from active `device_tokens`;
+- authenticated admin/event-manager RPCs for enqueue/list/get/cancel flows;
+- recipient selection for event registrants through existing event,
+  registration, membership, and device-token data.
+
+PR 9 still does not send remote push, call the Expo Push API, add an Edge
+Function, add a queue worker, add cron/scheduler logic, use privileged browser
+credentials, or change mobile UI. `supabase/functions/` is currently untracked
+in the workspace and must not be touched by this PR.
+
 ## Current preference model
 
 The current user-facing notification settings are stored in
@@ -160,6 +175,36 @@ Profile -> Notifications does not request a push token on screen open and does
 not register a token on sign-in. Token registration happens only when the user
 taps "Зарегистрировать это устройство".
 
+## Server push outbox foundation added in PR 9
+
+Remote push now has a database-side foundation, but no sender yet.
+
+The intended flow is:
+
+1. A user explicitly registers a device token through the PR 8 device-token
+   RPCs.
+2. An authorized `admin` or `event_manager` calls
+   `admin_enqueue_event_push_notification(...)` for an event.
+3. The database creates one `push_notification_jobs` row and per-device
+   `push_notification_deliveries` rows for active Expo device tokens belonging
+   to active event registrants.
+4. A future sender reads queued delivery rows from a dedicated backend-only
+   path and sends them to Expo.
+5. That future sender writes Expo ticket/receipt state back to the delivery
+   rows.
+
+Admin list/get RPCs expose job metadata and delivery counts/status totals only.
+They do not expose raw Expo push tokens. Direct table access is intentionally
+closed to normal authenticated clients; admin visibility goes through RPCs and
+the existing `has_community_role(..., array['admin', 'event_manager'])` role
+model.
+
+The current enqueue RPC is intentionally narrow: it creates event-registrant
+jobs for `event_created`, `event_updated`, and `event_cancelled`. The table
+schema reserves `news`, `manual`, single-user, and community-member audiences
+for later work, but this PR does not add a news sender, community broadcast UI,
+or token-revealing server API.
+
 ## Source boundaries
 
 Notification planning must use only domain sources that are already allowed for
@@ -210,8 +255,9 @@ backend-initiated events or community broadcasts:
 - Waitlist spot available.
 - News.
 
-PR 8 creates only the device token foundation. It does not send remote push and
-does not add server push functions.
+PR 8 creates only the device token foundation. PR 9 adds the database outbox,
+delivery rows, and admin RPCs for event push jobs. Neither PR sends remote push,
+calls Expo, adds an Edge Function, or adds a server push sender.
 
 ## Expo Go limits
 
@@ -317,26 +363,30 @@ registrations, profiles, or prayer data.
    - Validate real token registration later through EAS development build,
      TestFlight, or release build, not Expo Go.
 9. `feature/server-event-push-notifications`
-   - Add server-side push for event lifecycle notifications and news:
-     new community event, event changed, event cancelled, registration
-     confirmed/rejected, waitlist available, and news.
+   - Add the server-side push outbox foundation for future event/news remote
+     push delivery.
+   - Create `push_notification_jobs` and `push_notification_deliveries` with
+     RLS, strict direct access, and admin/event-manager RPCs.
+   - Enqueue event-registrant delivery rows from active `device_tokens`.
+   - Keep Expo sending, Edge Functions, queue workers, cron/scheduler logic,
+     web-admin UI, mobile UI, EAS, and TestFlight out of scope.
 
-Next PR: `feature/server-event-push-notifications`.
+Next PR: `feature/push-sender-edge-function`.
 
 ## Manual smoke checklist
 
 Manual smoke is performed by the project owner, not by Codex:
 
-1. Open iPhone app in Expo Go.
-2. Open Profile -> Notifications.
-3. Confirm existing local permission/test notification blocks still work.
-4. Confirm "Push-уведомления" / device block is visible.
-5. Confirm no push token is requested automatically on screen open.
-6. Tap "Зарегистрировать это устройство".
-7. In Expo Go, confirm the app does not crash and shows a clear unavailable or
-   missing EAS/projectId status if token registration is not available.
-8. Confirm existing notification preferences and advanced settings still save.
-9. Confirm no remote push is sent.
-10. Confirm no server push Edge Function was added.
-11. Later, in EAS development build/TestFlight, repeat token registration and
-    confirm the token row is created for the current user only.
+1. Open Supabase Studio.
+2. Confirm `push_notification_jobs` exists.
+3. Confirm `push_notification_deliveries` exists.
+4. Confirm RLS is enabled on both tables.
+5. Confirm `admin_enqueue_event_push_notification` exists.
+6. As an authorized admin/event_manager, enqueue a test event push job for an
+   event with active registrations and active device tokens.
+7. Confirm a job row is created.
+8. Confirm delivery rows are created for active device tokens only.
+9. Confirm raw Expo tokens are not exposed through admin list/get RPCs.
+10. Confirm no Edge Function was added.
+11. Confirm no real push was sent.
+12. Confirm `supabase/functions/` untracked files were not touched.
