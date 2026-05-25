@@ -1,9 +1,19 @@
 import { useEffect } from 'react';
+import * as Notifications from 'expo-notifications';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
 import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+});
 
 export default function RootLayout() {
   const loadSession = useAuthStore((state) => state.loadSession);

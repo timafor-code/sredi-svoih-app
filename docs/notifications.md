@@ -1,10 +1,22 @@
 # Notifications domain plan
 
-This document fixes the notification domain architecture before implementation.
-It is intentionally a planning document only: this PR must not connect
-`expo-notifications`, add notification services, add Supabase migrations, create
-device token storage, fetch Expo push tokens, add Edge Functions, or change
-events, registrations, contacts, prayer tracker, web-admin, or runtime screens.
+This document fixes the notification domain architecture and tracks the staged
+implementation.
+
+PR #157 created the domain plan only. PR 2
+(`feature/notifications-local-permission-foundation`) adds the minimal runtime
+foundation for local notifications on the device:
+
+- local notification permission status;
+- local notification permission request;
+- one test local notification;
+- cancellation of scheduled local notifications;
+- a root foreground notification handler.
+
+This PR still must not add Hebcal-based scheduling, birthday reminders, event
+reminders, remote push, Supabase migrations, device token storage, Expo push
+token fetching, Edge Functions, cron/scheduler logic, or changes to events,
+registrations, contacts, prayer tracker, web-admin, or server push.
 
 ## Current preference model
 
@@ -77,6 +89,10 @@ Expo push token, or add server push functions.
 Local notification UX can be checked in Expo Go for early development of
 permissions, settings, and scheduled local reminder behavior.
 
+The `expo-notifications` config plugin is included for development/release
+builds. Expo Go can validate the local permission/test foundation, but it may
+not reflect every native config change from app config plugins.
+
 Remote push cannot be fully validated in Expo Go. Push token registration and
 real push delivery require an EAS development build, TestFlight build, or
 release build. Device token work should therefore start only in the later push
@@ -120,7 +136,10 @@ registrations, profiles, or prayer data.
 ## Implementation sequence
 
 1. `feature/notifications-local-permission-foundation`
-   - Add local notification permission handling and a minimal local foundation.
+   - Add local notification permission handling and a minimal local test
+     foundation.
+   - Add a root foreground handler that can show banner/list notifications
+     without enabling sound or badge behavior.
    - Do not create device tokens or remote push infrastructure.
 2. `feature/notifications-schedule-model`
    - Add a client-side schedule model for planned local reminders.
@@ -150,9 +169,17 @@ registrations, profiles, or prayer data.
 
 Manual smoke is performed by the project owner, not by Codex:
 
-1. Open `docs/notifications.md`.
-2. Confirm all 8 current notification categories are documented.
-3. Confirm local vs remote push boundary is clear.
-4. Confirm Hebcal, contacts, birthdays, and events sources are described.
-5. Confirm Expo Go limitations are documented.
-6. Confirm next PR roadmap is clear.
+1. Open iPhone app in Expo Go.
+2. Open Profile -> Notifications.
+3. Confirm notification permission status is visible.
+4. Tap "Разрешить уведомления".
+5. Confirm iOS permission prompt appears if permission was not granted before.
+6. Confirm status updates after permission request.
+7. Tap "Отправить тестовое уведомление".
+8. Confirm a local notification appears on iPhone.
+9. Tap notification and confirm the app remains stable.
+10. Toggle existing notification settings and save.
+11. Reopen screen and confirm preferences are still saved.
+12. Tap "Отменить локальные уведомления" and confirm there is no crash.
+13. Confirm no events, contacts, birthday or Hebcal reminders were scheduled by
+    this PR.
