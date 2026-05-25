@@ -22,6 +22,7 @@ import {
 } from '@/services/notificationPlannerService';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useContactsStore } from '@/store/useContactsStore';
+import { useEventsStore } from '@/store/useEventsStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
 import {
@@ -142,6 +143,9 @@ export default function NotificationsScreen() {
   const updateProfile = useAuthStore((state) => state.updateProfile);
   const communityContacts = useContactsStore((state) => state.communityContacts);
   const localContacts = useContactsStore((state) => state.localContacts);
+  const events = useEventsStore((state) => state.events);
+  const loadedMyRegistrations = useEventsStore((state) => state.myRegistrations);
+  const myRegistrationsUserId = useEventsStore((state) => state.myRegistrationsUserId);
   const city = useSettingsStore((state) => state.city);
 
   const [preferences, setPreferences] = useState<ProfileNotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
@@ -167,14 +171,20 @@ export default function NotificationsScreen() {
   const permissionStatusLabel = isPermissionStatusLoading
     ? 'Проверяем...'
     : permissionStatusLabels[permissionStatus];
+  const myRegistrations = useMemo(
+    () => (user?.id && myRegistrationsUserId === user.id ? loadedMyRegistrations : []),
+    [loadedMyRegistrations, myRegistrationsUserId, user?.id],
+  );
   const schedulePreview = useMemo(
     () => buildNotificationSchedulePreview({
       city,
       communityContacts,
+      events,
       localContacts,
+      myRegistrations,
       preferences,
     }),
-    [city, communityContacts, localContacts, preferences],
+    [city, communityContacts, events, localContacts, myRegistrations, preferences],
   );
 
   useEffect(() => {

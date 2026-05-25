@@ -35,12 +35,18 @@ contact birthday data and already loaded local iPhone birthday contacts from the
 client store. It does not load contacts from Profile -> Notifications, request
 Contacts permission, upload iPhone contacts, or schedule real iOS reminders.
 
-PR 5 still must not schedule real category reminders through
-`Notifications.scheduleNotificationAsync`, read events or registrations, create
-device tokens, fetch Expo push tokens, add Supabase migrations, add Edge
-Functions, add cron/scheduler logic, or change prayer tracker privacy. Events,
-registrations, web-admin, remote push, EAS builds, and TestFlight remain out of
-scope.
+PR 6 (`feature/notifications-event-reminders-local`) adds preview-only event
+candidate rows for local reminders. It uses only current-user registrations and
+visible event/occurrence data already loaded in the client store. It does not
+load registrations from Profile -> Notifications, read event tables directly,
+schedule real iOS reminders, add backend changes, create device tokens, or add
+remote push infrastructure.
+
+PR 6 still must not schedule real category reminders through
+`Notifications.scheduleNotificationAsync`, create device tokens, fetch Expo
+push tokens, add Supabase migrations, add Edge Functions, add cron/scheduler
+logic, or change prayer tracker privacy. Web-admin, remote push, EAS builds,
+and TestFlight remain out of scope.
 
 ## Current preference model
 
@@ -63,12 +69,14 @@ scheduled. Missing keys should continue to be treated with existing defaults.
 
 PR 3 added a separate client-side schedule preview layer. PR 4 extends that
 preview layer for Hebcal-backed categories. PR 5 extends it for birthday
-preview candidates from already available contact data. The preview may mark a
-category as `disabled_by_preferences` when the user preference is off,
-`candidate` when a future local reminder candidate can be calculated safely,
-`needs_data` when the allowed local data cannot provide enough information, or
+preview candidates from already available contact data. PR 6 extends it for
+event reminder candidates from already loaded current-user registrations and
+visible event/occurrence data. The preview may mark a category as
+`disabled_by_preferences` when the user preference is off, `candidate` when a
+future local reminder candidate can be calculated safely, `needs_data` when the
+allowed local data cannot provide enough information, or
 `unsupported_in_this_pr` for categories that still belong to later PRs. It does
-not read events, read registrations, or schedule real local reminders.
+not schedule real local reminders.
 
 ## Source boundaries
 
@@ -90,6 +98,9 @@ the signed-in user:
   dates and sessions.
 - `event_registrations` is the source for event reminders tied to the current
   user's existing registration.
+- Profile -> Notifications may use already loaded `useEventsStore` values for
+  event preview candidates, but it must not call `loadEvents` or
+  `loadMyRegistrations`.
 - `profile.notification_preferences` is the source for category opt-in/out.
 
 ## Local vs remote boundary
@@ -103,7 +114,8 @@ scheduled on the device from already-visible data:
 - Holiday reminders.
 - Weekly parsha reminders.
 - Birthday reminders.
-- Event reminders for the current user's existing registrations.
+- Event reminders for the current user's existing registrations. PR 6 builds
+  these only as preview candidates; real local scheduling remains a later PR.
 
 Remote push is a later implementation track. It is for backend-initiated events
 or community broadcasts:
@@ -196,8 +208,13 @@ registrations, profiles, or prayer data.
      iOS reminders, request Contacts permission, upload contacts, or query
      hidden profile fields.
 6. `feature/notifications-event-reminders-local`
-   - Implement local event reminders for the current user's existing
-     registrations and visible occurrences.
+   - Add preview-only local event reminder candidates for the current user's
+     existing registrations and visible occurrences.
+   - Use already loaded client-store data only.
+   - Keep candidates occurrence-aware: occurrence registrations stay tied to
+     `occurrenceId`, while event-level fallback is only for single or
+     non-occurrence events.
+   - Do not schedule real iOS notifications in this PR.
 7. `feature/notifications-settings-advanced`
    - Add advanced settings such as offsets, quiet hours, and reminder detail
      controls after the core schedule model is stable.
@@ -210,7 +227,7 @@ registrations, profiles, or prayer data.
      new community event, event changed, event cancelled, registration
      confirmed/rejected, waitlist available, and news.
 
-Next PR: `feature/notifications-event-reminders-local`.
+Next PR: `feature/notifications-settings-advanced`.
 
 ## Manual smoke checklist
 
@@ -229,10 +246,16 @@ Manual smoke is performed by the project owner, not by Codex:
 9. Open Contacts tab and load community/local contacts if needed.
 10. Return to Profile -> Notifications and confirm birthdays preview can use
     already loaded visible data.
-11. Turn off birthdays and confirm birthday preview becomes disabled.
-12. Save preferences and reopen the screen.
-13. Confirm no real birthday reminders were scheduled automatically.
-14. Confirm no iPhone contacts permission prompt appears from Profile ->
+11. Open Events / My registrations so registrations are loaded if needed.
+12. Return to Profile -> Notifications and confirm events preview can use
+    already loaded current-user registrations.
+13. Confirm event candidates are occurrence-aware when occurrence data is
+    available.
+14. Turn off events and confirm event preview becomes disabled.
+15. Turn off birthdays and confirm birthday preview becomes disabled.
+16. Save preferences and reopen the screen.
+17. Confirm no real birthday or event reminders were scheduled automatically.
+18. Confirm no iPhone contacts permission prompt appears from Profile ->
     Notifications.
-15. Confirm no events, registrations, device tokens, remote push, or prayer
+19. Confirm no device tokens, remote push, backend migrations, or prayer
     activity logs were touched.

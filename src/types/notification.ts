@@ -1,6 +1,7 @@
 import type { Location } from '@hebcal/core';
 
 import type { CommunityContact, LocalIphoneContact } from './contact';
+import type { Event, EventItem, EventRegistration } from './event';
 import type { ProfileNotificationPreferences } from './profile';
 
 export const NOTIFICATION_CATEGORIES = [
@@ -55,8 +56,10 @@ export type NotificationScheduleItem = {
 export type NotificationScheduleBuildInput = {
   city?: string | null;
   communityContacts?: readonly CommunityContact[];
+  events?: readonly (Event | EventItem)[];
   location?: Location | null;
   localContacts?: readonly LocalIphoneContact[];
+  myRegistrations?: readonly EventRegistration[];
   now?: string | Date;
   preferences?: ProfileNotificationPreferences | null;
   timezone?: string | null;
