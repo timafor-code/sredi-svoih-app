@@ -71,7 +71,7 @@ const quickActions: QuickActionItem[] = [
     href: prayersSettingsHref,
     icon: 'sparkles-outline',
     title: 'Молитвы и календарь',
-    subtitle: 'Город, нусах, язык',
+    subtitle: 'Город, нусах, благословения',
     lockedSubtitle: 'Войдите для настроек',
   },
 ];
@@ -107,7 +107,7 @@ const menuSections: { title: string; items: MenuItem[] }[] = [
         href: prayersSettingsHref,
         icon: '📍',
         label: 'Молитвы и календарь',
-        sub: 'Город, нусах, язык сидура, напоминания',
+        sub: 'Город, нусах и отображение благословений',
       },
       {
         href: prayerTrackerHref,

@@ -7,7 +7,6 @@ import { ListRow } from '@/components/ui/ListRow';
 import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { SubHeader } from '@/components/ui/SubHeader';
-import { ToggleRow } from '@/components/ui/ToggleRow';
 import {
   getAvailableBlessingTextDisplayModes,
   normalizeDisplayModeForTextNusach,
@@ -57,11 +56,6 @@ export default function PrayersSettingsScreen() {
   );
 
   const [city, setCity] = useState('Москва');
-  const [siddurLang, setSiddurLang] = useState('Русский');
-  const [prayerReminder, setPrayerReminder] = useState(true);
-  const [candleReminder, setCandleReminder] = useState(true);
-  const [shabbatReminder, setShabbatReminder] = useState(true);
-  const [holidayReminder, setHolidayReminder] = useState(false);
   const [sessionRequested, setSessionRequested] = useState(false);
   const [savingNusach, setSavingNusach] = useState<VisibleNusach | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -142,7 +136,7 @@ export default function PrayersSettingsScreen() {
       <>
         <Stack.Screen options={{ headerShown: false }} />
         <Screen contentContainerStyle={{ gap: 16 }}>
-          <SubHeader title="Молитвы и календарь" subtitle="Город, нусах, язык сидура, напоминания" />
+          <SubHeader title="Молитвы и календарь" subtitle="Город, нусах и отображение благословений" />
           <IOSGroup>
             <ListRow title={title} subtitle={text} isLast />
           </IOSGroup>
@@ -156,7 +150,7 @@ export default function PrayersSettingsScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <Screen contentContainerStyle={{ gap: 16 }}>
-        <SubHeader title="Молитвы и календарь" subtitle="Город, нусах, язык сидура, напоминания" />
+        <SubHeader title="Молитвы и календарь" subtitle="Город, нусах и отображение благословений" />
 
         <SectionTitle title="МЕСТОПОЛОЖЕНИЕ" />
         <IOSGroup>
@@ -202,24 +196,6 @@ export default function PrayersSettingsScreen() {
               isLast={index === availableBlessingDisplayModes.length - 1}
             />
           ))}
-        </IOSGroup>
-
-        <IOSGroup>
-          <ListRow
-            icon="🌐"
-            title="Язык сидура"
-            rightText={siddurLang}
-            onPress={() => setSiddurLang(siddurLang === 'Русский' ? 'Иврит + русский' : 'Русский')}
-            isLast
-          />
-        </IOSGroup>
-
-        <SectionTitle title="НАПОМИНАНИЯ" />
-        <IOSGroup>
-          <ToggleRow icon="⏰" label="Напомнить о молитве" subtitle="За 15 минут до начала" value={prayerReminder} onValueChange={setPrayerReminder} />
-          <ToggleRow icon="🕯️" label="Зажигание свечей" subtitle="Шаббат и праздники" value={candleReminder} onValueChange={setCandleReminder} />
-          <ToggleRow icon="✡️" label="Начало Шаббата" value={shabbatReminder} onValueChange={setShabbatReminder} />
-          <ToggleRow icon="🎉" label="Праздники" value={holidayReminder} onValueChange={setHolidayReminder} isLast />
         </IOSGroup>
 
         <Text style={{ color: colors.textDim, fontSize: 12, lineHeight: 18 }}>
