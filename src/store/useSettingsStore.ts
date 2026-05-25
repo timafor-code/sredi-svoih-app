@@ -3,16 +3,19 @@ import { Platform } from 'react-native';
 import { create } from 'zustand';
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware';
 
+import { normalizeBlessingTextDisplayMode } from '@/lib/blessingTextDisplayMode';
 import {
   FALLBACK_ZMANIM_CITY,
   isSupportedZmanimCity,
   normalizeZmanimCityName,
 } from '@/lib/zmanim';
+import type { BlessingTextDisplayMode } from '@/types/blessing';
 
 type ZmanimSource = 'gps' | 'manual';
 type LocationPermissionStatus = 'unknown' | 'granted' | 'denied';
 
 type PersistedSettings = {
+  blessingDefaultDisplayMode: BlessingTextDisplayMode;
   city: string;
   gpsCity: string | null;
   locationPermissionStatus: LocationPermissionStatus;
@@ -23,6 +26,7 @@ type SettingsState = PersistedSettings & {
   hasHydrated: boolean;
   hydrateSettings: () => Promise<void>;
   resetToGpsCity: () => void;
+  setBlessingDefaultDisplayMode: (mode: BlessingTextDisplayMode) => void;
   setCity: (city: string) => void;
   setGpsCity: (city: string) => void;
   setHasHydrated: (hasHydrated: boolean) => void;
@@ -114,6 +118,7 @@ function normalizePersistedCity(value: unknown) {
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set, get) => ({
+      blessingDefaultDisplayMode: 'ru',
       city: FALLBACK_ZMANIM_CITY,
       gpsCity: null,
       hasHydrated: false,
@@ -135,6 +140,14 @@ export const useSettingsStore = create<SettingsState>()(
         set({
           city: normalizeZmanimCityName(gpsCity),
           zmanimSource: 'gps',
+        });
+      },
+
+      setBlessingDefaultDisplayMode: (blessingDefaultDisplayMode) => {
+        set({
+          blessingDefaultDisplayMode: normalizeBlessingTextDisplayMode(
+            blessingDefaultDisplayMode,
+          ),
         });
       },
 
@@ -169,11 +182,28 @@ export const useSettingsStore = create<SettingsState>()(
       name: SETTINGS_STORAGE_KEY,
       storage: createJSONStorage(() => settingsStorage),
       partialize: (state): PersistedSettings => ({
+        blessingDefaultDisplayMode: state.blessingDefaultDisplayMode,
         city: state.city,
         gpsCity: state.gpsCity,
         locationPermissionStatus: state.locationPermissionStatus,
         zmanimSource: state.zmanimSource,
       }),
+      migrate: (persisted): PersistedSettings => {
+        const settings = persisted as Partial<PersistedSettings> | undefined;
+        const gpsCity = typeof settings?.gpsCity === 'string' && settings.gpsCity.trim()
+          ? normalizeZmanimCityName(settings.gpsCity)
+          : null;
+
+        return {
+          blessingDefaultDisplayMode: normalizeBlessingTextDisplayMode(
+            settings?.blessingDefaultDisplayMode,
+          ),
+          city: normalizePersistedCity(settings?.city),
+          gpsCity,
+          locationPermissionStatus: normalizePermissionStatus(settings?.locationPermissionStatus),
+          zmanimSource: normalizeZmanimSource(settings?.zmanimSource),
+        };
+      },
       merge: (persisted, current) => {
         const settings = persisted as Partial<PersistedSettings> | undefined;
         const city = normalizePersistedCity(settings?.city);
@@ -183,6 +213,9 @@ export const useSettingsStore = create<SettingsState>()(
 
         return {
           ...current,
+          blessingDefaultDisplayMode: normalizeBlessingTextDisplayMode(
+            settings?.blessingDefaultDisplayMode,
+          ),
           city,
           gpsCity,
           locationPermissionStatus: normalizePermissionStatus(settings?.locationPermissionStatus),
@@ -192,7 +225,7 @@ export const useSettingsStore = create<SettingsState>()(
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
       },
-      version: 1,
+      version: 2,
     },
   ),
 );

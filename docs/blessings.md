@@ -168,6 +168,14 @@ For Beit Sefaradi text variants, the available modes are:
 
 Russian translation is available as a display mode for both text nusach variants. Ashkenazi transliteration is not shown for Beit Sefaradi.
 
+## Blessing display mode default
+
+The default display mode for blessing texts is stored locally in `useSettingsStore` as `blessingDefaultDisplayMode`. It is not a Supabase field and is not `profile.nusach`.
+
+`profile.nusach` still determines which blessing text variants are available. `blessingDefaultDisplayMode` determines which mode opens first when a blessing text modal is shown.
+
+For Beit Sefaradi, Ashkenazi transliteration is unavailable. If the local default is `translit_ashkenaz` while the active text nusach is Beit Sefaradi, the app normalizes it to `translit_sephard`.
+
 ## Core short blessing texts
 
 This PR adds short core blessing text blocks for basic before-food and after-food blessings in Hebrew, transliteration, and Russian.

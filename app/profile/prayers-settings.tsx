@@ -8,8 +8,14 @@ import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { SubHeader } from '@/components/ui/SubHeader';
 import { ToggleRow } from '@/components/ui/ToggleRow';
+import {
+  getAvailableBlessingTextDisplayModes,
+  normalizeDisplayModeForTextNusach,
+} from '@/lib/blessingTextDisplayMode';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
+import type { BlessingTextDisplayMode, BlessingTextNusach } from '@/types/blessing';
 
 type VisibleNusach = 'chabad' | 'sephardi';
 
@@ -22,8 +28,19 @@ const visibleNusachOptions: readonly {
   { label: 'Бейт Сфаради', subtitle: 'Сефардский порядок молитвы', value: 'sephardi' },
 ] as const;
 
+const blessingDisplayModeLabels: Record<BlessingTextDisplayMode, string> = {
+  he: 'Иврит',
+  translit_ashkenaz: 'Транслит Ашкеназ',
+  translit_sephard: 'Транслит Сефард',
+  ru: 'Русский',
+};
+
 function isVisibleNusach(value: string | null | undefined): value is VisibleNusach {
   return value === 'chabad' || value === 'sephardi';
+}
+
+function getTextNusachForVisibleNusach(value: VisibleNusach): BlessingTextNusach {
+  return value === 'sephardi' ? 'beit_sefaradi' : 'chabad';
 }
 
 export default function PrayersSettingsScreen() {
@@ -32,6 +49,12 @@ export default function PrayersSettingsScreen() {
   const loading = useAuthStore((state) => state.loading);
   const loadSession = useAuthStore((state) => state.loadSession);
   const updateProfile = useAuthStore((state) => state.updateProfile);
+  const blessingDefaultDisplayMode = useSettingsStore(
+    (state) => state.blessingDefaultDisplayMode,
+  );
+  const setBlessingDefaultDisplayMode = useSettingsStore(
+    (state) => state.setBlessingDefaultDisplayMode,
+  );
 
   const [city, setCity] = useState('Москва');
   const [siddurLang, setSiddurLang] = useState('Русский');
@@ -47,6 +70,12 @@ export default function PrayersSettingsScreen() {
   const savedNusach: VisibleNusach | null = isVisibleNusach(profile?.nusach) ? profile.nusach : null;
   const hasSavedVisibleNusach = savedNusach !== null;
   const selectedNusach: VisibleNusach = savedNusach ?? 'chabad';
+  const selectedTextNusach = getTextNusachForVisibleNusach(selectedNusach);
+  const availableBlessingDisplayModes = getAvailableBlessingTextDisplayModes(selectedTextNusach);
+  const selectedBlessingDisplayMode = normalizeDisplayModeForTextNusach(
+    blessingDefaultDisplayMode,
+    selectedTextNusach,
+  );
 
   useEffect(() => {
     if ((authUser && profile) || loading || sessionRequested) {
@@ -59,6 +88,16 @@ export default function PrayersSettingsScreen() {
     });
   }, [authUser, loadSession, loading, profile, sessionRequested]);
 
+  useEffect(() => {
+    if (selectedBlessingDisplayMode !== blessingDefaultDisplayMode) {
+      setBlessingDefaultDisplayMode(selectedBlessingDisplayMode);
+    }
+  }, [
+    blessingDefaultDisplayMode,
+    selectedBlessingDisplayMode,
+    setBlessingDefaultDisplayMode,
+  ]);
+
   const handleNusachPress = useCallback(async (value: VisibleNusach) => {
     if (isSavingNusachRef.current || !authUser || !profile) {
       return;
@@ -70,13 +109,27 @@ export default function PrayersSettingsScreen() {
 
     try {
       await updateProfile({ nusach: value });
+      const normalizedDisplayMode = normalizeDisplayModeForTextNusach(
+        blessingDefaultDisplayMode,
+        getTextNusachForVisibleNusach(value),
+      );
+
+      if (normalizedDisplayMode !== blessingDefaultDisplayMode) {
+        setBlessingDefaultDisplayMode(normalizedDisplayMode);
+      }
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : 'Не удалось сохранить нусах.');
     } finally {
       isSavingNusachRef.current = false;
       setSavingNusach(null);
     }
-  }, [authUser, profile, updateProfile]);
+  }, [
+    authUser,
+    blessingDefaultDisplayMode,
+    profile,
+    setBlessingDefaultDisplayMode,
+    updateProfile,
+  ]);
 
   if (!authUser || !profile) {
     const isProfileLoading = loading || !sessionRequested;
@@ -137,6 +190,20 @@ export default function PrayersSettingsScreen() {
           </Text>
         ) : null}
         {localError ? <Text style={{ color: colors.danger, fontSize: 12, lineHeight: 18 }}>{localError}</Text> : null}
+
+        <SectionTitle title="БЛАГОСЛОВЕНИЯ" />
+        <IOSGroup>
+          {availableBlessingDisplayModes.map((mode, index) => (
+            <ListRow
+              key={mode}
+              title={blessingDisplayModeLabels[mode]}
+              rightText={selectedBlessingDisplayMode === mode ? '✓' : undefined}
+              onPress={() => setBlessingDefaultDisplayMode(mode)}
+              isLast={index === availableBlessingDisplayModes.length - 1}
+            />
+          ))}
+        </IOSGroup>
+
         <IOSGroup>
           <ListRow
             icon="🌐"

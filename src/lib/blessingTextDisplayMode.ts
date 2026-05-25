@@ -62,6 +62,18 @@ export function getDisplayModeTransliterationStyle(
   }
 }
 
+export function normalizeBlessingTextDisplayMode(value: unknown): BlessingTextDisplayMode {
+  switch (value) {
+    case 'he':
+    case 'translit_ashkenaz':
+    case 'translit_sephard':
+    case 'ru':
+      return value;
+    default:
+      return 'ru';
+  }
+}
+
 export function normalizeDisplayModeForTextNusach(
   mode: BlessingTextDisplayMode,
   selectedTextNusach: BlessingTextNusach,
