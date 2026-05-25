@@ -1,5 +1,11 @@
 export type BlessingLanguage = 'he' | 'translit' | 'ru';
 
+export type BlessingTextDisplayMode =
+  | 'he'
+  | 'translit_ashkenaz'
+  | 'translit_sephard'
+  | 'ru';
+
 export type BlessingTranslitNusach = 'sephard' | 'ashkenaz';
 
 export type BlessingTransliterationStyle = 'ashkenazi' | 'sephardi';

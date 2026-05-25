@@ -13,16 +13,21 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BlessingLanguageTabs } from '@/components/blessings/BlessingLanguageTabs';
+import { BlessingTextDisplayModeTabs } from '@/components/blessings/BlessingTextDisplayModeTabs';
 import { BlessingTextNusachTabs } from '@/components/blessings/BlessingTextNusachTabs';
-import { BlessingTranslitNusachTabs } from '@/components/blessings/BlessingTranslitNusachTabs';
 import { GlassCard } from '@/components/glass/GlassCard';
+import {
+  getDisplayModeLanguage,
+  getDisplayModeTranslitNusach,
+  normalizeDisplayModeForTextNusach,
+} from '@/lib/blessingTextDisplayMode';
 import { supportsBlessingReaderMode } from '@/lib/blessingReaderMode';
 import { colors } from '@/theme/colors';
 import { radius } from '@/theme/radius';
 import type {
   BlessingContentBlock,
   BlessingLanguage,
+  BlessingTextDisplayMode,
   BlessingTextResult,
   BlessingTextNusach,
   BlessingTranslitNusach,
@@ -30,12 +35,10 @@ import type {
 
 type BlessingTextModalProps = {
   onClose: () => void;
-  onLanguageChange: (language: BlessingLanguage) => void;
+  onDisplayModeChange: (value: BlessingTextDisplayMode) => void;
   onTextNusachChange: (value: BlessingTextNusach) => void;
-  onTranslitNusachChange: (value: BlessingTranslitNusach) => void;
-  selectedLanguage: BlessingLanguage;
+  selectedDisplayMode: BlessingTextDisplayMode;
   selectedTextNusach: BlessingTextNusach;
-  selectedTranslitNusach: BlessingTranslitNusach;
   textResult: BlessingTextResult | null;
   visible: boolean;
 };
@@ -229,30 +232,25 @@ function isBirkatHamazonChabadMode(
   );
 }
 
-function getReaderModeLabel(
-  selectedLanguage: BlessingLanguage,
-  selectedTranslitNusach: BlessingTranslitNusach,
-): string {
-  switch (selectedLanguage) {
+function getReaderModeLabel(selectedDisplayMode: BlessingTextDisplayMode): string {
+  switch (selectedDisplayMode) {
     case 'he':
       return 'Иврит';
     case 'ru':
       return 'Русский';
-    case 'translit':
-      return selectedTranslitNusach === 'sephard'
-        ? 'Транслит · Сефард'
-        : 'Транслит · Ашкеназ';
+    case 'translit_ashkenaz':
+      return 'Транслит · Ашкеназ';
+    case 'translit_sephard':
+      return 'Транслит · Сефард';
   }
 }
 
 export function BlessingTextOverlay({
   onClose,
-  onLanguageChange,
+  onDisplayModeChange,
   onTextNusachChange,
-  onTranslitNusachChange,
-  selectedLanguage,
+  selectedDisplayMode,
   selectedTextNusach,
-  selectedTranslitNusach,
   textResult,
 }: BlessingTextOverlayProps) {
   const insets = useSafeAreaInsets();
@@ -274,12 +272,12 @@ export function BlessingTextOverlay({
   const effectiveTextResult = textResult;
   const textNusachVariants = effectiveTextResult?.blessing.nusachVariants ?? [];
   const showTextNusachTabs = textNusachVariants.length > 1;
-  const shouldShowTranslitNusachTabs =
-    selectedLanguage === 'translit' &&
-    (!showTextNusachTabs || selectedTextNusach !== 'beit_sefaradi');
-  const activeTranslitNusach: BlessingTranslitNusach = shouldShowTranslitNusachTabs
-    ? selectedTranslitNusach
-    : 'sephard';
+  const activeDisplayMode = normalizeDisplayModeForTextNusach(
+    selectedDisplayMode,
+    selectedTextNusach,
+  );
+  const selectedLanguage = getDisplayModeLanguage(activeDisplayMode);
+  const activeTranslitNusach = getDisplayModeTranslitNusach(activeDisplayMode) ?? 'sephard';
   const showReaderButton = supportsBlessingReaderMode(textResult);
   const showBirkatTachanunTools =
     isBirkatHamazonChabad && (selectedLanguage === 'he' || selectedLanguage === 'translit');
@@ -301,7 +299,7 @@ export function BlessingTextOverlay({
     readerFontSize * (selectedLanguage === 'he' ? 1.6 : 1.42),
   );
   const isTachanunPrefaceEnabled = prefaceMode === 'tachanun';
-  const readerModeLabel = getReaderModeLabel(selectedLanguage, activeTranslitNusach);
+  const readerModeLabel = getReaderModeLabel(activeDisplayMode);
 
   function toggleManualGroup(groupKey: string, defaultExpanded: boolean) {
     setExpandedManualGroups((current) => ({
@@ -536,17 +534,11 @@ export function BlessingTextOverlay({
               />
             ) : null}
 
-            <BlessingLanguageTabs
-              onValueChange={onLanguageChange}
-              value={selectedLanguage}
+            <BlessingTextDisplayModeTabs
+              onValueChange={onDisplayModeChange}
+              selectedTextNusach={selectedTextNusach}
+              value={activeDisplayMode}
             />
-
-            {shouldShowTranslitNusachTabs ? (
-              <BlessingTranslitNusachTabs
-                onValueChange={onTranslitNusachChange}
-                value={selectedTranslitNusach}
-              />
-            ) : null}
 
             {showTextTools ? (
               <View style={styles.birkatToolsRow}>
