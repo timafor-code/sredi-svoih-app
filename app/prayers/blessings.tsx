@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BlessingHomeGroup } from '@/components/blessings/BlessingHomeGroup';
@@ -10,6 +10,7 @@ import { BlessingSearchBar } from '@/components/blessings/BlessingSearchBar';
 import { BlessingSearchResults } from '@/components/blessings/BlessingSearchResults';
 import { BlessingTextModal, BlessingTextOverlay } from '@/components/blessings/BlessingTextModal';
 import { Screen } from '@/components/ui/Screen';
+import { resolveBlessingUserPreferences } from '@/lib/blessingUserPreferences';
 import { resolveJewishCalendarFlags } from '@/lib/jewishCalendarFlags';
 import {
   getBlessingItemDetails,
@@ -18,6 +19,7 @@ import {
   listHomeBlessings,
   searchBlessings,
 } from '@/services/blessingsCatalogService';
+import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
 import { radius } from '@/theme/radius';
 import type {
@@ -29,6 +31,7 @@ import type {
   BlessingSearchResult,
   BlessingTextResult,
   BlessingTextNusach,
+  BlessingTransliterationStyle,
   BlessingTranslitNusach,
 } from '@/types/blessing';
 
@@ -43,22 +46,38 @@ type BlessingTextSource = 'direct' | 'scheme';
 
 function getTransliterationStyleOption(
   language: BlessingLanguage,
+  transliterationStyle: BlessingTransliterationStyle,
+) {
+  return language === 'translit' ? transliterationStyle : undefined;
+}
+
+function getTranslitNusachStyleOption(
+  language: BlessingLanguage,
   translitNusach: BlessingTranslitNusach,
 ) {
-  return language === 'translit'
-    ? getBlessingTransliterationStyle(translitNusach)
-    : undefined;
+  return getTransliterationStyleOption(
+    language,
+    getBlessingTransliterationStyle(translitNusach),
+  );
 }
 
 export default function BlessingsScreen() {
   const router = useRouter();
+  const profileNusach = useAuthStore((state) => state.profile?.nusach);
+  const blessingUserPreferences = useMemo(
+    () => resolveBlessingUserPreferences(profileNusach),
+    [profileNusach],
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBlessingSlug, setSelectedBlessingSlug] = useState<string | null>(null);
   const [selectedItemDetails, setSelectedItemDetails] = useState<BlessingItemDetails | null>(null);
   const [modalLanguage, setModalLanguage] = useState<BlessingLanguage>('ru');
-  const [modalTextNusach, setModalTextNusach] = useState<BlessingTextNusach>('chabad');
-  const [modalTranslitNusach, setModalTranslitNusach] =
-    useState<BlessingTranslitNusach>('sephard');
+  const [modalTextNusach, setModalTextNusach] = useState<BlessingTextNusach>(
+    blessingUserPreferences.selectedTextNusach,
+  );
+  const [modalTranslitNusach, setModalTranslitNusach] = useState<BlessingTranslitNusach>(
+    blessingUserPreferences.translitNusach,
+  );
   const [modalTextResult, setModalTextResult] = useState<BlessingTextResult | null>(null);
   const [modalTextSource, setModalTextSource] = useState<BlessingTextSource | null>(null);
   const calendarFlags = useMemo(() => resolveJewishCalendarFlags(new Date()), []);
@@ -68,6 +87,20 @@ export default function BlessingsScreen() {
     () => (hasSearchQuery ? searchBlessings(searchQuery) : []),
     [hasSearchQuery, searchQuery],
   );
+
+  useEffect(() => {
+    if (modalTextResult) {
+      return;
+    }
+
+    setModalTextNusach(blessingUserPreferences.selectedTextNusach);
+    setModalTranslitNusach(blessingUserPreferences.translitNusach);
+  }, [
+    blessingUserPreferences.selectedTextNusach,
+    blessingUserPreferences.translitNusach,
+    modalTextResult,
+  ]);
+
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
     setSelectedItemDetails(null);
@@ -77,16 +110,17 @@ export default function BlessingsScreen() {
   const openBlessingText = (
     blessingSlug: string,
     initialLanguage?: BlessingLanguage,
-    initialTranslitNusach: BlessingTranslitNusach = 'sephard',
-    initialTextNusach: BlessingTextNusach = 'chabad',
     source: BlessingTextSource = 'direct',
   ) => {
     const language = initialLanguage ?? modalLanguage;
     const textResult = getBlessingText(blessingSlug, {
       calendarFlags: resolveJewishCalendarFlags(new Date()),
       language,
-      selectedTextNusach: initialTextNusach,
-      transliterationStyle: getTransliterationStyleOption(language, initialTranslitNusach),
+      selectedTextNusach: blessingUserPreferences.selectedTextNusach,
+      transliterationStyle: getTransliterationStyleOption(
+        language,
+        blessingUserPreferences.transliterationStyle,
+      ),
     });
 
     if (!textResult) {
@@ -95,8 +129,10 @@ export default function BlessingsScreen() {
     }
 
     setModalLanguage(language);
-    setModalTextNusach(textResult.selectedTextNusach ?? initialTextNusach);
-    setModalTranslitNusach(initialTranslitNusach);
+    setModalTextNusach(
+      textResult.selectedTextNusach ?? blessingUserPreferences.selectedTextNusach,
+    );
+    setModalTranslitNusach(blessingUserPreferences.translitNusach);
     setModalTextResult(textResult);
     setModalTextSource(source);
     return true;
@@ -127,7 +163,7 @@ export default function BlessingsScreen() {
       calendarFlags: modalTextResult.calendarFlags,
       language,
       selectedTextNusach: modalTextNusach,
-      transliterationStyle: getTransliterationStyleOption(language, modalTranslitNusach),
+      transliterationStyle: getTranslitNusachStyleOption(language, modalTranslitNusach),
     });
 
     if (textResult) {
@@ -166,10 +202,7 @@ export default function BlessingsScreen() {
       calendarFlags: modalTextResult.calendarFlags,
       language: modalLanguage,
       selectedTextNusach: value,
-      transliterationStyle: getTransliterationStyleOption(
-        modalLanguage,
-        modalTranslitNusach,
-      ),
+      transliterationStyle: getTranslitNusachStyleOption(modalLanguage, modalTranslitNusach),
     });
 
     if (textResult) {
@@ -209,7 +242,7 @@ export default function BlessingsScreen() {
   };
 
   const handleStepPress = (step: BlessingResolvedStep) => {
-    openBlessingText(step.blessingSlug, 'ru', 'sephard', 'chabad', 'scheme');
+    openBlessingText(step.blessingSlug, 'ru', 'scheme');
   };
 
   const isSchemeTextOverlayVisible =
