@@ -24,6 +24,7 @@ import {
   searchBlessings,
 } from '@/services/blessingsCatalogService';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
 import { radius } from '@/theme/radius';
 import type {
@@ -49,6 +50,9 @@ type BlessingTextSource = 'direct' | 'scheme';
 export default function BlessingsScreen() {
   const router = useRouter();
   const profileNusach = useAuthStore((state) => state.profile?.nusach);
+  const blessingDefaultDisplayMode = useSettingsStore(
+    (state) => state.blessingDefaultDisplayMode,
+  );
   const blessingUserPreferences = useMemo(
     () => resolveBlessingUserPreferences(profileNusach),
     [profileNusach],
@@ -56,7 +60,12 @@ export default function BlessingsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBlessingSlug, setSelectedBlessingSlug] = useState<string | null>(null);
   const [selectedItemDetails, setSelectedItemDetails] = useState<BlessingItemDetails | null>(null);
-  const [modalDisplayMode, setModalDisplayMode] = useState<BlessingTextDisplayMode>('ru');
+  const [modalDisplayMode, setModalDisplayMode] = useState<BlessingTextDisplayMode>(() => (
+    normalizeDisplayModeForTextNusach(
+      blessingDefaultDisplayMode,
+      blessingUserPreferences.selectedTextNusach,
+    )
+  ));
   const [modalTextNusach, setModalTextNusach] = useState<BlessingTextNusach>(
     blessingUserPreferences.selectedTextNusach,
   );
@@ -76,27 +85,15 @@ export default function BlessingsScreen() {
     }
 
     setModalTextNusach(blessingUserPreferences.selectedTextNusach);
-    setModalDisplayMode((current) => {
-      if (current !== 'translit_ashkenaz' && current !== 'translit_sephard') {
-        return normalizeDisplayModeForTextNusach(
-          current,
-          blessingUserPreferences.selectedTextNusach,
-        );
-      }
-
-      const profileTranslitDisplayMode =
-        blessingUserPreferences.translitNusach === 'ashkenaz'
-          ? 'translit_ashkenaz'
-          : 'translit_sephard';
-
-      return normalizeDisplayModeForTextNusach(
-        profileTranslitDisplayMode,
+    setModalDisplayMode(
+      normalizeDisplayModeForTextNusach(
+        blessingDefaultDisplayMode,
         blessingUserPreferences.selectedTextNusach,
-      );
-    });
+      ),
+    );
   }, [
+    blessingDefaultDisplayMode,
     blessingUserPreferences.selectedTextNusach,
-    blessingUserPreferences.translitNusach,
     modalTextResult,
   ]);
 
@@ -113,7 +110,7 @@ export default function BlessingsScreen() {
   ) => {
     const selectedTextNusach = blessingUserPreferences.selectedTextNusach;
     const displayMode = normalizeDisplayModeForTextNusach(
-      initialDisplayMode ?? modalDisplayMode,
+      initialDisplayMode ?? blessingDefaultDisplayMode,
       selectedTextNusach,
     );
     const language = getDisplayModeLanguage(displayMode);
@@ -203,7 +200,7 @@ export default function BlessingsScreen() {
   };
 
   const handleHomeBlessingPress = (blessing: Blessing) => {
-    openBlessingText(blessing.slug, blessing.displayMode === 'variants' ? 'he' : 'ru');
+    openBlessingText(blessing.slug);
   };
 
   const handleSearchResultPress = (result: BlessingSearchResult) => {
@@ -224,7 +221,7 @@ export default function BlessingsScreen() {
 
     if (result.resultType === 'blessing') {
       setSelectedItemDetails(null);
-      const didOpenText = openBlessingText(result.slug, 'ru');
+      const didOpenText = openBlessingText(result.slug);
       setSelectedBlessingSlug(didOpenText ? result.slug : null);
       return;
     }
@@ -233,7 +230,7 @@ export default function BlessingsScreen() {
   };
 
   const handleStepPress = (step: BlessingResolvedStep) => {
-    openBlessingText(step.blessingSlug, 'ru', 'scheme');
+    openBlessingText(step.blessingSlug, undefined, 'scheme');
   };
 
   const isSchemeTextOverlayVisible =
