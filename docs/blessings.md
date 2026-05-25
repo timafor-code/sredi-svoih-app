@@ -149,6 +149,25 @@ For `sephardi`, the blessings screen opens text with `selectedTextNusach: 'beit_
 
 If the requested text variant is not available, `getBlessingText()` keeps applying its existing local fallback logic.
 
+## Blessing text display modes
+
+The blessing text modal uses one display-mode segmented control instead of separate language and transliteration-nusach controls.
+
+For Chabad text variants, the available modes are:
+
+- `Иврит`
+- `Транслит Ашкеназ`
+- `Транслит Сефард`
+- `Русский`
+
+For Beit Sefaradi text variants, the available modes are:
+
+- `Иврит`
+- `Транслит Сефард`
+- `Русский`
+
+Russian translation is available as a display mode for both text nusach variants. Ashkenazi transliteration is not shown for Beit Sefaradi.
+
 ## Core short blessing texts
 
 This PR adds short core blessing text blocks for basic before-food and after-food blessings in Hebrew, transliteration, and Russian.
@@ -161,9 +180,7 @@ Texts that keep `needsVerification: true` still require final rabbinic/source re
 
 ## Transliteration nusach split
 
-The main blessing language tabs stay the same: `Иврит`, `Транслит`, and `Русский`.
-
-Inside `Транслит`, the UI now shows a secondary segmented control for `Сефард` and `Ашкеназ`.
+The blessing modal no longer shows a separate secondary transliteration control. Transliteration style is part of the display mode: `Транслит Ашкеназ` or `Транслит Сефард`.
 
 Core short blessings now have explicit `translit_sephard` and `translit_ashkenaz` blocks.
 

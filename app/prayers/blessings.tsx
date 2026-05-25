@@ -10,12 +10,16 @@ import { BlessingSearchBar } from '@/components/blessings/BlessingSearchBar';
 import { BlessingSearchResults } from '@/components/blessings/BlessingSearchResults';
 import { BlessingTextModal, BlessingTextOverlay } from '@/components/blessings/BlessingTextModal';
 import { Screen } from '@/components/ui/Screen';
+import {
+  getDisplayModeLanguage,
+  getDisplayModeTransliterationStyle,
+  normalizeDisplayModeForTextNusach,
+} from '@/lib/blessingTextDisplayMode';
 import { resolveBlessingUserPreferences } from '@/lib/blessingUserPreferences';
 import { resolveJewishCalendarFlags } from '@/lib/jewishCalendarFlags';
 import {
   getBlessingItemDetails,
   getBlessingText,
-  getBlessingTransliterationStyle,
   listHomeBlessings,
   searchBlessings,
 } from '@/services/blessingsCatalogService';
@@ -26,13 +30,11 @@ import type {
   Blessing,
   BlessingHomeGroup as BlessingHomeGroupKey,
   BlessingItemDetails,
-  BlessingLanguage,
   BlessingResolvedStep,
   BlessingSearchResult,
+  BlessingTextDisplayMode,
   BlessingTextResult,
   BlessingTextNusach,
-  BlessingTransliterationStyle,
-  BlessingTranslitNusach,
 } from '@/types/blessing';
 
 const homeGroupLabels: Record<BlessingHomeGroupKey, string> = {
@@ -44,23 +46,6 @@ const homeGroupLabels: Record<BlessingHomeGroupKey, string> = {
 const homeGroupOrder: readonly BlessingHomeGroupKey[] = ['before_food', 'after_food', 'various'];
 type BlessingTextSource = 'direct' | 'scheme';
 
-function getTransliterationStyleOption(
-  language: BlessingLanguage,
-  transliterationStyle: BlessingTransliterationStyle,
-) {
-  return language === 'translit' ? transliterationStyle : undefined;
-}
-
-function getTranslitNusachStyleOption(
-  language: BlessingLanguage,
-  translitNusach: BlessingTranslitNusach,
-) {
-  return getTransliterationStyleOption(
-    language,
-    getBlessingTransliterationStyle(translitNusach),
-  );
-}
-
 export default function BlessingsScreen() {
   const router = useRouter();
   const profileNusach = useAuthStore((state) => state.profile?.nusach);
@@ -71,12 +56,9 @@ export default function BlessingsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBlessingSlug, setSelectedBlessingSlug] = useState<string | null>(null);
   const [selectedItemDetails, setSelectedItemDetails] = useState<BlessingItemDetails | null>(null);
-  const [modalLanguage, setModalLanguage] = useState<BlessingLanguage>('ru');
+  const [modalDisplayMode, setModalDisplayMode] = useState<BlessingTextDisplayMode>('ru');
   const [modalTextNusach, setModalTextNusach] = useState<BlessingTextNusach>(
     blessingUserPreferences.selectedTextNusach,
-  );
-  const [modalTranslitNusach, setModalTranslitNusach] = useState<BlessingTranslitNusach>(
-    blessingUserPreferences.translitNusach,
   );
   const [modalTextResult, setModalTextResult] = useState<BlessingTextResult | null>(null);
   const [modalTextSource, setModalTextSource] = useState<BlessingTextSource | null>(null);
@@ -94,7 +76,24 @@ export default function BlessingsScreen() {
     }
 
     setModalTextNusach(blessingUserPreferences.selectedTextNusach);
-    setModalTranslitNusach(blessingUserPreferences.translitNusach);
+    setModalDisplayMode((current) => {
+      if (current !== 'translit_ashkenaz' && current !== 'translit_sephard') {
+        return normalizeDisplayModeForTextNusach(
+          current,
+          blessingUserPreferences.selectedTextNusach,
+        );
+      }
+
+      const profileTranslitDisplayMode =
+        blessingUserPreferences.translitNusach === 'ashkenaz'
+          ? 'translit_ashkenaz'
+          : 'translit_sephard';
+
+      return normalizeDisplayModeForTextNusach(
+        profileTranslitDisplayMode,
+        blessingUserPreferences.selectedTextNusach,
+      );
+    });
   }, [
     blessingUserPreferences.selectedTextNusach,
     blessingUserPreferences.translitNusach,
@@ -109,18 +108,20 @@ export default function BlessingsScreen() {
 
   const openBlessingText = (
     blessingSlug: string,
-    initialLanguage?: BlessingLanguage,
+    initialDisplayMode?: BlessingTextDisplayMode,
     source: BlessingTextSource = 'direct',
   ) => {
-    const language = initialLanguage ?? modalLanguage;
+    const selectedTextNusach = blessingUserPreferences.selectedTextNusach;
+    const displayMode = normalizeDisplayModeForTextNusach(
+      initialDisplayMode ?? modalDisplayMode,
+      selectedTextNusach,
+    );
+    const language = getDisplayModeLanguage(displayMode);
     const textResult = getBlessingText(blessingSlug, {
       calendarFlags: resolveJewishCalendarFlags(new Date()),
       language,
-      selectedTextNusach: blessingUserPreferences.selectedTextNusach,
-      transliterationStyle: getTransliterationStyleOption(
-        language,
-        blessingUserPreferences.transliterationStyle,
-      ),
+      selectedTextNusach,
+      transliterationStyle: getDisplayModeTransliterationStyle(displayMode),
     });
 
     if (!textResult) {
@@ -128,11 +129,11 @@ export default function BlessingsScreen() {
       return false;
     }
 
-    setModalLanguage(language);
-    setModalTextNusach(
-      textResult.selectedTextNusach ?? blessingUserPreferences.selectedTextNusach,
+    const resolvedTextNusach = textResult.selectedTextNusach ?? selectedTextNusach;
+    setModalDisplayMode(
+      normalizeDisplayModeForTextNusach(displayMode, resolvedTextNusach),
     );
-    setModalTranslitNusach(blessingUserPreferences.translitNusach);
+    setModalTextNusach(resolvedTextNusach);
     setModalTextResult(textResult);
     setModalTextSource(source);
     return true;
@@ -151,38 +152,21 @@ export default function BlessingsScreen() {
     }
   };
 
-  const handleModalLanguageChange = (language: BlessingLanguage) => {
-    setModalLanguage(language);
+  const handleModalDisplayModeChange = (value: BlessingTextDisplayMode) => {
+    const displayMode = normalizeDisplayModeForTextNusach(value, modalTextNusach);
+    setModalDisplayMode(displayMode);
 
     if (!modalTextResult) {
       return;
     }
 
     const blessingSlug = modalTextResult.blessing.slug;
+    const language = getDisplayModeLanguage(displayMode);
     const textResult = getBlessingText(blessingSlug, {
       calendarFlags: modalTextResult.calendarFlags,
       language,
       selectedTextNusach: modalTextNusach,
-      transliterationStyle: getTranslitNusachStyleOption(language, modalTranslitNusach),
-    });
-
-    if (textResult) {
-      setModalTextResult(textResult);
-    }
-  };
-
-  const handleModalTranslitNusachChange = (value: BlessingTranslitNusach) => {
-    setModalTranslitNusach(value);
-
-    if (!modalTextResult || modalLanguage !== 'translit') {
-      return;
-    }
-
-    const textResult = getBlessingText(modalTextResult.blessing.slug, {
-      calendarFlags: modalTextResult.calendarFlags,
-      language: modalLanguage,
-      selectedTextNusach: modalTextNusach,
-      transliterationStyle: getBlessingTransliterationStyle(value),
+      transliterationStyle: getDisplayModeTransliterationStyle(displayMode),
     });
 
     if (textResult) {
@@ -191,23 +175,30 @@ export default function BlessingsScreen() {
   };
 
   const handleModalTextNusachChange = (value: BlessingTextNusach) => {
+    const displayMode = normalizeDisplayModeForTextNusach(modalDisplayMode, value);
     setModalTextNusach(value);
+    setModalDisplayMode(displayMode);
 
     if (!modalTextResult) {
       return;
     }
 
     const blessingSlug = modalTextResult.blessing.slug;
+    const language = getDisplayModeLanguage(displayMode);
     const textResult = getBlessingText(blessingSlug, {
       calendarFlags: modalTextResult.calendarFlags,
-      language: modalLanguage,
+      language,
       selectedTextNusach: value,
-      transliterationStyle: getTranslitNusachStyleOption(modalLanguage, modalTranslitNusach),
+      transliterationStyle: getDisplayModeTransliterationStyle(displayMode),
     });
 
     if (textResult) {
       setModalTextResult(textResult);
-      setModalTextNusach(textResult.selectedTextNusach ?? value);
+      const resolvedTextNusach = textResult.selectedTextNusach ?? value;
+      setModalTextNusach(resolvedTextNusach);
+      setModalDisplayMode(
+        normalizeDisplayModeForTextNusach(displayMode, resolvedTextNusach),
+      );
     }
   };
 
@@ -321,12 +312,10 @@ export default function BlessingsScreen() {
           isSchemeTextOverlayVisible ? (
             <BlessingTextOverlay
               onClose={closeBlessingText}
-              onLanguageChange={handleModalLanguageChange}
+              onDisplayModeChange={handleModalDisplayModeChange}
               onTextNusachChange={handleModalTextNusachChange}
-              onTranslitNusachChange={handleModalTranslitNusachChange}
-              selectedLanguage={modalLanguage}
+              selectedDisplayMode={modalDisplayMode}
               selectedTextNusach={modalTextNusach}
-              selectedTranslitNusach={modalTranslitNusach}
               textResult={modalTextResult}
             />
           ) : null
@@ -335,12 +324,10 @@ export default function BlessingsScreen() {
       />
       <BlessingTextModal
         onClose={closeBlessingText}
-        onLanguageChange={handleModalLanguageChange}
+        onDisplayModeChange={handleModalDisplayModeChange}
         onTextNusachChange={handleModalTextNusachChange}
-        onTranslitNusachChange={handleModalTranslitNusachChange}
-        selectedLanguage={modalLanguage}
+        selectedDisplayMode={modalDisplayMode}
         selectedTextNusach={modalTextNusach}
-        selectedTranslitNusach={modalTranslitNusach}
         textResult={modalTextResult}
         visible={modalTextResult !== null && modalTextSource !== 'scheme'}
       />
