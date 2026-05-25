@@ -20,6 +20,7 @@ import {
   buildNotificationSchedulePreview,
   normalizeNotificationPreferencesForSchedule,
 } from '@/services/notificationPlannerService';
+import { registerCurrentDeviceForPush } from '@/services/pushTokenService';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useContactsStore } from '@/store/useContactsStore';
 import { useEventsStore } from '@/store/useEventsStore';
@@ -30,6 +31,7 @@ import {
   type ProfileNotificationPreferences,
 } from '@/types/profile';
 import type { NotificationScheduleItem, NotificationScheduleStatus } from '@/types/notification';
+import type { PushTokenRegistrationResult, PushTokenRegistrationStatus } from '@/types/pushToken';
 
 const profileHref = '/profile' as Href;
 
@@ -91,6 +93,18 @@ const permissionStatusLabels: Record<NotificationPermissionStatus, string> = {
   denied: 'Не разрешены',
   undetermined: 'Ещё не запрошены',
   unknown: 'Неизвестно',
+};
+
+const pushTokenStatusLabels: Record<PushTokenRegistrationStatus, string> = {
+  available: 'Токен получен',
+  idle: 'Не запрошен',
+  missing_project_id: 'Нужен EAS projectId',
+  not_authenticated: 'Нужен вход',
+  notifications_permission_not_granted: 'Нет разрешения',
+  push_token_unavailable_in_current_runtime: 'Недоступно в этой среде',
+  registered: 'Устройство зарегистрировано',
+  registration_failed: 'Регистрация не удалась',
+  unknown_error: 'Неизвестно',
 };
 
 const scheduleStatusLabels: Record<NotificationScheduleStatus, string> = {
@@ -191,6 +205,46 @@ function getScheduleStatusStyle(status: NotificationScheduleStatus) {
   return styles.scheduleStatusPending;
 }
 
+function getPushTokenStatusPillStyle(status: PushTokenRegistrationStatus) {
+  if (status === 'registered' || status === 'available') {
+    return styles.pushStatusPill_ready;
+  }
+
+  if (status === 'idle') {
+    return styles.pushStatusPill_idle;
+  }
+
+  if (
+    status === 'push_token_unavailable_in_current_runtime' ||
+    status === 'missing_project_id' ||
+    status === 'notifications_permission_not_granted'
+  ) {
+    return styles.pushStatusPill_pending;
+  }
+
+  return styles.pushStatusPill_error;
+}
+
+function getPushTokenStatusTextStyle(status: PushTokenRegistrationStatus) {
+  if (status === 'registered' || status === 'available') {
+    return styles.pushStatusText_ready;
+  }
+
+  if (status === 'idle') {
+    return styles.pushStatusText_idle;
+  }
+
+  if (
+    status === 'push_token_unavailable_in_current_runtime' ||
+    status === 'missing_project_id' ||
+    status === 'notifications_permission_not_granted'
+  ) {
+    return styles.pushStatusText_pending;
+  }
+
+  return styles.pushStatusText_error;
+}
+
 function formatScheduleTriggerAt(item: NotificationScheduleItem) {
   if (!item.triggerAt) {
     return null;
@@ -228,6 +282,27 @@ function getScheduleCandidateDetails(items: readonly NotificationScheduleItem[])
     });
 }
 
+function getPushTokenResultMessage(result: PushTokenRegistrationResult): string {
+  switch (result.status) {
+    case 'registered':
+      return 'Устройство зарегистрировано для будущих push-уведомлений. Серверная отправка появится в следующем PR.';
+    case 'push_token_unavailable_in_current_runtime':
+      return result.runtime.isExpoGo
+        ? 'Expo Go не выдаёт production-like ExpoPushToken. Проверьте регистрацию в EAS development build/TestFlight.'
+        : 'Текущая среда не выдала ExpoPushToken. Проверьте регистрацию в EAS development build/TestFlight.';
+    case 'missing_project_id':
+      return 'Не найден EAS projectId для Expo push token. Регистрация будет доступна после настройки EAS build.';
+    case 'notifications_permission_not_granted':
+      return 'Разрешите уведомления на устройстве, затем повторите регистрацию.';
+    case 'not_authenticated':
+      return 'Войдите в профиль, чтобы зарегистрировать это устройство.';
+    case 'registration_failed':
+      return 'ExpoPushToken получен, но сохранить его через Supabase RPC не удалось.';
+    default:
+      return 'Не удалось зарегистрировать устройство для push-уведомлений.';
+  }
+}
+
 export default function NotificationsScreen() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
@@ -253,6 +328,9 @@ export default function NotificationsScreen() {
   const [isRequestingPermission, setIsRequestingPermission] = useState(false);
   const [isSendingTestNotification, setIsSendingTestNotification] = useState(false);
   const [isCancellingLocalNotifications, setIsCancellingLocalNotifications] = useState(false);
+  const [pushTokenStatus, setPushTokenStatus] = useState<PushTokenRegistrationStatus>('idle');
+  const [pushTokenMessage, setPushTokenMessage] = useState<string | null>(null);
+  const [isRegisteringPushToken, setIsRegisteringPushToken] = useState(false);
 
   const savedPreferences = useMemo(
     () => normalizeNotificationPreferencesForSchedule(profile?.notification_preferences),
@@ -450,6 +528,21 @@ export default function NotificationsScreen() {
     }
   }, []);
 
+  const handleRegisterCurrentDeviceForPush = useCallback(async () => {
+    setLocalError(null);
+    setPushTokenMessage(null);
+    setIsRegisteringPushToken(true);
+
+    try {
+      const result = await registerCurrentDeviceForPush();
+
+      setPushTokenStatus(result.status);
+      setPushTokenMessage(getPushTokenResultMessage(result));
+    } finally {
+      setIsRegisteringPushToken(false);
+    }
+  }, []);
+
   if (loading && !user && !profile) {
     return (
       <>
@@ -577,6 +670,39 @@ export default function NotificationsScreen() {
 
           {notificationActionMessage ? (
             <Text style={styles.notificationActionText}>{notificationActionMessage}</Text>
+          ) : null}
+        </GlassCard>
+
+        <GlassCard>
+          <View style={styles.pushHeader}>
+            <View style={styles.permissionTextBlock}>
+              <Text style={styles.permissionTitle}>Push-уведомления</Text>
+              <Text style={styles.permissionSubtitle}>Устройство · foundation для будущей серверной отправки</Text>
+            </View>
+            <View style={[styles.pushStatusPill, getPushTokenStatusPillStyle(pushTokenStatus)]}>
+              <Text
+                numberOfLines={2}
+                style={[styles.pushStatusPillText, getPushTokenStatusTextStyle(pushTokenStatus)]}
+              >
+                {pushTokenStatusLabels[pushTokenStatus]}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.pushHelpText}>
+            Доступно для EAS development build/TestFlight. В Expo Go токен может быть недоступен, это ожидаемо.
+          </Text>
+
+          <PrimaryButton
+            disabled={!user || isRegisteringPushToken}
+            title={isRegisteringPushToken ? 'Регистрируем...' : 'Зарегистрировать это устройство'}
+            textNumberOfLines={2}
+            buttonStyle={styles.permissionButton}
+            onPress={handleRegisterCurrentDeviceForPush}
+          />
+
+          {pushTokenMessage ? (
+            <Text style={styles.notificationActionText}>{pushTokenMessage}</Text>
           ) : null}
         </GlassCard>
 
@@ -795,6 +921,59 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginTop: 12,
     textAlign: 'center',
+  },
+  pushHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
+  pushHelpText: {
+    color: colors.textDim,
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 12,
+  },
+  pushStatusPill: {
+    borderRadius: 999,
+    borderWidth: 1,
+    flexShrink: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  pushStatusPill_idle: {
+    backgroundColor: colors.glass.w07,
+    borderColor: colors.glass.w16,
+  },
+  pushStatusPill_pending: {
+    backgroundColor: colors.accent.goldBg,
+    borderColor: colors.accent.goldBorder,
+  },
+  pushStatusPill_ready: {
+    backgroundColor: colors.accent.greenBg,
+    borderColor: colors.accent.greenBorder,
+  },
+  pushStatusPill_error: {
+    backgroundColor: colors.accent.redBg,
+    borderColor: colors.accent.redBorder,
+  },
+  pushStatusPillText: {
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 16,
+    textAlign: 'center',
+  },
+  pushStatusText_idle: {
+    color: colors.textMuted,
+  },
+  pushStatusText_pending: {
+    color: colors.warning,
+  },
+  pushStatusText_ready: {
+    color: colors.success,
+  },
+  pushStatusText_error: {
+    color: colors.danger,
   },
   scheduleHeader: {
     alignItems: 'center',
