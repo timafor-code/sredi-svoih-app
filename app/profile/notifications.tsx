@@ -9,6 +9,13 @@ import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { SubHeader } from '@/components/ui/SubHeader';
 import { ToggleRow } from '@/components/ui/ToggleRow';
+import {
+  cancelAllLocalNotifications,
+  getNotificationPermissionStatus,
+  requestNotificationPermissions,
+  scheduleTestLocalNotification,
+  type NotificationPermissionStatus,
+} from '@/services/notificationsService';
 import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
 import {
@@ -49,6 +56,13 @@ const notificationRows: readonly NotificationPreferenceRow[] = [
   { key: 'news', icon: '📰', label: 'Новости общины', subtitle: 'Объявления и новости' },
 ];
 
+const permissionStatusLabels: Record<NotificationPermissionStatus, string> = {
+  granted: 'Разрешены',
+  denied: 'Не разрешены',
+  undetermined: 'Ещё не запрошены',
+  unknown: 'Неизвестно',
+};
+
 function normalizeNotificationPreferences(
   input: ProfileNotificationPreferences | null | undefined,
 ): ProfileNotificationPreferences {
@@ -88,6 +102,12 @@ export default function NotificationsScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [permissionStatus, setPermissionStatus] = useState<NotificationPermissionStatus>('unknown');
+  const [notificationActionMessage, setNotificationActionMessage] = useState<string | null>(null);
+  const [isPermissionStatusLoading, setIsPermissionStatusLoading] = useState(true);
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
+  const [isSendingTestNotification, setIsSendingTestNotification] = useState(false);
+  const [isCancellingLocalNotifications, setIsCancellingLocalNotifications] = useState(false);
 
   const savedPreferences = useMemo(
     () => normalizeNotificationPreferences(profile?.notification_preferences),
@@ -97,6 +117,9 @@ export default function NotificationsScreen() {
     () => !areNotificationPreferencesEqual(preferences, savedPreferences),
     [preferences, savedPreferences],
   );
+  const permissionStatusLabel = isPermissionStatusLoading
+    ? 'Проверяем...'
+    : permissionStatusLabels[permissionStatus];
 
   useEffect(() => {
     if (user || loading || sessionRequested) {
@@ -118,6 +141,28 @@ export default function NotificationsScreen() {
     setLocalError(null);
   }, [profile, savedPreferences]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadPermissionStatus = async () => {
+      setIsPermissionStatusLoading(true);
+      const status = await getNotificationPermissionStatus();
+
+      if (!isMounted) {
+        return;
+      }
+
+      setPermissionStatus(status);
+      setIsPermissionStatusLoading(false);
+    };
+
+    void loadPermissionStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleGoProfile = useCallback(() => {
     router.replace(profileHref);
   }, [router]);
@@ -125,6 +170,7 @@ export default function NotificationsScreen() {
   const handleToggle = useCallback((key: NotificationPreferenceKey, value: boolean) => {
     setIsSaved(false);
     setLocalError(null);
+    setNotificationActionMessage(null);
     setPreferences((current) => ({
       ...current,
       [key]: value,
@@ -157,6 +203,79 @@ export default function NotificationsScreen() {
       setIsSaving(false);
     }
   }, [preferences, profile, updateProfile, user]);
+
+  const handleRequestPermission = useCallback(async () => {
+    setLocalError(null);
+    setNotificationActionMessage(null);
+    setIsRequestingPermission(true);
+
+    try {
+      const status = await requestNotificationPermissions();
+      setPermissionStatus(status);
+
+      if (status === 'granted') {
+        setNotificationActionMessage('Уведомления разрешены на этом устройстве.');
+        return;
+      }
+
+      if (status === 'denied') {
+        setNotificationActionMessage('Уведомления не разрешены. Изменить это можно в настройках iOS.');
+        return;
+      }
+
+      if (status === 'undetermined') {
+        setNotificationActionMessage('Разрешение на уведомления ещё не выдано.');
+        return;
+      }
+
+      setNotificationActionMessage('Не удалось определить статус уведомлений.');
+    } finally {
+      setIsRequestingPermission(false);
+      setIsPermissionStatusLoading(false);
+    }
+  }, []);
+
+  const handleSendTestNotification = useCallback(async () => {
+    setLocalError(null);
+    setNotificationActionMessage(null);
+    setIsSendingTestNotification(true);
+
+    try {
+      const result = await scheduleTestLocalNotification();
+      setPermissionStatus(result.permissionStatus);
+
+      if (result.ok) {
+        setNotificationActionMessage('Тестовое локальное уведомление отправлено.');
+        return;
+      }
+
+      if (result.error === 'notifications_permission_not_granted') {
+        setNotificationActionMessage('Сначала разрешите уведомления на этом устройстве.');
+        return;
+      }
+
+      setNotificationActionMessage('Не удалось отправить тестовое уведомление.');
+    } finally {
+      setIsSendingTestNotification(false);
+    }
+  }, []);
+
+  const handleCancelLocalNotifications = useCallback(async () => {
+    setLocalError(null);
+    setNotificationActionMessage(null);
+    setIsCancellingLocalNotifications(true);
+
+    try {
+      const result = await cancelAllLocalNotifications();
+      setNotificationActionMessage(
+        result.ok
+          ? 'Локальные уведомления отменены.'
+          : 'Не удалось отменить локальные уведомления.',
+      );
+    } finally {
+      setIsCancellingLocalNotifications(false);
+    }
+  }, []);
 
   if (loading && !user && !profile) {
     return (
@@ -238,8 +357,54 @@ export default function NotificationsScreen() {
 
         <GlassCard>
           <Text style={styles.infoText}>
-            Эти настройки пока сохраняют ваши предпочтения. Реальные push-уведомления будут подключены отдельным этапом.
+            Сейчас подключается локальный слой уведомлений на устройстве. Серверные push-уведомления будут подключены отдельным этапом через EAS development build/TestFlight.
           </Text>
+        </GlassCard>
+
+        <GlassCard>
+          <View style={styles.permissionHeader}>
+            <View style={styles.permissionTextBlock}>
+              <Text style={styles.permissionTitle}>Статус уведомлений</Text>
+              <Text style={styles.permissionSubtitle}>
+                {permissionStatusLabel}
+              </Text>
+            </View>
+            <View style={[styles.permissionPill, styles[`permissionPill_${permissionStatus}`]]}>
+              <Text style={[styles.permissionPillText, styles[`permissionPillText_${permissionStatus}`]]}>
+                {permissionStatusLabel}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.permissionActions}>
+            {permissionStatus !== 'granted' ? (
+              <PrimaryButton
+                disabled={isRequestingPermission || isPermissionStatusLoading}
+                title={isRequestingPermission ? 'Запрашиваем...' : 'Разрешить уведомления'}
+                textNumberOfLines={2}
+                buttonStyle={styles.permissionButton}
+                onPress={handleRequestPermission}
+              />
+            ) : null}
+            <PrimaryButton
+              disabled={isSendingTestNotification}
+              title={isSendingTestNotification ? 'Отправляем...' : 'Отправить тестовое уведомление'}
+              textNumberOfLines={2}
+              buttonStyle={styles.permissionButton}
+              onPress={handleSendTestNotification}
+            />
+            <PrimaryButton
+              disabled={isCancellingLocalNotifications}
+              title={isCancellingLocalNotifications ? 'Отменяем...' : 'Отменить локальные уведомления'}
+              textNumberOfLines={2}
+              buttonStyle={styles.permissionButton}
+              onPress={handleCancelLocalNotifications}
+            />
+          </View>
+
+          {notificationActionMessage ? (
+            <Text style={styles.notificationActionText}>{notificationActionMessage}</Text>
+          ) : null}
         </GlassCard>
 
         <IOSGroup>
@@ -305,6 +470,81 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     fontSize: 13,
     lineHeight: 19,
+  },
+  permissionHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  permissionTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  permissionTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '800',
+    lineHeight: 22,
+  },
+  permissionSubtitle: {
+    color: colors.textDim,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  permissionPill: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  permissionPill_granted: {
+    backgroundColor: colors.accent.greenBg,
+    borderColor: colors.accent.greenBorder,
+  },
+  permissionPill_denied: {
+    backgroundColor: colors.accent.redBg,
+    borderColor: colors.accent.redBorder,
+  },
+  permissionPill_undetermined: {
+    backgroundColor: colors.accent.goldBg,
+    borderColor: colors.accent.goldBorder,
+  },
+  permissionPill_unknown: {
+    backgroundColor: colors.glass.w07,
+    borderColor: colors.glass.w16,
+  },
+  permissionPillText: {
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 16,
+  },
+  permissionPillText_granted: {
+    color: colors.success,
+  },
+  permissionPillText_denied: {
+    color: colors.danger,
+  },
+  permissionPillText_undetermined: {
+    color: colors.warning,
+  },
+  permissionPillText_unknown: {
+    color: colors.textMuted,
+  },
+  permissionActions: {
+    gap: 10,
+    marginTop: 16,
+  },
+  permissionButton: {
+    minHeight: 44,
+    borderRadius: 12,
+  },
+  notificationActionText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 12,
+    textAlign: 'center',
   },
   statusText: {
     color: colors.textGhost,
