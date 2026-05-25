@@ -18,6 +18,7 @@ import {
   isHebcalNotificationCategory,
 } from '@/services/notificationHebcalPlannerService';
 import { buildBirthdayNotificationCandidates } from '@/services/notificationBirthdayPlannerService';
+import { buildEventNotificationCandidates } from '@/services/notificationEventPlannerService';
 
 type CategoryScheduleDefinition = {
   body: string;
@@ -186,6 +187,10 @@ function buildCategorySchedulePreviewItems(
 
   if (category === 'birthdays') {
     return buildBirthdayNotificationCandidates(input);
+  }
+
+  if (category === 'events') {
+    return buildEventNotificationCandidates(input);
   }
 
   return [createUnsupportedScheduleItem(category, input)];
