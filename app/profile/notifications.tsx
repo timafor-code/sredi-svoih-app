@@ -21,6 +21,7 @@ import {
   normalizeNotificationPreferencesForSchedule,
 } from '@/services/notificationPlannerService';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useContactsStore } from '@/store/useContactsStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
 import {
@@ -122,14 +123,14 @@ function formatScheduleTriggerAt(item: NotificationScheduleItem) {
   return `${day}, ${time}`;
 }
 
-function getScheduleCandidateDetail(item: NotificationScheduleItem | undefined) {
-  if (!item || item.status !== 'candidate') {
-    return null;
-  }
+function getScheduleCandidateDetails(items: readonly NotificationScheduleItem[]) {
+  return items
+    .filter((item) => item.status === 'candidate')
+    .map((item) => {
+      const triggerAt = formatScheduleTriggerAt(item);
 
-  const triggerAt = formatScheduleTriggerAt(item);
-
-  return triggerAt ? `${item.title} · ${triggerAt}` : item.title;
+      return triggerAt ? `${item.title} · ${triggerAt}` : item.title;
+    });
 }
 
 export default function NotificationsScreen() {
@@ -139,6 +140,8 @@ export default function NotificationsScreen() {
   const loading = useAuthStore((state) => state.loading);
   const loadSession = useAuthStore((state) => state.loadSession);
   const updateProfile = useAuthStore((state) => state.updateProfile);
+  const communityContacts = useContactsStore((state) => state.communityContacts);
+  const localContacts = useContactsStore((state) => state.localContacts);
   const city = useSettingsStore((state) => state.city);
 
   const [preferences, setPreferences] = useState<ProfileNotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
@@ -165,8 +168,13 @@ export default function NotificationsScreen() {
     ? 'Проверяем...'
     : permissionStatusLabels[permissionStatus];
   const schedulePreview = useMemo(
-    () => buildNotificationSchedulePreview({ city, preferences }),
-    [city, preferences],
+    () => buildNotificationSchedulePreview({
+      city,
+      communityContacts,
+      localContacts,
+      preferences,
+    }),
+    [city, communityContacts, localContacts, preferences],
   );
 
   useEffect(() => {
@@ -465,17 +473,24 @@ export default function NotificationsScreen() {
 
           <View style={styles.scheduleList}>
             {notificationRows.map((row) => {
-              const scheduleItem = schedulePreview.items.find((item) => item.category === row.key);
+              const scheduleItems = schedulePreview.items.filter((item) => item.category === row.key);
+              const scheduleItem = scheduleItems[0];
               const scheduleStatus = scheduleItem?.status ?? 'unsupported_in_this_pr';
-              const candidateDetail = getScheduleCandidateDetail(scheduleItem);
+              const candidateDetails = getScheduleCandidateDetails(scheduleItems);
 
               return (
                 <View key={row.key} style={styles.scheduleRow}>
                   <View style={styles.scheduleCategoryBlock}>
                     <Text style={styles.scheduleCategory}>{row.label}</Text>
-                    {candidateDetail ? (
-                      <Text numberOfLines={1} style={styles.scheduleCandidateDetail}>{candidateDetail}</Text>
-                    ) : null}
+                    {candidateDetails.map((candidateDetail, index) => (
+                      <Text
+                        key={`${row.key}:candidate:${index}`}
+                        numberOfLines={1}
+                        style={styles.scheduleCandidateDetail}
+                      >
+                        {candidateDetail}
+                      </Text>
+                    ))}
                   </View>
                   <Text style={[styles.scheduleStatus, getScheduleStatusStyle(scheduleStatus)]}>
                     {scheduleStatusLabels[scheduleStatus]}
