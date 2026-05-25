@@ -48,6 +48,13 @@ export type ProfileNotificationPreferences = {
   birthdays: boolean;
   weekly: boolean;
   news: boolean;
+  candlesReminderOffsetMinutes?: number;
+  shabbatReminderOffsetHours?: number;
+  holidaysReminderHour?: number;
+  weeklyReminderOffsetHours?: number;
+  birthdaysReminderHour?: number;
+  eventsPrimaryReminderOffsetHours?: number;
+  eventsFallbackReminderOffsetHours?: number;
   quietHoursEnabled?: boolean;
   quietHoursStart?: string;
   quietHoursEnd?: string;
@@ -65,6 +72,16 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: ProfileNotificationPreferences = 
   birthdays: true,
   weekly: true,
   news: false,
+  candlesReminderOffsetMinutes: 60,
+  shabbatReminderOffsetHours: 8,
+  holidaysReminderHour: 9,
+  weeklyReminderOffsetHours: 8,
+  birthdaysReminderHour: 9,
+  eventsPrimaryReminderOffsetHours: 24,
+  eventsFallbackReminderOffsetHours: 2,
+  quietHoursEnabled: false,
+  quietHoursStart: '22:00',
+  quietHoursEnd: '08:00',
 };
 
 export function isProfileTribeStatus(value: unknown): value is ProfileTribeStatus {

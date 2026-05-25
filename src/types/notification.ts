@@ -37,6 +37,22 @@ export type NotificationScheduleStatus =
 
 export type NotificationScheduleMetadata = Record<string, unknown>;
 
+export type NotificationReminderOffsets = Pick<
+  ProfileNotificationPreferences,
+  | 'candlesReminderOffsetMinutes'
+  | 'shabbatReminderOffsetHours'
+  | 'holidaysReminderHour'
+  | 'weeklyReminderOffsetHours'
+  | 'birthdaysReminderHour'
+  | 'eventsPrimaryReminderOffsetHours'
+  | 'eventsFallbackReminderOffsetHours'
+>;
+
+export type NotificationAdvancedSettings = NotificationReminderOffsets & Pick<
+  ProfileNotificationPreferences,
+  'quietHoursEnabled' | 'quietHoursStart' | 'quietHoursEnd'
+>;
+
 export type NotificationScheduleItem = {
   id: string;
   category: NotificationCategory;

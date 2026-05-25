@@ -1,7 +1,7 @@
 import { Stack, useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { IOSGroup } from '@/components/ui/IOSGroup';
@@ -44,7 +44,29 @@ const notificationPreferenceKeys = [
   'news',
 ] as const;
 
+const advancedNotificationPreferenceKeys = [
+  'candlesReminderOffsetMinutes',
+  'shabbatReminderOffsetHours',
+  'holidaysReminderHour',
+  'weeklyReminderOffsetHours',
+  'birthdaysReminderHour',
+  'eventsPrimaryReminderOffsetHours',
+  'eventsFallbackReminderOffsetHours',
+  'quietHoursEnabled',
+  'quietHoursStart',
+  'quietHoursEnd',
+] as const;
+
+const allNotificationPreferenceKeys = [
+  ...notificationPreferenceKeys,
+  ...advancedNotificationPreferenceKeys,
+] as const;
+
 type NotificationPreferenceKey = (typeof notificationPreferenceKeys)[number];
+type AdvancedNumericPreferenceKey =
+  | 'candlesReminderOffsetMinutes'
+  | 'eventsPrimaryReminderOffsetHours'
+  | 'birthdaysReminderHour';
 
 type NotificationPreferenceRow = {
   icon: string;
@@ -79,11 +101,82 @@ const scheduleStatusLabels: Record<NotificationScheduleStatus, string> = {
   unsupported_in_this_pr: 'будет подключено в следующем PR',
 };
 
+const candleOffsetOptions = [30, 60, 90] as const;
+const eventPrimaryOffsetOptions = [12, 24, 48] as const;
+const birthdayHourOptions = [9, 10, 11] as const;
+
+type AdvancedOptionRowProps = {
+  isLast?: boolean;
+  label: string;
+  onChange: (value: number) => void;
+  options: readonly number[];
+  subtitle: string;
+  value: number;
+  valueSuffix: string;
+};
+
 function areNotificationPreferencesEqual(
   left: ProfileNotificationPreferences,
   right: ProfileNotificationPreferences,
 ): boolean {
-  return notificationPreferenceKeys.every((key) => left[key] === right[key]);
+  return allNotificationPreferenceKeys.every((key) => left[key] === right[key]);
+}
+
+function getNumericPreferenceValue(
+  preferences: ProfileNotificationPreferences,
+  key: AdvancedNumericPreferenceKey,
+  fallback: number,
+): number {
+  const value = preferences[key];
+  return typeof value === 'number' ? value : fallback;
+}
+
+function AdvancedOptionRow({
+  isLast,
+  label,
+  onChange,
+  options,
+  subtitle,
+  value,
+  valueSuffix,
+}: AdvancedOptionRowProps) {
+  return (
+    <View style={[styles.advancedOptionRow, !isLast && styles.advancedDivider]}>
+      <View style={styles.advancedOptionTextBlock}>
+        <Text numberOfLines={2} style={styles.advancedOptionLabel}>
+          {label}
+        </Text>
+        <Text numberOfLines={2} style={styles.advancedOptionSubtitle}>
+          {subtitle}
+        </Text>
+      </View>
+      <View style={styles.advancedOptionChips}>
+        {options.map((option) => {
+          const selected = option === value;
+
+          return (
+            <Pressable
+              key={option}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              onPress={() => onChange(option)}
+              style={[styles.advancedOptionChip, selected && styles.advancedOptionChipSelected]}
+            >
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.advancedOptionChipText,
+                  selected && styles.advancedOptionChipTextSelected,
+                ]}
+              >
+                {option} {valueSuffix}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
 }
 
 function getScheduleStatusStyle(status: NotificationScheduleStatus) {
@@ -129,8 +222,9 @@ function getScheduleCandidateDetails(items: readonly NotificationScheduleItem[])
     .filter((item) => item.status === 'candidate')
     .map((item) => {
       const triggerAt = formatScheduleTriggerAt(item);
+      const quietHoursLabel = item.metadata?.isInsideQuietHours === true ? ' · тихие часы' : '';
 
-      return triggerAt ? `${item.title} · ${triggerAt}` : item.title;
+      return triggerAt ? `${item.title} · ${triggerAt}${quietHoursLabel}` : `${item.title}${quietHoursLabel}`;
     });
 }
 
@@ -234,6 +328,19 @@ export default function NotificationsScreen() {
   }, [router]);
 
   const handleToggle = useCallback((key: NotificationPreferenceKey, value: boolean) => {
+    setIsSaved(false);
+    setLocalError(null);
+    setNotificationActionMessage(null);
+    setPreferences((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }, []);
+
+  const handleAdvancedPreferenceChange = useCallback((
+    key: keyof ProfileNotificationPreferences,
+    value: boolean | number | string,
+  ) => {
     setIsSaved(false);
     setLocalError(null);
     setNotificationActionMessage(null);
@@ -525,6 +632,45 @@ export default function NotificationsScreen() {
           ))}
         </IOSGroup>
 
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Расширенные настройки</Text>
+        </View>
+
+        <IOSGroup>
+          <ToggleRow
+            icon="🌙"
+            label="Тихие часы"
+            subtitle={`${preferences.quietHoursStart ?? '22:00'}–${preferences.quietHoursEnd ?? '08:00'}, только пометка в плане`}
+            value={preferences.quietHoursEnabled === true}
+            onValueChange={(value) => handleAdvancedPreferenceChange('quietHoursEnabled', value)}
+          />
+          <AdvancedOptionRow
+            label="Свечи"
+            subtitle="За сколько минут напомнить"
+            value={getNumericPreferenceValue(preferences, 'candlesReminderOffsetMinutes', 60)}
+            valueSuffix="мин"
+            options={candleOffsetOptions}
+            onChange={(value) => handleAdvancedPreferenceChange('candlesReminderOffsetMinutes', value)}
+          />
+          <AdvancedOptionRow
+            label="Мероприятия"
+            subtitle="Основное напоминание за"
+            value={getNumericPreferenceValue(preferences, 'eventsPrimaryReminderOffsetHours', 24)}
+            valueSuffix="ч"
+            options={eventPrimaryOffsetOptions}
+            onChange={(value) => handleAdvancedPreferenceChange('eventsPrimaryReminderOffsetHours', value)}
+          />
+          <AdvancedOptionRow
+            isLast
+            label="Дни рождения"
+            subtitle="В какой час напомнить"
+            value={getNumericPreferenceValue(preferences, 'birthdaysReminderHour', 9)}
+            valueSuffix="ч"
+            options={birthdayHourOptions}
+            onChange={(value) => handleAdvancedPreferenceChange('birthdaysReminderHour', value)}
+          />
+        </IOSGroup>
+
         <Text style={[styles.statusText, isDirty && styles.statusTextDirty, isSaved && styles.statusTextSaved]}>
           {isSaving
             ? 'Сохраняем...'
@@ -713,6 +859,74 @@ const styles = StyleSheet.create({
   },
   scheduleStatusPending: {
     color: colors.warning,
+  },
+  sectionHeader: {
+    marginBottom: -8,
+    paddingHorizontal: 4,
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '800',
+    lineHeight: 21,
+  },
+  advancedOptionRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    minHeight: 68,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  advancedDivider: {
+    borderBottomColor: colors.separator,
+    borderBottomWidth: 1,
+  },
+  advancedOptionTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  advancedOptionLabel: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '500',
+    includeFontPadding: false,
+    lineHeight: 19,
+  },
+  advancedOptionSubtitle: {
+    color: colors.textGhost,
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 3,
+  },
+  advancedOptionChips: {
+    flexDirection: 'row',
+    flexShrink: 0,
+    gap: 6,
+  },
+  advancedOptionChip: {
+    alignItems: 'center',
+    backgroundColor: colors.glass.w07,
+    borderColor: colors.glass.w16,
+    borderRadius: 10,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 32,
+    minWidth: 45,
+    paddingHorizontal: 8,
+  },
+  advancedOptionChipSelected: {
+    backgroundColor: colors.accent.orangeBg,
+    borderColor: colors.accent.orangeBorder,
+  },
+  advancedOptionChipText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 16,
+  },
+  advancedOptionChipTextSelected: {
+    color: colors.orange,
   },
   statusText: {
     color: colors.textGhost,

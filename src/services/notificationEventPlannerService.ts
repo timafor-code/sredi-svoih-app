@@ -9,6 +9,7 @@ import type {
   NotificationScheduleItem,
   NotificationScheduleMetadata,
 } from '@/types/notification';
+import { DEFAULT_NOTIFICATION_PREFERENCES } from '@/types/profile';
 
 type EventReminderEvent = Event | EventItem;
 
@@ -26,7 +27,7 @@ export type EventReminderSource = {
 
 export type NormalizeEventReminderSourcesInput = Pick<
   NotificationScheduleBuildInput,
-  'events' | 'myRegistrations' | 'now'
+  'events' | 'myRegistrations' | 'now' | 'preferences'
 > & {
   limit?: number;
 };
@@ -40,8 +41,10 @@ export type BuildEventNotificationCandidateInput = Pick<
 
 const EVENT_CANDIDATE_LIMIT = 3;
 const HOUR_MS = 60 * 60 * 1000;
-const PRIMARY_REMINDER_OFFSET_HOURS = 24;
-const FALLBACK_REMINDER_OFFSET_HOURS = 2;
+const DEFAULT_PRIMARY_REMINDER_OFFSET_HOURS =
+  DEFAULT_NOTIFICATION_PREFERENCES.eventsPrimaryReminderOffsetHours ?? 24;
+const DEFAULT_FALLBACK_REMINDER_OFFSET_HOURS =
+  DEFAULT_NOTIFICATION_PREFERENCES.eventsFallbackReminderOffsetHours ?? 2;
 const NO_REGISTRATIONS_REASON = 'Event reminders require loaded active registrations.';
 const NO_EVENT_REMINDERS_REASON =
   'Event reminders require upcoming active registrations with future reminder windows.';
@@ -78,6 +81,18 @@ function parseDate(value: string | null | undefined): Date | null {
 
 function normalizeTimezone(value: string | null | undefined): string | null {
   return value?.trim() || null;
+}
+
+function getEventReminderOffsets(input: Pick<NotificationScheduleBuildInput, 'preferences'>): {
+  fallbackOffsetHours: number;
+  primaryOffsetHours: number;
+} {
+  return {
+    fallbackOffsetHours: input.preferences?.eventsFallbackReminderOffsetHours
+      ?? DEFAULT_FALLBACK_REMINDER_OFFSET_HOURS,
+    primaryOffsetHours: input.preferences?.eventsPrimaryReminderOffsetHours
+      ?? DEFAULT_PRIMARY_REMINDER_OFFSET_HOURS,
+  };
 }
 
 function buildEventIndex(events: readonly EventReminderEvent[] = []): Map<string, EventReminderEvent> {
@@ -145,21 +160,26 @@ function getReminderStartsAt(
   return getOccurrenceStartsAt(registration, event) ?? getEventLevelStartsAt(registration, event);
 }
 
-function getReminderTriggerAt(eventStartsAt: Date, now: Date): { offsetHours: number; triggerAt: Date } | null {
-  const primaryTriggerAt = new Date(eventStartsAt.getTime() - PRIMARY_REMINDER_OFFSET_HOURS * HOUR_MS);
+function getReminderTriggerAt(
+  eventStartsAt: Date,
+  now: Date,
+  primaryOffsetHours: number,
+  fallbackOffsetHours: number,
+): { offsetHours: number; triggerAt: Date } | null {
+  const primaryTriggerAt = new Date(eventStartsAt.getTime() - primaryOffsetHours * HOUR_MS);
 
   if (primaryTriggerAt.getTime() > now.getTime()) {
     return {
-      offsetHours: PRIMARY_REMINDER_OFFSET_HOURS,
+      offsetHours: primaryOffsetHours,
       triggerAt: primaryTriggerAt,
     };
   }
 
-  const fallbackTriggerAt = new Date(eventStartsAt.getTime() - FALLBACK_REMINDER_OFFSET_HOURS * HOUR_MS);
+  const fallbackTriggerAt = new Date(eventStartsAt.getTime() - fallbackOffsetHours * HOUR_MS);
 
   if (fallbackTriggerAt.getTime() > now.getTime()) {
     return {
-      offsetHours: FALLBACK_REMINDER_OFFSET_HOURS,
+      offsetHours: fallbackOffsetHours,
       triggerAt: fallbackTriggerAt,
     };
   }
@@ -236,10 +256,12 @@ export function normalizeEventReminderSources({
   limit = EVENT_CANDIDATE_LIMIT,
   myRegistrations = [],
   now,
+  preferences,
 }: NormalizeEventReminderSourcesInput = {}): EventReminderSource[] {
   const nowDate = parseNow(now);
   const nowTime = nowDate.getTime();
   const eventsById = buildEventIndex(events);
+  const { fallbackOffsetHours, primaryOffsetHours } = getEventReminderOffsets({ preferences });
 
   return Array.from(myRegistrations)
     .filter((registration) => isRegistrationUpcomingOrCurrent(registration, nowTime))
@@ -256,7 +278,7 @@ export function normalizeEventReminderSources({
         return null;
       }
 
-      const reminder = getReminderTriggerAt(startsAt, nowDate);
+      const reminder = getReminderTriggerAt(startsAt, nowDate, primaryOffsetHours, fallbackOffsetHours);
 
       if (!reminder) {
         return null;
@@ -325,6 +347,7 @@ export function buildEventNotificationCandidates(
     limit: EVENT_CANDIDATE_LIMIT,
     myRegistrations: registrations,
     now: input.now,
+    preferences: input.preferences,
   }).map((reminderSource) => buildEventNotificationCandidate({
     reminderSource,
     timezone: input.timezone,
