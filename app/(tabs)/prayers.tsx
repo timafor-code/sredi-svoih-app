@@ -37,6 +37,29 @@ function isPrayerRecordableNow(prayer: PrayerWindow) {
   return nowMs >= prayer.start.getTime() && nowMs <= prayer.end.getTime();
 }
 
+function clampProgress(value: number) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function getUpcomingPrayerPreviewProgress(
+  prayers: PrayerWindow[],
+  prayerIndex: number,
+  now: Date,
+) {
+  const prayer = prayers[prayerIndex];
+  if (!prayer) return 0;
+
+  const startMs = prayer.start.getTime();
+  const gapStartMs = prayerIndex > 0
+    ? prayers[prayerIndex - 1]!.end.getTime()
+    : new Date(now).setHours(0, 0, 0, 0);
+  const gapDurationMs = startMs - gapStartMs;
+
+  if (gapDurationMs <= 0) return 0;
+
+  return clampProgress((now.getTime() - gapStartMs) / gapDurationMs);
+}
+
 export default function PrayersScreen() {
   const router = useRouter();
   const now = useNow();
@@ -82,6 +105,20 @@ export default function PrayersScreen() {
     [prayers, selectedPrayerId],
   );
   const activityDate = useMemo(() => formatLocalDateKey(now, daily.timeZone), [daily.timeZone, now]);
+  const upcomingPrayerPreview = useMemo(() => {
+    const hasActivePrayer = prayers.some((prayer) => prayer.active);
+    if (hasActivePrayer) return null;
+
+    const nowMs = now.getTime();
+    const nextPrayerIndex = prayers.findIndex((prayer) => nowMs < prayer.start.getTime());
+    if (nextPrayerIndex < 0) return null;
+
+    const nextPrayer = prayers[nextPrayerIndex]!;
+    return {
+      id: nextPrayer.id,
+      progress: getUpcomingPrayerPreviewProgress(prayers, nextPrayerIndex, now),
+    };
+  }, [now, prayers]);
   const selectedPrayerAlreadyRecorded = Boolean(
     authUser
     && selectedPrayer
@@ -305,6 +342,11 @@ export default function PrayersScreen() {
 
       {prayers.map((prayer) => {
         const recordable = prayer.active;
+        const upcomingPreview = Boolean(
+          upcomingPrayerPreview
+          && prayer.id === upcomingPrayerPreview.id
+          && !prayer.active,
+        );
         const alreadyRecorded = Boolean(
           authUser
           && hasRecordedActivity(
@@ -330,6 +372,8 @@ export default function PrayersScreen() {
             onPress={recordable ? () => handlePrayerPress(prayer) : undefined}
             timeZone={daily.timeZone}
             title={prayer.title}
+            upcomingPreview={upcomingPreview}
+            upcomingPreviewProgress={upcomingPreview ? upcomingPrayerPreview?.progress ?? 0 : 0}
             windowEnd={prayer.end}
             windowStart={prayer.start}
           />

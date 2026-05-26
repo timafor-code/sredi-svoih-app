@@ -8,8 +8,14 @@ import { colors } from '@/theme/colors';
 
 const mutedPrayerProgressColor = '#737782';
 
+type PrayerCardLayoutVariant = 'active' | 'upcomingPreview' | 'compact';
+
 function getPrayerPastVerb(prayerId: PrayerWindow['id']): 'прошел' | 'прошла' {
   return prayerId === 'mincha' ? 'прошла' : 'прошел';
+}
+
+function clampProgress(value: number) {
+  return Math.max(0, Math.min(1, value));
 }
 
 export type PrayerWindowCardProps = {
@@ -26,6 +32,8 @@ export type PrayerWindowCardProps = {
   status?: string;
   timeZone: string;
   title: string;
+  upcomingPreview?: boolean;
+  upcomingPreviewProgress?: number;
   windowEnd: Date;
   windowStart: Date;
 };
@@ -44,79 +52,120 @@ export function PrayerWindowCard({
   onPress,
   timeZone,
   title,
+  upcomingPreview = false,
+  upcomingPreviewProgress = 0,
   windowEnd,
   windowStart,
 }: PrayerWindowCardProps) {
   const inactive = !active;
   const done = inactive && state === 'done';
   const upcoming = inactive && state === 'upcoming';
-  const progressValue = active ? progress : done ? 1 : 0;
+  const layoutVariant: PrayerCardLayoutVariant = active
+    ? 'active'
+    : upcomingPreview
+      ? 'upcomingPreview'
+      : 'compact';
+  const compact = layoutVariant === 'compact';
+  const isUpcomingPreviewLayout = layoutVariant === 'upcomingPreview';
+  const showProgress = layoutVariant !== 'compact';
+  const progressValue = active
+    ? clampProgress(progress)
+    : isUpcomingPreviewLayout
+      ? clampProgress(upcomingPreviewProgress)
+      : 0;
+  const progressPercent = Math.round(progressValue * 100);
+  const nowMs = Date.now();
   const badgeLabel = active ? (alreadyRecorded ? 'Помолился' : 'ИДЁТ') : alreadyRecorded ? 'Помолился' : null;
-  const overlineLabel = active ? 'СЕЙЧАС' : done ? getPrayerPastVerb(prayerId).toUpperCase() : 'ДАЛЬШЕ';
+  const overlineLabel = active
+    ? 'СЕЙЧАС'
+    : isUpcomingPreviewLayout
+      ? 'БЛИЖАЙШАЯ'
+      : done
+        ? getPrayerPastVerb(prayerId).toUpperCase()
+        : 'ДАЛЬШЕ';
   const sideValue = active
-    ? formatDurationRu(windowEnd.getTime() - Date.now())
-    : done
-      ? formatRuTime(windowEnd, timeZone)
-      : formatRuTime(windowStart, timeZone);
-  const sideLabel = active ? `осталось · ${Math.round(progress * 100)}%` : done ? 'окончание' : 'начало';
+    ? formatDurationRu(Math.max(0, windowEnd.getTime() - nowMs))
+    : isUpcomingPreviewLayout
+      ? formatDurationRu(Math.max(0, windowStart.getTime() - nowMs))
+      : done
+        ? formatRuTime(windowEnd, timeZone)
+        : formatRuTime(windowStart, timeZone);
+  const sideLabel = active
+    ? `осталось · ${progressPercent}%`
+    : isUpcomingPreviewLayout
+      ? `до начала · ${progressPercent}%`
+      : done
+        ? 'окончание'
+        : 'начало';
   const timeLine = active
     ? `до ${formatRuTime(windowEnd, timeZone)}`
     : `${formatRuTime(windowStart, timeZone)} - ${formatRuTime(windowEnd, timeZone)}`;
-  const progressColor = active ? colors.gold : done ? mutedPrayerProgressColor : accent;
-  const tintColor = active ? colors.gold : done ? mutedPrayerProgressColor : accent;
+  const progressColor = active ? colors.gold : accent;
+  const tintColor = active ? colors.gold : isUpcomingPreviewLayout ? accent : mutedPrayerProgressColor;
   const hebrewLabel = status ?? hebrew;
   const emojiBoxStyle = active
     ? { borderColor: `${accent}55`, backgroundColor: `${accent}26` }
     : {
-        borderColor: done ? 'rgba(255,255,255,0.08)' : `${accent}33`,
-        backgroundColor: done ? 'rgba(255,255,255,0.04)' : `${accent}12`,
+        borderColor: done || compact ? 'rgba(255,255,255,0.08)' : `${accent}33`,
+        backgroundColor: done || compact ? 'rgba(255,255,255,0.04)' : `${accent}12`,
       };
 
   const card = (
     <GlassCard
+      contentStyle={compact ? styles.compactPrayerContent : undefined}
       style={[
         styles.prayerCard,
         active && styles.activePrayer,
+        compact && styles.compactPrayer,
         done && styles.passedPrayer,
-        upcoming && styles.upcomingPrayer,
+        upcoming && !isUpcomingPreviewLayout && styles.upcomingPrayer,
+        isUpcomingPreviewLayout && styles.upcomingPreviewPrayer,
         done && alreadyRecorded && styles.recordedPassedPrayer,
       ]}
     >
       <View style={[styles.prayerTint, { width: `${Math.round(progressValue * 100)}%`, backgroundColor: `${tintColor}14` }]} />
-      <View style={styles.prayerTop}>
-        <View style={styles.prayerLeft}>
-          <View style={[styles.emojiBox, emojiBoxStyle]}>
-            <Text style={[styles.emoji, inactive && styles.inactiveEmoji]}>{icon}</Text>
+      <View style={[styles.prayerTop, compact && styles.compactPrayerTop]}>
+        <View style={[styles.prayerLeft, compact && styles.compactPrayerLeft]}>
+          <View style={[styles.emojiBox, compact && styles.compactEmojiBox, emojiBoxStyle]}>
+            <Text style={[styles.emoji, compact && styles.compactEmoji, inactive && styles.inactiveEmoji]}>{icon}</Text>
           </View>
           <View style={styles.flex}>
             <View style={styles.rowGap}>
-              <Text style={[styles.overline, inactive && styles.inactiveOverline]}>{overlineLabel} · {title.toUpperCase()}</Text>
+              <Text style={[styles.overline, compact && styles.compactOverline, inactive && styles.inactiveOverline]}>{overlineLabel} · {title.toUpperCase()}</Text>
               {badgeLabel ? (
-                <Text style={[styles.statusBadge, active && !alreadyRecorded && styles.activeStatusBadge, alreadyRecorded && styles.recordedBadge]}>
+                <Text style={[styles.statusBadge, compact && styles.compactStatusBadge, active && !alreadyRecorded && styles.activeStatusBadge, alreadyRecorded && styles.recordedBadge]}>
                   {badgeLabel}
                 </Text>
               ) : null}
             </View>
-            <View style={styles.prayerTitleRow}>
-              <Text style={[styles.prayerTime, inactive && styles.inactivePrayerTime, done && styles.passedPrayerTime]}>{timeLine}</Text>
-              {hebrewLabel ? <Text style={[styles.prayerHebrew, inactive && styles.inactivePrayerHebrew]}>{hebrewLabel}</Text> : null}
+            <View style={[styles.prayerTitleRow, compact && styles.compactPrayerTitleRow]}>
+              <Text style={[styles.prayerTime, inactive && styles.inactivePrayerTime, done && styles.passedPrayerTime, compact && styles.compactPrayerTime]}>{timeLine}</Text>
+              {hebrewLabel ? <Text style={[styles.prayerHebrew, compact && styles.compactPrayerHebrew, inactive && styles.inactivePrayerHebrew]}>{hebrewLabel}</Text> : null}
             </View>
           </View>
         </View>
-        <View style={styles.prayerRight}>
-          <Text style={[styles.prayerValue, inactive && styles.inactiveValue, done && styles.passedValue]}>{sideValue}</Text>
-          <Text style={[styles.tinyMuted, inactive && styles.inactiveTinyMuted]}>{sideLabel}</Text>
+        <View style={[styles.prayerRight, compact && styles.compactPrayerRight]}>
+          <Text style={[styles.prayerValue, inactive && styles.inactiveValue, done && styles.passedValue, compact && styles.compactPrayerValue]}>{sideValue}</Text>
+          <Text style={[styles.tinyMuted, compact && styles.compactTinyMuted, inactive && styles.inactiveTinyMuted]}>{sideLabel}</Text>
         </View>
       </View>
-      <ProgressBar value={progressValue} color={progressColor} />
-      <View style={styles.progressLegend}>
-        <Text style={[styles.tinyMuted, inactive && styles.inactiveTinyMuted]}>{formatRuTime(windowStart, timeZone)} начало</Text>
-        <Text style={[styles.tinyMuted, inactive && styles.inactiveTinyMuted]}>{formatRuTime(windowEnd, timeZone)} окончание</Text>
-      </View>
+      {showProgress ? (
+        <>
+          <ProgressBar value={progressValue} color={progressColor} />
+          <View style={styles.progressLegend}>
+            <Text style={[styles.tinyMuted, inactive && styles.inactiveTinyMuted]}>
+              {isUpcomingPreviewLayout ? 'начало через' : `${formatRuTime(windowStart, timeZone)} начало`}
+            </Text>
+            <Text style={[styles.tinyMuted, inactive && styles.inactiveTinyMuted]}>
+              {isUpcomingPreviewLayout ? `${formatRuTime(windowStart, timeZone)} начало` : `${formatRuTime(windowEnd, timeZone)} окончание`}
+            </Text>
+          </View>
+        </>
+      ) : null}
     </GlassCard>
   );
 
-  if (!onPress || !recordable) {
+  if (!onPress || !recordable || !active) {
     return card;
   }
 
@@ -135,6 +184,13 @@ const styles = StyleSheet.create({
   prayerCard: {
     position: 'relative',
   },
+  compactPrayer: {
+    minHeight: 0,
+  },
+  compactPrayerContent: {
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
   prayerTint: {
     position: 'absolute',
     top: 0,
@@ -148,12 +204,19 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 10,
   },
+  compactPrayerTop: {
+    gap: 8,
+    marginBottom: 0,
+  },
   prayerLeft: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     minWidth: 0,
+  },
+  compactPrayerLeft: {
+    gap: 7,
   },
   emojiBox: {
     width: 28,
@@ -163,8 +226,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
   },
+  compactEmojiBox: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+  },
   emoji: {
     fontSize: 14,
+  },
+  compactEmoji: {
+    fontSize: 12,
   },
   inactiveEmoji: {
     opacity: 0.56,
@@ -186,6 +257,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     includeFontPadding: false,
   },
+  compactOverline: {
+    fontSize: 9,
+    letterSpacing: 0.6,
+  },
   inactiveOverline: {
     color: colors.textGhost,
   },
@@ -199,6 +274,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     includeFontPadding: false,
+  },
+  compactStatusBadge: {
+    borderRadius: 4,
+    fontSize: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
   },
   activeStatusBadge: {
     backgroundColor: 'rgba(246,164,0,0.20)',
@@ -217,6 +298,10 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     marginTop: 2,
   },
+  compactPrayerTitleRow: {
+    gap: 5,
+    marginTop: 1,
+  },
   prayerTime: {
     color: colors.text,
     fontSize: 18,
@@ -229,16 +314,27 @@ const styles = StyleSheet.create({
   passedPrayerTime: {
     color: colors.textFaint,
   },
+  compactPrayerTime: {
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0,
+  },
   prayerHebrew: {
     color: colors.textGhost,
     fontSize: 12,
     fontStyle: 'italic',
+  },
+  compactPrayerHebrew: {
+    fontSize: 11,
   },
   inactivePrayerHebrew: {
     color: colors.textDim,
   },
   prayerRight: {
     alignItems: 'flex-end',
+  },
+  compactPrayerRight: {
+    flexShrink: 0,
   },
   prayerValue: {
     color: colors.gold,
@@ -254,6 +350,11 @@ const styles = StyleSheet.create({
   passedValue: {
     color: colors.textGhost,
   },
+  compactPrayerValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0,
+  },
   activePrayer: {
     borderColor: 'rgba(246,164,0,0.30)',
     backgroundColor: 'rgba(246,164,0,0.06)',
@@ -265,6 +366,10 @@ const styles = StyleSheet.create({
   upcomingPrayer: {
     borderColor: 'rgba(255,255,255,0.075)',
     backgroundColor: 'rgba(255,255,255,0.035)',
+  },
+  upcomingPreviewPrayer: {
+    borderColor: 'rgba(246,164,0,0.20)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
   },
   recordedPassedPrayer: {
     borderColor: 'rgba(76,175,80,0.18)',
@@ -282,6 +387,9 @@ const styles = StyleSheet.create({
     color: colors.textGhost,
     fontSize: 10,
     fontWeight: '500',
+  },
+  compactTinyMuted: {
+    fontSize: 9,
   },
   inactiveTinyMuted: {
     color: 'rgba(255,255,255,0.28)',
