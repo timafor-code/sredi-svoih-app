@@ -243,56 +243,100 @@ function EventCard({
   const showCancelAction = Boolean(activeRegistration && event.registrationMode === 'internal_free');
   const [imageFailed, setImageFailed] = useState(false);
   const showImage = Boolean(event.imageUrl && !imageFailed);
+  const descriptionText = event.subtitle ?? event.shortDescription ?? null;
 
   useEffect(() => {
     setImageFailed(false);
   }, [event.imageUrl]);
 
-  if (event.featured) {
-    return (
-      <GlassCard padded={false}>
-        <Pressable onPress={() => onOpen(event)} style={({ pressed }) => [pressed && styles.pressed]}>
-          <View style={styles.featuredImage}>
+  const badges = (
+    <View style={styles.cardBadgeRow}>
+      <View
+        style={[
+          styles.tag,
+          { backgroundColor: `${event.tagColor}20`, borderColor: `${event.tagColor}55` },
+        ]}
+      >
+        <Text style={[styles.tagText, { color: event.tagColor }]}>{event.category}</Text>
+      </View>
+      {event.visibility === 'members_only' ? (
+        <View style={styles.visibilityBadge}>
+          <Text style={styles.visibilityBadgeText}>Для участников</Text>
+        </View>
+      ) : null}
+      <RegistrationModeBadge mode={event.registrationMode} />
+    </View>
+  );
+
+  return (
+    <GlassCard padded={false}>
+      <View style={styles.cardContent}>
+        <Pressable
+          onPress={() => onOpen(event)}
+          style={({ pressed }) => [styles.posterPressable, pressed && styles.pressed]}
+        >
+          <LinearGradient
+            colors={['rgba(255,255,255,0.08)', 'rgba(240,122,42,0.08)', 'rgba(9,11,20,0.98)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.posterFrame}
+          >
+            <LinearGradient
+              colors={['rgba(255,200,50,0.10)', 'transparent', 'rgba(0,0,0,0.24)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFillObject}
+            />
             {showImage ? (
               <Image
                 source={{ uri: event.imageUrl ?? '' }}
-                resizeMode="cover"
-                style={styles.featuredPhoto}
+                resizeMode="contain"
+                style={styles.posterPhoto}
                 onError={() => setImageFailed(true)}
               />
             ) : (
-              <LinearGradient
-                colors={['rgba(240,122,42,0.28)', 'rgba(74,144,217,0.18)', '#141420']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.featuredPlaceholder}
-              >
-                <Text style={styles.featuredEmoji}>{event.imageIcon}</Text>
-              </LinearGradient>
-            )}
-            <LinearGradient colors={['rgba(10,10,20,0.85)', 'transparent']} style={StyleSheet.absoluteFillObject} />
-            <View style={styles.featuredBadgeRow}>
-              <View style={[styles.tag, { backgroundColor: `${event.tagColor}DD` }]}>
-                <Text style={styles.tagTextWhite}>{event.category}</Text>
+              <View style={styles.posterFallback}>
+                <Text style={styles.posterEmoji}>{event.imageIcon}</Text>
               </View>
-              <RegistrationModeBadge mode={event.registrationMode} />
-              {event.visibility === 'members_only' ? (
-                <View style={styles.visibilityBadge}>
-                  <Text style={styles.visibilityBadgeText}>Для участников</Text>
-                </View>
-              ) : null}
-            </View>
-            <Text style={styles.siteText}>www.sredisvoih.com</Text>
-          </View>
-
-          <View style={styles.featuredBody}>
-            <Text style={styles.featuredTitle}>{event.title}</Text>
-            {event.date ? <Text style={styles.featuredDate}>{event.date}</Text> : null}
-          </View>
+            )}
+          </LinearGradient>
         </Pressable>
 
-        <View style={styles.featuredActions}>
-          <PrimaryButton title={buttonTitle} disabled={registering || cancelling} onPress={() => onRegister(event, registration)} />
+        <Pressable
+          onPress={() => onOpen(event)}
+          style={({ pressed }) => [
+            event.featured ? styles.featuredBody : styles.eventBody,
+            pressed && styles.pressed,
+          ]}
+        >
+          {badges}
+
+          <Text style={event.featured ? styles.featuredTitle : styles.eventTitle}>
+            {event.title}
+          </Text>
+
+          {descriptionText ? (
+            <Text style={event.featured ? styles.featuredSub : styles.eventSub}>
+              {descriptionText}
+            </Text>
+          ) : null}
+
+          {event.date ? (
+            <Text style={event.featured ? styles.featuredDate : styles.eventDate}>
+              {event.date}
+            </Text>
+          ) : null}
+        </Pressable>
+
+        <View style={event.featured ? styles.featuredActions : styles.eventActions}>
+          <PrimaryButton
+            title={buttonTitle}
+            disabled={registering || cancelling}
+            onPress={() => onRegister(event, registration)}
+            style={styles.actionButton}
+            buttonStyle={styles.actionButtonGradient}
+            textNumberOfLines={2}
+          />
           {showCancelAction && activeRegistration ? (
             <Pressable
               disabled={cancelling}
@@ -300,69 +344,6 @@ function EventCard({
               style={({ pressed }) => [styles.cancelAction, pressed && styles.cancelActionPressed]}
             >
               <Text style={styles.cancelActionText}>{cancelling ? 'Отменяем...' : 'Отменить запись'}</Text>
-            </Pressable>
-          ) : null}
-        </View>
-      </GlassCard>
-    );
-  }
-
-  return (
-    <GlassCard padded={false}>
-      <View style={styles.eventRow}>
-        <Pressable onPress={() => onOpen(event)} style={({ pressed }) => [styles.eventImagePressable, pressed && styles.pressed]}>
-          {showImage ? (
-            <Image
-              source={{ uri: event.imageUrl ?? '' }}
-              resizeMode="cover"
-              style={styles.eventPhoto}
-              onError={() => setImageFailed(true)}
-            />
-          ) : (
-            <LinearGradient colors={['#1a1440', '#0f0f1a']} style={styles.eventImage}>
-              <Text style={styles.eventEmoji}>{event.imageIcon}</Text>
-              <LinearGradient colors={['transparent', 'rgba(13,15,24,0.45)']} style={StyleSheet.absoluteFillObject} />
-            </LinearGradient>
-          )}
-        </Pressable>
-
-        <View style={styles.eventBody}>
-          <Pressable onPress={() => onOpen(event)} style={({ pressed }) => [styles.eventTextPressable, pressed && styles.pressed]}>
-            <View style={styles.cardBadgeRow}>
-              <View style={[styles.tag, { backgroundColor: `${event.tagColor}22` }]}>
-                <Text style={[styles.tagText, { color: event.tagColor }]}>{event.category}</Text>
-              </View>
-              {event.visibility === 'members_only' ? (
-                <View style={styles.visibilityBadge}>
-                  <Text style={styles.visibilityBadgeText}>Для участников</Text>
-                </View>
-              ) : null}
-              <RegistrationModeBadge mode={event.registrationMode} />
-            </View>
-
-            <Text style={styles.eventTitle}>{event.title}</Text>
-
-            {event.subtitle || event.shortDescription || event.date ? (
-              <Text style={styles.eventSub}>{event.subtitle ?? event.shortDescription ?? event.date}</Text>
-            ) : null}
-
-            {event.date ? <Text style={styles.eventDate}>{event.date}</Text> : null}
-          </Pressable>
-
-          <PrimaryButton
-            title={buttonTitle}
-            disabled={registering || cancelling}
-            onPress={() => onRegister(event, registration)}
-            buttonStyle={styles.smallButton}
-            textStyle={styles.smallButtonText}
-          />
-          {showCancelAction && activeRegistration ? (
-            <Pressable
-              disabled={cancelling}
-              onPress={() => onCancel(activeRegistration)}
-              style={({ pressed }) => [styles.smallCancelAction, pressed && styles.cancelActionPressed]}
-            >
-              <Text style={styles.smallCancelActionText}>{cancelling ? 'Отменяем...' : 'Отменить запись'}</Text>
             </Pressable>
           ) : null}
         </View>
@@ -685,47 +666,44 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: 18,
   },
-  featuredImage: {
-    height: 140,
+  cardContent: {
+    gap: 12,
+    padding: 12,
+  },
+  posterPressable: {
+    width: '100%',
+    borderRadius: 18,
+  },
+  posterFrame: {
+    width: '100%',
+    aspectRatio: 1,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    backgroundColor: '#141420',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.glass.w12,
+    backgroundColor: '#10121c',
   },
-  featuredPhoto: {
+  posterPhoto: {
     width: '100%',
     height: '100%',
   },
-  featuredPlaceholder: {
-    width: '100%',
-    height: '100%',
+  posterFallback: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  featuredEmoji: {
-    fontSize: 60,
-    opacity: 0.34,
+  posterEmoji: {
+    fontSize: 58,
+    opacity: 0.48,
   },
   tag: {
+    alignSelf: 'flex-start',
     borderRadius: 6,
+    borderWidth: 1,
     paddingHorizontal: 8,
     paddingVertical: 3,
-  },
-  featuredBadgeRow: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    right: 12,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 6,
-  },
-  tagTextWhite: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
-    includeFontPadding: false,
   },
   tagText: {
     fontSize: 11,
@@ -778,108 +756,65 @@ const styles = StyleSheet.create({
     borderColor: colors.accent.goldBorder,
     backgroundColor: colors.accent.goldBg,
   },
-  siteText: {
-    position: 'absolute',
-    left: 14,
-    right: 14,
-    bottom: 10,
-    color: colors.textMuted,
-    fontSize: 12,
-  },
   featuredBody: {
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 10,
+    gap: 8,
+    paddingHorizontal: 4,
   },
   featuredActions: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
+    gap: 8,
+    paddingTop: 2,
   },
   featuredTitle: {
     color: colors.text,
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
-    lineHeight: 21,
-    marginBottom: 6,
+    lineHeight: 24,
+  },
+  featuredSub: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
   },
   featuredDate: {
-    color: colors.textGhost,
+    color: colors.textDim,
     fontSize: 12,
-    marginBottom: 14,
-  },
-  eventRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  eventImage: {
-    flex: 1,
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  eventImagePressable: {
-    width: 100,
-    height: 154,
-    overflow: 'hidden',
-    backgroundColor: '#141420',
-  },
-  eventPhoto: {
-    width: '100%',
-    height: '100%',
-  },
-  eventEmoji: {
-    fontSize: 40,
-    opacity: 0.55,
   },
   eventBody: {
-    flex: 1,
-    justifyContent: 'space-between',
-    minHeight: 154,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  eventTextPressable: {
-    flex: 1,
+    gap: 7,
+    paddingHorizontal: 2,
   },
   eventTitle: {
     color: colors.text,
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
-    marginTop: 7,
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 20,
   },
   eventSub: {
-    color: colors.textGhost,
+    color: colors.textMuted,
     fontSize: 12,
-    marginTop: 3,
+    lineHeight: 17,
   },
   eventDate: {
     color: colors.textDim,
     fontSize: 12,
-    marginTop: 5,
   },
-  smallButton: {
-    alignSelf: 'flex-start',
-    minHeight: 32,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+  eventActions: {
+    gap: 8,
+    paddingTop: 2,
   },
-  smallButtonText: {
-    fontSize: 12,
+  actionButton: {
+    width: '100%',
+  },
+  actionButtonGradient: {
+    width: '100%',
+    minHeight: 42,
+    borderRadius: 14,
   },
   cancelAction: {
     alignSelf: 'center',
     minHeight: 34,
     justifyContent: 'center',
-    marginTop: 8,
     paddingHorizontal: 12,
-  },
-  smallCancelAction: {
-    alignSelf: 'flex-start',
-    minHeight: 30,
-    justifyContent: 'center',
-    marginTop: 6,
-    paddingHorizontal: 2,
   },
   cancelActionPressed: {
     opacity: 0.72,
@@ -887,11 +822,6 @@ const styles = StyleSheet.create({
   cancelActionText: {
     color: colors.textDim,
     fontSize: 13,
-    fontWeight: '600',
-  },
-  smallCancelActionText: {
-    color: colors.textDim,
-    fontSize: 12,
     fontWeight: '600',
   },
   pressed: {
