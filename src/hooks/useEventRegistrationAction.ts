@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Linking } from 'react-native';
 
@@ -43,7 +44,7 @@ export function getEventRegistrationActionTitle(
     case 'external_link':
       return 'Открыть регистрацию';
     case 'internal_paid':
-      return 'Оплата позже';
+      return 'Зарегистрироваться';
     case 'internal_free':
       return registration && isActiveEventRegistration(registration)
         ? getRegistrationStatusTitle(registration.status)
@@ -84,6 +85,7 @@ function showActionError(error: unknown) {
 }
 
 export function useEventRegistrationAction() {
+  const router = useRouter();
   const authUser = useAuthStore((state) => state.user);
   const registerForEvent = useEventsStore((state) => state.registerForEvent);
   const cancelRegistration = useEventsStore((state) => state.cancelRegistration);
@@ -141,13 +143,13 @@ export function useEventRegistrationAction() {
         return;
 
       case 'internal_paid':
-        Alert.alert('Оплата будет доступна позже');
+        router.push({ pathname: '/events/register/[id]', params: { id: event.id } });
         return;
 
       default:
         Alert.alert('Регистрация недоступна');
     }
-  }, [authUser, loadMyRegistrations, registerForEvent]);
+  }, [authUser, loadMyRegistrations, registerForEvent, router]);
 
   const handleCancelRegistration = useCallback((registration: EventRegistration) => {
     Alert.alert(
