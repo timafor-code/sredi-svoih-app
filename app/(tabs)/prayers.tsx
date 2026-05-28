@@ -16,6 +16,7 @@ import { PrayerWindowCard } from '@/components/prayer/PrayerWindowCard';
 import { ZmanimModal } from '@/components/prayer/ZmanimModal';
 import { Logo } from '@/components/ui/BrandHeader';
 import { Screen } from '@/components/ui/Screen';
+import { useAutoDetectZmanimCity } from '@/hooks/useAutoDetectZmanimCity';
 import { useNow } from '@/hooks/useNow';
 import { addDays, formatRuDate, formatRuTime } from '@/lib/dates';
 import { getHebrewDate, getHebrewDateLabel } from '@/lib/hebcal';
@@ -23,7 +24,6 @@ import { resolvePrayerDayPeriod } from '@/lib/prayerDayPeriod';
 import { formatLocalDateKey, hasRecordedActivity, prayerActivityTypeFromPrayerId } from '@/lib/prayerTracker';
 import { getDailyZmanim, getHebcalLocation, getPrayerWindows } from '@/lib/zmanim';
 import type { PrayerWindow } from '@/lib/zmanim';
-import { LocationServiceError, requestCurrentCityByGps } from '@/services/locationService';
 import { useAuthStore } from '@/store/useAuthStore';
 import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -66,18 +66,13 @@ export default function PrayersScreen() {
   const [selectedPrayerId, setSelectedPrayerId] = useState<PrayerWindow['id'] | null>(null);
   const [cityPickerVisible, setCityPickerVisible] = useState(false);
   const [zmanimModalVisible, setZmanimModalVisible] = useState(false);
-  const requestedAutoGpsRef = useRef(false);
   const requestedPrayerActivityForUserRef = useRef<string | null>(null);
+  useAutoDetectZmanimCity();
   const authUser = useAuthStore((state) => state.user);
   const prayerActivityItems = usePrayerTrackerStore((state) => state.items);
   const prayerActivityLoading = usePrayerTrackerStore((state) => state.loading);
   const loadMyActivity = usePrayerTrackerStore((state) => state.loadMyActivity);
   const city = useSettingsStore((state) => state.city);
-  const hasHydratedSettings = useSettingsStore((state) => state.hasHydrated);
-  const locationPermissionStatus = useSettingsStore((state) => state.locationPermissionStatus);
-  const setGpsCity = useSettingsStore((state) => state.setGpsCity);
-  const setLocationPermissionStatus = useSettingsStore((state) => state.setLocationPermissionStatus);
-  const zmanimSource = useSettingsStore((state) => state.zmanimSource);
   const location = useMemo(() => getHebcalLocation(city), [city]);
   const daily = useMemo(() => getDailyZmanim({ city, date: now }), [city, now]);
   const tomorrowDate = useMemo(() => addDays(now, 1), [now]);
@@ -198,39 +193,6 @@ export default function PrayersScreen() {
       },
     ];
   }, [overview, overviewWidth]);
-
-  useEffect(() => {
-    if (
-      !hasHydratedSettings
-      || requestedAutoGpsRef.current
-      || zmanimSource === 'manual'
-      || locationPermissionStatus === 'denied'
-    ) {
-      return;
-    }
-
-    requestedAutoGpsRef.current = true;
-
-    void requestCurrentCityByGps()
-      .then((result) => {
-        if (!result) return;
-
-        setLocationPermissionStatus('granted');
-
-        setGpsCity(result.city);
-      })
-      .catch((error) => {
-        if (error instanceof LocationServiceError && error.code === 'permission-denied') {
-          setLocationPermissionStatus('denied');
-        }
-      });
-  }, [
-    hasHydratedSettings,
-    locationPermissionStatus,
-    setGpsCity,
-    setLocationPermissionStatus,
-    zmanimSource,
-  ]);
 
   useEffect(() => {
     if (!authUser) {

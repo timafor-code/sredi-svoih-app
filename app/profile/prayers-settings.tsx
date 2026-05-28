@@ -2,15 +2,18 @@ import { Stack } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Text } from 'react-native';
 
+import { CityPickerModal } from '@/components/prayer/CityPickerModal';
 import { IOSGroup } from '@/components/ui/IOSGroup';
 import { ListRow } from '@/components/ui/ListRow';
 import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { SubHeader } from '@/components/ui/SubHeader';
+import { useAutoDetectZmanimCity } from '@/hooks/useAutoDetectZmanimCity';
 import {
   getAvailableBlessingTextDisplayModes,
   normalizeDisplayModeForTextNusach,
 } from '@/lib/blessingTextDisplayMode';
+import { isSupportedZmanimCity } from '@/lib/zmanim';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
@@ -54,8 +57,13 @@ export default function PrayersSettingsScreen() {
   const setBlessingDefaultDisplayMode = useSettingsStore(
     (state) => state.setBlessingDefaultDisplayMode,
   );
+  const city = useSettingsStore((state) => state.city);
+  const gpsCity = useSettingsStore((state) => state.gpsCity);
+  const locationPermissionStatus = useSettingsStore((state) => state.locationPermissionStatus);
+  const zmanimSource = useSettingsStore((state) => state.zmanimSource);
+  const autoDetectZmanimCity = useAutoDetectZmanimCity({ showMessages: true });
 
-  const [city, setCity] = useState('Москва');
+  const [cityPickerVisible, setCityPickerVisible] = useState(false);
   const [sessionRequested, setSessionRequested] = useState(false);
   const [savingNusach, setSavingNusach] = useState<VisibleNusach | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -70,6 +78,17 @@ export default function PrayersSettingsScreen() {
     blessingDefaultDisplayMode,
     selectedTextNusach,
   );
+  const locationSource = zmanimSource === 'gps' ? 'GPS' : 'ручной выбор';
+  const unsupportedGpsCityMessage = gpsCity && !isSupportedZmanimCity(gpsCity)
+    ? `Город определён: ${gpsCity}. Пока он не поддерживается для зманим. Выберите город из списка.`
+    : null;
+  const locationMessage = locationPermissionStatus === 'denied'
+    ? 'Нет доступа к геопозиции. Выберите город вручную.'
+    : autoDetectZmanimCity.isDetecting
+      ? 'Определяем город по GPS...'
+      : zmanimSource === 'gps'
+        ? autoDetectZmanimCity.message ?? unsupportedGpsCityMessage
+        : null;
 
   useEffect(() => {
     if ((authUser && profile) || loading || sessionRequested) {
@@ -154,9 +173,20 @@ export default function PrayersSettingsScreen() {
 
         <SectionTitle title="МЕСТОПОЛОЖЕНИЕ" />
         <IOSGroup>
-          <ListRow icon="📍" title="Город" rightText={city} onPress={() => setCity(city === 'Москва' ? 'Санкт-Петербург' : 'Москва')} />
-          <ListRow icon="🌍" title="Часовой пояс" rightText="Europe/Moscow" isLast />
+          <ListRow
+            icon="📍"
+            title="Город"
+            subtitle={`Источник: ${locationSource}`}
+            rightText={city}
+            onPress={() => setCityPickerVisible(true)}
+            isLast
+          />
         </IOSGroup>
+        {locationMessage ? (
+          <Text style={{ color: colors.textDim, fontSize: 12, lineHeight: 18 }}>
+            {locationMessage}
+          </Text>
+        ) : null}
 
         <SectionTitle title="НУСАХ" />
         <IOSGroup>
@@ -199,8 +229,13 @@ export default function PrayersSettingsScreen() {
         </IOSGroup>
 
         <Text style={{ color: colors.textDim, fontSize: 12, lineHeight: 18 }}>
-          Зманим рассчитываются по выбранному городу, а не по GPS.
+          Зманим, молитвы, Омер и календарные вставки благословений рассчитываются по выбранному городу.
         </Text>
+
+        <CityPickerModal
+          onClose={() => setCityPickerVisible(false)}
+          visible={cityPickerVisible}
+        />
       </Screen>
     </>
   );
