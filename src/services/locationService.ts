@@ -1,13 +1,9 @@
 import * as Location from 'expo-location';
 
 import { normalizeZmanimCityName } from '@/lib/zmanim';
+import type { CustomZmanimLocation } from '@/lib/zmanim';
 
-export type CurrentGpsCity = {
-  city: string;
-  latitude: number;
-  longitude: number;
-  timezone?: string;
-};
+export type CurrentGpsCity = CustomZmanimLocation;
 
 export type LocationServiceErrorCode =
   | 'location-unavailable'

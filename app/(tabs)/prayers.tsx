@@ -23,7 +23,7 @@ import { getHebrewDate, getHebrewDateLabel } from '@/lib/hebcal';
 import { resolvePrayerDayPeriod } from '@/lib/prayerDayPeriod';
 import { formatLocalDateKey, hasRecordedActivity, prayerActivityTypeFromPrayerId } from '@/lib/prayerTracker';
 import { getDailyZmanim, getHebcalLocation, getPrayerWindows } from '@/lib/zmanim';
-import type { PrayerWindow } from '@/lib/zmanim';
+import type { PrayerWindow, ZmanimLocationInput } from '@/lib/zmanim';
 import { useAuthStore } from '@/store/useAuthStore';
 import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -73,12 +73,24 @@ export default function PrayersScreen() {
   const prayerActivityLoading = usePrayerTrackerStore((state) => state.loading);
   const loadMyActivity = usePrayerTrackerStore((state) => state.loadMyActivity);
   const city = useSettingsStore((state) => state.city);
-  const location = useMemo(() => getHebcalLocation(city), [city]);
-  const daily = useMemo(() => getDailyZmanim({ city, date: now }), [city, now]);
+  const customGpsLocation = useSettingsStore((state) => state.customGpsLocation);
+  const zmanimSource = useSettingsStore((state) => state.zmanimSource);
+  const activeZmanimLocation = useMemo<ZmanimLocationInput>(
+    () => (zmanimSource === 'gps' && customGpsLocation ? customGpsLocation : city),
+    [city, customGpsLocation, zmanimSource],
+  );
+  const activeCity = typeof activeZmanimLocation === 'string'
+    ? activeZmanimLocation
+    : activeZmanimLocation.city;
+  const location = useMemo(() => getHebcalLocation(activeZmanimLocation), [activeZmanimLocation]);
+  const daily = useMemo(
+    () => getDailyZmanim({ date: now, location: activeZmanimLocation }),
+    [activeZmanimLocation, now],
+  );
   const tomorrowDate = useMemo(() => addDays(now, 1), [now]);
   const tomorrowDaily = useMemo(
-    () => getDailyZmanim({ city, date: tomorrowDate }),
-    [city, tomorrowDate],
+    () => getDailyZmanim({ date: tomorrowDate, location: activeZmanimLocation }),
+    [activeZmanimLocation, tomorrowDate],
   );
   const hdate = useMemo(() => getHebrewDate(now, location), [location, now]);
   const hebrewDateLabel = useMemo(() => getHebrewDateLabel(hdate), [hdate]);
@@ -242,20 +254,20 @@ export default function PrayersScreen() {
           </Text>
           <Pressable
             accessibilityHint="Открыть выбор города для зманим"
-            accessibilityLabel={`Город для зманим: ${city}`}
+            accessibilityLabel={`Город для зманим: ${activeCity}`}
             accessibilityRole="button"
             onPress={() => setCityPickerVisible(true)}
             style={({ pressed }) => [styles.cityChip, pressed && styles.cityChipPressed]}
           >
             <Ionicons name="location" size={12} color="rgba(255,255,255,0.72)" />
-            <Text numberOfLines={1} style={styles.cityChipText}>{city}</Text>
+            <Text numberOfLines={1} style={styles.cityChipText}>{activeCity}</Text>
             <Ionicons name="chevron-down" size={12} color="rgba(255,255,255,0.46)" />
           </Pressable>
         </View>
       </View>
 
       <OmerCountCard
-        city={city}
+        city={activeCity}
         now={now}
         onPress={() => router.push('/modals/omer')}
       />
@@ -294,7 +306,7 @@ export default function PrayersScreen() {
       </Pressable>
 
       <MorningShemaCard
-        city={city}
+        city={activeCity}
         daily={daily}
         hebrewDate={hebrewDatePayload}
         hebrewDateLabel={hebrewDateLabel}
@@ -347,11 +359,11 @@ export default function PrayersScreen() {
       <Pressable style={styles.infoCard}>
         <LinearGradient colors={['rgba(74,144,217,0.10)', 'rgba(74,144,217,0.04)']} style={StyleSheet.absoluteFillObject} />
         <Ionicons name="information-circle-outline" size={18} color="#4A90D9" />
-        <Text style={styles.infoText}>Зманим рассчитаны через Hebcal для города {city}, часовой пояс {daily.timeZone}.</Text>
+        <Text style={styles.infoText}>Зманим рассчитаны через Hebcal для города {activeCity}, часовой пояс {daily.timeZone}.</Text>
       </Pressable>
 
       <ZmanimModal
-        city={city}
+        city={activeCity}
         daily={daily}
         date={now}
         nextZmanId={nextZmanId}
@@ -375,7 +387,7 @@ export default function PrayersScreen() {
             }
             return recordable;
           }}
-          city={city}
+          city={activeCity}
           closeOnSuccess={false}
           confirmButtonTitle="Начал молиться"
           details={[
@@ -383,7 +395,7 @@ export default function PrayersScreen() {
               label: 'Окно',
               value: `${formatRuTime(selectedPrayer.start, daily.timeZone)} - ${formatRuTime(selectedPrayer.end, daily.timeZone)}`,
             },
-            { label: 'Город', value: city },
+            { label: 'Город', value: activeCity },
             { label: 'Часовой пояс', value: daily.timeZone },
             { label: 'Еврейская дата', value: hebrewDateLabel },
           ]}

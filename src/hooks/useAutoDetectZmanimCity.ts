@@ -6,6 +6,7 @@ import { useSettingsStore } from '@/store/useSettingsStore';
 
 const GPS_PERMISSION_DENIED_MESSAGE = 'Нет доступа к геопозиции. Выберите город вручную.';
 const GPS_CITY_UNAVAILABLE_MESSAGE = 'Не удалось определить город по геопозиции. Выберите город вручную.';
+const GPS_COORDINATES_READY_MESSAGE = 'Город определён по GPS. Зманим рассчитываются по координатам.';
 
 type UseAutoDetectZmanimCityOptions = {
   showMessages?: boolean;
@@ -15,6 +16,7 @@ export function useAutoDetectZmanimCity(options: UseAutoDetectZmanimCityOptions 
   const { showMessages = false } = options;
   const hasHydratedSettings = useSettingsStore((state) => state.hasHydrated);
   const locationPermissionStatus = useSettingsStore((state) => state.locationPermissionStatus);
+  const setCustomGpsLocation = useSettingsStore((state) => state.setCustomGpsLocation);
   const setGpsCity = useSettingsStore((state) => state.setGpsCity);
   const setLocationPermissionStatus = useSettingsStore((state) => state.setLocationPermissionStatus);
   const zmanimSource = useSettingsStore((state) => state.zmanimSource);
@@ -59,12 +61,10 @@ export function useAutoDetectZmanimCity(options: UseAutoDetectZmanimCityOptions 
         setLocationPermissionStatus('granted');
 
         if (!isSupportedZmanimCity(result.city)) {
-          setGpsCity(result.city);
+          setCustomGpsLocation(result);
 
           if (showMessages) {
-            setMessage(
-              `Город определён: ${result.city}. Пока он не поддерживается для зманим. Выберите город из списка.`,
-            );
+            setMessage(GPS_COORDINATES_READY_MESSAGE);
           }
           return;
         }
@@ -95,6 +95,7 @@ export function useAutoDetectZmanimCity(options: UseAutoDetectZmanimCityOptions 
   }, [
     hasHydratedSettings,
     locationPermissionStatus,
+    setCustomGpsLocation,
     setGpsCity,
     setLocationPermissionStatus,
     showMessages,
