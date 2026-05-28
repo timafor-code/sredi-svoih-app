@@ -115,12 +115,6 @@ const menuSections: { title: string; items: MenuItem[] }[] = [
         label: 'Молитвенный трекер',
         sub: 'Личная история молитв, Шма и Омера',
       },
-      {
-        href: '/profile/siddur' as Href,
-        icon: '📖',
-        label: 'Сидур',
-        sub: 'Нусах, язык, шрифт и другие настройки',
-      },
     ],
   },
   {
