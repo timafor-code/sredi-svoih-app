@@ -58,6 +58,7 @@ export default function PrayersSettingsScreen() {
     (state) => state.setBlessingDefaultDisplayMode,
   );
   const city = useSettingsStore((state) => state.city);
+  const customGpsLocation = useSettingsStore((state) => state.customGpsLocation);
   const gpsCity = useSettingsStore((state) => state.gpsCity);
   const locationPermissionStatus = useSettingsStore((state) => state.locationPermissionStatus);
   const zmanimSource = useSettingsStore((state) => state.zmanimSource);
@@ -78,9 +79,17 @@ export default function PrayersSettingsScreen() {
     blessingDefaultDisplayMode,
     selectedTextNusach,
   );
-  const locationSource = zmanimSource === 'gps' ? 'GPS' : 'ручной выбор';
+  const isCustomGpsActive = zmanimSource === 'gps' && Boolean(customGpsLocation);
+  const activeCity = isCustomGpsActive && customGpsLocation ? customGpsLocation.city : city;
+  const locationSource = isCustomGpsActive
+    ? 'GPS · по координатам'
+    : zmanimSource === 'gps'
+      ? 'GPS'
+      : 'ручной выбор';
   const unsupportedGpsCityMessage = gpsCity && !isSupportedZmanimCity(gpsCity)
-    ? `Город определён: ${gpsCity}. Пока он не поддерживается для зманим. Выберите город из списка.`
+    ? customGpsLocation
+      ? 'Город определён по GPS. Зманим рассчитываются по координатам.'
+      : `Город определён: ${gpsCity}. Пока он не поддерживается для зманим. Выберите город из списка.`
     : null;
   const locationMessage = locationPermissionStatus === 'denied'
     ? 'Нет доступа к геопозиции. Выберите город вручную.'
@@ -177,7 +186,7 @@ export default function PrayersSettingsScreen() {
             icon="📍"
             title="Город"
             subtitle={`Источник: ${locationSource}`}
-            rightText={city}
+            rightText={activeCity}
             onPress={() => setCityPickerVisible(true)}
             isLast
           />

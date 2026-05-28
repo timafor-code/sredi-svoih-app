@@ -35,10 +35,12 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const city = useSettingsStore((state) => state.city);
+  const customGpsLocation = useSettingsStore((state) => state.customGpsLocation);
   const gpsCity = useSettingsStore((state) => state.gpsCity);
   const locationPermissionStatus = useSettingsStore((state) => state.locationPermissionStatus);
   const resetToGpsCity = useSettingsStore((state) => state.resetToGpsCity);
   const setCity = useSettingsStore((state) => state.setCity);
+  const setCustomGpsLocation = useSettingsStore((state) => state.setCustomGpsLocation);
   const setGpsCity = useSettingsStore((state) => state.setGpsCity);
   const setLocationPermissionStatus = useSettingsStore((state) => state.setLocationPermissionStatus);
   const zmanimSource = useSettingsStore((state) => state.zmanimSource);
@@ -54,10 +56,20 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
     () => (gpsCity ? normalizeZmanimCityName(gpsCity) : null),
     [gpsCity],
   );
-  const canUseCachedGpsCity = Boolean(normalizedGpsCity && isSupportedZmanimCity(normalizedGpsCity));
-  const gpsButtonTitle = canUseCachedGpsCity && zmanimSource === 'manual'
+  const isCustomGpsActive = zmanimSource === 'gps' && Boolean(customGpsLocation);
+  const activeCity = isCustomGpsActive && customGpsLocation ? customGpsLocation.city : city;
+  const canUseCachedGpsLocation = Boolean(
+    normalizedGpsCity
+    && (customGpsLocation || isSupportedZmanimCity(normalizedGpsCity)),
+  );
+  const gpsButtonTitle = canUseCachedGpsLocation && zmanimSource === 'manual'
     ? 'Использовать GPS'
     : 'Определить по GPS';
+  const gpsMessageIsCoordinateInfo = Boolean(
+    gpsMessage
+    && customGpsLocation
+    && locationPermissionStatus !== 'denied',
+  );
 
   useEffect(() => {
     if (!visible) return;
@@ -65,12 +77,16 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
     setGpsState('idle');
 
     if (gpsCity && !isSupportedZmanimCity(gpsCity)) {
-      setGpsMessage(`Город определён: ${gpsCity}. Пока он не поддерживается для зманим.`);
+      setGpsMessage(
+        customGpsLocation
+          ? 'Город определён по GPS. Зманим рассчитываются по координатам.'
+          : `Город определён: ${gpsCity}. Пока он не поддерживается для зманим.`,
+      );
       return;
     }
 
     setGpsMessage(null);
-  }, [gpsCity, visible]);
+  }, [customGpsLocation, gpsCity, visible]);
 
   const handleCityPress = (item: SupportedZmanimCity) => {
     setCity(item);
@@ -78,7 +94,7 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
   };
 
   const handleGpsPress = async () => {
-    if (canUseCachedGpsCity && normalizedGpsCity && zmanimSource === 'manual') {
+    if (canUseCachedGpsLocation && normalizedGpsCity && zmanimSource === 'manual') {
       resetToGpsCity();
       onClose();
       return;
@@ -99,9 +115,9 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
       setLocationPermissionStatus('granted');
 
       if (!isSupportedZmanimCity(result.city)) {
-        setGpsCity(result.city);
+        setCustomGpsLocation(result);
         setGpsState('message');
-        setGpsMessage(`Город определён: ${result.city}. Пока он не поддерживается для зманим. Выберите город из списка.`);
+        setGpsMessage('Город определён по GPS. Зманим рассчитываются по координатам.');
         return;
       }
 
@@ -180,7 +196,7 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
                 <View style={styles.metaPill}>
                   <Ionicons name="location" size={12} color={colors.textMuted} />
                   <Text numberOfLines={1} style={styles.metaText}>
-                    {city}
+                    {activeCity}
                   </Text>
                 </View>
                 <View style={styles.metaPill}>
@@ -190,7 +206,7 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
                     color={colors.textMuted}
                   />
                   <Text numberOfLines={1} style={styles.metaText}>
-                    {zmanimSource === 'gps' ? 'GPS' : 'ручной выбор'}
+                    {isCustomGpsActive ? 'GPS · координаты' : zmanimSource === 'gps' ? 'GPS' : 'ручной выбор'}
                   </Text>
                 </View>
               </View>
@@ -217,7 +233,7 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
                     {gpsState === 'loading' ? 'Определяем город' : gpsButtonTitle}
                   </Text>
                   <Text numberOfLines={2} style={styles.gpsSubtitle}>
-                    {normalizedGpsCity && canUseCachedGpsCity
+                    {normalizedGpsCity && canUseCachedGpsLocation
                       ? `GPS: ${normalizedGpsCity}`
                       : locationPermissionStatus === 'denied'
                         ? 'Геопозиция недоступна'
@@ -230,9 +246,15 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
               {gpsMessage ? (
                 <View style={styles.messageBox}>
                   <Ionicons
-                    name={locationPermissionStatus === 'denied' ? 'lock-closed-outline' : 'alert-circle-outline'}
+                    name={
+                      locationPermissionStatus === 'denied'
+                        ? 'lock-closed-outline'
+                        : gpsMessageIsCoordinateInfo
+                          ? 'information-circle-outline'
+                          : 'alert-circle-outline'
+                    }
                     size={16}
-                    color={colors.warning}
+                    color={gpsMessageIsCoordinateInfo ? colors.textMuted : colors.warning}
                   />
                   <Text style={styles.messageText}>{gpsMessage}</Text>
                 </View>
@@ -249,7 +271,7 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
               <View style={styles.listBox}>
                 {SUPPORTED_ZMANIM_CITIES.map((item, index) => {
                   const isLast = index === SUPPORTED_ZMANIM_CITIES.length - 1;
-                  const isCurrent = city === item;
+                  const isCurrent = !isCustomGpsActive && city === item;
                   const isSelected = isCurrent;
 
                   return (

@@ -6,9 +6,19 @@ import { getHebrewDateLabel } from './hebcal';
 export interface ZmanimRequest {
   city?: string;
   date?: Date;
+  location?: ZmanimLocationInput;
   source?: 'manual' | 'gps';
   useElevation?: boolean;
 }
+
+export interface CustomZmanimLocation {
+  city: string;
+  latitude: number;
+  longitude: number;
+  timezone?: string;
+}
+
+export type ZmanimLocationInput = string | CustomZmanimLocation;
 
 export interface ZmanTime {
   at: Date;
@@ -380,6 +390,12 @@ const FALLBACK_LOCATION = new Location(55.75222, 37.61556, false, 'Europe/Moscow
 const ALOT_HASHACHAR_DEGREES = 16.1;
 const ALOT_HASHACHAR_MIN_FALLBACK_DEGREES = 6;
 const TZEIT_HAKOCHAVIM_ANGLE_DEGREES = 8.5;
+const ISRAEL_BOUNDS = {
+  maxLatitude: 33.4,
+  maxLongitude: 35.9,
+  minLatitude: 29.3,
+  minLongitude: 34.2,
+};
 
 function makeCityKey(value: string) {
   return value
@@ -400,14 +416,93 @@ export function isSupportedZmanimCity(city: string) {
   return SUPPORTED_ZMANIM_CITIES.includes(normalizeZmanimCityName(city) as SupportedZmanimCity);
 }
 
-export function getHebcalCityName(city: string = FALLBACK_ZMANIM_CITY) {
+export function isCustomZmanimLocation(value: unknown): value is CustomZmanimLocation {
+  if (!value || typeof value !== 'object') return false;
+
+  const location = value as Partial<CustomZmanimLocation>;
+
+  return (
+    typeof location.city === 'string'
+    && location.city.trim().length > 0
+    && typeof location.latitude === 'number'
+    && Number.isFinite(location.latitude)
+    && location.latitude >= -90
+    && location.latitude <= 90
+    && typeof location.longitude === 'number'
+    && Number.isFinite(location.longitude)
+    && location.longitude >= -180
+    && location.longitude <= 180
+  );
+}
+
+function getCustomLocationCity(location: CustomZmanimLocation) {
+  return normalizeZmanimCityName(location.city) || FALLBACK_ZMANIM_CITY;
+}
+
+function getRuntimeTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeTimeZone(timezone: string | null | undefined) {
+  const trimmed = timezone?.trim();
+  const candidate = trimmed || getRuntimeTimeZone() || FALLBACK_LOCATION.getTzid();
+
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: candidate });
+    return candidate;
+  } catch {
+    return FALLBACK_LOCATION.getTzid();
+  }
+}
+
+function isLikelyIsraelLocation(location: CustomZmanimLocation) {
+  return (
+    normalizeTimeZone(location.timezone) === 'Asia/Jerusalem'
+    && location.latitude >= ISRAEL_BOUNDS.minLatitude
+    && location.latitude <= ISRAEL_BOUNDS.maxLatitude
+    && location.longitude >= ISRAEL_BOUNDS.minLongitude
+    && location.longitude <= ISRAEL_BOUNDS.maxLongitude
+  );
+}
+
+function getLocationInput(req: ZmanimRequest) {
+  return req.location ?? req.city ?? FALLBACK_ZMANIM_CITY;
+}
+
+export function getHebcalCityName(city: ZmanimLocationInput = FALLBACK_ZMANIM_CITY) {
+  if (isCustomZmanimLocation(city)) {
+    return getCustomLocationCity(city);
+  }
+
   const normalizedCity = normalizeZmanimCityName(city);
   return CITY_TO_HEBCAL[normalizedCity as SupportedZmanimCity] ?? city;
 }
 
-export function getHebcalLocation(city: string = FALLBACK_ZMANIM_CITY) {
+export function getHebcalLocation(city: ZmanimLocationInput = FALLBACK_ZMANIM_CITY) {
+  if (isCustomZmanimLocation(city)) {
+    return new Location(
+      city.latitude,
+      city.longitude,
+      isLikelyIsraelLocation(city),
+      normalizeTimeZone(city.timezone),
+      getCustomLocationCity(city),
+    );
+  }
+
   const normalizedCity = normalizeZmanimCityName(city) as SupportedZmanimCity;
   return CITY_LOCATION_OVERRIDES[normalizedCity] ?? Location.lookup(getHebcalCityName(city)) ?? FALLBACK_LOCATION;
+}
+
+function getLocationDisplayCity(city: ZmanimLocationInput) {
+  if (isCustomZmanimLocation(city)) {
+    return getCustomLocationCity(city);
+  }
+
+  return normalizeZmanimCityName(city) || FALLBACK_ZMANIM_CITY;
 }
 
 function isValidDate(date: Date | null | undefined): date is Date {
@@ -468,9 +563,10 @@ function getHebcalCompatibleTzeit(zmanim: Zmanim) {
 }
 
 export function getDailyZmanim(req: ZmanimRequest = {}): DailyZmanim {
-  const city = req.city ?? FALLBACK_ZMANIM_CITY;
+  const locationInput = getLocationInput(req);
+  const city = getLocationDisplayCity(locationInput);
   const date = req.date ?? new Date();
-  const location = getHebcalLocation(city);
+  const location = getHebcalLocation(locationInput);
   const zmanim = new Zmanim(location, date, req.useElevation ?? false);
   const tzeit = makeTime(getHebcalCompatibleTzeit(zmanim), location);
   const tzeitHakochavimAngle = makeTime(zmanim.tzeit(TZEIT_HAKOCHAVIM_ANGLE_DEGREES), location);
@@ -509,7 +605,7 @@ export function getDailyZmanim(req: ZmanimRequest = {}): DailyZmanim {
 
   return {
     city,
-    hebcalCity: getHebcalCityName(city),
+    hebcalCity: getHebcalCityName(locationInput),
     items,
     location,
     timeZone: location.getTzid(),

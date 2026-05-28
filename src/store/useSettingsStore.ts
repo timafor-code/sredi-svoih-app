@@ -9,6 +9,7 @@ import {
   isSupportedZmanimCity,
   normalizeZmanimCityName,
 } from '@/lib/zmanim';
+import type { CustomZmanimLocation } from '@/lib/zmanim';
 import type { BlessingTextDisplayMode } from '@/types/blessing';
 
 type ZmanimSource = 'gps' | 'manual';
@@ -17,6 +18,7 @@ type LocationPermissionStatus = 'unknown' | 'granted' | 'denied';
 type PersistedSettings = {
   blessingDefaultDisplayMode: BlessingTextDisplayMode;
   city: string;
+  customGpsLocation: CustomZmanimLocation | null;
   gpsCity: string | null;
   locationPermissionStatus: LocationPermissionStatus;
   zmanimSource: ZmanimSource;
@@ -28,6 +30,7 @@ type SettingsState = PersistedSettings & {
   resetToGpsCity: () => void;
   setBlessingDefaultDisplayMode: (mode: BlessingTextDisplayMode) => void;
   setCity: (city: string) => void;
+  setCustomGpsLocation: (location: CustomZmanimLocation | null) => void;
   setGpsCity: (city: string) => void;
   setHasHydrated: (hasHydrated: boolean) => void;
   setLocationPermissionStatus: (status: LocationPermissionStatus) => void;
@@ -115,11 +118,65 @@ function normalizePersistedCity(value: unknown) {
     : FALLBACK_ZMANIM_CITY;
 }
 
+function numberFromUnknown(value: unknown) {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string' && value.trim()) return Number(value);
+
+  return NaN;
+}
+
+function normalizeCustomGpsLocation(value: unknown): CustomZmanimLocation | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const location = value as Partial<CustomZmanimLocation>;
+  const city = typeof location.city === 'string' && location.city.trim()
+    ? normalizeZmanimCityName(location.city)
+    : null;
+  const latitude = numberFromUnknown(location.latitude);
+  const longitude = numberFromUnknown(location.longitude);
+
+  if (
+    !city
+    || !Number.isFinite(latitude)
+    || latitude < -90
+    || latitude > 90
+    || !Number.isFinite(longitude)
+    || longitude < -180
+    || longitude > 180
+  ) {
+    return null;
+  }
+
+  const timezone = typeof location.timezone === 'string' && location.timezone.trim()
+    ? location.timezone.trim()
+    : undefined;
+
+  return {
+    city,
+    latitude,
+    longitude,
+    ...(timezone ? { timezone } : {}),
+  };
+}
+
+function getPersistedCustomGpsLocation(settings: Partial<PersistedSettings> | undefined) {
+  const legacySettings = settings as (Partial<PersistedSettings> & {
+    gpsLocation?: unknown;
+  }) | undefined;
+
+  return normalizeCustomGpsLocation(
+    settings?.customGpsLocation ?? legacySettings?.gpsLocation,
+  );
+}
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set, get) => ({
       blessingDefaultDisplayMode: 'ru',
       city: FALLBACK_ZMANIM_CITY,
+      customGpsLocation: null,
       gpsCity: null,
       hasHydrated: false,
       locationPermissionStatus: 'unknown',
@@ -132,7 +189,17 @@ export const useSettingsStore = create<SettingsState>()(
       },
 
       resetToGpsCity: () => {
-        const gpsCity = get().gpsCity;
+        const { customGpsLocation, gpsCity } = get();
+
+        if (customGpsLocation) {
+          set({
+            customGpsLocation,
+            gpsCity: customGpsLocation.city,
+            zmanimSource: 'gps',
+          });
+          return;
+        }
+
         if (!gpsCity || !isSupportedZmanimCity(gpsCity)) {
           return;
         }
@@ -158,16 +225,45 @@ export const useSettingsStore = create<SettingsState>()(
         });
       },
 
+      setCustomGpsLocation: (location) => {
+        const customGpsLocation = normalizeCustomGpsLocation(location);
+
+        if (!customGpsLocation) {
+          set({ customGpsLocation: null });
+          return;
+        }
+
+        set(() => {
+          if (isSupportedZmanimCity(customGpsLocation.city)) {
+            const gpsCity = normalizeZmanimCityName(customGpsLocation.city);
+
+            return {
+              city: gpsCity,
+              customGpsLocation: null,
+              gpsCity,
+              zmanimSource: 'gps',
+            };
+          }
+
+          return {
+            customGpsLocation,
+            gpsCity: customGpsLocation.city,
+            zmanimSource: 'gps',
+          };
+        });
+      },
+
       setGpsCity: (city) => {
         const gpsCity = normalizeZmanimCityName(city);
 
         set((state) => {
           if (state.zmanimSource === 'manual' || !isSupportedZmanimCity(gpsCity)) {
-            return { gpsCity };
+            return { customGpsLocation: null, gpsCity };
           }
 
           return {
             city: gpsCity,
+            customGpsLocation: null,
             gpsCity,
             zmanimSource: 'gps',
           };
@@ -184,21 +280,24 @@ export const useSettingsStore = create<SettingsState>()(
       partialize: (state): PersistedSettings => ({
         blessingDefaultDisplayMode: state.blessingDefaultDisplayMode,
         city: state.city,
+        customGpsLocation: state.customGpsLocation,
         gpsCity: state.gpsCity,
         locationPermissionStatus: state.locationPermissionStatus,
         zmanimSource: state.zmanimSource,
       }),
       migrate: (persisted): PersistedSettings => {
         const settings = persisted as Partial<PersistedSettings> | undefined;
+        const customGpsLocation = getPersistedCustomGpsLocation(settings);
         const gpsCity = typeof settings?.gpsCity === 'string' && settings.gpsCity.trim()
           ? normalizeZmanimCityName(settings.gpsCity)
-          : null;
+          : customGpsLocation?.city ?? null;
 
         return {
           blessingDefaultDisplayMode: normalizeBlessingTextDisplayMode(
             settings?.blessingDefaultDisplayMode,
           ),
           city: normalizePersistedCity(settings?.city),
+          customGpsLocation,
           gpsCity,
           locationPermissionStatus: normalizePermissionStatus(settings?.locationPermissionStatus),
           zmanimSource: normalizeZmanimSource(settings?.zmanimSource),
@@ -207,9 +306,10 @@ export const useSettingsStore = create<SettingsState>()(
       merge: (persisted, current) => {
         const settings = persisted as Partial<PersistedSettings> | undefined;
         const city = normalizePersistedCity(settings?.city);
+        const customGpsLocation = getPersistedCustomGpsLocation(settings);
         const gpsCity = typeof settings?.gpsCity === 'string' && settings.gpsCity.trim()
           ? normalizeZmanimCityName(settings.gpsCity)
-          : null;
+          : customGpsLocation?.city ?? null;
 
         return {
           ...current,
@@ -217,6 +317,7 @@ export const useSettingsStore = create<SettingsState>()(
             settings?.blessingDefaultDisplayMode,
           ),
           city,
+          customGpsLocation,
           gpsCity,
           locationPermissionStatus: normalizePermissionStatus(settings?.locationPermissionStatus),
           zmanimSource: normalizeZmanimSource(settings?.zmanimSource),
@@ -225,7 +326,7 @@ export const useSettingsStore = create<SettingsState>()(
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
       },
-      version: 2,
+      version: 3,
     },
   ),
 );
