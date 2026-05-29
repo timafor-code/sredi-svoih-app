@@ -19,17 +19,27 @@ import {
   getNearestOccurrence,
   getRegistrationWindowInfo,
   getUnavailableRegistrationText,
+  isOccurrenceAlwaysOpen,
+  shouldRequireOccurrenceChoice,
   type RegistrationWindowInfo,
 } from '@/lib/registrationWindow';
 import { listEventOccurrences } from '@/services/eventOccurrencesService';
 import { listEventParticipationOptions } from '@/services/participationOptionsService';
-import { useEventsStore } from '@/store/useEventsStore';
+import { useAuthStore } from '@/store/useAuthStore';
+import {
+  findActiveRegistrationForTarget,
+  useEventsStore,
+} from '@/store/useEventsStore';
 import { colors } from '@/theme/colors';
 import type { EventItem } from '@/types/event';
 import type { EventOccurrence } from '@/types/eventOccurrence';
 import type { EventParticipationOption } from '@/types/participationOption';
 
 type Quantities = Record<string, number>;
+
+const paymentSimulationTitle = 'Тестовая оплата';
+const paymentSimulationText = 'Это тестовая имитация оплаты. Реальный платёжный сервис пока не подключён.';
+const paymentSimulationSuccessText = 'Запись создана. Оплата отмечена как тестовая.';
 
 const optionTypeLabels: Record<string, string> = {
   participation: 'Участие',
@@ -125,6 +135,23 @@ function formatOccurrence(occurrence: EventOccurrence): string {
   return `${start} - ${end}`;
 }
 
+function formatOccurrenceTimeRange(occurrence: EventOccurrence): string {
+  const start = formatTime(occurrence.startsAt, occurrence.timezone);
+
+  if (!occurrence.endsAt) {
+    return start;
+  }
+
+  const end = isSameCalendarDay(occurrence.startsAt, occurrence.endsAt, occurrence.timezone)
+    ? formatTime(occurrence.endsAt, occurrence.timezone)
+    : `${formatDate(occurrence.endsAt, occurrence.timezone)}, ${formatTime(
+      occurrence.endsAt,
+      occurrence.timezone,
+    )}`;
+
+  return `${start} - ${end}`;
+}
+
 function getRegistrationWindowActionTitle(info: RegistrationWindowInfo): string {
   switch (info.state) {
     case 'closed':
@@ -155,6 +182,25 @@ function getRegistrationWindowHint(
     case 'open':
     default:
       return 'Регистрация открыта.';
+  }
+}
+
+function getOccurrenceRegistrationLabel(
+  occurrence: EventOccurrence,
+  info: RegistrationWindowInfo,
+): string {
+  switch (info.state) {
+    case 'closed':
+      return 'Регистрация закрыта';
+    case 'not_yet_open':
+      return `Запись ${info.label.toLocaleLowerCase('ru-RU')}`;
+    case 'no_window':
+      return 'Регистрация сейчас недоступна';
+    case 'open':
+    default:
+      return isOccurrenceAlwaysOpen(occurrence)
+        ? 'Регистрация открыта всегда'
+        : 'Регистрация открыта';
   }
 }
 
@@ -248,6 +294,62 @@ function QuantityStepper({
   );
 }
 
+type OccurrenceCardProps = {
+  occurrence: EventOccurrence;
+  selected: boolean;
+  disabled: boolean;
+  windowInfo: RegistrationWindowInfo;
+  onPress: () => void;
+};
+
+function OccurrenceCard({
+  disabled,
+  occurrence,
+  onPress,
+  selected,
+  windowInfo,
+}: OccurrenceCardProps) {
+  return (
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.occurrenceCard,
+        selected && styles.occurrenceCardSelected,
+        disabled && styles.occurrenceCardDisabled,
+        pressed && !disabled && styles.pressed,
+      ]}
+    >
+      <View style={styles.occurrenceTextBlock}>
+        <Text style={styles.occurrenceDate}>
+          {formatDate(occurrence.startsAt, occurrence.timezone)}
+        </Text>
+        <Text style={styles.occurrenceTime}>{formatOccurrenceTimeRange(occurrence)}</Text>
+        {occurrence.title ? (
+          <Text style={styles.occurrenceTitle}>{occurrence.title}</Text>
+        ) : null}
+        <Text
+          style={[
+            styles.occurrenceStatus,
+            disabled && styles.occurrenceStatusDisabled,
+          ]}
+        >
+          {getOccurrenceRegistrationLabel(occurrence, windowInfo)}
+        </Text>
+      </View>
+      <View
+        style={[
+          styles.occurrenceRadio,
+          selected && styles.occurrenceRadioSelected,
+          disabled && styles.occurrenceRadioDisabled,
+        ]}
+      >
+        {selected ? <Ionicons name="checkmark" size={15} color={colors.text} /> : null}
+      </View>
+    </Pressable>
+  );
+}
+
 type OptionCardProps = {
   option: EventParticipationOption;
   quantity: number;
@@ -315,14 +417,22 @@ export default function EventRegistrationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const eventId = firstParam(params.id);
+  const authUser = useAuthStore((state) => state.user);
   const loadEventById = useEventsStore((state) => state.loadEventById);
+  const loadMyRegistrations = useEventsStore((state) => state.loadMyRegistrations);
+  const myRegistrations = useEventsStore((state) => state.myRegistrations);
+  const registerForPaidEventSimulated = useEventsStore(
+    (state) => state.registerForPaidEventSimulated,
+  );
   const [event, setEvent] = useState<EventItem | null>(null);
   const [occurrences, setOccurrences] = useState<EventOccurrence[]>([]);
   const [options, setOptions] = useState<EventParticipationOption[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<string | null>(null);
   const [quantities, setQuantities] = useState<Quantities>({});
   const [imageFailed, setImageFailed] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
@@ -331,6 +441,7 @@ export default function EventRegistrationScreen() {
       setOccurrences([]);
       setOptions([]);
       setSelectedIds([]);
+      setSelectedOccurrenceId(null);
       setError('Событие не найдено');
       setLoading(false);
       return;
@@ -362,11 +473,17 @@ export default function EventRegistrationScreen() {
       setSelectedIds((current) => (
         current.filter((id) => activeOptions.some((option) => option.id === id))
       ));
+      setSelectedOccurrenceId((current) => (
+        current && loadedOccurrences.some((occurrence) => occurrence.id === current)
+          ? current
+          : null
+      ));
     } catch (loadError) {
       setEvent(null);
       setOccurrences([]);
       setOptions([]);
       setSelectedIds([]);
+      setSelectedOccurrenceId(null);
       setError(
         loadError instanceof Error
           ? loadError.message
@@ -382,6 +499,14 @@ export default function EventRegistrationScreen() {
   }, [loadData]);
 
   useEffect(() => {
+    if (!authUser) {
+      return;
+    }
+
+    void loadMyRegistrations().catch(() => undefined);
+  }, [authUser, loadMyRegistrations]);
+
+  useEffect(() => {
     setImageFailed(false);
   }, [event?.imageUrl]);
 
@@ -394,28 +519,60 @@ export default function EventRegistrationScreen() {
     () => selectNextFutureOccurrence(occurrences) ?? event?.nextOccurrence ?? null,
     [event?.nextOccurrence, occurrences],
   );
+  const occurrenceChoiceRequired = useMemo(
+    () => shouldRequireOccurrenceChoice(event, occurrences),
+    [event, occurrences],
+  );
+  const selectedOccurrenceFromChoice = useMemo(
+    () => occurrences.find((occurrence) => occurrence.id === selectedOccurrenceId) ?? null,
+    [occurrences, selectedOccurrenceId],
+  );
+  const autoOccurrence = occurrenceChoiceRequired ? null : nearestFutureOccurrence;
+  const selectedOccurrence = occurrenceChoiceRequired
+    ? selectedOccurrenceFromChoice
+    : autoOccurrence;
   const displayOccurrence = useMemo(
-    () => nearestFutureOccurrence ?? getNearestOccurrence(occurrences),
-    [nearestFutureOccurrence, occurrences],
+    () => (
+      occurrenceChoiceRequired
+        ? selectedOccurrenceFromChoice
+        : nearestFutureOccurrence ?? getNearestOccurrence(occurrences)
+    ),
+    [
+      nearestFutureOccurrence,
+      occurrenceChoiceRequired,
+      occurrences,
+      selectedOccurrenceFromChoice,
+    ],
   );
   const occurrenceWindowRequired = Boolean(
-    event?.hasOccurrences === true
+    occurrenceChoiceRequired
+    || selectedOccurrence
+    || autoOccurrence
+    || event?.hasOccurrences === true
     || event?.nextOccurrence
     || occurrences.length > 0,
   );
-  const registrationWindowInfo = useMemo(
-    () => (occurrenceWindowRequired ? getRegistrationWindowInfo(nearestFutureOccurrence) : null),
-    [nearestFutureOccurrence, occurrenceWindowRequired],
-  );
-  const selectedOccurrence = registrationWindowInfo?.state === 'open'
-    ? nearestFutureOccurrence
-    : null;
+  const registrationWindowInfo = useMemo(() => {
+    if (!occurrenceWindowRequired) {
+      return null;
+    }
+
+    if (occurrenceChoiceRequired && !selectedOccurrence) {
+      return null;
+    }
+
+    return getRegistrationWindowInfo(selectedOccurrence);
+  }, [occurrenceChoiceRequired, occurrenceWindowRequired, selectedOccurrence]);
   const registrationWindowBlocked = Boolean(
     registrationWindowInfo && registrationWindowInfo.state !== 'open',
   );
   const registrationWindowHint = registrationWindowInfo && registrationWindowBlocked
     ? getRegistrationWindowHint(registrationWindowInfo, occurrences)
     : null;
+  const occurrenceChoiceBlocked = occurrenceChoiceRequired && !selectedOccurrence;
+  const registrationTargetBlocked = occurrenceWindowRequired && selectedOccurrence === null;
+  const showOccurrenceChoiceStep = occurrenceChoiceRequired && !selectedOccurrence;
+  const showOptionsStep = !showOccurrenceChoiceStep;
   const totals = useMemo(() => (
     selectedOptions.reduce(
       (acc, option) => {
@@ -429,10 +586,22 @@ export default function EventRegistrationScreen() {
       { amount: 0, seats: 0 },
     )
   ), [quantities, selectedOptions]);
+  const existingRegistrationForTarget = useMemo(() => {
+    if (!eventId || registrationTargetBlocked) {
+      return null;
+    }
+
+    return findActiveRegistrationForTarget(
+      myRegistrations,
+      eventId,
+      selectedOccurrence?.id ?? null,
+    );
+  }, [eventId, myRegistrations, registrationTargetBlocked, selectedOccurrence]);
   const summaryCurrency = selectedOptions[0]?.priceCurrency ?? 'RUB';
-  const canContinue = options.length > 0
-    && selectedOptions.length > 0
-    && (!occurrenceWindowRequired || selectedOccurrence !== null);
+  const canContinue = totals.seats > 0
+    && !submitting
+    && !registrationTargetBlocked
+    && !registrationWindowBlocked;
   const showImage = Boolean(event?.imageUrl && !imageFailed);
 
   const handleBack = useCallback(() => {
@@ -480,7 +649,84 @@ export default function EventRegistrationScreen() {
     });
   }, []);
 
+  const handleSelectOccurrence = useCallback((occurrence: EventOccurrence) => {
+    if (getRegistrationWindowInfo(occurrence).state !== 'open') {
+      return;
+    }
+
+    setSelectedOccurrenceId(occurrence.id);
+  }, []);
+
+  const handleChangeOccurrence = useCallback(() => {
+    setSelectedOccurrenceId(null);
+    setSelectedIds([]);
+    setQuantities({});
+  }, []);
+
+  const submitRegistration = useCallback(async () => {
+    if (!eventId) {
+      return;
+    }
+
+    if (registrationTargetBlocked || registrationWindowBlocked) {
+      Alert.alert(
+        'Регистрация сейчас недоступна',
+        registrationWindowHint ?? 'Регистрация сейчас недоступна.',
+      );
+      return;
+    }
+
+    if (totals.seats <= 0) {
+      Alert.alert('Выберите вариант участия');
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      await registerForPaidEventSimulated({
+        eventId,
+        occurrenceId: selectedOccurrence?.id ?? null,
+        optionSelections: selectedOptions.map((option) => ({
+          optionId: option.id,
+          quantity: getOptionQuantity(option, quantities),
+        })),
+        seatsCount: totals.seats,
+      });
+
+      Alert.alert('Готово', paymentSimulationSuccessText, [
+        {
+          text: 'ОК',
+          onPress: () => router.replace({ pathname: '/events/[id]', params: { id: eventId } }),
+        },
+      ]);
+    } catch (submitError) {
+      Alert.alert(
+        'Не удалось создать запись',
+        submitError instanceof Error ? submitError.message : 'Попробуйте ещё раз.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }, [
+    eventId,
+    quantities,
+    registerForPaidEventSimulated,
+    registrationTargetBlocked,
+    registrationWindowBlocked,
+    registrationWindowHint,
+    router,
+    selectedOccurrence,
+    selectedOptions,
+    totals.seats,
+  ]);
+
   const handleContinue = useCallback(() => {
+    if (occurrenceChoiceBlocked) {
+      Alert.alert('Выберите дату', 'Сначала выберите дату события.');
+      return;
+    }
+
     if (registrationWindowBlocked) {
       Alert.alert(
         'Регистрация сейчас недоступна',
@@ -489,8 +735,38 @@ export default function EventRegistrationScreen() {
       return;
     }
 
-    Alert.alert('Оплата и запись будут доступны позже');
-  }, [registrationWindowBlocked, registrationWindowHint]);
+    if (totals.seats <= 0) {
+      Alert.alert('Выберите вариант участия');
+      return;
+    }
+
+    if (existingRegistrationForTarget) {
+      Alert.alert(
+        'Создать ещё одну запись?',
+        'У вас уже есть запись на этот сеанс. Новая запись будет создана отдельно.',
+        [
+          { text: 'Отмена', style: 'cancel' },
+          {
+            text: 'Создать ещё одну запись',
+            onPress: () => { void submitRegistration(); },
+          },
+        ],
+      );
+      return;
+    }
+
+    Alert.alert(paymentSimulationTitle, paymentSimulationText, [
+      { text: 'Отмена', style: 'cancel' },
+      { text: 'Продолжить', onPress: () => { void submitRegistration(); } },
+    ]);
+  }, [
+    existingRegistrationForTarget,
+    occurrenceChoiceBlocked,
+    registrationWindowBlocked,
+    registrationWindowHint,
+    submitRegistration,
+    totals.seats,
+  ]);
 
   return (
     <>
@@ -543,57 +819,122 @@ export default function EventRegistrationScreen() {
               ) : null}
             </View>
 
-            <GlassCard>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Варианты участия</Text>
-                <Chip tone="warning">Платно</Chip>
-              </View>
-              {options.length === 0 ? (
-                <View style={styles.emptyOptions}>
-                  <Ionicons name="ticket-outline" size={24} color={colors.textDim} />
-                  <Text style={styles.emptyTitle}>Варианты участия пока не настроены</Text>
+            {showOccurrenceChoiceStep ? (
+              <GlassCard>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Выберите дату</Text>
                 </View>
-              ) : (
-                <View style={styles.optionsBlock}>
-                  {options.map((option) => (
-                    <OptionCard
-                      key={option.id}
-                      option={option}
-                      selected={selectedIdSet.has(option.id)}
-                      quantity={getOptionQuantity(option, quantities)}
-                      onPress={() => toggleOption(option)}
-                      onDecrease={() => updateQuantity(option, -1)}
-                      onIncrease={() => updateQuantity(option, 1)}
-                    />
-                  ))}
-                </View>
-              )}
-            </GlassCard>
+                <Text style={styles.sectionSubtitle}>Выберите дату события</Text>
+                <View style={styles.occurrenceList}>
+                  {occurrences.map((occurrence) => {
+                    const windowInfo = getRegistrationWindowInfo(occurrence);
+                    const disabled = windowInfo.state !== 'open';
 
-            <GlassCard>
-              <View style={styles.totalRow}>
-                <View style={styles.totalIcon}>
-                  <Ionicons name="receipt-outline" size={18} color={colors.orange} />
+                    return (
+                      <OccurrenceCard
+                        key={occurrence.id}
+                        occurrence={occurrence}
+                        selected={selectedOccurrenceId === occurrence.id}
+                        disabled={disabled}
+                        windowInfo={windowInfo}
+                        onPress={() => handleSelectOccurrence(occurrence)}
+                      />
+                    );
+                  })}
                 </View>
-                <View style={styles.totalTextBlock}>
-                  <Text style={styles.totalLabel}>Итого</Text>
-                  <Text style={styles.totalText}>
-                    {formatMoney(totals.amount, summaryCurrency)}
-                  </Text>
-                  <Text style={styles.seatsText}>
-                    {selectedOptions.length > 0 ? `Мест: ${totals.seats}` : 'Места не выбраны'}
-                  </Text>
+              </GlassCard>
+            ) : null}
+
+            {occurrenceChoiceRequired && selectedOccurrence ? (
+              <GlassCard>
+                <View style={styles.selectedOccurrenceSummary}>
+                  <View style={styles.selectedOccurrenceTextBlock}>
+                    <Text style={styles.selectedOccurrenceLabel}>Выбранная дата</Text>
+                    <Text style={styles.selectedOccurrenceDate}>
+                      {formatDate(selectedOccurrence.startsAt, selectedOccurrence.timezone)}
+                    </Text>
+                    <Text style={styles.selectedOccurrenceTime}>
+                      {formatOccurrenceTimeRange(selectedOccurrence)}
+                    </Text>
+                    {selectedOccurrence.title ? (
+                      <Text style={styles.selectedOccurrenceTitle}>{selectedOccurrence.title}</Text>
+                    ) : null}
+                  </View>
+                  <Pressable
+                    onPress={handleChangeOccurrence}
+                    style={({ pressed }) => [
+                      styles.changeOccurrenceButton,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Ionicons name="calendar-outline" size={16} color={colors.orange} />
+                    <Text style={styles.changeOccurrenceText}>Изменить дату</Text>
+                  </Pressable>
                 </View>
-              </View>
-              <PrimaryButton
-                title={registrationWindowInfo && registrationWindowBlocked
-                  ? getRegistrationWindowActionTitle(registrationWindowInfo)
-                  : 'Продолжить'}
-                disabled={!canContinue}
-                onPress={handleContinue}
-                buttonStyle={styles.continueButton}
-              />
-            </GlassCard>
+              </GlassCard>
+            ) : null}
+
+            {showOptionsStep ? (
+              <>
+                <GlassCard>
+                  <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>Варианты участия</Text>
+                    <Chip tone="warning">Платно</Chip>
+                  </View>
+                  {options.length === 0 ? (
+                    <View style={styles.emptyOptions}>
+                      <Ionicons name="ticket-outline" size={24} color={colors.textDim} />
+                      <Text style={styles.emptyTitle}>Варианты участия пока не настроены</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.optionsBlock}>
+                      {options.map((option) => (
+                        <OptionCard
+                          key={option.id}
+                          option={option}
+                          selected={selectedIdSet.has(option.id)}
+                          quantity={getOptionQuantity(option, quantities)}
+                          onPress={() => toggleOption(option)}
+                          onDecrease={() => updateQuantity(option, -1)}
+                          onIncrease={() => updateQuantity(option, 1)}
+                        />
+                      ))}
+                    </View>
+                  )}
+                </GlassCard>
+
+                <GlassCard>
+                  <View style={styles.totalRow}>
+                    <View style={styles.totalIcon}>
+                      <Ionicons name="receipt-outline" size={18} color={colors.orange} />
+                    </View>
+                    <View style={styles.totalTextBlock}>
+                      <Text style={styles.totalLabel}>Итого</Text>
+                      <Text style={styles.totalText}>
+                        {formatMoney(totals.amount, summaryCurrency)}
+                      </Text>
+                      <Text style={styles.seatsText}>
+                        {selectedOptions.length > 0
+                          ? `Мест: ${totals.seats}`
+                          : 'Места не выбраны'}
+                      </Text>
+                    </View>
+                  </View>
+                  <PrimaryButton
+                    title={submitting
+                      ? 'Создаём запись...'
+                      : occurrenceChoiceBlocked
+                        ? 'Выберите дату'
+                        : registrationWindowInfo && registrationWindowBlocked
+                          ? getRegistrationWindowActionTitle(registrationWindowInfo)
+                          : 'Продолжить'}
+                    disabled={!canContinue}
+                    onPress={handleContinue}
+                    buttonStyle={styles.continueButton}
+                  />
+                </GlassCard>
+              </>
+            ) : null}
           </>
         ) : null}
       </Screen>
@@ -666,6 +1007,63 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     lineHeight: 24,
   },
+  sectionSubtitle: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 6,
+  },
+  selectedOccurrenceSummary: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  selectedOccurrenceTextBlock: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  selectedOccurrenceLabel: {
+    color: colors.textDim,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
+  selectedOccurrenceDate: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: '900',
+    lineHeight: 22,
+  },
+  selectedOccurrenceTime: {
+    color: colors.textMuted,
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  selectedOccurrenceTitle: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  changeOccurrenceButton: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.accent.orangeBorder,
+    backgroundColor: colors.accent.orangeBg,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  changeOccurrenceText: {
+    color: colors.orange,
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 17,
+  },
   chip: {
     alignSelf: 'flex-start',
     borderRadius: 8,
@@ -684,6 +1082,75 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     includeFontPadding: false,
+  },
+  occurrenceList: {
+    gap: 10,
+    marginTop: 14,
+  },
+  occurrenceCard: {
+    minHeight: 112,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.glass.w06,
+    padding: 14,
+    gap: 12,
+  },
+  occurrenceCardSelected: {
+    borderColor: colors.accent.orangeBorder,
+    backgroundColor: colors.accent.orangeBg,
+  },
+  occurrenceCardDisabled: {
+    opacity: 0.55,
+  },
+  occurrenceTextBlock: {
+    flex: 1,
+    minWidth: 0,
+    gap: 5,
+  },
+  occurrenceDate: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '800',
+    lineHeight: 21,
+  },
+  occurrenceTime: {
+    color: colors.textMuted,
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  occurrenceTitle: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  occurrenceStatus: {
+    color: colors.accent.goldText,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+  occurrenceStatusDisabled: {
+    color: colors.textDim,
+  },
+  occurrenceRadio: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: colors.glass.w35,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  occurrenceRadioSelected: {
+    borderColor: colors.orange,
+    backgroundColor: colors.orange,
+  },
+  occurrenceRadioDisabled: {
+    borderColor: colors.glass.w16,
   },
   optionsBlock: {
     gap: 10,

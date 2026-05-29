@@ -1,4 +1,5 @@
 import type { EventOccurrence } from '@/types/eventOccurrence';
+import type { EventItem } from '@/types/event';
 
 export type RegistrationWindowState =
   | 'open'
@@ -15,6 +16,8 @@ export type RegistrationWindowInfo = {
 };
 
 const ACTIVE_OCCURRENCE_STATUS = 'active';
+
+type OccurrenceChoiceEvent = Pick<EventItem, 'eventKind'> | null | undefined;
 
 function parseTime(value: string | null | undefined): number | null {
   if (!value) {
@@ -123,6 +126,32 @@ export function getRegistrationWindowInfo(
     label: 'Регистрация открыта',
     shortCtaLabel: 'Выбрать участие',
   };
+}
+
+export function isOccurrenceAlwaysOpen(
+  occurrence: EventOccurrence | null | undefined,
+): boolean {
+  return Boolean(
+    occurrence
+    && occurrence.status === ACTIVE_OCCURRENCE_STATUS
+    && occurrence.registrationOpensAt === null
+    && occurrence.registrationClosesAt === null,
+  );
+}
+
+export function shouldRequireOccurrenceChoice(
+  event: OccurrenceChoiceEvent,
+  occurrences: EventOccurrence[] | null | undefined,
+): boolean {
+  if (!occurrences || occurrences.length <= 1) {
+    return false;
+  }
+
+  if (event?.eventKind === 'shabbat') {
+    return false;
+  }
+
+  return occurrences.some(isOccurrenceAlwaysOpen);
 }
 
 export function isRegistrationWindowOpen(
