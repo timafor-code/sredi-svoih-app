@@ -179,6 +179,32 @@ Missing registration window fields are treated as open for active occurrences
 in the user-facing UI. Backend validation remains the source of truth for the
 final registration attempt.
 
+Registration always open + multiple active dates means mobile must use a
+two-step flow and ask the user to choose occurrence first. This is represented
+by active occurrences where both `registration_opens_at` and
+`registration_closes_at` are `null`. The mobile paid registration screen first
+shows only occurrence/date cards. After the user chooses one available
+occurrence, it advances to the options step with the selected occurrence
+summary, participation options, totals, and the existing test
+registration/payment action.
+
+Shabbat can have many occurrences but does not show manual date choice; it
+follows nearest occurrence and configured registration window. If that nearest
+Shabbat occurrence is closed or not yet open, the registration action stays
+disabled with the same window labels described above.
+
+Always-open multi-date lecture/course mobile flow:
+
+1. Choose occurrence/date.
+2. Choose participation options and continue through the test
+   registration/payment action.
+
+Window-based Shabbat mobile flow:
+
+1. Resolve nearest occurrence.
+2. Apply the occurrence registration window guard.
+3. Show participation options only if the window is open.
+
 The legacy `register_for_event` RPC is not occurrence-window-aware and must not
 be considered final backend protection for recurring events. Until
 `internal_free` registration is moved to an occurrence-aware RPC, the mobile UI
