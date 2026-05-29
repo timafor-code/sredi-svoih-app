@@ -29,7 +29,7 @@ function parseTime(value: string | null | undefined): number | null {
   return Number.isNaN(time) ? null : time;
 }
 
-function getNowTime(now: Date | number = Date.now()): number {
+function getNowTime(now: Date | number): number {
   return typeof now === 'number' ? now : now.getTime();
 }
 
@@ -77,11 +77,57 @@ export function formatRegistrationDateTime(
   return `${formatDatePart(value, timeZone)} в ${formatTimePart(value, timeZone)}`;
 }
 
+function buildRegistrationWindowInfo(
+  occurrence: EventOccurrence,
+  state: Exclude<RegistrationWindowState, 'no_window'> | 'unavailable',
+): RegistrationWindowInfo {
+  const opensAt = occurrence.registrationOpensAt;
+  const closesAt = occurrence.registrationClosesAt;
+
+  switch (state) {
+    case 'not_yet_open':
+      return {
+        state,
+        opensAt,
+        closesAt,
+        label: opensAt
+          ? `Откроется ${formatRegistrationDateTime(opensAt, occurrence.timezone)}`
+          : 'Регистрация скоро откроется',
+        shortCtaLabel: 'Регистрация сейчас недоступна',
+      };
+    case 'closed':
+      return {
+        state,
+        opensAt,
+        closesAt,
+        label: 'Регистрация закрыта',
+        shortCtaLabel: 'Регистрация сейчас недоступна',
+      };
+    case 'unavailable':
+      return {
+        state: 'no_window',
+        opensAt,
+        closesAt,
+        label: 'Регистрация сейчас недоступна',
+        shortCtaLabel: 'Регистрация сейчас недоступна',
+      };
+    case 'open':
+    default:
+      return {
+        state: 'open',
+        opensAt,
+        closesAt,
+        label: 'Регистрация открыта',
+        shortCtaLabel: 'Выбрать участие',
+      };
+  }
+}
+
 export function getRegistrationWindowInfo(
   occurrence: EventOccurrence | null | undefined,
-  now: Date | number = Date.now(),
+  now?: Date | number,
 ): RegistrationWindowInfo {
-  if (!occurrence || occurrence.status !== ACTIVE_OCCURRENCE_STATUS) {
+  if (!occurrence) {
     return {
       state: 'no_window',
       opensAt: null,
@@ -91,11 +137,20 @@ export function getRegistrationWindowInfo(
     };
   }
 
+  // Client Date.now() is UI fallback only. Server registrationState is the source of truth.
+  if (occurrence.registrationState) {
+    return buildRegistrationWindowInfo(occurrence, occurrence.registrationState);
+  }
+
+  if (occurrence.status !== ACTIVE_OCCURRENCE_STATUS) {
+    return buildRegistrationWindowInfo(occurrence, 'unavailable');
+  }
+
   const opensAt = occurrence.registrationOpensAt;
   const closesAt = occurrence.registrationClosesAt;
   const opensAtTime = parseTime(opensAt);
   const closesAtTime = parseTime(closesAt);
-  const nowTime = getNowTime(now);
+  const nowTime = getNowTime(now ?? Date.now());
 
   if (opensAt && opensAtTime !== null && nowTime < opensAtTime) {
     const formattedOpensAt = formatRegistrationDateTime(opensAt, occurrence.timezone);
@@ -131,6 +186,10 @@ export function getRegistrationWindowInfo(
 export function isOccurrenceAlwaysOpen(
   occurrence: EventOccurrence | null | undefined,
 ): boolean {
+  if (typeof occurrence?.isRegistrationAlwaysOpen === 'boolean') {
+    return occurrence.isRegistrationAlwaysOpen;
+  }
+
   return Boolean(
     occurrence
     && occurrence.status === ACTIVE_OCCURRENCE_STATUS
@@ -156,14 +215,14 @@ export function shouldRequireOccurrenceChoice(
 
 export function isRegistrationWindowOpen(
   occurrence: EventOccurrence | null | undefined,
-  now: Date | number = Date.now(),
+  now?: Date | number,
 ): boolean {
   return getRegistrationWindowInfo(occurrence, now).state === 'open';
 }
 
 export function getOpenOccurrences(
   occurrences: EventOccurrence[],
-  now: Date | number = Date.now(),
+  now?: Date | number,
 ): EventOccurrence[] {
   return occurrences.filter((occurrence) => isRegistrationWindowOpen(occurrence, now));
 }
@@ -184,16 +243,29 @@ export function getNearestOccurrence(
 
 export function getNearestFutureOpening(
   occurrences: EventOccurrence[],
-  now: Date | number = Date.now(),
+  now?: Date | number,
 ): EventOccurrence | null {
-  const nowTime = getNowTime(now);
+  let fallbackNowTime: number | null = null;
+  const getFallbackNowTime = () => {
+    fallbackNowTime ??= getNowTime(now ?? Date.now());
+
+    return fallbackNowTime;
+  };
 
   return [...occurrences]
     .filter((occurrence) => {
-      const info = getRegistrationWindowInfo(occurrence, nowTime);
+      const info = occurrence.registrationState
+        ? getRegistrationWindowInfo(occurrence)
+        : getRegistrationWindowInfo(occurrence, getFallbackNowTime());
       const opensAtTime = parseTime(info.opensAt);
 
-      return info.state === 'not_yet_open' && opensAtTime !== null && opensAtTime > nowTime;
+      if (occurrence.registrationState) {
+        return info.state === 'not_yet_open' && opensAtTime !== null;
+      }
+
+      return info.state === 'not_yet_open'
+        && opensAtTime !== null
+        && opensAtTime > getFallbackNowTime();
     })
     .sort((first, second) => (
       (parseTime(first.registrationOpensAt) ?? Number.POSITIVE_INFINITY)
@@ -203,21 +275,21 @@ export function getNearestFutureOpening(
 
 export function getNextRegistrationOpening(
   occurrences: EventOccurrence[],
-  now: Date | number = Date.now(),
+  now?: Date | number,
 ): EventOccurrence | null {
   return getNearestFutureOpening(occurrences, now);
 }
 
 export function formatRegistrationWindowLabel(
   occurrence: EventOccurrence | null | undefined,
-  now: Date | number = Date.now(),
+  now?: Date | number,
 ): string {
   return getRegistrationWindowInfo(occurrence, now).label;
 }
 
 export function getUnavailableRegistrationText(
   occurrences: EventOccurrence[],
-  now: Date | number = Date.now(),
+  now?: Date | number,
 ): string {
   const nextOpening = getNearestFutureOpening(occurrences, now);
 

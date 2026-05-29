@@ -4,8 +4,15 @@ export type EventOccurrenceStatus =
   | 'cancelled'
   | 'archived';
 
+export type EventOccurrenceRegistrationState =
+  | 'open'
+  | 'not_yet_open'
+  | 'closed'
+  | 'unavailable';
+
 export type EventOccurrenceRow = {
   id: string;
+  occurrence_id?: string | null;
   event_id: string;
   title: string | null;
   starts_at: string;
@@ -20,6 +27,10 @@ export type EventOccurrenceRow = {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  server_now?: string | null;
+  is_registration_always_open?: boolean | null;
+  registration_state?: EventOccurrenceRegistrationState | string | null;
+  registration_state_reason?: string | null;
 };
 
 export type EventOccurrence = {
@@ -38,4 +49,8 @@ export type EventOccurrence = {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+  serverNow?: string | null;
+  isRegistrationAlwaysOpen?: boolean | null;
+  registrationState?: EventOccurrenceRegistrationState;
+  registrationStateReason?: string | null;
 };

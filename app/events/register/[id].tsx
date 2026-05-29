@@ -19,6 +19,7 @@ import {
   getNearestOccurrence,
   getRegistrationWindowInfo,
   getUnavailableRegistrationText,
+  isRegistrationWindowOpen,
   isOccurrenceAlwaysOpen,
   shouldRequireOccurrenceChoice,
   type RegistrationWindowInfo,
@@ -524,7 +525,19 @@ export default function EventRegistrationScreen() {
     [event, occurrences],
   );
   const selectedOccurrenceFromChoice = useMemo(
-    () => occurrences.find((occurrence) => occurrence.id === selectedOccurrenceId) ?? null,
+    () => {
+      const occurrence = occurrences.find((item) => item.id === selectedOccurrenceId) ?? null;
+
+      if (
+        !occurrence
+        || !isRegistrationWindowOpen(occurrence)
+        || !isOccurrenceAlwaysOpen(occurrence)
+      ) {
+        return null;
+      }
+
+      return occurrence;
+    },
     [occurrences, selectedOccurrenceId],
   );
   const autoOccurrence = occurrenceChoiceRequired ? null : nearestFutureOccurrence;
@@ -650,7 +663,7 @@ export default function EventRegistrationScreen() {
   }, []);
 
   const handleSelectOccurrence = useCallback((occurrence: EventOccurrence) => {
-    if (getRegistrationWindowInfo(occurrence).state !== 'open') {
+    if (!isRegistrationWindowOpen(occurrence) || !isOccurrenceAlwaysOpen(occurrence)) {
       return;
     }
 
@@ -828,7 +841,8 @@ export default function EventRegistrationScreen() {
                 <View style={styles.occurrenceList}>
                   {occurrences.map((occurrence) => {
                     const windowInfo = getRegistrationWindowInfo(occurrence);
-                    const disabled = windowInfo.state !== 'open';
+                    const disabled = !isRegistrationWindowOpen(occurrence)
+                      || !isOccurrenceAlwaysOpen(occurrence);
 
                     return (
                       <OccurrenceCard
