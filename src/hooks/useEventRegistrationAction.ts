@@ -2,11 +2,18 @@ import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Linking } from 'react-native';
 
+import {
+  getRegistrationWindowInfo,
+  type RegistrationWindowInfo,
+} from '@/lib/registrationWindow';
 import { useAuthStore } from '@/store/useAuthStore';
 import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStore';
 import type { EventItem, EventRegistration, EventRegistrationStatus } from '@/types/event';
 
-type EventActionTarget = Pick<EventItem, 'id' | 'registrationMode' | 'registrationUrl'>;
+type EventActionTarget = Pick<
+  EventItem,
+  'id' | 'registrationMode' | 'registrationUrl' | 'nextOccurrence' | 'hasOccurrences'
+>;
 
 export function getRegistrationStatusTitle(status: EventRegistrationStatus): string {
   switch (status) {
@@ -44,14 +51,89 @@ export function getEventRegistrationActionTitle(
     case 'external_link':
       return 'Открыть регистрацию';
     case 'internal_paid':
-      return 'Зарегистрироваться';
+      return getBlockedRegistrationActionTitle(event) ?? 'Зарегистрироваться';
     case 'internal_free':
       return registration && isActiveEventRegistration(registration)
         ? getRegistrationStatusTitle(registration.status)
-        : 'Записаться';
+        : getBlockedRegistrationActionTitle(event) ?? 'Записаться';
     default:
       return 'Регистрация недоступна';
   }
+}
+
+function usesOccurrenceRegistrationWindow(event: EventActionTarget): boolean {
+  return Boolean(event.nextOccurrence || event.hasOccurrences === true);
+}
+
+function canGuardRegistrationMode(mode: EventItem['registrationMode']): boolean {
+  return mode === 'internal_free' || mode === 'internal_paid';
+}
+
+export function getEventRegistrationWindowGuardInfo(
+  event: EventActionTarget,
+): RegistrationWindowInfo | null {
+  if (!canGuardRegistrationMode(event.registrationMode) || !usesOccurrenceRegistrationWindow(event)) {
+    return null;
+  }
+
+  return getRegistrationWindowInfo(event.nextOccurrence);
+}
+
+export function isEventRegistrationWindowBlocked(
+  event: EventActionTarget,
+  registration?: EventRegistration | null,
+): boolean {
+  if (
+    event.registrationMode === 'internal_free'
+    && registration
+    && isActiveEventRegistration(registration)
+  ) {
+    return false;
+  }
+
+  const windowInfo = getEventRegistrationWindowGuardInfo(event);
+
+  return Boolean(windowInfo && windowInfo.state !== 'open');
+}
+
+export function getRegistrationWindowUnavailableText(info: RegistrationWindowInfo): string {
+  switch (info.state) {
+    case 'closed':
+      return 'Запись на ближайший сеанс закрыта.';
+    case 'not_yet_open':
+      return `Запись ${info.label.toLocaleLowerCase('ru-RU')}.`;
+    case 'no_window':
+      return 'Регистрация сейчас недоступна.';
+    case 'open':
+    default:
+      return 'Регистрация открыта.';
+  }
+}
+
+function getBlockedRegistrationActionTitle(event: EventActionTarget): string | null {
+  const windowInfo = getEventRegistrationWindowGuardInfo(event);
+
+  if (!windowInfo || windowInfo.state === 'open') {
+    return null;
+  }
+
+  switch (windowInfo.state) {
+    case 'closed':
+      return 'Регистрация закрыта';
+    case 'not_yet_open':
+      return windowInfo.label;
+    case 'no_window':
+    default:
+      return 'Регистрация сейчас недоступна';
+  }
+}
+
+function showRegistrationWindowUnavailableAlert(info: RegistrationWindowInfo) {
+  const title = info.state === 'closed'
+    ? 'Регистрация закрыта'
+    : 'Регистрация сейчас недоступна';
+
+  Alert.alert(title, getRegistrationWindowUnavailableText(info));
 }
 
 function showActionError(error: unknown) {
@@ -129,9 +211,19 @@ export function useEventRegistrationAction() {
           return;
         }
 
+        const freeWindowInfo = getEventRegistrationWindowGuardInfo(event);
+
+        if (freeWindowInfo && freeWindowInfo.state !== 'open') {
+          showRegistrationWindowUnavailableAlert(freeWindowInfo);
+          return;
+        }
+
         setRegisteringEventId(event.id);
 
         try {
+          // TODO(feature/registration-with-occurrence-free-rpc): recurring internal_free
+          // registration must move to an occurrence-aware RPC with occurrence_id.
+          // This UI guard is not a backend security boundary.
           await registerForEvent(event.id);
           void loadMyRegistrations().catch(() => undefined);
           Alert.alert('Вы записаны', 'Регистрация на событие создана.');
@@ -143,6 +235,15 @@ export function useEventRegistrationAction() {
         return;
 
       case 'internal_paid':
+        {
+          const paidWindowInfo = getEventRegistrationWindowGuardInfo(event);
+
+          if (paidWindowInfo && paidWindowInfo.state !== 'open') {
+            showRegistrationWindowUnavailableAlert(paidWindowInfo);
+            return;
+          }
+        }
+
         router.push({ pathname: '/events/register/[id]', params: { id: event.id } });
         return;
 

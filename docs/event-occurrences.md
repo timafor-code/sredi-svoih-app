@@ -34,10 +34,9 @@ set while each occurrence tracks its own capacity.
 Registrations can store `event_registrations.occurrence_id`.
 `register_for_event_occurrence_with_options` is the backend foundation for
 creating one authenticated registration against a concrete occurrence with
-selected participation option snapshots. Existing mobile UI wiring is
-unchanged in this PR: the current `internal_paid` simulation flow still passes
-an occurrence when the event has occurrences, while `internal_free` still uses
-the legacy event-level `register_for_event` flow.
+selected participation option snapshots. The current `internal_paid` simulation
+flow still passes an occurrence when the event has occurrences, while
+`internal_free` still uses the legacy event-level `register_for_event` flow.
 
 The new occurrence/options RPC enforces idempotency in the transaction: if the
 same user already has an active `pending`, `confirmed`, or `waitlisted`
@@ -155,24 +154,35 @@ Tranzila, checkout, or other payment gateway is implemented here.
 
 The mobile UI treats event visibility and registration availability as separate
 states. A parent event can be `published` and visible in the app while
-registration for every concrete occurrence is closed or not yet open.
+registration for its concrete occurrence is closed or not yet open.
 
-For `internal_paid` events with occurrences, the detail screen loads active
-occurrences and evaluates each occurrence's `registration_opens_at` /
-`registration_closes_at` window:
+A future occurrence remains visible in the event feed as the nearest upcoming
+session, but the mobile registration CTA is enabled only when that occurrence's
+registration window is open. A closed registration window must disable the
+mobile CTA for both `internal_free` and `internal_paid` recurring events and
+show a closed/unavailable/opening-soon label instead of a generic "register"
+label.
 
-- if at least one occurrence is open, the event CTA remains active and opens
-  the paid participation flow;
-- if no occurrence is open, the event remains visible, but the registration CTA
-  is disabled and explains whether registration opens later, the nearest
-  session is closed, or no sessions are available;
-- the paid options screen only auto-selects an open occurrence, shows
-  unavailable sessions as disabled schedule context, and does not call
-  `register_for_paid_event_simulated` when no open occurrence can be selected.
+For events with occurrences, mobile evaluates the effective nearest
+`event_occurrences.registration_opens_at` /
+`event_occurrences.registration_closes_at` window:
+
+- if the nearest effective occurrence is open, the event CTA remains active;
+- if the nearest effective occurrence is closed, not yet open, missing, or not
+  active, the event remains visible, but the registration CTA is disabled and
+  explains whether registration opens later, the nearest session is closed, or
+  registration is currently unavailable;
+- the paid options screen must not use a closed occurrence as an available
+  occurrence for selection or continuation.
 
 Missing registration window fields are treated as open for active occurrences
 in the user-facing UI. Backend validation remains the source of truth for the
 final registration attempt.
+
+The legacy `register_for_event` RPC is not occurrence-window-aware and must not
+be considered final backend protection for recurring events. Until
+`internal_free` registration is moved to an occurrence-aware RPC, the mobile UI
+guard only prevents accidental client-side entry and is not a security boundary.
 
 ## Mobile "My registrations"
 
