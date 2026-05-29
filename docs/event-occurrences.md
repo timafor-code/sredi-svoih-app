@@ -193,6 +193,46 @@ follows nearest occurrence and configured registration window. If that nearest
 Shabbat occurrence is closed or not yet open, the registration action stays
 disabled with the same window labels described above.
 
+## Server-side registration window state
+
+PostgreSQL `now()` is the source of truth for occurrence registration-window
+state. The mobile app must not decide whether registration is open or closed
+from device time.
+
+`list_event_occurrences(p_event_id)` returns the occurrence fields plus:
+
+- `server_now`
+- `is_registration_always_open`
+- `registration_state`: `open`, `not_yet_open`, `closed`, or `unavailable`
+- `registration_state_reason`
+
+The server state rules are:
+
+- `unavailable` when the occurrence status is not `active`
+- `open` when the occurrence is active and both registration window timestamps
+  are missing
+- `not_yet_open` when the occurrence is active, `registration_opens_at` exists,
+  and PostgreSQL `now()` is before it
+- `closed` when the occurrence is active, `registration_closes_at` exists, and
+  PostgreSQL `now()` is after it
+- `open` for the remaining active cases where `now()` is inside a full window
+  or does not violate a partial window
+
+Mobile `Date.now()` is not a security boundary. It is allowed only as a
+fallback/loading UI state when server state has not arrived yet. Once
+`registration_state` is present on an occurrence, mobile uses it as the source
+of truth. A closed registration must not become available when a user changes
+the device date or time.
+
+Always-open multi-date events are represented by server state `open` together
+with `is_registration_always_open = true`. Mobile shows date choice for these
+events, then moves to the participation-options step after the user selects an
+open occurrence.
+
+Shabbat/window-based events use the nearest occurrence and do not show manual
+date choice. Their closed, not-yet-open, and open states come from the server
+state for that occurrence.
+
 Always-open multi-date lecture/course mobile flow:
 
 1. Choose occurrence/date.

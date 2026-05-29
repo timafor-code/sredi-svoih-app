@@ -2,7 +2,15 @@ import { supabase } from './supabaseClient';
 import type {
   EventOccurrence,
   EventOccurrenceRow,
+  EventOccurrenceRegistrationState,
 } from '@/types/eventOccurrence';
+
+const REGISTRATION_STATES: EventOccurrenceRegistrationState[] = [
+  'open',
+  'not_yet_open',
+  'closed',
+  'unavailable',
+];
 
 function nullableString(value: unknown): string | null {
   if (value === null || value === undefined) {
@@ -53,6 +61,14 @@ function nullableBoolean(value: unknown): boolean | null {
   return null;
 }
 
+function normalizeRegistrationState(
+  value: unknown,
+): EventOccurrenceRegistrationState | undefined {
+  const normalized = nullableString(value)?.trim().toLowerCase();
+
+  return REGISTRATION_STATES.find((state) => state === normalized);
+}
+
 export function normalizeEventOccurrenceRow(
   row: Partial<EventOccurrenceRow>,
 ): EventOccurrence {
@@ -72,6 +88,10 @@ export function normalizeEventOccurrenceRow(
     sortOrder: safeNumber(row.sort_order, 0),
     createdAt: requiredString(row.created_at, ''),
     updatedAt: requiredString(row.updated_at, ''),
+    serverNow: nullableString(row.server_now),
+    isRegistrationAlwaysOpen: nullableBoolean(row.is_registration_always_open),
+    registrationState: normalizeRegistrationState(row.registration_state),
+    registrationStateReason: nullableString(row.registration_state_reason),
   };
 }
 
