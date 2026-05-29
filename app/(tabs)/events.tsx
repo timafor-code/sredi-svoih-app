@@ -20,6 +20,7 @@ import { Screen } from '@/components/ui/Screen';
 import { SegmentControl } from '@/components/ui/SegmentControl';
 import {
   getEventRegistrationActionTitle,
+  isEventRegistrationWindowBlocked,
   useEventRegistrationAction,
 } from '@/hooks/useEventRegistrationAction';
 import {
@@ -240,6 +241,7 @@ function EventCard({
 }: EventCardProps) {
   const activeRegistration = isActiveEventRegistration(registration) ? registration : null;
   const buttonTitle = getEventRegistrationActionTitle(event, registration, registering);
+  const registrationWindowBlocked = isEventRegistrationWindowBlocked(event, registration);
   const showCancelAction = Boolean(activeRegistration && event.registrationMode === 'internal_free');
   const [imageFailed, setImageFailed] = useState(false);
   const showImage = Boolean(event.imageUrl && !imageFailed);
@@ -331,7 +333,7 @@ function EventCard({
         <View style={event.featured ? styles.featuredActions : styles.eventActions}>
           <PrimaryButton
             title={buttonTitle}
-            disabled={registering || cancelling}
+            disabled={registering || cancelling || registrationWindowBlocked}
             onPress={() => onRegister(event, registration)}
             style={styles.actionButton}
             buttonStyle={styles.actionButtonGradient}

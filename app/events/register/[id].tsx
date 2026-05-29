@@ -15,7 +15,12 @@ import { GlassCard } from '@/components/glass/GlassCard';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { selectNextFutureOccurrence } from '@/lib/eventTime';
-import { getNearestOccurrence } from '@/lib/registrationWindow';
+import {
+  getNearestOccurrence,
+  getRegistrationWindowInfo,
+  getUnavailableRegistrationText,
+  type RegistrationWindowInfo,
+} from '@/lib/registrationWindow';
 import { listEventOccurrences } from '@/services/eventOccurrencesService';
 import { listEventParticipationOptions } from '@/services/participationOptionsService';
 import { useEventsStore } from '@/store/useEventsStore';
@@ -118,6 +123,39 @@ function formatOccurrence(occurrence: EventOccurrence): string {
     )}`;
 
   return `${start} - ${end}`;
+}
+
+function getRegistrationWindowActionTitle(info: RegistrationWindowInfo): string {
+  switch (info.state) {
+    case 'closed':
+      return 'Регистрация закрыта';
+    case 'not_yet_open':
+      return info.label;
+    case 'no_window':
+      return 'Регистрация сейчас недоступна';
+    case 'open':
+    default:
+      return 'Продолжить';
+  }
+}
+
+function getRegistrationWindowHint(
+  info: RegistrationWindowInfo,
+  occurrences: EventOccurrence[],
+): string {
+  switch (info.state) {
+    case 'closed':
+      return 'Запись на ближайший сеанс закрыта.';
+    case 'not_yet_open':
+      return `Запись ${info.label.toLocaleLowerCase('ru-RU')}.`;
+    case 'no_window':
+      return occurrences.length > 0
+        ? getUnavailableRegistrationText(occurrences)
+        : 'Регистрация сейчас недоступна.';
+    case 'open':
+    default:
+      return 'Регистрация открыта.';
+  }
 }
 
 function formatMoney(amount: number, currency: string | null | undefined): string {
@@ -352,12 +390,32 @@ export default function EventRegistrationScreen() {
     () => options.filter((option) => selectedIdSet.has(option.id)),
     [options, selectedIdSet],
   );
-  const nearestOccurrence = useMemo(
-    () => selectNextFutureOccurrence(occurrences)
-      ?? event?.nextOccurrence
-      ?? getNearestOccurrence(occurrences),
+  const nearestFutureOccurrence = useMemo(
+    () => selectNextFutureOccurrence(occurrences) ?? event?.nextOccurrence ?? null,
     [event?.nextOccurrence, occurrences],
   );
+  const displayOccurrence = useMemo(
+    () => nearestFutureOccurrence ?? getNearestOccurrence(occurrences),
+    [nearestFutureOccurrence, occurrences],
+  );
+  const occurrenceWindowRequired = Boolean(
+    event?.hasOccurrences === true
+    || event?.nextOccurrence
+    || occurrences.length > 0,
+  );
+  const registrationWindowInfo = useMemo(
+    () => (occurrenceWindowRequired ? getRegistrationWindowInfo(nearestFutureOccurrence) : null),
+    [nearestFutureOccurrence, occurrenceWindowRequired],
+  );
+  const selectedOccurrence = registrationWindowInfo?.state === 'open'
+    ? nearestFutureOccurrence
+    : null;
+  const registrationWindowBlocked = Boolean(
+    registrationWindowInfo && registrationWindowInfo.state !== 'open',
+  );
+  const registrationWindowHint = registrationWindowInfo && registrationWindowBlocked
+    ? getRegistrationWindowHint(registrationWindowInfo, occurrences)
+    : null;
   const totals = useMemo(() => (
     selectedOptions.reduce(
       (acc, option) => {
@@ -372,7 +430,9 @@ export default function EventRegistrationScreen() {
     )
   ), [quantities, selectedOptions]);
   const summaryCurrency = selectedOptions[0]?.priceCurrency ?? 'RUB';
-  const canContinue = options.length > 0 && selectedOptions.length > 0;
+  const canContinue = options.length > 0
+    && selectedOptions.length > 0
+    && (!occurrenceWindowRequired || selectedOccurrence !== null);
   const showImage = Boolean(event?.imageUrl && !imageFailed);
 
   const handleBack = useCallback(() => {
@@ -421,8 +481,16 @@ export default function EventRegistrationScreen() {
   }, []);
 
   const handleContinue = useCallback(() => {
+    if (registrationWindowBlocked) {
+      Alert.alert(
+        'Регистрация сейчас недоступна',
+        registrationWindowHint ?? 'Регистрация сейчас недоступна.',
+      );
+      return;
+    }
+
     Alert.alert('Оплата и запись будут доступны позже');
-  }, []);
+  }, [registrationWindowBlocked, registrationWindowHint]);
 
   return (
     <>
@@ -467,8 +535,11 @@ export default function EventRegistrationScreen() {
 
             <View style={styles.titleBlock}>
               <Text style={styles.title}>{event.title}</Text>
-              {nearestOccurrence ? (
-                <Text style={styles.subtitle}>{formatOccurrence(nearestOccurrence)}</Text>
+              {displayOccurrence ? (
+                <Text style={styles.subtitle}>{formatOccurrence(displayOccurrence)}</Text>
+              ) : null}
+              {registrationWindowHint ? (
+                <Text style={styles.windowHint}>{registrationWindowHint}</Text>
               ) : null}
             </View>
 
@@ -515,7 +586,9 @@ export default function EventRegistrationScreen() {
                 </View>
               </View>
               <PrimaryButton
-                title="Продолжить"
+                title={registrationWindowInfo && registrationWindowBlocked
+                  ? getRegistrationWindowActionTitle(registrationWindowInfo)
+                  : 'Продолжить'}
                 disabled={!canContinue}
                 onPress={handleContinue}
                 buttonStyle={styles.continueButton}
@@ -574,6 +647,11 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 14,
     lineHeight: 20,
+  },
+  windowHint: {
+    color: colors.textDim,
+    fontSize: 13,
+    lineHeight: 18,
   },
   sectionHeader: {
     flexDirection: 'row',

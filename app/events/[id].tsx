@@ -15,7 +15,11 @@ import { GlassCard } from '@/components/glass/GlassCard';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import {
+  getEventRegistrationActionTitle,
+  getEventRegistrationWindowGuardInfo,
   getRegistrationStatusTitle,
+  getRegistrationWindowUnavailableText,
+  isEventRegistrationWindowBlocked,
   useEventRegistrationAction,
 } from '@/hooks/useEventRegistrationAction';
 import {
@@ -26,6 +30,7 @@ import {
 import { formatRegistrationCount } from '@/lib/registrationGroups';
 import { useAuthStore } from '@/store/useAuthStore';
 import {
+  findActiveRegistrationForTarget,
   isActiveEventRegistration,
   isDuplicateBlockingEventRegistration,
   isSameRegistrationTarget,
@@ -212,6 +217,13 @@ function RegistrationBlock({
 }: RegistrationBlockProps) {
   const activeRegistration = getActiveRegistration(registration);
   const eventPassed = hasEventPassed(event);
+  const registrationWindowInfo = getEventRegistrationWindowGuardInfo(event);
+  const registrationWindowBlocked = isEventRegistrationWindowBlocked(event, registration);
+  const registrationWindowUnavailableText = registrationWindowInfo
+    && registrationWindowInfo.state !== 'open'
+    ? getRegistrationWindowUnavailableText(registrationWindowInfo)
+    : null;
+  const registrationActionTitle = getEventRegistrationActionTitle(event, registration, registering);
 
   if (event.registrationMode === 'external_link') {
     return (
@@ -237,14 +249,19 @@ function RegistrationBlock({
           <Text style={styles.sectionTitle}>Регистрация</Text>
           <Chip tone="warning">Платное участие</Chip>
         </View>
-        <Text style={styles.sectionText}>Выберите дату и вариант участия. Оплату и финальную запись подключим следующим этапом.</Text>
+        <Text style={styles.sectionText}>
+          {registrationWindowBlocked
+            ? registrationWindowUnavailableText ?? 'Регистрация сейчас недоступна.'
+            : 'Выберите дату и вариант участия. Оплату и финальную запись подключим следующим этапом.'}
+        </Text>
         {activeRegistrationCount > 0 ? (
           <Text style={styles.mutedNote}>
             У вас {formatRegistrationCount(activeRegistrationCount)} на это событие.
           </Text>
         ) : null}
         <PrimaryButton
-          title="Зарегистрироваться"
+          title={registrationActionTitle}
+          disabled={registrationWindowBlocked}
           onPress={() => onOpenPaidRegistration(event)}
           buttonStyle={styles.registrationButton}
         />
@@ -260,6 +277,23 @@ function RegistrationBlock({
           <Chip tone="success">Не требуется</Chip>
         </View>
         <Text style={styles.sectionText}>Регистрация не требуется. Можно просто прийти в указанное время.</Text>
+      </GlassCard>
+    );
+  }
+
+  if (registrationWindowBlocked) {
+    return (
+      <GlassCard>
+        <Text style={styles.sectionTitle}>Регистрация</Text>
+        <Text style={styles.sectionText}>
+          {registrationWindowUnavailableText ?? 'Регистрация сейчас недоступна.'}
+        </Text>
+        <PrimaryButton
+          title={registrationActionTitle}
+          disabled
+          onPress={() => onRegister(event, registration)}
+          buttonStyle={styles.registrationButton}
+        />
       </GlassCard>
     );
   }
@@ -311,7 +345,7 @@ function RegistrationBlock({
       <Text style={styles.sectionTitle}>Регистрация</Text>
       <Text style={styles.sectionText}>Запись проходит внутри приложения.</Text>
       <PrimaryButton
-        title={registering ? 'Записываем...' : 'Записаться'}
+        title={registrationActionTitle}
         disabled={registering}
         onPress={() => onRegister(event, registration)}
         buttonStyle={styles.registrationButton}
@@ -390,10 +424,22 @@ export default function EventDetailScreen() {
       return null;
     }
 
+    if (event?.nextOccurrence?.id) {
+      return findActiveRegistrationForTarget(
+        myRegistrations,
+        eventId,
+        event.nextOccurrence.id,
+      );
+    }
+
+    if (event?.hasOccurrences === true) {
+      return null;
+    }
+
     const eventRegistrations = myRegistrations.filter((item) => item.eventId === eventId);
 
     return eventRegistrations.find(isActiveEventRegistration) ?? eventRegistrations[0] ?? null;
-  }, [eventId, myRegistrations]);
+  }, [event?.hasOccurrences, event?.nextOccurrence?.id, eventId, myRegistrations]);
 
   const activeRegistrationCount = useMemo(() => {
     if (!event) {
