@@ -1,8 +1,8 @@
 # Event capacity units
 
 This document describes the backend foundation for capacity buckets inside one
-event. It is intentionally limited to schema, RLS, and admin RPCs; actual seat
-reservation during registration is planned for a later PR.
+event, plus the registration-time reservations that make those buckets consume
+real seats.
 
 ## Model
 
@@ -28,6 +28,17 @@ The mapping table stores `event_id` and has composite foreign keys back to both
 `event_participation_options(id, event_id)` and
 `event_capacity_units(id, event_id)`. That keeps every option and capacity unit
 inside the same event boundary.
+
+`event_registration_capacity_reservations` stores the durable reservation rows
+created when a registration selects mapped participation options. Each row
+captures the registration, event, occurrence, capacity unit, option, snapshots
+of the unit and option labels, selected quantity, `seats_per_quantity`, and the
+final `seats_count`.
+
+Reservations are append-only history for this flow. Cancelling or rejecting a
+registration does not delete reservation rows. Occupied-seat checks join back to
+`event_registrations` and count only active consuming statuses, so cancelled,
+rejected, and waitlisted registrations do not consume capacity-unit seats.
 
 ## Admin RPCs
 
@@ -109,6 +120,10 @@ Participation option mapping:
 If `Whole Shabbat` has `seats_per_quantity = 1` for both units, one selected
 quantity consumes one Friday dinner seat and one Shabbat lunch seat.
 
+For example, "Весь Шабат" reserves both `friday_dinner` and `shabbat_lunch`.
+If either mapped slot is full, registration is blocked even if the other slot
+still has room.
+
 ### Yom Tov
 
 Capacity units:
@@ -130,11 +145,38 @@ Participation option mapping:
 | Day 2 lunch | `yomtov_day2_lunch` |
 | Whole Yom Tov | all four units |
 
+For example, "Весь Йом Тов" can reserve every mapped day and meal unit in the
+package. The registration succeeds only when every mapped unit has enough
+remaining capacity.
+
 ## Donations
 
 Donation and sponsorship options do not have capacity-unit mappings. They can
 remain in `event_participation_options` for payment or sponsorship flows, but
-they should not reserve seats in a meal/day/slot bucket.
+they do not create capacity reservation rows and should not reserve seats in a
+meal/day/slot bucket.
+
+## Registration behavior
+
+`register_for_event_occurrence_with_options(...)` creates capacity reservation
+rows for selected options that are non-donation and have
+`counts_toward_capacity = true`.
+
+When a selected option has capacity-unit mappings, the RPC aggregates requested
+seats per unit, locks the relevant `event_capacity_units` rows, and checks
+occupied seats against `coalesce(event_capacity_units.capacity,
+event_occurrences.capacity, events.capacity)`. A `null` effective capacity is
+treated as unlimited.
+
+When a selected capacity-counting option has no capacity-unit mappings, the RPC
+keeps the legacy fallback: its selected quantity counts toward the existing
+event/occurrence capacity check. Events and options without any capacity-unit
+mappings therefore continue to behave as before.
+
+Existing active registrations are still returned idempotently; the RPC does not
+create duplicate option selections or duplicate capacity reservations for an
+already active registration. Backfill of older registrations is outside this
+PR.
 
 ## Admin UI
 
@@ -155,10 +197,6 @@ pair currently uses `seats_per_quantity = 1`.
 
 ## Out of scope
 
-This foundation does not change registration behavior yet. The actual seat
-reservation and capacity decrement/check during registration will be added in a
-separate PR, alongside any reservation table such as
-`event_registration_capacity_reservations`.
-
-This PR also does not change mobile UI, payment flow, Excel export, or legacy
-event migration.
+This PR does not change mobile UI, payment flow, Excel export, legacy event
+migration, or backfill older registrations. Admin overview/export changes for
+capacity reservations will be handled in separate PRs.
