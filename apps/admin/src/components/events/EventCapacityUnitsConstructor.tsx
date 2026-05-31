@@ -1,20 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import { Button } from "../ui/Button";
 import {
   listAdminEventCapacityUnits,
-  listAdminOptionCapacityUnitMappings,
   replaceAdminEventCapacityUnits,
-  replaceAdminOptionCapacityUnitMappings,
 } from "../../services/adminEventCapacityUnitsService";
-import { listAdminEventParticipationOptions } from "../../services/adminParticipationOptionsService";
 import type {
   AdminEventCapacityUnit,
   AdminEventCapacityUnitInput,
-  AdminOptionCapacityUnitMappingInput,
 } from "../../types/eventCapacityUnits";
-import type { ParticipationOption } from "../../types/participationOptions";
+
+const CAPACITY_UNITS_UPDATED_EVENT = "admin-event-capacity-units-updated";
 
 type EventCapacityUnitsConstructorProps = {
   eventId: string;
@@ -44,7 +41,12 @@ type SaveStatus = {
   savedAt: string | null;
 };
 
-const SHABBAT_UNIT_TEMPLATES = [
+type UnitTemplate = {
+  key: string;
+  title: string;
+};
+
+const SHABBAT_UNIT_TEMPLATES: UnitTemplate[] = [
   {
     key: "friday_dinner",
     title: "Пятничная вечерняя трапеза",
@@ -53,7 +55,37 @@ const SHABBAT_UNIT_TEMPLATES = [
     key: "shabbat_lunch",
     title: "Субботняя дневная трапеза",
   },
-] as const;
+];
+
+const YOM_TOV_ONE_DAY_UNIT_TEMPLATES: UnitTemplate[] = [
+  {
+    key: "yomtov_day1_evening",
+    title: "Йом Тов — вечерняя трапеза",
+  },
+  {
+    key: "yomtov_day1_lunch",
+    title: "Йом Тов — дневная трапеза",
+  },
+];
+
+const YOM_TOV_TWO_DAYS_UNIT_TEMPLATES: UnitTemplate[] = [
+  {
+    key: "yomtov_day1_evening",
+    title: "Йом Тов день 1 — вечерняя трапеза",
+  },
+  {
+    key: "yomtov_day1_lunch",
+    title: "Йом Тов день 1 — дневная трапеза",
+  },
+  {
+    key: "yomtov_day2_evening",
+    title: "Йом Тов день 2 — вечерняя трапеза",
+  },
+  {
+    key: "yomtov_day2_lunch",
+    title: "Йом Тов день 2 — дневная трапеза",
+  },
+];
 
 let draftUnitCounter = 0;
 
@@ -102,10 +134,7 @@ function buildEmptyDraft(index: number): DraftUnit {
   };
 }
 
-function buildTemplateDraft(
-  template: (typeof SHABBAT_UNIT_TEMPLATES)[number],
-  index: number,
-): DraftUnit {
+function buildTemplateDraft(template: UnitTemplate, index: number): DraftUnit {
   return {
     ...buildEmptyDraft(index),
     key: template.key,
@@ -182,48 +211,15 @@ function validateUnitDrafts(drafts: DraftUnit[]): ValidationResult {
   return Object.keys(errors).length > 0 ? { ok: false, errors } : { ok: true, inputs };
 }
 
-function mappingKey(optionId: string, unitId: string): string {
-  return `${optionId}:${unitId}`;
-}
-
-function isOptionDisabledForMapping(option: ParticipationOption): boolean {
-  return option.isDonation || !option.countsTowardCapacity;
-}
-
-function optionTypeLabel(option: ParticipationOption): string {
-  if (option.isDonation) {
-    return "Пожертвование";
-  }
-
-  if (option.optionType === "meal") {
-    return "Трапеза";
-  }
-
-  if (option.optionType === "package") {
-    return "Пакет";
-  }
-
-  return "Участие";
-}
-
 export function EventCapacityUnitsConstructor({
   eventId,
 }: EventCapacityUnitsConstructorProps) {
   const [unitDrafts, setUnitDrafts] = useState<DraftUnit[]>([]);
   const [unitErrors, setUnitErrors] = useState<Record<string, DraftUnitErrors>>({});
-  const [participationOptions, setParticipationOptions] = useState<
-    ParticipationOption[]
-  >([]);
-  const [selectedMappingKeys, setSelectedMappingKeys] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savingUnits, setSavingUnits] = useState(false);
-  const [savingMappings, setSavingMappings] = useState(false);
   const [unitsStatus, setUnitsStatus] = useState<SaveStatus>({
-    error: null,
-    savedAt: null,
-  });
-  const [mappingsStatus, setMappingsStatus] = useState<SaveStatus>({
     error: null,
     savedAt: null,
   });
@@ -235,23 +231,12 @@ export function EventCapacityUnitsConstructor({
     setLoadError(null);
     setUnitErrors({});
     setUnitsStatus({ error: null, savedAt: null });
-    setMappingsStatus({ error: null, savedAt: null });
 
-    Promise.all([
-      listAdminEventCapacityUnits(eventId),
-      listAdminEventParticipationOptions(eventId),
-      listAdminOptionCapacityUnitMappings(eventId),
-    ])
-      .then(([units, options, mappings]) => {
+    listAdminEventCapacityUnits(eventId)
+      .then((units) => {
         if (cancelled) return;
 
         setUnitDrafts(units.map(buildDraftFromUnit));
-        setParticipationOptions(options);
-        setSelectedMappingKeys(
-          mappings.map((mapping) =>
-            mappingKey(mapping.optionId, mapping.capacityUnitId),
-          ),
-        );
       })
       .catch((error) => {
         if (cancelled) return;
@@ -261,8 +246,6 @@ export function EventCapacityUnitsConstructor({
             : "Не удалось загрузить настройки capacity units.",
         );
         setUnitDrafts([]);
-        setParticipationOptions([]);
-        setSelectedMappingKeys([]);
       })
       .finally(() => {
         if (cancelled) return;
@@ -274,25 +257,8 @@ export function EventCapacityUnitsConstructor({
     };
   }, [eventId]);
 
-  const selectedMappingKeySet = useMemo(
-    () => new Set(selectedMappingKeys),
-    [selectedMappingKeys],
-  );
-
-  const persistedActiveUnits = useMemo(
-    () =>
-      unitDrafts
-        .filter((unit) => unit.remoteId && unit.isActive)
-        .sort((a, b) => {
-          const left = parseInteger(a.sortOrder);
-          const right = parseInteger(b.sortOrder);
-          return (left ?? 0) - (right ?? 0);
-        }),
-    [unitDrafts],
-  );
-
   const hasUnsavedUnits = unitDrafts.some((unit) => !unit.remoteId);
-  const disabled = loading || savingUnits || savingMappings;
+  const disabled = loading || savingUnits;
 
   const updateUnitDraft = (
     draftId: string,
@@ -318,11 +284,13 @@ export function EventCapacityUnitsConstructor({
     setUnitsStatus({ error: null, savedAt: null });
   };
 
-  const addShabbatTemplate = () => {
+  const addTemplateUnits = (templates: UnitTemplate[]) => {
     setUnitDrafts((current) => {
-      const existingKeys = new Set(current.map((unit) => unit.key.trim()));
-      const additions = SHABBAT_UNIT_TEMPLATES.filter(
-        (template) => !existingKeys.has(template.key),
+      const existingKeys = new Set(
+        current.map((unit) => unit.key.trim().toLowerCase()),
+      );
+      const additions = templates.filter(
+        (template) => !existingKeys.has(template.key.toLowerCase()),
       ).map((template, offset) =>
         buildTemplateDraft(template, current.length + offset),
       );
@@ -330,6 +298,18 @@ export function EventCapacityUnitsConstructor({
       return additions.length > 0 ? [...current, ...additions] : current;
     });
     setUnitsStatus({ error: null, savedAt: null });
+  };
+
+  const addShabbatTemplate = () => {
+    addTemplateUnits(SHABBAT_UNIT_TEMPLATES);
+  };
+
+  const addYomTovOneDayTemplate = () => {
+    addTemplateUnits(YOM_TOV_ONE_DAY_UNIT_TEMPLATES);
+  };
+
+  const addYomTovTwoDaysTemplate = () => {
+    addTemplateUnits(YOM_TOV_TWO_DAYS_UNIT_TEMPLATES);
   };
 
   const deleteUnit = (draftId: string) => {
@@ -363,15 +343,12 @@ export function EventCapacityUnitsConstructor({
     setSavingUnits(true);
     try {
       await replaceAdminEventCapacityUnits(eventId, validation.inputs);
-      const [nextUnits, nextMappings] = await Promise.all([
-        listAdminEventCapacityUnits(eventId),
-        listAdminOptionCapacityUnitMappings(eventId),
-      ]);
+      const nextUnits = await listAdminEventCapacityUnits(eventId);
       setUnitDrafts(nextUnits.map(buildDraftFromUnit));
-      setSelectedMappingKeys(
-        nextMappings.map((mapping) =>
-          mappingKey(mapping.optionId, mapping.capacityUnitId),
-        ),
+      window.dispatchEvent(
+        new CustomEvent(CAPACITY_UNITS_UPDATED_EVENT, {
+          detail: { eventId },
+        }),
       );
       setUnitsStatus({ error: null, savedAt: new Date().toISOString() });
     } catch (error) {
@@ -387,80 +364,25 @@ export function EventCapacityUnitsConstructor({
     }
   };
 
-  const toggleMapping = (
-    optionId: string,
-    capacityUnitId: string,
-    checked: boolean,
-  ) => {
-    const nextKey = mappingKey(optionId, capacityUnitId);
-
-    setSelectedMappingKeys((current) => {
-      if (checked) {
-        return current.includes(nextKey) ? current : [...current, nextKey];
-      }
-
-      return current.filter((entry) => entry !== nextKey);
-    });
-    setMappingsStatus({ error: null, savedAt: null });
-  };
-
-  const saveMappings = async () => {
-    if (disabled || persistedActiveUnits.length === 0) return;
-
-    setMappingsStatus({ error: null, savedAt: null });
-
-    const activeUnitIds = new Set(
-      persistedActiveUnits
-        .map((unit) => unit.remoteId)
-        .filter((unitId): unitId is string => Boolean(unitId)),
-    );
-    const eligibleOptionIds = new Set(
-      participationOptions
-        .filter((option) => !isOptionDisabledForMapping(option))
-        .map((option) => option.id),
-    );
-
-    const inputs: AdminOptionCapacityUnitMappingInput[] = selectedMappingKeys
-      .map((entry) => {
-        const [optionId, capacityUnitId] = entry.split(":");
-        return { optionId, capacityUnitId, seatsPerQuantity: 1 };
-      })
-      .filter(
-        (input) =>
-          eligibleOptionIds.has(input.optionId) &&
-          activeUnitIds.has(input.capacityUnitId),
-      );
-
-    setSavingMappings(true);
-    try {
-      const saved = await replaceAdminOptionCapacityUnitMappings(eventId, inputs);
-      setSelectedMappingKeys(
-        saved.map((mapping) => mappingKey(mapping.optionId, mapping.capacityUnitId)),
-      );
-      setMappingsStatus({ error: null, savedAt: new Date().toISOString() });
-    } catch (error) {
-      setMappingsStatus({
-        error:
-          error instanceof Error
-            ? error.message
-            : "Не удалось сохранить маппинг capacity units.",
-        savedAt: null,
-      });
-    } finally {
-      setSavingMappings(false);
-    }
-  };
-
   return (
     <section className="capacity-units-constructor">
       <header className="capacity-units-constructor__head">
         <div>
-          <h2>Учёт мест по трапезам/дням</h2>
-          <p>Capacity units и связь вариантов участия с этими buckets.</p>
+          <h2>Слоты мест для вариантов участия</h2>
+          <p>
+            После сохранения слотов они появятся в окне создания/редактирования
+            вариантов участия.
+          </p>
         </div>
         <div className="capacity-units-constructor__head-actions">
           <Button disabled={disabled} onClick={addShabbatTemplate} size="sm">
             + Шабат
+          </Button>
+          <Button disabled={disabled} onClick={addYomTovOneDayTemplate} size="sm">
+            + Йом Тов 1 день
+          </Button>
+          <Button disabled={disabled} onClick={addYomTovTwoDaysTemplate} size="sm">
+            + Йом Тов 2 дня
           </Button>
           <Button disabled={disabled} onClick={addUnit} size="sm" variant="gold">
             + Unit
@@ -477,14 +399,14 @@ export function EventCapacityUnitsConstructor({
       <div className="capacity-units-constructor__layout">
         <section className="capacity-units-panel">
           <div className="capacity-units-panel__head">
-            <span>Capacity units</span>
+            <span>Слоты мест</span>
             {hasUnsavedUnits ? <strong>Есть новые unsaved units</strong> : null}
           </div>
 
           {loading ? (
-            <p className="capacity-units-empty">Загружаем capacity units...</p>
+            <p className="capacity-units-empty">Загружаем слоты мест...</p>
           ) : unitDrafts.length === 0 ? (
-            <p className="capacity-units-empty">Сначала добавьте capacity units</p>
+            <p className="capacity-units-empty">Сначала добавьте слоты мест</p>
           ) : (
             <ul className="capacity-unit-rows">
               {unitDrafts.map((unit) => (
@@ -508,61 +430,6 @@ export function EventCapacityUnitsConstructor({
               error={unitsStatus.error}
               savedAt={unitsStatus.savedAt}
               saving={savingUnits}
-            />
-          </footer>
-        </section>
-
-        <section className="capacity-units-panel">
-          <div className="capacity-units-panel__head">
-            <span>Маппинг вариантов участия</span>
-            {persistedActiveUnits.length > 0 ? (
-              <strong>{persistedActiveUnits.length} active units</strong>
-            ) : null}
-          </div>
-
-          {loading ? (
-            <p className="capacity-units-empty">Загружаем маппинг...</p>
-          ) : unitDrafts.length === 0 ? (
-            <p className="capacity-units-empty">Сначала добавьте capacity units</p>
-          ) : persistedActiveUnits.length === 0 ? (
-            <p className="capacity-units-empty">
-              Нет активных сохранённых units для маппинга.
-            </p>
-          ) : participationOptions.length === 0 ? (
-            <p className="capacity-units-empty">Сначала добавьте варианты участия.</p>
-          ) : (
-            <div className="capacity-mapping-table">
-              <div className="capacity-mapping-table__head">
-                <span>Вариант</span>
-                <span>Capacity units</span>
-              </div>
-              <div className="capacity-mapping-table__body">
-                {participationOptions.map((option) => (
-                  <MappingRow
-                    disabled={disabled || isOptionDisabledForMapping(option)}
-                    key={option.id}
-                    onToggle={toggleMapping}
-                    option={option}
-                    selectedMappingKeySet={selectedMappingKeySet}
-                    units={persistedActiveUnits}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          <footer className="capacity-units-footer">
-            <Button
-              disabled={disabled || persistedActiveUnits.length === 0}
-              onClick={saveMappings}
-              variant="primary"
-            >
-              {savingMappings ? "Сохраняем..." : "Сохранить mappings"}
-            </Button>
-            <SaveStatusView
-              error={mappingsStatus.error}
-              savedAt={mappingsStatus.savedAt}
-              saving={savingMappings}
             />
           </footer>
         </section>
@@ -667,56 +534,6 @@ function CapacityUnitRow({
         </button>
       </div>
     </li>
-  );
-}
-
-function MappingRow({
-  disabled,
-  onToggle,
-  option,
-  selectedMappingKeySet,
-  units,
-}: {
-  disabled: boolean;
-  onToggle: (optionId: string, capacityUnitId: string, checked: boolean) => void;
-  option: ParticipationOption;
-  selectedMappingKeySet: Set<string>;
-  units: DraftUnit[];
-}) {
-  const inactiveClass = option.isActive ? "" : " capacity-mapping-row--inactive";
-  const disabledClass = disabled ? " capacity-mapping-row--disabled" : "";
-
-  return (
-    <div className={`capacity-mapping-row${inactiveClass}${disabledClass}`}>
-      <div className="capacity-mapping-row__option">
-        <span className="capacity-mapping-row__badge">{optionTypeLabel(option)}</span>
-        <strong>{option.title}</strong>
-        {disabled ? <small>места не занимает</small> : null}
-      </div>
-      <div className="capacity-mapping-row__units">
-        {units.map((unit) => {
-          const unitId = unit.remoteId;
-          if (!unitId) {
-            return null;
-          }
-
-          const key = mappingKey(option.id, unitId);
-          return (
-            <label className="capacity-mapping-checkbox" key={unitId}>
-              <input
-                checked={selectedMappingKeySet.has(key)}
-                disabled={disabled}
-                onChange={(event) =>
-                  onToggle(option.id, unitId, event.target.checked)
-                }
-                type="checkbox"
-              />
-              <span>{unit.key || unit.title}</span>
-            </label>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 

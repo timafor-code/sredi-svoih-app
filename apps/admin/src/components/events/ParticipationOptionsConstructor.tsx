@@ -7,11 +7,23 @@ import {
   replaceAdminEventParticipationOptions,
 } from "../../services/adminParticipationOptionsService";
 import {
+  listAdminEventCapacityUnits,
+  listAdminOptionCapacityUnitMappings,
+  replaceAdminOptionCapacityUnitMappings,
+} from "../../services/adminEventCapacityUnitsService";
+import type {
+  AdminEventCapacityUnit,
+  AdminOptionCapacityUnitMapping,
+  AdminOptionCapacityUnitMappingInput,
+} from "../../types/eventCapacityUnits";
+import {
   PARTICIPATION_OPTION_TYPES,
   type ParticipationOption,
   type ParticipationOptionInput,
   type ParticipationOptionType,
 } from "../../types/participationOptions";
+
+const CAPACITY_UNITS_UPDATED_EVENT = "admin-event-capacity-units-updated";
 
 const DEFAULT_PRICE_CURRENCY = "RUB";
 
@@ -76,6 +88,7 @@ type DraftOption = {
   countsTowardCapacity: boolean;
   groupKey: string;
   conflictsWith: string;
+  capacityUnitIds: string[];
   sortOrder: string;
   isActive: boolean;
 };
@@ -105,7 +118,10 @@ function isParticipationOptionType(value: string): value is ParticipationOptionT
   return (PARTICIPATION_OPTION_TYPES as readonly string[]).includes(value);
 }
 
-function buildDraftFromOption(option: ParticipationOption): DraftOption {
+function buildDraftFromOption(
+  option: ParticipationOption,
+  mappingsByOptionId: Map<string, string[]> = new Map(),
+): DraftOption {
   return {
     draftId: nextDraftId(),
     remoteId: option.id,
@@ -124,6 +140,9 @@ function buildDraftFromOption(option: ParticipationOption): DraftOption {
     countsTowardCapacity: option.countsTowardCapacity,
     groupKey: option.groupKey ?? "",
     conflictsWith: option.conflictsWith.join(", "),
+    capacityUnitIds: option.isDonation || !option.countsTowardCapacity
+      ? []
+      : (mappingsByOptionId.get(option.id) ?? []),
     sortOrder: String(option.sortOrder),
     isActive: option.isActive,
   };
@@ -146,9 +165,24 @@ function buildEmptyDraft(index: number, currency: string): DraftOption {
     countsTowardCapacity: true,
     groupKey: "",
     conflictsWith: "",
+    capacityUnitIds: [],
     sortOrder: String(index),
     isActive: true,
   };
+}
+
+function buildMappingsByOptionId(
+  mappings: AdminOptionCapacityUnitMapping[],
+): Map<string, string[]> {
+  const result = new Map<string, string[]>();
+
+  for (const mapping of mappings) {
+    const current = result.get(mapping.optionId) ?? [];
+    current.push(mapping.capacityUnitId);
+    result.set(mapping.optionId, current);
+  }
+
+  return result;
 }
 
 function parseInteger(value: string): number | null {
@@ -313,6 +347,7 @@ export function ParticipationOptionsConstructor({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [capacityUnits, setCapacityUnits] = useState<AdminEventCapacityUnit[]>([]);
   const [modalState, setModalState] = useState<ModalState>({ kind: "closed" });
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("multiple");
   const [previewQuantities, setPreviewQuantities] = useState<Record<string, number>>(
@@ -327,17 +362,35 @@ export function ParticipationOptionsConstructor({
     setSavedAt(null);
 
     let cancelled = false;
-    listAdminEventParticipationOptions(eventId)
-      .then((options) => {
+    Promise.all([
+      listAdminEventParticipationOptions(eventId),
+      listAdminEventCapacityUnits(eventId),
+      listAdminOptionCapacityUnitMappings(eventId),
+    ])
+      .then(([options, units, mappings]) => {
         if (cancelled) return;
-        setDrafts(options.map(buildDraftFromOption));
+        const mappingsByOptionId = buildMappingsByOptionId(mappings);
+        const activeUnitIds = new Set(
+          units.filter((unit) => unit.isActive).map((unit) => unit.id),
+        );
+        setCapacityUnits(units);
+        setDrafts(
+          options.map((option) => ({
+            ...buildDraftFromOption(option, mappingsByOptionId),
+            capacityUnitIds: (mappingsByOptionId.get(option.id) ?? []).filter(
+              (unitId) => activeUnitIds.has(unitId),
+            ),
+          })),
+        );
       })
       .catch((error) => {
         if (cancelled) return;
+        setCapacityUnits([]);
+        setDrafts([]);
         setLoadError(
           error instanceof Error
             ? error.message
-            : "Не удалось загрузить варианты участия.",
+            : "Не удалось загрузить варианты участия и слоты мест.",
         );
       })
       .finally(() => {
@@ -352,6 +405,26 @@ export function ParticipationOptionsConstructor({
 
   useEffect(() => {
     return loadOptions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventId]);
+
+  useEffect(() => {
+    const handleCapacityUnitsUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ eventId?: string }>).detail;
+      if (!detail?.eventId || detail.eventId === eventId) {
+        loadOptions();
+      }
+    };
+
+    window.addEventListener(
+      CAPACITY_UNITS_UPDATED_EVENT,
+      handleCapacityUnitsUpdated,
+    );
+    return () =>
+      window.removeEventListener(
+        CAPACITY_UNITS_UPDATED_EVENT,
+        handleCapacityUnitsUpdated,
+      );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
@@ -376,11 +449,25 @@ export function ParticipationOptionsConstructor({
     });
   }, [drafts, selectionMode]);
 
+  const activeCapacityUnits = useMemo(
+    () =>
+      capacityUnits
+        .filter((unit) => unit.isActive)
+        .sort((left, right) => left.sortOrder - right.sortOrder),
+    [capacityUnits],
+  );
+
+  const activeCapacityUnitIds = useMemo(
+    () => new Set(activeCapacityUnits.map((unit) => unit.id)),
+    [activeCapacityUnits],
+  );
+
   const persistDrafts = async (nextDrafts: DraftOption[]) => {
     setSaveError(null);
     setSavedAt(null);
 
     const validations = nextDrafts.map((draft, index) => ({
+      draft,
       result: validateDraft(draft, index),
     }));
 
@@ -403,7 +490,36 @@ export function ParticipationOptionsConstructor({
     setSaving(true);
     try {
       const saved = await replaceAdminEventParticipationOptions(eventId, inputs);
-      setDrafts(saved.map(buildDraftFromOption));
+      const mappingInputs: AdminOptionCapacityUnitMappingInput[] = [];
+
+      saved.forEach((option, index) => {
+        const sourceDraft = validations[index]?.draft;
+        if (!sourceDraft || option.isDonation || !option.countsTowardCapacity) {
+          return;
+        }
+
+        const uniqueUnitIds = Array.from(new Set(sourceDraft.capacityUnitIds));
+        uniqueUnitIds.forEach((capacityUnitId) => {
+          if (!activeCapacityUnitIds.has(capacityUnitId)) {
+            return;
+          }
+
+          mappingInputs.push({
+            optionId: option.id,
+            capacityUnitId,
+            seatsPerQuantity: 1,
+          });
+        });
+      });
+
+      const savedMappings = await replaceAdminOptionCapacityUnitMappings(
+        eventId,
+        mappingInputs,
+      );
+      const mappingsByOptionId = buildMappingsByOptionId(savedMappings);
+      setDrafts(
+        saved.map((option) => buildDraftFromOption(option, mappingsByOptionId)),
+      );
       setSaveError(null);
       setSavedAt(new Date().toISOString());
     } catch (error) {
@@ -459,6 +575,10 @@ export function ParticipationOptionsConstructor({
         draftId: nextDraftId(),
         remoteId: null,
         title: `${source.title || "Вариант"} (копия)`,
+        capacityUnitIds:
+          source.isDonation || !source.countsTowardCapacity
+            ? []
+            : source.capacityUnitIds,
       };
       const next = [...current];
       next.splice(index + 1, 0, copy);
@@ -543,7 +663,12 @@ export function ParticipationOptionsConstructor({
     setModalState({
       kind: "edit",
       draftId,
-      form: { ...target },
+      form: {
+        ...target,
+        capacityUnitIds: target.capacityUnitIds.filter((unitId) =>
+          activeCapacityUnitIds.has(unitId),
+        ),
+      },
       errors: {},
     });
   };
@@ -754,6 +879,7 @@ export function ParticipationOptionsConstructor({
       {modalState.kind !== "closed"
         ? createPortal(
             <OptionModal
+              activeCapacityUnits={activeCapacityUnits}
               onChange={updateModalForm}
               onClose={closeModal}
               onSubmit={submitModal}
@@ -1060,6 +1186,7 @@ function PreviewRow({
 }
 
 type OptionModalProps = {
+  activeCapacityUnits: AdminEventCapacityUnit[];
   onChange: (updater: (form: DraftOption) => DraftOption) => void;
   onClose: () => void;
   onSubmit: () => void;
@@ -1067,7 +1194,14 @@ type OptionModalProps = {
   state: Exclude<ModalState, { kind: "closed" }>;
 };
 
-function OptionModal({ onChange, onClose, onSubmit, saving, state }: OptionModalProps) {
+function OptionModal({
+  activeCapacityUnits,
+  onChange,
+  onClose,
+  onSubmit,
+  saving,
+  state,
+}: OptionModalProps) {
   const { form, errors } = state;
 
   useEffect(() => {
@@ -1258,12 +1392,22 @@ function OptionModal({ onChange, onClose, onSubmit, saving, state }: OptionModal
             </div>
           ) : null}
 
+          <CapacityUnitsPicker
+            activeCapacityUnits={activeCapacityUnits}
+            form={form}
+            onChange={onChange}
+          />
+
           <div className="participation-modal__toggles">
             <ModalToggle
               checked={form.isDonation}
               label="Благотворительный вариант"
               onChange={(value) =>
-                onChange((current) => ({ ...current, isDonation: value }))
+                onChange((current) => ({
+                  ...current,
+                  isDonation: value,
+                  capacityUnitIds: value ? [] : current.capacityUnitIds,
+                }))
               }
             />
           </div>
@@ -1278,6 +1422,7 @@ function OptionModal({ onChange, onClose, onSubmit, saving, state }: OptionModal
                   onChange((current) => ({
                     ...current,
                     countsTowardCapacity: value,
+                    capacityUnitIds: value ? current.capacityUnitIds : [],
                   }))
                 }
               />
@@ -1342,6 +1487,80 @@ function OptionModal({ onChange, onClose, onSubmit, saving, state }: OptionModal
         </footer>
       </div>
     </div>
+  );
+}
+
+function CapacityUnitsPicker({
+  activeCapacityUnits,
+  form,
+  onChange,
+}: {
+  activeCapacityUnits: AdminEventCapacityUnit[];
+  form: DraftOption;
+  onChange: (updater: (form: DraftOption) => DraftOption) => void;
+}) {
+  const doesNotReserveSeats = form.isDonation || !form.countsTowardCapacity;
+
+  const handleToggle = (capacityUnitId: string, checked: boolean) => {
+    onChange((current) => {
+      if (current.isDonation || !current.countsTowardCapacity) {
+        return { ...current, capacityUnitIds: [] };
+      }
+
+      if (checked) {
+        return current.capacityUnitIds.includes(capacityUnitId)
+          ? current
+          : {
+              ...current,
+              capacityUnitIds: [...current.capacityUnitIds, capacityUnitId],
+            };
+      }
+
+      return {
+        ...current,
+        capacityUnitIds: current.capacityUnitIds.filter(
+          (unitId) => unitId !== capacityUnitId,
+        ),
+      };
+    });
+  };
+
+  return (
+    <section className="participation-modal-capacity">
+      <div className="participation-modal-capacity__head">
+        <h4>Учёт мест</h4>
+        <p>
+          Выберите, какие трапезы/дни занимает этот вариант. Например, Весь
+          Шабат занимает и пятничную, и субботнюю трапезу.
+        </p>
+      </div>
+
+      {doesNotReserveSeats ? (
+        <p className="participation-modal-capacity__empty">
+          Этот вариант места не занимает.
+        </p>
+      ) : activeCapacityUnits.length === 0 ? (
+        <p className="participation-modal-capacity__empty">
+          Сначала добавьте слоты мест ниже: + Шабат или + Unit.
+        </p>
+      ) : (
+        <div className="participation-modal-capacity__list">
+          {activeCapacityUnits.map((unit) => (
+            <label className="participation-modal-capacity__item" key={unit.id}>
+              <input
+                checked={form.capacityUnitIds.includes(unit.id)}
+                onChange={(event) => handleToggle(unit.id, event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                <strong>{unit.key}</strong>
+                <small>{unit.title}</small>
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
