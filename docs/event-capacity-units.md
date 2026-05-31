@@ -115,19 +115,19 @@ Capacity units:
 
 | Key | Meaning |
 | --- | --- |
-| `day1_evening` | First evening meal |
-| `day1_lunch` | First day lunch |
-| `day2_evening` | Second evening meal |
-| `day2_lunch` | Second day lunch |
+| `yomtov_day1_evening` | First evening meal |
+| `yomtov_day1_lunch` | First day lunch |
+| `yomtov_day2_evening` | Second evening meal |
+| `yomtov_day2_lunch` | Second day lunch |
 
 Participation option mapping:
 
 | Option | Capacity units |
 | --- | --- |
-| Day 1 evening | `day1_evening` |
-| Day 1 lunch | `day1_lunch` |
-| Day 2 evening | `day2_evening` |
-| Day 2 lunch | `day2_lunch` |
+| Day 1 evening | `yomtov_day1_evening` |
+| Day 1 lunch | `yomtov_day1_lunch` |
+| Day 2 evening | `yomtov_day2_evening` |
+| Day 2 lunch | `yomtov_day2_lunch` |
 | Whole Yom Tov | all four units |
 
 ## Donations
@@ -136,6 +136,23 @@ Donation and sponsorship options do not have capacity-unit mappings. They can
 remain in `event_participation_options` for payment or sponsorship flows, but
 they should not reserve seats in a meal/day/slot bucket.
 
+## Admin UI
+
+The web-admin edit form for `internal_paid` events includes a compact "slots"
+constructor below participation options. Managers create event capacity units
+there and save them through `admin_replace_event_capacity_units`. The
+constructor includes quick presets for Shabbat, one-day Yom Tov, and two-day
+Yom Tov slots; presets skip keys that already exist.
+
+The option-to-slot relationship is configured inside the add/edit modal for a
+participation option. The modal shows active saved slots, and each checked
+slot is saved through `admin_replace_option_capacity_units` after
+`admin_replace_event_participation_options` returns the saved option rows.
+
+Donation options and options with `counts_toward_capacity = false` are shown as
+non-capacity options in the modal and are not mapped. Each checked option/unit
+pair currently uses `seats_per_quantity = 1`.
+
 ## Out of scope
 
 This foundation does not change registration behavior yet. The actual seat
@@ -143,5 +160,5 @@ reservation and capacity decrement/check during registration will be added in a
 separate PR, alongside any reservation table such as
 `event_registration_capacity_reservations`.
 
-This PR also does not change web-admin UI, mobile UI, payment flow, Excel
-export, or legacy event migration.
+This PR also does not change mobile UI, payment flow, Excel export, or legacy
+event migration.
