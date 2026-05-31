@@ -99,6 +99,7 @@ const CAPACITY_OCCUPIED_STATUSES = new Set<string>([
   "no_show",
 ]);
 
+const CAPACITY_REGISTRATION_LIMIT = 1000;
 const REGISTRATION_PAGE_SIZE = 50;
 const REGISTRATION_MENU_WIDTH = 232;
 const REGISTRATION_MENU_HEIGHT = 318;
@@ -179,6 +180,13 @@ export function RegistrationsPage() {
   const [registrations, setRegistrations] = useState<AdminEventRegistrationRow[]>([]);
   const [registrationsLoading, setRegistrationsLoading] = useState(false);
   const [registrationsError, setRegistrationsError] = useState<string | null>(null);
+  const [capacityRegistrations, setCapacityRegistrations] = useState<
+    AdminEventRegistrationRow[]
+  >([]);
+  const [capacityRegistrationsLoading, setCapacityRegistrationsLoading] = useState(false);
+  const [capacityRegistrationsError, setCapacityRegistrationsError] = useState<string | null>(
+    null,
+  );
   const [statusFilter, setStatusFilter] = useState<RegistrationStatusFilter>("all");
   const [registrationSearch, setRegistrationSearch] = useState("");
   const [offset, setOffset] = useState(0);
@@ -345,6 +353,58 @@ export function RegistrationsPage() {
     ],
   );
 
+  const loadCapacityRegistrations = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!selectedEventId) {
+        setCapacityRegistrations([]);
+        setCapacityRegistrationsLoading(false);
+        setCapacityRegistrationsError(null);
+        return [];
+      }
+
+      if (eventHasOccurrences && !selectedOccurrenceId) {
+        setCapacityRegistrations([]);
+        setCapacityRegistrationsLoading(false);
+        setCapacityRegistrationsError(null);
+        return [];
+      }
+
+      if (!silent) {
+        setCapacityRegistrationsLoading(true);
+        setCapacityRegistrations([]);
+      }
+
+      setCapacityRegistrationsError(null);
+
+      try {
+        const nextCapacityRegistrations = await listEventRegistrations({
+          eventId: selectedEventId,
+          occurrenceId: eventHasOccurrences ? selectedOccurrenceId : null,
+          status: "all",
+          search: null,
+          limit: CAPACITY_REGISTRATION_LIMIT,
+          offset: 0,
+        });
+
+        setCapacityRegistrations(nextCapacityRegistrations);
+        return nextCapacityRegistrations;
+      } catch (nextError) {
+        const message =
+          nextError instanceof Error
+            ? nextError.message
+            : "Не удалось загрузить данные занятости мест.";
+        setCapacityRegistrations([]);
+        setCapacityRegistrationsError(message);
+        return [];
+      } finally {
+        if (!silent) {
+          setCapacityRegistrationsLoading(false);
+        }
+      }
+    },
+    [eventHasOccurrences, selectedEventId, selectedOccurrenceId],
+  );
+
   useEffect(() => {
     void loadRegistrationEventSummaries().catch(() => undefined);
   }, [loadRegistrationEventSummaries]);
@@ -352,6 +412,10 @@ export function RegistrationsPage() {
   useEffect(() => {
     void loadRegistrations().catch(() => undefined);
   }, [loadRegistrations]);
+
+  useEffect(() => {
+    void loadCapacityRegistrations();
+  }, [loadCapacityRegistrations]);
 
   useEffect(() => {
     if (!selectedEventId || !eventHasOccurrences) {
@@ -489,8 +553,9 @@ export function RegistrationsPage() {
     await Promise.all([
       loadRegistrationEventSummaries({ silent: true }),
       loadRegistrations({ silent: true }),
+      loadCapacityRegistrations({ silent: true }),
     ]);
-  }, [loadRegistrationEventSummaries, loadRegistrations]);
+  }, [loadCapacityRegistrations, loadRegistrationEventSummaries, loadRegistrations]);
 
   const runRegistrationAction = useCallback(
     async (registration: AdminEventRegistrationRow, action: RegistrationAction) => {
@@ -590,13 +655,14 @@ export function RegistrationsPage() {
     void Promise.all([
       loadRegistrationEventSummaries(),
       loadRegistrations(),
+      loadCapacityRegistrations(),
     ]).catch((nextError) => {
       pushToast(
         "error",
         nextError instanceof Error ? nextError.message : "Не удалось обновить регистрации.",
       );
     });
-  }, [loadRegistrationEventSummaries, loadRegistrations, pushToast]);
+  }, [loadCapacityRegistrations, loadRegistrationEventSummaries, loadRegistrations, pushToast]);
 
   const handleExportExcel = useCallback(() => {
     if (!selectedEvent || excelExportLoading) {
@@ -745,8 +811,10 @@ export function RegistrationsPage() {
               ) : null}
 
               <RegistrationCapacityOverview
+                error={capacityRegistrationsError}
                 event={selectedEvent}
-                registrations={registrations}
+                isLoading={capacityRegistrationsLoading}
+                registrations={capacityRegistrations}
                 selectedOccurrence={eventHasOccurrences ? selectedOccurrence : null}
               />
 
@@ -950,15 +1018,20 @@ function CounterPill({
 }
 
 function RegistrationCapacityOverview({
+  error,
   event,
+  isLoading,
   registrations,
   selectedOccurrence,
 }: {
+  error: string | null;
   event: AdminRegistrationEventSummary;
+  isLoading: boolean;
   registrations: AdminEventRegistrationRow[];
   selectedOccurrence: AdminEventOccurrence | null;
 }) {
   const [mode, setMode] = useState<CapacityOverviewMode>("total");
+  const isOccurrenceMissing = event.occurrenceCount > 0 && !selectedOccurrence;
   const selectedModeLabel =
     CAPACITY_OVERVIEW_MODES.find((entry) => entry.value === mode)?.label ??
     CAPACITY_OVERVIEW_MODES[0].label;
@@ -1015,7 +1088,20 @@ function RegistrationCapacityOverview({
         </label>
       </div>
 
-      {mode === "total" ? (
+      {isOccurrenceMissing ? (
+        <div className="registration-capacity-soft-state">
+          Выберите дату/сеанс, чтобы увидеть занятость мест.
+        </div>
+      ) : isLoading ? (
+        <div className="registration-capacity-soft-state">
+          Загружаем данные занятости мест...
+        </div>
+      ) : error ? (
+        <div className="registration-capacity-soft-state registration-capacity-soft-state--error">
+          <strong>Не удалось загрузить данные занятости мест.</strong>
+          <span>{error}</span>
+        </div>
+      ) : mode === "total" ? (
         <div className="registration-capacity-total">
           <div className="registration-capacity-total__main">
             <span>Зарегистрировалось</span>
