@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { EventForm } from "../components/events/EventForm";
+import { EventCapacityUnitsConstructor } from "../components/events/EventCapacityUnitsConstructor";
 import { EventOccurrencesConstructor } from "../components/events/EventOccurrencesConstructor";
 import { ParticipationOptionsConstructor } from "../components/events/ParticipationOptionsConstructor";
 import { Badge } from "../components/ui/Badge";
@@ -167,6 +168,7 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
                   eventCapacity={currentEvent.capacity}
                   eventId={currentEvent.id}
                 />
+                <EventCapacityUnitsConstructor eventId={currentEvent.id} />
               </div>
             ) : null
           }

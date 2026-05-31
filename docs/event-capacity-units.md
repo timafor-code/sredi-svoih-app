@@ -136,6 +136,18 @@ Donation and sponsorship options do not have capacity-unit mappings. They can
 remain in `event_participation_options` for payment or sponsorship flows, but
 they should not reserve seats in a meal/day/slot bucket.
 
+## Admin UI
+
+The web-admin edit form for `internal_paid` events includes a compact
+constructor below participation options. Managers can create event capacity
+units, save them through `admin_replace_event_capacity_units`, and map active
+participation options to active saved units through
+`admin_replace_option_capacity_units`.
+
+Donation options and options with `counts_toward_capacity = false` are shown as
+non-capacity rows and are not mapped. Each checked option/unit pair currently
+uses `seats_per_quantity = 1`.
+
 ## Out of scope
 
 This foundation does not change registration behavior yet. The actual seat
@@ -143,5 +155,5 @@ reservation and capacity decrement/check during registration will be added in a
 separate PR, alongside any reservation table such as
 `event_registration_capacity_reservations`.
 
-This PR also does not change web-admin UI, mobile UI, payment flow, Excel
-export, or legacy event migration.
+This PR also does not change mobile UI, payment flow, Excel export, or legacy
+event migration.
