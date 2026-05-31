@@ -24,6 +24,11 @@ type SupabaseSelectError = {
   hint?: string | null;
 };
 
+type AdminEventCapacityRow = {
+  id: string;
+  capacity: number | string | null;
+};
+
 const ADMIN_EVENT_FIELDS = `
   id,
   community_id,
@@ -183,6 +188,7 @@ export function normalizeRegistrationEventSummaryRow(
     startsAt: nullableString(row.starts_at),
     eventKind: requiredString(row.event_kind, "single"),
     registrationMode: requiredString(row.registration_mode, "none"),
+    capacity: nullableNumber(row.capacity),
     occurrenceCount: safeNumber(row.occurrence_count, 0),
     confirmedCount: safeNumber(row.confirmed_count, 0),
     pendingCount: safeNumber(row.pending_count, 0),
@@ -281,6 +287,32 @@ export async function listRegistrationEvents(): Promise<AdminRegistrationEventSu
 
   return ((data ?? []) as AdminRegistrationEventSummaryRpcRow[]).map(
     normalizeRegistrationEventSummaryRow,
+  );
+}
+
+export async function listAdminEventCapacities(
+  eventIds: string[],
+): Promise<Map<string, number | null>> {
+  const uniqueEventIds = Array.from(new Set(eventIds.filter(Boolean)));
+
+  if (uniqueEventIds.length === 0) {
+    return new Map();
+  }
+
+  const supabase = requireSupabaseClient();
+  const { data, error } = await supabase
+    .from("events")
+    .select("id, capacity")
+    .in("id", uniqueEventIds);
+
+  if (error) {
+    throw new Error(formatSupabaseError("List admin event capacities", error));
+  }
+
+  return new Map(
+    ((data ?? []) as AdminEventCapacityRow[])
+      .map((row) => [requiredString(row.id, ""), nullableNumber(row.capacity)] as const)
+      .filter(([eventId]) => eventId.length > 0),
   );
 }
 

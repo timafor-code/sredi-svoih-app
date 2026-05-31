@@ -12,6 +12,7 @@ import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
 import { listAdminEventOccurrences } from "../services/adminEventOccurrencesService";
 import {
+  listAdminEventCapacities,
   listEventRegistrations,
   listRegistrationEvents,
   markRegistrationAttendance,
@@ -72,17 +73,31 @@ type RegistrationActionMenuState = {
   top: number;
 };
 
-type OccurrenceSummaryCounts = {
-  confirmedCount: number;
-  pendingCount: number;
-  waitlistedCount: number;
-  cancelledCount: number;
-  rejectedCount: number;
-  attendedCount: number;
-  noShowCount: number;
+type CapacityOverviewMode = "total" | "options";
+
+type CapacityOptionStat = {
+  key: string;
+  title: string;
+  quantity: number;
+  seatsCount: number;
+  isDonation: boolean;
+  countsTowardCapacity: boolean;
 };
 
-const OCCURRENCE_SUMMARY_FETCH_LIMIT = 1000;
+const CAPACITY_OVERVIEW_MODES: Array<{
+  value: CapacityOverviewMode;
+  label: string;
+}> = [
+  { value: "total", label: "Все места выбранной даты" },
+  { value: "options", label: "По вариантам участия" },
+];
+
+const CAPACITY_OCCUPIED_STATUSES = new Set<string>([
+  "confirmed",
+  "pending",
+  "attended",
+  "no_show",
+]);
 
 const REGISTRATION_PAGE_SIZE = 50;
 const REGISTRATION_MENU_WIDTH = 232;
@@ -174,7 +189,6 @@ export function RegistrationsPage() {
   const [occurrencesError, setOccurrencesError] = useState<string | null>(null);
   const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<string | null>(null);
   const [showPastOccurrences, setShowPastOccurrences] = useState(false);
-  const [occurrenceSummary, setOccurrenceSummary] = useState<OccurrenceSummaryCounts | null>(null);
 
   const [pendingAction, setPendingAction] = useState<PendingRegistrationAction | null>(null);
   const [actionInFlight, setActionInFlight] = useState<ActionInFlight | null>(null);
@@ -215,17 +229,27 @@ export function RegistrationsPage() {
 
       try {
         const nextEvents = await listRegistrationEvents();
+        const eventCapacityById = await listAdminEventCapacities(
+          nextEvents.map((event) => event.eventId),
+        );
+        const nextEventsWithCapacity = nextEvents.map((event) => ({
+          ...event,
+          capacity: eventCapacityById.get(event.eventId) ?? event.capacity ?? null,
+        }));
 
-        setEvents(nextEvents);
+        setEvents(nextEventsWithCapacity);
         setSelectedEventId((currentEventId) => {
-          if (currentEventId && nextEvents.some((event) => event.eventId === currentEventId)) {
+          if (
+            currentEventId &&
+            nextEventsWithCapacity.some((event) => event.eventId === currentEventId)
+          ) {
             return currentEventId;
           }
 
-          return nextEvents[0]?.eventId ?? null;
+          return nextEventsWithCapacity[0]?.eventId ?? null;
         });
 
-        return nextEvents;
+        return nextEventsWithCapacity;
       } catch (nextError) {
         const message =
           nextError instanceof Error
@@ -269,6 +293,8 @@ export function RegistrationsPage() {
 
       if (!silent) {
         setRegistrationsLoading(true);
+        setRegistrations([]);
+        setSelectedRegistrationId(null);
       }
 
       setRegistrationsError(null);
@@ -319,36 +345,6 @@ export function RegistrationsPage() {
     ],
   );
 
-  const loadOccurrenceSummary = useCallback(async () => {
-    if (!selectedEventId || !eventHasOccurrences || !selectedOccurrenceId) {
-      setOccurrenceSummary(null);
-      return;
-    }
-
-    try {
-      const rows = await listEventRegistrations({
-        eventId: selectedEventId,
-        occurrenceId: selectedOccurrenceId,
-        status: "all",
-        search: null,
-        limit: OCCURRENCE_SUMMARY_FETCH_LIMIT,
-        offset: 0,
-      });
-
-      setOccurrenceSummary({
-        confirmedCount: rows.filter((row) => row.status === "confirmed").length,
-        pendingCount: rows.filter((row) => row.status === "pending").length,
-        waitlistedCount: rows.filter((row) => row.status === "waitlisted").length,
-        cancelledCount: rows.filter((row) => row.status === "cancelled").length,
-        rejectedCount: rows.filter((row) => row.status === "rejected").length,
-        attendedCount: rows.filter((row) => row.status === "attended").length,
-        noShowCount: rows.filter((row) => row.status === "no_show").length,
-      });
-    } catch {
-      setOccurrenceSummary(null);
-    }
-  }, [eventHasOccurrences, selectedEventId, selectedOccurrenceId]);
-
   useEffect(() => {
     void loadRegistrationEventSummaries().catch(() => undefined);
   }, [loadRegistrationEventSummaries]);
@@ -356,10 +352,6 @@ export function RegistrationsPage() {
   useEffect(() => {
     void loadRegistrations().catch(() => undefined);
   }, [loadRegistrations]);
-
-  useEffect(() => {
-    void loadOccurrenceSummary();
-  }, [loadOccurrenceSummary]);
 
   useEffect(() => {
     if (!selectedEventId || !eventHasOccurrences) {
@@ -497,9 +489,8 @@ export function RegistrationsPage() {
     await Promise.all([
       loadRegistrationEventSummaries({ silent: true }),
       loadRegistrations({ silent: true }),
-      loadOccurrenceSummary(),
     ]);
-  }, [loadOccurrenceSummary, loadRegistrationEventSummaries, loadRegistrations]);
+  }, [loadRegistrationEventSummaries, loadRegistrations]);
 
   const runRegistrationAction = useCallback(
     async (registration: AdminEventRegistrationRow, action: RegistrationAction) => {
@@ -570,7 +561,6 @@ export function RegistrationsPage() {
     setOccurrences([]);
     setOccurrencesError(null);
     setShowPastOccurrences(false);
-    setOccurrenceSummary(null);
   }, []);
 
   const handleSelectOccurrence = useCallback((occurrenceId: string | null) => {
@@ -754,13 +744,10 @@ export function RegistrationsPage() {
                 />
               ) : null}
 
-              <RegistrationSummaryCards
-                counts={occurrenceSummary ?? selectedEvent}
-                scopeLabel={
-                  eventHasOccurrences && occurrenceSummary
-                    ? "Счётчики выбранной даты"
-                    : "Счётчики события"
-                }
+              <RegistrationCapacityOverview
+                event={selectedEvent}
+                registrations={registrations}
+                selectedOccurrence={eventHasOccurrences ? selectedOccurrence : null}
               />
 
               <div className="registration-controls">
@@ -962,37 +949,152 @@ function CounterPill({
   );
 }
 
-function RegistrationSummaryCards({
-  counts,
-  scopeLabel,
+function RegistrationCapacityOverview({
+  event,
+  registrations,
+  selectedOccurrence,
 }: {
-  counts: OccurrenceSummaryCounts;
-  scopeLabel?: string;
+  event: AdminRegistrationEventSummary;
+  registrations: AdminEventRegistrationRow[];
+  selectedOccurrence: AdminEventOccurrence | null;
 }) {
-  const inactiveCount = counts.cancelledCount + counts.rejectedCount;
-  const attendanceCount = counts.attendedCount + counts.noShowCount;
+  const [mode, setMode] = useState<CapacityOverviewMode>("total");
+  const selectedModeLabel =
+    CAPACITY_OVERVIEW_MODES.find((entry) => entry.value === mode)?.label ??
+    CAPACITY_OVERVIEW_MODES[0].label;
+  const occupiedRegistrations = useMemo(
+    () => registrations.filter((registration) => isCapacityOccupiedStatus(registration.status)),
+    [registrations],
+  );
+  const occupiedSeats = useMemo(
+    () =>
+      occupiedRegistrations.reduce(
+        (total, registration) => total + Math.max(0, registration.seatsCount),
+        0,
+      ),
+    [occupiedRegistrations],
+  );
+  const optionStats = useMemo(
+    () => buildCapacityOptionStats(occupiedRegistrations),
+    [occupiedRegistrations],
+  );
+  const capacity = selectedOccurrence?.capacity ?? event.capacity ?? null;
+  const hasCapacity = capacity !== null;
+  const safeCapacity = Math.max(0, capacity ?? 0);
+  const fillPercent =
+    hasCapacity && safeCapacity > 0
+      ? Math.min(100, Math.round((occupiedSeats / safeCapacity) * 100))
+      : null;
+  const remainingSeats = hasCapacity ? Math.max(0, safeCapacity - occupiedSeats) : null;
+  const freePercent =
+    hasCapacity && safeCapacity > 0 && remainingSeats !== null
+      ? Math.max(0, 100 - (fillPercent ?? 0))
+      : null;
 
   return (
-    <div className="registration-summary-block">
-      {scopeLabel ? <span className="registration-summary-scope">{scopeLabel}</span> : null}
-      <div className="registration-summary-grid">
-        <SummaryCard label="confirmed" tone="green" value={counts.confirmedCount} />
-        <SummaryCard label="pending" tone="gold" value={counts.pendingCount} />
-        <SummaryCard label="waitlisted" tone="purple" value={counts.waitlistedCount} />
-        <SummaryCard
-          description={`${counts.cancelledCount} отменено / ${counts.rejectedCount} отклонено`}
-          label="cancelled/rejected"
-          tone="red"
-          value={inactiveCount}
-        />
-        <SummaryCard
-          description={`${counts.attendedCount} пришёл / ${counts.noShowCount} no-show`}
-          label="attended/no_show"
-          tone="green"
-          value={attendanceCount}
-        />
+    <section className="registration-capacity-overview" aria-label="Занятость мест">
+      <div className="registration-capacity-overview__head">
+        <div>
+          <span>{formatCapacityScopeLabel(event, selectedOccurrence)}</span>
+          <strong>{selectedModeLabel}</strong>
+        </div>
+        <label className="registration-capacity-overview__mode">
+          <span>Статистика</span>
+          <select
+            onChange={(selectEvent) =>
+              setMode(selectEvent.target.value as CapacityOverviewMode)
+            }
+            value={mode}
+          >
+            {CAPACITY_OVERVIEW_MODES.map((entry) => (
+              <option key={entry.value} value={entry.value}>
+                {entry.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
-    </div>
+
+      {mode === "total" ? (
+        <div className="registration-capacity-total">
+          <div className="registration-capacity-total__main">
+            <span>Зарегистрировалось</span>
+            <strong>
+              {hasCapacity
+                ? `${occupiedSeats} из ${safeCapacity} мест`
+                : `${occupiedSeats} мест`}
+            </strong>
+            <small>
+              {hasCapacity && remainingSeats !== null
+                ? `Осталось ${remainingSeats} мест`
+                : "Лимит мест не задан"}
+            </small>
+          </div>
+
+          <div className="registration-capacity-meter">
+            <div
+              aria-valuemax={hasCapacity ? 100 : undefined}
+              aria-valuemin={hasCapacity ? 0 : undefined}
+              aria-valuenow={fillPercent ?? undefined}
+              className="registration-capacity-meter__track"
+              role={hasCapacity ? "progressbar" : undefined}
+            >
+              <span style={{ width: `${fillPercent ?? 0}%` }} />
+            </div>
+            <div className="registration-capacity-meter__labels">
+              <span>
+                {fillPercent !== null
+                  ? `${fillPercent}% заполнено`
+                  : "Лимит мест не задан"}
+              </span>
+              {freePercent !== null && remainingSeats !== null ? (
+                <span>
+                  {remainingSeats} ({freePercent}%) свободно
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="registration-capacity-total__free">
+            <span>Свободные места</span>
+            <strong>
+              {remainingSeats !== null && freePercent !== null
+                ? `${remainingSeats} (${freePercent}%)`
+                : "Лимит не задан"}
+            </strong>
+            <small>
+              {remainingSeats !== null
+                ? `Осталось ${remainingSeats} мест`
+                : "Без расчёта процента"}
+            </small>
+          </div>
+        </div>
+      ) : (
+        <div className="registration-capacity-options">
+          {optionStats.length > 0 ? (
+            optionStats.map((option) => {
+              const doesNotOccupySeats =
+                option.isDonation || option.countsTowardCapacity === false;
+
+              return (
+                <div className="registration-capacity-option-row" key={option.key}>
+                  <div>
+                    <strong>{option.title}</strong>
+                    {doesNotOccupySeats ? <span>места не занимает</span> : null}
+                  </div>
+                  <span>{option.quantity} шт.</span>
+                  <span>{option.seatsCount} мест</span>
+                </div>
+              );
+            })
+          ) : (
+            <div className="registration-capacity-options__empty">
+              В загруженных заявках нет выбранных вариантов участия.
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1084,24 +1186,64 @@ function isPastOccurrence(occurrence: AdminEventOccurrence): boolean {
   return timestamp < Date.now();
 }
 
-function SummaryCard({
-  description,
-  label,
-  tone,
-  value,
-}: {
-  description?: string;
-  label: string;
-  tone: AdminBadgeTone;
-  value: number;
-}) {
-  return (
-    <div className={`registration-summary-card registration-summary-card--${tone}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-      {description ? <small>{description}</small> : null}
-    </div>
+function formatCapacityScopeLabel(
+  event: AdminRegistrationEventSummary,
+  selectedOccurrence: AdminEventOccurrence | null,
+): string {
+  if (selectedOccurrence) {
+    const titleSuffix = selectedOccurrence.title ? ` · ${selectedOccurrence.title}` : "";
+    return `${formatDateTime(selectedOccurrence.startsAt)}${titleSuffix}`;
+  }
+
+  return event.startsAt ? formatDateTime(event.startsAt) : "Дата события";
+}
+
+function isCapacityOccupiedStatus(status: string): boolean {
+  return CAPACITY_OCCUPIED_STATUSES.has(status);
+}
+
+function buildCapacityOptionStats(
+  registrations: AdminEventRegistrationRow[],
+): CapacityOptionStat[] {
+  const statsByKey = new Map<string, CapacityOptionStat>();
+
+  registrations.forEach((registration) => {
+    registration.selectedOptions.forEach((option) => {
+      const key = getCapacityOptionKey(option);
+      const current = statsByKey.get(key);
+
+      if (current) {
+        current.quantity += option.quantity;
+        current.seatsCount += option.seatsCount;
+        current.isDonation = current.isDonation || option.isDonation;
+        current.countsTowardCapacity =
+          current.countsTowardCapacity && option.countsTowardCapacity;
+        return;
+      }
+
+      statsByKey.set(key, {
+        key,
+        title: option.title,
+        quantity: option.quantity,
+        seatsCount: option.seatsCount,
+        isDonation: option.isDonation,
+        countsTowardCapacity: option.countsTowardCapacity,
+      });
+    });
+  });
+
+  return Array.from(statsByKey.values()).sort((left, right) =>
+    left.title.localeCompare(right.title, "ru"),
   );
+}
+
+function getCapacityOptionKey(option: AdminRegistrationOptionSelectionSummary): string {
+  return [
+    option.optionId ?? option.title,
+    option.optionType,
+    option.isDonation ? "donation" : "seat",
+    option.countsTowardCapacity ? "capacity" : "no-capacity",
+  ].join("|");
 }
 
 function RegistrationsTable({

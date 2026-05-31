@@ -32,6 +32,7 @@ export type AdminRegistrationEventSummaryRpcRow = {
   starts_at: string | null;
   event_kind: AdminEventKind | string;
   registration_mode: AdminEventRegistrationMode | string;
+  capacity: number | string | null;
   occurrence_count: number | string | null;
   confirmed_count: number | string | null;
   pending_count: number | string | null;
@@ -48,6 +49,7 @@ export type AdminRegistrationEventSummary = {
   startsAt: string | null;
   eventKind: AdminEventKind | string;
   registrationMode: AdminEventRegistrationMode | string;
+  capacity: number | null;
   occurrenceCount: number;
   confirmedCount: number;
   pendingCount: number;

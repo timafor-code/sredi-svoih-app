@@ -4762,60 +4762,208 @@ a {
   font-size: 13px;
 }
 
-.registration-summary-grid {
+.registration-capacity-overview {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
+  gap: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius);
+  padding: 16px;
+  background:
+    linear-gradient(135deg, rgba(16, 18, 30, 0.92), rgba(44, 45, 62, 0.82)),
+    rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-.registration-summary-card {
+.registration-capacity-overview__head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.registration-capacity-overview__head > div {
   display: grid;
   min-width: 0;
-  min-height: 86px;
-  align-content: start;
-  gap: 7px;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  padding: 10px;
-  background: rgba(255, 255, 255, 0.04);
+  gap: 4px;
 }
 
-.registration-summary-card span {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 850;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.registration-summary-card strong {
-  color: var(--text);
-  font-size: 26px;
-  line-height: 1;
-}
-
-.registration-summary-card small {
+.registration-capacity-overview__head span,
+.registration-capacity-total__main > span,
+.registration-capacity-total__free > span,
+.registration-capacity-overview__mode span {
   color: var(--text-muted);
   font-size: 11px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.registration-capacity-overview__head strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.registration-capacity-overview__mode {
+  display: grid;
+  flex: 0 0 min(260px, 42%);
+  gap: 6px;
+}
+
+.registration-capacity-overview__mode select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius);
+  outline: 0;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.registration-capacity-overview__mode select:focus {
+  border-color: rgba(242, 184, 75, 0.62);
+}
+
+.registration-capacity-total {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.95fr) minmax(240px, 1.55fr) minmax(160px, 0.85fr);
+  align-items: center;
+  gap: 16px;
+}
+
+.registration-capacity-total__main,
+.registration-capacity-total__free {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.registration-capacity-total__main strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 40px;
+  line-height: 0.96;
+}
+
+.registration-capacity-total__main small,
+.registration-capacity-total__free small {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 650;
   line-height: 1.35;
 }
 
-.registration-summary-card--green {
-  border-color: rgba(53, 199, 89, 0.23);
+.registration-capacity-meter,
+.registration-capacity-total__free {
+  border-left: 1px solid rgba(255, 255, 255, 0.13);
+  padding-left: 16px;
 }
 
-.registration-summary-card--gold {
-  border-color: rgba(242, 184, 75, 0.24);
+.registration-capacity-meter {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
 }
 
-.registration-summary-card--purple {
-  border-color: rgba(167, 139, 250, 0.25);
+.registration-capacity-meter__track {
+  position: relative;
+  overflow: hidden;
+  height: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
 }
 
-.registration-summary-card--red {
-  border-color: rgba(229, 44, 54, 0.24);
+.registration-capacity-meter__track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(53, 199, 89, 0.86), rgba(242, 184, 75, 0.9));
+}
+
+.registration-capacity-meter__labels {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.3;
+}
+
+.registration-capacity-total__free strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 28px;
+  line-height: 1;
+}
+
+.registration-capacity-options {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius);
+}
+
+.registration-capacity-option-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(74px, auto) minmax(90px, auto);
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.registration-capacity-option-row:first-child {
+  border-top: 0;
+}
+
+.registration-capacity-option-row > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.registration-capacity-option-row strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.registration-capacity-option-row span {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: right;
+}
+
+.registration-capacity-option-row > div span {
+  flex: 0 0 auto;
+  border: 1px solid rgba(242, 184, 75, 0.22);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: rgba(255, 222, 156, 0.94);
+  font-size: 10px;
+  text-align: left;
+}
+
+.registration-capacity-options__empty {
+  padding: 14px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 650;
 }
 
 .registration-controls {
@@ -4904,19 +5052,6 @@ a {
   color: rgba(229, 100, 110, 0.92);
   font-size: 12px;
   font-weight: 600;
-}
-
-.registration-summary-block {
-  display: grid;
-  gap: 8px;
-}
-
-.registration-summary-scope {
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
 }
 
 .registration-filter-chips {
@@ -5604,8 +5739,17 @@ a {
     max-height: none;
   }
 
-  .registration-summary-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .registration-capacity-total {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .registration-capacity-meter,
+  .registration-capacity-total__free {
+    border-top: 1px solid rgba(255, 255, 255, 0.13);
+    border-left: 0;
+    padding-top: 14px;
+    padding-left: 0;
   }
 
   .event-form-grid--time {
@@ -5806,7 +5950,6 @@ a {
   .member-detail-counters,
   .member-membership-fields,
   .registrations-workspace,
-  .registration-summary-grid,
   .registration-detail-row,
   .registration-option-row,
   .event-action-dialog__states,
@@ -5818,9 +5961,38 @@ a {
   }
 
   .registrations-main-head,
+  .registration-capacity-overview__head,
   .registrations-table-panel__head {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .registration-capacity-overview__mode {
+    flex-basis: auto;
+    width: 100%;
+  }
+
+  .registration-capacity-total__main strong {
+    font-size: 34px;
+  }
+
+  .registration-capacity-option-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 6px;
+  }
+
+  .registration-capacity-option-row > div {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .registration-capacity-option-row strong {
+    white-space: normal;
+  }
+
+  .registration-capacity-option-row span {
+    text-align: left;
   }
 
   .registrations-main-actions,
