@@ -10,6 +10,8 @@ import {
   sefirahMeaningRu,
   sefirahRu,
 } from './hebcalRu';
+import { getJewishCalendarEventMeta } from './jewishCalendarEventMeta';
+import type { JewishCalendarEventKind } from './jewishCalendarEventMeta';
 
 export type HebcalLang = 'he' | 'ru' | 'en';
 
@@ -141,11 +143,15 @@ export function getOmerInfo(
 export interface UpcomingHoliday {
   date: Date;
   daysUntil: number;
+  descriptionRu: string;
   emoji: string | null;
   hebrewDateRu: string;
+  kind: JewishCalendarEventKind;
   nameEn: string;
   nameHe: string;
   nameRu: string;
+  observanceNoteRu?: string;
+  typeLabelRu: string;
 }
 
 const UPCOMING_HOLIDAY_MASK =
@@ -155,6 +161,29 @@ const UPCOMING_HOLIDAY_EXCLUDE_MASK = flags.EREV | flags.OMER_COUNT | flags.PARS
 function isDisplayHoliday(event: Event) {
   const mask = event.getFlags();
   return (mask & UPCOMING_HOLIDAY_MASK) !== 0 && (mask & UPCOMING_HOLIDAY_EXCLUDE_MASK) === 0;
+}
+
+function classifyCalendarEvent(event: Event): JewishCalendarEventKind {
+  const mask = event.getFlags();
+  const isChag = (mask & flags.CHAG) !== 0;
+
+  if (((mask & (flags.MAJOR_FAST | flags.MINOR_FAST)) !== 0) && !isChag) {
+    return 'fast';
+  }
+
+  if (isChag) {
+    return 'holiday';
+  }
+
+  if ((mask & flags.MODERN_HOLIDAY) !== 0) {
+    return 'modern_holiday';
+  }
+
+  if ((mask & flags.MINOR_HOLIDAY) !== 0) {
+    return 'minor_holiday';
+  }
+
+  return 'other';
 }
 
 export function getUpcomingHoliday(
@@ -170,15 +199,21 @@ export function getUpcomingHoliday(
   const eventDate = event.getDate();
   const gregDate = eventDate.greg();
   const nameEn = event.basename();
+  const kind = classifyCalendarEvent(event);
+  const meta = getJewishCalendarEventMeta(nameEn, kind);
 
   return {
     date: gregDate,
     daysUntil: daysUntil(gregDate, start.greg()),
+    descriptionRu: meta.descriptionRu,
     emoji: event.getEmoji(),
     hebrewDateRu: getHebrewDateLabel(eventDate),
+    kind,
     nameEn,
     nameHe: event.render('he'),
     nameRu: holidayNameRu(nameEn),
+    observanceNoteRu: meta.observanceNoteRu,
+    typeLabelRu: meta.typeLabelRu,
   };
 }
 
