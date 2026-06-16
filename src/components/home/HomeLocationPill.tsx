@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '@/theme/colors';
 
@@ -9,17 +9,18 @@ type HomeLocationPillProps = {
 
 export function HomeLocationPill({ city }: HomeLocationPillProps) {
   return (
-    <Pressable style={styles.locationPill}>
+    <View style={styles.locationPill}>
       <Ionicons name="location" size={13} color="rgba(255,255,255,0.62)" />
-      <Text style={styles.locationText}>{city} · зманим</Text>
+      <Text numberOfLines={1} style={styles.locationText}>{city} · зманим</Text>
       <Ionicons name="chevron-forward" size={13} color="rgba(255,255,255,0.4)" />
-    </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   locationPill: {
     alignSelf: 'flex-start',
+    maxWidth: '100%',
     minHeight: 34,
     flexDirection: 'row',
     alignItems: 'center',
@@ -31,8 +32,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   locationText: {
+    flexShrink: 1,
     color: colors.textSecondary,
     fontSize: 13,
     fontWeight: '500',
+    lineHeight: 17,
   },
 });

@@ -8,6 +8,7 @@ import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { formatRuDayMonth, formatRuTime } from '@/lib/dates';
 import { getEffectiveEventStartsAt } from '@/lib/eventTime';
 import { colors } from '@/theme/colors';
+import { radius } from '@/theme/radius';
 import type { EventItem } from '@/types/event';
 
 type HomeEventCardProps = {
@@ -83,7 +84,13 @@ export function HomeEventCard({
     const handlePress = () => onPress(event.id);
 
     return (
-      <Pressable onPress={handlePress} style={({ pressed }) => pressed && styles.pressed}>
+      <Pressable
+        accessibilityLabel={event.title}
+        accessibilityRole="button"
+        hitSlop={2}
+        onPress={handlePress}
+        style={({ pressed }) => [styles.eventPressable, pressed && styles.pressed]}
+      >
         <GlassCard padded={false}>
           <View style={styles.eventCard}>
             {showImage ? (
@@ -114,6 +121,7 @@ export function HomeEventCard({
               </View>
 
               <PrimaryButton
+                accessibilityRole="button"
                 title={getActionTitle(event)}
                 onPress={handlePress}
                 buttonStyle={styles.eventButton}
@@ -140,6 +148,9 @@ const HOME_EVENT_CARD_HEIGHT = 160;
 const HOME_EVENT_IMAGE_WIDTH = 138;
 
 const styles = StyleSheet.create({
+  eventPressable: {
+    borderRadius: radius.glassCard,
+  },
   eventCard: {
     height: HOME_EVENT_CARD_HEIGHT,
     flexDirection: 'row',
@@ -225,7 +236,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   pressed: {
-    opacity: 0.86,
+    opacity: 0.92,
+    transform: [{ scale: 0.995 }],
   },
   stateContent: {
     alignItems: 'center',

@@ -13,13 +13,13 @@ export function HomeParshaCard({ hebrew, title }: HomeParshaCardProps) {
   return (
     <GlassCard>
       <View style={styles.rowBetween}>
-        <View>
+        <View style={styles.textBlock}>
           <Text style={styles.overline}>НЕДЕЛЬНАЯ ГЛАВА</Text>
-          <Text style={styles.cardTitle}>{title}</Text>
-          <Text style={styles.hebrew}>{hebrew}</Text>
+          <Text numberOfLines={2} style={styles.cardTitle}>{title}</Text>
+          <Text numberOfLines={1} style={styles.hebrew}>{hebrew}</Text>
           <View style={[styles.dateRow, styles.teacherRow]}>
             <Ionicons name="person-outline" size={11} color={colors.textDim} />
-            <Text style={styles.mutedSmall}>Урок раввина Рувена Колина</Text>
+            <Text numberOfLines={1} style={styles.mutedSmall}>Урок раввина Рувена Колина</Text>
           </View>
         </View>
         <View style={[styles.roundIcon, styles.blueBox]}>
@@ -49,28 +49,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 14,
   },
+  textBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
   cardTitle: {
     color: colors.text,
     fontSize: 16,
     fontWeight: '700',
+    lineHeight: 20,
     marginTop: 6,
   },
   hebrew: {
     color: colors.textGhost,
     fontSize: 12,
     fontStyle: 'italic',
+    lineHeight: 16,
     marginTop: 2,
   },
   teacherRow: {
     marginTop: 6,
   },
   mutedSmall: {
+    flex: 1,
+    minWidth: 0,
     color: colors.textDim,
     fontSize: 12,
+    lineHeight: 16,
   },
   roundIcon: {
     width: 52,
     height: 52,
+    flexShrink: 0,
     borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',

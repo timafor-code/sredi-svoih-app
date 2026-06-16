@@ -16,20 +16,22 @@ export function HomeCandleLightingCard({
   time,
 }: HomeCandleLightingCardProps) {
   return (
-    <GlassCard>
+    <GlassCard contentStyle={styles.cardContent}>
       <View style={styles.rowBetween}>
         <View style={styles.candleLeft}>
           <Text style={styles.largeEmoji}>🕯️</Text>
-          <View>
+          <View style={styles.textBlock}>
             <Text style={styles.overline}>ЗАЖИГАНИЕ СВЕЧЕЙ</Text>
-            <Text style={styles.bigTime}>{time}</Text>
-            <Text style={styles.mutedSmall}>{subtitle}</Text>
+            <Text numberOfLines={1} style={styles.bigTime}>{time}</Text>
+            <Text numberOfLines={1} style={styles.mutedSmall}>{subtitle}</Text>
           </View>
         </View>
         <PrimaryButton
+          accessibilityRole="button"
           title="Записаться на Шабат"
           buttonStyle={styles.candleButton}
           onPress={onRegistrationPress}
+          textNumberOfLines={2}
           textStyle={styles.smallButtonText}
         />
       </View>
@@ -38,6 +40,9 @@ export function HomeCandleLightingCard({
 }
 
 const styles = StyleSheet.create({
+  cardContent: {
+    paddingVertical: 14,
+  },
   overline: {
     color: colors.textDim,
     fontSize: 10,
@@ -49,30 +54,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 14,
+    gap: 12,
   },
   candleLeft: {
     flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 12,
+  },
+  textBlock: {
+    flex: 1,
+    minWidth: 0,
   },
   largeEmoji: {
     fontSize: 30,
+    lineHeight: 34,
   },
   bigTime: {
     color: colors.text,
     fontSize: 26,
     fontWeight: '700',
+    lineHeight: 31,
   },
   mutedSmall: {
     color: colors.textDim,
     fontSize: 12,
+    lineHeight: 16,
   },
   candleButton: {
-    width: 104,
-    minHeight: 48,
+    width: 110,
+    minHeight: 44,
     paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   smallButtonText: {
     fontSize: 12,
