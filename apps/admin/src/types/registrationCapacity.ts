@@ -26,11 +26,6 @@ export type AdminRegistrationCapacityReservationRow = {
   created_at: string;
 };
 
-export type AdminRegistrationCapacityRegistrationStatusRow = {
-  id: string;
-  status: string;
-};
-
 export type AdminRegistrationCapacityBucket = {
   capacityUnitId: string;
   key: string;
