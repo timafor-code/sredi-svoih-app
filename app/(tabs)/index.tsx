@@ -5,6 +5,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { HomeEventCard } from '@/components/home/HomeEventCard';
+import { HomeJewishCalendarInfoModal } from '@/components/home/HomeJewishCalendarInfoModal';
 import { MorningShemaCard } from '@/components/prayer/MorningShemaCard';
 import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
 import { PrayerWindowCard } from '@/components/prayer/PrayerWindowCard';
@@ -55,6 +56,28 @@ function pluralDays(count: number) {
   return 'дней';
 }
 
+function getCalendarEventOverline(event: UpcomingHoliday | null) {
+  if (!event) return 'БЛИЖАЙШИЙ ПРАЗДНИК';
+
+  if (event.kind === 'fast') return 'БЛИЖАЙШИЙ ПОСТ';
+  if (event.kind === 'modern_holiday') return 'ПАМЯТНАЯ ДАТА';
+  return 'БЛИЖАЙШИЙ ПРАЗДНИК';
+}
+
+function getCalendarEventAccessibilityLabel(event: UpcomingHoliday | null) {
+  if (!event) return 'Открыть календарь';
+
+  if (event.kind === 'fast') {
+    return `Открыть описание поста ${event.nameRu}`;
+  }
+
+  if (event.kind === 'modern_holiday') {
+    return `Открыть описание памятной даты ${event.nameRu}`;
+  }
+
+  return `Открыть описание праздника ${event.nameRu}`;
+}
+
 function isPrayerRecordableNow(prayer: PrayerWindow) {
   const nowMs = Date.now();
   return nowMs >= prayer.start.getTime() && nowMs <= prayer.end.getTime();
@@ -84,6 +107,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const now = useNow();
   const [selectedPrayerId, setSelectedPrayerId] = useState<PrayerWindow['id'] | null>(null);
+  const [calendarInfoVisible, setCalendarInfoVisible] = useState(false);
   const requestedPrayerActivityForUserRef = useRef<string | null>(null);
   const authUser = useAuthStore((state) => state.user);
   const events = useEventsStore((state) => state.events);
@@ -128,6 +152,11 @@ export default function HomeScreen() {
   );
   const homeEvent = useMemo(() => selectHomeEvent(events, now.getTime()), [events, now]);
   const homeShabbatEvent = useMemo(() => selectHomeShabbatEvent(events, now.getTime()), [events, now]);
+  const calendarDaysUntilText = useMemo(() => {
+    if (!holiday) return undefined;
+    if (holiday.daysUntil === 0) return 'сегодня';
+    return `${holiday.daysUntil} ${pluralDays(holiday.daysUntil)}`;
+  }, [holiday]);
   const currentPrayer =
     prayers.find((item) => item.active) ?? prayers.find((item) => now.getTime() < item.start.getTime()) ?? prayers[prayers.length - 1]!;
   const selectedPrayer = useMemo(
@@ -205,6 +234,11 @@ export default function HomeScreen() {
 
     handleHomeEventPress(homeShabbatEvent.id);
   }, [handleHomeEventPress, homeShabbatEvent]);
+
+  const handleCalendarInfoPress = useCallback(() => {
+    if (!holiday) return;
+    setCalendarInfoVisible(true);
+  }, [holiday]);
 
   return (
     <Screen>
@@ -298,7 +332,7 @@ export default function HomeScreen() {
           <View style={styles.candleLeft}>
             <Text style={styles.largeEmoji}>📜</Text>
             <View style={styles.flex}>
-              <Text style={styles.overline}>БЛИЖАЙШИЙ ПРАЗДНИК</Text>
+              <Text style={styles.overline}>{getCalendarEventOverline(holiday)}</Text>
               <Text style={styles.orangeTitle}>{holiday?.nameRu ?? 'Календарь'}</Text>
               <Text style={styles.mutedSmall}>
                 {holiday ? `${formatRuWeekdayDayMonth(holiday.date, daily.timeZone)} · ${holiday.hebrewDateRu}` : 'Hebcal не нашёл событие'}
@@ -310,7 +344,14 @@ export default function HomeScreen() {
             <Text style={styles.mutedSmall}>{holiday ? pluralDays(holiday.daysUntil) : ''}</Text>
           </View>
         </View>
-        <PrimaryButton title={holiday ? `Подробнее: ${holiday.nameRu} →` : 'Открыть календарь →'} />
+        <PrimaryButton
+          accessibilityLabel={getCalendarEventAccessibilityLabel(holiday)}
+          accessibilityRole="button"
+          disabled={!holiday}
+          onPress={handleCalendarInfoPress}
+          textNumberOfLines={2}
+          title={holiday ? `Подробнее: ${holiday.nameRu} →` : 'Открыть календарь →'}
+        />
       </GlassCard>
 
       <View>
@@ -362,6 +403,14 @@ export default function HomeScreen() {
           visible
         />
       ) : null}
+
+      <HomeJewishCalendarInfoModal
+        daysUntilText={calendarDaysUntilText}
+        event={holiday}
+        onClose={() => setCalendarInfoVisible(false)}
+        timeZone={daily.timeZone}
+        visible={calendarInfoVisible}
+      />
     </Screen>
   );
 }
