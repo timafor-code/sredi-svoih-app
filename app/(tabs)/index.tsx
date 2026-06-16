@@ -1,20 +1,20 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 
-import { GlassCard } from '@/components/glass/GlassCard';
+import { HomeBirthdaysCard } from '@/components/home/HomeBirthdaysCard';
+import type { HomeBirthdayCardItem } from '@/components/home/HomeBirthdaysCard';
+import { HomeCandleLightingCard } from '@/components/home/HomeCandleLightingCard';
 import { HomeEventCard } from '@/components/home/HomeEventCard';
+import { HomeJewishCalendarCard } from '@/components/home/HomeJewishCalendarCard';
 import { HomeJewishCalendarInfoModal } from '@/components/home/HomeJewishCalendarInfoModal';
+import { HomeLocationPill } from '@/components/home/HomeLocationPill';
+import { HomeParshaCard } from '@/components/home/HomeParshaCard';
 import { MorningShemaCard } from '@/components/prayer/MorningShemaCard';
 import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
 import { PrayerWindowCard } from '@/components/prayer/PrayerWindowCard';
-import { Avatar } from '@/components/ui/Avatar';
 import { Logo, OmerPill } from '@/components/ui/BrandHeader';
-import { PrimaryButton } from '@/components/ui/PrimaryButton';
-import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Screen } from '@/components/ui/Screen';
-import { SectionTitle } from '@/components/ui/SectionTitle';
 import { useNow } from '@/hooks/useNow';
 import { getCommunityContactRoute, getIphoneContactRoute } from '@/lib/contactRoutes';
 import { formatRuDate, formatRuTime, formatRuWeekdayDayMonth } from '@/lib/dates';
@@ -35,19 +35,7 @@ import { useEventsStore } from '@/store/useEventsStore';
 import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
-import type { BirthdayOccurrence, ContactSource } from '@/types/contact';
-
-type HomeBirthdayItem = {
-  active: boolean;
-  bg: string;
-  contactId: string;
-  hebrew: string;
-  id: string;
-  initials: string;
-  name: string;
-  source: ContactSource;
-  when: string;
-};
+import type { BirthdayOccurrence } from '@/types/contact';
 
 function pluralDays(count: number) {
   const lastTwo = count % 100;
@@ -85,7 +73,7 @@ function isPrayerRecordableNow(prayer: PrayerWindow) {
   return nowMs >= prayer.start.getTime() && nowMs <= prayer.end.getTime();
 }
 
-function toHomeBirthdayItem(birthday: BirthdayOccurrence): HomeBirthdayItem {
+function toHomeBirthdayItem(birthday: BirthdayOccurrence): HomeBirthdayCardItem {
   return {
     active: birthday.daysUntil === 0,
     bg: birthday.avatarBg ?? '#2a3a4a',
@@ -99,30 +87,10 @@ function toHomeBirthdayItem(birthday: BirthdayOccurrence): HomeBirthdayItem {
   };
 }
 
-function getBirthdayContactRoute(item: HomeBirthdayItem) {
+function getBirthdayContactRoute(item: HomeBirthdayCardItem) {
   return item.source === 'iphone'
     ? getIphoneContactRoute(item.contactId)
     : getCommunityContactRoute(item.contactId);
-}
-
-function BirthdayRow({ item, isLast }: { item: HomeBirthdayItem; isLast?: boolean }) {
-  const router = useRouter();
-
-  return (
-    <Pressable
-      onPress={() => router.push(getBirthdayContactRoute(item))}
-      style={({ pressed }) => [styles.birthdayRow, !isLast && styles.rowDivider, pressed && styles.rowPressed]}
-    >
-      <Avatar initials={item.initials} bg={item.bg} size={40} />
-      <View style={styles.birthdayContent}>
-        <View style={styles.flex}>
-          <Text style={styles.birthdayName}>{item.name}</Text>
-          <Text style={styles.birthdayHebrew}>{item.hebrew}</Text>
-        </View>
-        <Text style={[styles.birthdayWhen, item.active && styles.birthdayToday]}>{item.when}</Text>
-      </View>
-    </Pressable>
-  );
 }
 
 export default function HomeScreen() {
@@ -165,7 +133,7 @@ export default function HomeScreen() {
   const holiday = useMemo<UpcomingHoliday | null>(() => getUpcomingHoliday(hdate, location.getIsrael()), [hdate, location]);
   const candle = useMemo<CandleLightingInfo | null>(() => getUpcomingCandleLighting(now, location), [location, now]);
   const prayers = useMemo(() => getPrayerWindows(daily, now), [daily, now]);
-  const birthdays = useMemo<HomeBirthdayItem[]>(
+  const birthdays = useMemo<HomeBirthdayCardItem[]>(
     () => upcomingBirthdays.slice(0, 3).map(toHomeBirthdayItem),
     [upcomingBirthdays],
   );
@@ -265,6 +233,10 @@ export default function HomeScreen() {
     setCalendarInfoVisible(true);
   }, [holiday]);
 
+  const handleBirthdayPress = useCallback((item: HomeBirthdayCardItem) => {
+    router.push(getBirthdayContactRoute(item));
+  }, [router]);
+
   return (
     <Screen>
       <View style={styles.header}>
@@ -277,11 +249,7 @@ export default function HomeScreen() {
         <Text style={styles.dateSubtitle}>{formatRuDate(now, location.getTzid())}</Text>
       </View>
 
-      <Pressable style={styles.locationPill}>
-        <Ionicons name="location" size={13} color="rgba(255,255,255,0.62)" />
-        <Text style={styles.locationText}>{city} · зманим</Text>
-        <Ionicons name="chevron-forward" size={13} color="rgba(255,255,255,0.4)" />
-      </Pressable>
+      <HomeLocationPill city={city} />
 
       <MorningShemaCard
         city={city}
@@ -314,93 +282,35 @@ export default function HomeScreen() {
         windowStart={currentPrayer.start}
       />
 
-      <GlassCard>
-        <View style={styles.rowBetween}>
-          <View>
-            <Text style={styles.overline}>НЕДЕЛЬНАЯ ГЛАВА</Text>
-            <Text style={styles.cardTitle}>{parsha?.ru ?? holiday?.nameRu ?? 'Особое чтение'}</Text>
-            <Text style={styles.hebrew}>{parsha?.he ?? holiday?.nameHe ?? ''}</Text>
-            <View style={[styles.dateRow, styles.teacherRow]}>
-              <Ionicons name="person-outline" size={11} color={colors.textDim} />
-              <Text style={styles.mutedSmall}>Урок раввина Рувена Колина</Text>
-            </View>
-          </View>
-          <View style={[styles.roundIcon, styles.blueBox]}>
-            <Text style={styles.roundIconText}>📖</Text>
-          </View>
-        </View>
-      </GlassCard>
+      <HomeParshaCard
+        title={parsha?.ru ?? holiday?.nameRu ?? 'Особое чтение'}
+        hebrew={parsha?.he ?? holiday?.nameHe ?? ''}
+      />
 
-      <GlassCard>
-        <View style={styles.rowBetween}>
-          <View style={styles.candleLeft}>
-            <Text style={styles.largeEmoji}>🕯️</Text>
-            <View>
-              <Text style={styles.overline}>ЗАЖИГАНИЕ СВЕЧЕЙ</Text>
-              <Text style={styles.bigTime}>{candle?.time ?? daily.times.sunset.time}</Text>
-              <Text style={styles.mutedSmall}>
-                {candle ? formatRuWeekdayDayMonth(candle.date, daily.timeZone) : 'перед Шабатом и праздниками'}
-              </Text>
-            </View>
-          </View>
-          <PrimaryButton
-            title="Записаться на Шабат"
-            buttonStyle={styles.candleButton}
-            onPress={handleShabbatRegistrationPress}
-            textStyle={styles.smallButtonText}
-          />
-        </View>
-      </GlassCard>
+      <HomeCandleLightingCard
+        time={candle?.time ?? daily.times.sunset.time}
+        subtitle={candle ? formatRuWeekdayDayMonth(candle.date, daily.timeZone) : 'перед Шабатом и праздниками'}
+        onRegistrationPress={handleShabbatRegistrationPress}
+      />
 
-      <GlassCard>
-        <View style={styles.holidayTop}>
-          <View style={styles.candleLeft}>
-            <Text style={styles.largeEmoji}>📜</Text>
-            <View style={styles.flex}>
-              <Text style={styles.overline}>{getCalendarEventOverline(holiday)}</Text>
-              <Text style={styles.orangeTitle}>{holiday?.nameRu ?? 'Календарь'}</Text>
-              <Text style={styles.mutedSmall}>
-                {holiday ? `${formatRuWeekdayDayMonth(holiday.date, daily.timeZone)} · ${holiday.hebrewDateRu}` : 'Hebcal не нашёл событие'}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.daysBlock}>
-            <Text style={styles.daysNumber}>{holiday?.daysUntil ?? '-'}</Text>
-            <Text style={styles.mutedSmall}>{holiday ? pluralDays(holiday.daysUntil) : ''}</Text>
-          </View>
-        </View>
-        <PrimaryButton
-          accessibilityLabel={getCalendarEventAccessibilityLabel(holiday)}
-          accessibilityRole="button"
-          disabled={!holiday}
-          onPress={handleCalendarInfoPress}
-          textNumberOfLines={2}
-          title={holiday ? `Подробнее: ${holiday.nameRu} →` : 'Открыть календарь →'}
-        />
-      </GlassCard>
+      <HomeJewishCalendarCard
+        accessibilityLabel={getCalendarEventAccessibilityLabel(holiday)}
+        buttonTitle={holiday ? `Подробнее: ${holiday.nameRu} →` : 'Открыть календарь →'}
+        daysLabel={holiday ? pluralDays(holiday.daysUntil) : ''}
+        daysValue={holiday?.daysUntil ?? '-'}
+        disabled={!holiday}
+        onPress={handleCalendarInfoPress}
+        overline={getCalendarEventOverline(holiday)}
+        subtitle={holiday ? `${formatRuWeekdayDayMonth(holiday.date, daily.timeZone)} · ${holiday.hebrewDateRu}` : 'Hebcal не нашёл событие'}
+        title={holiday?.nameRu ?? 'Календарь'}
+      />
 
-      <View>
-        <SectionTitle title="ДНИ РОЖДЕНИЯ · КОНТАКТЫ" action="Все контакты →" />
-        <GlassCard padded={false}>
-          {birthdaysLoading ? (
-            <View style={styles.birthdayState}>
-              <Text style={styles.birthdayStateText}>Загружаем дни рождения…</Text>
-            </View>
-          ) : birthdaysError ? (
-            <View style={styles.birthdayState}>
-              <Text style={styles.birthdayStateText}>Не удалось загрузить контакты</Text>
-            </View>
-          ) : birthdays.length === 0 ? (
-            <View style={styles.birthdayState}>
-              <Text style={styles.birthdayStateText}>Ближайшие дни рождения не найдены</Text>
-            </View>
-          ) : (
-            birthdays.map((item, index) => (
-              <BirthdayRow key={item.id} item={item} isLast={index === birthdays.length - 1} />
-            ))
-          )}
-        </GlassCard>
-      </View>
+      <HomeBirthdaysCard
+        error={birthdaysError}
+        items={birthdays}
+        loading={birthdaysLoading}
+        onBirthdayPress={handleBirthdayPress}
+      />
 
       {selectedPrayer?.active ? (
         <PrayerActionModal
@@ -471,174 +381,5 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     fontSize: 14,
     marginTop: 2,
-  },
-  locationPill: {
-    alignSelf: 'flex-start',
-    minHeight: 34,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.glass.w10,
-    backgroundColor: colors.glass.w07,
-    paddingHorizontal: 14,
-  },
-  locationText: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  overline: {
-    color: colors.textDim,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    includeFontPadding: false,
-  },
-  dateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  rowBetween: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 14,
-  },
-  cardTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '700',
-    marginTop: 6,
-  },
-  hebrew: {
-    color: colors.textGhost,
-    fontSize: 12,
-    fontStyle: 'italic',
-    marginTop: 2,
-  },
-  teacherRow: {
-    marginTop: 6,
-  },
-  mutedSmall: {
-    color: colors.textDim,
-    fontSize: 12,
-  },
-  roundIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-  },
-  blueBox: {
-    borderColor: 'rgba(80,120,200,0.30)',
-    backgroundColor: 'rgba(80,120,200,0.15)',
-  },
-  roundIconText: {
-    fontSize: 26,
-  },
-  candleLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  largeEmoji: {
-    fontSize: 30,
-  },
-  bigTime: {
-    color: colors.text,
-    fontSize: 26,
-    fontWeight: '700',
-  },
-  candleButton: {
-    width: 104,
-    minHeight: 48,
-    paddingHorizontal: 10,
-  },
-  smallButtonText: {
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  holidayTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
-  },
-  orangeTitle: {
-    color: colors.orange,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  daysBlock: {
-    alignItems: 'center',
-  },
-  daysNumber: {
-    color: colors.orange,
-    fontSize: 36,
-    fontWeight: '800',
-    lineHeight: 38,
-  },
-  birthdayRow: {
-    minHeight: 64,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  rowDivider: {
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.12)',
-  },
-  rowPressed: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-  birthdayContent: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  flex: {
-    flex: 1,
-    minWidth: 0,
-  },
-  birthdayName: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  birthdayHebrew: {
-    color: colors.textGhost,
-    fontSize: 12,
-    fontStyle: 'italic',
-    marginTop: 2,
-  },
-  birthdayWhen: {
-    color: colors.textDim,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  birthdayToday: {
-    color: colors.orange,
-  },
-  birthdayState: {
-    minHeight: 64,
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  birthdayStateText: {
-    color: colors.textDim,
-    fontSize: 13,
-    fontWeight: '500',
   },
 });
