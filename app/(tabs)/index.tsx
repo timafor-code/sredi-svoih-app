@@ -15,10 +15,8 @@ import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
-import { mockContacts } from '@/data/mockContacts';
 import { useNow } from '@/hooks/useNow';
-import { getUpcomingContactBirthdays } from '@/lib/birthdays';
-import { getCommunityContactRoute } from '@/lib/contactRoutes';
+import { getCommunityContactRoute, getIphoneContactRoute } from '@/lib/contactRoutes';
 import { formatRuDate, formatRuTime, formatRuWeekdayDayMonth } from '@/lib/dates';
 import { selectHomeEvent, selectHomeShabbatEvent } from '@/lib/homeEvents';
 import { getHebrewDate, getHebrewDateLabel, getUpcomingHoliday, getWeeklyParsha } from '@/lib/hebcal';
@@ -32,18 +30,22 @@ import {
 } from '@/lib/zmanim';
 import type { CandleLightingInfo, PrayerWindow } from '@/lib/zmanim';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useContactsStore } from '@/store/useContactsStore';
 import { useEventsStore } from '@/store/useEventsStore';
 import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
+import type { BirthdayOccurrence, ContactSource } from '@/types/contact';
 
 type HomeBirthdayItem = {
   active: boolean;
   bg: string;
+  contactId: string;
   hebrew: string;
   id: string;
   initials: string;
   name: string;
+  source: ContactSource;
   when: string;
 };
 
@@ -83,12 +85,32 @@ function isPrayerRecordableNow(prayer: PrayerWindow) {
   return nowMs >= prayer.start.getTime() && nowMs <= prayer.end.getTime();
 }
 
+function toHomeBirthdayItem(birthday: BirthdayOccurrence): HomeBirthdayItem {
+  return {
+    active: birthday.daysUntil === 0,
+    bg: birthday.avatarBg ?? '#2a3a4a',
+    contactId: birthday.contactId,
+    hebrew: birthday.nextDateHebrew.label || birthday.hebrewBirthDate.label,
+    id: birthday.id,
+    initials: birthday.initials,
+    name: birthday.displayName,
+    source: birthday.source,
+    when: birthday.when,
+  };
+}
+
+function getBirthdayContactRoute(item: HomeBirthdayItem) {
+  return item.source === 'iphone'
+    ? getIphoneContactRoute(item.contactId)
+    : getCommunityContactRoute(item.contactId);
+}
+
 function BirthdayRow({ item, isLast }: { item: HomeBirthdayItem; isLast?: boolean }) {
   const router = useRouter();
 
   return (
     <Pressable
-      onPress={() => router.push(getCommunityContactRoute(item.id))}
+      onPress={() => router.push(getBirthdayContactRoute(item))}
       style={({ pressed }) => [styles.birthdayRow, !isLast && styles.rowDivider, pressed && styles.rowPressed]}
     >
       <Avatar initials={item.initials} bg={item.bg} size={40} />
@@ -114,6 +136,12 @@ export default function HomeScreen() {
   const eventsLoading = useEventsStore((state) => state.loading);
   const eventsError = useEventsStore((state) => state.error);
   const loadEvents = useEventsStore((state) => state.loadEvents);
+  const upcomingBirthdays = useContactsStore((state) => state.upcomingBirthdays);
+  const refreshContacts = useContactsStore((state) => state.refreshAll);
+  const contactsLoadingCommunity = useContactsStore((state) => state.loadingCommunity);
+  const contactsLoadingLocal = useContactsStore((state) => state.loadingLocal);
+  const contactsCommunityError = useContactsStore((state) => state.communityError);
+  const contactsError = useContactsStore((state) => state.error);
   const prayerActivityItems = usePrayerTrackerStore((state) => state.items);
   const prayerActivityLoading = usePrayerTrackerStore((state) => state.loading);
   const loadMyActivity = usePrayerTrackerStore((state) => state.loadMyActivity);
@@ -138,18 +166,11 @@ export default function HomeScreen() {
   const candle = useMemo<CandleLightingInfo | null>(() => getUpcomingCandleLighting(now, location), [location, now]);
   const prayers = useMemo(() => getPrayerWindows(daily, now), [daily, now]);
   const birthdays = useMemo<HomeBirthdayItem[]>(
-    () =>
-      getUpcomingContactBirthdays(mockContacts, now, 3).map(({ birthday, contact }) => ({
-        active: birthday.daysUntil === 0,
-        bg: contact.avatarBg ?? '#2a3a4a',
-        hebrew: contact.hebrewName,
-        id: contact.id,
-        initials: contact.initials,
-        name: contact.name,
-        when: birthday.when,
-      })),
-    [now],
+    () => upcomingBirthdays.slice(0, 3).map(toHomeBirthdayItem),
+    [upcomingBirthdays],
   );
+  const birthdaysLoading = (contactsLoadingCommunity || contactsLoadingLocal) && birthdays.length === 0;
+  const birthdaysError = Boolean((contactsCommunityError || contactsError) && birthdays.length === 0);
   const homeEvent = useMemo(() => selectHomeEvent(events, now.getTime()), [events, now]);
   const homeShabbatEvent = useMemo(() => selectHomeShabbatEvent(events, now.getTime()), [events, now]);
   const calendarDaysUntilText = useMemo(() => {
@@ -187,6 +208,10 @@ export default function HomeScreen() {
   useEffect(() => {
     void loadEvents().catch(() => undefined);
   }, [authUser?.id, loadEvents]);
+
+  useEffect(() => {
+    void refreshContacts().catch(() => undefined);
+  }, [authUser?.id, refreshContacts]);
 
   useEffect(() => {
     if (!authUser) {
@@ -357,9 +382,23 @@ export default function HomeScreen() {
       <View>
         <SectionTitle title="ДНИ РОЖДЕНИЯ · КОНТАКТЫ" action="Все контакты →" />
         <GlassCard padded={false}>
-          {birthdays.map((item, index) => (
-            <BirthdayRow key={item.name} item={item} isLast={index === birthdays.length - 1} />
-          ))}
+          {birthdaysLoading ? (
+            <View style={styles.birthdayState}>
+              <Text style={styles.birthdayStateText}>Загружаем дни рождения…</Text>
+            </View>
+          ) : birthdaysError ? (
+            <View style={styles.birthdayState}>
+              <Text style={styles.birthdayStateText}>Не удалось загрузить контакты</Text>
+            </View>
+          ) : birthdays.length === 0 ? (
+            <View style={styles.birthdayState}>
+              <Text style={styles.birthdayStateText}>Ближайшие дни рождения не найдены</Text>
+            </View>
+          ) : (
+            birthdays.map((item, index) => (
+              <BirthdayRow key={item.id} item={item} isLast={index === birthdays.length - 1} />
+            ))
+          )}
         </GlassCard>
       </View>
 
@@ -590,5 +629,16 @@ const styles = StyleSheet.create({
   },
   birthdayToday: {
     color: colors.orange,
+  },
+  birthdayState: {
+    minHeight: 64,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  birthdayStateText: {
+    color: colors.textDim,
+    fontSize: 13,
+    fontWeight: '500',
   },
 });
