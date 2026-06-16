@@ -1,10 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
+import { HomeEventCard } from '@/components/home/HomeEventCard';
 import { MorningShemaCard } from '@/components/prayer/MorningShemaCard';
 import { PrayerActionModal } from '@/components/prayer/PrayerActionModal';
 import { PrayerWindowCard } from '@/components/prayer/PrayerWindowCard';
@@ -19,6 +19,7 @@ import { useNow } from '@/hooks/useNow';
 import { getUpcomingContactBirthdays } from '@/lib/birthdays';
 import { getCommunityContactRoute } from '@/lib/contactRoutes';
 import { formatRuDate, formatRuTime, formatRuWeekdayDayMonth } from '@/lib/dates';
+import { selectHomeEvent } from '@/lib/homeEvents';
 import { getHebrewDate, getHebrewDateLabel, getUpcomingHoliday, getWeeklyParsha } from '@/lib/hebcal';
 import type { UpcomingHoliday, WeeklyParsha } from '@/lib/hebcal';
 import { formatLocalDateKey, hasRecordedActivity, prayerActivityTypeFromPrayerId } from '@/lib/prayerTracker';
@@ -30,6 +31,7 @@ import {
 } from '@/lib/zmanim';
 import type { CandleLightingInfo, PrayerWindow } from '@/lib/zmanim';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useEventsStore } from '@/store/useEventsStore';
 import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
@@ -58,32 +60,6 @@ function isPrayerRecordableNow(prayer: PrayerWindow) {
   return nowMs >= prayer.start.getTime() && nowMs <= prayer.end.getTime();
 }
 
-function EventCard() {
-  return (
-    <GlassCard padded={false}>
-      <View style={styles.eventCard}>
-        <LinearGradient colors={['#22233a', '#101119']} style={styles.eventImage}>
-          <View style={styles.personLeft} />
-          <View style={styles.personHeadLeft} />
-          <View style={styles.personRight} />
-          <View style={styles.personHeadRight} />
-          <LinearGradient colors={['transparent', 'rgba(13,15,24,0.72)']} style={styles.eventImageShade} />
-        </LinearGradient>
-        <View style={styles.eventBody}>
-          <View>
-            <View style={styles.dateRow}>
-              <Ionicons name="calendar-outline" size={11} color={colors.textDim} />
-              <Text style={styles.eventMeta}>23 апреля, 19:00</Text>
-            </View>
-            <Text style={styles.eventTitle}>Встреча с Игорем Маричем</Text>
-          </View>
-          <PrimaryButton title="Записаться →" buttonStyle={styles.eventButton} />
-        </View>
-      </View>
-    </GlassCard>
-  );
-}
-
 function BirthdayRow({ item, isLast }: { item: HomeBirthdayItem; isLast?: boolean }) {
   const router = useRouter();
 
@@ -105,10 +81,15 @@ function BirthdayRow({ item, isLast }: { item: HomeBirthdayItem; isLast?: boolea
 }
 
 export default function HomeScreen() {
+  const router = useRouter();
   const now = useNow();
   const [selectedPrayerId, setSelectedPrayerId] = useState<PrayerWindow['id'] | null>(null);
   const requestedPrayerActivityForUserRef = useRef<string | null>(null);
   const authUser = useAuthStore((state) => state.user);
+  const events = useEventsStore((state) => state.events);
+  const eventsLoading = useEventsStore((state) => state.loading);
+  const eventsError = useEventsStore((state) => state.error);
+  const loadEvents = useEventsStore((state) => state.loadEvents);
   const prayerActivityItems = usePrayerTrackerStore((state) => state.items);
   const prayerActivityLoading = usePrayerTrackerStore((state) => state.loading);
   const loadMyActivity = usePrayerTrackerStore((state) => state.loadMyActivity);
@@ -145,6 +126,7 @@ export default function HomeScreen() {
       })),
     [now],
   );
+  const homeEvent = useMemo(() => selectHomeEvent(events, now.getTime()), [events, now]);
   const currentPrayer =
     prayers.find((item) => item.active) ?? prayers.find((item) => now.getTime() < item.start.getTime()) ?? prayers[prayers.length - 1]!;
   const selectedPrayer = useMemo(
@@ -171,6 +153,10 @@ export default function HomeScreen() {
       authUser.id,
     ),
   );
+
+  useEffect(() => {
+    void loadEvents().catch(() => undefined);
+  }, [authUser?.id, loadEvents]);
 
   useEffect(() => {
     if (!authUser) {
@@ -206,6 +192,10 @@ export default function HomeScreen() {
     setSelectedPrayerId(currentPrayer.id);
   };
 
+  const handleHomeEventPress = useCallback((eventId: string) => {
+    router.push({ pathname: '/events/[id]', params: { id: eventId } });
+  }, [router]);
+
   return (
     <Screen>
       <View style={styles.header}>
@@ -232,7 +222,12 @@ export default function HomeScreen() {
         now={now}
         source="home_shema_card"
       />
-      <EventCard />
+      <HomeEventCard
+        event={homeEvent}
+        loading={eventsLoading}
+        error={eventsError}
+        onPress={handleHomeEventPress}
+      />
       <PrayerWindowCard
         accent={currentPrayer.accent}
         active={currentPrayer.active}
@@ -402,83 +397,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     includeFontPadding: false,
   },
-  eventCard: {
-    minHeight: 130,
-    flexDirection: 'row',
-  },
-  eventImage: {
-    width: 140,
-    minHeight: 130,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  eventImageShade: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  personLeft: {
-    position: 'absolute',
-    bottom: 0,
-    left: 10,
-    width: 55,
-    height: 90,
-    borderTopLeftRadius: 40,
-    borderTopRightRadius: 40,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  personHeadLeft: {
-    position: 'absolute',
-    bottom: 70,
-    left: 22,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-  },
-  personRight: {
-    position: 'absolute',
-    bottom: 0,
-    right: 10,
-    width: 60,
-    height: 100,
-    borderTopLeftRadius: 40,
-    borderTopRightRadius: 40,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  personHeadRight: {
-    position: 'absolute',
-    bottom: 80,
-    right: 16,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.09)',
-  },
-  eventBody: {
-    flex: 1,
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-  },
   dateRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-  },
-  eventMeta: {
-    color: colors.textDim,
-    fontSize: 11,
-  },
-  eventTitle: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 20,
-    marginTop: 6,
-  },
-  eventButton: {
-    minHeight: 36,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
   },
   rowBetween: {
     flexDirection: 'row',
