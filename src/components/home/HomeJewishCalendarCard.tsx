@@ -28,24 +28,25 @@ export function HomeJewishCalendarCard({
   title,
 }: HomeJewishCalendarCardProps) {
   return (
-    <GlassCard>
+    <GlassCard contentStyle={styles.cardContent}>
       <View style={styles.holidayTop}>
         <View style={styles.candleLeft}>
           <Text style={styles.largeEmoji}>📜</Text>
           <View style={styles.flex}>
             <Text style={styles.overline}>{overline}</Text>
-            <Text style={styles.orangeTitle}>{title}</Text>
-            <Text style={styles.mutedSmall}>{subtitle}</Text>
+            <Text numberOfLines={2} style={styles.orangeTitle}>{title}</Text>
+            <Text numberOfLines={1} style={styles.mutedSmall}>{subtitle}</Text>
           </View>
         </View>
         <View style={styles.daysBlock}>
-          <Text style={styles.daysNumber}>{daysValue}</Text>
-          <Text style={styles.mutedSmall}>{daysLabel}</Text>
+          <Text numberOfLines={1} style={styles.daysNumber}>{daysValue}</Text>
+          <Text numberOfLines={1} style={styles.daysLabel}>{daysLabel}</Text>
         </View>
       </View>
       <PrimaryButton
         accessibilityLabel={accessibilityLabel}
         accessibilityRole="button"
+        accessibilityState={{ disabled }}
         disabled={disabled}
         onPress={onPress}
         textNumberOfLines={2}
@@ -56,6 +57,10 @@ export function HomeJewishCalendarCard({
 }
 
 const styles = StyleSheet.create({
+  cardContent: {
+    gap: 12,
+    paddingVertical: 14,
+  },
   overline: {
     color: colors.textDim,
     fontSize: 10,
@@ -65,36 +70,48 @@ const styles = StyleSheet.create({
   },
   candleLeft: {
     flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 12,
   },
   largeEmoji: {
     fontSize: 30,
+    lineHeight: 34,
   },
   mutedSmall: {
     color: colors.textDim,
     fontSize: 12,
+    lineHeight: 16,
   },
   holidayTop: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 12,
   },
   orangeTitle: {
     color: colors.orange,
     fontSize: 16,
     fontWeight: '700',
+    lineHeight: 20,
+    marginTop: 2,
   },
   daysBlock: {
+    minWidth: 46,
     alignItems: 'center',
+    flexShrink: 0,
   },
   daysNumber: {
     color: colors.orange,
     fontSize: 36,
     fontWeight: '800',
     lineHeight: 38,
+  },
+  daysLabel: {
+    color: colors.textDim,
+    fontSize: 12,
+    lineHeight: 16,
+    textAlign: 'center',
   },
   flex: {
     flex: 1,
