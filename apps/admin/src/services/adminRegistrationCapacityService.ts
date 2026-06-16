@@ -1,8 +1,8 @@
+import { listEventRegistrations } from "./adminEventsService";
 import { requireSupabaseClient } from "./supabaseClient";
 import type {
   AdminRegistrationCapacityBucket,
   AdminRegistrationCapacityBucketRow,
-  AdminRegistrationCapacityRegistrationStatusRow,
   AdminRegistrationCapacityReservationRow,
   ListAdminRegistrationCapacityBucketsParams,
 } from "../types/registrationCapacity";
@@ -45,15 +45,15 @@ type MutableCapacityBucket = {
   createdAt: string;
 };
 
-const ACTIVE_CAPACITY_REGISTRATION_STATUSES = [
+const ACTIVE_CAPACITY_REGISTRATION_STATUSES = new Set<string>([
   "confirmed",
   "pending",
   "attended",
   "no_show",
-];
+]);
 
 const QUERY_PAGE_SIZE = 1000;
-const REGISTRATION_STATUS_CHUNK_SIZE = 400;
+const REGISTRATIONS_PAGE_SIZE = 1000;
 
 const CAPACITY_UNIT_FIELDS = `
   id,
@@ -124,14 +124,13 @@ function uniqueStrings(values: Iterable<string>): string[] {
   );
 }
 
-function chunkValues<T>(values: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-
-  for (let index = 0; index < values.length; index += size) {
-    chunks.push(values.slice(index, index + size));
-  }
-
-  return chunks;
+function isInOccurrenceScope(
+  occurrenceId: string | null,
+  rowOccurrenceId: string | null,
+): boolean {
+  return occurrenceId === null
+    ? rowOccurrenceId === null
+    : rowOccurrenceId === occurrenceId;
 }
 
 function normalizeCapacityUnitRow(
@@ -250,7 +249,7 @@ async function fetchCapacityReservations(
 }
 
 async function fetchActiveRegistrationIds(
-  eventId: string,
+  params: ListAdminRegistrationCapacityBucketsParams,
   registrationIds: string[],
 ): Promise<Set<string>> {
   const uniqueIds = uniqueStrings(registrationIds);
@@ -259,28 +258,35 @@ async function fetchActiveRegistrationIds(
     return new Set();
   }
 
-  const supabase = requireSupabaseClient();
+  const reservationRegistrationIds = new Set(uniqueIds);
   const activeIds = new Set<string>();
 
-  for (const chunk of chunkValues(uniqueIds, REGISTRATION_STATUS_CHUNK_SIZE)) {
-    const { data, error } = await supabase
-      .from("event_registrations")
-      .select("id, status")
-      .eq("event_id", eventId)
-      .in("id", chunk)
-      .in("status", ACTIVE_CAPACITY_REGISTRATION_STATUSES);
-
-    if (error) {
-      throw new Error(formatSupabaseError("List active capacity registrations", error));
-    }
-
-    ((data ?? []) as AdminRegistrationCapacityRegistrationStatusRow[]).forEach((row) => {
-      const registrationId = requiredString(row.id, "");
-
-      if (registrationId) {
-        activeIds.add(registrationId);
-      }
+  for (let offset = 0; ; offset += REGISTRATIONS_PAGE_SIZE) {
+    const page = await listEventRegistrations({
+      eventId: params.eventId,
+      occurrenceId: params.occurrenceId,
+      status: "all",
+      search: null,
+      limit: REGISTRATIONS_PAGE_SIZE,
+      offset,
     });
+
+    page
+      .filter((registration) =>
+        isInOccurrenceScope(params.occurrenceId, registration.occurrenceId),
+      )
+      .forEach((registration) => {
+        if (
+          reservationRegistrationIds.has(registration.id) &&
+          ACTIVE_CAPACITY_REGISTRATION_STATUSES.has(registration.status)
+        ) {
+          activeIds.add(registration.id);
+        }
+      });
+
+    if (page.length < REGISTRATIONS_PAGE_SIZE) {
+      break;
+    }
   }
 
   return activeIds;
@@ -294,7 +300,7 @@ export async function listAdminRegistrationCapacityBuckets(
     fetchCapacityReservations(params),
   ]);
   const activeRegistrationIds = await fetchActiveRegistrationIds(
-    params.eventId,
+    params,
     reservations.map((reservation) => reservation.registrationId),
   );
   const bucketsByUnitId = new Map<string, MutableCapacityBucket>();
