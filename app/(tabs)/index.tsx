@@ -19,7 +19,7 @@ import { useNow } from '@/hooks/useNow';
 import { getUpcomingContactBirthdays } from '@/lib/birthdays';
 import { getCommunityContactRoute } from '@/lib/contactRoutes';
 import { formatRuDate, formatRuTime, formatRuWeekdayDayMonth } from '@/lib/dates';
-import { selectHomeEvent } from '@/lib/homeEvents';
+import { selectHomeEvent, selectHomeShabbatEvent } from '@/lib/homeEvents';
 import { getHebrewDate, getHebrewDateLabel, getUpcomingHoliday, getWeeklyParsha } from '@/lib/hebcal';
 import type { UpcomingHoliday, WeeklyParsha } from '@/lib/hebcal';
 import { formatLocalDateKey, hasRecordedActivity, prayerActivityTypeFromPrayerId } from '@/lib/prayerTracker';
@@ -127,6 +127,7 @@ export default function HomeScreen() {
     [now],
   );
   const homeEvent = useMemo(() => selectHomeEvent(events, now.getTime()), [events, now]);
+  const homeShabbatEvent = useMemo(() => selectHomeShabbatEvent(events, now.getTime()), [events, now]);
   const currentPrayer =
     prayers.find((item) => item.active) ?? prayers.find((item) => now.getTime() < item.start.getTime()) ?? prayers[prayers.length - 1]!;
   const selectedPrayer = useMemo(
@@ -195,6 +196,15 @@ export default function HomeScreen() {
   const handleHomeEventPress = useCallback((eventId: string) => {
     router.push({ pathname: '/events/[id]', params: { id: eventId } });
   }, [router]);
+
+  const handleShabbatRegistrationPress = useCallback(() => {
+    if (!homeShabbatEvent) {
+      Alert.alert('Регистрация на ближайший Шабат пока не опубликована.');
+      return;
+    }
+
+    handleHomeEventPress(homeShabbatEvent.id);
+  }, [handleHomeEventPress, homeShabbatEvent]);
 
   return (
     <Screen>
@@ -277,6 +287,7 @@ export default function HomeScreen() {
           <PrimaryButton
             title="Записаться на Шабат"
             buttonStyle={styles.candleButton}
+            onPress={handleShabbatRegistrationPress}
             textStyle={styles.smallButtonText}
           />
         </View>
