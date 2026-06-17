@@ -22,10 +22,27 @@ This file is a reference document only. Production code should not copy the prot
 
 ## This PR
 
-- Adds `admin_get_registration_capacity_analytics(p_event_id uuid, p_occurrence_id uuid default null)` as the server-side source of truth for the "Места и регистрации" capacity overview.
-- Migrates the admin capacity service away from client-side bucket analytics. `listAdminRegistrationCapacityBuckets` is now a compatibility wrapper around the analytics RPC.
-- Keeps the v15 layout shell, registration detail modal, seating placeholder button, export, refresh, pagination, and status actions unchanged.
+- Updates the production "Места и регистрации" card to the v15 compact/collapsible UX.
+- Uses the existing `admin_get_registration_capacity_analytics` service/RPC data as the source of truth for buckets, totals, options, unique guests, multi-meal guests, and donations.
+- Adds compact quick-pills for capacity buckets, unique guests, and multi-meal guests.
+- Adds detail modes for capacity slots, all seats in the selected date, participation options, and unique guests.
+- Keeps the v15 layout shell, registration detail modal, row click/Enter behavior, seating placeholder button, export, refresh, pagination, occurrence selector, and status actions unchanged.
 - Keeps seating editor/backend work out of production scope.
+
+## v15 capacity card UI
+
+The card header shows "Места и регистрации" with the selected event date/session scope. The card starts in a compact state: quick-pills stay visible, while the detailed area can be expanded or collapsed from the header toggle.
+
+Quick-pills show the main capacity buckets with occupied/capacity values and a progress bar. Buckets near capacity get an attention state. The compact strip also shows unique people and guests that occupy multiple meal/capacity slots when the analytics payload provides those values.
+
+The detailed area has four modes:
+
+- `По слотам мест`: renders one row per capacity bucket with title, key/code, occupied/capacity, remaining seats, fill percent, reservation count, option breakdown summary, and the existing "Схема рассадки" button.
+- `Все места выбранной даты`: renders total occupied seats, total capacity, remaining/free seats, and fill percent. Unlimited/null capacity is displayed as "без лимита" and never as `NaN`.
+- `По вариантам участия`: renders RPC option breakdown with option title, registration/quantity count, seat count, and explicit markers for donations or `counts_toward_capacity = false` options as "не занимает место".
+- `Уникальные гости`: renders unique people/guests, multi-meal guests, sponsors/donations, donation options when present, and total occupied seats with graceful fallbacks for missing analytics fields.
+
+The "Схема рассадки" button remains a safe placeholder. It does not open a seating editor, create backend calls, or persist seating data; it only shows the existing toast that the seating editor will be added in a separate PR.
 
 ## Capacity analytics RPC
 
@@ -63,7 +80,7 @@ Seat occupancy for mapped capacity units comes from `event_registration_capacity
 
 Donation options and options with `counts_toward_capacity = false` do not occupy seats and do not create capacity reservations. They are returned in `option_stats` and `donation_options` with `isDonation` / `countsTowardCapacity` markers so the UI can display them without counting them as occupied capacity.
 
-The detailed v15 capacity card UI is intentionally deferred to PR 4: `feature/admin-registrations-capacity-v15-ui`.
+The detailed bucket breakdown chart/list toggle is intentionally deferred to PR 5: `feature/admin-registrations-bucket-breakdown`.
 
 ## Next seating work
 

@@ -4,11 +4,16 @@ import type { AdminEventOccurrence } from "../../types/eventOccurrences";
 import type {
   AdminRegistrationCapacityAnalytics,
   AdminRegistrationCapacityBucket,
+  AdminRegistrationCapacityBucketAggregate,
+  AdminRegistrationCapacityBucketOptionBreakdown,
+  AdminRegistrationCapacityOptionStat,
+  AdminRegistrationCapacityTotals,
 } from "../../types/registrationCapacity";
 import type { AdminRegistrationEventSummary } from "../../types/registrations";
 import { formatDateTime } from "./formatters";
 
-type CapacityOverviewMode = "total" | "options" | "buckets";
+type CapacityOverviewMode = "buckets" | "total" | "options" | "guests";
+type CapacityPillTone = "default" | "hot" | "info" | "gold";
 
 type CapacityBucketView = AdminRegistrationCapacityBucket & {
   effectiveCapacity: number | null;
@@ -18,14 +23,26 @@ type CapacityBucketView = AdminRegistrationCapacityBucket & {
   usesFallbackCapacity: boolean;
 };
 
+type CapacityQuickPill = {
+  key: string;
+  title: string;
+  value: string;
+  detail: string;
+  fillPercent: number | null;
+  tone: CapacityPillTone;
+};
+
 const CAPACITY_OVERVIEW_MODE_OPTIONS: Array<{
   value: CapacityOverviewMode;
   label: string;
 }> = [
+  { value: "buckets", label: "По слотам мест" },
   { value: "total", label: "Все места выбранной даты" },
   { value: "options", label: "По вариантам участия" },
-  { value: "buckets", label: "По слотам мест" },
+  { value: "guests", label: "Уникальные гости" },
 ];
+
+const HOT_FILL_PERCENT = 85;
 
 export function RegistrationCapacityBucketsOverview({
   analytics,
@@ -42,340 +59,62 @@ export function RegistrationCapacityBucketsOverview({
   onOpenSeatingPlaceholder: (bucket: AdminRegistrationCapacityBucket) => void;
   selectedOccurrence: AdminEventOccurrence | null;
 }) {
-  const [mode, setMode] = useState<CapacityOverviewMode>("total");
+  const [mode, setMode] = useState<CapacityOverviewMode>("buckets");
+  const [isExpanded, setIsExpanded] = useState(false);
   const isOccurrenceMissing = event.occurrenceCount > 0 && !selectedOccurrence;
   const buckets = analytics?.buckets ?? [];
   const hasBuckets = buckets.length > 0;
+  const scopeLabel = formatCapacityScopeLabel(event, selectedOccurrence);
   const selectedModeLabel =
     CAPACITY_OVERVIEW_MODE_OPTIONS.find((entry) => entry.value === mode)?.label ??
     CAPACITY_OVERVIEW_MODE_OPTIONS[0].label;
-  const occupiedSeats = analytics?.totals.activeSeatsCount ?? 0;
   const optionStats = analytics?.optionStats ?? [];
-  const legacyCapacity =
-    analytics?.totals.capacity ?? selectedOccurrence?.capacity ?? event.capacity ?? null;
-  const legacySafeCapacity = Math.max(0, legacyCapacity ?? 0);
-  const legacyFillPercent =
-    analytics?.totals.fillPercent ??
-    (legacyCapacity !== null && legacySafeCapacity > 0
-      ? Math.min(100, Math.round((occupiedSeats / legacySafeCapacity) * 100))
-      : null);
-  const legacyRemainingSeats =
-    analytics?.totals.remainingSeats ??
-    (legacyCapacity !== null ? Math.max(0, legacySafeCapacity - occupiedSeats) : null);
-  const legacyFreePercent =
-    analytics?.totals.freePercent ??
-    (legacyCapacity !== null && legacySafeCapacity > 0 && legacyRemainingSeats !== null
-      ? Math.max(0, 100 - (legacyFillPercent ?? 0))
-      : null);
-  const bucketViews = useMemo(
-    () => buckets.map((bucket) => buildCapacityBucketView(bucket, legacyCapacity)),
-    [buckets, legacyCapacity],
+  const bucketViews = useMemo(() => buckets.map(buildCapacityBucketView), [buckets]);
+  const bucketAggregate = analytics?.bucketAggregate ?? null;
+  const quickPills = useMemo(
+    () =>
+      analytics && !isOccurrenceMissing
+        ? buildQuickPills({
+            bucketAggregate,
+            bucketViews,
+            totals: analytics.totals,
+          })
+        : [],
+    [analytics, bucketAggregate, bucketViews, isOccurrenceMissing],
   );
-  const fallbackBucketAggregate = useMemo(
-    () => buildCapacityBucketAggregate(bucketViews),
-    [bucketViews],
-  );
-  const bucketAggregate = analytics?.bucketAggregate ?? fallbackBucketAggregate;
 
   useEffect(() => {
     setMode(hasBuckets ? "buckets" : "total");
+    setIsExpanded(false);
   }, [event.eventId, hasBuckets, selectedOccurrence?.id]);
 
-  const renderLegacyTotal = () => {
-    if (analyticsLoading) {
-      return (
-        <div className="registration-capacity-soft-state">
-          Загружаем данные занятости мест...
-        </div>
-      );
-    }
-
-    if (analyticsError) {
-      return (
-        <div className="registration-capacity-soft-state registration-capacity-soft-state--error">
-          <strong>Не удалось загрузить данные занятости мест.</strong>
-          <span>{analyticsError}</span>
-        </div>
-      );
-    }
-
-    return (
-      <div className="registration-capacity-total">
-        <div className="registration-capacity-total__main">
-          <span>Зарегистрировалось</span>
-          <strong>
-            {legacyCapacity !== null
-              ? `${occupiedSeats} из ${legacySafeCapacity} мест`
-              : `${occupiedSeats} мест`}
-          </strong>
-          <small>
-            {legacyCapacity !== null && legacyRemainingSeats !== null
-              ? `Осталось ${legacyRemainingSeats} мест`
-              : "Лимит мест не задан"}
-          </small>
-        </div>
-
-        <RegistrationCapacityMeter
-          fillPercent={legacyFillPercent}
-          label={
-            legacyFillPercent !== null
-              ? `${legacyFillPercent}% заполнено`
-              : "Лимит мест не задан"
-          }
-          secondaryLabel={
-            legacyFreePercent !== null && legacyRemainingSeats !== null
-              ? `${legacyRemainingSeats} (${legacyFreePercent}%) свободно`
-              : null
-          }
-        />
-
-        <div className="registration-capacity-total__free">
-          <span>Свободные места</span>
-          <strong>
-            {legacyRemainingSeats !== null && legacyFreePercent !== null
-              ? `${legacyRemainingSeats} (${legacyFreePercent}%)`
-              : "Лимит не задан"}
-          </strong>
-          <small>
-            {legacyRemainingSeats !== null
-              ? `Осталось ${legacyRemainingSeats} мест`
-              : "Без расчёта процента"}
-          </small>
-        </div>
-      </div>
-    );
-  };
-
-  const renderBucketAggregate = () => (
-    <>
-      <div className="registration-capacity-total">
-        <div className="registration-capacity-total__main">
-          <span>Занято по слотам</span>
-          <strong>
-            {bucketAggregate.knownCapacity > 0 && !bucketAggregate.hasUnlimitedBuckets
-              ? `${bucketAggregate.occupiedSeats} из ${bucketAggregate.knownCapacity} мест`
-              : `${bucketAggregate.occupiedSeats} мест`}
-          </strong>
-          <small>
-            {bucketAggregate.knownCapacity > 0
-              ? `Осталось ${bucketAggregate.remainingSeats} мест в слотах с лимитом`
-              : "Лимит мест не задан"}
-          </small>
-        </div>
-
-        <RegistrationCapacityMeter
-          fillPercent={bucketAggregate.fillPercent}
-          label={
-            bucketAggregate.fillPercent !== null
-              ? `${bucketAggregate.fillPercent}% заполнено`
-              : "Лимит мест не задан"
-          }
-          secondaryLabel={
-            bucketAggregate.freePercent !== null
-              ? `${bucketAggregate.remainingSeats} (${bucketAggregate.freePercent}%) свободно`
-              : null
-          }
-        />
-
-        <div className="registration-capacity-total__free">
-          <span>Свободные места</span>
-          <strong>
-            {bucketAggregate.knownCapacity > 0 && bucketAggregate.freePercent !== null
-              ? `${bucketAggregate.remainingSeats} (${bucketAggregate.freePercent}%)`
-              : "Лимит не задан"}
-          </strong>
-          <small>
-            {bucketAggregate.knownCapacity > 0
-              ? `По ${bucketAggregate.limitedBucketCount} слотам с лимитом`
-              : "Без расчёта процента"}
-          </small>
-        </div>
-      </div>
-
-      {bucketAggregate.hasUnlimitedBuckets ? (
-        <p className="registration-capacity-helper">
-          Есть слоты без лимита, общий процент рассчитан только по слотам с лимитом.
-        </p>
-      ) : null}
-    </>
-  );
-
-  const renderTotal = () => {
-    if (hasBuckets) {
-      return renderBucketAggregate();
-    }
-
-    return (
-      <>
-        {analyticsLoading ? (
-          <div className="registration-capacity-soft-state">
-            Загружаем слоты мест...
-          </div>
-        ) : analyticsError ? (
-          <div className="registration-capacity-soft-state registration-capacity-soft-state--error">
-            <strong>Не удалось загрузить слоты мест.</strong>
-            <span>{analyticsError}</span>
-          </div>
-        ) : null}
-        {renderLegacyTotal()}
-      </>
-    );
-  };
-
-  const renderBuckets = () => {
-    if (analyticsLoading) {
-      return (
-        <div className="registration-capacity-soft-state">
-          Загружаем слоты мест...
-        </div>
-      );
-    }
-
-    if (analyticsError) {
-      return (
-        <div className="registration-capacity-soft-state registration-capacity-soft-state--error">
-          <strong>Не удалось загрузить слоты мест.</strong>
-          <span>{analyticsError}</span>
-        </div>
-      );
-    }
-
-    if (bucketViews.length === 0) {
-      return (
-        <div className="registration-capacity-soft-state">
-          Слоты мест для выбранной даты не найдены. Используется общий overview.
-        </div>
-      );
-    }
-
-    return (
-      <div className="registration-capacity-buckets">
-        {bucketViews.map((bucket) => {
-          const hasCapacity = bucket.effectiveCapacity !== null;
-          const title = bucket.title || "Слот мест";
-          const bucketKey = bucket.key || bucket.capacityUnitId;
-
-          return (
-            <div className="registration-capacity-bucket-row" key={bucket.capacityUnitId}>
-              <div className="registration-capacity-bucket-row__head">
-                <div className="registration-capacity-bucket-row__title">
-                  <strong>{title}</strong>
-                  <span>{bucketKey}</span>
-                </div>
-                <div className="registration-capacity-bucket-row__count">
-                  <strong>
-                    {hasCapacity
-                      ? `${bucket.occupiedSeats} из ${bucket.effectiveCapacity} мест`
-                      : `${bucket.occupiedSeats} мест`}
-                  </strong>
-                  <span>
-                    {hasCapacity && bucket.effectiveRemainingSeats !== null
-                      ? `Осталось ${bucket.effectiveRemainingSeats}`
-                      : "Лимит не задан"}
-                  </span>
-                </div>
-                <button
-                  className="registration-capacity-bucket-row__seat-button"
-                  onClick={() => onOpenSeatingPlaceholder(bucket)}
-                  title="Схема рассадки будет добавлена в следующем PR"
-                  type="button"
-                >
-                  Схема рассадки
-                </button>
-              </div>
-
-              <RegistrationCapacityMeter
-                fillPercent={bucket.effectiveFillPercent}
-                label={
-                  bucket.effectiveFillPercent !== null
-                    ? `${bucket.effectiveFillPercent}% заполнено`
-                    : "Лимит не задан"
-                }
-                secondaryLabel={
-                  bucket.effectiveFreePercent !== null && bucket.effectiveRemainingSeats !== null
-                    ? `${bucket.effectiveRemainingSeats} (${bucket.effectiveFreePercent}%) свободно`
-                    : null
-                }
-              />
-
-              <div className="registration-capacity-bucket-row__meta">
-                {bucket.optionTitles.length > 0 ? (
-                  <span>Варианты: {bucket.optionTitles.join(", ")}</span>
-                ) : null}
-                {bucket.reservationsCount > 0 ? (
-                  <span>{bucket.reservationsCount} резерв.</span>
-                ) : null}
-                {bucket.usesFallbackCapacity ? (
-                  <span>лимит взят из выбранной даты/события</span>
-                ) : null}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  const renderOptions = () => {
-    if (analyticsLoading) {
-      return (
-        <div className="registration-capacity-soft-state">
-          Загружаем варианты участия...
-        </div>
-      );
-    }
-
-    if (analyticsError) {
-      return (
-        <div className="registration-capacity-soft-state registration-capacity-soft-state--error">
-          <strong>Не удалось загрузить варианты участия.</strong>
-          <span>{analyticsError}</span>
-        </div>
-      );
-    }
-
-    return (
-      <>
-        <div className="registration-capacity-options">
-          {optionStats.length > 0 ? (
-            optionStats.map((option) => {
-              const doesNotOccupySeats =
-                option.isDonation || option.countsTowardCapacity === false;
-
-              return (
-                <div className="registration-capacity-option-row" key={getCapacityOptionKey(option)}>
-                  <div>
-                    <strong>{option.title}</strong>
-                    {doesNotOccupySeats ? <span>места не занимает</span> : null}
-                  </div>
-                  <span>{option.quantity} шт.</span>
-                  <span>{option.seatsCount} мест</span>
-                </div>
-              );
-            })
-          ) : (
-            <div className="registration-capacity-options__empty">
-              В загруженных заявках нет выбранных вариантов участия.
-            </div>
-          )}
-        </div>
-        <p className="registration-capacity-helper">
-          Фактическая занятость мест считается по слотам мест.
-        </p>
-      </>
-    );
-  };
-
   return (
-    <section className="registration-capacity-overview" aria-label="Занятость мест">
-      <div className="registration-capacity-overview__head">
-        <div>
-          <span>{formatCapacityScopeLabel(event, selectedOccurrence)}</span>
-          <strong>{selectedModeLabel}</strong>
-        </div>
-        <label className="registration-capacity-overview__mode">
-          <span>Статистика</span>
+    <section
+      aria-label="Места и регистрации"
+      className={`registration-capacity-overview${isExpanded ? "" : " is-collapsed"}`}
+    >
+      <div className="cap-head">
+        <button
+          aria-controls="registration-capacity-detail"
+          aria-expanded={isExpanded}
+          className="cap-toggle"
+          onClick={() => setIsExpanded((current) => !current)}
+          type="button"
+        >
+          <span
+            aria-hidden="true"
+            className={`chev${isExpanded ? " chev--open" : ""}`}
+          >
+            ▾
+          </span>
+          <span>Места и регистрации</span>
+          <span className="sub">{scopeLabel}</span>
+        </button>
+
+        <label className="cap-mode">
+          <span>Режим</span>
           <select
+            aria-label="Режим карточки мест и регистраций"
             onChange={(selectEvent) =>
               setMode(selectEvent.target.value as CapacityOverviewMode)
             }
@@ -390,18 +129,488 @@ export function RegistrationCapacityBucketsOverview({
         </label>
       </div>
 
-      {isOccurrenceMissing ? (
-        <div className="registration-capacity-soft-state">
-          Выберите дату/сеанс, чтобы увидеть занятость мест.
+      {renderQuickPills({
+        analyticsError,
+        analyticsLoading,
+        isOccurrenceMissing,
+        quickPills,
+      })}
+
+      <div className="cap-detail" id="registration-capacity-detail">
+        <div className="registration-capacity-detail-head">
+          <span>Детализация</span>
+          <strong>{selectedModeLabel}</strong>
         </div>
-      ) : mode === "buckets" ? (
-        renderBuckets()
-      ) : mode === "total" ? (
-        renderTotal()
-      ) : (
-        renderOptions()
-      )}
+        {isOccurrenceMissing ? (
+          renderSoftState("Выберите дату/сеанс, чтобы увидеть занятость мест.")
+        ) : mode === "buckets" ? (
+          renderBuckets({
+            analyticsError,
+            analyticsLoading,
+            bucketViews,
+            onOpenSeatingPlaceholder,
+          })
+        ) : mode === "total" ? (
+          renderTotal({
+            analytics,
+            analyticsError,
+            analyticsLoading,
+            bucketAggregate,
+            hasBuckets,
+          })
+        ) : mode === "options" ? (
+          renderOptions({
+            analyticsError,
+            analyticsLoading,
+            optionStats,
+          })
+        ) : (
+          renderGuests({
+            analytics,
+            analyticsError,
+            analyticsLoading,
+          })
+        )}
+      </div>
     </section>
+  );
+}
+
+function renderQuickPills({
+  analyticsError,
+  analyticsLoading,
+  isOccurrenceMissing,
+  quickPills,
+}: {
+  analyticsError: string | null;
+  analyticsLoading: boolean;
+  isOccurrenceMissing: boolean;
+  quickPills: CapacityQuickPill[];
+}) {
+  if (isOccurrenceMissing) {
+    return (
+      <div className="cap-quick">
+        {renderSoftState("Выберите дату/сеанс, чтобы увидеть занятость мест.")}
+      </div>
+    );
+  }
+
+  if (analyticsLoading && quickPills.length === 0) {
+    return (
+      <div className="cap-quick">
+        {renderSoftState("Загружаем данные занятости мест...")}
+      </div>
+    );
+  }
+
+  if (analyticsError && quickPills.length === 0) {
+    return (
+      <div className="cap-quick">
+        {renderSoftState(
+          "Не удалось загрузить данные занятости мест.",
+          analyticsError,
+          true,
+        )}
+      </div>
+    );
+  }
+
+  if (quickPills.length === 0) {
+    return (
+      <div className="cap-quick">
+        {renderSoftState("Данные по местам пока не найдены.")}
+      </div>
+    );
+  }
+
+  return (
+    <div className="cap-quick" aria-label="Краткая занятость мест">
+      {quickPills.map((pill) => (
+        <div
+          className={`cap-pill cap-pill--${pill.tone}`}
+          key={pill.key}
+          title={`${pill.title}: ${pill.value}`}
+        >
+          <div className="cap-pill__l">
+            <span>{pill.title}</span>
+            <b>{pill.value}</b>
+          </div>
+          {pill.fillPercent !== null ? (
+            <div
+              aria-valuemax={100}
+              aria-valuemin={0}
+              aria-valuenow={pill.fillPercent}
+              className="cap-pill__bar"
+              role="progressbar"
+            >
+              <span style={{ width: `${pill.fillPercent}%` }} />
+            </div>
+          ) : (
+            <div className="cap-pill__hint">{pill.detail}</div>
+          )}
+          {pill.fillPercent !== null ? (
+            <div className="cap-pill__hint">{pill.detail}</div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function renderTotal({
+  analytics,
+  analyticsError,
+  analyticsLoading,
+  bucketAggregate,
+  hasBuckets,
+}: {
+  analytics: AdminRegistrationCapacityAnalytics | null;
+  analyticsError: string | null;
+  analyticsLoading: boolean;
+  bucketAggregate: AdminRegistrationCapacityBucketAggregate | null;
+  hasBuckets: boolean;
+}) {
+  if (analyticsLoading && !analytics) {
+    return renderSoftState("Загружаем общую занятость мест...");
+  }
+
+  if (analyticsError && !analytics) {
+    return renderSoftState(
+      "Не удалось загрузить общую занятость мест.",
+      analyticsError,
+      true,
+    );
+  }
+
+  if (!analytics) {
+    return renderSoftState("Данные по местам пока не найдены.");
+  }
+
+  const summary = hasBuckets
+    ? buildBucketAggregateSummary(bucketAggregate)
+    : buildTotalsSummary(analytics.totals);
+
+  return (
+    <>
+      <div className="registration-capacity-total">
+        <div className="registration-capacity-total__main">
+          <span>Занято по выбранной дате</span>
+          <strong>{summary.occupiedLabel}</strong>
+          <small>{summary.scopeHint}</small>
+        </div>
+
+        <RegistrationCapacityMeter
+          fillPercent={summary.fillPercent}
+          label={summary.fillLabel}
+          secondaryLabel={summary.secondaryLabel}
+        />
+
+        <div className="registration-capacity-total__free">
+          <span>Свободные места</span>
+          <strong>{summary.remainingLabel}</strong>
+          <small>{summary.capacityLabel}</small>
+        </div>
+      </div>
+
+      {summary.note ? <p className="registration-capacity-helper">{summary.note}</p> : null}
+    </>
+  );
+}
+
+function renderBuckets({
+  analyticsError,
+  analyticsLoading,
+  bucketViews,
+  onOpenSeatingPlaceholder,
+}: {
+  analyticsError: string | null;
+  analyticsLoading: boolean;
+  bucketViews: CapacityBucketView[];
+  onOpenSeatingPlaceholder: (bucket: AdminRegistrationCapacityBucket) => void;
+}) {
+  if (analyticsLoading && bucketViews.length === 0) {
+    return renderSoftState("Загружаем слоты мест...");
+  }
+
+  if (analyticsError && bucketViews.length === 0) {
+    return renderSoftState("Не удалось загрузить слоты мест.", analyticsError, true);
+  }
+
+  if (bucketViews.length === 0) {
+    return renderSoftState(
+      "Слоты мест для выбранной даты не найдены. Используется общий обзор.",
+    );
+  }
+
+  return (
+    <div className="registration-capacity-buckets">
+      {bucketViews.map((bucket) => {
+        const title = bucket.title || "Слот мест";
+        const bucketKey = bucket.code || bucket.key || bucket.capacityUnitId;
+        const capacityLabel = formatCapacityLimit(bucket.effectiveCapacity);
+        const occupiedLabel =
+          bucket.effectiveCapacity !== null
+            ? `${bucket.occupiedSeats} из ${bucket.effectiveCapacity} мест`
+            : `${bucket.occupiedSeats} мест`;
+        const remainingLabel =
+          bucket.effectiveRemainingSeats !== null
+            ? `Свободно ${bucket.effectiveRemainingSeats}`
+            : "Без лимита";
+
+        return (
+          <div className="registration-capacity-bucket-row" key={bucket.capacityUnitId}>
+            <div className="registration-capacity-bucket-row__head">
+              <div className="registration-capacity-bucket-row__title">
+                <strong>{title}</strong>
+                {bucketKey ? <span>{bucketKey}</span> : null}
+              </div>
+              <div className="registration-capacity-bucket-row__count">
+                <strong>{occupiedLabel}</strong>
+                <span>{remainingLabel}</span>
+              </div>
+              <button
+                className="registration-capacity-bucket-row__seat-button"
+                onClick={() => onOpenSeatingPlaceholder(bucket)}
+                title="Редактор рассадки будет добавлен отдельным PR"
+                type="button"
+              >
+                Схема рассадки
+              </button>
+            </div>
+
+            <RegistrationCapacityMeter
+              fillPercent={bucket.effectiveFillPercent}
+              label={
+                bucket.effectiveFillPercent !== null
+                  ? `${bucket.effectiveFillPercent}% заполнено`
+                  : "Без лимита"
+              }
+              secondaryLabel={
+                bucket.effectiveFreePercent !== null && bucket.effectiveRemainingSeats !== null
+                  ? `${bucket.effectiveRemainingSeats} (${bucket.effectiveFreePercent}%) свободно`
+                  : null
+              }
+            />
+
+            <div className="registration-capacity-bucket-row__meta">
+              <span>Лимит: {capacityLabel}</span>
+              <span>{bucket.reservationsCount} резерв.</span>
+              {bucket.usesFallbackCapacity ? (
+                <span>лимит взят из выбранной даты/события</span>
+              ) : null}
+            </div>
+
+            {renderBucketOptionSummary(bucket)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function renderBucketOptionSummary(bucket: CapacityBucketView) {
+  const optionBreakdown = bucket.optionBreakdown ?? [];
+
+  if (optionBreakdown.length > 0) {
+    return (
+      <div className="registration-capacity-bucket-row__breakdown">
+        {optionBreakdown.map((option) => (
+          <span key={getCapacityBucketOptionKey(option)}>
+            {formatBucketOptionSummary(option)}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  if (bucket.optionTitles.length > 0) {
+    return (
+      <div className="registration-capacity-bucket-row__breakdown">
+        <span>Варианты: {bucket.optionTitles.join(", ")}</span>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function renderOptions({
+  analyticsError,
+  analyticsLoading,
+  optionStats,
+}: {
+  analyticsError: string | null;
+  analyticsLoading: boolean;
+  optionStats: AdminRegistrationCapacityOptionStat[];
+}) {
+  if (analyticsLoading && optionStats.length === 0) {
+    return renderSoftState("Загружаем варианты участия...");
+  }
+
+  if (analyticsError && optionStats.length === 0) {
+    return renderSoftState(
+      "Не удалось загрузить варианты участия.",
+      analyticsError,
+      true,
+    );
+  }
+
+  if (optionStats.length === 0) {
+    return renderSoftState(
+      "В загруженных заявках нет выбранных вариантов участия.",
+    );
+  }
+
+  return (
+    <>
+      <div className="registration-capacity-options">
+        {optionStats.map((option) => {
+          const doesNotOccupySeats =
+            option.isDonation || option.countsTowardCapacity === false;
+
+          return (
+            <div
+              className={`registration-capacity-option-row${
+                doesNotOccupySeats ? " registration-capacity-option-row--muted" : ""
+              }`}
+              key={getCapacityOptionKey(option)}
+            >
+              <div>
+                <strong>{option.title}</strong>
+                {option.isDonation ? <span>донат</span> : null}
+                {doesNotOccupySeats ? <span>не занимает место</span> : null}
+              </div>
+              <span>
+                {option.registrationsCount} заявок / {option.quantity} шт.
+              </span>
+              <span>{doesNotOccupySeats ? "не занимает место" : `${option.seatsCount} мест`}</span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="registration-capacity-helper">
+        Занятость мест берётся из analytics RPC и capacity reservations; донаты и варианты
+        без capacity не смешиваются с местами без маркировки.
+      </p>
+    </>
+  );
+}
+
+function renderGuests({
+  analytics,
+  analyticsError,
+  analyticsLoading,
+}: {
+  analytics: AdminRegistrationCapacityAnalytics | null;
+  analyticsError: string | null;
+  analyticsLoading: boolean;
+}) {
+  if (analyticsLoading && !analytics) {
+    return renderSoftState("Загружаем гостей и донаты...");
+  }
+
+  if (analyticsError && !analytics) {
+    return renderSoftState(
+      "Не удалось загрузить гостей и донаты.",
+      analyticsError,
+      true,
+    );
+  }
+
+  if (!analytics) {
+    return renderSoftState("Данные по уникальным гостям пока не найдены.");
+  }
+
+  const totals = analytics.totals;
+  const donationOptions = analytics.donationOptions;
+  const donationCount = totals.sponsorsDonationsCount || totals.donationsCount;
+
+  return (
+    <>
+      <div className="registration-capacity-stats">
+        <CapacityStat
+          hint="Уникальные зарегистрированные участники и гости"
+          label="Уникальные люди"
+          value={formatNumber(totals.uniquePeopleCount)}
+        />
+        <CapacityStat
+          hint="Гости без дублей по имени в активных заявках"
+          label="Уникальные гости"
+          value={formatNumber(totals.uniqueGuestsCount)}
+        />
+        <CapacityStat
+          hint="Гости, которые занимают места в нескольких слотах"
+          label="Гости в нескольких слотах"
+          value={formatNumber(totals.multiMealGuestsCount)}
+        />
+        <CapacityStat
+          hint={`${totals.donationQuantity} шт. / ${totals.donationRegistrationsCount} заявок`}
+          label="Спонсоры/донаты"
+          value={formatNumber(donationCount)}
+        />
+        <CapacityStat
+          hint="Активные места в выбранной дате"
+          label="Занято мест"
+          value={formatNumber(totals.activeSeatsCount)}
+        />
+      </div>
+
+      {donationOptions.length > 0 ? (
+        <div className="registration-capacity-options">
+          {donationOptions.map((option) => (
+            <div
+              className="registration-capacity-option-row registration-capacity-option-row--muted"
+              key={getCapacityOptionKey(option)}
+            >
+              <div>
+                <strong>{option.title}</strong>
+                <span>донат</span>
+                <span>не занимает место</span>
+              </div>
+              <span>
+                {option.registrationsCount} заявок / {option.quantity} шт.
+              </span>
+              <span>не занимает место</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="registration-capacity-helper">
+          Донаты или спонсорские варианты в выбранной дате не найдены.
+        </p>
+      )}
+    </>
+  );
+}
+
+function CapacityStat({
+  hint,
+  label,
+  value,
+}: {
+  hint: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="registration-capacity-stat">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{hint}</small>
+    </div>
+  );
+}
+
+function renderSoftState(message: string, detail?: string, isError = false) {
+  return (
+    <div
+      className={`registration-capacity-soft-state${
+        isError ? " registration-capacity-soft-state--error" : ""
+      }`}
+    >
+      <strong>{message}</strong>
+      {detail ? <span>{detail}</span> : null}
+    </div>
   );
 }
 
@@ -419,76 +628,238 @@ function formatCapacityScopeLabel(
 
 function buildCapacityBucketView(
   bucket: AdminRegistrationCapacityBucket,
-  fallbackCapacity: number | null,
 ): CapacityBucketView {
-  const effectiveCapacity =
-    bucket.effectiveCapacity !== undefined
-      ? bucket.effectiveCapacity
-      : bucket.capacity !== null
-        ? Math.max(0, bucket.capacity)
-        : fallbackCapacity;
-  const safeEffectiveCapacity =
-    effectiveCapacity !== null ? Math.max(0, effectiveCapacity) : null;
+  const effectiveCapacity = normalizeCapacity(
+    bucket.effectiveCapacity !== undefined ? bucket.effectiveCapacity : bucket.capacity,
+  );
   const effectiveRemainingSeats =
     bucket.effectiveRemainingSeats !== undefined
-      ? bucket.effectiveRemainingSeats
-      : safeEffectiveCapacity !== null
-        ? Math.max(0, safeEffectiveCapacity - bucket.occupiedSeats)
-        : null;
-  const effectiveFillPercent =
-    bucket.effectiveFillPercent !== undefined
-      ? bucket.effectiveFillPercent
-      : safeEffectiveCapacity !== null && safeEffectiveCapacity > 0
-        ? Math.min(100, Math.round((bucket.occupiedSeats / safeEffectiveCapacity) * 100))
-        : null;
-  const effectiveFreePercent =
-    bucket.effectiveFreePercent !== undefined
-      ? bucket.effectiveFreePercent
-      : effectiveFillPercent !== null
-        ? Math.max(0, 100 - effectiveFillPercent)
-        : null;
+      ? normalizeCapacity(bucket.effectiveRemainingSeats)
+      : bucket.remainingSeats !== null
+        ? normalizeCapacity(bucket.remainingSeats)
+        : bucket.freeSeats !== undefined
+          ? normalizeCapacity(bucket.freeSeats)
+          : null;
 
   return {
     ...bucket,
-    effectiveCapacity: safeEffectiveCapacity,
+    effectiveCapacity,
     effectiveRemainingSeats,
-    effectiveFillPercent,
-    effectiveFreePercent,
-    usesFallbackCapacity:
-      bucket.usesFallbackCapacity ?? (bucket.capacity === null && fallbackCapacity !== null),
+    effectiveFillPercent: normalizePercent(
+      bucket.effectiveFillPercent !== undefined
+        ? bucket.effectiveFillPercent
+        : bucket.fillPercent,
+    ),
+    effectiveFreePercent: normalizePercent(bucket.effectiveFreePercent ?? null),
+    usesFallbackCapacity: bucket.usesFallbackCapacity ?? false,
   };
 }
 
-function buildCapacityBucketAggregate(buckets: CapacityBucketView[]) {
-  const occupiedSeats = buckets.reduce((total, bucket) => total + bucket.occupiedSeats, 0);
-  const limitedBuckets = buckets.filter((bucket) => bucket.effectiveCapacity !== null);
-  const knownCapacity = limitedBuckets.reduce(
-    (total, bucket) => total + (bucket.effectiveCapacity ?? 0),
-    0,
-  );
-  const knownOccupiedSeats = limitedBuckets.reduce(
-    (total, bucket) => total + bucket.occupiedSeats,
-    0,
-  );
-  const remainingSeats = limitedBuckets.reduce(
-    (total, bucket) => total + (bucket.effectiveRemainingSeats ?? 0),
-    0,
-  );
-  const fillPercent =
-    knownCapacity > 0
-      ? Math.min(100, Math.round((knownOccupiedSeats / knownCapacity) * 100))
-      : null;
-  const freePercent = fillPercent !== null ? Math.max(0, 100 - fillPercent) : null;
+function buildQuickPills({
+  bucketAggregate,
+  bucketViews,
+  totals,
+}: {
+  bucketAggregate: AdminRegistrationCapacityBucketAggregate | null;
+  bucketViews: CapacityBucketView[];
+  totals: AdminRegistrationCapacityTotals;
+}): CapacityQuickPill[] {
+  const bucketPills = bucketViews.map((bucket) => {
+    const fillPercent = normalizePercent(bucket.effectiveFillPercent);
+    const capacity = bucket.effectiveCapacity;
+    const value =
+      capacity !== null ? `${bucket.occupiedSeats}/${capacity}` : `${bucket.occupiedSeats}`;
+    const detail =
+      capacity !== null
+        ? `${formatRemainingSeats(bucket.effectiveRemainingSeats)} · ${formatPercent(fillPercent)}`
+        : "без лимита";
+
+    return {
+      key: bucket.capacityUnitId,
+      title: bucket.title || bucket.key || "Слот мест",
+      value,
+      detail,
+      fillPercent,
+      tone:
+        fillPercent !== null && fillPercent >= HOT_FILL_PERCENT
+          ? "hot"
+          : ("default" as CapacityPillTone),
+    };
+  });
+
+  const totalPill =
+    bucketViews.length === 0
+      ? [
+          {
+            key: "total-seats",
+            title: "Занято мест",
+            value:
+              totals.capacity !== null
+                ? `${totals.activeSeatsCount}/${totals.capacity}`
+                : `${totals.activeSeatsCount}`,
+            detail:
+              totals.capacity !== null
+                ? `${formatRemainingSeats(totals.remainingSeats)} · ${formatPercent(
+                    totals.fillPercent,
+                  )}`
+                : "без лимита",
+            fillPercent: normalizePercent(totals.fillPercent),
+            tone:
+              totals.fillPercent !== null && totals.fillPercent >= HOT_FILL_PERCENT
+                ? "hot"
+                : ("default" as CapacityPillTone),
+          },
+        ]
+      : [
+          {
+            key: "bucket-total",
+            title: "Все слоты",
+            value: buildBucketTotalValue(bucketAggregate),
+            detail: bucketAggregate?.hasUnlimitedBuckets
+              ? "есть слоты без лимита"
+              : `${formatRemainingSeats(bucketAggregate?.remainingSeats ?? null)} · ${formatPercent(
+                  bucketAggregate?.fillPercent ?? null,
+                )}`,
+            fillPercent: normalizePercent(bucketAggregate?.fillPercent ?? null),
+            tone:
+              bucketAggregate?.fillPercent !== null &&
+              bucketAggregate?.fillPercent !== undefined &&
+              bucketAggregate.fillPercent >= HOT_FILL_PERCENT
+                ? "hot"
+                : ("default" as CapacityPillTone),
+          },
+        ];
+
+  return [
+    ...bucketPills,
+    ...totalPill,
+    {
+      key: "unique-guests",
+      title: "Уникальные гости",
+      value: formatNumber(totals.uniquePeopleCount),
+      detail: `${totals.uniqueGuestsCount} гостей`,
+      fillPercent: null,
+      tone: "info",
+    },
+    {
+      key: "multi-meal-guests",
+      title: "Несколько слотов",
+      value: formatNumber(totals.multiMealGuestsCount),
+      detail: "гости в нескольких слотах",
+      fillPercent: null,
+      tone: "gold",
+    },
+  ];
+}
+
+function buildBucketAggregateSummary(
+  aggregate: AdminRegistrationCapacityBucketAggregate | null,
+) {
+  if (!aggregate) {
+    return {
+      occupiedLabel: "0 мест",
+      scopeHint: "Слоты мест пока не найдены",
+      fillPercent: null,
+      fillLabel: "Нет данных по лимиту",
+      secondaryLabel: null,
+      remainingLabel: "нет данных",
+      capacityLabel: "Вместимость не найдена",
+      note: null,
+    };
+  }
+
+  if (aggregate.hasUnlimitedBuckets) {
+    const hasKnownCapacity = aggregate.knownCapacity > 0;
+
+    return {
+      occupiedLabel: `${aggregate.occupiedSeats} мест`,
+      scopeHint: hasKnownCapacity
+        ? `${aggregate.knownCapacity} мест в слотах с лимитом`
+        : "Все слоты без лимита",
+      fillPercent: hasKnownCapacity ? normalizePercent(aggregate.fillPercent) : null,
+      fillLabel:
+        hasKnownCapacity && aggregate.fillPercent !== null
+          ? `${aggregate.fillPercent}% заполнено в слотах с лимитом`
+          : "Общий лимит: без лимита",
+      secondaryLabel: hasKnownCapacity
+        ? `${aggregate.remainingSeats} свободно в слотах с лимитом`
+        : null,
+      remainingLabel: hasKnownCapacity
+        ? `${aggregate.remainingSeats} с лимитом`
+        : "без лимита",
+      capacityLabel: hasKnownCapacity
+        ? `${aggregate.knownCapacity} мест с лимитом + без лимита`
+        : "Общая вместимость: без лимита",
+      note: "Есть слоты без лимита, поэтому общий процент считается только по слотам с заданным лимитом.",
+    };
+  }
 
   return {
-    occupiedSeats,
-    knownCapacity,
-    remainingSeats,
-    fillPercent,
-    freePercent,
-    limitedBucketCount: limitedBuckets.length,
-    hasUnlimitedBuckets: limitedBuckets.length < buckets.length,
+    occupiedLabel:
+      aggregate.knownCapacity > 0
+        ? `${aggregate.occupiedSeats} из ${aggregate.knownCapacity} мест`
+        : `${aggregate.occupiedSeats} мест`,
+    scopeHint:
+      aggregate.limitedBucketCount > 0
+        ? `По ${aggregate.limitedBucketCount} слотам с лимитом`
+        : "Лимит мест не задан",
+    fillPercent: normalizePercent(aggregate.fillPercent),
+    fillLabel:
+      aggregate.fillPercent !== null
+        ? `${aggregate.fillPercent}% заполнено`
+        : "Общий лимит: без лимита",
+    secondaryLabel:
+      aggregate.freePercent !== null
+        ? `${aggregate.remainingSeats} (${aggregate.freePercent}%) свободно`
+        : null,
+    remainingLabel:
+      aggregate.knownCapacity > 0 ? `${aggregate.remainingSeats}` : "без лимита",
+    capacityLabel:
+      aggregate.knownCapacity > 0
+        ? `Общая вместимость: ${aggregate.knownCapacity}`
+        : "Общая вместимость: без лимита",
+    note: null,
   };
+}
+
+function buildTotalsSummary(totals: AdminRegistrationCapacityTotals) {
+  const hasCapacity = totals.capacity !== null;
+
+  return {
+    occupiedLabel: hasCapacity
+      ? `${totals.activeSeatsCount} из ${totals.capacity} мест`
+      : `${totals.activeSeatsCount} мест`,
+    scopeHint: "По активным заявкам выбранной даты",
+    fillPercent: normalizePercent(totals.fillPercent),
+    fillLabel:
+      totals.fillPercent !== null
+        ? `${totals.fillPercent}% заполнено`
+        : "Общий лимит: без лимита",
+    secondaryLabel:
+      totals.freePercent !== null && totals.remainingSeats !== null
+        ? `${totals.remainingSeats} (${totals.freePercent}%) свободно`
+        : null,
+    remainingLabel:
+      totals.remainingSeats !== null ? `${totals.remainingSeats}` : "без лимита",
+    capacityLabel: hasCapacity
+      ? `Общая вместимость: ${totals.capacity}`
+      : "Общая вместимость: без лимита",
+    note: null,
+  };
+}
+
+function buildBucketTotalValue(
+  aggregate: AdminRegistrationCapacityBucketAggregate | null,
+): string {
+  if (!aggregate) {
+    return "0";
+  }
+
+  if (aggregate.knownCapacity > 0 && !aggregate.hasUnlimitedBuckets) {
+    return `${aggregate.occupiedSeats}/${aggregate.knownCapacity}`;
+  }
+
+  return `${aggregate.occupiedSeats}`;
 }
 
 function RegistrationCapacityMeter({
@@ -500,16 +871,18 @@ function RegistrationCapacityMeter({
   label: string;
   secondaryLabel: string | null;
 }) {
+  const safeFillPercent = normalizePercent(fillPercent);
+
   return (
     <div className="registration-capacity-meter">
       <div
-        aria-valuemax={fillPercent !== null ? 100 : undefined}
-        aria-valuemin={fillPercent !== null ? 0 : undefined}
-        aria-valuenow={fillPercent ?? undefined}
+        aria-valuemax={safeFillPercent !== null ? 100 : undefined}
+        aria-valuemin={safeFillPercent !== null ? 0 : undefined}
+        aria-valuenow={safeFillPercent ?? undefined}
         className="registration-capacity-meter__track"
-        role={fillPercent !== null ? "progressbar" : undefined}
+        role={safeFillPercent !== null ? "progressbar" : undefined}
       >
-        <span style={{ width: `${fillPercent ?? 0}%` }} />
+        <span style={{ width: `${safeFillPercent ?? 0}%` }} />
       </div>
       <div className="registration-capacity-meter__labels">
         <span>{label}</span>
@@ -517,6 +890,49 @@ function RegistrationCapacityMeter({
       </div>
     </div>
   );
+}
+
+function normalizeCapacity(value: number | null | undefined): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return Math.max(0, value);
+}
+
+function normalizePercent(value: number | null | undefined): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function formatCapacityLimit(capacity: number | null): string {
+  return capacity !== null ? `${capacity} мест` : "без лимита";
+}
+
+function formatRemainingSeats(remainingSeats: number | null): string {
+  return remainingSeats !== null ? `${remainingSeats} свободно` : "без лимита";
+}
+
+function formatPercent(fillPercent: number | null): string {
+  return fillPercent !== null ? `${fillPercent}%` : "без лимита";
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat("ru-RU").format(value);
+}
+
+function formatBucketOptionSummary(
+  option: AdminRegistrationCapacityBucketOptionBreakdown,
+): string {
+  const seatsLabel =
+    option.isDonation || option.countsTowardCapacity === false
+      ? "не занимает место"
+      : `${option.seatsCount} мест`;
+
+  return `${option.title}: ${option.registrationsCount} заявок / ${option.quantity} шт. · ${seatsLabel}`;
 }
 
 function getCapacityOptionKey(option: {
@@ -529,6 +945,16 @@ function getCapacityOptionKey(option: {
   return [
     option.optionId ?? option.title,
     option.optionType,
+    option.isDonation ? "donation" : "seat",
+    option.countsTowardCapacity ? "capacity" : "no-capacity",
+  ].join("|");
+}
+
+function getCapacityBucketOptionKey(
+  option: AdminRegistrationCapacityBucketOptionBreakdown,
+): string {
+  return [
+    option.optionId ?? option.title,
     option.isDonation ? "donation" : "seat",
     option.countsTowardCapacity ? "capacity" : "no-capacity",
   ].join("|");
