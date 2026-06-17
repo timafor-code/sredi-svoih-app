@@ -6,11 +6,16 @@ block B PRs and may be extended in later ones.
 
 - **PR 7:** schema + RLS + read RPC. Database layer only — no UI, no mutations,
   no auto-seating.
-- **PR 8 (this revision):** seating write RPC (save layout, save assignments,
-  create/delete templates, create layout from template). No UI, no full typed
-  service layer — only minimal wrappers in `adminSeatingService.ts`.
-- **Later PRs:** auto-seating, locked/manual assignments, extra assignment
-  types.
+- **PR 8:** seating write RPC (save layout, save assignments, create/delete
+  templates, create layout from template). No UI, no full typed service layer —
+  only minimal wrappers in `adminSeatingService.ts`.
+- **PR 9:** pure seating geometry layer (`apps/admin/src/lib/seatingGeometry.ts`)
+  and the geometry types in `apps/admin/src/types/seating.ts`. No IO, no UI.
+- **PR 10 (this revision):** the full **typed service layer** over the read/write
+  RPC (`adminSeatingService.ts` + the service-layer types in `types/seating.ts`).
+  Still no canvas and no UI — see "Service layer" below.
+- **Later PRs:** layout editor / canvas, template selector UI, auto-seating,
+  locked/manual assignments, reserves, capacity summary, capacity sync.
 
 The browser admin client talks to all of this through the normal authenticated
 Supabase session. No service role or Admin API is used anywhere in the seating
@@ -208,6 +213,69 @@ snapshot is a non-authoritative display value only; the real limit lives in
 `event_capacity_units.capacity` and changing it is a separate, explicit admin
 action (planned for PR 19). A seating save can therefore never silently raise or
 lower who may register.
+
+## Service layer (PR 10)
+
+`apps/admin/src/services/adminSeatingService.ts` is the full typed client over the
+read RPC (PR 7) and write RPC (PR 8). It replaces the minimal pass-through
+wrappers from PR 8 with typed inputs/outputs, snake_case → camelCase
+normalisation, camelCase → v15 payload serialisation, and centralised RPC error
+handling. The model types live in `apps/admin/src/types/seating.ts` (service-layer
+section), built on top of and reusing the geometry types (`SeatingTable`,
+`SeatingConnection`) so a loaded layout feeds straight into `seatingGeometry.ts`
+without translation.
+
+**This PR has no canvas and no UI.** The layout editor / canvas, the template
+selector, auto-seating, drag/drop, reserves and the capacity summary are all
+later PRs (11–18). `SeatingCapacitySummary` here is a **type only** — its formulas
+and UI arrive in PR 18.
+
+**This PR does not change the registration limit.** The service never reads or
+writes `event_capacity_units.capacity`. The `capacity` field on the save payload
+is accepted for v15 parity only; the RPC ignores it and derives
+`capacity_limit_snapshot` server-side (see "Capacity is never changed" above).
+
+### Public service functions
+
+| Function | RPC | Returns |
+| --- | --- | --- |
+| `listSeatingTemplates()` | `admin_list_seating_templates` | `SeatingTemplate[]` |
+| `getSeatingTemplate(templateId)` | `admin_get_seating_template` | `SeatingTemplate` |
+| `getSeatingLayout(params)` | `admin_get_seating_layout` | `SeatingLayout \| null` (null = no instance for the slot yet) |
+| `createSeatingLayoutFromTemplate(params)` | `admin_create_seating_layout_from_template` | `SeatingLayoutRow` |
+| `saveSeatingLayout(payload)` | `admin_save_seating_layout` | `SeatingLayoutRow` |
+| `saveSeatingAssignments(payload)` | `admin_save_seating_assignments` | `SeatingAssignmentsSaveResult` |
+| `createSeatingTemplateFromLayout(layoutId, title)` | `admin_create_seating_template_from_layout` | `SeatingTemplate` |
+| `deleteSeatingTemplate(templateId)` | `admin_delete_seating_template` | `SeatingTemplate` |
+
+`getSeatingLayout` / `createSeatingLayoutFromTemplate` take a `SeatingSlotParams`
+(`{ eventId, occurrenceId, capacityUnitId }`, plus `templateId` for the fork). The
+routing keys (`eventId` / `occurrenceId` / `capacityUnitId`) live **inside** the
+save payload by design (PR 8); the service types them explicitly rather than
+hiding them.
+
+### Field mapping (snake_case RPC ↔ camelCase model)
+
+The read RPC return `to_jsonb(...)` of the DB rows (snake_case); the write RPC
+return the same shapes. The service normalises them into the camelCase frontend
+model. The table/connection normalisers accept **both** shapes, because a layout's
+`tables` jsonb is a snake_case DB row while a template snapshot's `tables` already
+use the v15 camelCase shape.
+
+| Model | Frontend (camelCase) | RPC row (snake_case) |
+| --- | --- | --- |
+| `SeatingLayout` / `SeatingLayoutRow` | `communityId`, `eventId`, `occurrenceId`, `capacityUnitId`, `templateId`, `capacityLimitSnapshot`, `seatingDone`, `createdBy`, `createdAt`, `updatedAt` | `community_id`, `event_id`, `occurrence_id`, `capacity_unit_id`, `template_id`, `capacity_limit_snapshot`, `seating_done`, `created_by`, `created_at`, `updated_at` |
+| `SeatingTemplate` | `isBuiltin`, `isActive`, `createdBy`, `snapshot` | `is_builtin`, `is_active`, `created_by`, `snapshot` |
+| `SeatingTable` (= geometry type) | `id`, `cx`, `cy`, `w`, `h`, `angle`, `sideSeats`, `isRabbiTable` | `client_table_id`, `cx`, `cy`, `w`, `h`, `angle`, `long_side_seats`, `is_rabbi_table` |
+| `SeatingConnection` (= geometry type) | `aTableId`, `aEnd`, `bTableId`, `bEnd`, `x`, `y` | `from_client_table_id`, `from_end`, `to_client_table_id`, `to_end`, `anchor_x`, `anchor_y` |
+| `SeatingAssignment` | `layoutId`, `registrationId`, `seatKey`, `guestLabel`, `guestInitials`, `type` | `layout_id`, `registration_id`, `seat_key`, `guest_label`, `guest_initials`, `assignment_type` |
+
+On the way out, `serializeSeatingLayoutPayload` / `serializeSeatingAssignmentsPayload`
+rebuild the exact v15 contract (`{ layout, customTables[], tableConnections[],
+selectedTableId, seatingDone, activeTemplateId, reserveIds[], capacity, chairs[],
+pool[] }`) plus the routing keys, field by field, so unknown extra properties never
+leak to the RPC and every contract key is always present with its canonical
+default.
 
 ## Manual smoke checklist (PR 8)
 
