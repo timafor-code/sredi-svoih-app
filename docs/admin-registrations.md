@@ -22,12 +22,14 @@ This file is a reference document only. Production code should not copy the prot
 
 ## This PR
 
-- Updates the production "Места и регистрации" card to the v15 compact/collapsible UX.
+- Adds detailed bucket breakdown inside the production "Места и регистрации" card.
 - Uses the existing `admin_get_registration_capacity_analytics` service/RPC data as the source of truth for buckets, totals, options, unique guests, multi-meal guests, and donations.
-- Adds compact quick-pills for capacity buckets, unique guests, and multi-meal guests.
-- Adds detail modes for capacity slots, all seats in the selected date, participation options, and unique guests.
-- Keeps the v15 layout shell, registration detail modal, row click/Enter behavior, seating placeholder button, export, refresh, pagination, occurrence selector, and status actions unchanged.
-- Keeps seating editor/backend work out of production scope.
+- Shows which participation options contributed to each capacity bucket, including registration count, quantity count, seat count, and contribution percentage.
+- Shows remaining/free seats as a separate row in each bucket breakdown.
+- Marks donations and `counts_toward_capacity = false` options as "не занимает место" when those rows are present in the analytics payload.
+- Adds a lightweight list/chart toggle for bucket breakdowns. The chart uses CSS `conic-gradient`; there is no Chart.js, CDN, or new npm dependency.
+- Keeps the v15 layout shell, compact/collapsible capacity card, registration detail modal, row click/Enter behavior, seating placeholder button, export, refresh, pagination, occurrence selector, and status actions unchanged.
+- Keeps backend/RPC, seating editor/backend work, Excel export changes, and registration business logic out of production scope.
 
 ## v15 capacity card UI
 
@@ -37,9 +39,9 @@ Quick-pills show the main capacity buckets with occupied/capacity values and a p
 
 The detailed area has four modes:
 
-- `По слотам мест`: renders one row per capacity bucket with title, key/code, occupied/capacity, remaining seats, fill percent, reservation count, option breakdown summary, and the existing "Схема рассадки" button.
+- `По слотам мест`: renders one row per capacity bucket with title, key/code, occupied/capacity, remaining seats, fill percent, reservation count, detailed option breakdown, free-seat row, and the existing "Схема рассадки" button.
 - `Все места выбранной даты`: renders total occupied seats, total capacity, remaining/free seats, and fill percent. Unlimited/null capacity is displayed as "без лимита" and never as `NaN`.
-- `По вариантам участия`: renders RPC option breakdown with option title, registration/quantity count, seat count, and explicit markers for donations or `counts_toward_capacity = false` options as "не занимает место".
+- `По вариантам участия`: for events with capacity buckets, renders seat-taking rows aggregated from `buckets[].optionBreakdown` so it stays consistent with `По слотам мест`; donation and `counts_toward_capacity = false` options are added as separate non-seat rows.
 - `Уникальные гости`: renders unique people/guests, multi-meal guests, sponsors/donations, donation options when present, and total occupied seats with graceful fallbacks for missing analytics fields.
 
 The "Схема рассадки" button remains a safe placeholder. It does not open a seating editor, create backend calls, or persist seating data; it only shows the existing toast that the seating editor will be added in a separate PR.
@@ -92,8 +94,42 @@ The fallback is strictly read-only inside the RPC: it does not insert into `even
 
 Donation options and options with `counts_toward_capacity = false` do not occupy seats and do not create capacity reservations. They are returned in `option_stats` and `donation_options` with `isDonation` / `countsTowardCapacity` markers so the UI can display them without counting them as occupied capacity.
 
-The detailed bucket breakdown chart/list toggle is intentionally deferred to PR 5: `feature/admin-registrations-bucket-breakdown`.
+This PR does not change the RPC, migrations, RLS, capacity semantics, or browser access pattern. Bucket detail percentages are presentation-level derivations from the existing payload:
+
+- option contribution percent is `optionSeats / occupiedSeats` when occupied seats are known;
+- free percent is `remainingSeats / capacity` when a finite capacity is known;
+- null/unlimited capacity, zero occupied seats, missing remaining seats, and empty breakdown arrays render without `NaN`.
+
+## Bucket breakdown
+
+Each row in `По слотам мест` now has a scoped `.bucket-breakdown` section labelled "Из чего сложилось".
+
+The default list view renders one row per `optionBreakdown` entry with:
+
+- option title;
+- registration count and quantity count;
+- occupied seat count;
+- percentage contribution inside the bucket;
+- donation / non-seat marker when `isDonation` is true or `countsTowardCapacity` is false.
+
+The list also adds a free-seat row when `effectiveRemainingSeats` is available. If the RPC does not return `optionBreakdown`, the UI keeps the bucket totals visible, shows a safe fallback row for occupied seats without option detail when needed, and prints a small note instead of trying to rebuild source-of-truth from registrations on the client.
+
+The chart view is available from the small toggle inside the breakdown when there is at least one positive chart segment. It uses CSS `conic-gradient` and the same rows as the list. Donation/non-seat rows stay visible in the legend but do not add occupied capacity.
+
+## Capacity/options consistency
+
+For bucket-based events, capacity occupancy is owned by `buckets` in the analytics response:
+
+- `По слотам мест` reads `buckets[].occupiedSeats` and `buckets[].optionBreakdown`;
+- `По вариантам участия` aggregates seat-taking rows from the same `buckets[].optionBreakdown`;
+- `option_stats` / `donation_options` are used in this mode only for donation and other non-seat rows, or as a fallback when the event has no capacity buckets.
+
+This avoids showing a seat-taking participation option as occupied when the selected event/occurrence has zero occupied seats in the bucket source of truth. If a bucket has occupied seats but no option breakdown, the UI shows a "Места без детализации" fallback row instead of rebuilding capacity from registration rows on the client.
 
 ## Next seating work
 
 The seating editor, seating data types, backend/RPC/RLS changes, canvas, drag-and-drop, table templates, and save flow should be implemented in separate follow-up PRs.
+
+## Next PR
+
+`feature/admin-registrations-export-v15`
