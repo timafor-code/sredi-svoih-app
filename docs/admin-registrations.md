@@ -75,10 +75,22 @@ The RPC returns one row:
 - `capacityUnitId`, `key` / `code`, and `title`;
 - raw capacity unit `capacity` without changing `event_capacity_units.capacity` semantics;
 - effective capacity fields based on the current event/occurrence fallback capacity;
-- occupied seats from `event_registration_capacity_reservations`;
-- remaining/free seats, fill/free percentages, reservation count, option titles, and option breakdown.
+- occupied seats from `event_registration_capacity_reservations` plus the read-only fallback described below;
+- remaining/free seats, fill/free percentages, reservation/obligation count, option titles, and option breakdown.
 
-Seat occupancy for mapped capacity units comes from `event_registration_capacity_reservations`. This preserves the current registration flow behavior where one registration can create multiple seat obligations, for example a package option reserving both `friday_dinner` and `shabbat_lunch`.
+Seat occupancy for mapped capacity units uses `event_registration_capacity_reservations` as the primary source of truth. This preserves the current registration flow behavior where one registration can create multiple seat obligations, for example a package option reserving both `friday_dinner` and `shabbat_lunch`.
+
+For legacy/test registrations that have active seat-taking option selections but no matching rows in `event_registration_capacity_reservations`, the RPC builds a read-only fallback obligation from the option-to-capacity-unit mappings in `event_participation_option_capacity_units`. The fallback:
+
+- only considers active registrations (`confirmed`, `pending`, `attended`, `no_show`);
+- ignores donation options (`is_donation = true`) and non-capacity options (`counts_toward_capacity = false`), which never create a fallback obligation;
+- computes seats with the same model the registration flow uses (`quantity * seats_per_quantity` from the mapping);
+- expands a multi-unit option (for example "Весь Шабат") into every mapped capacity unit, so it lands in both `friday_dinner` and `shabbat_lunch`;
+- skips any `registration_id` + `option_id` + `capacity_unit_id` triple that already has a real reservation row, so existing reservations are never double-counted.
+
+Because the fallback contributes to the same `occupiedSeats`, `optionBreakdown`, and `optionTitles` outputs, `reservationsCount` is the count of all bucket obligations including fallback obligations, not only physical reservation rows.
+
+The fallback is strictly read-only inside the RPC: it does not insert into `event_registration_capacity_reservations`, does not change `event_capacity_units.capacity`, does not change the registration/cancel/reject flow, and does not affect public registration. After this hotfix, the bucket breakdown work continues in PR #196 (`feature/admin-registrations-bucket-breakdown`).
 
 Donation options and options with `counts_toward_capacity = false` do not occupy seats and do not create capacity reservations. They are returned in `option_stats` and `donation_options` with `isDonation` / `countsTowardCapacity` markers so the UI can display them without counting them as occupied capacity.
 
