@@ -14,6 +14,7 @@ import { formatDateTime } from "./formatters";
 
 type CapacityOverviewMode = "buckets" | "total" | "options" | "guests";
 type CapacityPillTone = "default" | "hot" | "info" | "gold";
+type BucketBreakdownView = "list" | "chart";
 
 type CapacityBucketView = AdminRegistrationCapacityBucket & {
   effectiveCapacity: number | null;
@@ -32,6 +33,20 @@ type CapacityQuickPill = {
   tone: CapacityPillTone;
 };
 
+type BucketBreakdownEntry = {
+  key: string;
+  title: string;
+  detail: string;
+  marker: string | null;
+  valueLabel: string;
+  percentLabel: string;
+  barPercent: number;
+  chartValue: number;
+  color: string;
+  isFree: boolean;
+  isNonSeat: boolean;
+};
+
 const CAPACITY_OVERVIEW_MODE_OPTIONS: Array<{
   value: CapacityOverviewMode;
   label: string;
@@ -43,6 +58,16 @@ const CAPACITY_OVERVIEW_MODE_OPTIONS: Array<{
 ];
 
 const HOT_FILL_PERCENT = 85;
+const BUCKET_BREAKDOWN_COLORS = [
+  "var(--gold)",
+  "var(--green)",
+  "var(--blue)",
+  "var(--purple)",
+  "#ff9ca2",
+  "#54d6c4",
+];
+const BUCKET_BREAKDOWN_FREE_COLOR = "rgba(255, 255, 255, 0.32)";
+const BUCKET_BREAKDOWN_NON_SEAT_COLOR = "rgba(107, 127, 212, 0.58)";
 
 export function RegistrationCapacityBucketsOverview({
   analytics,
@@ -400,7 +425,7 @@ function renderBuckets({
               ) : null}
             </div>
 
-            {renderBucketOptionSummary(bucket)}
+            <BucketBreakdown bucket={bucket} />
           </div>
         );
       })}
@@ -408,30 +433,117 @@ function renderBuckets({
   );
 }
 
-function renderBucketOptionSummary(bucket: CapacityBucketView) {
-  const optionBreakdown = bucket.optionBreakdown ?? [];
+function BucketBreakdown({ bucket }: { bucket: CapacityBucketView }) {
+  const [view, setView] = useState<BucketBreakdownView>("list");
+  const { entries, note, summary } = buildBucketBreakdown(bucket);
+  const chartGradient = buildBucketBreakdownGradient(entries);
+  const canShowChart = chartGradient !== null;
+  const activeView = canShowChart ? view : "list";
 
-  if (optionBreakdown.length > 0) {
-    return (
-      <div className="registration-capacity-bucket-row__breakdown">
-        {optionBreakdown.map((option) => (
-          <span key={getCapacityBucketOptionKey(option)}>
-            {formatBucketOptionSummary(option)}
+  return (
+    <div className="bucket-breakdown">
+      <div className="bucket-breakdown__label">
+        <span>Из чего сложилось</span>
+        <span className="bucket-breakdown__summary">{summary}</span>
+        {canShowChart ? (
+          <button
+            aria-label={
+              activeView === "list"
+                ? "Показать breakdown диаграммой"
+                : "Показать breakdown списком"
+            }
+            className="bd-toggle"
+            onClick={() =>
+              setView((currentView) => (currentView === "list" ? "chart" : "list"))
+            }
+            title={activeView === "list" ? "Диаграмма" : "Список"}
+            type="button"
+          >
+            <span aria-hidden="true">{activeView === "list" ? "◔" : "☰"}</span>
+          </button>
+        ) : null}
+      </div>
+
+      {entries.length === 0 ? (
+        <p className="bucket-breakdown__empty">
+          В analytics RPC нет breakdown по вариантам для этого слота.
+        </p>
+      ) : activeView === "chart" && chartGradient ? (
+        <BucketBreakdownChart entries={entries} gradient={chartGradient} />
+      ) : (
+        <BucketBreakdownList entries={entries} />
+      )}
+
+      {note ? <p className="bucket-breakdown__note">{note}</p> : null}
+    </div>
+  );
+}
+
+function BucketBreakdownList({ entries }: { entries: BucketBreakdownEntry[] }) {
+  return (
+    <div className="bucket-breakdown__list">
+      {entries.map((entry) => (
+        <div
+          className={`brow${entry.isFree ? " brow--free" : ""}${
+            entry.isNonSeat ? " brow--muted" : ""
+          }`}
+          key={entry.key}
+        >
+          <span
+            aria-hidden="true"
+            className="brow__dot"
+            style={{ backgroundColor: entry.color }}
+          />
+          <span className="brow__name">
+            <strong>{entry.title}</strong>
+            <span>{entry.detail}</span>
+            {entry.marker ? <em>{entry.marker}</em> : null}
+          </span>
+          <span className="brow__val">
+            {entry.valueLabel}
+            <small>{entry.percentLabel}</small>
+          </span>
+          <span className="brow__bar" aria-hidden="true">
+            <span
+              style={{ backgroundColor: entry.color, width: `${entry.barPercent}%` }}
+            />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BucketBreakdownChart({
+  entries,
+  gradient,
+}: {
+  entries: BucketBreakdownEntry[];
+  gradient: string;
+}) {
+  return (
+    <div className="bd-pie">
+      <div
+        aria-label="Диаграмма занятых и свободных мест слота"
+        className="bd-pie__chart"
+        role="img"
+        style={{ background: gradient }}
+      />
+      <div className="bd-pie__legend">
+        {entries.map((entry) => (
+          <span
+            className={`bd-leg${entry.isNonSeat ? " bd-leg--muted" : ""}`}
+            key={entry.key}
+          >
+            <i aria-hidden="true" style={{ backgroundColor: entry.color }} />
+            <span>{entry.marker ? `${entry.title} · ${entry.marker}` : entry.title}</span>
+            <b>{entry.valueLabel}</b>
+            <span className="pct">{entry.percentLabel}</span>
           </span>
         ))}
       </div>
-    );
-  }
-
-  if (bucket.optionTitles.length > 0) {
-    return (
-      <div className="registration-capacity-bucket-row__breakdown">
-        <span>Варианты: {bucket.optionTitles.join(", ")}</span>
-      </div>
-    );
-  }
-
-  return null;
+    </div>
+  );
 }
 
 function renderOptions({
@@ -924,17 +1036,6 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat("ru-RU").format(value);
 }
 
-function formatBucketOptionSummary(
-  option: AdminRegistrationCapacityBucketOptionBreakdown,
-): string {
-  const seatsLabel =
-    option.isDonation || option.countsTowardCapacity === false
-      ? "не занимает место"
-      : `${option.seatsCount} мест`;
-
-  return `${option.title}: ${option.registrationsCount} заявок / ${option.quantity} шт. · ${seatsLabel}`;
-}
-
 function getCapacityOptionKey(option: {
   optionId: string | null;
   title: string;
@@ -948,6 +1049,178 @@ function getCapacityOptionKey(option: {
     option.isDonation ? "donation" : "seat",
     option.countsTowardCapacity ? "capacity" : "no-capacity",
   ].join("|");
+}
+
+function buildBucketBreakdown(bucket: CapacityBucketView): {
+  entries: BucketBreakdownEntry[];
+  note: string | null;
+  summary: string;
+} {
+  const occupiedSeats = Math.max(0, bucket.occupiedSeats);
+  const remainingSeats = bucket.effectiveRemainingSeats;
+  const optionBreakdown = bucket.optionBreakdown ?? [];
+  const seatedBreakdownSeats = optionBreakdown.reduce((total, option) => {
+    if (option.isDonation || option.countsTowardCapacity === false) {
+      return total;
+    }
+
+    return total + Math.max(0, option.seatsCount);
+  }, 0);
+  const entries = optionBreakdown.map((option, index) =>
+    buildBucketOptionBreakdownEntry(option, index, occupiedSeats),
+  );
+
+  if (seatedBreakdownSeats < occupiedSeats) {
+    entries.push(
+      buildBucketFallbackOccupiedEntry(occupiedSeats - seatedBreakdownSeats, occupiedSeats),
+    );
+  }
+
+  if (remainingSeats !== null) {
+    entries.push(buildBucketFreeEntry(bucket));
+  }
+
+  const summary = formatBucketBreakdownSummary(bucket);
+  const note =
+    optionBreakdown.length === 0
+      ? bucket.optionTitles.length > 0
+        ? `RPC не вернул option breakdown; варианты слота: ${bucket.optionTitles.join(", ")}.`
+        : "RPC не вернул option breakdown для этого слота."
+      : null;
+
+  return {
+    entries,
+    note,
+    summary,
+  };
+}
+
+function buildBucketOptionBreakdownEntry(
+  option: AdminRegistrationCapacityBucketOptionBreakdown,
+  index: number,
+  occupiedSeats: number,
+): BucketBreakdownEntry {
+  const isNonSeat = option.isDonation || option.countsTowardCapacity === false;
+  const seatsCount = isNonSeat ? 0 : Math.max(0, option.seatsCount);
+  const contributionPercent =
+    isNonSeat || occupiedSeats > 0
+      ? normalizePercent(occupiedSeats > 0 ? (seatsCount / occupiedSeats) * 100 : 0)
+      : null;
+  const marker = option.isDonation
+    ? "донат · не занимает место"
+    : option.countsTowardCapacity === false
+      ? "не занимает место"
+      : null;
+  const color = isNonSeat
+    ? BUCKET_BREAKDOWN_NON_SEAT_COLOR
+    : BUCKET_BREAKDOWN_COLORS[index % BUCKET_BREAKDOWN_COLORS.length];
+
+  return {
+    key: `${getCapacityBucketOptionKey(option)}|${index}`,
+    title: option.title,
+    detail: `${formatNumber(option.registrationsCount)} заявок / ${formatNumber(
+      option.quantity,
+    )} шт.`,
+    marker,
+    valueLabel: isNonSeat ? "0 мест" : `${formatNumber(seatsCount)} мест`,
+    percentLabel: formatContributionPercent(contributionPercent),
+    barPercent: contributionPercent ?? 0,
+    chartValue: seatsCount,
+    color,
+    isFree: false,
+    isNonSeat,
+  };
+}
+
+function buildBucketFallbackOccupiedEntry(
+  seatsCount: number,
+  occupiedSeats: number,
+): BucketBreakdownEntry {
+  const contributionPercent =
+    occupiedSeats > 0 ? normalizePercent((seatsCount / occupiedSeats) * 100) : null;
+
+  return {
+    key: "unmatched-occupied",
+    title: "Места без детализации",
+    detail: "есть в занятости слота, но без option breakdown",
+    marker: null,
+    valueLabel: `${formatNumber(seatsCount)} мест`,
+    percentLabel: formatContributionPercent(contributionPercent),
+    barPercent: contributionPercent ?? 0,
+    chartValue: seatsCount,
+    color: "rgba(255, 255, 255, 0.42)",
+    isFree: false,
+    isNonSeat: false,
+  };
+}
+
+function buildBucketFreeEntry(bucket: CapacityBucketView): BucketBreakdownEntry {
+  const remainingSeats = bucket.effectiveRemainingSeats ?? 0;
+  const freePercent =
+    bucket.effectiveFreePercent ??
+    (bucket.effectiveCapacity !== null && bucket.effectiveCapacity > 0
+      ? normalizePercent((remainingSeats / bucket.effectiveCapacity) * 100)
+      : null);
+
+  return {
+    key: "free-seats",
+    title: "Свободно",
+    detail:
+      bucket.effectiveCapacity !== null
+        ? `из лимита ${formatNumber(bucket.effectiveCapacity)} мест`
+        : "лимит не задан",
+    marker: null,
+    valueLabel: `${formatNumber(remainingSeats)} мест`,
+    percentLabel: freePercent !== null ? `${freePercent}% свободно` : "без лимита",
+    barPercent: freePercent ?? 0,
+    chartValue: bucket.effectiveCapacity !== null ? remainingSeats : 0,
+    color: BUCKET_BREAKDOWN_FREE_COLOR,
+    isFree: true,
+    isNonSeat: false,
+  };
+}
+
+function formatBucketBreakdownSummary(bucket: CapacityBucketView): string {
+  const occupiedLabel =
+    bucket.effectiveCapacity !== null
+      ? `Занято ${formatNumber(bucket.occupiedSeats)} из ${formatNumber(
+          bucket.effectiveCapacity,
+        )}`
+      : `Занято ${formatNumber(bucket.occupiedSeats)}`;
+  const fillLabel =
+    bucket.effectiveFillPercent !== null
+      ? `${bucket.effectiveFillPercent}% заполнено`
+      : "без лимита";
+  const freeLabel =
+    bucket.effectiveRemainingSeats !== null
+      ? `${formatNumber(bucket.effectiveRemainingSeats)} свободно`
+      : "без лимита";
+
+  return `${occupiedLabel} · ${fillLabel} · ${freeLabel}`;
+}
+
+function formatContributionPercent(percent: number | null): string {
+  return percent !== null ? `${percent}%` : "нет занятых мест";
+}
+
+function buildBucketBreakdownGradient(entries: BucketBreakdownEntry[]): string | null {
+  const chartEntries = entries.filter((entry) => entry.chartValue > 0);
+  const total = chartEntries.reduce((sum, entry) => sum + entry.chartValue, 0);
+
+  if (total <= 0) {
+    return null;
+  }
+
+  let cursor = 0;
+  const segments = chartEntries.map((entry) => {
+    const start = cursor;
+    const end = cursor + (entry.chartValue / total) * 360;
+    cursor = end;
+
+    return `${entry.color} ${start.toFixed(2)}deg ${end.toFixed(2)}deg`;
+  });
+
+  return `conic-gradient(${segments.join(", ")})`;
 }
 
 function getCapacityBucketOptionKey(
