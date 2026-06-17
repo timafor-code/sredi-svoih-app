@@ -1,9 +1,13 @@
-import { listEventRegistrations } from "./adminEventsService";
 import { requireSupabaseClient } from "./supabaseClient";
 import type {
+  AdminRegistrationCapacityAnalytics,
+  AdminRegistrationCapacityAnalyticsRpcRow,
   AdminRegistrationCapacityBucket,
-  AdminRegistrationCapacityBucketRow,
-  AdminRegistrationCapacityReservationRow,
+  AdminRegistrationCapacityBucketAggregate,
+  AdminRegistrationCapacityBucketOptionBreakdown,
+  AdminRegistrationCapacityOptionStat,
+  AdminRegistrationCapacityStatusCounts,
+  AdminRegistrationCapacityTotals,
   ListAdminRegistrationCapacityBucketsParams,
 } from "../types/registrationCapacity";
 
@@ -13,79 +17,42 @@ type SupabaseSelectError = {
   hint?: string | null;
 };
 
-type CapacityUnitSummary = {
-  id: string;
-  key: string;
-  title: string;
-  capacity: number | null;
-  sortOrder: number;
-  createdAt: string;
-};
-
-type ReservationSummary = {
-  id: string;
-  registrationId: string;
-  capacityUnitId: string;
-  unitKeySnapshot: string;
-  unitTitleSnapshot: string;
-  optionTitleSnapshot: string | null;
-  seatsCount: number;
-  createdAt: string;
-};
-
-type MutableCapacityBucket = {
-  capacityUnitId: string;
-  key: string;
-  title: string;
-  capacity: number | null;
-  occupiedSeats: number;
-  reservationsCount: number;
-  optionTitles: Set<string>;
-  sortOrder: number;
-  createdAt: string;
-};
-
-const ACTIVE_CAPACITY_REGISTRATION_STATUSES = new Set<string>([
-  "confirmed",
-  "pending",
-  "attended",
-  "no_show",
-]);
-
-const QUERY_PAGE_SIZE = 1000;
-const REGISTRATIONS_PAGE_SIZE = 1000;
-
-const CAPACITY_UNIT_FIELDS = `
-  id,
-  event_id,
-  key,
-  title,
-  description,
-  capacity,
-  sort_order,
-  is_active,
-  created_at
-`;
-
-const CAPACITY_RESERVATION_FIELDS = `
-  id,
-  registration_id,
-  event_id,
-  occurrence_id,
-  capacity_unit_id,
-  option_id,
-  capacity_unit_key_snapshot,
-  capacity_unit_title_snapshot,
-  option_title_snapshot,
-  quantity,
-  seats_per_quantity,
-  seats_count,
-  created_at
-`;
+type JsonRecord = Record<string, unknown>;
 
 function formatSupabaseError(action: string, error: SupabaseSelectError): string {
   const details = [error.message, error.details, error.hint].filter(Boolean).join(" ");
   return `${action} failed: ${details || "Unknown Supabase error"}`;
+}
+
+function parseJsonish(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+function isRecord(value: unknown): value is JsonRecord {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function toRecord(value: unknown): JsonRecord {
+  const parsed = parseJsonish(value);
+  return isRecord(parsed) ? parsed : {};
+}
+
+function toRecordArray(value: unknown): JsonRecord[] {
+  const parsed = parseJsonish(value);
+
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  return parsed.filter(isRecord);
 }
 
 function nullableString(value: unknown): string | null {
@@ -118,246 +85,213 @@ function safeNumber(value: unknown, fallback: number): number {
   return nullableNumber(value) ?? fallback;
 }
 
-function uniqueStrings(values: Iterable<string>): string[] {
-  return Array.from(new Set(Array.from(values).map((value) => value.trim()))).filter(
-    (value) => value.length > 0,
+function safeBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  const parsed = parseJsonish(value);
+
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      parsed
+        .map((entry) => (typeof entry === "string" ? entry.trim() : null))
+        .filter((entry): entry is string => Boolean(entry && entry.length > 0)),
+    ),
   );
 }
 
-function isInOccurrenceScope(
-  occurrenceId: string | null,
-  rowOccurrenceId: string | null,
-): boolean {
-  return occurrenceId === null
-    ? rowOccurrenceId === null
-    : rowOccurrenceId === occurrenceId;
-}
+function normalizeStatusCounts(
+  totals: JsonRecord,
+): AdminRegistrationCapacityStatusCounts {
+  const statusCounts = toRecord(totals.statusCounts ?? totals.status_counts);
 
-function normalizeCapacityUnitRow(
-  row: Partial<AdminRegistrationCapacityBucketRow>,
-): CapacityUnitSummary {
   return {
-    id: requiredString(row.id, ""),
-    key: requiredString(row.key, ""),
-    title: requiredString(row.title, ""),
-    capacity: nullableNumber(row.capacity),
-    sortOrder: safeNumber(row.sort_order, 0),
-    createdAt: requiredString(row.created_at, ""),
+    confirmed: safeNumber(statusCounts.confirmed ?? totals.confirmedCount, 0),
+    pending: safeNumber(statusCounts.pending ?? totals.pendingCount, 0),
+    waitlisted: safeNumber(statusCounts.waitlisted ?? totals.waitlistedCount, 0),
+    cancelled: safeNumber(statusCounts.cancelled ?? totals.cancelledCount, 0),
+    rejected: safeNumber(statusCounts.rejected ?? totals.rejectedCount, 0),
+    attended: safeNumber(statusCounts.attended ?? totals.attendedCount, 0),
+    no_show: safeNumber(statusCounts.no_show ?? totals.noShowCount, 0),
   };
 }
 
-function normalizeReservationRow(
-  row: Partial<AdminRegistrationCapacityReservationRow>,
-): ReservationSummary | null {
-  const registrationId = requiredString(row.registration_id, "");
-  const capacityUnitId = requiredString(row.capacity_unit_id, "");
-
-  if (!registrationId || !capacityUnitId) {
-    return null;
-  }
+function normalizeTotals(value: unknown): AdminRegistrationCapacityTotals {
+  const totals = toRecord(value);
+  const statusCounts = normalizeStatusCounts(totals);
+  const totalRegistrations = safeNumber(
+    totals.totalRegistrations ?? totals.totalRegistrationsCount,
+    0,
+  );
 
   return {
-    id: requiredString(row.id, ""),
-    registrationId,
-    capacityUnitId,
-    unitKeySnapshot: requiredString(row.capacity_unit_key_snapshot, ""),
-    unitTitleSnapshot: requiredString(row.capacity_unit_title_snapshot, ""),
-    optionTitleSnapshot: nullableString(row.option_title_snapshot),
-    seatsCount: Math.max(0, safeNumber(row.seats_count, 0)),
-    createdAt: requiredString(row.created_at, ""),
+    totalRegistrations,
+    totalRegistrationsCount: safeNumber(totals.totalRegistrationsCount, totalRegistrations),
+    statusCounts,
+    confirmedCount: safeNumber(totals.confirmedCount, statusCounts.confirmed),
+    pendingCount: safeNumber(totals.pendingCount, statusCounts.pending),
+    waitlistedCount: safeNumber(totals.waitlistedCount, statusCounts.waitlisted),
+    cancelledCount: safeNumber(totals.cancelledCount, statusCounts.cancelled),
+    rejectedCount: safeNumber(totals.rejectedCount, statusCounts.rejected),
+    attendedCount: safeNumber(totals.attendedCount, statusCounts.attended),
+    noShowCount: safeNumber(totals.noShowCount, statusCounts.no_show),
+    activeRegistrationsCount: safeNumber(totals.activeRegistrationsCount, 0),
+    activeSeatsCount: safeNumber(totals.activeSeatsCount, 0),
+    uniqueRegisteredUsersCount: safeNumber(totals.uniqueRegisteredUsersCount, 0),
+    uniqueGuestsCount: safeNumber(totals.uniqueGuestsCount, 0),
+    uniquePeopleCount: safeNumber(totals.uniquePeopleCount, 0),
+    multiMealGuestsCount: safeNumber(totals.multiMealGuestsCount, 0),
+    sponsorsDonationsCount: safeNumber(totals.sponsorsDonationsCount, 0),
+    donationsCount: safeNumber(totals.donationsCount, 0),
+    donationQuantity: safeNumber(totals.donationQuantity, 0),
+    donationRegistrationsCount: safeNumber(totals.donationRegistrationsCount, 0),
+    capacity: nullableNumber(totals.capacity),
+    remainingSeats: nullableNumber(totals.remainingSeats),
+    freeSeats: nullableNumber(totals.freeSeats),
+    fillPercent: nullableNumber(totals.fillPercent),
+    freePercent: nullableNumber(totals.freePercent),
   };
 }
 
-function toCapacityBucket(bucket: MutableCapacityBucket): AdminRegistrationCapacityBucket {
-  const safeCapacity = bucket.capacity === null ? null : Math.max(0, bucket.capacity);
-  const remainingSeats =
-    safeCapacity === null ? null : Math.max(0, safeCapacity - bucket.occupiedSeats);
-  const fillPercent =
-    safeCapacity !== null && safeCapacity > 0
-      ? Math.min(100, Math.round((bucket.occupiedSeats / safeCapacity) * 100))
-      : null;
-
+function normalizeOptionStat(value: JsonRecord): AdminRegistrationCapacityOptionStat {
   return {
-    capacityUnitId: bucket.capacityUnitId,
-    key: bucket.key,
-    title: bucket.title,
-    capacity: safeCapacity,
-    occupiedSeats: bucket.occupiedSeats,
-    remainingSeats,
-    fillPercent,
-    reservationsCount: bucket.reservationsCount,
-    optionTitles: uniqueStrings(bucket.optionTitles),
-    isUnlimited: safeCapacity === null,
+    optionId: nullableString(value.optionId ?? value.option_id),
+    title: requiredString(value.title, "Option"),
+    optionType: requiredString(value.optionType ?? value.option_type, "participation"),
+    registrationsCount: safeNumber(value.registrationsCount ?? value.registrations_count, 0),
+    quantity: safeNumber(value.quantity, 0),
+    seatsCount: safeNumber(value.seatsCount ?? value.seats_count, 0),
+    isDonation: safeBoolean(value.isDonation ?? value.is_donation, false),
+    countsTowardCapacity: (value.countsTowardCapacity ?? value.counts_toward_capacity) !== false,
   };
 }
 
-async function fetchCapacityUnits(eventId: string): Promise<CapacityUnitSummary[]> {
+function normalizeOptionStats(value: unknown): AdminRegistrationCapacityOptionStat[] {
+  return toRecordArray(value).map(normalizeOptionStat);
+}
+
+function normalizeBucketOptionBreakdown(
+  value: JsonRecord,
+): AdminRegistrationCapacityBucketOptionBreakdown {
+  return {
+    optionId: nullableString(value.optionId ?? value.option_id),
+    title: requiredString(value.title, "Option"),
+    registrationsCount: safeNumber(value.registrationsCount ?? value.registrations_count, 0),
+    quantity: safeNumber(value.quantity, 0),
+    seatsCount: safeNumber(value.seatsCount ?? value.seats_count, 0),
+    isDonation: safeBoolean(value.isDonation ?? value.is_donation, false),
+    countsTowardCapacity: (value.countsTowardCapacity ?? value.counts_toward_capacity) !== false,
+  };
+}
+
+function normalizeCapacityBucket(value: JsonRecord): AdminRegistrationCapacityBucket {
+  const capacity = nullableNumber(value.capacity);
+  const key = requiredString(value.key ?? value.code, "");
+  const title = requiredString(value.title, key || "Capacity unit");
+
+  return {
+    capacityUnitId: requiredString(value.capacityUnitId ?? value.capacity_unit_id, ""),
+    key,
+    code: nullableString(value.code) ?? undefined,
+    title,
+    capacity,
+    effectiveCapacity: nullableNumber(value.effectiveCapacity ?? value.effective_capacity),
+    occupiedSeats: safeNumber(value.occupiedSeats ?? value.occupied_seats, 0),
+    remainingSeats: nullableNumber(value.remainingSeats ?? value.remaining_seats),
+    freeSeats: nullableNumber(value.freeSeats ?? value.free_seats),
+    effectiveRemainingSeats: nullableNumber(
+      value.effectiveRemainingSeats ?? value.effective_remaining_seats,
+    ),
+    fillPercent: nullableNumber(value.fillPercent ?? value.fill_percent),
+    effectiveFillPercent: nullableNumber(value.effectiveFillPercent ?? value.effective_fill_percent),
+    effectiveFreePercent: nullableNumber(value.effectiveFreePercent ?? value.effective_free_percent),
+    reservationsCount: safeNumber(value.reservationsCount ?? value.reservations_count, 0),
+    optionTitles: normalizeStringArray(value.optionTitles ?? value.option_titles),
+    optionBreakdown: toRecordArray(value.optionBreakdown ?? value.option_breakdown).map(
+      normalizeBucketOptionBreakdown,
+    ),
+    isUnlimited: safeBoolean(value.isUnlimited ?? value.is_unlimited, capacity === null),
+    usesFallbackCapacity: safeBoolean(
+      value.usesFallbackCapacity ?? value.uses_fallback_capacity,
+      false,
+    ),
+  };
+}
+
+function normalizeCapacityBuckets(value: unknown): AdminRegistrationCapacityBucket[] {
+  return toRecordArray(value)
+    .map(normalizeCapacityBucket)
+    .filter((bucket) => bucket.capacityUnitId.length > 0);
+}
+
+function normalizeBucketAggregate(
+  value: unknown,
+): AdminRegistrationCapacityBucketAggregate {
+  const aggregate = toRecord(value);
+
+  return {
+    occupiedSeats: safeNumber(aggregate.occupiedSeats ?? aggregate.occupied_seats, 0),
+    knownCapacity: safeNumber(aggregate.knownCapacity ?? aggregate.known_capacity, 0),
+    remainingSeats: safeNumber(aggregate.remainingSeats ?? aggregate.remaining_seats, 0),
+    fillPercent: nullableNumber(aggregate.fillPercent ?? aggregate.fill_percent),
+    freePercent: nullableNumber(aggregate.freePercent ?? aggregate.free_percent),
+    limitedBucketCount: safeNumber(
+      aggregate.limitedBucketCount ?? aggregate.limited_bucket_count,
+      0,
+    ),
+    hasUnlimitedBuckets: safeBoolean(
+      aggregate.hasUnlimitedBuckets ?? aggregate.has_unlimited_buckets,
+      false,
+    ),
+  };
+}
+
+function normalizeAnalyticsRow(
+  row: Partial<AdminRegistrationCapacityAnalyticsRpcRow>,
+  params: ListAdminRegistrationCapacityBucketsParams,
+): AdminRegistrationCapacityAnalytics {
+  return {
+    eventId: requiredString(row.event_id, params.eventId),
+    occurrenceId: nullableString(row.occurrence_id) ?? params.occurrenceId,
+    totals: normalizeTotals(row.totals),
+    bucketAggregate: normalizeBucketAggregate(row.bucket_aggregate),
+    buckets: normalizeCapacityBuckets(row.buckets),
+    optionStats: normalizeOptionStats(row.option_stats),
+    donationOptions: normalizeOptionStats(row.donation_options),
+  };
+}
+
+export async function getAdminRegistrationCapacityAnalytics(
+  params: ListAdminRegistrationCapacityBucketsParams,
+): Promise<AdminRegistrationCapacityAnalytics> {
   const supabase = requireSupabaseClient();
-  const { data, error } = await supabase
-    .from("event_capacity_units")
-    .select(CAPACITY_UNIT_FIELDS)
-    .eq("event_id", eventId)
-    .order("sort_order", { ascending: true })
-    .order("created_at", { ascending: true });
+  const { data, error } = await supabase.rpc("admin_get_registration_capacity_analytics", {
+    p_event_id: params.eventId,
+    p_occurrence_id: params.occurrenceId,
+  });
 
   if (error) {
-    throw new Error(formatSupabaseError("List registration capacity units", error));
+    throw new Error(formatSupabaseError("Get registration capacity analytics", error));
   }
 
-  return ((data ?? []) as AdminRegistrationCapacityBucketRow[])
-    .map(normalizeCapacityUnitRow)
-    .filter((unit) => unit.id.length > 0);
-}
+  const rows = Array.isArray(data) ? data : data ? [data] : [];
+  const row = rows[0] as Partial<AdminRegistrationCapacityAnalyticsRpcRow> | undefined;
 
-async function fetchCapacityReservations(
-  params: ListAdminRegistrationCapacityBucketsParams,
-): Promise<ReservationSummary[]> {
-  const supabase = requireSupabaseClient();
-  const rows: AdminRegistrationCapacityReservationRow[] = [];
-
-  for (let from = 0; ; from += QUERY_PAGE_SIZE) {
-    const to = from + QUERY_PAGE_SIZE - 1;
-    let query = supabase
-      .from("event_registration_capacity_reservations")
-      .select(CAPACITY_RESERVATION_FIELDS)
-      .eq("event_id", params.eventId)
-      .order("created_at", { ascending: true })
-      .range(from, to);
-
-    query =
-      params.occurrenceId === null
-        ? query.is("occurrence_id", null)
-        : query.eq("occurrence_id", params.occurrenceId);
-
-    const { data, error } = await query;
-
-    if (error) {
-      throw new Error(formatSupabaseError("List registration capacity reservations", error));
-    }
-
-    const page = (data ?? []) as AdminRegistrationCapacityReservationRow[];
-    rows.push(...page);
-
-    if (page.length < QUERY_PAGE_SIZE) {
-      break;
-    }
+  if (!row) {
+    throw new Error("Get registration capacity analytics failed: RPC returned no rows.");
   }
 
-  return rows
-    .map(normalizeReservationRow)
-    .filter((row): row is ReservationSummary => Boolean(row));
-}
-
-async function fetchActiveRegistrationIds(
-  params: ListAdminRegistrationCapacityBucketsParams,
-  registrationIds: string[],
-): Promise<Set<string>> {
-  const uniqueIds = uniqueStrings(registrationIds);
-
-  if (uniqueIds.length === 0) {
-    return new Set();
-  }
-
-  const reservationRegistrationIds = new Set(uniqueIds);
-  const activeIds = new Set<string>();
-
-  for (let offset = 0; ; offset += REGISTRATIONS_PAGE_SIZE) {
-    const page = await listEventRegistrations({
-      eventId: params.eventId,
-      occurrenceId: params.occurrenceId,
-      status: "all",
-      search: null,
-      limit: REGISTRATIONS_PAGE_SIZE,
-      offset,
-    });
-
-    page
-      .filter((registration) =>
-        isInOccurrenceScope(params.occurrenceId, registration.occurrenceId),
-      )
-      .forEach((registration) => {
-        if (
-          reservationRegistrationIds.has(registration.id) &&
-          ACTIVE_CAPACITY_REGISTRATION_STATUSES.has(registration.status)
-        ) {
-          activeIds.add(registration.id);
-        }
-      });
-
-    if (page.length < REGISTRATIONS_PAGE_SIZE) {
-      break;
-    }
-  }
-
-  return activeIds;
+  return normalizeAnalyticsRow(row, params);
 }
 
 export async function listAdminRegistrationCapacityBuckets(
   params: ListAdminRegistrationCapacityBucketsParams,
 ): Promise<AdminRegistrationCapacityBucket[]> {
-  const [capacityUnits, reservations] = await Promise.all([
-    fetchCapacityUnits(params.eventId),
-    fetchCapacityReservations(params),
-  ]);
-  const activeRegistrationIds = await fetchActiveRegistrationIds(
-    params,
-    reservations.map((reservation) => reservation.registrationId),
-  );
-  const bucketsByUnitId = new Map<string, MutableCapacityBucket>();
-
-  capacityUnits.forEach((unit) => {
-    bucketsByUnitId.set(unit.id, {
-      capacityUnitId: unit.id,
-      key: unit.key,
-      title: unit.title,
-      capacity: unit.capacity,
-      occupiedSeats: 0,
-      reservationsCount: 0,
-      optionTitles: new Set(),
-      sortOrder: unit.sortOrder,
-      createdAt: unit.createdAt,
-    });
-  });
-
-  reservations.forEach((reservation) => {
-    if (!activeRegistrationIds.has(reservation.registrationId)) {
-      return;
-    }
-
-    const existingBucket = bucketsByUnitId.get(reservation.capacityUnitId);
-    const bucket =
-      existingBucket ??
-      {
-        capacityUnitId: reservation.capacityUnitId,
-        key: reservation.unitKeySnapshot,
-        title: reservation.unitTitleSnapshot,
-        capacity: null,
-        occupiedSeats: 0,
-        reservationsCount: 0,
-        optionTitles: new Set<string>(),
-        sortOrder: Number.MAX_SAFE_INTEGER,
-        createdAt: reservation.createdAt,
-      };
-
-    bucket.occupiedSeats += reservation.seatsCount;
-    bucket.reservationsCount += 1;
-
-    if (reservation.optionTitleSnapshot) {
-      bucket.optionTitles.add(reservation.optionTitleSnapshot);
-    }
-
-    if (!existingBucket) {
-      bucketsByUnitId.set(reservation.capacityUnitId, bucket);
-    }
-  });
-
-  return Array.from(bucketsByUnitId.values())
-    .sort((left, right) => {
-      if (left.sortOrder !== right.sortOrder) {
-        return left.sortOrder - right.sortOrder;
-      }
-
-      return left.createdAt.localeCompare(right.createdAt) || left.title.localeCompare(right.title);
-    })
-    .map(toCapacityBucket);
+  const analytics = await getAdminRegistrationCapacityAnalytics(params);
+  return analytics.buckets;
 }

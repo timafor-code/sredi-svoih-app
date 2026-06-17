@@ -16,7 +16,7 @@ import { RegistrationMainActions } from "../components/registrations/Registratio
 import { RegistrationsState } from "../components/registrations/RegistrationsState";
 import { RegistrationsTable } from "../components/registrations/RegistrationsTable";
 import { listAdminEventOccurrences } from "../services/adminEventOccurrencesService";
-import { listAdminRegistrationCapacityBuckets } from "../services/adminRegistrationCapacityService";
+import { getAdminRegistrationCapacityAnalytics } from "../services/adminRegistrationCapacityService";
 import {
   listAdminEventCapacities,
   listEventRegistrations,
@@ -31,7 +31,10 @@ import type {
   AdminRegistrationEventSummary,
   AdminRegistrationStatus,
 } from "../types/registrations";
-import type { AdminRegistrationCapacityBucket } from "../types/registrationCapacity";
+import type {
+  AdminRegistrationCapacityAnalytics,
+  AdminRegistrationCapacityBucket,
+} from "../types/registrationCapacity";
 import {
   formatDateTime,
   formatEventKind,
@@ -55,7 +58,6 @@ type ToastMessage = {
   message: string;
 };
 
-const CAPACITY_REGISTRATION_LIMIT = 1000;
 const REGISTRATION_PAGE_SIZE = 50;
 const STATUS_FILTERS: Array<{ value: RegistrationStatusFilter; label: string }> = [
   { value: "all", label: "Все" },
@@ -133,16 +135,10 @@ export function RegistrationsPage() {
   const [registrations, setRegistrations] = useState<AdminEventRegistrationRow[]>([]);
   const [registrationsLoading, setRegistrationsLoading] = useState(false);
   const [registrationsError, setRegistrationsError] = useState<string | null>(null);
-  const [capacityRegistrations, setCapacityRegistrations] = useState<
-    AdminEventRegistrationRow[]
-  >([]);
-  const [capacityRegistrationsLoading, setCapacityRegistrationsLoading] = useState(false);
-  const [capacityRegistrationsError, setCapacityRegistrationsError] = useState<string | null>(
-    null,
-  );
-  const [capacityBuckets, setCapacityBuckets] = useState<AdminRegistrationCapacityBucket[]>([]);
-  const [capacityBucketsLoading, setCapacityBucketsLoading] = useState(false);
-  const [capacityBucketsError, setCapacityBucketsError] = useState<string | null>(null);
+  const [capacityAnalytics, setCapacityAnalytics] =
+    useState<AdminRegistrationCapacityAnalytics | null>(null);
+  const [capacityAnalyticsLoading, setCapacityAnalyticsLoading] = useState(false);
+  const [capacityAnalyticsError, setCapacityAnalyticsError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<RegistrationStatusFilter>("all");
   const [registrationSearch, setRegistrationSearch] = useState("");
   const [offset, setOffset] = useState(0);
@@ -309,100 +305,48 @@ export function RegistrationsPage() {
     ],
   );
 
-  const loadCapacityRegistrations = useCallback(
+  const loadCapacityAnalytics = useCallback(
     async ({ silent = false }: { silent?: boolean } = {}) => {
       if (!selectedEventId) {
-        setCapacityRegistrations([]);
-        setCapacityRegistrationsLoading(false);
-        setCapacityRegistrationsError(null);
-        return [];
+        setCapacityAnalytics(null);
+        setCapacityAnalyticsLoading(false);
+        setCapacityAnalyticsError(null);
+        return null;
       }
 
       if (eventHasOccurrences && !selectedOccurrenceId) {
-        setCapacityRegistrations([]);
-        setCapacityRegistrationsLoading(false);
-        setCapacityRegistrationsError(null);
-        return [];
+        setCapacityAnalytics(null);
+        setCapacityAnalyticsLoading(false);
+        setCapacityAnalyticsError(null);
+        return null;
       }
 
       if (!silent) {
-        setCapacityRegistrationsLoading(true);
-        setCapacityRegistrations([]);
+        setCapacityAnalyticsLoading(true);
+        setCapacityAnalytics(null);
       }
 
-      setCapacityRegistrationsError(null);
+      setCapacityAnalyticsError(null);
 
       try {
-        const nextCapacityRegistrations = await listEventRegistrations({
+        const nextAnalytics = await getAdminRegistrationCapacityAnalytics({
           eventId: selectedEventId,
           occurrenceId: eventHasOccurrences ? selectedOccurrenceId : null,
-          status: "all",
-          search: null,
-          limit: CAPACITY_REGISTRATION_LIMIT,
-          offset: 0,
         });
 
-        setCapacityRegistrations(nextCapacityRegistrations);
-        return nextCapacityRegistrations;
+        setCapacityAnalytics(nextAnalytics);
+        return nextAnalytics;
       } catch (nextError) {
         const message =
           nextError instanceof Error
             ? nextError.message
             : "Не удалось загрузить данные занятости мест.";
-        setCapacityRegistrations([]);
-        setCapacityRegistrationsError(message);
-        return [];
+        setCapacityAnalytics(null);
+        setCapacityAnalyticsError(message);
+        return null;
       } finally {
         if (!silent) {
-          setCapacityRegistrationsLoading(false);
-        }
-      }
-    },
-    [eventHasOccurrences, selectedEventId, selectedOccurrenceId],
-  );
-
-  const loadCapacityBuckets = useCallback(
-    async ({ silent = false }: { silent?: boolean } = {}) => {
-      if (!selectedEventId) {
-        setCapacityBuckets([]);
-        setCapacityBucketsLoading(false);
-        setCapacityBucketsError(null);
-        return [];
-      }
-
-      if (eventHasOccurrences && !selectedOccurrenceId) {
-        setCapacityBuckets([]);
-        setCapacityBucketsLoading(false);
-        setCapacityBucketsError(null);
-        return [];
-      }
-
-      if (!silent) {
-        setCapacityBucketsLoading(true);
-        setCapacityBuckets([]);
-      }
-
-      setCapacityBucketsError(null);
-
-      try {
-        const nextBuckets = await listAdminRegistrationCapacityBuckets({
-          eventId: selectedEventId,
-          occurrenceId: eventHasOccurrences ? selectedOccurrenceId : null,
-        });
-
-        setCapacityBuckets(nextBuckets);
-        return nextBuckets;
-      } catch (nextError) {
-        const message =
-          nextError instanceof Error
-            ? nextError.message
-            : "Не удалось загрузить слоты мест.";
-        setCapacityBuckets([]);
-        setCapacityBucketsError(message);
-        return [];
-      } finally {
-        if (!silent) {
-          setCapacityBucketsLoading(false);
+          setCapacityAnalyticsLoading(false);
         }
       }
     },
@@ -418,12 +362,8 @@ export function RegistrationsPage() {
   }, [loadRegistrations]);
 
   useEffect(() => {
-    void loadCapacityRegistrations();
-  }, [loadCapacityRegistrations]);
-
-  useEffect(() => {
-    void loadCapacityBuckets();
-  }, [loadCapacityBuckets]);
+    void loadCapacityAnalytics();
+  }, [loadCapacityAnalytics]);
 
   useEffect(() => {
     if (!selectedEventId || !eventHasOccurrences) {
@@ -561,12 +501,10 @@ export function RegistrationsPage() {
     await Promise.all([
       loadRegistrationEventSummaries({ silent: true }),
       loadRegistrations({ silent: true }),
-      loadCapacityRegistrations({ silent: true }),
-      loadCapacityBuckets({ silent: true }),
+      loadCapacityAnalytics({ silent: true }),
     ]);
   }, [
-    loadCapacityBuckets,
-    loadCapacityRegistrations,
+    loadCapacityAnalytics,
     loadRegistrationEventSummaries,
     loadRegistrations,
   ]);
@@ -677,8 +615,7 @@ export function RegistrationsPage() {
     void Promise.all([
       loadRegistrationEventSummaries(),
       loadRegistrations(),
-      loadCapacityRegistrations(),
-      loadCapacityBuckets(),
+      loadCapacityAnalytics(),
     ]).catch((nextError) => {
       pushToast(
         "error",
@@ -686,8 +623,7 @@ export function RegistrationsPage() {
       );
     });
   }, [
-    loadCapacityBuckets,
-    loadCapacityRegistrations,
+    loadCapacityAnalytics,
     loadRegistrationEventSummaries,
     loadRegistrations,
     pushToast,
@@ -786,14 +722,11 @@ export function RegistrationsPage() {
               ) : null}
 
               <RegistrationCapacityBucketsOverview
-                bucketError={capacityBucketsError}
-                buckets={capacityBuckets}
-                bucketsLoading={capacityBucketsLoading}
-                error={capacityRegistrationsError}
+                analytics={capacityAnalytics}
+                analyticsError={capacityAnalyticsError}
+                analyticsLoading={capacityAnalyticsLoading}
                 event={selectedEvent}
-                isLoading={capacityRegistrationsLoading}
                 onOpenSeatingPlaceholder={handleOpenSeatingPlaceholder}
-                registrations={capacityRegistrations}
                 selectedOccurrence={eventHasOccurrences ? selectedOccurrence : null}
               />
 
