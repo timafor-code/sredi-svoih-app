@@ -51,6 +51,10 @@ type RegistrationExportRow = {
   paymentStatus: string;
   selectedOptions: string;
   seatsCount: number;
+  capacitySeats: number;
+  seatObligations: string;
+  donations: string;
+  multiMeal: string;
   guests: string;
   comment: string;
   amount: number | null;
@@ -96,6 +100,32 @@ const EXPORT_COLUMNS: RegistrationExportColumn[] = [
     wrap: true,
   },
   { header: "Количество мест", key: "seatsCount", maxWidth: 18, minWidth: 16 },
+  {
+    header: "Занятые места (по capacity)",
+    key: "capacitySeats",
+    maxWidth: 18,
+    minWidth: 16,
+  },
+  {
+    header: "Обязательства по сеансам",
+    key: "seatObligations",
+    maxWidth: 48,
+    minWidth: 22,
+    wrap: true,
+  },
+  {
+    header: "Пожертвования",
+    key: "donations",
+    maxWidth: 44,
+    minWidth: 20,
+    wrap: true,
+  },
+  {
+    header: "Multi-meal (неск. сеансов)",
+    key: "multiMeal",
+    maxWidth: 22,
+    minWidth: 16,
+  },
   { header: "Гости", key: "guests", maxWidth: 36, minWidth: 16, wrap: true },
   { header: "Комментарий", key: "comment", maxWidth: 44, minWidth: 18, wrap: true },
   { header: "Сумма", key: "amount", maxWidth: 16, minWidth: 12 },
@@ -272,18 +302,22 @@ function buildExportRow(
   return {
     amount: getRegistrationAmount(registration),
     cancelledAt: formatDateTime(registration.cancelledAt),
+    capacitySeats: getCapacitySeats(registration.selectedOptions),
     comment: registration.comment ?? "",
     confirmedAt: formatDateTime(registration.confirmedAt),
     currency: getRegistrationCurrency(registration),
+    donations: formatDonations(registration.selectedOptions),
     email: registration.email ?? "",
     eventTitle: event.title,
     fullName: registration.participantDisplayName,
     guests: registration.guestNames.join(", "),
+    multiMeal: formatMultiMealMarker(registration.selectedOptions),
     occurrenceDate: formatDateTime(registration.occurrenceStartsAt ?? event.startsAt),
     occurrenceTitle: registration.occurrenceTitle ?? "",
     paymentStatus: formatPaymentStatus(registration.paymentStatus, registration.paymentId),
     phone: registration.phone ?? "",
     registeredAt: formatDateTime(registration.registeredAt),
+    seatObligations: formatSeatObligations(registration.selectedOptions),
     seatsCount: registration.seatsCount,
     selectedOptions: formatSelectedOptions(registration.selectedOptions),
     status: formatRegistrationStatus(registration.status),
@@ -407,14 +441,106 @@ function isSimulatedPaymentId(paymentId: string | null): boolean {
 function formatSelectedOptions(
   selectedOptions: AdminRegistrationOptionSelectionSummary[],
 ): string {
+  // Donations are intentionally excluded here — they get their own «Пожертвования»
+  // column so seat-taking options and donations are never double-counted.
   return selectedOptions
-    .map((option) => {
-      const donationLabel = option.isDonation ? " (пожертвование)" : "";
-      return `${option.title}${donationLabel} × ${option.quantity} — ${formatAmountWithCurrency(
-        option.totalAmount,
-        option.currency,
-      )}`;
-    })
+    .filter((option) => !option.isDonation)
+    .map(
+      (option) =>
+        `${option.title} × ${option.quantity} — ${formatAmountWithCurrency(
+          option.totalAmount,
+          option.currency,
+        )}`,
+    )
+    .join("\n");
+}
+
+// Doctrine: a donation never occupies a seat (schema-level v_has_non_donation_selection).
+// Capacity columns below only look at options with countsTowardCapacity === true and
+// isDonation === false, so donations stay out of seat counts and seat obligations.
+function getCapacityOptions(
+  selectedOptions: AdminRegistrationOptionSelectionSummary[],
+): AdminRegistrationOptionSelectionSummary[] {
+  return selectedOptions.filter(
+    (option) => option.countsTowardCapacity === true && !option.isDonation,
+  );
+}
+
+function getCapacitySeats(
+  selectedOptions: AdminRegistrationOptionSelectionSummary[],
+): number {
+  return getCapacityOptions(selectedOptions).reduce(
+    (total, option) => total + Math.max(0, option.seatsCount),
+    0,
+  );
+}
+
+function formatSeatObligations(
+  selectedOptions: AdminRegistrationOptionSelectionSummary[],
+): string {
+  // One registration can carry several seat obligations (e.g. «Весь Шабат» →
+  // friday_dinner + shabbat_lunch). List each capacity-taking option with its count.
+  return getCapacityOptions(selectedOptions)
+    .map((option) => `${option.title} ×${formatNumber(option.quantity)}`)
+    .join(", ");
+}
+
+function getCapacityBucketCount(
+  selectedOptions: AdminRegistrationOptionSelectionSummary[],
+): number {
+  // A capacity bucket is one session/meal, keyed by optionType. A guest who occupies
+  // seats across more than one bucket is a multi-meal (unique) guest.
+  const buckets = new Set(
+    getCapacityOptions(selectedOptions).map((option) => option.optionType || option.title),
+  );
+
+  return buckets.size;
+}
+
+function formatMultiMealMarker(
+  selectedOptions: AdminRegistrationOptionSelectionSummary[],
+): string {
+  const bucketCount = getCapacityBucketCount(selectedOptions);
+
+  if (bucketCount <= 0) {
+    return "";
+  }
+
+  if (bucketCount === 1) {
+    return "Нет";
+  }
+
+  return `Да · ${bucketCount} ${pluralizeSessions(bucketCount)}`;
+}
+
+function pluralizeSessions(count: number): string {
+  const mod100 = count % 100;
+  const mod10 = count % 10;
+
+  if (mod100 >= 11 && mod100 <= 14) {
+    return "сеансов";
+  }
+
+  if (mod10 === 1) {
+    return "сеанс";
+  }
+
+  if (mod10 >= 2 && mod10 <= 4) {
+    return "сеанса";
+  }
+
+  return "сеансов";
+}
+
+function formatDonations(
+  selectedOptions: AdminRegistrationOptionSelectionSummary[],
+): string {
+  return selectedOptions
+    .filter((option) => option.isDonation)
+    .map(
+      (option) =>
+        `${option.title} — ${formatAmountWithCurrency(option.totalAmount, option.currency)}`,
+    )
     .join("\n");
 }
 

@@ -126,6 +126,38 @@ For bucket-based events, capacity occupancy is owned by `buckets` in the analyti
 
 This avoids showing a seat-taking participation option as occupied when the selected event/occurrence has zero occupied seats in the bucket source of truth. If a bucket has occupied seats but no option breakdown, the UI shows a "Места без детализации" fallback row instead of rebuilding capacity from registration rows on the client.
 
+## Excel export
+
+`apps/admin/src/services/registrationExcelExport.ts` builds the registrations workbook
+from the same `listEventRegistrations` data the page already loads — no extra RPC or
+migration. The export covers the selected occurrence (`exportOccurrence`) or all
+registrations, and keeps the existing columns (event, occurrence date/title, full name,
+email, phone, status, payment, participation options, seat count, guests, comment, amount,
+currency, registered/confirmed/cancelled timestamps).
+
+The operational columns added on top read `registration.selectedOptions`:
+
+- **Занятые места (по capacity)** — sum of `seatsCount` over options with
+  `countsTowardCapacity === true`. Donations are excluded.
+- **Обязательства по сеансам** — comma-separated list of the seat-taking options with their
+  count (e.g. `Пятничный ужин ×1, Субботний обед ×1`). One registration can carry several
+  obligations, porting the «Весь Шабат → friday_dinner + shabbat_lunch» logic.
+- **Пожертвования** — separate column listing options with `isDonation === true` (title plus
+  amount/currency). Donations are also removed from «Варианты участия», so no seat is ever
+  double-counted.
+- **Multi-meal (неск. сеансов)** — marks a unique guest who occupies seats across more than
+  one capacity bucket (distinct `optionType`): `Нет` for a single bucket, `Да · N сеансов`
+  for several, empty when the registration takes no seat (donation-only).
+
+Doctrine: a donation never occupies a seat (schema-level `v_has_non_donation_selection`). In
+the export this means `isDonation` / `!countsTowardCapacity` options stay out of «Занятые
+места» and «Обязательства по сеансам». A donation-only registration therefore shows `0`
+occupied seats and an empty multi-meal marker.
+
+Seating assignments (table/seat placement) are intentionally **out of scope** here — there is
+no seating data yet. The export reports capacity obligations only; seat-by-seat data lands
+with the seating editor in a later PR.
+
 ## Next seating work
 
 The seating editor, seating data types, backend/RPC/RLS changes, canvas, drag-and-drop, table templates, and save flow should be implemented in separate follow-up PRs.
