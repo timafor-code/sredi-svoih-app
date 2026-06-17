@@ -4847,33 +4847,82 @@ a {
 
 .registration-capacity-overview {
   display: grid;
-  gap: 16px;
+  gap: 10px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 12px;
   background:
     linear-gradient(135deg, rgba(16, 18, 30, 0.92), rgba(44, 45, 62, 0.82)),
     rgba(255, 255, 255, 0.04);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-.registration-capacity-overview__head {
+.cap-head {
   display: flex;
-  align-items: start;
+  align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-.registration-capacity-overview__head > div {
-  display: grid;
+.cap-toggle {
+  display: inline-flex;
   min-width: 0;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 2px 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 850;
+  line-height: 1.25;
+  text-align: left;
 }
 
-.registration-capacity-overview__head span,
+.cap-toggle .chev {
+  display: inline-flex;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  background: var(--glass);
+  color: var(--text-soft);
+  font-size: 10px;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+
+.cap-toggle .chev--open {
+  transform: rotate(180deg);
+}
+
+.cap-toggle .sub {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cap-mode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cap-mode span,
+.registration-capacity-detail-head span,
 .registration-capacity-total__main > span,
 .registration-capacity-total__free > span,
-.registration-capacity-overview__mode span {
+.registration-capacity-stat > span {
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 800;
@@ -4881,33 +4930,144 @@ a {
   text-transform: uppercase;
 }
 
-.registration-capacity-overview__head strong {
-  overflow-wrap: anywhere;
-  color: var(--text);
-  font-size: 17px;
-  line-height: 1.2;
-}
-
-.registration-capacity-overview__mode {
-  display: grid;
-  flex: 0 0 min(260px, 42%);
-  gap: 6px;
-}
-
-.registration-capacity-overview__mode select {
-  width: 100%;
-  min-height: 36px;
+.cap-mode select {
+  min-height: 32px;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: var(--radius);
+  border-radius: 6px;
   outline: 0;
-  padding: 0 10px;
+  padding: 0 9px;
   background: rgba(255, 255, 255, 0.08);
   color: var(--text);
-  font-size: 13px;
+  font-size: 12px;
 }
 
-.registration-capacity-overview__mode select:focus {
+.cap-mode select:focus {
   border-color: rgba(242, 184, 75, 0.62);
+}
+
+.cap-quick {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 8px;
+}
+
+.cap-quick .registration-capacity-soft-state {
+  grid-column: 1 / -1;
+  padding: 10px 12px;
+}
+
+.cap-pill {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.cap-pill__l {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cap-pill__l span {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cap-pill__l b {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.cap-pill__bar {
+  overflow: hidden;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.cap-pill__bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(53, 199, 89, 0.86), rgba(242, 184, 75, 0.9));
+}
+
+.cap-pill__hint {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 720;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cap-pill--hot {
+  border-color: rgba(229, 44, 54, 0.26);
+  background: rgba(229, 44, 54, 0.08);
+}
+
+.cap-pill--hot .cap-pill__bar > span {
+  background: linear-gradient(90deg, rgba(242, 184, 75, 0.9), rgba(229, 44, 54, 0.92));
+}
+
+.cap-pill--info {
+  border-color: rgba(107, 127, 212, 0.32);
+  background: rgba(107, 127, 212, 0.08);
+}
+
+.cap-pill--info b {
+  color: #9badff;
+}
+
+.cap-pill--gold {
+  border-color: rgba(242, 184, 75, 0.28);
+  background: rgba(242, 184, 75, 0.08);
+}
+
+.cap-pill--gold b {
+  color: var(--gold);
+}
+
+.cap-detail {
+  display: grid;
+  gap: 10px;
+}
+
+.registration-capacity-overview.is-collapsed .cap-detail,
+.registration-capacity-overview.is-collapsed .cap-mode {
+  display: none;
+}
+
+.registration-capacity-detail-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.registration-capacity-detail-head strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.2;
+  text-align: right;
 }
 
 .registration-capacity-total {
@@ -4927,7 +5087,7 @@ a {
 .registration-capacity-total__main strong {
   overflow-wrap: anywhere;
   color: var(--text);
-  font-size: 40px;
+  font-size: 30px;
   line-height: 0.96;
 }
 
@@ -4981,7 +5141,7 @@ a {
 .registration-capacity-total__free strong {
   overflow-wrap: anywhere;
   color: var(--text);
-  font-size: 28px;
+  font-size: 24px;
   line-height: 1;
 }
 
@@ -5042,11 +5202,43 @@ a {
   text-align: left;
 }
 
-.registration-capacity-options__empty {
-  padding: 14px;
-  color: var(--text-muted);
-  font-size: 13px;
+.registration-capacity-option-row--muted {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.registration-capacity-option-row--muted > div span {
+  border-color: rgba(107, 127, 212, 0.24);
+  color: #b8c2ff;
+}
+
+.registration-capacity-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.registration-capacity-stat {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.registration-capacity-stat strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.registration-capacity-stat small {
+  color: var(--text-soft);
+  font-size: 11px;
   font-weight: 650;
+  line-height: 1.35;
 }
 
 .registration-capacity-helper {
@@ -5065,10 +5257,10 @@ a {
 .registration-capacity-bucket-row {
   display: grid;
   min-width: 0;
-  gap: 12px;
+  gap: 10px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--radius);
-  padding: 12px;
+  padding: 10px;
   background: rgba(255, 255, 255, 0.035);
 }
 
@@ -5139,14 +5331,27 @@ a {
   padding-left: 0;
 }
 
-.registration-capacity-bucket-row__meta {
+.registration-capacity-bucket-row__meta,
+.registration-capacity-bucket-row__breakdown {
   display: flex;
   flex-wrap: wrap;
   gap: 5px 10px;
 }
 
-.registration-capacity-bucket-row__meta span {
+.registration-capacity-bucket-row__meta span,
+.registration-capacity-bucket-row__breakdown span {
   overflow-wrap: anywhere;
+}
+
+.registration-capacity-bucket-row__breakdown span {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .registration-capacity-soft-state {
@@ -6254,19 +6459,33 @@ a {
   }
 
   .registrations-main-head,
-  .registration-capacity-overview__head,
+  .cap-head,
+  .registration-capacity-detail-head,
   .registrations-table-panel__head {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .registration-capacity-overview__mode {
-    flex-basis: auto;
+  .cap-toggle {
+    width: 100%;
+  }
+
+  .cap-toggle .sub {
+    white-space: normal;
+  }
+
+  .cap-mode {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .cap-mode select {
     width: 100%;
   }
 
   .registration-capacity-total__main strong {
-    font-size: 34px;
+    font-size: 28px;
   }
 
   .registration-capacity-option-row {

@@ -608,7 +608,7 @@ export function RegistrationsPage() {
   }, []);
 
   const handleOpenSeatingPlaceholder = useCallback(() => {
-    pushToast("success", "Схема рассадки будет добавлена в следующем PR.");
+    pushToast("success", "Редактор рассадки будет добавлен отдельным PR.");
   }, [pushToast]);
 
   const refreshAll = useCallback(() => {
