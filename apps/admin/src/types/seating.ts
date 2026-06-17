@@ -1,13 +1,21 @@
-// Seating geometry types (block B, PR 9 — feature/admin-seating-geometry-lib).
+// Seating types (block B).
 //
-// These are the minimal types required by the pure geometry layer in
-// `lib/seatingGeometry.ts`. They intentionally cover only geometry / seat-state
-// math — there is NO service-layer, RPC, DTO or persistence type here. The full
-// typed service layer (SeatingLayout, SeatingTemplate, SeatingAssignment, …)
-// arrives in PR 10 (feature/admin-seating-service-types).
+// This file has two clearly separated sections:
 //
-// The field names mirror the v15 payload contract (see PLAN §3 and
-// adminSeatingService.SeatingLayoutSavePayload): `customTables[]` rows carry
+//   1. Geometry / seat-state types (PR 9 — feature/admin-seating-geometry-lib).
+//      The minimal types required by the pure geometry layer in
+//      `lib/seatingGeometry.ts`. They cover only geometry / seat-state math.
+//
+//   2. Service-layer types (PR 10 — feature/admin-seating-service-types), at the
+//      bottom of the file. The typed model for `services/adminSeatingService.ts`:
+//      the normalised camelCase frontend model (SeatingLayout, SeatingTemplate,
+//      SeatingAssignment, …), the raw snake_case RPC rows it normalises from, and
+//      the v15 save payload contract it serialises to. They are built ON TOP of
+//      the geometry types and reuse them (SeatingTable, SeatingConnection) so a
+//      loaded layout can be fed straight into the geometry layer.
+//
+// The field names mirror the v15 payload contract (see PLAN §3 and the
+// SeatingLayoutPayload type below): `customTables[]` rows carry
 // `{ id, cx, cy, w, h, angle, sideSeats, isRabbiTable }` and `tableConnections[]`
 // carry `{ aTableId, aEnd, bTableId, bEnd, x, y }`. Keeping the same shape means
 // the geometry layer consumes saved layouts without a translation step.
@@ -126,4 +134,271 @@ export interface SeatState {
   rabbiReserveCount: number;
   headIndex: number;
   physicalSeatCount: number;
+}
+
+// ===========================================================================
+// Service-layer types (block B, PR 10 — feature/admin-seating-service-types).
+//
+// The typed model consumed/produced by `services/adminSeatingService.ts`.
+// Three layers:
+//   * Frontend model — normalised camelCase (SeatingLayout, SeatingTemplate,
+//     SeatingAssignment, …). What the service returns.
+//   * RPC rows — the raw snake_case jsonb the read/write RPC return. What the
+//     service normalises FROM. Suffixed `RpcRow`.
+//   * Save payload — the v15 contract the save RPC accept. What the service
+//     serialises TO. Suffixed `Payload`.
+//
+// `SeatingTable` and `SeatingConnection` are deliberately the geometry types
+// above, so a loaded layout's `tables` / `connections` go straight into
+// `computeTableSeats` without translation.
+// ===========================================================================
+
+/** Assignment kind. `reserve` carries no registration; `guest` references one. */
+export type SeatingAssignmentType = "guest" | "reserve";
+
+/**
+ * A table connection in the service model. Identical to the geometry
+ * {@link SeatingTableConnection} (`{ aTableId, aEnd, bTableId, bEnd, x, y }`);
+ * aliased here so service-layer call sites can speak of "connections".
+ */
+export type SeatingConnection = SeatingTableConnection;
+
+// ---------------------------------------------------------------------------
+// Frontend model (normalised, camelCase)
+// ---------------------------------------------------------------------------
+
+/**
+ * One `event_seating_layouts` row (a seating instance bound to a capacity slot),
+ * without its child collections. Returned by the write RPC that mutate the row
+ * (save layout, create-from-template).
+ */
+export interface SeatingLayoutRow {
+  id: string;
+  communityId: string;
+  eventId: string;
+  /** `null` for the legacy single-occurrence slot. */
+  occurrenceId: string | null;
+  capacityUnitId: string;
+  /** `null` when the instance keeps its own geometry (builtin/grid/blank). */
+  templateId: string | null;
+  /** Non-authoritative display snapshot; `null` = no limit. Never the real limit. */
+  capacityLimitSnapshot: number | null;
+  seatingDone: boolean;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A seating instance with its tables, connections and assignments. */
+export interface SeatingLayout extends SeatingLayoutRow {
+  tables: SeatingTable[];
+  connections: SeatingConnection[];
+  assignments: SeatingAssignment[];
+}
+
+/** Geometry-only snapshot stored on a template (no guests, no slot). */
+export interface SeatingTemplateSnapshot {
+  version: number;
+  canvas: { width: number; height: number };
+  tables: SeatingTable[];
+  connections: SeatingConnection[];
+}
+
+/** A reusable, community-scoped geometry template. */
+export interface SeatingTemplate {
+  id: string;
+  communityId: string;
+  title: string;
+  snapshot: SeatingTemplateSnapshot;
+  /** Built-in templates cannot be deleted. */
+  isBuiltin: boolean;
+  /** Soft-delete flag (`false` = deleted). */
+  isActive: boolean;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A guest / reserve placed on a chair (or pooled when `seatKey` is null). */
+export interface SeatingAssignment {
+  id: string;
+  layoutId: string;
+  /** `null` for reserves and unplaced pool entries. */
+  registrationId: string | null;
+  /** `client_table_id` + seat index; `null` when unplaced (pool). */
+  seatKey: string | null;
+  guestLabel: string | null;
+  guestInitials: string | null;
+  type: SeatingAssignmentType;
+}
+
+/**
+ * Display-only capacity summary shape (the v15 status line). This PR ships the
+ * TYPE only — the formulas (PLAN §1) and the UI land in PR 18
+ * (feature/admin-seating-capacity-summary). It is never computed here and never
+ * changes `event_capacity_units.capacity`.
+ */
+export interface SeatingCapacitySummary {
+  /** Physical chairs from the geometry (`computePhysicalSeatCount`). */
+  physicalSeatCount: number;
+  /** Registration limit; `null` = no limit. */
+  capacityLimit: number | null;
+  occupiedSeats: number;
+  reserveCount: number;
+  /** `capacityLimit − occupiedSeats`; `null` when there is no limit. */
+  freeByLimit: number | null;
+  /** `physicalSeatCount − occupiedSeats − reserveCount`. */
+  freePhysical: number;
+  /** `max(0, occupiedSeats + reserveCount − physicalSeatCount)`. */
+  missingPhysical: number;
+  /** `max(0, physicalSeatCount − capacityLimit)`; `0` when there is no limit. */
+  physicalOverflow: number;
+}
+
+// ---------------------------------------------------------------------------
+// Raw RPC rows (snake_case, as returned by the read/write RPC)
+// ---------------------------------------------------------------------------
+
+/** `to_jsonb(event_seating_layout_templates)` / template-returning RPC rows. */
+export interface SeatingTemplateRpcRow {
+  id: string;
+  community_id: string;
+  title: string;
+  snapshot: unknown;
+  is_builtin: boolean;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** `to_jsonb(event_seating_layouts)` / layout-returning RPC rows. */
+export interface SeatingLayoutRpcRow {
+  id: string;
+  community_id: string;
+  event_id: string;
+  occurrence_id: string | null;
+  capacity_unit_id: string;
+  template_id: string | null;
+  capacity_limit_snapshot: number | null;
+  seating_done: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** `to_jsonb(event_seating_tables)` rows (layout `tables` jsonb). */
+export interface SeatingTableRpcRow {
+  client_table_id: string;
+  cx: number | string;
+  cy: number | string;
+  w: number | string;
+  h: number | string;
+  angle: number | string;
+  long_side_seats: number | string;
+  is_rabbi_table: boolean;
+}
+
+/** `to_jsonb(event_seating_table_connections)` rows (layout `connections` jsonb). */
+export interface SeatingConnectionRpcRow {
+  from_client_table_id: string;
+  from_end: string | null;
+  to_client_table_id: string;
+  to_end: string | null;
+  anchor_x: number | string | null;
+  anchor_y: number | string | null;
+}
+
+/** `to_jsonb(event_seating_assignments)` rows (layout `assignments` jsonb). */
+export interface SeatingAssignmentRpcRow {
+  id: string;
+  layout_id: string;
+  registration_id: string | null;
+  seat_key: string | null;
+  guest_label: string | null;
+  guest_initials: string | null;
+  assignment_type: string;
+}
+
+/** A single row of `admin_get_seating_layout`. `layout` is null for an empty slot. */
+export interface SeatingLayoutEnvelopeRpcRow {
+  layout: SeatingLayoutRpcRow | null;
+  tables: SeatingTableRpcRow[];
+  connections: SeatingConnectionRpcRow[];
+  assignments: SeatingAssignmentRpcRow[];
+}
+
+// ---------------------------------------------------------------------------
+// Save payload (v15 contract + slot routing keys)
+// ---------------------------------------------------------------------------
+
+/**
+ * One entry of the v15 `chairs[]` (placed) or `pool[]` (unplaced) arrays.
+ * `seatKey` is set for placed chairs and null/absent for pool entries.
+ */
+export interface SeatingAssignmentEntry {
+  seatKey?: string | null;
+  registrationId?: string | null;
+  type: SeatingAssignmentType;
+  name?: string | null;
+  initials?: string | null;
+}
+
+/**
+ * The v15 save-layout payload (PLAN §3) plus the slot routing keys. The routing
+ * keys (`eventId` / `occurrenceId` / `capacityUnitId`) live INSIDE the payload by
+ * design (PR 8): the prototype carried the slot in the localStorage key, the RPC
+ * reads it from the body. They are typed explicitly here, not hidden.
+ *
+ * Only routing + geometry are required; the remaining v15 fields are optional and
+ * defaulted by the serializer to the canonical contract. `capacity` is accepted
+ * for parity only — the RPC ignores it and derives `capacity_limit_snapshot`
+ * server-side, so it can never change `event_capacity_units.capacity`.
+ */
+export interface SeatingLayoutPayload {
+  // routing keys
+  eventId: string;
+  occurrenceId?: string | null;
+  capacityUnitId: string;
+  // v15 contract
+  layout?: string;
+  customTables: SeatingTable[];
+  tableConnections?: SeatingConnection[];
+  selectedTableId?: string | null;
+  seatingDone?: boolean;
+  activeTemplateId?: string | null;
+  reserveIds?: string[];
+  capacity?: number;
+  chairs?: SeatingAssignmentEntry[];
+  pool?: SeatingAssignmentEntry[];
+}
+
+/** The save-assignments payload: chairs[] (placed) + pool[] (unplaced) + routing. */
+export interface SeatingAssignmentsPayload {
+  eventId: string;
+  occurrenceId?: string | null;
+  capacityUnitId: string;
+  chairs?: SeatingAssignmentEntry[];
+  pool?: SeatingAssignmentEntry[];
+  reserveIds?: string[];
+}
+
+/** Slot identifier for the read / fork RPC. */
+export interface SeatingSlotParams {
+  eventId: string;
+  occurrenceId: string | null;
+  capacityUnitId: string;
+}
+
+/** Slot + template id for `admin_create_seating_layout_from_template`. */
+export interface CreateSeatingLayoutFromTemplateParams extends SeatingSlotParams {
+  templateId: string;
+}
+
+/** Result of `admin_save_seating_assignments`. */
+export interface SeatingAssignmentsSaveResult {
+  layoutId: string;
+  placedCount: number;
+  pooledCount: number;
+  reserveCount: number;
 }
