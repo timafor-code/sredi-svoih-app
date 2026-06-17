@@ -51,6 +51,7 @@ export function RegistrationCapacityBucketsOverview({
   error,
   event,
   isLoading,
+  onOpenSeatingPlaceholder,
   registrations,
   selectedOccurrence,
 }: {
@@ -60,6 +61,7 @@ export function RegistrationCapacityBucketsOverview({
   error: string | null;
   event: AdminRegistrationEventSummary;
   isLoading: boolean;
+  onOpenSeatingPlaceholder: (bucket: AdminRegistrationCapacityBucket) => void;
   registrations: AdminEventRegistrationRow[];
   selectedOccurrence: AdminEventOccurrence | null;
 }) {
@@ -303,6 +305,14 @@ export function RegistrationCapacityBucketsOverview({
                       : "Лимит не задан"}
                   </span>
                 </div>
+                <button
+                  className="registration-capacity-bucket-row__seat-button"
+                  onClick={() => onOpenSeatingPlaceholder(bucket)}
+                  title="Схема рассадки будет добавлена в следующем PR"
+                  type="button"
+                >
+                  Схема рассадки
+                </button>
               </div>
 
               <RegistrationCapacityMeter

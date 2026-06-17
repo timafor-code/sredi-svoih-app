@@ -282,7 +282,7 @@ export function RegistrationsPage() {
             return currentRegistrationId;
           }
 
-          return nextRegistrations[0]?.id ?? null;
+          return null;
         });
 
         return nextRegistrations;
@@ -665,6 +665,14 @@ export function RegistrationsPage() {
     setOffset(0);
   }, []);
 
+  const handleCloseRegistrationModal = useCallback(() => {
+    setSelectedRegistrationId(null);
+  }, []);
+
+  const handleOpenSeatingPlaceholder = useCallback(() => {
+    pushToast("success", "Схема рассадки будет добавлена в следующем PR.");
+  }, [pushToast]);
+
   const refreshAll = useCallback(() => {
     void Promise.all([
       loadRegistrationEventSummaries(),
@@ -784,6 +792,7 @@ export function RegistrationsPage() {
                 error={capacityRegistrationsError}
                 event={selectedEvent}
                 isLoading={capacityRegistrationsLoading}
+                onOpenSeatingPlaceholder={handleOpenSeatingPlaceholder}
                 registrations={capacityRegistrations}
                 selectedOccurrence={eventHasOccurrences ? selectedOccurrence : null}
               />
@@ -911,17 +920,16 @@ export function RegistrationsPage() {
             />
           )}
         </GlassCard>
-
-        <GlassCard className="registration-detail-panel" elevated>
-          <RegistrationDetailPanel
-            actionInFlight={actionInFlight}
-            actions={REGISTRATION_ACTIONS}
-            event={selectedEvent}
-            onAction={requestRegistrationAction}
-            registration={selectedRegistration}
-          />
-        </GlassCard>
       </div>
+
+      <RegistrationDetailModal
+        actionInFlight={actionInFlight}
+        actions={REGISTRATION_ACTIONS}
+        event={selectedEvent}
+        onAction={requestRegistrationAction}
+        onClose={handleCloseRegistrationModal}
+        registration={selectedRegistration}
+      />
 
       {pendingAction ? (
         <RegistrationConfirmDialog
@@ -942,6 +950,90 @@ export function RegistrationsPage() {
     </div>
   );
 }
+
+function RegistrationDetailModal({
+  actionInFlight,
+  actions,
+  event,
+  onAction,
+  onClose,
+  registration,
+}: {
+  actionInFlight: ActionInFlight | null;
+  actions: RegistrationAction[];
+  event: AdminRegistrationEventSummary | null;
+  onAction: (registration: AdminEventRegistrationRow, action: RegistrationAction) => void;
+  onClose: () => void;
+  registration: AdminEventRegistrationRow | null;
+}) {
+  useEffect(() => {
+    if (!registration) {
+      return undefined;
+    }
+
+    const handleKeyDown = (keyboardEvent: KeyboardEvent) => {
+      if (keyboardEvent.key === "Escape") {
+        onClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, registration]);
+
+  if (!registration || typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div
+      className="registration-detail-modal-overlay"
+      onMouseDown={(mouseEvent) => {
+        if (mouseEvent.target === mouseEvent.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        aria-labelledby="registration-detail-modal-title"
+        aria-modal="true"
+        className="registration-detail-modal"
+        role="dialog"
+      >
+        <header className="registration-detail-modal__head">
+          <div>
+            <span>Заявка участника</span>
+            <h2 id="registration-detail-modal-title">
+              {registration.participantDisplayName}
+            </h2>
+          </div>
+          <button
+            aria-label="Закрыть детали регистрации"
+            className="registration-detail-modal__close"
+            onClick={onClose}
+            type="button"
+          >
+            ×
+          </button>
+        </header>
+        <div className="registration-detail-modal__body">
+          <RegistrationDetailPanel
+            actionInFlight={actionInFlight}
+            actions={actions}
+            event={event}
+            onAction={onAction}
+            registration={registration}
+          />
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 function RegistrationOccurrenceBar({
   occurrences,
   occurrencesLoading,

@@ -1,0 +1,1580 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Среди Своих — Регистрации</title>
+<style>
+:root{color-scheme:dark;--bg:#0d0d18;--bg-deep:#080811;--surface:#151522;--surface-strong:#1d1d30;--elevated:#24243a;--glass:rgba(255,255,255,0.06);--glass-strong:rgba(255,255,255,0.09);--glass-border:rgba(255,255,255,0.12);--text:rgba(255,255,255,0.94);--text-soft:rgba(255,255,255,0.72);--text-muted:rgba(255,255,255,0.48);--text-faint:rgba(255,255,255,0.28);--red:#e52c36;--red-soft:rgba(229,44,54,0.16);--gold:#f2b84b;--gold-soft:rgba(242,184,75,0.16);--green:#35c759;--green-soft:rgba(53,199,89,0.14);--blue:#6b7fd4;--blue-soft:rgba(107,127,212,0.16);--purple:#a78bfa;--purple-soft:rgba(167,139,250,0.16);--shadow:0 20px 60px rgba(0,0,0,0.36);--topbar-height:64px;--radius:8px;--font-sans:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-family:var(--font-sans)}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;color:var(--text);background:linear-gradient(135deg,rgba(229,44,54,0.12),transparent 28%),linear-gradient(315deg,rgba(242,184,75,0.1),transparent 24%),linear-gradient(180deg,var(--bg),var(--bg-deep));padding:24px}
+button,input,select{font:inherit}button{cursor:pointer}
+select option{background:var(--surface-strong);color:var(--text)}
+.page-stack{display:grid;gap:20px;width:min(100%,1540px);margin:0 auto}
+.page-header{display:grid;gap:9px;max-width:860px}
+.page-header h1{margin:0;font-size:30px;line-height:1.08}
+.page-header p{margin:0;color:var(--text-soft);font-size:14px;line-height:1.65}
+.glass-card{border:1px solid var(--glass-border);border-radius:var(--radius);padding:16px;background:var(--glass);box-shadow:var(--shadow);backdrop-filter:blur(20px)}
+.glass-card--elevated{background:var(--surface-strong)}
+.badge{display:inline-flex;align-items:center;width:fit-content;min-height:20px;border-radius:6px;padding:2px 7px;border:1px solid transparent;font-size:11px;font-weight:800;line-height:1.25;white-space:nowrap}
+.badge--red{border-color:rgba(229,44,54,0.28);background:var(--red-soft);color:#ff7b83}
+.badge--gold{border-color:rgba(242,184,75,0.28);background:var(--gold-soft);color:var(--gold)}
+.badge--green{border-color:rgba(53,199,89,0.26);background:var(--green-soft);color:var(--green)}
+.badge--blue{border-color:rgba(107,127,212,0.3);background:var(--blue-soft);color:#9badff}
+.badge--purple{border-color:rgba(167,139,250,0.28);background:var(--purple-soft);color:var(--purple)}
+.badge--muted,.badge--glass{border-color:var(--glass-border);background:var(--glass);color:var(--text-soft)}
+.badge-row{display:flex;flex-wrap:wrap;gap:6px}
+.button{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;border-radius:var(--radius);font-weight:750;line-height:1;white-space:nowrap;transition:background .14s,border-color .14s,color .14s}
+.button--md{min-height:38px;padding:0 13px;font-size:13px}
+.button--sm{min-height:30px;padding:0 10px;font-size:12px}
+.button--primary{background:var(--red);color:#fff}.button--primary:hover{background:#cc2530}
+.button--secondary{border-color:var(--glass-border);background:var(--glass);color:var(--text)}.button--secondary:hover{background:var(--glass-strong)}
+.button--ghost{background:transparent;color:var(--text-soft)}.button--ghost:hover{background:var(--glass-strong)}
+.button--gold{background:var(--gold);color:#1d1506}
+.button:disabled{cursor:not-allowed;opacity:.58}
+
+.page-stack--registrations{width:min(100%,1540px)}
+.registrations-page-header{max-width:860px}
+.registrations-workspace{display:grid;grid-template-columns:290px minmax(0,1fr) 340px;gap:12px;align-items:stretch}
+.registrations-events-panel,.registrations-main-panel,.registration-detail-panel{min-width:0;max-height:calc(100vh - 90px);padding:0;overflow:hidden}
+.registrations-events-panel{display:grid;grid-template-rows:auto auto minmax(0,1fr)}
+.registrations-main-panel,.registration-detail-panel{overflow-y:auto}
+.registrations-panel__head,.registrations-main-head,.registrations-table-panel__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.registrations-panel__head{border-bottom:1px solid var(--glass-border);padding:14px}
+.registrations-panel__head div{display:grid;min-width:0;gap:6px}
+.registrations-panel__head span{color:var(--text-muted);font-size:11px;font-weight:850;text-transform:uppercase}
+.registrations-panel__head strong{font-size:22px;line-height:1}
+.registration-search-field{display:grid;min-width:0;gap:7px;padding:14px}
+.registration-search-field span{color:var(--text-soft);font-size:12px;font-weight:750}
+.registration-search-field input{width:100%;min-height:38px;border:1px solid var(--glass-border);border-radius:var(--radius);outline:0;padding:0 11px;background:rgba(255,255,255,0.08);color:var(--text);font-size:13px}
+.registration-search-field input:focus{border-color:rgba(242,184,75,0.62)}
+.registration-search-field--wide{padding:0}
+.registration-event-list{display:grid;align-content:start;gap:8px;min-height:0;overflow-y:auto;padding:0 10px 12px}
+.registration-event-card{display:grid;width:100%;gap:10px;border:1px solid transparent;border-radius:var(--radius);padding:11px;background:transparent;color:inherit;text-align:left;transition:background .12s,border-color .12s}
+.registration-event-card:hover{border-color:var(--glass-border);background:var(--glass)}
+.registration-event-card--active{border-color:rgba(242,184,75,0.34);background:rgba(242,184,75,0.09)}
+.registration-event-card__title{display:grid;min-width:0;gap:4px}
+.registration-event-card__title strong{overflow:hidden;font-size:13px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
+.registration-event-card__title span{overflow:hidden;color:var(--text-muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+.registration-event-card__counters{display:flex;flex-wrap:wrap;gap:5px}
+.registration-counter{display:inline-flex;align-items:center;gap:4px;min-height:22px;border:1px solid var(--glass-border);border-radius:6px;padding:2px 6px;background:var(--glass)}
+.registration-counter strong{font-size:12px}.registration-counter small{color:var(--text-muted);font-size:10px;font-weight:800;text-transform:uppercase}
+.registration-counter--green{border-color:rgba(53,199,89,0.24);background:rgba(53,199,89,0.1)}
+.registration-counter--gold{border-color:rgba(242,184,75,0.24);background:rgba(242,184,75,0.1)}
+.registration-counter--purple{border-color:rgba(167,139,250,0.25);background:rgba(167,139,250,0.1)}
+.registrations-main-panel{display:grid;align-content:start;gap:14px;padding:16px}
+.registrations-main-head{border-bottom:1px solid var(--glass-border);padding-bottom:14px}
+.registrations-main-head h2{margin:0;font-size:22px;line-height:1.16}
+.registrations-main-head p{margin:0;color:var(--text-soft);font-size:13px}
+.registrations-main-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+
+.registration-occurrence-bar{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--glass-border);border-radius:var(--radius);background:rgba(36,36,58,0.7)}
+.registration-occurrence-field{display:grid;gap:6px;min-width:240px;flex:1 1 280px}
+.registration-occurrence-field span{color:var(--text-soft);font-size:12px;font-weight:750}
+.registration-occurrence-field select{width:100%;min-height:38px;border:1px solid var(--glass-border);border-radius:var(--radius);outline:0;padding:0 11px;background:rgba(255,255,255,0.08);color:var(--text);font-size:13px}
+.registration-occurrence-toggle{display:inline-flex;align-items:center;gap:8px;color:var(--text-soft);font-size:12px;font-weight:750}
+.registration-occurrence-toggle input{width:16px;height:16px;accent-color:rgba(242,184,75,0.86)}
+
+.registration-capacity-overview{display:grid;gap:16px;border:1px solid rgba(255,255,255,0.14);border-radius:var(--radius);padding:16px;background:linear-gradient(135deg,rgba(16,18,30,0.92),rgba(44,45,62,0.82)),rgba(255,255,255,0.04);box-shadow:inset 0 1px 0 rgba(255,255,255,0.08)}
+.registration-capacity-overview__head{display:flex;align-items:start;justify-content:space-between;gap:14px}
+.registration-capacity-overview__head>div{display:grid;min-width:0;gap:4px}
+.registration-capacity-overview__head span,.registration-capacity-total__main>span,.registration-capacity-total__free>span,.registration-capacity-overview__mode span{color:var(--text-muted);font-size:11px;font-weight:800;line-height:1.25;text-transform:uppercase}
+.registration-capacity-overview__head strong{font-size:17px;line-height:1.2}
+.registration-capacity-overview__mode{display:grid;flex:0 0 min(260px,42%);gap:6px}
+.registration-capacity-overview__mode select{width:100%;min-height:36px;border:1px solid rgba(255,255,255,0.16);border-radius:var(--radius);outline:0;padding:0 10px;background:rgba(255,255,255,0.08);color:var(--text);font-size:13px}
+.registration-capacity-total{display:grid;grid-template-columns:minmax(170px,0.95fr) minmax(240px,1.55fr) minmax(160px,0.85fr);align-items:center;gap:16px}
+.registration-capacity-total__main,.registration-capacity-total__free{display:grid;min-width:0;gap:6px}
+.registration-capacity-total__main strong{font-size:40px;line-height:.96}
+.registration-capacity-total__main small,.registration-capacity-total__free small{color:var(--text-soft);font-size:12px;font-weight:650;line-height:1.35}
+.registration-capacity-meter,.registration-capacity-total__free{border-left:1px solid rgba(255,255,255,0.13);padding-left:16px}
+.registration-capacity-meter{display:grid;min-width:0;gap:10px}
+.registration-capacity-meter__track{position:relative;overflow:hidden;height:12px;border:1px solid rgba(255,255,255,0.12);border-radius:999px;background:rgba(255,255,255,0.08)}
+.registration-capacity-meter__track span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,rgba(53,199,89,0.86),rgba(242,184,75,0.9))}
+.registration-capacity-meter__labels{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;color:var(--text-soft);font-size:12px;font-weight:720;line-height:1.3}
+.registration-capacity-total__free strong{font-size:28px;line-height:1}
+.registration-capacity-options{display:grid;overflow:hidden;border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius)}
+.registration-capacity-option-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(74px,auto) minmax(90px,auto);align-items:center;gap:12px;min-height:48px;padding:10px 12px;border-top:1px solid rgba(255,255,255,0.09);background:rgba(255,255,255,0.035)}
+.registration-capacity-option-row:first-child{border-top:0}
+.registration-capacity-option-row>div{display:flex;min-width:0;align-items:center;gap:8px}
+.registration-capacity-option-row strong{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}
+.registration-capacity-option-row span{color:var(--text-soft);font-size:12px;font-weight:700;text-align:right}
+.registration-capacity-option-row>div span{flex:0 0 auto;border:1px solid rgba(242,184,75,0.22);border-radius:999px;padding:3px 7px;color:rgba(255,222,156,0.94);font-size:10px;text-align:left}
+.registration-capacity-helper{margin:0;color:var(--text-muted);font-size:12px;font-weight:650;line-height:1.45}
+.registration-capacity-buckets{display:grid;gap:10px}
+.registration-capacity-bucket-row{display:grid;min-width:0;gap:12px;border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius);padding:12px;background:rgba(255,255,255,0.035)}
+.registration-capacity-bucket-row__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.registration-capacity-bucket-row__title,.registration-capacity-bucket-row__count{display:grid;min-width:0;gap:4px}
+.registration-capacity-bucket-row__title strong,.registration-capacity-bucket-row__count strong{font-size:14px;line-height:1.25}
+.registration-capacity-bucket-row__title span,.registration-capacity-bucket-row__count span,.registration-capacity-bucket-row__meta{color:var(--text-muted);font-size:11px;font-weight:720;line-height:1.35}
+.registration-capacity-bucket-row__count{justify-items:end;text-align:right}
+.registration-capacity-bucket-row .registration-capacity-meter{border-left:0;padding-left:0}
+.registration-capacity-bucket-row__meta{display:flex;flex-wrap:wrap;gap:5px 10px}
+.bucket-breakdown{display:grid;border-top:1px dashed var(--glass-border);padding-top:10px;gap:7px}
+.bucket-breakdown__label{display:flex;align-items:center;gap:7px;color:var(--text-muted);font-size:10px;font-weight:850;letter-spacing:.05em;text-transform:uppercase}
+.brow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px}
+.brow__dot{width:9px;height:9px;border-radius:3px;flex:0 0 9px}
+.brow__name{color:var(--text-soft);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brow__bar{grid-column:1/-1;height:5px;border-radius:3px;background:rgba(255,255,255,0.07);overflow:hidden}
+.brow__bar>span{display:block;height:100%;border-radius:3px}
+.brow__val{font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}
+.bucket-breakdown__label{justify-content:flex-start}
+.bd-toggle{margin-left:auto;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:1px solid var(--glass-border);border-radius:6px;background:var(--glass);color:var(--text-soft);cursor:pointer;padding:0;transition:background .12s,color .12s}
+.bd-toggle:hover{background:var(--glass-strong);color:var(--text)}
+.bd-pie{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-top:2px}
+.bd-pie__canvas{width:112px;height:112px;flex:0 0 112px;position:relative}
+.bd-pie__canvas canvas{width:112px !important;height:112px !important}
+.bd-pie__legend{display:grid;gap:6px;min-width:0;flex:1 1 200px}
+.bd-leg{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-soft);min-width:0}
+.bd-leg i{width:10px;height:10px;border-radius:3px;flex:0 0 10px}
+.bd-leg>span:not(.pct){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bd-leg b{margin-left:auto;color:var(--text);font-variant-numeric:tabular-nums;flex:0 0 auto}
+.bd-leg .pct{color:var(--text-muted);font-size:11px;min-width:36px;text-align:right;flex:0 0 auto}
+
+.registration-controls{display:grid;gap:12px}
+.registration-filter-chips{display:flex;flex-wrap:wrap;gap:7px}
+.registration-filter-chip{display:inline-flex;align-items:center;justify-content:center;min-height:30px;border:1px solid var(--glass-border);border-radius:6px;padding:0 10px;background:var(--glass);color:var(--text-soft);font-size:12px;font-weight:750;transition:background .12s,border-color .12s,color .12s}
+.registration-filter-chip:hover,.registration-filter-chip--active{border-color:rgba(242,184,75,0.44);background:rgba(242,184,75,0.12);color:var(--text)}
+.registrations-table-panel{display:grid;overflow:hidden;border:1px solid var(--glass-border);border-radius:var(--radius);background:rgba(36,36,58,0.72)}
+.registrations-table-panel__head{align-items:center;border-bottom:1px solid var(--glass-border);padding:10px 12px}
+.registrations-table-panel__head>span{color:var(--text-muted);font-size:12px;font-weight:750}
+.registrations-pagination{display:flex;gap:6px}
+.registrations-table-panel__tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.registrations-table-panel__divider{width:1px;height:20px;background:var(--glass-border)}
+.export-ic{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-right:5px;border:1px solid currentColor;border-radius:4px;font-size:10px;font-weight:900;line-height:1}
+#exportExcel{font-weight:800}
+.registrations-table-scroll{overflow-x:auto}
+.data-table{display:grid;width:100%}
+.data-table--registrations{min-width:920px;background:rgba(36,36,58,0.76)}
+.data-table__row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.16fr) minmax(0,0.38fr) minmax(0,1.12fr) minmax(0,0.82fr) minmax(0,0.82fr) 56px;gap:10px;align-items:center;min-height:58px;padding:10px 12px;border-bottom:1px solid var(--glass-border)}
+.data-table__row--head{min-height:36px;background:rgba(255,255,255,0.025);color:var(--text-muted);font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase}
+.data-table__row--head span{color:var(--text-muted);font-size:11px;font-weight:600;letter-spacing:.5px;white-space:nowrap}
+.data-table__row--registration{cursor:pointer;transition:background .12s}
+.data-table__row--registration:hover{background:var(--glass)}
+.data-table__row--registration-selected{background:rgba(242,184,75,0.08)}
+.data-table__row>[role=cell]{min-width:0;overflow:hidden}
+.data-table--registrations .badge{max-width:100%;overflow:hidden;border-radius:20px;padding:2px 8px;text-overflow:ellipsis}
+.registration-table-person{display:grid;grid-template-columns:34px minmax(0,1fr);align-items:center;gap:9px}
+.registration-table-person div,.registration-table-stack{display:grid;min-width:0;gap:4px}
+.registration-table-person strong,.registration-table-stack span{overflow:hidden;font-size:13px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
+.registration-table-person small,.registration-table-stack small{overflow:hidden;color:var(--text-muted);font-size:11px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
+.registration-table-stack--options span,.registration-table-stack--options small{overflow:visible;text-overflow:clip;white-space:normal}
+.registration-avatar{display:grid;width:34px;height:34px;place-items:center;border:1px solid rgba(242,184,75,0.24);border-radius:50%;background:rgba(242,184,75,0.12);color:var(--gold);font-size:11px;font-weight:850}
+.registration-avatar--large{width:62px;height:62px;font-size:18px}
+.event-table__actions{display:flex;align-items:center;justify-content:center}
+.event-action-dots{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text-muted);font-size:16px;font-weight:700;transition:background .12s,border-color .12s,color .12s}
+.event-action-dots:hover{border-color:var(--glass-border);background:var(--glass);color:var(--text)}
+.registrations-state{display:grid;min-height:180px;place-items:center;align-content:center;gap:9px;padding:22px;text-align:center}
+.registrations-state h3{margin:0;font-size:17px}
+.registrations-state p{max-width:420px;margin:0;color:var(--text-soft);font-size:13px;line-height:1.55}
+
+.registration-detail{display:grid;align-content:start;gap:14px;padding:16px}
+.registration-detail__profile{display:grid;justify-items:center;gap:10px;border-bottom:1px solid var(--glass-border);padding-bottom:16px;text-align:center}
+.registration-detail__profile h2{margin:0;font-size:19px;line-height:1.22}
+.registration-detail-section{display:grid;gap:9px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:13px}
+.registration-detail-section:last-child{border-bottom:0;padding-bottom:0}
+.registration-detail-section h3{margin:0;color:var(--text-muted);font-size:11px;font-weight:850;text-transform:uppercase}
+.registration-detail-row,.registration-option-row{display:grid;grid-template-columns:minmax(0,0.76fr) minmax(0,1fr);gap:10px;align-items:start}
+.registration-detail-row span,.registration-option-row span,.registration-detail__muted{color:var(--text-muted);font-size:12px;line-height:1.45}
+.registration-detail-row strong,.registration-option-row strong{overflow-wrap:anywhere;color:var(--text-soft);font-size:13px;line-height:1.45}
+.registration-options-list{display:grid;gap:8px}
+.registration-option-row{border:1px solid var(--glass-border);border-radius:var(--radius);padding:9px;background:var(--glass)}
+.registration-option-row div{display:grid;min-width:0;gap:3px}
+.registration-option-row div:last-child{justify-items:end;text-align:right}
+.registration-guest-list{display:flex;flex-wrap:wrap;gap:6px}
+.registration-guest-list span{border:1px solid var(--glass-border);border-radius:6px;padding:4px 7px;background:var(--glass);color:var(--text-soft);font-size:12px}
+.registration-detail__muted{margin:0}
+.registration-detail-actions{display:flex;flex-wrap:wrap;gap:7px}
+
+/* compact + collapsible capacity */
+.registration-capacity-overview{padding:12px;gap:10px}
+.cap-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.cap-toggle{display:inline-flex;align-items:center;gap:8px;border:0;background:transparent;color:var(--text);font-size:14px;font-weight:800;padding:2px 0}
+.cap-toggle .chev{display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center;border:1px solid var(--glass-border);border-radius:6px;background:var(--glass);color:var(--text-soft);font-size:10px;transition:transform .15s}
+.cap-toggle .chev--open{transform:rotate(180deg)}
+.cap-toggle .sub{color:var(--text-muted);font-size:11px;font-weight:700;text-transform:uppercase;margin-left:4px}
+.cap-mode{display:flex;align-items:center;gap:6px}
+.cap-mode span{color:var(--text-muted);font-size:11px;font-weight:800;text-transform:uppercase}
+.cap-mode select{min-height:32px;border:1px solid rgba(255,255,255,0.16);border-radius:6px;padding:0 9px;background:rgba(255,255,255,0.08);color:var(--text);font-size:12px}
+.cap-quick{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+@media(max-width:1100px){.cap-quick{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:720px){.cap-quick{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.cap-pill{display:grid;gap:5px;min-width:0;border:1px solid var(--glass-border);border-radius:6px;padding:8px 10px;background:rgba(255,255,255,0.04)}
+.cap-pill__l{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.cap-pill__l b{flex:0 0 auto;white-space:nowrap}
+.cap-pill__l span{color:var(--text-soft);font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.cap-pill__l b{font-size:14px;font-variant-numeric:tabular-nums}
+.cap-pill__l b .cap{color:var(--text-muted);font-size:11px;font-weight:700}
+.cap-pill__bar{height:5px;border-radius:3px;background:rgba(255,255,255,0.08);overflow:hidden}
+.cap-pill__bar>span{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,rgba(53,199,89,0.86),rgba(242,184,75,0.9))}
+.cap-pill--hot .cap-pill__bar>span{background:linear-gradient(90deg,rgba(242,184,75,0.9),rgba(229,44,54,0.92))}
+.cap-pill--info{border-color:rgba(107,127,212,0.32);background:rgba(107,127,212,0.08)}
+.cap-pill--info b{color:#9badff}
+.cap-pill--gold{border-color:rgba(242,184,75,0.28);background:rgba(242,184,75,0.08)}
+.cap-pill--gold b{color:var(--gold)}
+.cap-detail{display:grid;gap:10px}
+.is-collapsed .cap-detail,.is-collapsed .cap-mode{display:none}
+/* tighten detail meters */
+.registration-capacity-bucket-row{padding:10px}
+.registration-capacity-total__main strong{font-size:30px}
+
+
+/* modal (matches admin participation-modal) */
+.registrations-workspace{grid-template-columns:290px minmax(0,1fr)}
+.participation-modal-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(8,8,17,0.72);backdrop-filter:blur(6px);z-index:1000}
+.participation-modal-overlay[hidden]{display:none}
+.participation-modal{display:grid;width:min(640px,100%);max-height:calc(100vh - 48px);border:1px solid var(--glass-border);border-radius:14px;background:var(--surface-strong);box-shadow:var(--shadow);overflow:hidden;grid-template-rows:auto minmax(0,1fr)}
+.participation-modal__head{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--glass-border);padding:14px 18px}
+.participation-modal__head h3{margin:0;color:var(--text);font-size:16px;font-weight:800}
+.participation-modal__close{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:0;border-radius:50%;background:var(--glass);color:var(--text-soft);font-size:14px}
+.participation-modal__close:hover{background:var(--glass-strong);color:var(--text)}
+.participation-modal__body{display:grid;gap:14px;padding:18px;overflow-y:auto}
+
+
+/* seating editor */
+.seat-open-btn{width:100%;min-height:34px;border:1px dashed var(--glass-border);border-radius:var(--radius);background:transparent;color:var(--text-soft);font-size:12px;font-weight:750;cursor:pointer;transition:background .12s,border-color .12s,color .12s}
+.seat-open-btn:hover{border-color:rgba(242,184,75,.42);background:rgba(242,184,75,.08);color:var(--text)}
+.seat-modal{width:min(1180px,100%);max-height:calc(100vh - 32px);grid-template-rows:auto auto minmax(0,1fr)}
+.seat-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 18px;border-bottom:1px solid var(--glass-border)}
+.seat-layouts{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.seat-template-field{display:flex;align-items:center;gap:8px;min-height:32px;border:1px solid var(--glass-border);border-radius:6px;padding:0 8px;background:var(--glass)}
+.seat-template-field span{color:var(--text-muted);font-size:11px;font-weight:850;text-transform:uppercase;white-space:nowrap}
+.seat-template-field select{min-width:250px;max-width:360px;height:30px;border:0;outline:0;background:transparent;color:var(--text);font-size:12px;font-weight:750}
+.seat-template-field option{background:var(--surface-strong);color:var(--text)}
+.seat-lay-btn{min-height:30px;border:1px solid var(--glass-border);border-radius:6px;padding:0 10px;background:var(--glass);color:var(--text-soft);font-size:12px;font-weight:750;cursor:pointer}
+.seat-lay-btn--active,.seat-lay-btn:hover{border-color:rgba(242,184,75,.44);background:rgba(242,184,75,.12);color:var(--text)}
+.seat-toolbar__sep{width:1px;height:20px;background:var(--glass-border)}
+.seat-count{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;color:var(--text-muted);font-size:12px;font-weight:700;line-height:1.25}
+.seat-count__main{color:var(--text);font-size:15px;font-weight:900;letter-spacing:-.01em}
+.seat-count__sub{color:var(--text-muted);font-size:12px;font-weight:750}
+.seat-count__warn{color:var(--gold);font-size:12px;font-weight:800}
+.seat-body{display:grid;grid-template-columns:minmax(0,1fr) 250px;min-height:0;overflow:hidden}
+.seat-stage{display:grid;grid-template-rows:minmax(0,1fr) auto;min-width:0;min-height:0;overflow:hidden}
+.seat-canvas-wrap{overflow:auto;padding:16px;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 25% 12%,rgba(255,255,255,0.035),transparent 60%)}
+.seat-layout-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--glass-border);background:rgba(255,255,255,.025)}
+.seat-controls-label{color:var(--text-muted);font-size:11px;font-weight:850;text-transform:uppercase;letter-spacing:.04em;margin-right:2px}
+.seat-layout-controls .seat-toolbar__sep{height:22px}
+.seat-canvas{position:relative;flex:0 0 auto;transform-origin:center center}
+.seat-table{position:absolute;background:linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03));border:1px solid var(--glass-border);border-radius:5px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.06)}
+.seat-table--editable{cursor:move;transition:border-color .12s,box-shadow .12s,background .12s;transform-origin:center center;z-index:2}
+.seat-table--editable:hover{border-color:rgba(242,184,75,.42);background:linear-gradient(135deg,rgba(242,184,75,.13),rgba(255,255,255,.04))}
+.seat-table--selected{border-color:rgba(242,184,75,.78);box-shadow:0 0 0 2px rgba(242,184,75,.18),inset 0 1px 0 rgba(255,255,255,0.08)}
+.seat-table--connected{box-shadow:inset 0 0 0 1px rgba(229,44,54,.22),inset 0 1px 0 rgba(255,255,255,0.08)}
+.seat-table--rabbi{border-color:rgba(242,184,75,.74);background:linear-gradient(135deg,rgba(242,184,75,.14),rgba(255,255,255,.035));box-shadow:0 0 0 1px rgba(242,184,75,.15),inset 0 1px 0 rgba(255,255,255,.08)}
+.seat-table--rabbi .seat-table__label{color:rgba(255,230,178,.96)}
+.seat-table__role{display:block;color:var(--gold);font-size:10px;font-weight:950;text-transform:uppercase;margin-bottom:1px}
+.seat-table__label{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:rgba(255,255,255,.62);font-size:10px;font-weight:900;letter-spacing:.02em;pointer-events:none;text-align:center;line-height:1.25;white-space:nowrap}
+.seat-table__size{display:block;color:rgba(242,184,75,.9);font-size:9px;font-weight:900;margin-top:2px}
+.seat-seam{position:absolute;width:12px;height:12px;border:1px solid rgba(229,44,54,.5);border-radius:3px;background:rgba(229,44,54,.22);transform:translate(-50%,-50%);z-index:4}
+.seat-seam::after{content:"";position:absolute;left:2px;right:2px;top:5px;height:1px;background:rgba(255,255,255,.58)}
+.seat-table--round{border-radius:50%}
+.seat{position:absolute;width:34px;height:34px;border-radius:50%;display:grid;place-items:center}
+.seat--empty{border:1px dashed rgba(255,255,255,0.24);background:rgba(255,255,255,0.055);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.035)}
+.seat--preview{border-color:rgba(255,255,255,0.2);background:rgba(255,255,255,0.035);opacity:.82;pointer-events:none}
+.seat--rabbi-reserved{border-color:rgba(242,184,75,.34);background:rgba(242,184,75,.055);box-shadow:inset 0 0 0 1px rgba(242,184,75,.08)}
+.seat--rabbi-reserved.seat--empty{border-color:rgba(242,184,75,.42)}
+.seat--drop{outline:2px solid var(--gold);outline-offset:1px}
+.seat-head-mark{color:var(--gold);font-size:12px;opacity:.6}
+.chip{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:800;cursor:grab;color:#fff;border:1px solid rgba(0,0,0,0.25);user-select:none}
+.chip:active{cursor:grabbing}
+.chip--person{background:linear-gradient(135deg,var(--blue),var(--purple))}
+.chip--rabbi{background:linear-gradient(135deg,var(--gold),#e09200);color:#1d1506;border:1px solid rgba(255,255,255,0.45)}
+.chip--reserve{background:rgba(255,255,255,0.08);color:var(--text-soft);border:1px dashed var(--glass-border)}
+.seat-pool{border-left:1px solid var(--glass-border);padding:14px;display:grid;gap:10px;align-content:start;overflow:auto;background:rgba(255,255,255,0.02)}
+.seat-pool h4{margin:0;font-size:11px;text-transform:uppercase;color:var(--text-muted);letter-spacing:.04em}
+.seat-pool__list{display:flex;flex-wrap:wrap;gap:8px;min-height:46px;border:1px dashed var(--glass-border);border-radius:8px;padding:10px}
+.seat-pool__empty{margin:0;color:var(--text-faint);font-size:12px}
+.seat-pool__hint{margin:0;color:var(--text-muted);font-size:11px;line-height:1.5}
+.seat-layout-note{margin:0;color:var(--text-soft);font-size:12px;line-height:1.55;border:1px dashed var(--glass-border);border-radius:8px;padding:10px;background:rgba(255,255,255,.035)}
+.seat-legend{display:grid;gap:6px;font-size:11px;color:var(--text-soft)}
+.seat-legend span{display:flex;align-items:center;gap:8px}
+.seat-legend i{width:14px;height:14px;border-radius:50%;flex:0 0 14px}
+@media(max-width:760px){.seat-body{grid-template-columns:1fr}.seat-pool{border-left:0;border-top:1px solid var(--glass-border)}.seat-layout-controls{align-content:start}}
+
+@media(max-width:1180px){.registrations-workspace{grid-template-columns:minmax(260px,0.42fr) minmax(0,1fr)}.registration-detail-panel{grid-column:1/-1;max-height:none}.registration-capacity-total{grid-template-columns:1fr}.registration-capacity-meter,.registration-capacity-total__free{border-top:1px solid rgba(255,255,255,0.13);border-left:0;padding-top:14px;padding-left:0}}
+@media(max-width:960px){.registrations-workspace{grid-template-columns:minmax(0,1fr)}.registrations-events-panel,.registrations-main-panel{max-height:none}}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="page-stack page-stack--registrations">
+  <section class="page-header registrations-page-header">
+    <span class="badge badge--green">Supabase RPC</span>
+    <h1>Регистрации</h1>
+    <p>Рабочий центр заявок на события: список событий, таблица регистраций, детали участника и управление статусами через admin registration RPC.</p>
+  </section>
+
+  <div class="registrations-workspace">
+    <!-- LEFT: events -->
+    <div class="glass-card registrations-events-panel glass-card--elevated">
+      <div class="registrations-panel__head">
+        <div><span>События</span><strong id="eventsCount">3</strong></div>
+        <button class="button button--secondary button--sm">Обновить</button>
+      </div>
+      <label class="registration-search-field"><span>Поиск события</span><input type="search" placeholder="Название или дата" /></label>
+      <div class="registration-event-list" id="eventList"></div>
+    </div>
+
+    <!-- CENTER: main -->
+    <div class="glass-card registrations-main-panel glass-card--elevated">
+      <div class="registrations-main-head">
+        <div>
+          <div class="badge-row">
+            <span class="badge badge--glass" id="evKind">повторяющееся</span>
+            <span class="badge badge--blue" id="evOcc">12 сеанс.</span>
+          </div>
+          <h2 id="evTitle">Шабат в общине</h2>
+          <p id="evDate">пт, 24 апреля 2026, 19:00</p>
+        </div>
+        <div class="registrations-main-actions">
+          <button class="button button--secondary button--sm">Обновить</button>
+        </div>
+      </div>
+
+      <div class="registration-occurrence-bar" id="occBar" aria-label="Дата сеанса">
+        <label class="registration-occurrence-field">
+          <span>Дата / сеанс</span>
+          <select>
+            <option>пт, 24 апреля 2026, 19:00 · Шабат</option>
+            <option>пт, 1 мая 2026, 19:00 · Шабат</option>
+            <option>пт, 8 мая 2026, 19:00 · Шабат</option>
+          </select>
+        </label>
+        <label class="registration-occurrence-toggle"><input type="checkbox" /><span>Архив дат</span></label>
+      </div>
+
+      <!-- CAPACITY OVERVIEW (compact, collapsible) -->
+      <div class="registration-capacity-overview is-collapsed" id="capCard">
+        <div class="cap-head">
+          <button class="cap-toggle" id="capToggle">
+            <span class="chev" id="capChev">▾</span>
+            Места и регистрации
+            <span class="sub" id="capSub">пт, 24 апреля</span>
+          </button>
+          <label class="cap-mode">
+            <span>Режим</span>
+            <select id="capMode">
+              <option value="buckets">По слотам мест</option>
+              <option value="total">Все места выбранной даты</option>
+              <option value="options">По вариантам участия</option>
+              <option value="guests">Уникальные гости</option>
+            </select>
+          </label>
+        </div>
+        <div class="cap-quick" id="capQuick"></div>
+        <div class="cap-detail" id="capBody"></div>
+      </div>
+
+      <!-- PARTICIPANT SEARCH -->
+      <label class="registration-search-field registration-search-field--wide"><span>Поиск по участникам</span><input type="search" placeholder="Имя, email, телефон, комментарий, гость" /></label>
+
+      <!-- TABLE -->
+      <div class="registrations-table-panel">
+        <div class="registrations-table-panel__head">
+          <span id="tableRange">Показано 1-8</span>
+          <div class="registrations-table-panel__tools">
+            <button class="button button--gold button--sm" id="exportExcel">
+              <span class="export-ic" aria-hidden="true">↓</span> Экспорт Excel
+            </button>
+            <span class="registrations-table-panel__divider"></span>
+            <div class="registrations-pagination">
+              <button class="button button--secondary button--sm" disabled>Назад</button>
+              <button class="button button--secondary button--sm">Далее</button>
+            </div>
+          </div>
+        </div>
+        <div class="registrations-table-scroll">
+          <div class="data-table data-table--registrations" role="table">
+            <div class="data-table__row data-table__row--head" role="row">
+              <span role="columnheader">Участник</span>
+              <span role="columnheader">Контакты</span>
+              <span role="columnheader">Мест</span>
+              <span role="columnheader">Опции</span>
+              <span role="columnheader">Оплата</span>
+              <span role="columnheader">Заявка</span>
+              <span role="columnheader">Действия</span>
+            </div>
+            <div id="tableBody"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- PARTICIPANT MODAL -->
+  <div class="participation-modal-overlay" id="regModal" hidden role="presentation">
+    <div class="participation-modal" role="dialog" aria-modal="true" id="regModalCard">
+      <header class="participation-modal__head">
+        <h3 id="regModalTitle">Регистрация</h3>
+        <button class="participation-modal__close" id="regModalClose" aria-label="Закрыть" type="button">✕</button>
+      </header>
+      <div class="participation-modal__body" id="regModalBody"></div>
+    </div>
+  </div>
+
+  <!-- SEATING MODAL -->
+  <div class="participation-modal-overlay" id="seatModal" hidden role="presentation">
+    <div class="participation-modal seat-modal" role="dialog" aria-modal="true">
+      <header class="participation-modal__head">
+        <h3 id="seatTitle">Схема рассадки</h3>
+        <button class="participation-modal__close" id="seatClose" aria-label="Закрыть" type="button">✕</button>
+      </header>
+      <div class="seat-toolbar">
+        <div class="seat-layouts" id="seatLayouts">
+          <label class="seat-template-field">
+            <span>Готовая расстановка</span>
+            <select id="seatTemplateSelect" aria-label="Готовая расстановка столов"></select>
+          </label>
+          <button class="button button--secondary button--sm" id="seatSaveTemplate" type="button">Сохранить как шаблон</button>
+          <button class="button button--secondary button--sm" id="seatDeleteTemplate" type="button">Удалить шаблон</button>
+        </div>
+        <button class="button button--gold button--sm" id="seatSave" type="button" style="margin-left:auto">Сохранить</button>
+      </div>
+      <div class="seat-body">
+        <div class="seat-stage">
+          <div class="seat-canvas-wrap"><div class="seat-canvas" id="seatCanvas"></div></div>
+          <div class="seat-layout-controls">
+            <span class="seat-controls-label">Расстановка столов</span>
+            <button class="button button--secondary button--sm" id="seatAddTable" type="button">+ Стол</button>
+            <button class="button button--secondary button--sm" id="seatRotateTable" type="button">↻ 90°</button>
+            <button class="button button--secondary button--sm" id="seatToggleSeats" type="button">Все столы: 3 места/стор.</button>
+            <button class="button button--secondary button--sm" id="seatRemoveTable" type="button">Удалить стол</button>
+            <span class="seat-toolbar__sep"></span>
+            <button class="button button--gold button--sm" id="seatMakeSeating" type="button">Сделать рассадку</button>
+            <button class="button button--secondary button--sm" id="seatEditTables" type="button">Редактировать столы</button>
+            <button class="button button--secondary button--sm" id="seatAuto" type="button">Перерассадить</button>
+            <button class="button button--secondary button--sm" id="seatAddReserve" type="button">+ Резерв</button>
+            <span class="seat-count" id="seatCount"></span>
+          </div>
+        </div>
+        <div class="seat-pool">
+          <h4 id="seatPoolTitle">Не рассажены</h4>
+          <div class="seat-pool__list" id="seatPool"></div>
+          <div class="seat-legend">
+            <span><i class="chip--rabbi" style="background:linear-gradient(135deg,var(--gold),#e09200)"></i> Раввин (во главе)</span>
+            <span><i style="background:linear-gradient(135deg,var(--blue),var(--purple))"></i> Гость из регистраций</span>
+            <span><i style="background:rgba(255,255,255,0.08);border:1px dashed var(--glass-border)"></i> Резерв (сажает админ)</span>
+          </div>
+          <p class="seat-pool__hint" id="seatPoolHint">Перетаскивайте людей на стулья и между стульями. Стулья появляются автоматически по числу мест трапезы.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===== Multi-event data ===== */
+const EVENTS=[
+  {id:"shabbat",title:"Шабат в общине",date:"пт, 24 апреля 2026, 19:00",ok:64,new:8,wait:3},
+  {id:"shavuot",title:"Шавуот Среди Своих 5786",date:"21–23 мая 2026",ok:88,new:14,wait:5},
+  {id:"lesson",title:"Урок по недельной главе",date:"вт, 28 апреля 2026, 19:30",ok:18,new:2,wait:1}
+];
+
+const DATA={
+  shabbat:{
+    title:"Шабат в общине",date:"пт, 24 апреля 2026, 19:00",kind:"повторяющееся",occ:"12 сеанс.",hasOcc:true,scope:"пт, 24 апреля",sess:"Шабат",
+    slots:[
+      {key:"friday_dinner",title:"Трапеза в пятницу вечером",short:"Пт · вечер",cap:70,occ:55,parts:[["Весь Шабат",36,"var(--gold)"],["Только вечерняя трапеза",12,"var(--green)"],["Детский билет",7,"var(--blue)"]]},
+      {key:"shabbat_lunch",title:"Трапеза в субботу днём",short:"Сб · день",cap:70,occ:61,parts:[["Весь Шабат",36,"var(--gold)"],["Только дневная трапеза",18,"var(--green)"],["Детский билет",7,"var(--blue)"]]}
+    ],
+    optionStats:[
+      {title:"Весь Шабат",type:"пакет",qty:36,seats:72},
+      {title:"Только вечерняя трапеза",type:"трапеза",qty:12,seats:12},
+      {title:"Только дневная трапеза",type:"трапеза",qty:18,seats:18},
+      {title:"Детский билет",type:"детский",qty:7,seats:14},
+      {title:"Подарить Шабат нуждающемуся",type:"пожертвование",qty:9,seats:0,donation:true}
+    ],
+    guests:{unique:73,multi:43,sponsors:9,parts:[["Полный пакет + дети",43,"var(--gold)"],["Одна трапеза",30,"var(--green)"]]},
+    regs:[
+      {id:"s1",name:"Давид Коэн",email:"david.cohen@mail.com",phone:"+972 50 123 4567",status:"confirmed",seats:1,opts:[{t:"Весь Шабат",ty:"package",q:1,amt:250,seats:1}],pay:"Оплачено",amt:"250,00 ₪",reg:"20 апр, 14:02",guests:["Дина Коэн"],comment:"Без рыбы, аллергия"},
+      {id:"s2",name:"Рахель Леви",email:"rachel.levi@mail.com",phone:"+972 52 555 1188",status:"confirmed",seats:1,opts:[{t:"Только дневная трапеза",ty:"meal",q:1,amt:150,seats:1}],pay:"Оплачено",amt:"150,00 ₪",reg:"20 апр, 15:31",guests:[],comment:null},
+      {id:"s3",name:"Моше Берг",email:"moshe.berg@mail.com",phone:"+972 54 777 2200",status:"pending",seats:2,opts:[{t:"Весь Шабат",ty:"package",q:1,amt:250,seats:1},{t:"Детский билет",ty:"child",q:1,amt:80,seats:1}],pay:"Ожидает оплаты",amt:"330,00 ₪",reg:"21 апр, 09:14",guests:["Йоси Берг"],comment:"С ребёнком 6 лет"},
+      {id:"s4",name:"Сара Кац",email:"sara.katz@mail.com",phone:"+972 50 909 0001",status:"confirmed",seats:1,opts:[{t:"Только вечерняя трапеза",ty:"meal",q:1,amt:150,seats:1}],pay:"Оплачено",amt:"150,00 ₪",reg:"21 апр, 11:48",guests:[],comment:null},
+      {id:"s5",name:"Ицхак Розен",email:"i.rozen@mail.com",phone:"+972 53 414 7788",status:"waitlisted",seats:1,opts:[{t:"Весь Шабат",ty:"package",q:1,amt:250,seats:1}],pay:"Ожидает оплаты",amt:"250,00 ₪",reg:"21 апр, 16:20",guests:[],comment:"Готов на лист ожидания"},
+      {id:"s6",name:"Мириам Шапиро",email:"miriam.s@mail.com",phone:"+972 58 220 9933",status:"confirmed",seats:1,opts:[{t:"Подарить Шабат нуждающемуся",ty:"donation",q:2,amt:500,seats:0,donation:true},{t:"Весь Шабат",ty:"package",q:1,amt:250,seats:1}],pay:"Оплачено",amt:"750,00 ₪",reg:"22 апр, 08:05",guests:[],comment:"Спонсирует две трапезы"},
+      {id:"s7",name:"Арье Гольдберг",email:"arye.g@mail.com",phone:"+972 50 333 1212",status:"attended",seats:1,opts:[{t:"Только дневная трапеза",ty:"meal",q:1,amt:150,seats:1}],pay:"Оплачено",amt:"150,00 ₪",reg:"19 апр, 20:40",guests:[],comment:null},
+      {id:"s8",name:"Това Фридман",email:"tova.f@mail.com",phone:"+972 54 818 5050",status:"cancelled",seats:1,opts:[{t:"Только вечерняя трапеза",ty:"meal",q:1,amt:150,seats:1}],pay:"Отменено",amt:"150,00 ₪",reg:"20 апр, 10:11",guests:[],comment:null}
+    ]
+  },
+
+  shavuot:{
+    title:"Шавуот Среди Своих 5786",date:"21–23 мая 2026",kind:"праздник · 3 дня",occ:"6 трапез",hasOcc:false,scope:"21–23 мая",sess:"Шавуот",
+    slots:[
+      {key:"d1_evening", title:"Чт, 21 мая · вечерняя трапеза (21:40)", short:"Чт · вечер",       cap:80,occ:58,parts:[["Весь Шавуот",38,"var(--gold)"],["Только эта трапеза",14,"var(--green)"],["Детский билет",6,"var(--blue)"]]},
+      {key:"d2_dairy",   title:"Пт, 22 мая · молочная трапеза (12:30)",  short:"Пт · день молочн.",cap:80,occ:47,parts:[["Весь Шавуот",38,"var(--gold)"],["Только эта трапеза",3,"var(--green)"],["Детский билет",6,"var(--blue)"]]},
+      {key:"d2_meat",    title:"Пт, 22 мая · мясная трапеза (16:00)",    short:"Пт · день мясн.",  cap:80,occ:63,parts:[["Весь Шавуот",38,"var(--gold)"],["Только эта трапеза",19,"var(--green)"],["Детский билет",6,"var(--blue)"]]},
+      {key:"d2_evening", title:"Пт, 22 мая · вечерняя трапеза (21:42)",  short:"Пт · вечер",       cap:80,occ:71,parts:[["Весь Шавуот",38,"var(--gold)"],["Только эта трапеза",27,"var(--green)"],["Детский билет",6,"var(--blue)"]]},
+      {key:"d3_dairy",   title:"Сб, 23 мая · молочная трапеза (13:00)",  short:"Сб · день молочн.",cap:80,occ:45,parts:[["Весь Шавуот",38,"var(--gold)"],["Только эта трапеза",1,"var(--green)"],["Детский билет",6,"var(--blue)"]]},
+      {key:"d3_meat",    title:"Сб, 23 мая · мясная трапеза (17:00)",    short:"Сб · день мясн.",  cap:80,occ:66,parts:[["Весь Шавуот",38,"var(--gold)"],["Только эта трапеза",22,"var(--green)"],["Детский билет",6,"var(--blue)"]]}
+    ],
+    optionStats:[
+      {title:"Весь Шавуот (все 6 трапез)",type:"пакет",qty:38,seats:228},
+      {title:"Чт · вечерняя трапеза",type:"трапеза",qty:14,seats:14},
+      {title:"Пт · молочная трапеза",type:"трапеза",qty:3,seats:3},
+      {title:"Пт · мясная трапеза",type:"трапеза",qty:19,seats:19},
+      {title:"Пт · вечерняя трапеза",type:"трапеза",qty:27,seats:27},
+      {title:"Сб · молочная трапеза",type:"трапеза",qty:1,seats:1},
+      {title:"Сб · мясная трапеза",type:"трапеза",qty:22,seats:22},
+      {title:"Детский билет",type:"детский",qty:6,seats:36},
+      {title:"Подарить Шавуот нуждающемуся",type:"пожертвование",qty:12,seats:0,donation:true}
+    ],
+    guests:{unique:96,multi:51,sponsors:12,parts:[["Весь Шавуот + дети",44,"var(--gold)"],["Несколько трапез",7,"var(--purple)"],["Одна трапеза",45,"var(--green)"]]},
+    regs:[
+      {id:"v1",name:"Леа Вайс",email:"lea.weiss@mail.com",phone:"+972 50 700 1100",status:"confirmed",seats:1,opts:[{t:"Весь Шавуот (все 6 трапез)",ty:"package",q:1,amt:600,seats:6}],pay:"Оплачено",amt:"600,00 ₪",reg:"10 мая, 12:00",guests:[],comment:"Молочное без орехов"},
+      {id:"v2",name:"Биньямин Стерн",email:"b.stern@mail.com",phone:"+972 52 414 8899",status:"confirmed",seats:2,opts:[{t:"Весь Шавуот (все 6 трапез)",ty:"package",q:1,amt:600,seats:6},{t:"Детский билет",ty:"child",q:1,amt:200,seats:6}],pay:"Оплачено",amt:"800,00 ₪",reg:"11 мая, 09:30",guests:["Авигаиль Стерн"],comment:"С ребёнком 8 лет"},
+      {id:"v3",name:"Хана Гросс",email:"hana.gross@mail.com",phone:"+972 54 222 3030",status:"confirmed",seats:1,opts:[{t:"Пт · мясная трапеза",ty:"meal",q:1,amt:160,seats:1}],pay:"Оплачено",amt:"160,00 ₪",reg:"11 мая, 18:45",guests:[],comment:null},
+      {id:"v4",name:"Шимон Альтер",email:"s.alter@mail.com",phone:"+972 53 818 4242",status:"pending",seats:2,opts:[{t:"Чт · вечерняя трапеза",ty:"meal",q:1,amt:160,seats:1},{t:"Пт · вечерняя трапеза",ty:"meal",q:1,amt:160,seats:1}],pay:"Ожидает оплаты",amt:"320,00 ₪",reg:"12 мая, 10:10",guests:[],comment:"Только вечерние трапезы"},
+      {id:"v5",name:"Эстер Блюм",email:"esther.blum@mail.com",phone:"+972 58 909 5151",status:"confirmed",seats:1,opts:[{t:"Подарить Шавуот нуждающемуся",ty:"donation",q:3,amt:600,seats:0,donation:true},{t:"Весь Шавуот (все 6 трапез)",ty:"package",q:1,amt:600,seats:6}],pay:"Оплачено",amt:"1 200,00 ₪",reg:"12 мая, 14:22",guests:[],comment:"Спонсирует 3 места"},
+      {id:"v6",name:"Гершон Таль",email:"g.tal@mail.com",phone:"+972 50 333 7788",status:"confirmed",seats:1,opts:[{t:"Сб · мясная трапеза",ty:"meal",q:1,amt:160,seats:1}],pay:"Оплачено",amt:"160,00 ₪",reg:"13 мая, 08:05",guests:[],comment:null},
+      {id:"v7",name:"Двора Линд",email:"dvora.lind@mail.com",phone:"+972 54 121 6363",status:"waitlisted",seats:1,opts:[{t:"Весь Шавуот (все 6 трапез)",ty:"package",q:1,amt:600,seats:6}],pay:"Ожидает оплаты",amt:"600,00 ₪",reg:"13 мая, 19:40",guests:[],comment:"Если освободится место"},
+      {id:"v8",name:"Нахум Перец",email:"n.peretz@mail.com",phone:"+972 53 505 9090",status:"pending",seats:2,opts:[{t:"Пт · молочная трапеза",ty:"meal",q:1,amt:130,seats:1},{t:"Пт · мясная трапеза",ty:"meal",q:1,amt:160,seats:1}],pay:"Ожидает оплаты",amt:"290,00 ₪",reg:"14 мая, 11:15",guests:[],comment:null}
+    ]
+  },
+
+  lesson:{
+    title:"Урок по недельной главе",date:"вт, 28 апреля 2026, 19:30",kind:"повторяющееся",occ:"8 сеанс.",hasOcc:true,scope:"вт, 28 апреля",sess:"Занятие",
+    slots:[
+      {key:"class",title:"Занятие",short:"Занятие",cap:40,occ:21,parts:[["Участие",21,"var(--green)"]]}
+    ],
+    optionStats:[
+      {title:"Участие в занятии",type:"участие",qty:21,seats:21}
+    ],
+    guests:{unique:21,multi:0,sponsors:0,parts:[["Участники",21,"var(--green)"]]},
+    regs:[
+      {id:"l1",name:"Аарон Кляйн",email:"a.klein@mail.com",phone:"+972 50 111 2233",status:"confirmed",seats:1,opts:[{t:"Участие в занятии",ty:"участие",q:1,amt:0,seats:1}],pay:"Не требуется",amt:"Без суммы",reg:"24 апр, 10:00",guests:[],comment:null},
+      {id:"l2",name:"Йоханан Брук",email:"y.bruk@mail.com",phone:"+972 52 444 5566",status:"confirmed",seats:1,opts:[{t:"Участие в занятии",ty:"участие",q:1,amt:0,seats:1}],pay:"Не требуется",amt:"Без суммы",reg:"24 апр, 12:30",guests:[],comment:null},
+      {id:"l3",name:"Рут Авраами",email:"ruth.a@mail.com",phone:"+972 54 777 8899",status:"pending",seats:1,opts:[{t:"Участие в занятии",ty:"участие",q:1,amt:0,seats:1}],pay:"Не требуется",amt:"Без суммы",reg:"25 апр, 09:15",guests:[],comment:null}
+    ]
+  }
+};
+
+let current="shabbat";
+const bucketView={};
+let pendingCharts=[];
+let chartInstances={};
+const PIE_COLORS={"var(--gold)":"#f2b84b","var(--green)":"#35c759","var(--blue)":"#6b7fd4","var(--purple)":"#a78bfa","var(--red)":"#e52c36"};
+const FREE_COLOR="#3b3b57";
+const resolveColor=c=>PIE_COLORS[c]||c;
+const ICON_PIE='<svg viewBox="0 0 24 24" width="13" height="13"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 12V3a9 9 0 0 1 9 9z" fill="currentColor"/></svg>';
+const ICON_BARS='<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="7" x2="19" y2="7"/><line x1="5" y1="12" x2="14" y2="12"/><line x1="5" y1="17" x2="17" y2="17"/></svg>';
+function breakdownBlock(key,label,parts,free){
+  const view=bucketView[key]||"bars";
+  const icon=view==="bars"?ICON_PIE:ICON_BARS;
+  const header=`<div class="bucket-breakdown__label">${label}<button class="bd-toggle" data-bd="${key}" type="button" title="${view==="bars"?"Круговая диаграмма":"Списком"}">${icon}</button></div>`;
+  let body;
+  if(view==="pie"){
+    const segs=parts.map(p=>({label:p[0],value:p[1],color:resolveColor(p[2])}));
+    if(free!=null&&free>0)segs.push({label:"Свободно",value:free,color:FREE_COLOR});
+    const total=segs.reduce((a,x)=>a+x.value,0)||1;
+    const canvasId="pie_"+key;
+    pendingCharts.push({id:canvasId,segs});
+    const legend=segs.map(x=>`<span class="bd-leg"><i style="background:${x.color}"></i><span>${x.label}</span><b>${x.value}</b><span class="pct">${Math.round(x.value/total*100)}%</span></span>`).join("");
+    body=`<div class="bd-pie"><div class="bd-pie__canvas"><canvas id="${canvasId}"></canvas></div><div class="bd-pie__legend">${legend}</div></div>`;
+  } else {
+    const max=Math.max(...parts.map(p=>p[1]));
+    body=parts.map(p=>`<div class="brow"><span class="brow__dot" style="background:${p[2]}"></span><span class="brow__name">${p[0]}</span><span class="brow__val">${p[1]}</span><span class="brow__bar"><span style="width:${Math.round(p[1]/max*100)}%;background:${p[2]}"></span></span></div>`).join("");
+  }
+  return `<div class="bucket-breakdown">${header}${body}</div>`;
+}
+
+function renderPendingCharts(){
+  Object.values(chartInstances).forEach(c=>{try{c.destroy();}catch(e){}});
+  chartInstances={};
+  if(typeof Chart==="undefined")return;
+  pendingCharts.forEach(pc=>{
+    const el=document.getElementById(pc.id);
+    if(!el)return;
+    chartInstances[pc.id]=new Chart(el.getContext("2d"),{
+      type:"doughnut",
+      data:{labels:pc.segs.map(s=>s.label),datasets:[{data:pc.segs.map(s=>s.value),backgroundColor:pc.segs.map(s=>s.color),borderColor:"#1d1d30",borderWidth:2,hoverOffset:4}]},
+      options:{cutout:"60%",responsive:false,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:(ctx)=>` ${ctx.label}: ${ctx.parsed}`}}}}
+    });
+  });
+}
+const cur=()=>DATA[current];
+
+const STATUS_LABEL={attended:"Пришёл",cancelled:"Отменено",confirmed:"Подтверждено",no_show:"No-show",pending:"Заявка",rejected:"Отклонено",waitlisted:"Лист ожидания"};
+function statusTone(s){if(s==="confirmed"||s==="attended")return"green";if(s==="pending")return"gold";if(s==="waitlisted")return"purple";if(s==="rejected"||s==="no_show")return"red";if(s==="cancelled")return"muted";return"glass"}
+function initials(n){return n.trim().split(/\s+/).slice(0,2).map(p=>p[0].toUpperCase()).join("")}
+function meter(pct,labelL,labelR){return `<div class="registration-capacity-meter"><div class="registration-capacity-meter__track"><span style="width:${pct}%"></span></div><div class="registration-capacity-meter__labels"><span>${labelL}</span><span>${labelR}</span></div></div>`}
+
+function renderEvents(){
+  document.getElementById("eventsCount").textContent=EVENTS.length;
+  document.getElementById("eventList").innerHTML=EVENTS.map(e=>`
+    <button class="registration-event-card${e.id===current?" registration-event-card--active":""}" data-ev="${e.id}">
+      <div class="registration-event-card__title"><strong>${e.title}</strong><span>${e.date}</span></div>
+      <div class="registration-event-card__counters">
+        <span class="registration-counter registration-counter--green"><strong>${e.ok}</strong><small>ok</small></span>
+        <span class="registration-counter registration-counter--gold"><strong>${e.new}</strong><small>new</small></span>
+        <span class="registration-counter registration-counter--purple"><strong>${e.wait}</strong><small>wait</small></span>
+      </div>
+    </button>`).join("");
+  document.querySelectorAll(".registration-event-card").forEach(c=>c.onclick=()=>selectEvent(c.dataset.ev));
+}
+
+function renderHead(){
+  const d=cur();
+  document.getElementById("evKind").textContent=d.kind;
+  document.getElementById("evOcc").textContent=d.occ;
+  document.getElementById("evTitle").textContent=d.title;
+  document.getElementById("evDate").textContent=d.date;
+  document.getElementById("capSub").textContent=d.scope;
+  document.getElementById("occBar").style.display=d.hasOcc?"":"none";
+}
+
+function renderQuick(){
+  const d=cur();
+  const maxCap=Math.max(...d.slots.map(s=>s.cap));
+  const slotPills=d.slots.map(b=>{
+    const pct=Math.round(b.occ/b.cap*100);
+    const hot=pct>=85?" cap-pill--hot":"";
+    return `<div class="cap-pill${hot}"><div class="cap-pill__l"><span>${b.short||b.key}</span><b>${b.occ}<span class="cap"> / ${b.cap}</span></b></div><div class="cap-pill__bar"><span style="width:${pct}%"></span></div></div>`;
+  }).join("");
+  const guestPill=`<div class="cap-pill cap-pill--info"><div class="cap-pill__l"><span>Уникальных гостей</span><b>${d.guests.unique}</b></div><div class="cap-pill__bar"><span style="width:${Math.round(d.guests.unique/maxCap*100)}%;background:linear-gradient(90deg,rgba(107,127,212,0.86),rgba(167,139,250,0.9))"></span></div></div>`;
+  const multiPill=d.guests.multi>0?`<div class="cap-pill cap-pill--gold"><div class="cap-pill__l"><span>Неск. трапез</span><b>${d.guests.multi}</b></div><div class="cap-pill__bar"><span style="width:${Math.round(d.guests.multi/d.guests.unique*100)}%;background:linear-gradient(90deg,rgba(242,184,75,0.86),rgba(242,184,75,0.95))"></span></div></div>`:"";
+  document.getElementById("capQuick").innerHTML=slotPills+guestPill+multiPill;
+}
+
+function renderCapacity(){
+  const d=cur();
+  pendingCharts=[];
+  const mode=document.getElementById("capMode").value;
+  const totalOcc=d.slots.reduce((s,b)=>s+b.occ,0);
+  const totalCap=d.slots.reduce((s,b)=>s+b.cap,0);
+  let html="";
+  if(mode==="buckets"){
+    html='<div class="registration-capacity-buckets">'+d.slots.map(b=>{
+      const pct=Math.round(b.occ/b.cap*100),free=b.cap-b.occ;
+      return `<div class="registration-capacity-bucket-row">
+        <div class="registration-capacity-bucket-row__head">
+          <div class="registration-capacity-bucket-row__title"><strong>${b.title}</strong><span>${b.key}</span></div>
+          <div class="registration-capacity-bucket-row__count"><strong>${b.occ} / ${b.cap}</strong><span>свободно ${free} · ${pct}%</span></div>
+        </div>
+        ${meter(pct,pct+"% заполнено",free+" свободно")}
+        <button class="seat-open-btn" data-seat="${b.key}" type="button">Схема рассадки за столом</button>
+        ${breakdownBlock(b.key,"Из чего сложилось",b.parts,b.cap-b.occ)}
+      </div>`;
+    }).join("")+'</div>';
+    html+=`<p class="registration-capacity-helper">${d.slots.map(b=>b.occ).join(" + ")} = ${totalOcc} посадок · ${d.guests.unique} уникальных гостей${d.guests.multi>0?` · из них ${d.guests.multi} на нескольких трапезах`:""}.</p>`;
+  } else if(mode==="total"){
+    const pct=Math.round(totalOcc/totalCap*100),free=totalCap-totalOcc;
+    html=`<div class="registration-capacity-total">
+      <div class="registration-capacity-total__main"><span>Занято по слотам</span><strong>${totalOcc} из ${totalCap} мест</strong><small>Сумма по ${d.slots.length} ${d.slots.length===1?"слоту":"слотам"}</small></div>
+      ${meter(pct,pct+"% заполнено",free+" ("+(100-pct)+"%) свободно")}
+      <div class="registration-capacity-total__free"><span>Свободные места</span><strong>${free} (${100-pct}%)</strong><small>Осталось ${free} мест</small></div>
+    </div>`;
+  } else if(mode==="options"){
+    html='<div class="registration-capacity-options">'+d.optionStats.map(o=>`
+      <div class="registration-capacity-option-row">
+        <div><strong>${o.title}</strong>${o.donation?'<span>не место</span>':''}</div>
+        <span>${o.qty} чел.</span>
+        <span>${o.donation?'0 мест':o.seats+' мест'}</span>
+      </div>`).join("")+'</div>';
+    html+='<p class="registration-capacity-helper">Пожертвования отмечены counts_toward_capacity = false — добавляют деньги, но не занимают места.</p>';
+  } else {
+    const pct=Math.round(d.guests.unique/Math.max(...d.slots.map(s=>s.cap))*100);
+    html=`<div class="registration-capacity-bucket-row">
+      <div class="registration-capacity-bucket-row__head">
+        <div class="registration-capacity-bucket-row__title"><strong>Уникальные гости</strong><span>каждый человек считается один раз</span></div>
+        <div class="registration-capacity-bucket-row__count"><strong>${d.guests.unique}</strong><span>пришедших гостя</span></div>
+      </div>
+      ${meter(pct,d.guests.unique+" гостей","посадок "+totalOcc)}
+      ${breakdownBlock("guests","Как распределились",d.guests.parts,null)}
+    </div>`;
+    if(d.guests.sponsors>0)html+=`<p class="registration-capacity-helper">Плюс ${d.guests.sponsors} спонсоров — мест не занимают, учитываются только в выручке.</p>`;
+  }
+  document.getElementById("capBody").innerHTML=html;
+  renderPendingCharts();
+  document.querySelectorAll(".bd-toggle").forEach(btn=>btn.onclick=()=>{const k=btn.dataset.bd;bucketView[k]=(bucketView[k]||"bars")==="bars"?"pie":"bars";renderCapacity();});
+  document.querySelectorAll(".seat-open-btn").forEach(b=>b.onclick=()=>openSeating(b.dataset.seat));
+}
+
+function optsCompact(opts){return opts.slice(0,2).map(o=>{const t=o.donation?"Пожертвование: "+o.t:o.t;return `${t} × ${o.q}`+(o.amt>0?` · ${o.amt} ₪`:"")}).join(", ")}
+
+function renderTable(){
+  const rows=cur().regs;
+  document.getElementById("tableRange").textContent=`Показано 1-${rows.length}`;
+  document.getElementById("tableBody").innerHTML=rows.map(r=>`
+    <div class="data-table__row data-table__row--registration" data-id="${r.id}" role="row">
+      <div class="registration-table-person" role="cell"><span class="registration-avatar">${initials(r.name)}</span><div><strong>${r.name}</strong>${r.guests.length?`<small>${r.guests.length} гост.</small>`:""}</div></div>
+      <div class="registration-table-stack" role="cell"><span>${r.email}</span><small>${r.phone}</small></div>
+      <span role="cell">${r.seats}</span>
+      <div class="registration-table-stack registration-table-stack--options" role="cell"><span>${optsCompact(r.opts)}</span>${r.opts.length>2?`<small>+${r.opts.length-2} ещё</small>`:""}</div>
+      <div class="registration-table-stack" role="cell"><span>${r.pay}</span><small>${r.amt}</small></div>
+      <span role="cell">${r.reg}</span>
+      <div class="event-table__actions" role="cell"><button class="event-action-dots">...</button></div>
+    </div>`).join("");
+  document.querySelectorAll(".data-table__row--registration").forEach(row=>row.onclick=()=>openModal(row.dataset.id));
+}
+
+function buildDetailHtml(r){
+  const d=cur();
+  const opts=r.opts.map(o=>`<div class="registration-option-row"><div><strong>${o.t}</strong><span>${o.donation?"Пожертвование":o.ty} × ${o.q}</span></div><div><strong>${o.amt} ₪</strong><span>${o.donation?"не место":o.seats+" мест"}</span></div></div>`).join("");
+  return `
+    <div class="registration-detail" style="padding:0;gap:14px">
+      <div class="registration-detail__profile">
+        <span class="registration-avatar registration-avatar--large">${initials(r.name)}</span>
+        <h2>${r.name}</h2>
+        <div class="badge-row"><span class="badge badge--${statusTone(r.status)}">${STATUS_LABEL[r.status]}</span><span class="badge badge--glass">${r.seats} мест</span></div>
+      </div>
+      <section class="registration-detail-section"><h3>Контакты</h3>
+        <div class="registration-detail-row"><span>Email</span><strong>${r.email}</strong></div>
+        <div class="registration-detail-row"><span>Телефон</span><strong>${r.phone}</strong></div>
+      </section>
+      <section class="registration-detail-section"><h3>Событие и сеанс</h3>
+        <div class="registration-detail-row"><span>Событие</span><strong>${d.title}</strong></div>
+        <div class="registration-detail-row"><span>Дата</span><strong>${d.date}</strong></div>
+        <div class="registration-detail-row"><span>Сеанс</span><strong>${d.sess}</strong></div>
+      </section>
+      <section class="registration-detail-section"><h3>Опции участия</h3><div class="registration-options-list">${opts}</div></section>
+      <section class="registration-detail-section"><h3>Оплата</h3>
+        <div class="registration-detail-row"><span>Статус</span><strong>${r.pay}</strong></div>
+        <div class="registration-detail-row"><span>Сумма</span><strong>${r.amt}</strong></div>
+      </section>
+    </div>`;
+}
+
+function openModal(regId){
+  const r=cur().regs.find(x=>x.id===regId);
+  if(!r)return;
+  document.getElementById("regModalTitle").textContent=r.name;
+  document.getElementById("regModalBody").innerHTML=buildDetailHtml(r);
+  document.getElementById("regModal").hidden=false;
+}
+function closeModal(){document.getElementById("regModal").hidden=true;}
+
+function selectEvent(id){
+  if(!DATA[id])return;
+  current=id;
+  closeModal();
+  renderEvents();renderHead();renderQuick();renderCapacity();renderTable();
+}
+
+/* ===== Seating editor ===== */
+const seatState={};
+let curSeat=null;
+let seatDrag=null;
+const SEAT_FIRSTS=["Давид","Моше","Яаков","Ицхак","Шломо","Биньямин","Арье","Менахем","Натан","Гершон","Эли","Йосеф","Леви","Шимон","Реувен","Дан","Цви","Барух","Меир","Авраам","Сара","Рахель","Лея","Хана","Мириам","Двора","Эстер","Това","Батья","Ципора","Рут","Шифра","Голда","Фрида","Ада"];
+const SEAT_LASTS=["Коэн","Леви","Берг","Кац","Розен","Шапиро","Вайс","Стерн","Гросс","Альтер","Блюм","Таль","Линд","Перец","Фридман","Гольдберг","Кляйн","Брук","Авраами","Зильбер","Горовиц","Рубин","Эпштейн","Села","Ландау"];
+const TABLE_W=120,TABLE_H=64,CHAIR_OFFSET=28,TABLE_SEAM=3;
+function seatInitials(n){return n.trim().split(/\s+/).slice(0,2).map(p=>p[0].toUpperCase()).join("");}
+function genPeople(d,n){
+  const out=[];const seed=d.regs.map(r=>r.name);
+  for(let i=0;i<n;i++){
+    const name=i<seed.length?seed[i]:SEAT_FIRSTS[i%SEAT_FIRSTS.length]+" "+SEAT_LASTS[(i*7+3)%SEAT_LASTS.length];
+    out.push({id:"p"+i,type:"person",name,initials:seatInitials(name)});
+  }
+  return out;
+}
+function tableId(){return "tbl_"+Math.random().toString(36).slice(2,8);}
+function normalizeAngle(a){let n=((a%360)+360)%360;return Math.round(n/90)*90%360;}
+function tableVectors(t){const a=(t.angle||0)*Math.PI/180;return {ux:Math.cos(a),uy:Math.sin(a),px:-Math.sin(a),py:Math.cos(a)};}
+function tableEndpoint(t,end){
+  const v=tableVectors(t),sg=end==="a"?-1:1;
+  return {x:t.cx+v.ux*(t.w/2)*sg,y:t.cy+v.uy*(t.w/2)*sg,dir:{x:v.ux*sg,y:v.uy*sg},perp:{x:v.px,y:v.py},tableId:t.id,end};
+}
+function tableCorners(t){
+  const v=tableVectors(t),hw=t.w/2,hh=t.h/2;
+  return [[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]].map(([x,y])=>({x:t.cx+v.ux*x+v.px*y,y:t.cy+v.uy*x+v.py*y}));
+}
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+function angleDelta(a,b){
+  const d=Math.abs(normalizeAngle(a)-normalizeAngle(b))%180;
+  return d>90?180-d:d;
+}
+function projectPoly(poly,axis){
+  let min=Infinity,max=-Infinity;
+  poly.forEach(p=>{const v=p.x*axis.x+p.y*axis.y;min=Math.min(min,v);max=Math.max(max,v);});
+  return {min,max};
+}
+function polygonsOverlap(a,b,eps=.5){
+  const axes=[];
+  [a,b].forEach(poly=>{
+    for(let i=0;i<poly.length;i++){
+      const p1=poly[i],p2=poly[(i+1)%poly.length];
+      const ex=p2.x-p1.x,ey=p2.y-p1.y,len=Math.hypot(ex,ey)||1;
+      axes.push({x:-ey/len,y:ex/len});
+    }
+  });
+  return axes.every(axis=>{
+    const pa=projectPoly(a,axis),pb=projectPoly(b,axis);
+    return !(pa.max<=pb.min+eps||pb.max<=pa.min+eps);
+  });
+}
+function pointSegmentDistance(p,a,b){
+  const vx=b.x-a.x,vy=b.y-a.y,len2=vx*vx+vy*vy||1;
+  const t=Math.max(0,Math.min(1,((p.x-a.x)*vx+(p.y-a.y)*vy)/len2));
+  const x=a.x+vx*t,y=a.y+vy*t;
+  return Math.hypot(p.x-x,p.y-y);
+}
+function pointInPoly(p,poly){
+  let inside=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const pi=poly[i],pj=poly[j];
+    if(((pi.y>p.y)!==(pj.y>p.y))&&(p.x<(pj.x-pi.x)*(p.y-pi.y)/(pj.y-pi.y)+pi.x))inside=!inside;
+  }
+  return inside;
+}
+function pointPolyDistance(p,poly){
+  if(pointInPoly(p,poly))return 0;
+  let d=Infinity;
+  for(let i=0;i<poly.length;i++)d=Math.min(d,pointSegmentDistance(p,poly[i],poly[(i+1)%poly.length]));
+  return d;
+}
+function connectionAngleDelta(st,c){
+  const a=tableById(st,c.aTableId),b=tableById(st,c.bTableId);
+  return a&&b?angleDelta(a.angle||0,b.angle||0):0;
+}
+function isNearPerpendicularConnection(st,chair){
+  return (st.tableConnections||[]).some(c=>{
+    if(c.aTableId!==chair.tableId&&c.bTableId!==chair.tableId)return false;
+    if(connectionAngleDelta(st,c)<12)return false;
+    const p={x:c.x,y:c.y};
+    // v7: block only the seat that physically falls onto the seam itself.
+    // Earlier versions used a broad radius and accidentally removed valid free seats
+    // along the outer side of perpendicular table chains.
+    return dist(chair,p)<26||dist(chair.anchor,p)<18;
+  });
+}
+function isChairBlockedByAnotherTable(st,chair){
+  return (st.customTables||[]).some(t=>{
+    if(t.id===chair.tableId)return false;
+    const poly=tableCorners(t);
+    return pointPolyDistance({x:chair.x,y:chair.y},poly)<24||pointPolyDistance(chair.anchor,poly)<8;
+  });
+}
+function tableCollides(st,t){
+  const poly=tableCorners(t);
+  return (st.customTables||[]).some(o=>o.id!==t.id&&polygonsOverlap(poly,tableCorners(o),1.25));
+}
+function dedupeChairs(chairs,minDist=32){
+  const out=[];
+  chairs.forEach(c=>{
+    if(!out.some(x=>Math.hypot(x.x-c.x,x.y-c.y)<minDist))out.push(c);
+  });
+  return out;
+}
+function movedTable(t,dx,dy){return {...t,cx:t.cx+dx,cy:t.cy+dy};}
+function tableCornerAtEndpoint(ep,half,side){return {x:ep.x+ep.perp.x*half*side,y:ep.y+ep.perp.y*half*side};}
+function clearTableConnections(st,tableId=null,end=null){
+  st.tableConnections=(st.tableConnections||[]).filter(c=>{
+    if(!tableId)return true;
+    if(end==null)return c.aTableId!==tableId&&c.bTableId!==tableId;
+    return !((c.aTableId===tableId&&c.aEnd===end)||(c.bTableId===tableId&&c.bEnd===end));
+  });
+}
+function addTableConnection(st,aTableId,aEnd,bTableId,bEnd,x,y){
+  st.tableConnections=st.tableConnections||[];
+  clearTableConnections(st,aTableId,aEnd);
+  clearTableConnections(st,bTableId,bEnd);
+  st.tableConnections.push({aTableId,aEnd,bTableId,bEnd,x,y});
+}
+function createHolidayLayout(needed){
+  const count=Math.max(7,Math.ceil(needed/6.5));
+  const top=Math.max(3,Math.ceil(count*.32));
+  const arms=Math.max(2,Math.ceil(count*.22));
+  const center=Math.max(2,count-top-arms*2);
+  const out=[],connections=[],x0=240,y0=120,w=TABLE_W,h=TABLE_H;
+  for(let i=0;i<top;i++)out.push(createTable(x0+i*w,y0,0));
+  for(let i=0;i<top-1;i++)connections.push({aTableId:out[i].id,aEnd:'b',bTableId:out[i+1].id,bEnd:'a',x:x0+i*w+w/2,y:y0});
+  const leftCorner={x:x0-w/2,y:y0+h/2};
+  const rightCorner={x:x0+(top-1)*w+w/2,y:y0+h/2};
+  let prevLeft=null,prevRight=null;
+  for(let i=0;i<arms;i++){
+    const cy=leftCorner.y+w/2+i*w;
+    const left=createTable(leftCorner.x-h/2,cy,90);
+    const right=createTable(rightCorner.x+h/2,cy,90);
+    out.push(left,right);
+    if(i===0){
+      connections.push({aTableId:out[0].id,aEnd:'a',bTableId:left.id,bEnd:'a',x:leftCorner.x,y:leftCorner.y});
+      connections.push({aTableId:out[top-1].id,aEnd:'b',bTableId:right.id,bEnd:'a',x:rightCorner.x,y:rightCorner.y});
+    }else{
+      connections.push({aTableId:prevLeft.id,aEnd:'b',bTableId:left.id,bEnd:'a',x:left.cx,y:left.cy-w/2});
+      connections.push({aTableId:prevRight.id,aEnd:'b',bTableId:right.id,bEnd:'a',x:right.cx,y:right.cy-w/2});
+    }
+    prevLeft=left;prevRight=right;
+  }
+  const middleY=y0+h/2+w*.9;
+  const startX=x0+w*.8;
+  let prev=null;
+  for(let i=0;i<center;i++){
+    const t=createTable(startX+i*w,middleY,0);out.push(t);
+    if(prev)connections.push({aTableId:prev.id,aEnd:'b',bTableId:t.id,bEnd:'a',x:prev.cx+w/2,y:prev.cy});
+    prev=t;
+  }
+  ensureOneRabbiTable(out);
+  return {tables:out,connections};
+}
+function isCustomLayout(st){return st&&st.layout==="islands";}
+function createTable(cx,cy,angle=0,sideSeats=3,isRabbiTable=false){return {id:tableId(),cx,cy,w:TABLE_W,h:TABLE_H,angle:normalizeAngle(angle),sideSeats:sideSeats===2?2:3,isRabbiTable:!!isRabbiTable};}
+function tableSideSeats(t){return t&&t.sideSeats===2?2:3;}
+function isRabbiTable(t){return !!(t&&t.isRabbiTable);}
+function ensureOneRabbiTable(tables){
+  if(!Array.isArray(tables)||!tables.length)return tables||[];
+  let found=false;
+  tables.forEach((t,i)=>{
+    if(isRabbiTable(t)&&!found){t.isRabbiTable=true;found=true;}
+    else t.isRabbiTable=false;
+  });
+  if(!found)tables[0].isRabbiTable=true;
+  return tables;
+}
+function rabbiTableId(st){const t=(st.customTables||[]).find(isRabbiTable)||(st.customTables||[])[0];return t?t.id:null;}
+function createGridTables(needed){
+  const count=Math.max(1,Math.ceil(needed/8));
+  const cols=Math.max(1,Math.ceil(Math.sqrt(count)));
+  const out=[];
+  for(let i=0;i<count;i++)out.push(createTable(120+(i%cols)*210,120+Math.floor(i/cols)*150,0));
+  return ensureOneRabbiTable(out);
+}
+function createHolidayTables(needed){return createHolidayLayout(needed).tables;}
+function ensureCustomTables(st,kind="grid"){
+  if(!st.customTables||!st.customTables.length){
+    if(kind==="holiday"){
+      const layout=createHolidayLayout(st.needed);
+      st.customTables=layout.tables;st.tableConnections=layout.connections;
+    }else{
+      st.customTables=createGridTables(st.needed);st.tableConnections=[];
+    }
+  }
+  st.tableConnections=st.tableConnections||[];
+  ensureOneRabbiTable(st.customTables);
+  if(!st.selectedTableId&&st.customTables[0])st.selectedTableId=st.customTables[0].id;
+}
+function tableById(st,id){return (st.customTables||[]).find(t=>t.id===id)||null;}
+const SEAT_TEMPLATE_KEY="seatLayoutTemplatesV14";
+function readSeatTemplates(){try{return JSON.parse(localStorage.getItem(SEAT_TEMPLATE_KEY)||"[]").filter(t=>t&&t.id&&Array.isArray(t.tables));}catch(_){return [];}}
+function writeSeatTemplates(items){try{localStorage.setItem(SEAT_TEMPLATE_KEY,JSON.stringify(items));}catch(_){/* prototype only */}}
+function currentTemplateValue(st){return st&&st.activeTemplateId?st.activeTemplateId:"builtin:holiday_p_row";}
+function renderSeatTemplateSelect(){
+  const select=document.getElementById("seatTemplateSelect");
+  if(!select)return;
+  const templates=readSeatTemplates();
+  const current=currentTemplateValue(curSeat);
+  const options=[
+    `<option value="builtin:holiday_p_row">П + ряд — праздничная схема</option>`,
+    `<option value="builtin:grid">Сетка отдельных столов</option>`,
+    `<option value="builtin:blank">Пустой конструктор</option>`
+  ];
+  if(templates.length){
+    options.push(`<option disabled>────────── Сохранённые ──────────</option>`);
+    templates.forEach(t=>options.push(`<option value="saved:${t.id}">${escapeHtml(t.name||"Без названия")}</option>`));
+  }
+  select.innerHTML=options.join("");
+  if([...select.options].some(o=>o.value===current))select.value=current;
+}
+function snapshotTablesForTemplate(st){
+  return {
+    tables:ensureOneRabbiTable(st.customTables||[]).map(t=>({id:t.id,cx:t.cx,cy:t.cy,w:t.w,h:t.h,angle:normalizeAngle(t.angle||0),sideSeats:tableSideSeats(t),isRabbiTable:isRabbiTable(t)})),
+    connections:(st.tableConnections||[]).map(c=>({...c}))
+  };
+}
+function cloneTemplateTables(template){
+  const idMap={};
+  const tables=(template.tables||[]).map(src=>{const id=tableId();idMap[src.id]=id;return {id,cx:src.cx,cy:src.cy,w:src.w||TABLE_W,h:src.h||TABLE_H,angle:normalizeAngle(src.angle||0),sideSeats:src.sideSeats===2?2:3,isRabbiTable:!!src.isRabbiTable};});
+  ensureOneRabbiTable(tables);
+  const connections=(template.connections||[]).map(c=>({...c,aTableId:idMap[c.aTableId]||c.aTableId,bTableId:idMap[c.bTableId]||c.bTableId})).filter(c=>tables.some(t=>t.id===c.aTableId)&&tables.some(t=>t.id===c.bTableId));
+  return {tables,connections};
+}
+function applySeatTemplate(value){
+  const st=curSeat;if(!st)return;
+  const hadAssignments=(st.chairs||[]).some(Boolean)||(st.pool||[]).length>0;
+  st.layout="islands";
+  if(value==="builtin:blank"){
+    st.customTables=[];st.tableConnections=[];st.selectedTableId=null;st.activeTemplateId=value;
+  }else if(value==="builtin:grid"){
+    st.customTables=createGridTables(st.needed);st.tableConnections=[];st.selectedTableId=st.customTables[0]?.id||null;st.activeTemplateId=value;
+  }else if(value==="builtin:holiday_p_row"){
+    const layout=createHolidayLayout(st.needed);st.customTables=layout.tables;ensureOneRabbiTable(st.customTables);st.tableConnections=layout.connections;st.selectedTableId=rabbiTableId(st)||st.customTables[0]?.id||null;st.activeTemplateId=value;
+  }else if(value&&value.startsWith("saved:")){
+    const id=value.slice(6);const tpl=readSeatTemplates().find(t=>t.id===id);if(!tpl)return;
+    const cloned=cloneTemplateTables(tpl);st.customTables=cloned.tables;st.tableConnections=cloned.connections;st.selectedTableId=st.customTables[0]?.id||null;st.activeTemplateId=value;
+  }
+  ensureOneRabbiTable(st.customTables);
+  st.seatingDone=false;
+  if(!hadAssignments){st.chairs=[];st.pool=[];}
+  applyGeometry(st,{preserveIndex:true});
+  renderSeatTemplateSelect();
+  renderSeating();
+}
+function saveCurrentSeatTemplate(){
+  const st=curSeat;if(!st||!isCustomLayout(st))return;
+  if(!st.customTables||!st.customTables.length){alert("Сначала расставьте хотя бы один стол.");return;}
+  const name=(prompt("Название готовой расстановки","")||"").trim();
+  if(!name)return;
+  const templates=readSeatTemplates();
+  const id="tpl_"+Date.now().toString(36);
+  const snap=snapshotTablesForTemplate(st);
+  templates.push({id,name,tables:snap.tables,connections:snap.connections,createdAt:new Date().toISOString()});
+  writeSeatTemplates(templates);
+  st.activeTemplateId="saved:"+id;
+  renderSeatTemplateSelect();
+  renderSeating();
+}
+function deleteSelectedSeatTemplate(){
+  const select=document.getElementById("seatTemplateSelect");
+  if(!select||!select.value.startsWith("saved:"))return;
+  const id=select.value.slice(6);const templates=readSeatTemplates();const tpl=templates.find(t=>t.id===id);
+  if(!tpl)return;
+  if(!confirm(`Удалить шаблон «${tpl.name||"Без названия"}»?`))return;
+  writeSeatTemplates(templates.filter(t=>t.id!==id));
+  if(curSeat&&curSeat.activeTemplateId==="saved:"+id)curSeat.activeTemplateId="builtin:holiday_p_row";
+  renderSeatTemplateSelect();
+  renderSeating();
+}
+function getCanvasScale(){
+  const canvas=document.getElementById("seatCanvas");
+  if(!canvas)return 1;
+  const rect=canvas.getBoundingClientRect();
+  return rect.width&&canvas.offsetWidth?rect.width/canvas.offsetWidth:1;
+}
+function buildRun(o,seam,x,y,units,orient,th,unitLen,sides,ends,tables,chairs){
+  for(let k=0;k<units;k++){
+    if(orient==="h")tables.push({x:x+k*unitLen+seam,y:y,w:unitLen-2*seam,h:th,angle:0});
+    else tables.push({x:x,y:y+k*unitLen+seam,w:th,h:unitLen-2*seam,angle:0});
+    for(let j=0;j<3;j++){
+      const along=k*unitLen+(j+0.5)*(unitLen/3);
+      if(orient==="h"){
+        if(sides.a)chairs.push({x:x+along,y:y-o});
+        if(sides.b)chairs.push({x:x+along,y:y+th+o});
+      }else{
+        if(sides.a)chairs.push({x:x-o,y:y+along});
+        if(sides.b)chairs.push({x:x+th+o,y:y+along});
+      }
+    }
+  }
+  const runLen=units*unitLen;
+  if(orient==="h"){
+    if(ends.start)chairs.push({x:x-o,y:y+th/2});
+    if(ends.end)chairs.push({x:x+runLen+o,y:y+th/2});
+  }else{
+    if(ends.start)chairs.push({x:x+th/2,y:y-o});
+    if(ends.end)chairs.push({x:x+th/2,y:y+runLen+o});
+  }
+}
+function tableBounds(t){
+  if(t.cx!=null){
+    const cs=tableCorners(t);return {minX:Math.min(...cs.map(c=>c.x)),maxX:Math.max(...cs.map(c=>c.x)),minY:Math.min(...cs.map(c=>c.y)),maxY:Math.max(...cs.map(c=>c.y))};
+  }
+  return {minX:t.x,maxX:t.x+t.w,minY:t.y,maxY:t.y+t.h};
+}
+function pickRabbiHeadIndex(tables,chairs,hp){
+  const rabbiTable=tables.find(t=>t&&t.isRabbiTable);
+  if(rabbiTable){
+    const tableChairs=chairs.map((c,i)=>({...c,_i:i})).filter(c=>c.tableId===rabbiTable.id);
+    if(tableChairs.length){
+      const angle=normalizeAngle(rabbiTable.angle||0);
+      const horizontal=angle===0||angle===180;
+      const prefer=horizontal
+        ? tableChairs.filter(c=>c.y<=rabbiTable.cy)
+        : tableChairs.filter(c=>c.x<=rabbiTable.cx);
+      const side=prefer.length?prefer:tableChairs;
+      side.sort((a,b)=>horizontal?(a.x-b.x):(a.y-b.y));
+      return side[Math.floor(side.length/2)]._i;
+    }
+  }
+  let headIndex=0,best=1e18;
+  chairs.forEach((c,i)=>{const dd=(c.x-hp.x)**2+(c.y-hp.y)**2;if(dd<best){best=dd;headIndex=i;}});
+  return headIndex;
+}
+function finishGeo(tables,chairs,hp,seams=[]){
+  let headIndex=pickRabbiHeadIndex(tables,chairs,hp);
+  let maxX=0,maxY=0,minX=1e9,minY=1e9;
+  tables.forEach(t=>{const b=tableBounds(t);maxX=Math.max(maxX,b.maxX);maxY=Math.max(maxY,b.maxY);minX=Math.min(minX,b.minX);minY=Math.min(minY,b.minY);});
+  chairs.forEach(c=>{maxX=Math.max(maxX,c.x+20);maxY=Math.max(maxY,c.y+20);minX=Math.min(minX,c.x-20);minY=Math.min(minY,c.y-20);});
+  seams.forEach(c=>{maxX=Math.max(maxX,c.x+12);maxY=Math.max(maxY,c.y+12);minX=Math.min(minX,c.x-12);minY=Math.min(minY,c.y-12);});
+  const sx=minX<28?28-minX:0,sy=minY<28?28-minY:0;
+  if(sx||sy){
+    tables.forEach(t=>{if(t.cx!=null){t.cx+=sx;t.cy+=sy;t.x=t.cx-t.w/2;t.y=t.cy-t.h/2;}else{t.x+=sx;t.y+=sy;}});
+    chairs.forEach(c=>{c.x+=sx;c.y+=sy;});
+    seams.forEach(c=>{c.x+=sx;c.y+=sy;});
+    maxX+=sx;maxY+=sy;
+  }
+  return {tables,chairs,seams,headIndex,width:maxX+40,height:maxY+40};
+}
+function customSeatGeometry(st){
+  ensureCustomTables(st);
+  ensureOneRabbiTable(st.customTables);
+  const connectedEndMap={};
+  const seams=(st.tableConnections||[]).map(c=>{
+    connectedEndMap[c.aTableId+":"+c.aEnd]=c;
+    connectedEndMap[c.bTableId+":"+c.bEnd]=c;
+    return {x:c.x,y:c.y};
+  });
+  function isEndHardBlocked(t,end){
+    const c=connectedEndMap[t.id+":"+end];
+    if(!c)return false;
+    const otherId=c.aTableId===t.id?c.bTableId:c.aTableId;
+    const other=tableById(st,otherId);
+    // v9: block an end seat by connection only when the table is joined end-to-end
+    // with a parallel table. Perpendicular/corner joints should still allow an
+    // outside end chair if the chair itself does not collide with another table.
+    return !!other&&angleDelta(t.angle||0,other.angle||0)<12;
+  }
+  const connectedIds=new Set();
+  (st.tableConnections||[]).forEach(c=>{connectedIds.add(c.aTableId);connectedIds.add(c.bTableId);});
+  const tables=st.customTables.map((t,i)=>({...t,x:t.cx-t.w/2,y:t.cy-t.h/2,editable:!st.seatingDone,label:isRabbiTable(t)?"стол":String(i+1),selected:!st.seatingDone&&t.id===st.selectedTableId,connected:connectedIds.has(t.id),isRabbiTable:isRabbiTable(t)}));
+  const rawChairs=[];
+  function pushChair(ch){
+    if(ch.kind==="side"&&isNearPerpendicularConnection(st,ch))return;
+    if(isChairBlockedByAnotherTable(st,ch))return;
+    rawChairs.push(ch);
+  }
+  // v10: even while editing the figure, calculate potential physical seats.
+  // They are shown as empty preview circles before the actual seating is generated.
+  st.customTables.forEach(t=>{
+    const v=tableVectors(t);
+    const sideSeats=tableSideSeats(t);
+    for(let j=0;j<sideSeats;j++){
+      const along=-t.w/2+(j+.5)*(t.w/sideSeats);
+      const anchorA={x:t.cx+v.ux*along+v.px*(-t.h/2),y:t.cy+v.uy*along+v.py*(-t.h/2)};
+      const anchorB={x:t.cx+v.ux*along+v.px*(t.h/2),y:t.cy+v.uy*along+v.py*(t.h/2)};
+      pushChair({x:anchorA.x+v.px*(-CHAIR_OFFSET),y:anchorA.y+v.py*(-CHAIR_OFFSET),anchor:anchorA,tableId:t.id,kind:"side",edge:"a",slot:j});
+      pushChair({x:anchorB.x+v.px*(CHAIR_OFFSET),y:anchorB.y+v.py*(CHAIR_OFFSET),anchor:anchorB,tableId:t.id,kind:"side",edge:"b",slot:j});
+    }
+    const endA=tableEndpoint(t,"a"),endB=tableEndpoint(t,"b");
+    if(!isEndHardBlocked(t,"a"))pushChair({x:endA.x+endA.dir.x*CHAIR_OFFSET,y:endA.y+endA.dir.y*CHAIR_OFFSET,anchor:{x:endA.x,y:endA.y},tableId:t.id,kind:"end",end:"a"});
+    if(!isEndHardBlocked(t,"b"))pushChair({x:endB.x+endB.dir.x*CHAIR_OFFSET,y:endB.y+endB.dir.y*CHAIR_OFFSET,anchor:{x:endB.x,y:endB.y},tableId:t.id,kind:"end",end:"b"});
+  });
+  const cleanChairs=dedupeChairs(rawChairs,20).map(c=>({x:c.x,y:c.y,tableId:c.tableId,kind:c.kind,end:c.end,edge:c.edge,slot:c.slot,isRabbiTable:isRabbiTable(tableById(st,c.tableId))}));
+  const hp=cleanChairs.find(c=>c.isRabbiTable)||cleanChairs[0]||tables[0]||{x:0,y:0};
+  return finishGeo(tables,cleanChairs,hp,seams);
+}
+function seatGeometry(layout,T,st=null){
+  const o=CHAIR_OFFSET,seam=TABLE_SEAM,unitLen=TABLE_W;
+  if(layout==="islands"&&st)return customSeatGeometry(st);
+  if(layout==="row"){
+    const M=Math.max(1,Math.ceil((T-2)/6));
+    const th=64,tx=90,ty=170,tables=[],chairs=[];
+    buildRun(o,seam,tx,ty,M,"h",th,unitLen,{a:true,b:true},{start:true,end:true},tables,chairs);
+    return finishGeo(tables,chairs,{x:tx-o,y:ty+th/2});
+  }
+  const thH=60,thV=60;
+  let Mtop=Math.max(2,Math.round(T/14));
+  const topSeats=3*Mtop;
+  const perArm=Math.max(1,Math.ceil(((T-topSeats)/2-1)/6));
+  const tx=130,ty=160,topW=Mtop*unitLen,tables=[],chairs=[];
+  buildRun(o,seam,tx,ty,Mtop,"h",thH,unitLen,{a:true,b:false},{start:false,end:false},tables,chairs);
+  buildRun(o,seam,tx,ty+thH,perArm,"v",thV,unitLen,{a:true,b:true},{start:false,end:true},tables,chairs);
+  buildRun(o,seam,tx+topW-thV,ty+thH,perArm,"v",thV,unitLen,{a:true,b:true},{start:false,end:true},tables,chairs);
+  return finishGeo(tables,chairs,{x:tx+topW/2,y:ty-o});
+}
+function applyGeometry(st,opts={}){
+  const oldChairs=Array.isArray(st.chairs)?st.chairs.slice():[];
+  const oldPool=Array.isArray(st.pool)?st.pool.slice():[];
+  st.geo=seatGeometry(st.layout,st.needed,st);
+  st.headIndex=st.geo.headIndex;
+  if(isCustomLayout(st)&&!st.seatingDone){return;}
+  const next=new Array(st.geo.chairs.length).fill(null);
+  if(opts.preserveIndex){
+    for(let i=0;i<Math.min(oldChairs.length,next.length);i++)next[i]=oldChairs[i];
+    const overflow=oldChairs.slice(next.length).filter(Boolean);
+    st.pool=[...new Set([...oldPool,...overflow])];
+  }else{
+    const assigned=[...oldChairs.filter(Boolean),...oldPool].filter((v,i,a)=>a.indexOf(v)===i);
+    let qi=0;for(let i=0;i<next.length&&qi<assigned.length;i++)next[i]=assigned[qi++];
+    st.pool=assigned.slice(qi);
+  }
+  st.chairs=next;
+}
+function spreadSeatIndexes(total,count,headIndex,excludedIndexes=new Set()){
+  const available=[];
+  for(let i=0;i<total;i++)if(i!==headIndex&&!excludedIndexes.has(i))available.push(i);
+  if(count<=0)return [];
+  if(count>=available.length)return available;
+  if(count===1)return [available[Math.floor(available.length/2)]];
+  const picked=[],used=new Set();
+  const step=(available.length-1)/(count-1);
+  for(let k=0;k<count;k++){
+    let at=Math.round(k*step);
+    if(used.has(at)){
+      let left=at-1,right=at+1;
+      while(left>=0||right<available.length){
+        if(right<available.length&&!used.has(right)){at=right;break;}
+        if(left>=0&&!used.has(left)){at=left;break;}
+        left--;right++;
+      }
+    }
+    used.add(at);picked.push(available[at]);
+  }
+  return picked;
+}
+
+function rabbiSeatIndexes(st){
+  const indexes=new Set();
+  (st.geo?.chairs||[]).forEach((c,i)=>{if(c.isRabbiTable)indexes.add(i);});
+  return indexes;
+}
+function ensureRabbiPlaced(st){
+  if(!st||!st.seatingDone||!st.geo||!st.geo.chairs||!st.geo.chairs.length)return;
+  const current=(st.chairs||[]).indexOf("rabbi");
+  if(current>=0)return;
+  if(!Array.isArray(st.chairs))st.chairs=new Array(st.geo.chairs.length).fill(null);
+  const head=Number.isInteger(st.headIndex)?st.headIndex:0;
+  if(st.chairs[head])st.pool=[...new Set([...(st.pool||[]),st.chairs[head]])];
+  st.chairs[head]="rabbi";
+}
+function autoArrange(st){
+  if(isCustomLayout(st))st.seatingDone=true;
+  applyGeometry(st,{preserveIndex:false});
+  const T=st.chairs.length;
+  st.chairs=new Array(T).fill(null);st.pool=[];
+  if(T)st.chairs[st.headIndex]="rabbi";
+  const queue=[...st.peopleIds,...st.reserveIds];
+  const custom=isCustomLayout(st);
+  const reserved=custom?rabbiSeatIndexes(st):new Set([st.headIndex]);
+  const targetIndexes=custom?spreadSeatIndexes(T,Math.min(queue.length,Math.max(0,T-reserved.size)),st.headIndex,reserved):[];
+  let qi=0;
+  if(custom){
+    targetIndexes.forEach(i=>{if(qi<queue.length)st.chairs[i]=queue[qi++];});
+  }else{
+    for(let i=0;i<T&&qi<queue.length;i++){if(i===st.headIndex)continue;st.chairs[i]=queue[qi++];}
+  }
+  while(qi<queue.length)st.pool.push(queue[qi++]);
+}
+function ensureReservePeople(st){
+  (st.reserveIds||[]).forEach((id,i)=>{if(!st.occByKey[id])st.occByKey[id]={type:"reserve",name:"Резерв "+(i+1),initials:"Рез"};});
+}
+function seatStorageKey(){return curSeat?"seatMockV15:"+current+":"+curSeat.slotKey:null;}
+function readSavedSeat(key){try{return JSON.parse(localStorage.getItem("seatMockV15:"+key)||"null");}catch(_){return null;}}
+function persistSeat(st){
+  try{
+    localStorage.setItem("seatMockV15:"+current+":"+st.slotKey,JSON.stringify({layout:st.layout,customTables:st.customTables||[],tableConnections:st.tableConnections||[],selectedTableId:st.selectedTableId||null,seatingDone:!!st.seatingDone,activeTemplateId:st.activeTemplateId||null,reserveIds:st.reserveIds||[],capacity:st.capacity||0,chairs:st.chairs||[],pool:st.pool||[]}));
+  }catch(_){/* prototype only */}
+}
+function restoreSeat(st,saved){
+  if(!saved)return;
+  st.layout=saved.layout||st.layout;
+  st.customTables=(saved.customTables||[]).map(t=>({...t,angle:normalizeAngle(t.angle||0),sideSeats:t.sideSeats===2?2:3,isRabbiTable:!!t.isRabbiTable}));
+  ensureOneRabbiTable(st.customTables);
+  st.tableConnections=saved.tableConnections||[];
+  st.selectedTableId=saved.selectedTableId||st.customTables?.[0]?.id||null;
+  st.activeTemplateId=saved.activeTemplateId||null;
+  st.seatingDone=saved.seatingDone!==undefined?!!saved.seatingDone:(st.layout!=="islands"||!!(saved.chairs&&saved.chairs.length));
+  st.reserveIds=saved.reserveIds||[];st.capacity=saved.capacity||st.capacity||0;ensureReservePeople(st);
+  st.chairs=saved.chairs||[];st.pool=saved.pool||[];
+  applyGeometry(st,{preserveIndex:true});
+}
+function buildSeatState(d,slot){
+  const people=genPeople(d,slot.occ);
+  const occByKey={rabbi:{type:"rabbi",name:"Раввин",initials:"Рав"}};
+  people.forEach(p=>occByKey[p.id]=p);
+  const tableTargetSeats=Math.max(slot.cap||0,slot.occ||0)+1;
+  const initialLayout=createHolidayLayout(tableTargetSeats);
+  const st={layout:"islands",slotKey:slot.key,title:slot.title,occByKey,peopleIds:people.map(p=>p.id),reserveIds:[],capacity:slot.cap||slot.occ||0,needed:tableTargetSeats,chairs:[],pool:[],headIndex:0,customTables:initialLayout.tables,tableConnections:initialLayout.connections,selectedTableId:rabbiTableId({customTables:initialLayout.tables})||initialLayout.tables[0]?.id||null,seatingDone:false,activeTemplateId:"builtin:holiday_p_row"};
+  const saved=readSavedSeat(current+":"+slot.key);
+  if(saved)restoreSeat(st,saved);else applyGeometry(st,{preserveIndex:true});
+  return st;
+}
+function openSeating(slotKey){
+  const d=cur();const slot=d.slots.find(s=>s.key===slotKey);if(!slot)return;
+  const key=current+"|"+slotKey;
+  if(!seatState[key])seatState[key]=buildSeatState(d,slot);
+  curSeat=seatState[key];
+  document.getElementById("seatTitle").textContent="Рассадка · "+slot.title;
+  document.getElementById("seatModal").hidden=false;
+  renderSeatTemplateSelect();
+  renderSeating();
+}
+function closeSeating(){document.getElementById("seatModal").hidden=true;}
+function fitSeatCanvas(){
+  const wrap=document.querySelector(".seat-canvas-wrap");
+  const canvas=document.getElementById("seatCanvas");
+  if(!wrap||!canvas||!curSeat||!curSeat.geo)return;
+  const availW=Math.max(120,wrap.clientWidth-24);
+  const availH=Math.max(120,(wrap.clientHeight||Math.round(window.innerHeight*0.7))-24);
+  let k=Math.min(availW/curSeat.geo.width,availH/curSeat.geo.height);
+  if(!isFinite(k)||k<=0)k=1;if(k>1.25)k=1.25;if(k<.35)k=.35;
+  canvas.style.transform="scale("+k+")";
+}
+function updateSeatControls(){
+  const editable=isCustomLayout(curSeat),layoutOnly=editable&&!curSeat.seatingDone,selectedTable=layoutOnly?tableById(curSeat,curSeat.selectedTableId):null,hasSelected=!!selectedTable;
+  [["seatAddTable",!layoutOnly],["seatRotateTable",!hasSelected],["seatToggleSeats",!layoutOnly],["seatRemoveTable",!hasSelected],["seatMakeSeating",!layoutOnly],["seatEditTables",!editable||layoutOnly],["seatAuto",!curSeat||!curSeat.seatingDone],["seatAddReserve",!curSeat||!curSeat.seatingDone]].forEach(([id,disabled])=>{const el=document.getElementById(id);if(el)el.disabled=disabled;});
+  const saveTpl=document.getElementById("seatSaveTemplate");if(saveTpl)saveTpl.disabled=!editable||!(curSeat&&curSeat.customTables&&curSeat.customTables.length);
+  const delTpl=document.getElementById("seatDeleteTemplate");const selTpl=document.getElementById("seatTemplateSelect");if(delTpl)delTpl.disabled=!(selTpl&&selTpl.value&&selTpl.value.startsWith("saved:"));
+  const sizeBtn=document.getElementById("seatToggleSeats");
+  if(sizeBtn){
+    const tables=curSeat&&curSeat.customTables?curSeat.customTables:[];
+    const allTwo=tables.length>0&&tables.every(t=>tableSideSeats(t)===2);
+    const allThree=tables.length>0&&tables.every(t=>tableSideSeats(t)===3);
+    const currentLabel=allTwo?"2":(allThree?"3":"смешано");
+    const nextLabel=allTwo?"3":"2";
+    sizeBtn.textContent=`Все столы: ${currentLabel} места/стор.`;
+    sizeBtn.title=`Переключить все столы на ${nextLabel} места по длинной стороне`;
+  }
+  document.querySelectorAll(".seat-lay-btn").forEach(b=>b.classList.toggle("seat-lay-btn--active",curSeat&&b.dataset.lay===curSeat.layout));
+}
+function renderSeating(){
+  const st=curSeat;if(!st)return;
+  applyGeometry(st,{preserveIndex:true});
+  ensureRabbiPlaced(st);
+  const g=st.geo;
+  const canvas=document.getElementById("seatCanvas");
+  canvas.style.width=g.width+"px";canvas.style.height=g.height+"px";
+  let html="";
+  g.tables.forEach(t=>{
+    const editable=t.editable?" seat-table--editable":"";
+    const selected=t.selected?" seat-table--selected":"";
+    const connected=t.connected?" seat-table--connected":"";
+    const round=t.round?" seat-table--round":"";
+    const rabbiCls=t.isRabbiTable?" seat-table--rabbi":"";
+    const angle=t.angle||0;
+    const idAttr=t.editable?` data-table="${t.id}" title="Стол ${t.label}. Перетащите, чтобы совместить торцы; поворот — кнопкой ↻ 90°"`:"";
+    const sideSeats=t.sideSeats===2?2:3;
+    const label=t.editable?`<span class="seat-table__label">${t.isRabbiTable?'<span class="seat-table__role">Раввинский</span>':''}${t.label}${t.isRabbiTable?'':' · '+angle+'°'}<span class="seat-table__size">${sideSeats} места/стор.</span></span>`:"";
+    html+=`<div class="seat-table${round}${editable}${selected}${connected}${rabbiCls}"${idAttr} style="left:${t.x}px;top:${t.y}px;width:${t.w}px;height:${t.h}px;transform:rotate(${angle}deg)">${label}</div>`;
+  });
+  (g.seams||[]).forEach(s=>{html+=`<span class="seat-seam" style="left:${s.x}px;top:${s.y}px" title="Торцы соединены: посадка на этом торце отключена"></span>`;});
+  const layoutOnly=isCustomLayout(st)&&!st.seatingDone;
+  g.chairs.forEach((c,i)=>{
+    const occId=layoutOnly?null:st.chairs[i],occ=occId?st.occByKey[occId]:null,isHead=!layoutOnly&&i===st.headIndex;
+    const isRabbiSeat=!!c.isRabbiTable;
+    const isRabbiPreview=layoutOnly&&i===st.headIndex;
+    const chip=occ?`<div class="chip chip--${occ.type}" draggable="true" data-occ="${occId}" data-from="chair:${i}" title="${occ.name}">${occ.initials}</div>`:((isHead||isRabbiPreview)?'<span class="seat-head-mark">★</span>':'');
+    const preview=layoutOnly?" seat--preview":"";
+    const rabbiSeat=isRabbiSeat?" seat--rabbi-reserved":"";
+    const title=layoutOnly?(isRabbiSeat?'Потенциальное место раввинского стола: авторассадка сюда не ставит гостей':'Потенциальное место после рассадки'):(isRabbiSeat?'Раввинский стол: резерв, авторассадка сюда не ставит гостей':'Свободное место');
+    html+=`<div class="seat ${occ?'':'seat--empty'}${preview}${rabbiSeat}" data-chair="${i}" style="left:${c.x-17}px;top:${c.y-17}px" title="${title}">${chip}</div>`;
+  });
+  canvas.innerHTML=html;
+  fitSeatCanvas();
+  const pool=document.getElementById("seatPool");
+  const poolTitle=document.getElementById("seatPoolTitle");
+  const poolHint=document.getElementById("seatPoolHint");
+  if(layoutOnly){
+    poolTitle.textContent="Фигура столов";
+    pool.innerHTML='<p class="seat-layout-note">Сейчас включено редактирование столов: пустые серые кружки показывают потенциальные физические места. Раввинский стол подсвечен золотым; его места остаются резервом и не заполняются авторассадкой. Готовые расстановки выбираются сверху; текущую фигуру можно сохранить как шаблон и потом использовать для других слотов. Если рассадка уже была сделана, она не сбрасывается и восстановится после «Сделать рассадку».</p>';
+    poolHint.textContent="Счётчик снизу сразу показывает количество столов и потенциальных мест. Раввинский стол подсвечен золотым: его места считаются резервом и авторассадка не ставит туда гостей. Торцы, соединённые со столами, будут без посадочных мест. Перестановка столов не удаляет уже созданную рассадку: при возврате к рассадке гости сохраняются по местам насколько возможно.";
+  }else{
+    poolTitle.textContent="Не рассажены";
+    pool.innerHTML=st.pool.length?st.pool.map(id=>{const o=st.occByKey[id];return o?`<div class="chip chip--${o.type}" draggable="true" data-occ="${id}" data-from="pool" title="${o.name}">${o.initials}</div>`:"";}).join(""):'<p class="seat-pool__empty">Все рассажены</p>';
+    poolHint.textContent="Фиолетовые кружки — занятые места, серые пунктирные — свободные физические места за столами. В режиме конструктора авторассадка распределяет гостей по всей фигуре, но не занимает раввинский стол. Места раввинского стола можно изменить только вручную. Перетаскивайте людей на стулья и между стульями.";
+  }
+  const tableCount=isCustomLayout(st)?st.customTables.length:g.tables.length;
+  const editHint=layoutOnly?"фигура без рассадки":(isCustomLayout(st)?"фигура зафиксирована":"шаблон");
+  const occupiedCount=(st.chairs||[]).filter(Boolean).length;
+  const freeCount=Math.max(0,g.chairs.length-occupiedCount);
+  const limitText=st.capacity?`лимит ${st.capacity}`:"без лимита";
+  const rabbiReserveCount=g.chairs.filter(c=>c.isRabbiTable).length;
+  const seatCountEl=document.getElementById("seatCount");
+  if(layoutOnly){
+    const tables=st.customTables||[];
+    const allTwo=tables.length>0&&tables.every(t=>tableSideSeats(t)===2);
+    const allThree=tables.length>0&&tables.every(t=>tableSideSeats(t)===3);
+    const seatsMode=allTwo?"2 места/стор.":(allThree?"3 места/стор.":"смешанная вместимость");
+    seatCountEl.innerHTML=`<span class="seat-count__main">${tableCount} стол. · ${g.chairs.length} потенциальных мест</span><span class="seat-count__sub">${g.seams.length} стык. · ${limitText} · ${seatsMode} · раввинский резерв ${rabbiReserveCount} · ${editHint}</span>`;
+  }else{
+    seatCountEl.innerHTML=`<span class="seat-count__main">${tableCount} стол. · ${g.chairs.length} мест</span><span class="seat-count__sub">занято ${occupiedCount} · свободно ${freeCount} · раввинский резерв ${rabbiReserveCount} · ${limitText} · ${st.pool.length} не рассажены · ${editHint}</span>`;
+  }
+  updateSeatControls();
+  if(!layoutOnly)wireSeatDnD();
+  wireTableEditing();
+}
+function wireSeatDnD(){
+  document.querySelectorAll("#seatModal .chip[draggable=true]").forEach(ch=>{
+    ch.ondragstart=e=>e.dataTransfer.setData("text",JSON.stringify({occ:ch.dataset.occ,from:ch.dataset.from}));
+  });
+  document.querySelectorAll("#seatCanvas .seat").forEach(seat=>{
+    seat.ondragover=e=>{e.preventDefault();seat.classList.add("seat--drop");};
+    seat.ondragleave=()=>seat.classList.remove("seat--drop");
+    seat.ondrop=e=>{e.preventDefault();seat.classList.remove("seat--drop");seatDrop("chair",+seat.dataset.chair,e);};
+  });
+  const pool=document.getElementById("seatPool");
+  pool.ondragover=e=>e.preventDefault();
+  pool.ondrop=e=>{e.preventDefault();seatDrop("pool",null,e);};
+}
+function seatDrop(targetType,idx,e){
+  let data;try{data=JSON.parse(e.dataTransfer.getData("text"));}catch(_){return;}
+  const st=curSeat;
+  if(data.from.indexOf("chair:")===0){const fi=+data.from.split(":")[1];if(targetType==="chair"&&idx===fi)return;st.chairs[fi]=null;}
+  else if(data.from==="pool"){st.pool=st.pool.filter(x=>x!==data.occ);}
+  if(targetType==="chair"){
+    const existing=st.chairs[idx];
+    if(existing){if(data.from.indexOf("chair:")===0)st.chairs[+data.from.split(":")[1]]=existing;else st.pool.push(existing);}
+    st.chairs[idx]=data.occ;
+  } else st.pool.push(data.occ);
+  renderSeating();
+}
+function wireTableEditing(){
+  if(!isCustomLayout(curSeat)||curSeat.seatingDone)return;
+  document.querySelectorAll("#seatCanvas .seat-table--editable").forEach(el=>{
+    el.onmousedown=e=>{
+      if(e.button!==0)return;
+      const t=tableById(curSeat,el.dataset.table);if(!t)return;
+      e.preventDefault();
+      clearTableConnections(curSeat,t.id);
+      curSeat.selectedTableId=t.id;
+      seatDrag={id:t.id,startX:e.clientX,startY:e.clientY,origCx:t.cx,origCy:t.cy,moved:false};
+      document.body.style.userSelect="none";
+      renderSeating();
+    };
+  });
+}
+function snapTableToEnds(st,t){
+  const own=[tableEndpoint(t,"a"),tableEndpoint(t,"b")];
+  let best=null;
+  st.customTables.forEach(other=>{
+    if(other.id===t.id)return;
+    const otherPoly=tableCorners(other);
+    [tableEndpoint(other,"a"),tableEndpoint(other,"b")].forEach(ep=>{
+      own.forEach(me=>{
+        const baseD=dist(me,ep);
+        if(baseD>76)return;
+        const dAng=angleDelta(t.angle||0,other.angle||0);
+        const candidates=[];
+        if(dAng<8){
+          candidates.push({dx:ep.x-me.x,dy:ep.y-me.y,point:{x:ep.x,y:ep.y}});
+        }else{
+          [-1,1].forEach(ms=>[-1,1].forEach(os=>{
+            const mc=tableCornerAtEndpoint(me,t.h/2,ms),oc=tableCornerAtEndpoint(ep,other.h/2,os);
+            candidates.push({dx:oc.x-mc.x,dy:oc.y-mc.y,point:{x:oc.x,y:oc.y}});
+          }));
+        }
+        candidates.forEach(c=>{
+          const moved=movedTable(t,c.dx,c.dy);
+          const movedPoly=tableCorners(moved);
+          let collision=false;
+          st.customTables.forEach(o=>{if(o.id!==t.id&&polygonsOverlap(movedPoly,tableCorners(o),1.25))collision=true;});
+          if(collision)return;
+          const moveScore=Math.hypot(c.dx,c.dy);
+          const score=moveScore+(dAng<8?0:12);
+          if(moveScore<86&&(!best||score<best.score))best={score,dx:c.dx,dy:c.dy,point:c.point,me,ep,other};
+        });
+      });
+    });
+  });
+  if(best){
+    t.cx+=best.dx;t.cy+=best.dy;
+    addTableConnection(st,t.id,best.me.end,best.other.id,best.ep.end,best.point.x,best.point.y);
+    return true;
+  }
+  return false;
+}
+document.addEventListener("mousemove",e=>{
+  if(!seatDrag||!curSeat)return;
+  const t=tableById(curSeat,seatDrag.id);if(!t)return;
+  const scale=getCanvasScale();
+  const dx=(e.clientX-seatDrag.startX)/scale,dy=(e.clientY-seatDrag.startY)/scale;
+  if(Math.abs(dx)>1||Math.abs(dy)>1)seatDrag.moved=true;
+  t.cx=seatDrag.origCx+dx;t.cy=seatDrag.origCy+dy;
+  renderSeating();
+});
+document.addEventListener("mouseup",()=>{
+  if(!seatDrag||!curSeat)return;
+  const t=tableById(curSeat,seatDrag.id);
+  if(t){
+    const snapped=snapTableToEnds(curSeat,t);
+    if(!snapped&&tableCollides(curSeat,t)){t.cx=seatDrag.origCx;t.cy=seatDrag.origCy;}
+  }
+  seatDrag=null;document.body.style.userSelect="";renderSeating();
+});
+function seatSetLayout(lay){
+  if(!curSeat)return;
+  curSeat.layout=lay;
+  if(lay==="islands"){
+    ensureCustomTables(curSeat,"holiday");
+    curSeat.seatingDone=false;
+    curSeat.chairs=[];curSeat.pool=[];
+    applyGeometry(curSeat,{preserveIndex:true});
+  }else{
+    curSeat.seatingDone=true;
+    applyGeometry(curSeat,{preserveIndex:false});
+    autoArrange(curSeat);
+  }
+  renderSeating();
+}
+function seatAddTable(){
+  const st=curSeat;if(!isCustomLayout(st)||st.seatingDone)return;
+  const base=tableById(st,st.selectedTableId)||st.customTables[st.customTables.length-1];
+  const t=createTable((base?.cx||160)+150,(base?.cy||130)+30,base?.angle||0);
+  st.customTables.push(t);st.selectedTableId=t.id;
+  renderSeating();
+}
+function seatRemoveTable(){
+  const st=curSeat;if(!isCustomLayout(st)||st.seatingDone||st.customTables.length<=1)return;
+  const removedId=st.selectedTableId;
+  st.customTables=st.customTables.filter(t=>t.id!==removedId);
+  clearTableConnections(st,removedId);
+  st.selectedTableId=st.customTables[0]?.id||null;
+  renderSeating();
+}
+function seatRotateTable(){
+  const st=curSeat,t=tableById(st,st?.selectedTableId);if(!st||st.seatingDone||!t)return;
+  clearTableConnections(st,t.id);
+  t.angle=normalizeAngle((t.angle||0)+90);
+  snapTableToEnds(st,t);
+  renderSeating();
+}
+function seatToggleSeats(){
+  const st=curSeat;if(!isCustomLayout(st)||st.seatingDone)return;
+  const tables=st.customTables||[];
+  if(!tables.length)return;
+  const allTwo=tables.every(t=>tableSideSeats(t)===2);
+  const next=allTwo?3:2;
+  tables.forEach(t=>{t.sideSeats=next;});
+  applyGeometry(st,{preserveIndex:true});
+  renderSeating();
+}
+function seatHolidayPreset(){
+  const st=curSeat;if(!isCustomLayout(st)||st.seatingDone)return;
+  const layout=createHolidayLayout(st.needed);
+  st.customTables=layout.tables;ensureOneRabbiTable(st.customTables);st.tableConnections=layout.connections;st.selectedTableId=rabbiTableId(st)||st.customTables[0]?.id||null;
+  st.seatingDone=false;
+  applyGeometry(st,{preserveIndex:true});renderSeating();
+}
+function seatMakeSeating(){
+  const st=curSeat;if(!isCustomLayout(st)||st.seatingDone)return;
+  const hadAssignments=(st.chairs||[]).some(Boolean)||(st.pool||[]).length>0;
+  st.seatingDone=true;
+  st.selectedTableId=null;
+  if(hadAssignments){applyGeometry(st,{preserveIndex:true});ensureRabbiPlaced(st);}
+  else autoArrange(st);
+  renderSeating();
+}
+function seatEditTables(){
+  const st=curSeat;if(!isCustomLayout(st)||!st.seatingDone)return;
+  // Keep existing chair assignments and pool intact. Editing mode hides people visually,
+  // but when the admin returns to seating mode the previous seating is restored by index.
+  st.seatingDone=false;
+  st.selectedTableId=st.customTables?.[0]?.id||null;
+  applyGeometry(st,{preserveIndex:true});
+  renderSeating();
+}
+function seatAddReserve(){
+  const st=curSeat;if(isCustomLayout(st)&&!st.seatingDone)return;const id="res"+(st.reserveIds.length+1);
+  st.occByKey[id]={type:"reserve",name:"Резерв "+(st.reserveIds.length+1),initials:"Рез"};
+  st.reserveIds.push(id);st.needed++;st.pool.push(id);
+  renderSeating();
+}
+window.addEventListener("resize",()=>{const m=document.getElementById("seatModal");if(m&&!m.hidden)fitSeatCanvas();});
+document.getElementById("seatClose").onclick=closeSeating;
+document.getElementById("seatModal").onclick=e=>{if(e.target.id==="seatModal")closeSeating();};
+document.getElementById("seatAddTable").onclick=seatAddTable;
+document.getElementById("seatRotateTable").onclick=seatRotateTable;
+document.getElementById("seatToggleSeats").onclick=seatToggleSeats;
+document.getElementById("seatRemoveTable").onclick=seatRemoveTable;
+document.getElementById("seatTemplateSelect").onchange=e=>applySeatTemplate(e.target.value);
+document.getElementById("seatSaveTemplate").onclick=saveCurrentSeatTemplate;
+document.getElementById("seatDeleteTemplate").onclick=deleteSelectedSeatTemplate;
+document.getElementById("seatMakeSeating").onclick=seatMakeSeating;
+document.getElementById("seatEditTables").onclick=seatEditTables;
+document.getElementById("seatAuto").onclick=()=>{autoArrange(curSeat);renderSeating();};
+document.getElementById("seatAddReserve").onclick=seatAddReserve;
+document.getElementById("seatSave").onclick=()=>{const btn=document.getElementById("seatSave");const t=btn.textContent;persistSeat(curSeat);btn.textContent="Сохранено ✓";setTimeout(()=>btn.textContent=t,1500);};
+
+
+document.getElementById("capMode").onchange=renderCapacity;
+const capCard=document.getElementById("capCard");
+document.getElementById("capToggle").onclick=()=>{
+  const collapsed=capCard.classList.toggle("is-collapsed");
+  document.getElementById("capChev").classList.toggle("chev--open",!collapsed);
+};
+document.getElementById("regModalClose").onclick=closeModal;
+document.getElementById("regModal").onclick=(e)=>{if(e.target.id==="regModal")closeModal();};
+document.addEventListener("keydown",(e)=>{if(e.key==="Escape")closeModal();});
+
+renderEvents();renderHead();renderQuick();renderCapacity();renderTable();
+
+</script>
+</body>
+</html>

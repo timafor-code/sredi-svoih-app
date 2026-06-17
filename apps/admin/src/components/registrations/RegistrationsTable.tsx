@@ -130,6 +130,10 @@ export function RegistrationsTable({
               key={registration.id}
               onClick={() => onSelectRegistration(registration.id)}
               onKeyDown={(keyboardEvent) => {
+                if (keyboardEvent.target !== keyboardEvent.currentTarget) {
+                  return;
+                }
+
                 if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
                   keyboardEvent.preventDefault();
                   onSelectRegistration(registration.id);
