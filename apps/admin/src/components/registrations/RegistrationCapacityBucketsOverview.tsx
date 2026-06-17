@@ -47,6 +47,18 @@ type BucketBreakdownEntry = {
   isNonSeat: boolean;
 };
 
+type CapacityOptionDisplayRow = {
+  key: string;
+  title: string;
+  registrationsCount: number;
+  quantity: number;
+  seatsCount: number;
+  isDonation: boolean;
+  countsTowardCapacity: boolean;
+  bucketTitles: string[];
+  sortGroup: "capacity" | "fallback" | "non-seat";
+};
+
 const CAPACITY_OVERVIEW_MODE_OPTIONS: Array<{
   value: CapacityOverviewMode;
   label: string;
@@ -94,7 +106,12 @@ export function RegistrationCapacityBucketsOverview({
     CAPACITY_OVERVIEW_MODE_OPTIONS.find((entry) => entry.value === mode)?.label ??
     CAPACITY_OVERVIEW_MODE_OPTIONS[0].label;
   const optionStats = analytics?.optionStats ?? [];
+  const donationOptions = analytics?.donationOptions ?? [];
   const bucketViews = useMemo(() => buckets.map(buildCapacityBucketView), [buckets]);
+  const optionRows = useMemo(
+    () => buildCapacityOptionRows({ bucketViews, donationOptions, optionStats }),
+    [bucketViews, donationOptions, optionStats],
+  );
   const bucketAggregate = analytics?.bucketAggregate ?? null;
   const quickPills = useMemo(
     () =>
@@ -187,7 +204,8 @@ export function RegistrationCapacityBucketsOverview({
           renderOptions({
             analyticsError,
             analyticsLoading,
-            optionStats,
+            hasBucketSource: bucketViews.length > 0,
+            optionRows,
           })
         ) : (
           renderGuests({
@@ -549,17 +567,19 @@ function BucketBreakdownChart({
 function renderOptions({
   analyticsError,
   analyticsLoading,
-  optionStats,
+  hasBucketSource,
+  optionRows,
 }: {
   analyticsError: string | null;
   analyticsLoading: boolean;
-  optionStats: AdminRegistrationCapacityOptionStat[];
+  hasBucketSource: boolean;
+  optionRows: CapacityOptionDisplayRow[];
 }) {
-  if (analyticsLoading && optionStats.length === 0) {
+  if (analyticsLoading && optionRows.length === 0) {
     return renderSoftState("Загружаем варианты участия...");
   }
 
-  if (analyticsError && optionStats.length === 0) {
+  if (analyticsError && optionRows.length === 0) {
     return renderSoftState(
       "Не удалось загрузить варианты участия.",
       analyticsError,
@@ -567,42 +587,52 @@ function renderOptions({
     );
   }
 
-  if (optionStats.length === 0) {
+  if (optionRows.length === 0) {
     return renderSoftState(
-      "В загруженных заявках нет выбранных вариантов участия.",
+      hasBucketSource
+        ? "В capacity reservations выбранной даты нет вариантов участия, занимающих места."
+        : "В загруженных заявках нет выбранных вариантов участия.",
     );
   }
 
   return (
     <>
       <div className="registration-capacity-options">
-        {optionStats.map((option) => {
+        {optionRows.map((option) => {
           const doesNotOccupySeats =
             option.isDonation || option.countsTowardCapacity === false;
+          const bucketLabel = formatOptionBucketTitles(option.bucketTitles);
 
           return (
             <div
               className={`registration-capacity-option-row${
                 doesNotOccupySeats ? " registration-capacity-option-row--muted" : ""
               }`}
-              key={getCapacityOptionKey(option)}
+              key={option.key}
             >
               <div>
                 <strong>{option.title}</strong>
                 {option.isDonation ? <span>донат</span> : null}
                 {doesNotOccupySeats ? <span>не занимает место</span> : null}
+                {bucketLabel ? <span>{bucketLabel}</span> : null}
               </div>
               <span>
-                {option.registrationsCount} заявок / {option.quantity} шт.
+                {formatNumber(option.registrationsCount)} заявок /{" "}
+                {formatNumber(option.quantity)} шт.
               </span>
-              <span>{doesNotOccupySeats ? "не занимает место" : `${option.seatsCount} мест`}</span>
+              <span>
+                {doesNotOccupySeats
+                  ? "не занимает место"
+                  : `${formatNumber(option.seatsCount)} мест`}
+              </span>
             </div>
           );
         })}
       </div>
       <p className="registration-capacity-helper">
-        Занятость мест берётся из analytics RPC и capacity reservations; донаты и варианты
-        без capacity не смешиваются с местами без маркировки.
+        {hasBucketSource
+          ? "Варианты, занимающие места, собраны из bucket option breakdown и capacity reservations, поэтому согласованы с режимом “По слотам мест”. Донаты и варианты без capacity показываются отдельно."
+          : "Занятость мест берётся из analytics RPC; донаты и варианты без capacity не смешиваются с местами без маркировки."}
       </p>
     </>
   );
@@ -1051,6 +1081,215 @@ function getCapacityOptionKey(option: {
   ].join("|");
 }
 
+function buildCapacityOptionRows({
+  bucketViews,
+  donationOptions,
+  optionStats,
+}: {
+  bucketViews: CapacityBucketView[];
+  donationOptions: AdminRegistrationCapacityOptionStat[];
+  optionStats: AdminRegistrationCapacityOptionStat[];
+}): CapacityOptionDisplayRow[] {
+  if (bucketViews.length === 0) {
+    const rowsByKey = new Map<string, CapacityOptionDisplayRow>();
+
+    optionStats.forEach((option) => {
+      mergeCapacityOptionRow(rowsByKey, buildCapacityOptionRowFromStat(option));
+    });
+    donationOptions
+      .filter((option) => option.isDonation || option.countsTowardCapacity === false)
+      .forEach((option) => {
+        mergeCapacityOptionRow(rowsByKey, buildCapacityOptionRowFromStat(option));
+      });
+
+    return Array.from(rowsByKey.values()).sort(compareCapacityOptionRows);
+  }
+
+  const rowsByKey = new Map<string, CapacityOptionDisplayRow>();
+
+  bucketViews.forEach((bucket) => {
+    const occupiedSeats = Math.max(0, bucket.occupiedSeats);
+    const optionBreakdown = getDisplayBucketOptionBreakdown(bucket, occupiedSeats);
+    const bucketTitle = bucket.title || bucket.key || "Слот мест";
+    const seatedBreakdownSeats = optionBreakdown.reduce((total, option) => {
+      if (isNonSeatBucketOption(option)) {
+        return total;
+      }
+
+      return total + Math.max(0, option.seatsCount);
+    }, 0);
+
+    optionBreakdown.forEach((option) => {
+      mergeCapacityOptionRow(
+        rowsByKey,
+        buildCapacityOptionRowFromBucketOption(option, bucketTitle),
+      );
+    });
+
+    const unmatchedSeats = Math.max(0, occupiedSeats - seatedBreakdownSeats);
+
+    if (unmatchedSeats > 0) {
+      mergeCapacityOptionRow(
+        rowsByKey,
+        buildCapacityOptionFallbackRow(bucket, bucketTitle, unmatchedSeats),
+      );
+    }
+  });
+
+  [...optionStats, ...donationOptions]
+    .filter((option) => option.isDonation || option.countsTowardCapacity === false)
+    .forEach((option) => {
+      mergeCapacityOptionRow(rowsByKey, buildCapacityOptionRowFromStat(option));
+    });
+
+  return Array.from(rowsByKey.values()).sort(compareCapacityOptionRows);
+}
+
+function buildCapacityOptionRowFromStat(
+  option: AdminRegistrationCapacityOptionStat,
+): CapacityOptionDisplayRow {
+  const isNonSeat = option.isDonation || option.countsTowardCapacity === false;
+
+  return {
+    key: getCapacityOptionIdentity(option),
+    title: option.title,
+    registrationsCount: Math.max(0, option.registrationsCount),
+    quantity: Math.max(0, option.quantity),
+    seatsCount: isNonSeat ? 0 : Math.max(0, option.seatsCount),
+    isDonation: option.isDonation,
+    countsTowardCapacity: option.countsTowardCapacity,
+    bucketTitles: [],
+    sortGroup: isNonSeat ? "non-seat" : "capacity",
+  };
+}
+
+function buildCapacityOptionRowFromBucketOption(
+  option: AdminRegistrationCapacityBucketOptionBreakdown,
+  bucketTitle: string,
+): CapacityOptionDisplayRow {
+  const isNonSeat = option.isDonation || option.countsTowardCapacity === false;
+
+  return {
+    key: getCapacityOptionIdentity(option),
+    title: option.title,
+    registrationsCount: Math.max(0, option.registrationsCount),
+    quantity: Math.max(0, option.quantity),
+    seatsCount: isNonSeat ? 0 : Math.max(0, option.seatsCount),
+    isDonation: option.isDonation,
+    countsTowardCapacity: option.countsTowardCapacity,
+    bucketTitles: [bucketTitle],
+    sortGroup: isNonSeat ? "non-seat" : "capacity",
+  };
+}
+
+function buildCapacityOptionFallbackRow(
+  bucket: CapacityBucketView,
+  bucketTitle: string,
+  seatsCount: number,
+): CapacityOptionDisplayRow {
+  return {
+    key: `fallback|${bucket.capacityUnitId}`,
+    title: "Места без детализации",
+    registrationsCount: Math.max(0, bucket.reservationsCount),
+    quantity: seatsCount,
+    seatsCount,
+    isDonation: false,
+    countsTowardCapacity: true,
+    bucketTitles: [bucketTitle],
+    sortGroup: "fallback",
+  };
+}
+
+function mergeCapacityOptionRow(
+  rowsByKey: Map<string, CapacityOptionDisplayRow>,
+  nextRow: CapacityOptionDisplayRow,
+) {
+  const currentRow = rowsByKey.get(nextRow.key);
+
+  if (!currentRow) {
+    rowsByKey.set(nextRow.key, { ...nextRow, bucketTitles: [...nextRow.bucketTitles] });
+    return;
+  }
+
+  currentRow.registrationsCount = Math.max(
+    currentRow.registrationsCount,
+    nextRow.registrationsCount,
+  );
+  currentRow.quantity = Math.max(currentRow.quantity, nextRow.quantity);
+  currentRow.seatsCount += nextRow.seatsCount;
+  currentRow.bucketTitles = Array.from(
+    new Set([...currentRow.bucketTitles, ...nextRow.bucketTitles]),
+  );
+
+  if (currentRow.sortGroup !== "capacity") {
+    currentRow.sortGroup = nextRow.sortGroup;
+  }
+}
+
+function compareCapacityOptionRows(
+  left: CapacityOptionDisplayRow,
+  right: CapacityOptionDisplayRow,
+): number {
+  const groupOrder: Record<CapacityOptionDisplayRow["sortGroup"], number> = {
+    capacity: 0,
+    fallback: 1,
+    "non-seat": 2,
+  };
+  const groupDiff = groupOrder[left.sortGroup] - groupOrder[right.sortGroup];
+
+  if (groupDiff !== 0) {
+    return groupDiff;
+  }
+
+  return left.title.localeCompare(right.title, "ru");
+}
+
+function getCapacityOptionIdentity(option: {
+  optionId: string | null;
+  title: string;
+  isDonation: boolean;
+  countsTowardCapacity: boolean;
+}): string {
+  return [
+    option.optionId ?? option.title,
+    option.isDonation ? "donation" : "seat",
+    option.countsTowardCapacity ? "capacity" : "no-capacity",
+  ].join("|");
+}
+
+function getDisplayBucketOptionBreakdown(
+  bucket: CapacityBucketView,
+  occupiedSeats: number,
+): AdminRegistrationCapacityBucketOptionBreakdown[] {
+  const optionBreakdown = bucket.optionBreakdown ?? [];
+
+  if (occupiedSeats > 0) {
+    return optionBreakdown;
+  }
+
+  return optionBreakdown.filter(isNonSeatBucketOption);
+}
+
+function isNonSeatBucketOption(
+  option: AdminRegistrationCapacityBucketOptionBreakdown,
+): boolean {
+  return option.isDonation || option.countsTowardCapacity === false;
+}
+
+function formatOptionBucketTitles(bucketTitles: string[]): string | null {
+  if (bucketTitles.length === 0) {
+    return null;
+  }
+
+  if (bucketTitles.length <= 2) {
+    return `слоты: ${bucketTitles.join(", ")}`;
+  }
+
+  return `слоты: ${bucketTitles.slice(0, 2).join(", ")} + ещё ${
+    bucketTitles.length - 2
+  }`;
+}
+
 function buildBucketBreakdown(bucket: CapacityBucketView): {
   entries: BucketBreakdownEntry[];
   note: string | null;
@@ -1058,9 +1297,9 @@ function buildBucketBreakdown(bucket: CapacityBucketView): {
 } {
   const occupiedSeats = Math.max(0, bucket.occupiedSeats);
   const remainingSeats = bucket.effectiveRemainingSeats;
-  const optionBreakdown = bucket.optionBreakdown ?? [];
+  const optionBreakdown = getDisplayBucketOptionBreakdown(bucket, occupiedSeats);
   const seatedBreakdownSeats = optionBreakdown.reduce((total, option) => {
-    if (option.isDonation || option.countsTowardCapacity === false) {
+    if (isNonSeatBucketOption(option)) {
       return total;
     }
 
