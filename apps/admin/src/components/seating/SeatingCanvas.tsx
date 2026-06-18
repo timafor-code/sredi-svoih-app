@@ -22,6 +22,9 @@ import type {
 const SEAT_SIZE = 34;
 const MIN_CANVAS_WIDTH = 360;
 const MIN_CANVAS_HEIGHT = 260;
+const MIN_SCALE = 0.35;
+const MAX_SCALE = 1.5;
+const SCALE_STEP = 0.1;
 
 type DragState = {
   id: string;
@@ -32,6 +35,7 @@ type DragState = {
 };
 
 export function SeatingCanvas({
+  cancelVersion,
   connections,
   geometry,
   isSeatingDone,
@@ -45,6 +49,7 @@ export function SeatingCanvas({
   selectedTableId,
   tables,
 }: {
+  cancelVersion?: number;
   connections: SeatingConnection[];
   geometry: SeatingGeometryResult;
   isSeatingDone: boolean;
@@ -105,7 +110,7 @@ export function SeatingCanvas({
       nextScale = 1;
     }
 
-    setScale(Math.max(0.35, Math.min(1.25, nextScale)));
+    setScale(clampScale(nextScale));
   }, [canvasHeight, canvasWidth]);
 
   useLayoutEffect(() => {
@@ -153,6 +158,24 @@ export function SeatingCanvas({
       window.removeEventListener("pointerup", handlePointerUp);
     };
   }, [drag, onMoveTable]);
+
+  useEffect(() => {
+    if (cancelVersion === undefined) {
+      return;
+    }
+
+    setDrag(null);
+    setDropTargetSeatIndex(null);
+    setDraggingSeatIndex(null);
+  }, [cancelVersion]);
+
+  const handleZoomOut = useCallback(() => {
+    setScale((currentScale) => clampScale(currentScale - SCALE_STEP));
+  }, []);
+
+  const handleZoomIn = useCallback(() => {
+    setScale((currentScale) => clampScale(currentScale + SCALE_STEP));
+  }, []);
 
   const handleTablePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>, table: SeatingTable) => {
@@ -232,17 +255,56 @@ export function SeatingCanvas({
     transform: `scale(${scale})`,
     width: canvasWidth,
   };
+  const viewportStyle: CSSProperties = {
+    height: Math.ceil(canvasHeight * scale),
+    width: Math.ceil(canvasWidth * scale),
+  };
+  const scalePercent = Math.round(scale * 100);
 
   return (
     <div className="seat-canvas-wrap" ref={wrapRef}>
-      <div
+      <div aria-label="Масштаб схемы" className="seat-canvas-tools">
+        <button
+          aria-label="Уменьшить схему"
+          className="seat-canvas-tool"
+          disabled={scale <= MIN_SCALE}
+          onClick={handleZoomOut}
+          title="Уменьшить схему"
+          type="button"
+        >
+          -
+        </button>
+        <span aria-live="polite" className="seat-canvas-scale">
+          {scalePercent}%
+        </span>
+        <button
+          aria-label="Увеличить схему"
+          className="seat-canvas-tool"
+          disabled={scale >= MAX_SCALE}
+          onClick={handleZoomIn}
+          title="Увеличить схему"
+          type="button"
+        >
+          +
+        </button>
+        <button
+          className="seat-canvas-tool seat-canvas-tool--fit"
+          onClick={fitSeatCanvas}
+          title="Подогнать схему под видимую область"
+          type="button"
+        >
+          По размеру
+        </button>
+      </div>
+      <div className="seat-canvas-viewport" style={viewportStyle}>
+        <div
         aria-label="Конструктор схемы столов"
         className="seat-canvas"
         ref={canvasRef}
         role="application"
         style={canvasStyle}
-      >
-        {tables.map((table, index) => {
+        >
+          {tables.map((table, index) => {
           const selected = !isSeatingDone && table.id === selectedTableId;
           const sideSeats = table.sideSeats === 2 ? 2 : 3;
           const tableStyle: CSSProperties = {
@@ -294,7 +356,7 @@ export function SeatingCanvas({
           );
         })}
 
-        {geometry.seams.map((seam, index) => (
+          {geometry.seams.map((seam, index) => (
           <span
             className="seat-seam"
             key={`${seam.x}:${seam.y}:${index}`}
@@ -303,7 +365,7 @@ export function SeatingCanvas({
           />
         ))}
 
-        {geometry.seats.map((seat, index) => {
+          {geometry.seats.map((seat, index) => {
           const isHead = index === geometry.headIndex;
           const occupant = occupantsBySeat.get(index);
           const isOccupied = Boolean(occupant);
@@ -375,6 +437,7 @@ export function SeatingCanvas({
             </div>
           );
         })}
+        </div>
       </div>
     </div>
   );
@@ -387,4 +450,13 @@ function getCanvasScale(canvas: HTMLDivElement | null): number {
 
   const rect = canvas.getBoundingClientRect();
   return rect.width && canvas.offsetWidth ? rect.width / canvas.offsetWidth : 1;
+}
+
+function clampScale(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return 1;
+  }
+
+  const rounded = Math.round(value * 100) / 100;
+  return Math.max(MIN_SCALE, Math.min(MAX_SCALE, rounded));
 }
