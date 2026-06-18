@@ -5543,30 +5543,6 @@ a {
   background: var(--glass-border);
 }
 
-.seat-count {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.25;
-}
-
-.seat-count__main {
-  color: var(--text);
-  font-size: 15px;
-  font-weight: 900;
-  letter-spacing: 0;
-}
-
-.seat-count__sub {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 750;
-}
-
 .seat-body {
   display: grid;
   min-height: 0;
@@ -5628,6 +5604,36 @@ a {
   background: rgba(240, 200, 120, 0.08);
   color: var(--text-muted);
   font-size: 12px;
+  line-height: 1.35;
+}
+
+/* PR 18: display-only capacity summary (physical seats vs registration limit),
+   embedded inline into the seating footer status line — not a separate row. */
+.seat-capacity-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.seat-capacity-summary__line {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.seat-capacity-summary__warning {
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid rgba(229, 44, 54, 0.4);
+  border-radius: 8px;
+  background: rgba(229, 44, 54, 0.1);
+  color: #ff9ca2;
+  font-size: 12px;
+  font-weight: 750;
   line-height: 1.35;
 }
 

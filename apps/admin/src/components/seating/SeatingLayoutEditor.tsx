@@ -57,6 +57,7 @@ import type {
 } from "../../types/seating";
 import { SeatingAssignmentsPanel } from "./SeatingAssignmentsPanel";
 import { SeatingCanvas } from "./SeatingCanvas";
+import { SeatingCapacitySummary } from "./SeatingCapacitySummary";
 import { SeatingReserveDialog } from "./SeatingReserveDialog";
 import {
   DEFAULT_SEATING_TEMPLATE_VALUE,
@@ -412,8 +413,11 @@ export function SeatingLayoutEditor({
       : null);
 
   const capacityLimit = slot?.bucket.effectiveCapacity ?? slot?.bucket.capacity ?? null;
-  const capacityLabel = formatCapacityLimit(capacityLimit);
   const seatsModeLabel = useMemo(() => formatSeatsMode(tables), [tables]);
+  const rabbiReserveCount = useMemo(
+    () => geometry.seats.filter((seat) => seat.isRabbiTable).length,
+    [geometry.seats],
+  );
   const slotTitle = slot ? formatSlotTitle(slot) : "Схема рассадки";
   const slotSubtitle = slot ? formatSlotSubtitle(slot) : null;
   const hasValidGeometry = tables.length > 0 && countRabbiTables(tables) === 1;
@@ -1336,29 +1340,21 @@ export function SeatingLayoutEditor({
                   Редактировать столы
                 </Button>
                 <span className="seat-toolbar__sep" />
-                <span className="seat-count" aria-live="polite">
-                  <span className="seat-count__main">
-                    {tables.length} стол. · {geometry.physicalSeatCount} мест
-                  </span>
-                  <span className="seat-count__sub">
-                    занято {assignmentRestoreState.occupiedCount} · свободно{" "}
-                    {Math.max(
-                      0,
-                      geometry.physicalSeatCount -
-                        assignmentRestoreState.occupiedCount -
-                        placedReserveCount,
-                    )}{" "}
-                    · раввинский резерв{" "}
-                    {geometry.seats.filter((seat) => seat.isRabbiTable).length}
-                    {placedReserveCount > 0 ? ` · резервов ${placedReserveCount}` : ""} ·{" "}
-                    {capacityLabel} · {unassignedGuestPool.length} не рассажены ·
-                    фигура зафиксирована
-                  </span>
-                </span>
+                <SeatingCapacitySummary
+                  capacityLimit={capacityLimit}
+                  occupiedSeats={slot.bucket.occupiedSeats}
+                  physicalSeatCount={geometry.physicalSeatCount}
+                  reserveSeats={placedReserveCount}
+                  leadingParts={[`${tables.length} стол.`]}
+                  trailingParts={[
+                    `раввинский резерв ${rabbiReserveCount}`,
+                    `${unassignedGuestPool.length} не рассажены`,
+                    "фигура зафиксирована",
+                  ]}
+                />
               </div>
             ) : (
               <SeatingToolbar
-                capacityLabel={capacityLabel}
                 hasSelectedTable={Boolean(selectedTable)}
                 isLoading={isLoading}
                 onAddTable={handleAddTable}
@@ -1366,12 +1362,23 @@ export function SeatingLayoutEditor({
                 onRotateTable={handleRotateTable}
                 onSetAllSideSeats={handleSetAllSideSeats}
                 onToggleSelectedSideSeats={handleToggleSelectedSideSeats}
-                physicalSeatCount={geometry.physicalSeatCount}
-                rabbiReserveCount={geometry.seats.filter((seat) => seat.isRabbiTable).length}
                 removeDisabled={!selectedTable || tables.length <= 1}
-                seamCount={geometry.seams.length}
-                seatsModeLabel={seatsModeLabel}
                 selectedTableSideSeats={selectedTable ? tableSideSeats(selectedTable) : null}
+                statusSummary={
+                  <SeatingCapacitySummary
+                    capacityLimit={capacityLimit}
+                    occupiedSeats={slot.bucket.occupiedSeats}
+                    physicalSeatCount={geometry.physicalSeatCount}
+                    reserveSeats={placedReserveCount}
+                    leadingParts={[`${tables.length} стол.`]}
+                    trailingParts={[
+                      `${geometry.seams.length} стык.`,
+                      seatsModeLabel,
+                      `раввинский резерв ${rabbiReserveCount}`,
+                      "фигура без рассадки",
+                    ]}
+                  />
+                }
                 tableCount={tables.length}
                 variant="layout"
               />
@@ -1905,12 +1912,6 @@ function connectionTouchesTable(connection: SeatingConnection, tableId: string):
 
 function pickSelectedTableId(tables: SeatingTable[]): string | null {
   return tables.find((table) => table.isRabbiTable)?.id ?? tables[0]?.id ?? null;
-}
-
-function formatCapacityLimit(capacity: number | null): string {
-  return capacity === null
-    ? "без лимита"
-    : `лимит ${new Intl.NumberFormat("ru-RU").format(capacity)}`;
 }
 
 function formatSeatsMode(tables: SeatingTable[]): string {

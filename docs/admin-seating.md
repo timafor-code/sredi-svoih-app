@@ -48,7 +48,11 @@ block B PRs and may be extended in later ones.
   and reserves win conflicts), missing/blocked/duplicate occupants return to
   "Не рассажены", and a short warning reports how many placements were preserved vs
   returned. No change to `event_capacity_units.capacity`.
-- **Later PRs:** capacity summary (PR 18), capacity sync (PR 19).
+- **PR 18 (this revision):** display-only capacity summary in the seating modal.
+  It makes the difference between the physical seats from the table geometry and
+  the registration limit explicit, and changes nothing else: no capacity sync, no
+  new RPC, no migration, and no change to `event_capacity_units.capacity`.
+- **Later PRs:** capacity sync (PR 19).
 
 The browser admin client talks to all of this through the normal authenticated
 Supabase session. No service role or Admin API is used anywhere in the seating
@@ -716,6 +720,74 @@ Persistence:
   `assignment_type='reserve'`, `registration_id IS NULL`). Success is shown only
   after both relevant saves succeed.
 
+### Capacity summary (PR 18)
+
+PR 18 adds a **display-only** summary to the seating modal so an admin can see,
+at a glance, the difference between the physical seats produced by the table
+geometry and the registration limit. This is the core of the "limit 70 / 80
+physical seats" question (PLAN §1): the two numbers are **independent**, and
+editing the table geometry must never change `event_capacity_units.capacity`.
+
+- `capacityLimit` = the registration business limit (the gate for public
+  sign-up), read from the bucket. `null` means *без лимита* (no limit).
+- `physicalSeatCount` = how many chairs the current geometry yields
+  (`geometry.physicalSeatCount`).
+
+The pure math lives in `apps/admin/src/lib/seatingCapacity.ts`
+(`computeSeatingCapacitySummary`) and is covered by
+`apps/admin/src/lib/__tests__/seatingCapacity.test.ts`. The
+`SeatingCapacitySummary` component renders it **inline as the single footer
+status line** in `SeatingLayoutEditor` (it takes `leadingParts`/`trailingParts`
+so the state-specific bits — table count, rabbi reserve, seams/mode,
+`не рассажены`, `фигура зафиксирована` — stay on the same line instead of a
+separate row below the modal) and does no IO. `occupiedSeats` is the bucket's
+registration occupancy; `reserveSeats` is the count of reserves currently placed
+on physical seats (reserves take a chair but are **not** registration
+occupancy).
+
+Formulas (all guard a `null` limit before any arithmetic — never `null − число`,
+so no `NaN` reaches the UI):
+
+```
+seatsNeeded      = occupiedSeats + reserveSeats
+freeByLimit      = capacityLimit === null ? null : capacityLimit − occupiedSeats
+freePhysical     = max(0, physicalSeatCount − occupiedSeats − reserveSeats)
+missingPhysical  = max(0, seatsNeeded − physicalSeatCount)
+physicalOverflow = capacityLimit === null ? 0 : max(0, physicalSeatCount − capacityLimit)
+```
+
+`null` limit (без лимита):
+
+```
+freeByLimit      = null      (not 0, not NaN — the UI prints "без лимита")
+physicalOverflow = 0         (nothing to overflow without a limit)
+missingPhysical  = computed as usual (still max(0, seatsNeeded − physicalSeatCount))
+```
+
+All numeric inputs are sanitised to finite, non-negative values, and a
+non-positive or non-finite limit collapses to `null`, so the summary can never
+render `NaN` or a negative count.
+
+UI strings (the capacity segments are spliced into the one footer status line
+between `leadingParts` and `trailingParts`):
+
+- normal segments:
+  `80 физ. мест · лимит 70 · занято 55 · свободно по лимиту 15 · физически свободно 25`
+  (a `· резервов N` segment is appended when reserves occupy seats);
+- no limit: the limit segment is `без лимита` and the `свободно по лимиту`
+  segment is omitted;
+- shortage (`missingPhysical > 0`): the capacity segments end with
+  `не хватает N физических мест` and a compact red warning is appended to the
+  same status area: `Не хватает физических мест: 68 гостей на 60 стульев`;
+- spare physical seats (`physicalOverflow > 0`, no shortage): no extra note — the
+  slack simply shows as positive `свободно по лимиту` / `физически свободно`.
+
+This PR explicitly does **not**: change `event_capacity_units.capacity`; add a
+capacity-sync button; add `admin_update_capacity_unit_limit`; add any migration;
+or change the registration / seating-write / auto-seating / drag-drop / reserves
+logic (it only reads the existing numbers for display). Capacity sync remains
+PR 19.
+
 ### Field mapping (snake_case RPC ↔ camelCase model)
 
 The read RPC return `to_jsonb(...)` of the DB rows (snake_case); the write RPC
@@ -930,3 +1002,32 @@ Not run by Claude Code. Manual smoke is performed by the project owner.
 25. Confirm no capacity summary/sync UI is available yet.
 26. Confirm registrations table/detail modal/export/refresh still work.
 27. Confirm browser smoke was not run by Claude Code.
+
+## Manual smoke checklist (PR 18)
+
+Not run by Claude Code. Manual smoke is performed by the project owner.
+
+1. Open web-admin registrations page.
+2. Open the seating modal for a bucket that has a numeric limit and more physical
+   seats than the limit (e.g. limit 70, geometry ~80 seats).
+3. Confirm the capacity summary line reads like
+   `80 физ. мест · лимит 70 · занято N · свободно по лимиту 70−N · физически свободно …`.
+4. Confirm the numbers match the toolbar/status counts and the bucket occupancy.
+5. Reduce the geometry below the occupied count (delete tables) so guests exceed
+   chairs.
+6. Confirm the line shows `не хватает N физических мест` and a red warning
+   `Не хватает физических мест: X гостей на Y стульев`.
+7. Open the modal for a bucket with **no** limit (capacity `null`).
+8. Confirm the summary shows `без лимита`, omits `свободно по лимиту`, shows no
+   overflow, and renders no `NaN`/negative numbers.
+9. Make a seating, add and seat a reserve.
+10. Confirm `физически свободно` drops by the number of seated reserves while
+    `занято` (registration occupancy) does not change, and a `резервов N`
+    segment appears.
+11. Confirm the summary is display-only: there is no button to change the limit
+    and no capacity-sync action.
+12. Confirm `event_capacity_units.capacity` did not change after any of the above.
+13. Confirm template selector, table editing, auto seating, drag/drop and
+    reserves from earlier PRs still work.
+14. Confirm registrations table/detail modal/export/refresh still work.
+15. Confirm browser smoke was not run by Claude Code.

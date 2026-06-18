@@ -1,7 +1,8 @@
+import type { ReactNode } from "react";
+
 import { Button } from "../ui/Button";
 
 type LayoutToolbarProps = {
-  capacityLabel: string;
   hasSelectedTable: boolean;
   isLoading: boolean;
   onAddTable: () => void;
@@ -9,12 +10,12 @@ type LayoutToolbarProps = {
   onRotateTable: () => void;
   onSetAllSideSeats: (sideSeats: 2 | 3) => void;
   onToggleSelectedSideSeats: () => void;
-  physicalSeatCount: number;
-  rabbiReserveCount: number;
   removeDisabled: boolean;
-  seamCount: number;
-  seatsModeLabel: string;
   selectedTableSideSeats: number | null;
+  // PR 18: the single capacity/status line shown in the toolbar footer. The parent
+  // builds it (table count + capacity numbers + seams/mode/rabbi reserve) so the
+  // footer stays one line instead of a separate summary row below the modal.
+  statusSummary: ReactNode;
   tableCount: number;
   variant: "layout";
 };
@@ -73,15 +74,7 @@ export function SeatingToolbar(props: SeatingToolbarProps) {
         Удалить стол
       </Button>
       <span className="seat-toolbar__sep" />
-      <span className="seat-count" aria-live="polite">
-        <span className="seat-count__main">
-          {props.tableCount} стол. · {props.physicalSeatCount} потенциальных мест
-        </span>
-        <span className="seat-count__sub">
-          {props.seamCount} стык. · {props.capacityLabel} · {props.seatsModeLabel} ·
-          раввинский резерв {props.rabbiReserveCount} · фигура без рассадки
-        </span>
-      </span>
+      {props.statusSummary}
     </div>
   );
 }
