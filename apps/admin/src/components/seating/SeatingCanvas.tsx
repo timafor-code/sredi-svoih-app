@@ -316,6 +316,7 @@ export function SeatingCanvas({
               className={[
                 "seat",
                 isOccupied ? "seat--occupied" : "seat--empty",
+                occupant?.type === "reserve" ? "seat--reserve" : "",
                 !isSeatingDone ? "seat--preview" : "",
                 seat.isRabbiTable ? "seat--rabbi-reserved" : "",
                 occupant?.isRabbiHead ? "seat--rabbi-head" : "",
@@ -341,7 +342,11 @@ export function SeatingCanvas({
                 <span
                   className={[
                     "seat-occupant",
-                    occupant.isRabbiHead ? "seat-occupant--rabbi" : "seat-occupant--guest",
+                    occupant.isRabbiHead
+                      ? "seat-occupant--rabbi"
+                      : occupant.type === "reserve"
+                        ? "seat-occupant--reserve"
+                        : "seat-occupant--guest",
                     occupantDraggable ? "seat-occupant--draggable" : "",
                     draggingSeatIndex === index ? "seat-occupant--dragging" : "",
                     occupant.locked ? "seat-occupant--locked" : "",

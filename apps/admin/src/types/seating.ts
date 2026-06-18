@@ -285,6 +285,22 @@ export interface SeatingCapacitySummary {
   physicalOverflow: number;
 }
 
+/**
+ * PR 16: a UI-created operational reserve shown in the "Не рассажены" pool.
+ *
+ * A reserve is NOT a registration: it carries no `registrationId`, never appears
+ * in `event_registration_capacity_reservations`, and never increases the occupied
+ * registration seat count. It only occupies a physical seat. Reserves are
+ * persisted as `assignment_type='reserve'` assignments (placed in `chairs[]` or
+ * pooled in `pool[]`); `id` is the stable reserve / assignment identity used as
+ * the pool drag key and to match the reserve across moves.
+ */
+export interface SeatingReservePoolItem {
+  id: string;
+  label: string;
+  initials: string;
+}
+
 export type SeatingGuestPoolSource = "participant" | "guest";
 export type SeatingGuestPoolObligationSource =
   | "reservation"

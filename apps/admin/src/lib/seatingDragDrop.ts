@@ -8,17 +8,27 @@
 // derive from it (no split state between panel and canvas).
 //
 // Supported moves (v15 `seatDrop`):
-//   * pool  -> empty seat      place a guest from "Не рассажены".
-//   * seat  -> empty seat      move a seated guest.
-//   * seat  -> occupied seat   swap two seated guests.
-//   * pool  -> occupied seat   place the guest, return the displaced one to pool.
-//   * seat  -> pool            unassign a seated guest back to "Не рассажены".
+//   * pool    -> empty seat      place a guest from "Не рассажены".
+//   * reserve -> empty seat      place a pooled reserve (PR 16) on a seat.
+//   * seat    -> empty seat      move a seated guest / reserve.
+//   * seat    -> occupied seat   swap two seated occupants.
+//   * pool    -> occupied seat   place the guest, return the displaced one to pool.
+//   * reserve -> occupied seat   place the reserve, return the displaced one to pool.
+//   * seat    -> pool            unassign a seated occupant back to "Не рассажены".
+//
+// PR 16 — reserves: a reserve is a UI-created operational placeholder
+// (`assignment_type='reserve'`, no registration). It lives in the same
+// `assignments` array as a pooled entry (`seatKey === null`) until placed, so a
+// seated reserve moves/swaps/unassigns through the generic `seat` source like any
+// occupant. Reserves represent the rabbi's operational guests (габай, гость
+// раввина) and are therefore allowed onto rabbi-reserved seats; ordinary
+// registration guests are still blocked from them.
 //
 // Rejections (no-op, the caller decides whether/how to surface them):
 //   * dropping onto the same seat;
 //   * dropping onto a rabbi-reserved seat with an ordinary (non-rabbi) guest;
 //   * an out-of-range seat index;
-//   * a missing source occupant / missing pool guest;
+//   * a missing source occupant / missing pool guest / missing pooled reserve;
 //   * a guest that is already seated (duplicate assignment).
 //
 // Seat keys are always rebuilt from the geometry via `seatingSeatKey`, which is
@@ -37,6 +47,7 @@ import type {
 
 export type SeatingDragSourceRef =
   | { kind: "pool"; guestKey: string }
+  | { kind: "reserve"; reserveId: string }
   | { kind: "seat"; seatIndex: number };
 
 export type SeatingDropTargetRef =
@@ -48,6 +59,7 @@ export type SeatingDragDropRejection =
   | "seat_out_of_range"
   | "rabbi_reserved_seat"
   | "missing_guest"
+  | "missing_reserve"
   | "missing_source_occupant"
   | "duplicate_guest";
 
@@ -81,6 +93,7 @@ export function applySeatingDragDrop({
   // ---- resolve the moving entity ----------------------------------------
   let sourcePos: number | null = null;
   let movingGuest: SeatingGuestPoolItem | null = null;
+  let movingIsReserve = false;
 
   if (source.kind === "seat") {
     const pos = placedPosByIndex.get(source.seatIndex);
@@ -88,6 +101,22 @@ export function applySeatingDragDrop({
       return rejection(assignments, "missing_source_occupant");
     }
     sourcePos = pos;
+    movingIsReserve = next[pos].type === "reserve";
+  } else if (source.kind === "reserve") {
+    // A pooled reserve is already an assignment (seatKey === null); place it by
+    // setting its seatKey. It can never be on two seats: there is exactly one
+    // pooled entry per reserve id.
+    const pos = next.findIndex(
+      (assignment) =>
+        assignment.type === "reserve" &&
+        assignment.id === source.reserveId &&
+        !assignment.seatKey,
+    );
+    if (pos < 0) {
+      return rejection(assignments, "missing_reserve");
+    }
+    sourcePos = pos;
+    movingIsReserve = true;
   } else {
     movingGuest = guestPool.find((guest) => guest.key === source.guestKey) ?? null;
     if (!movingGuest) {
@@ -101,7 +130,7 @@ export function applySeatingDragDrop({
   // ---- target: pool (unassign) ------------------------------------------
   if (target.kind === "pool") {
     if (source.kind !== "seat" || sourcePos === null) {
-      // Dragging a pool chip back to the pool is a no-op.
+      // Dragging a pool chip / pooled reserve back to the pool is a no-op.
       return rejection(assignments, "noop");
     }
     next[sourcePos] = unplaceAssignment(next[sourcePos]);
@@ -121,9 +150,13 @@ export function applySeatingDragDrop({
   const movingIsRabbi =
     source.kind === "pool"
       ? isExplicitRabbiGuest(movingGuest!)
-      : isRabbiSeatedOccupant(next[sourcePos!], geometry, guestPool);
+      : source.kind === "seat"
+        ? isRabbiSeatedOccupant(next[sourcePos!], geometry, guestPool)
+        : false;
 
-  if (isRabbiReservedSeat(geometry, targetIndex) && !movingIsRabbi) {
+  // Reserves may take rabbi-reserved seats (they ARE the rabbi/admin reserve);
+  // only ordinary registration guests are blocked there.
+  if (isRabbiReservedSeat(geometry, targetIndex) && !movingIsRabbi && !movingIsReserve) {
     return rejection(assignments, "rabbi_reserved_seat");
   }
 
@@ -135,9 +168,15 @@ export function applySeatingDragDrop({
     const sourceSeatKey = next[sPos].seatKey as string;
 
     if (targetPos !== undefined) {
-      // swap — the displaced guest takes the source seat; guard the rabbi seat.
+      // swap — the displaced occupant takes the source seat; guard the rabbi seat
+      // (a reserve is allowed back onto a rabbi-reserved source seat).
       const displacedIsRabbi = isRabbiSeatedOccupant(next[targetPos], geometry, guestPool);
-      if (isRabbiReservedSeat(geometry, source.seatIndex) && !displacedIsRabbi) {
+      const displacedIsReserve = next[targetPos].type === "reserve";
+      if (
+        isRabbiReservedSeat(geometry, source.seatIndex) &&
+        !displacedIsRabbi &&
+        !displacedIsReserve
+      ) {
         return rejection(assignments, "rabbi_reserved_seat");
       }
       next[targetPos] = markManual({ ...next[targetPos], seatKey: sourceSeatKey });
@@ -147,12 +186,18 @@ export function applySeatingDragDrop({
     return { assignments: next, changed: true };
   }
 
-  // source: pool
-  const guest = movingGuest!;
+  // source: pooled reserve or pool guest — place onto the target seat, returning
+  // any displaced occupant to the pool.
   if (targetPos !== undefined) {
     next[targetPos] = unplaceAssignment(next[targetPos]);
   }
 
+  if (source.kind === "reserve") {
+    next[sourcePos!] = markManual({ ...next[sourcePos!], seatKey: targetSeatKey });
+    return { assignments: next, changed: true };
+  }
+
+  const guest = movingGuest!;
   const placed = markManual(placedAssignmentFromGuest(guest, targetSeatKey));
   const pooledPos = next.findIndex(
     (assignment) => !assignment.seatKey && matchesGuest(assignment, guest),

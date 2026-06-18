@@ -446,6 +446,90 @@ test("repeat auto seating preserves locked placements and only seats the pool", 
   assertEqual(result.assignedSeats.length, 3, "remaining pool guests seated");
 });
 
+test("repeat auto seating treats a locked reserve seat as blocked and never seats reserves", () => {
+  const tables = defaultTables();
+  const geometry = computeTableSeats({ tables });
+  const guests = Array.from({ length: 3 }, (_, i) => makeGuest(i + 1));
+  // A reserve is manually placed on a non-rabbi seat (no registration).
+  const reserveSeatIndex = geometry.seats.findIndex((seat) => !seat.isRabbiTable);
+  const reserveSeatKey = `${geometry.seats[reserveSeatIndex].tableId}:${seatStable(
+    geometry,
+    reserveSeatIndex,
+  )}`;
+  const lockedAssignments = [
+    {
+      guestInitials: "Рез",
+      guestLabel: "Гость раввина",
+      id: "reserve-1",
+      layoutId: "layout-1",
+      locked: true,
+      placementSource: "manual" as const,
+      registrationId: null,
+      seatKey: reserveSeatKey,
+      type: "reserve" as const,
+    },
+  ];
+
+  const result = autoAssignSeating({ guestPool: guests, lockedAssignments, tables });
+
+  // The reserve seat is blocked: auto never reuses it.
+  assert(
+    result.assignedSeats.every((seat) => seat.seatIndex !== reserveSeatIndex),
+    "reserve seat is left untouched by auto",
+  );
+  // Auto only seats registration guests; every assigned seat carries a registration.
+  assert(
+    result.assignedSeats.every((seat) => seat.guest.registrationId !== null),
+    "auto seats only registration guests, never reserves",
+  );
+  assertEqual(result.assignedSeats.length, 3, "all registration guests seated");
+});
+
+test("a placed reserve does not count as an occupied registration seat", () => {
+  const tables = defaultTables();
+  const geometry = computeTableSeats({ tables });
+  const guest = makeGuest(1);
+  const guestSeatIndex = geometry.seats.findIndex((seat) => !seat.isRabbiTable);
+  const reserveSeatIndex = geometry.seats.findIndex(
+    (seat, index) => !seat.isRabbiTable && index !== guestSeatIndex,
+  );
+  const assignments = [
+    {
+      guestInitials: guest.initials,
+      guestLabel: guest.displayName,
+      id: "guest-1",
+      layoutId: "layout-1",
+      registrationId: guest.registrationId,
+      seatKey: `${geometry.seats[guestSeatIndex].tableId}:${seatStable(geometry, guestSeatIndex)}`,
+      type: "guest" as const,
+    },
+    {
+      guestInitials: "Рез",
+      guestLabel: "Резерв 1",
+      id: "reserve-1",
+      layoutId: "layout-1",
+      registrationId: null,
+      seatKey: `${geometry.seats[reserveSeatIndex].tableId}:${seatStable(geometry, reserveSeatIndex)}`,
+      type: "reserve" as const,
+    },
+  ];
+
+  const state = deriveSeatingAssignmentRestoreState({
+    assignments,
+    geometry,
+    guestPool: [guest],
+  });
+
+  // Two physical seats occupied, but only the one registration guest counts.
+  assertEqual(state.occupants.length, 2, "both occupants placed on canvas");
+  assertEqual(state.occupiedCount, 1, "reserve excluded from registration occupied count");
+  assertEqual(
+    state.occupants.filter((occupant) => occupant.type === "reserve").length,
+    1,
+    "reserve rendered as an occupant",
+  );
+});
+
 function seatStable(geometry: ReturnType<typeof computeTableSeats>, index: number): string {
   const seat = geometry.seats[index];
   if (seat.kind === "side" && seat.edge && typeof seat.slot === "number") {
