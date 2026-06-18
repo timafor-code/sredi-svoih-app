@@ -7,11 +7,15 @@ import {
 export function SeatingAssignmentsPanel({
   error,
   guests,
+  isSeatingDone,
   isLoading,
+  warning,
 }: {
   error: string | null;
   guests: SeatingGuestPoolItem[];
+  isSeatingDone: boolean;
   isLoading: boolean;
+  warning?: string | null;
 }) {
   return (
     <aside
@@ -27,6 +31,12 @@ export function SeatingAssignmentsPanel({
       </div>
 
       <div className="seat-pool__list">
+        {!isLoading && !error && warning ? (
+          <p className="seat-pool__empty seat-pool__empty--warning" role="alert">
+            {warning}
+          </p>
+        ) : null}
+
         {isLoading ? (
           <p className="seat-pool__empty" role="status">
             Загружаем гостей...
@@ -34,6 +44,10 @@ export function SeatingAssignmentsPanel({
         ) : error ? (
           <p className="seat-pool__empty seat-pool__empty--error" role="alert">
             {error}
+          </p>
+        ) : guests.length === 0 && isSeatingDone ? (
+          <p className="seat-pool__empty seat-pool__empty--success">
+            Все рассажены.
           </p>
         ) : guests.length === 0 ? (
           <p className="seat-pool__empty">Нет гостей для выбранного слота.</p>

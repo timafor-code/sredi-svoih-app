@@ -19,7 +19,10 @@ import type {
   AdminEventRegistrationRow,
   AdminRegistrationStatus,
 } from "../types/registrations";
-import type { SeatingGuestPoolItem } from "../types/seating";
+import type {
+  SeatingGuestPoolItem,
+  SeatingGuestPoolObligationSource,
+} from "../types/seating";
 
 type SupabaseSelectError = {
   message?: string;
@@ -30,14 +33,34 @@ type SupabaseSelectError = {
 type JsonRecord = Record<string, unknown>;
 
 type OptionCapacityUnitMappingRowForGuestPool = {
-  option_id: string | null;
-  capacity_unit_id: string | null;
+  id: string;
+  event_id: string;
+  option_id: string;
+  capacity_unit_id: string;
   seats_per_quantity: number | string | null;
+  created_at: string;
 };
 
+type OptionCapacityUnitMappingForGuestPool = {
+  id: string;
+  eventId: string;
+  optionId: string;
+  capacityUnitId: string;
+  seatsPerQuantity: number;
+  createdAt: string;
+};
+
+type DirectSeatObligationSource = Exclude<
+  SeatingGuestPoolObligationSource,
+  "mixed"
+>;
+
 type RegistrationSeatObligation = {
+  capacityReservationIds: string[];
+  optionIds: string[];
   optionTitles: string[];
   seatsCount: number;
+  sources: DirectSeatObligationSource[];
 };
 
 const REGISTRATION_CAPACITY_RESERVATION_FIELDS = `
@@ -57,9 +80,12 @@ const REGISTRATION_CAPACITY_RESERVATION_FIELDS = `
 `;
 
 const OPTION_CAPACITY_UNIT_MAPPING_FIELDS_FOR_GUEST_POOL = `
+  id,
+  event_id,
   option_id,
   capacity_unit_id,
-  seats_per_quantity
+  seats_per_quantity,
+  created_at
 `;
 
 const REGISTRATION_GUEST_POOL_PAGE_SIZE = 200;
@@ -293,6 +319,19 @@ function normalizeCapacityReservation(
   };
 }
 
+function normalizeOptionCapacityUnitMappingForGuestPool(
+  row: Partial<OptionCapacityUnitMappingRowForGuestPool>,
+): OptionCapacityUnitMappingForGuestPool {
+  return {
+    id: requiredString(row.id, ""),
+    eventId: requiredString(row.event_id, ""),
+    optionId: requiredString(row.option_id, ""),
+    capacityUnitId: requiredString(row.capacity_unit_id, ""),
+    seatsPerQuantity: Math.max(1, Math.floor(safeNumber(row.seats_per_quantity, 1))),
+    createdAt: requiredString(row.created_at, ""),
+  };
+}
+
 function normalizeCapacityBuckets(value: unknown): AdminRegistrationCapacityBucket[] {
   return toRecordArray(value)
     .map(normalizeCapacityBucket)
@@ -417,6 +456,31 @@ export async function getAdminRegistrationCapacityGuestPool(
   });
 }
 
+async function listOptionCapacityUnitMappingsForGuestPool(
+  params: ListAdminRegistrationCapacityReservationsParams,
+): Promise<OptionCapacityUnitMappingForGuestPool[]> {
+  const supabase = requireSupabaseClient();
+  const { data, error } = await supabase
+    .from("event_participation_option_capacity_units")
+    .select(OPTION_CAPACITY_UNIT_MAPPING_FIELDS_FOR_GUEST_POOL)
+    .eq("event_id", params.eventId)
+    .eq("capacity_unit_id", params.capacityUnitId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error(formatSupabaseError("List option capacity unit mappings", error));
+  }
+
+  return ((data ?? []) as OptionCapacityUnitMappingRowForGuestPool[])
+    .map(normalizeOptionCapacityUnitMappingForGuestPool)
+    .filter(
+      (mapping) =>
+        mapping.eventId === params.eventId &&
+        mapping.capacityUnitId === params.capacityUnitId &&
+        mapping.optionId.length > 0,
+    );
+}
+
 async function listActiveRegistrationsForGuestPool(
   params: ListAdminRegistrationCapacityBucketsParams,
 ): Promise<AdminEventRegistrationRow[]> {
@@ -465,25 +529,6 @@ async function listRegistrationsForGuestPoolStatus(
   return registrations;
 }
 
-async function listOptionCapacityUnitMappingsForGuestPool(
-  params: GetAdminRegistrationCapacityGuestPoolParams,
-): Promise<OptionCapacityUnitMappingRowForGuestPool[]> {
-  const supabase = requireSupabaseClient();
-  const { data, error } = await supabase
-    .from("event_participation_option_capacity_units")
-    .select(OPTION_CAPACITY_UNIT_MAPPING_FIELDS_FOR_GUEST_POOL)
-    .eq("event_id", params.eventId)
-    .eq("capacity_unit_id", params.capacityUnitId);
-
-  if (error) {
-    throw new Error(formatSupabaseError("List option capacity unit mappings", error));
-  }
-
-  return ((data ?? []) as OptionCapacityUnitMappingRowForGuestPool[]).filter(
-    (row) => Boolean(row.option_id && row.capacity_unit_id === params.capacityUnitId),
-  );
-}
-
 function buildRegistrationSeatObligations({
   capacityUnitId,
   optionMappings,
@@ -491,64 +536,73 @@ function buildRegistrationSeatObligations({
   reservations,
 }: {
   capacityUnitId: string;
-  optionMappings: OptionCapacityUnitMappingRowForGuestPool[];
+  optionMappings: OptionCapacityUnitMappingForGuestPool[];
   registrations: AdminEventRegistrationRow[];
   reservations: AdminRegistrationCapacityReservation[];
 }): Map<string, RegistrationSeatObligation> {
   const obligations = new Map<string, RegistrationSeatObligation>();
   const realReservationKeys = new Set<string>();
-  const mappingByOptionId = new Map(
-    optionMappings
-      .map((mapping) => {
-        const optionId = nullableString(mapping.option_id);
-        return optionId ? [optionId, mapping] as const : null;
-      })
-      .filter((entry): entry is readonly [string, OptionCapacityUnitMappingRowForGuestPool] =>
-        Boolean(entry),
-      ),
-  );
 
   reservations.forEach((reservation) => {
     if (reservation.capacityUnitId !== capacityUnitId) {
       return;
     }
 
-    addSeatObligation(
-      obligations,
-      reservation.registrationId,
-      reservation.seatsCount,
-      reservation.optionTitleSnapshot,
-    );
-    realReservationKeys.add(
-      registrationOptionKey(reservation.registrationId, reservation.optionId),
-    );
+    if (reservation.optionId) {
+      realReservationKeys.add(
+        seatObligationKey(
+          reservation.registrationId,
+          reservation.optionId,
+          reservation.capacityUnitId,
+        ),
+      );
+    }
+
+    addSeatObligation(obligations, {
+      capacityReservationId: reservation.id,
+      optionId: reservation.optionId,
+      optionTitle: reservation.optionTitleSnapshot,
+      registrationId: reservation.registrationId,
+      seatsCount: reservation.seatsCount,
+      source: "reservation",
+    });
   });
+
+  const mappingsByOptionId = new Map(
+    optionMappings.map((mapping) => [mapping.optionId, mapping]),
+  );
 
   registrations.forEach((registration) => {
     registration.selectedOptions.forEach((option) => {
-      const optionId = option.optionId;
-
       if (
-        !optionId ||
+        !option.optionId ||
         option.isDonation ||
-        option.countsTowardCapacity === false ||
-        realReservationKeys.has(registrationOptionKey(registration.id, optionId))
+        option.countsTowardCapacity === false
       ) {
         return;
       }
 
-      const mapping = mappingByOptionId.get(optionId);
-
+      const mapping = mappingsByOptionId.get(option.optionId);
       if (!mapping) {
         return;
       }
 
-      addSeatObligation(
-        obligations,
-        registration.id,
-        option.quantity * Math.max(1, safeNumber(mapping.seats_per_quantity, 1)),
-        option.title,
-      );
+      if (
+        realReservationKeys.has(
+          seatObligationKey(registration.id, option.optionId, mapping.capacityUnitId),
+        )
+      ) {
+        return;
+      }
+
+      addSeatObligation(obligations, {
+        capacityReservationId: null,
+        optionId: option.optionId,
+        optionTitle: option.title,
+        registrationId: registration.id,
+        seatsCount: option.quantity * mapping.seatsPerQuantity,
+        source: "mapped_option",
+      });
     });
   });
 
@@ -574,8 +628,12 @@ function buildSeatingGuestPool({
 
     const participantName = safeDisplayName(registration.participantDisplayName, "Участник");
     const optionTitles = obligation?.optionTitles ?? [];
+    const optionIds = obligation?.optionIds ?? [];
+    const capacityReservationIds = obligation?.capacityReservationIds ?? [];
+    const seatObligationSource = normalizeSeatObligationSource(obligation);
     const items: SeatingGuestPoolItem[] = [
       {
+        capacityReservationIds,
         capacityUnitId: params.capacityUnitId,
         displayName: participantName,
         email: registration.email,
@@ -585,12 +643,14 @@ function buildSeatingGuestPool({
         initials: seatInitials(participantName),
         key: seatingGuestPoolKey(registration.id, "participant", 0, params.capacityUnitId),
         occurrenceId: params.occurrenceId,
+        optionIds,
         optionTitles,
         participantDisplayName: participantName,
         participantUserId: registration.userId || null,
         paymentStatus: registration.paymentStatus,
         phone: registration.phone,
         registrationId: registration.id,
+        seatObligationSource,
         source: "participant",
         sourceLabel: "Участник",
         status: registration.status,
@@ -605,6 +665,7 @@ function buildSeatingGuestPool({
         guestName ?? `Гость ${guestIndex} · ${participantName}`;
 
       items.push({
+        capacityReservationIds,
         capacityUnitId: params.capacityUnitId,
         displayName,
         email: registration.email,
@@ -614,12 +675,14 @@ function buildSeatingGuestPool({
         initials: seatInitials(guestName ?? `Гость ${guestIndex}`),
         key: seatingGuestPoolKey(registration.id, "guest", guestIndex, params.capacityUnitId),
         occurrenceId: params.occurrenceId,
+        optionIds,
         optionTitles,
         participantDisplayName: participantName,
         participantUserId: registration.userId || null,
         paymentStatus: registration.paymentStatus,
         phone: registration.phone,
         registrationId: registration.id,
+        seatObligationSource,
         source: "guest",
         sourceLabel: "Гость",
         status: registration.status,
@@ -632,27 +695,76 @@ function buildSeatingGuestPool({
 
 function addSeatObligation(
   obligations: Map<string, RegistrationSeatObligation>,
-  registrationId: string,
-  seatsCount: number,
-  optionTitle: string | null,
+  {
+    capacityReservationId,
+    optionId,
+    optionTitle,
+    registrationId,
+    seatsCount,
+    source,
+  }: {
+    capacityReservationId: string | null;
+    optionId: string | null;
+    optionTitle: string | null;
+    registrationId: string;
+    seatsCount: number;
+    source: DirectSeatObligationSource;
+  },
 ) {
   if (!registrationId || seatsCount <= 0) {
     return;
   }
 
   const current = obligations.get(registrationId) ?? {
+    capacityReservationIds: [],
+    optionIds: [],
     optionTitles: [],
     seatsCount: 0,
+    sources: [],
   };
   const title = optionTitle?.trim();
+  const normalizedOptionId = optionId?.trim();
+  const normalizedReservationId = capacityReservationId?.trim();
 
   obligations.set(registrationId, {
+    capacityReservationIds:
+      normalizedReservationId &&
+      !current.capacityReservationIds.includes(normalizedReservationId)
+        ? [...current.capacityReservationIds, normalizedReservationId]
+        : current.capacityReservationIds,
+    optionIds:
+      normalizedOptionId && !current.optionIds.includes(normalizedOptionId)
+        ? [...current.optionIds, normalizedOptionId]
+        : current.optionIds,
     optionTitles:
       title && !current.optionTitles.includes(title)
         ? [...current.optionTitles, title]
         : current.optionTitles,
     seatsCount: current.seatsCount + Math.floor(seatsCount),
+    sources: current.sources.includes(source)
+      ? current.sources
+      : [...current.sources, source],
   });
+}
+
+function seatObligationKey(
+  registrationId: string,
+  optionId: string,
+  capacityUnitId: string,
+): string {
+  return `${registrationId}:${optionId}:${capacityUnitId}`;
+}
+
+function normalizeSeatObligationSource(
+  obligation: RegistrationSeatObligation | undefined,
+): SeatingGuestPoolObligationSource {
+  const sources = obligation?.sources ?? [];
+
+  if (sources.length === 1) {
+    return sources[0] ?? "mixed";
+  }
+
+  return "mixed";
 }
 
 function compareRegistrationsForGuestPool(
@@ -673,10 +785,6 @@ function normalizeGuestNames(guestNames: string[]): string[] {
   return guestNames
     .map((guestName) => guestName.trim())
     .filter((guestName) => guestName.length > 0);
-}
-
-function registrationOptionKey(registrationId: string, optionId: string | null): string {
-  return `${registrationId}:${optionId ?? ""}`;
 }
 
 function safeDisplayName(name: string | null | undefined, fallback: string): string {

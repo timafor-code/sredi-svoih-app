@@ -166,7 +166,15 @@ function firstRecord(value: unknown): JsonRecord {
 function normalizeTable(value: unknown): SeatingTable {
   const row = toRecord(value) as Partial<SeatingTableRpcRow> & JsonRecord;
   return {
-    id: requiredString(row.id ?? row.client_table_id),
+    // The table identity MUST be the stable `client_table_id`, never the
+    // `event_seating_tables.id` uuid. The read RPC returns `to_jsonb(st.*)`,
+    // which carries BOTH `id` (the DB row uuid) and `client_table_id`. Seat
+    // keys, connections and saved assignments are all built from
+    // `client_table_id`, so preferring `id` here would re-key every table to a
+    // volatile uuid on reopen and orphan every saved seat_key. Template
+    // snapshots use the v15 camelCase shape (`{ id, … }`, no client_table_id),
+    // so fall back to `id` for those.
+    id: requiredString(row.client_table_id ?? row.id),
     cx: safeNumber(row.cx, 0),
     cy: safeNumber(row.cy, 0),
     w: safeNumber(row.w, 0),
