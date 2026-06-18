@@ -1,3 +1,6 @@
+import { useState } from "react";
+import type { DragEvent as ReactDragEvent } from "react";
+
 import type { SeatingGuestPoolItem } from "../../types/seating";
 import {
   formatPaymentStatus,
@@ -9,14 +12,43 @@ export function SeatingAssignmentsPanel({
   guests,
   isSeatingDone,
   isLoading,
+  manualSeatingEnabled = false,
+  onGuestDragEnd,
+  onGuestDragStart,
+  onPoolDrop,
   warning,
 }: {
   error: string | null;
   guests: SeatingGuestPoolItem[];
   isSeatingDone: boolean;
   isLoading: boolean;
+  /** PR 15: when true, pool chips are draggable and the panel accepts drops. */
+  manualSeatingEnabled?: boolean;
+  onGuestDragEnd?: () => void;
+  onGuestDragStart?: (guestKey: string) => void;
+  onPoolDrop?: () => void;
   warning?: string | null;
 }) {
+  const [isDropTarget, setIsDropTarget] = useState(false);
+
+  const handleDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
+    if (!manualSeatingEnabled || !onPoolDrop) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setIsDropTarget(true);
+  };
+
+  const handleDrop = (event: ReactDragEvent<HTMLDivElement>) => {
+    if (!manualSeatingEnabled || !onPoolDrop) {
+      return;
+    }
+    event.preventDefault();
+    setIsDropTarget(false);
+    onPoolDrop();
+  };
+
   return (
     <aside
       aria-busy={isLoading}
@@ -30,7 +62,18 @@ export function SeatingAssignmentsPanel({
         </span>
       </div>
 
-      <div className="seat-pool__list">
+      <div
+        className={[
+          "seat-pool__list",
+          manualSeatingEnabled ? "seat-pool__list--droppable" : "",
+          isDropTarget ? "seat-pool__list--drop" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onDragLeave={manualSeatingEnabled ? () => setIsDropTarget(false) : undefined}
+        onDragOver={manualSeatingEnabled ? handleDragOver : undefined}
+        onDrop={manualSeatingEnabled ? handleDrop : undefined}
+      >
         {!isLoading && !error && warning ? (
           <p className="seat-pool__empty seat-pool__empty--warning" role="alert">
             {warning}
@@ -52,14 +95,32 @@ export function SeatingAssignmentsPanel({
         ) : guests.length === 0 ? (
           <p className="seat-pool__empty">Нет гостей для выбранного слота.</p>
         ) : (
-          guests.map((guest) => <GuestChip guest={guest} key={guest.key} />)
+          guests.map((guest) => (
+            <GuestChip
+              draggable={manualSeatingEnabled}
+              guest={guest}
+              key={guest.key}
+              onDragEnd={onGuestDragEnd}
+              onDragStart={onGuestDragStart}
+            />
+          ))
         )}
       </div>
     </aside>
   );
 }
 
-function GuestChip({ guest }: { guest: SeatingGuestPoolItem }) {
+function GuestChip({
+  draggable,
+  guest,
+  onDragEnd,
+  onDragStart,
+}: {
+  draggable: boolean;
+  guest: SeatingGuestPoolItem;
+  onDragEnd?: () => void;
+  onDragStart?: (guestKey: string) => void;
+}) {
   const statusLabel = guest.status ? getRegistrationStatusLabel(guest.status) : null;
   const paymentLabel = guest.paymentStatus
     ? formatPaymentStatus(guest.paymentStatus)
@@ -68,8 +129,25 @@ function GuestChip({ guest }: { guest: SeatingGuestPoolItem }) {
   const optionsLabel = guest.optionTitles.slice(0, 2).join(", ");
   const hiddenOptionsCount = Math.max(0, guest.optionTitles.length - 2);
 
+  const handleDragStart = (event: ReactDragEvent<HTMLDivElement>) => {
+    if (!draggable || !onDragStart) {
+      return;
+    }
+    event.dataTransfer.setData("text/plain", `pool:${guest.key}`);
+    event.dataTransfer.effectAllowed = "move";
+    onDragStart(guest.key);
+  };
+
   return (
-    <div className="seat-guest-chip" title={formatGuestTitle(guest)}>
+    <div
+      className={["seat-guest-chip", draggable ? "seat-guest-chip--draggable" : ""]
+        .filter(Boolean)
+        .join(" ")}
+      draggable={draggable}
+      onDragEnd={draggable ? onDragEnd : undefined}
+      onDragStart={draggable ? handleDragStart : undefined}
+      title={formatGuestTitle(guest)}
+    >
       <span aria-hidden="true" className="seat-guest-chip__initials">
         {guest.initials}
       </span>

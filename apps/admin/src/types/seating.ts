@@ -157,6 +157,17 @@ export interface SeatState {
 export type SeatingAssignmentType = "guest" | "reserve";
 
 /**
+ * How a placed assignment got onto its seat. `auto` = deterministic auto seating
+ * (PR 14); `manual` = explicit drag/drop placement (PR 15). This is UI-safe
+ * metadata: the `admin_save_seating_assignments` RPC only reads the known v15
+ * entry keys, so it is ignored on the way to the backend and is not persisted as
+ * a column. After a reopen the flag cannot be restored from the DB, so the editor
+ * treats every currently placed assignment as locked for repeat auto seating
+ * (see PR 15 in `docs/admin-seating.md`).
+ */
+export type SeatingPlacementSource = "auto" | "manual";
+
+/**
  * A table connection in the service model. Identical to the geometry
  * {@link SeatingTableConnection} (`{ aTableId, aEnd, bTableId, bEnd, x, y }`);
  * aliased here so service-layer call sites can speak of "connections".
@@ -230,6 +241,10 @@ export interface SeatingAssignment {
   guestLabel: string | null;
   guestInitials: string | null;
   type: SeatingAssignmentType;
+  /** PR 15: how this assignment reached its seat. Optional / UI-safe metadata. */
+  placementSource?: SeatingPlacementSource;
+  /** PR 15: a locked assignment is preserved by repeat auto seating. */
+  locked?: boolean;
 }
 
 /** Display occupant derived from a saved/auto-generated seating assignment. */
@@ -242,6 +257,9 @@ export interface SeatingSeatOccupant {
   seatIndex: number;
   seatKey: string;
   type: SeatingAssignmentType;
+  /** PR 15: present when the occupant was placed manually / is locked. */
+  placementSource?: SeatingPlacementSource;
+  locked?: boolean;
 }
 
 /**
@@ -392,6 +410,12 @@ export interface SeatingAssignmentEntry {
   type: SeatingAssignmentType;
   name?: string | null;
   initials?: string | null;
+  /**
+   * PR 15 UI-safe metadata. The save RPC ignores unknown entry keys, so these
+   * are sent for client round-tripping only and never reach a DB column.
+   */
+  placementSource?: SeatingPlacementSource;
+  locked?: boolean;
 }
 
 /**
