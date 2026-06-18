@@ -563,6 +563,82 @@ Explicitly **not** included in PR 15 (kept for later PRs):
 - capacity summary or capacity sync — **PR 18/19**;
 - family/group seating; and no change to `event_capacity_units.capacity`.
 
+### Reserves (PR 16)
+
+PR 16 adds **operational reserves** on top of the manual seating from PR 15. A
+reserve is the answer to the "80 physical seats, limit 70" scenario (PLAN §1):
+the extra physical seats are slack for the rabbi's guests, the габай, or
+unregistered "свои", and a reserve fills one of those seats **without touching the
+registration count**.
+
+What a reserve is:
+
+- A **UI-created placeholder** with a human label (`Гость раввина`, `Резерв 1`,
+  `Габай`). The `+ Резерв` action next to "Не рассажены" opens
+  `SeatingReserveDialog`, which collects only the label.
+- It is **not** a registration. A reserve creates **no** `event_registration`, no
+  participant, no profile, and no `event_registration_capacity_reservations` row.
+  It never changes `event_capacity_units.capacity`.
+
+Data model:
+
+- A reserve is persisted as an `event_seating_assignments` row with
+  `assignment_type = 'reserve'`, `registration_id IS NULL`, and the label/initials
+  in `guest_label` / `guest_initials`. No migration was needed — PR 7's schema
+  already allows `assignment_type in ('guest','reserve')` with a nullable
+  `registration_id`, and PR 8/14's `admin_save_seating_assignments` already accepts
+  `type='reserve'`, **requires** `registration_id IS NULL` for it, and does **not**
+  require capacity-reservation membership for reserves.
+- In the editor a reserve lives in the same `assignments` array as a pooled entry
+  (`seatKey === null`, `type: "reserve"`) until placed. Its stable identity is the
+  assignment `id` (a client `reserve_…` id while unsaved; the DB row id after a
+  reopen), used as the pool drag key and for delete.
+
+Behaviour (all through the existing PR 15 drag/drop, `applySeatingDragDrop`):
+
+- **Pool → seat:** a reserve drags onto any free physical seat (source kind
+  `reserve`).
+- **Seat → seat / swap:** a seated reserve moves or swaps like any occupant
+  (generic `seat` source). A reserve can never be on two seats — there is exactly
+  one pooled entry per reserve id (a second placement is a `missing_reserve`
+  no-op).
+- **Seat → pool:** a seated reserve unassigns back to "Не рассажены".
+- **Rabbi-reserved seats:** reserves **are** the rabbi/admin reserve, so they are
+  allowed onto rabbi-table seats; ordinary registration guests are still blocked
+  there (unchanged from PR 14/15).
+- **Delete:** the pooled reserve chip has a delete (×) action. Removing a reserve
+  never touches registrations; after Save it does not come back.
+
+Counts (status line):
+
+- `occupiedCount` (occupied **registration** seats) is unchanged by reserves — it
+  still counts only `type === "guest"` assignments with a `registrationId`.
+- A placed reserve **does** occupy a physical seat: the "свободно" (free physical)
+  count subtracts reserves, and a small `резервов N` counter is shown when any
+  reserve is seated.
+- The full capacity summary (physical vs limit formulas) is still **PR 18**, and
+  capacity sync is still **PR 19** — this PR only adjusts the existing status line.
+
+Auto seating interaction:
+
+- A repeat auto seating (`Дорассадить свободных`) treats every placed reserve seat
+  as **blocked** (it is carried in `lockedAssignments`) and carries unseated
+  reserves forward, so auto never removes a reserve.
+- Auto seats only registration guests from the unassigned/unlocked pool; it never
+  seats a reserve. Donation-only options stay excluded and mapped "Весь шабат"
+  still works.
+
+Save / reopen:
+
+- `+ Резерв` → seat → `Сохранить` → reopen restores the seated reserve on the
+  canvas with its label/initials; the registration occupied count does not grow.
+- Unseated reserves are also persisted (they go to the `pool[]` of
+  `admin_save_seating_assignments` as `type='reserve'` entries) and reappear in
+  "Не рассажены" after reopen.
+- A note/comment field is intentionally **not** included: the backend has no
+  metadata column for assignments and adding one would be out of scope for this
+  PR. Only the UI label is collected and persisted.
+
 ### Field mapping (snake_case RPC ↔ camelCase model)
 
 The read RPC return `to_jsonb(...)` of the DB rows (snake_case); the write RPC
@@ -712,3 +788,35 @@ Not run by Claude Code. Manual smoke is performed by the project owner.
 21. Confirm no reserves UI is available yet.
 22. Confirm registrations table/detail modal/export/refresh still work.
 23. Confirm browser smoke was not run by Claude Code.
+
+## Manual smoke checklist (PR 16)
+
+Not run by Claude Code. Manual smoke is performed by the project owner.
+
+1. Open web-admin registrations page.
+2. Open the seating modal for a bucket with guests and run "Сделать рассадку".
+3. Click `+ Резерв`.
+4. Create a reserve named `Гость раввина`.
+5. Confirm the reserve appears in "Не рассажены" as a distinct (dashed) item.
+6. Drag the reserve onto an empty ordinary seat.
+7. Confirm the reserve appears on the canvas and occupies one physical seat.
+8. Confirm the registration occupied count does not increase.
+9. Drag the reserve seat to another empty seat and confirm it moves.
+10. Drag the reserve onto an occupied guest seat and confirm the swap works when
+    both seats are valid.
+11. Drag the reserve back to "Не рассажены" and confirm the physical seat empties.
+12. Delete the reserve from the pool.
+13. Save, close, reopen the same bucket; confirm the deleted reserve does not
+    return.
+14. Create and seat another reserve, then Save / close / reopen; confirm the
+    reserve assignment is restored with its label/initials.
+15. Run "Дорассадить свободных"; confirm the reserve placement is preserved and
+    blocks its physical seat, and that only registration guests are auto-seated.
+16. Confirm ordinary guests still cannot be dropped onto rabbi-reserved seats,
+    while a reserve can.
+17. Confirm mapped "Весь шабат" still works without slot mismatch.
+18. Confirm donation-only options do not enter the pool.
+19. Confirm `event_capacity_units.capacity` did not change.
+20. Confirm no capacity summary/sync UI is available yet.
+21. Confirm registrations table/detail modal/export/refresh still work.
+22. Confirm browser smoke was not run by Claude Code.

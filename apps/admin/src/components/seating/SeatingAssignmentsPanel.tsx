@@ -1,32 +1,49 @@
 import { useState } from "react";
 import type { DragEvent as ReactDragEvent } from "react";
 
-import type { SeatingGuestPoolItem } from "../../types/seating";
+import type {
+  SeatingGuestPoolItem,
+  SeatingReservePoolItem,
+} from "../../types/seating";
 import {
   formatPaymentStatus,
   getRegistrationStatusLabel,
 } from "../registrations/formatters";
 
 export function SeatingAssignmentsPanel({
+  canAddReserve = false,
   error,
   guests,
   isSeatingDone,
   isLoading,
   manualSeatingEnabled = false,
+  onAddReserve,
+  onDeleteReserve,
   onGuestDragEnd,
   onGuestDragStart,
   onPoolDrop,
+  onReserveDragEnd,
+  onReserveDragStart,
+  reserves = [],
   warning,
 }: {
+  /** PR 16: when true, the "+ Резерв" action and reserve chips are interactive. */
+  canAddReserve?: boolean;
   error: string | null;
   guests: SeatingGuestPoolItem[];
   isSeatingDone: boolean;
   isLoading: boolean;
   /** PR 15: when true, pool chips are draggable and the panel accepts drops. */
   manualSeatingEnabled?: boolean;
+  onAddReserve?: () => void;
+  onDeleteReserve?: (reserveId: string) => void;
   onGuestDragEnd?: () => void;
   onGuestDragStart?: (guestKey: string) => void;
   onPoolDrop?: () => void;
+  onReserveDragEnd?: () => void;
+  onReserveDragStart?: (reserveId: string) => void;
+  /** PR 16: unseated operational reserves (no registration). */
+  reserves?: SeatingReservePoolItem[];
   warning?: string | null;
 }) {
   const [isDropTarget, setIsDropTarget] = useState(false);
@@ -57,9 +74,21 @@ export function SeatingAssignmentsPanel({
     >
       <div className="seat-pool__head">
         <h4>Не рассажены</h4>
-        <span className="seat-pool__count">
-          {isLoading ? "..." : formatGuestCount(guests.length)}
-        </span>
+        <div className="seat-pool__head-meta">
+          <span className="seat-pool__count">
+            {isLoading ? "..." : formatGuestCount(guests.length)}
+          </span>
+          {canAddReserve && onAddReserve ? (
+            <button
+              className="seat-pool__add"
+              onClick={onAddReserve}
+              title="Добавить операционный резерв (гость раввина, габай, незаписанный гость)"
+              type="button"
+            >
+              + Резерв
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div
@@ -88,22 +117,34 @@ export function SeatingAssignmentsPanel({
           <p className="seat-pool__empty seat-pool__empty--error" role="alert">
             {error}
           </p>
-        ) : guests.length === 0 && isSeatingDone ? (
+        ) : guests.length === 0 && reserves.length === 0 && isSeatingDone ? (
           <p className="seat-pool__empty seat-pool__empty--success">
             Все рассажены.
           </p>
-        ) : guests.length === 0 ? (
+        ) : guests.length === 0 && reserves.length === 0 ? (
           <p className="seat-pool__empty">Нет гостей для выбранного слота.</p>
         ) : (
-          guests.map((guest) => (
-            <GuestChip
-              draggable={manualSeatingEnabled}
-              guest={guest}
-              key={guest.key}
-              onDragEnd={onGuestDragEnd}
-              onDragStart={onGuestDragStart}
-            />
-          ))
+          <>
+            {guests.map((guest) => (
+              <GuestChip
+                draggable={manualSeatingEnabled}
+                guest={guest}
+                key={guest.key}
+                onDragEnd={onGuestDragEnd}
+                onDragStart={onGuestDragStart}
+              />
+            ))}
+            {reserves.map((reserve) => (
+              <ReserveChip
+                draggable={canAddReserve}
+                key={reserve.id}
+                onDelete={onDeleteReserve}
+                onDragEnd={onReserveDragEnd}
+                onDragStart={onReserveDragStart}
+                reserve={reserve}
+              />
+            ))}
+          </>
         )}
       </div>
     </aside>
@@ -161,6 +202,60 @@ function GuestChip({
           </small>
         ) : null}
       </span>
+    </div>
+  );
+}
+
+function ReserveChip({
+  draggable,
+  onDelete,
+  onDragEnd,
+  onDragStart,
+  reserve,
+}: {
+  draggable: boolean;
+  onDelete?: (reserveId: string) => void;
+  onDragEnd?: () => void;
+  onDragStart?: (reserveId: string) => void;
+  reserve: SeatingReservePoolItem;
+}) {
+  const handleDragStart = (event: ReactDragEvent<HTMLDivElement>) => {
+    if (!draggable || !onDragStart) {
+      return;
+    }
+    event.dataTransfer.setData("text/plain", `reserve:${reserve.id}`);
+    event.dataTransfer.effectAllowed = "move";
+    onDragStart(reserve.id);
+  };
+
+  return (
+    <div
+      className={["seat-reserve-chip", draggable ? "seat-reserve-chip--draggable" : ""]
+        .filter(Boolean)
+        .join(" ")}
+      draggable={draggable}
+      onDragEnd={draggable ? onDragEnd : undefined}
+      onDragStart={draggable ? handleDragStart : undefined}
+      title={`Резерв: ${reserve.label} · занимает физическое место, без регистрации`}
+    >
+      <span aria-hidden="true" className="seat-reserve-chip__initials">
+        {reserve.initials}
+      </span>
+      <span className="seat-reserve-chip__body">
+        <strong>{reserve.label}</strong>
+        <span>Резерв · без регистрации</span>
+      </span>
+      {onDelete ? (
+        <button
+          aria-label={`Удалить резерв «${reserve.label}»`}
+          className="seat-reserve-chip__delete"
+          onClick={() => onDelete(reserve.id)}
+          title="Удалить резерв"
+          type="button"
+        >
+          ×
+        </button>
+      ) : null}
     </div>
   );
 }

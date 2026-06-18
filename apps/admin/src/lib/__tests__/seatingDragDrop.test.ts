@@ -354,6 +354,165 @@ test("each occupied seat holds at most one assignment after a swap", () => {
   assertEqual(occupied.length, 2, "both guests still seated");
 });
 
+function pooledReserve(id: string, label = "Резерв"): SeatingAssignment {
+  return {
+    guestInitials: "Рез",
+    guestLabel: label,
+    id,
+    layoutId: "layout-1",
+    registrationId: null,
+    seatKey: null,
+    type: "reserve",
+  };
+}
+
+function seatedReserve(
+  id: string,
+  geometry: SeatingGeometryResult,
+  seatIndex: number,
+  label = "Резерв",
+): SeatingAssignment {
+  return {
+    ...pooledReserve(id, label),
+    seatKey: seatingSeatKey(geometry.seats[seatIndex], seatIndex),
+  };
+}
+
+test("reserve pool -> empty seat places the reserve and keeps its type", () => {
+  const geometry = defaultGeometry();
+  const targetIndex = regularSeatIndexes(geometry)[0];
+  const result = applySeatingDragDrop({
+    assignments: [pooledReserve("res-1", "Гость раввина")],
+    geometry,
+    guestPool: [],
+    source: { kind: "reserve", reserveId: "res-1" },
+    target: { kind: "seat", seatIndex: targetIndex },
+  });
+
+  assert(result.changed, "reserve placed");
+  assertEqual(result.assignments.length, 1, "still one assignment");
+  const placed = result.assignments[0];
+  assertEqual(placed.type, "reserve", "type preserved");
+  assertEqual(placed.registrationId, null, "reserve has no registration");
+  assertEqual(
+    placed.seatKey,
+    seatingSeatKey(geometry.seats[targetIndex], targetIndex),
+    "seat key set",
+  );
+  assertEqual(placed.locked, true, "manual placement is locked");
+});
+
+test("reserve seat -> empty seat moves the reserve", () => {
+  const geometry = defaultGeometry();
+  const [from, to] = regularSeatIndexes(geometry);
+  const result = applySeatingDragDrop({
+    assignments: [seatedReserve("res-1", geometry, from)],
+    geometry,
+    guestPool: [],
+    source: { kind: "seat", seatIndex: from },
+    target: { kind: "seat", seatIndex: to },
+  });
+
+  assert(result.changed, "reserve moved");
+  assertEqual(result.assignments[0].type, "reserve", "type preserved");
+  assertEqual(
+    result.assignments[0].seatKey,
+    seatingSeatKey(geometry.seats[to], to),
+    "reserve at target seat",
+  );
+});
+
+test("reserve seat -> pool returns the reserve to the pool", () => {
+  const geometry = defaultGeometry();
+  const seatIndex = regularSeatIndexes(geometry)[0];
+  const result = applySeatingDragDrop({
+    assignments: [seatedReserve("res-1", geometry, seatIndex)],
+    geometry,
+    guestPool: [],
+    source: { kind: "seat", seatIndex },
+    target: { kind: "pool" },
+  });
+
+  assert(result.changed, "reserve unassigned");
+  assertEqual(result.assignments[0].seatKey, null, "seat cleared");
+  assertEqual(result.assignments[0].type, "reserve", "still a reserve");
+});
+
+test("reserve / guest swap exchanges the two seats", () => {
+  const geometry = defaultGeometry();
+  const [a, b] = regularSeatIndexes(geometry);
+  const guest = makeGuest(1);
+  const result = applySeatingDragDrop({
+    assignments: [
+      seatedReserve("res-1", geometry, a),
+      placedAssignment(guest, geometry, b),
+    ],
+    geometry,
+    guestPool: [guest],
+    source: { kind: "seat", seatIndex: a },
+    target: { kind: "seat", seatIndex: b },
+  });
+
+  assert(result.changed, "swap changed state");
+  const reserve = result.assignments.find((assignment) => assignment.type === "reserve");
+  const seated = result.assignments.find((assignment) => assignment.type === "guest");
+  assertEqual(reserve?.seatKey, seatingSeatKey(geometry.seats[b], b), "reserve took guest seat");
+  assertEqual(seated?.seatKey, seatingSeatKey(geometry.seats[a], a), "guest took reserve seat");
+});
+
+test("reserve pool -> occupied seat returns the displaced guest to the pool", () => {
+  const geometry = defaultGeometry();
+  const seated = makeGuest(1);
+  const seatIndex = regularSeatIndexes(geometry)[0];
+  const result = applySeatingDragDrop({
+    assignments: [placedAssignment(seated, geometry, seatIndex), pooledReserve("res-1")],
+    geometry,
+    guestPool: [seated],
+    source: { kind: "reserve", reserveId: "res-1" },
+    target: { kind: "seat", seatIndex },
+  });
+
+  assert(result.changed, "reserve placed on occupied seat");
+  const seatKey = seatingSeatKey(geometry.seats[seatIndex], seatIndex);
+  const onSeat = result.assignments.filter((assignment) => assignment.seatKey === seatKey);
+  assertEqual(onSeat.length, 1, "exactly one occupant on the seat");
+  assertEqual(onSeat[0].type, "reserve", "reserve now seated");
+  const displaced = result.assignments.find(
+    (assignment) => assignment.registrationId === seated.registrationId,
+  );
+  assertEqual(displaced?.seatKey ?? "null", "null", "displaced guest returned to pool");
+});
+
+test("a reserve cannot be placed on two seats at once", () => {
+  const geometry = defaultGeometry();
+  const [first, second] = regularSeatIndexes(geometry);
+  // The reserve is already seated; there is no pooled entry to place again.
+  const result = applySeatingDragDrop({
+    assignments: [seatedReserve("res-1", geometry, first)],
+    geometry,
+    guestPool: [],
+    source: { kind: "reserve", reserveId: "res-1" },
+    target: { kind: "seat", seatIndex: second },
+  });
+
+  assert(!result.changed, "duplicate reserve placement rejected");
+  assertEqual(result.rejection, "missing_reserve", "rejection reason");
+});
+
+test("a reserve may be placed on a rabbi-reserved seat", () => {
+  const geometry = defaultGeometry();
+  const result = applySeatingDragDrop({
+    assignments: [pooledReserve("res-1", "Гость раввина")],
+    geometry,
+    guestPool: [],
+    source: { kind: "reserve", reserveId: "res-1" },
+    target: { kind: "seat", seatIndex: rabbiSeatIndex(geometry) },
+  });
+
+  assert(result.changed, "reserve allowed on rabbi seat");
+  assertEqual(result.assignments[0].type, "reserve", "reserve seated");
+});
+
 test("the source assignments array is not mutated", () => {
   const geometry = defaultGeometry();
   const guest = makeGuest(1);

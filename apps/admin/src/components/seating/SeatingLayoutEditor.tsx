@@ -47,11 +47,13 @@ import type {
   SeatingConnection,
   SeatingGuestPoolItem,
   SeatingLayoutRow,
+  SeatingReservePoolItem,
   SeatingTable,
   SeatingTemplate,
 } from "../../types/seating";
 import { SeatingAssignmentsPanel } from "./SeatingAssignmentsPanel";
 import { SeatingCanvas } from "./SeatingCanvas";
+import { SeatingReserveDialog } from "./SeatingReserveDialog";
 import {
   DEFAULT_SEATING_TEMPLATE_VALUE,
   SeatingTemplateSelector,
@@ -83,6 +85,7 @@ const GRID_TABLE_CAPACITY = 8;
 const HOLIDAY_TABLE_CAPACITY = 6.5;
 
 let clientTableSequence = 0;
+let clientReserveSequence = 0;
 
 export function SeatingLayoutEditor({
   onClose,
@@ -104,6 +107,7 @@ export function SeatingLayoutEditor({
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
   const [isGuestPoolLoading, setIsGuestPoolLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isReserveDialogOpen, setIsReserveDialogOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [isTemplateListLoading, setIsTemplateListLoading] = useState(false);
@@ -119,6 +123,11 @@ export function SeatingLayoutEditor({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        // While the reserve dialog is open, Escape closes only the dialog (it has
+        // its own handler); it must not also close the whole seating modal.
+        if (isReserveDialogOpen) {
+          return;
+        }
         onClose();
       }
     };
@@ -128,7 +137,7 @@ export function SeatingLayoutEditor({
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [onClose, slot]);
+  }, [isReserveDialogOpen, onClose, slot]);
 
   useEffect(() => {
     if (!slot) {
@@ -137,6 +146,7 @@ export function SeatingLayoutEditor({
       setConnections([]);
       setDragSource(null);
       setIsAutoAssigning(false);
+      setIsReserveDialogOpen(false);
       setIsSeatingDone(false);
       setSelectedTableId(null);
       setTables([]);
@@ -146,6 +156,7 @@ export function SeatingLayoutEditor({
     let cancelled = false;
 
     setFeedback({ message: "Загружаем схему...", tone: "muted" });
+    setIsReserveDialogOpen(false);
     setActiveTemplateValue(DEFAULT_SEATING_TEMPLATE_VALUE);
     setIsLoading(true);
     setIsApplyingTemplate(false);
@@ -412,6 +423,18 @@ export function SeatingLayoutEditor({
     geometry.physicalSeatCount === 0;
   const manualSeatingEnabled =
     isSeatingDone && hasValidGeometry && !isLoading && !isSaving && !isAutoAssigning;
+  // PR 16: unseated reserves live in the assignments array as pooled
+  // (`seatKey === null`) `type: "reserve"` entries; placed reserves are occupants.
+  const pooledReserves = useMemo(
+    () => (manualSeatingEnabled ? derivePooledReserves(currentAssignments) : []),
+    [currentAssignments, manualSeatingEnabled],
+  );
+  const placedReserveCount = useMemo(
+    () =>
+      assignmentRestoreState.occupants.filter((occupant) => occupant.type === "reserve")
+        .length,
+    [assignmentRestoreState.occupants],
+  );
 
   useEffect(() => {
     if (!slot || !hasGuestPoolMismatch) {
@@ -889,10 +912,18 @@ export function SeatingLayoutEditor({
       connections: nextConnections,
       tables: nextTables,
     });
-    // PR 15: a repeat auto seating keeps every currently placed guest (manual or
-    // earlier auto) and only fills the remaining empty seats with pool guests.
+    // PR 15: a repeat auto seating keeps every currently placed occupant (manual
+    // or earlier auto) and only fills the remaining empty seats with pool guests.
+    // PR 16: placed reserves are kept via lockedAssignments (their seats stay
+    // blocked); unseated reserves must also be carried forward so auto never drops
+    // them. Auto only seats registration guests, never reserves.
     const lockedAssignments = isSeatingDone
       ? currentAssignments.filter((assignment) => assignment.seatKey)
+      : [];
+    const pooledReserveAssignments = isSeatingDone
+      ? currentAssignments.filter(
+          (assignment) => !assignment.seatKey && assignment.type === "reserve",
+        )
       : [];
     const result = autoAssignSeating({
       capacityUnitId: slot.bucket.capacityUnitId,
@@ -919,6 +950,7 @@ export function SeatingLayoutEditor({
 
     const mergedAssignments = [
       ...lockedAssignments,
+      ...pooledReserveAssignments,
       ...autoAssignResultToAssignments(result),
     ];
     const payloadEntries = assignmentsToPayloadEntries(mergedAssignments);
@@ -1079,6 +1111,49 @@ export function SeatingLayoutEditor({
     handleManualDrop({ kind: "pool" });
   }, [handleManualDrop]);
 
+  const handleAddReserve = useCallback(() => {
+    if (!manualSeatingEnabled) {
+      return;
+    }
+    setIsReserveDialogOpen(true);
+  }, [manualSeatingEnabled]);
+
+  const handleCancelReserve = useCallback(() => {
+    setIsReserveDialogOpen(false);
+  }, []);
+
+  const handleCreateReserve = useCallback((label: string) => {
+    const trimmed = label.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const reserve = createReserveAssignment(trimmed);
+    setAssignments((current) => [...current, reserve]);
+    setIsReserveDialogOpen(false);
+    setFeedback({
+      message: `Резерв «${trimmed}» добавлен в «Не рассажены». Перетащите его на место и нажмите «Сохранить».`,
+      tone: "muted",
+    });
+  }, []);
+
+  const handleDeleteReserve = useCallback((reserveId: string) => {
+    setDragSource(null);
+    setAssignments((current) =>
+      current.filter(
+        (assignment) => !(assignment.type === "reserve" && assignment.id === reserveId),
+      ),
+    );
+    setFeedback({
+      message: "Резерв удалён. Нажмите «Сохранить», чтобы зафиксировать изменение.",
+      tone: "muted",
+    });
+  }, []);
+
+  const handleReserveDragStart = useCallback((reserveId: string) => {
+    setDragSource({ kind: "reserve", reserveId });
+  }, []);
+
   if (!slot || typeof document === "undefined") {
     return null;
   }
@@ -1203,9 +1278,15 @@ export function SeatingLayoutEditor({
                   </span>
                   <span className="seat-count__sub">
                     занято {assignmentRestoreState.occupiedCount} · свободно{" "}
-                    {Math.max(0, geometry.physicalSeatCount - assignmentRestoreState.occupiedCount)} ·
-                    раввинский резерв{" "}
-                    {geometry.seats.filter((seat) => seat.isRabbiTable).length} ·{" "}
+                    {Math.max(
+                      0,
+                      geometry.physicalSeatCount -
+                        assignmentRestoreState.occupiedCount -
+                        placedReserveCount,
+                    )}{" "}
+                    · раввинский резерв{" "}
+                    {geometry.seats.filter((seat) => seat.isRabbiTable).length}
+                    {placedReserveCount > 0 ? ` · резервов ${placedReserveCount}` : ""} ·{" "}
                     {capacityLabel} · {unassignedGuestPool.length} не рассажены ·
                     фигура зафиксирована
                   </span>
@@ -1235,14 +1316,20 @@ export function SeatingLayoutEditor({
 
           <aside className="seat-side-panel">
             <SeatingAssignmentsPanel
+              canAddReserve={manualSeatingEnabled}
               error={guestPoolError}
               guests={visibleGuestPool}
               isSeatingDone={isSeatingDone}
               isLoading={isGuestPoolLoading}
               manualSeatingEnabled={manualSeatingEnabled}
+              onAddReserve={handleAddReserve}
+              onDeleteReserve={handleDeleteReserve}
               onGuestDragEnd={handleManualDragEnd}
               onGuestDragStart={handleGuestDragStart}
               onPoolDrop={handlePoolDrop}
+              onReserveDragEnd={handleManualDragEnd}
+              onReserveDragStart={handleReserveDragStart}
+              reserves={pooledReserves}
               warning={guestPoolWarning}
             />
 
@@ -1267,6 +1354,13 @@ export function SeatingLayoutEditor({
           </aside>
         </div>
       </section>
+
+      {isReserveDialogOpen ? (
+        <SeatingReserveDialog
+          onClose={handleCancelReserve}
+          onCreate={handleCreateReserve}
+        />
+      ) : null}
     </div>,
     document.body,
   );
@@ -1609,6 +1703,45 @@ function createEditorTable({
 function createClientTableId(): string {
   clientTableSequence += 1;
   return `table_${Date.now().toString(36)}_${clientTableSequence.toString(36)}`;
+}
+
+// PR 16: a reserve is a pooled `type: "reserve"` assignment with no
+// registration_id. The stable client id is its identity for drag/drop and delete;
+// after a reopen the DB row id takes over the same role.
+function createReserveAssignment(label: string): SeatingAssignment {
+  clientReserveSequence += 1;
+  return {
+    guestInitials: reserveInitials(label),
+    guestLabel: label,
+    id: `reserve_${Date.now().toString(36)}_${clientReserveSequence.toString(36)}`,
+    layoutId: "",
+    registrationId: null,
+    seatKey: null,
+    type: "reserve",
+  };
+}
+
+function derivePooledReserves(
+  assignments: SeatingAssignment[],
+): SeatingReservePoolItem[] {
+  return assignments
+    .filter((assignment) => assignment.type === "reserve" && !assignment.seatKey)
+    .map((assignment) => ({
+      id: assignment.id,
+      initials: assignment.guestInitials?.trim() || "Рез",
+      label: assignment.guestLabel?.trim() || "Резерв",
+    }));
+}
+
+function reserveInitials(label: string): string {
+  const words = label.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    return "Рез";
+  }
+  if (words.length === 1) {
+    return words[0].slice(0, 2).toLocaleUpperCase("ru-RU");
+  }
+  return `${words[0][0]}${words[1][0]}`.toLocaleUpperCase("ru-RU");
 }
 
 function normalizeEditorTables(tables: SeatingTable[]): SeatingTable[] {

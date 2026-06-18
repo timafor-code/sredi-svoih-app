@@ -5986,6 +5986,201 @@ a {
   line-height: 1.25;
 }
 
+/* PR 16: operational reserves (pool chip + canvas occupant + create dialog). */
+.seat-pool__head-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.seat-pool__add {
+  flex: 0 0 auto;
+  border: 1px dashed rgba(242, 184, 75, 0.5);
+  border-radius: 7px;
+  padding: 4px 9px;
+  background: rgba(242, 184, 75, 0.08);
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.seat-pool__add:hover {
+  background: rgba(242, 184, 75, 0.16);
+}
+
+.seat-reserve-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  gap: 8px;
+  border: 1px dashed rgba(242, 184, 75, 0.45);
+  border-radius: 8px;
+  padding: 7px 9px 7px 7px;
+  background: rgba(242, 184, 75, 0.06);
+  color: var(--text);
+}
+
+.seat-reserve-chip--draggable {
+  cursor: grab;
+}
+
+.seat-reserve-chip--draggable:active {
+  cursor: grabbing;
+}
+
+.seat-reserve-chip__initials {
+  display: grid;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(242, 184, 75, 0.5);
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(120, 132, 168, 0.92), rgba(90, 100, 140, 0.92));
+  color: #fff;
+  font-size: 11px;
+  font-weight: 950;
+  place-items: center;
+}
+
+.seat-reserve-chip__body {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.seat-reserve-chip__body strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.seat-reserve-chip__body span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--gold);
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.seat-reserve-chip__delete {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--glass-border);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.seat-reserve-chip__delete:hover {
+  border-color: rgba(229, 44, 54, 0.6);
+  color: #ff9ca2;
+}
+
+/* A seated reserve reads as a neutral slate occupant, distinct from a teal
+   registration guest and the gold rabbi head. */
+.seat--reserve.seat--occupied {
+  border-color: rgba(150, 164, 196, 0.6);
+  background: linear-gradient(135deg, rgba(120, 132, 168, 0.92), rgba(90, 100, 140, 0.92));
+}
+
+.seat-occupant--reserve {
+  color: #f3f5fb;
+}
+
+.seat-reserve-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1080;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(5, 5, 10, 0.6);
+  backdrop-filter: blur(8px);
+}
+
+.seat-reserve-dialog {
+  display: grid;
+  gap: 14px;
+  width: min(420px, 100%);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 18px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.seat-reserve-dialog__head {
+  display: grid;
+  gap: 4px;
+}
+
+.seat-reserve-dialog__head span {
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.seat-reserve-dialog__head h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.seat-reserve-dialog__head p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.seat-reserve-dialog__field {
+  display: grid;
+  gap: 6px;
+}
+
+.seat-reserve-dialog__field span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.seat-reserve-dialog__field input {
+  width: 100%;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 9px 11px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.seat-reserve-dialog__field input:focus {
+  outline: none;
+  border-color: rgba(242, 184, 75, 0.6);
+}
+
+.seat-reserve-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .seat-layout-panel {
   display: grid;
   align-content: start;
