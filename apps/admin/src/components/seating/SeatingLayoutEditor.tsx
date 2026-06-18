@@ -23,6 +23,10 @@ import {
   deriveSeatingAssignmentRestoreState,
 } from "../../lib/seatingAutoAssign";
 import {
+  reconcileSeatingAssignments,
+  type SeatingReconcileCounts,
+} from "../../lib/seatingAssignmentReconcile";
+import {
   applySeatingDragDrop,
   type SeatingDragDropRejection,
   type SeatingDragSourceRef,
@@ -105,6 +109,10 @@ export function SeatingLayoutEditor({
   const [isApplyingTemplate, setIsApplyingTemplate] = useState(false);
   const [isDeletingTemplate, setIsDeletingTemplate] = useState(false);
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
+  // PR 17: true after "Редактировать столы" reopens geometry editing from a done
+  // seating; controls the reconcile/restore exit affordance and warning.
+  const [isEditingAfterSeating, setIsEditingAfterSeating] = useState(false);
+  const [reconcileNotice, setReconcileNotice] = useState<SeatingReconcileCounts | null>(null);
   const [isGuestPoolLoading, setIsGuestPoolLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isReserveDialogOpen, setIsReserveDialogOpen] = useState(false);
@@ -146,6 +154,8 @@ export function SeatingLayoutEditor({
       setConnections([]);
       setDragSource(null);
       setIsAutoAssigning(false);
+      setIsEditingAfterSeating(false);
+      setReconcileNotice(null);
       setIsReserveDialogOpen(false);
       setIsSeatingDone(false);
       setSelectedTableId(null);
@@ -157,6 +167,8 @@ export function SeatingLayoutEditor({
 
     setFeedback({ message: "Загружаем схему...", tone: "muted" });
     setIsReserveDialogOpen(false);
+    setIsEditingAfterSeating(false);
+    setReconcileNotice(null);
     setActiveTemplateValue(DEFAULT_SEATING_TEMPLATE_VALUE);
     setIsLoading(true);
     setIsApplyingTemplate(false);
@@ -901,133 +913,171 @@ export function SeatingLayoutEditor({
     tables,
   ]);
 
+  // PR 17: shared seating commit. Recomputes the physical seats for the current
+  // (possibly just-edited) geometry, reconciles the preserved assignments against
+  // them, optionally auto-fills the remaining free seats, then saves the layout +
+  // reconciled assignments through the existing RPC. `autoFill === false` is the
+  // "вернуться к рассадке" exit path: it only restores valid placements and leaves
+  // freed occupants in "Не рассажены"; `autoFill === true` additionally re-seats the
+  // still-unassigned/unlocked registration guests ("Сделать рассадку").
+  const performSeating = useCallback(
+    (autoFill: boolean) => {
+      if (!slot || !hasValidGeometry) {
+        return;
+      }
+
+      const nextTables = normalizeEditorTables(tables);
+      const nextConnections = filterConnectionsForTables(connections, nextTables);
+      const autoGeometry = computeTableSeats({
+        connections: nextConnections,
+        tables: nextTables,
+      });
+
+      // Reconcile the current assignments with the (possibly changed) geometry:
+      // keep valid placements (manual/locked + reserves win conflicts), return
+      // missing/blocked/duplicate occupants to the pool.
+      const reconcile = reconcileSeatingAssignments({
+        assignments: currentAssignments,
+        geometry: autoGeometry,
+        guestPool,
+      });
+      // Kept placements (guests + reserves) block their seats for any re-seating and
+      // exclude their guests from the auto queue. Unseated reserves are carried so
+      // auto never drops them; ordinary guests freed by reconcile stay in the pool
+      // and are picked up by auto from `guestPool`.
+      const keptAssignments = reconcile.keptAssignments;
+      const pooledReserves = reconcile.assignments.filter(
+        (assignment) => !assignment.seatKey && assignment.type === "reserve",
+      );
+
+      let mergedAssignments: SeatingAssignment[];
+      let overflowCount = 0;
+
+      if (autoFill) {
+        const result = autoAssignSeating({
+          capacityUnitId: slot.bucket.capacityUnitId,
+          connections: nextConnections,
+          geometry: autoGeometry,
+          guestPool,
+          lockedAssignments: keptAssignments,
+          occurrenceId: slot.occurrence?.id ?? null,
+          tables: nextTables,
+        });
+
+        if (result.warning?.code === "no_tables") {
+          setFeedback({
+            message: "Сначала добавьте столы в схему рассадки.",
+            tone: "error",
+          });
+          return;
+        }
+
+        if (
+          result.warning?.code === "empty_guest_pool" &&
+          keptAssignments.length === 0 &&
+          pooledReserves.length === 0
+        ) {
+          setFeedback({ message: "Нет гостей для авторассадки.", tone: "muted" });
+          return;
+        }
+
+        mergedAssignments = [
+          ...keptAssignments,
+          ...pooledReserves,
+          ...autoAssignResultToAssignments(result),
+        ];
+        overflowCount = result.remainingUnassignedGuests.length;
+      } else {
+        // Restore-only exit: kept placements + returned/pooled occupants as-is.
+        mergedAssignments = reconcile.assignments;
+      }
+
+      const payloadEntries = assignmentsToPayloadEntries(mergedAssignments);
+      const nextSelectedTableId = null;
+
+      setIsAutoAssigning(true);
+      setFeedback({ message: "Делаем рассадку...", tone: "muted" });
+
+      void saveLayoutGeometry({
+        nextConnections,
+        nextSeatingDone: false,
+        nextSelectedTableId: pickSelectedTableId(nextTables),
+        nextTables,
+        templateValue: activeTemplateValue,
+      })
+        .then(() =>
+          saveSeatingAssignments({
+            capacityUnitId: slot.bucket.capacityUnitId,
+            chairs: payloadEntries.chairs,
+            eventId: slot.event.eventId,
+            occurrenceId: slot.occurrence?.id ?? null,
+            pool: payloadEntries.pool,
+            reserveIds: [],
+          }),
+        )
+        .then((saveResult) => {
+          assertAssignmentSaveResultMatchesPayload(saveResult, payloadEntries);
+        })
+        .then(() =>
+          saveLayoutGeometry({
+            nextConnections,
+            nextSeatingDone: true,
+            nextSelectedTableId,
+            nextTables,
+            templateValue: activeTemplateValue,
+          }),
+        )
+        .then(() => {
+          commitGeometry({
+            nextConnections,
+            nextSelectedTableId,
+            nextTables,
+            templateValue: activeTemplateValue,
+          });
+          setDragSource(null);
+          setAssignments(mergedAssignments);
+          setIsSeatingDone(true);
+          setIsEditingAfterSeating(false);
+          setReconcileNotice(reconcile.counts.returnedCount > 0 ? reconcile.counts : null);
+          setFeedback(buildSeatingFeedback(reconcile.counts, overflowCount));
+        })
+        .catch((error) => {
+          console.error("Auto seating save failed", error);
+          setFeedback({
+            message: formatAutoAssignSaveError(error),
+            tone: "error",
+          });
+        })
+        .finally(() => {
+          setIsAutoAssigning(false);
+        });
+    },
+    [
+      activeTemplateValue,
+      commitGeometry,
+      connections,
+      currentAssignments,
+      guestPool,
+      hasValidGeometry,
+      saveLayoutGeometry,
+      slot,
+      tables,
+    ],
+  );
+
   const handleAutoAssign = useCallback(() => {
     if (!slot || autoAssignDisabled) {
       return;
     }
+    performSeating(true);
+  }, [autoAssignDisabled, performSeating, slot]);
 
-    const nextTables = normalizeEditorTables(tables);
-    const nextConnections = filterConnectionsForTables(connections, nextTables);
-    const autoGeometry = computeTableSeats({
-      connections: nextConnections,
-      tables: nextTables,
-    });
-    // PR 15: a repeat auto seating keeps every currently placed occupant (manual
-    // or earlier auto) and only fills the remaining empty seats with pool guests.
-    // PR 16: placed reserves are kept via lockedAssignments (their seats stay
-    // blocked); unseated reserves must also be carried forward so auto never drops
-    // them. Auto only seats registration guests, never reserves.
-    const lockedAssignments = isSeatingDone
-      ? currentAssignments.filter((assignment) => assignment.seatKey)
-      : [];
-    const pooledReserveAssignments = isSeatingDone
-      ? currentAssignments.filter(
-          (assignment) => !assignment.seatKey && assignment.type === "reserve",
-        )
-      : [];
-    const result = autoAssignSeating({
-      capacityUnitId: slot.bucket.capacityUnitId,
-      connections: nextConnections,
-      geometry: autoGeometry,
-      guestPool,
-      lockedAssignments,
-      occurrenceId: slot.occurrence?.id ?? null,
-      tables: nextTables,
-    });
-
-    if (result.warning?.code === "empty_guest_pool" && lockedAssignments.length === 0) {
-      setFeedback({ message: "Нет гостей для авторассадки.", tone: "muted" });
+  const handleReturnToSeating = useCallback(() => {
+    if (!slot || !isEditingAfterSeating || isAutoAssigning || isSaving || isLoading) {
       return;
     }
-
-    if (result.warning?.code === "no_tables") {
-      setFeedback({
-        message: "Сначала добавьте столы в схему рассадки.",
-        tone: "error",
-      });
-      return;
-    }
-
-    const mergedAssignments = [
-      ...lockedAssignments,
-      ...pooledReserveAssignments,
-      ...autoAssignResultToAssignments(result),
-    ];
-    const payloadEntries = assignmentsToPayloadEntries(mergedAssignments);
-    const nextSelectedTableId = null;
-
-    setIsAutoAssigning(true);
-    setFeedback({ message: "Делаем рассадку...", tone: "muted" });
-
-    void saveLayoutGeometry({
-      nextConnections,
-      nextSeatingDone: false,
-      nextSelectedTableId: pickSelectedTableId(nextTables),
-      nextTables,
-      templateValue: activeTemplateValue,
-    })
-      .then(() =>
-        saveSeatingAssignments({
-          capacityUnitId: slot.bucket.capacityUnitId,
-          chairs: payloadEntries.chairs,
-          eventId: slot.event.eventId,
-          occurrenceId: slot.occurrence?.id ?? null,
-          pool: payloadEntries.pool,
-          reserveIds: [],
-        }),
-      )
-      .then((saveResult) => {
-        assertAssignmentSaveResultMatchesPayload(saveResult, payloadEntries);
-      })
-      .then(() =>
-        saveLayoutGeometry({
-          nextConnections,
-          nextSeatingDone: true,
-          nextSelectedTableId,
-          nextTables,
-          templateValue: activeTemplateValue,
-        }),
-      )
-      .then(() => {
-        commitGeometry({
-          nextConnections,
-          nextSelectedTableId,
-          nextTables,
-          templateValue: activeTemplateValue,
-        });
-        setDragSource(null);
-        setAssignments(mergedAssignments);
-        setIsSeatingDone(true);
-        setFeedback({
-          message:
-            result.remainingUnassignedGuests.length > 0
-              ? `Рассадка сохранена. Не поместились: ${result.remainingUnassignedGuests.length}.`
-              : "Рассадка сохранена.",
-          tone: result.remainingUnassignedGuests.length > 0 ? "muted" : "success",
-        });
-      })
-      .catch((error) => {
-        console.error("Auto seating save failed", error);
-        setFeedback({
-          message: formatAutoAssignSaveError(error),
-          tone: "error",
-        });
-      })
-      .finally(() => {
-        setIsAutoAssigning(false);
-      });
-  }, [
-    activeTemplateValue,
-    autoAssignDisabled,
-    commitGeometry,
-    connections,
-    currentAssignments,
-    guestPool,
-    isSeatingDone,
-    saveLayoutGeometry,
-    slot,
-    tables,
-  ]);
+    performSeating(false);
+  }, [isAutoAssigning, isEditingAfterSeating, isLoading, isSaving, performSeating, slot]);
 
   const handleEditTablesAfterSeating = useCallback(() => {
     if (!isSeatingDone) {
@@ -1035,7 +1085,7 @@ export function SeatingLayoutEditor({
     }
 
     const confirmed = window.confirm(
-      "Рассадка уже сделана. В режиме редактирования гости будут скрыты, текущие assignments сохранятся как current state. Полный reconcile после изменения геометрии будет в PR 17. Продолжить?",
+      "Рассадка уже сделана. В режиме редактирования гости скрыты, а текущая рассадка сохраняется. После изменения схемы нажмите «Сделать рассадку» или «Вернуться к рассадке» — посадки восстановятся насколько возможно, освободившиеся гости вернутся в список. Продолжить?",
     );
 
     if (!confirmed) {
@@ -1044,10 +1094,12 @@ export function SeatingLayoutEditor({
 
     setDragSource(null);
     setIsSeatingDone(false);
+    setIsEditingAfterSeating(true);
+    setReconcileNotice(null);
     setSelectedTableId(pickSelectedTableId(tables));
     setFeedback({
       message:
-        "Режим редактирования включён. Гости скрыты; сохранённые assignments не пересчитываются до PR 17.",
+        "Режим редактирования включён. Гости скрыты; assignments сохранятся и будут восстановлены при возврате к рассадке.",
       tone: "muted",
     });
   }, [isSeatingDone, tables]);
@@ -1092,6 +1144,7 @@ export function SeatingLayoutEditor({
       }
 
       setAssignments(result.assignments);
+      setReconcileNotice(null);
       setFeedback({
         message: "Изменения рассадки не сохранены. Нажмите «Сохранить».",
         tone: "muted",
@@ -1217,6 +1270,17 @@ export function SeatingLayoutEditor({
                 : "Сделать рассадку"}
           </Button>
 
+          {isEditingAfterSeating && !isSeatingDone ? (
+            <Button
+              disabled={isLoading || isSaving || isAutoAssigning || !hasValidGeometry}
+              onClick={handleReturnToSeating}
+              size="sm"
+              variant="secondary"
+            >
+              Вернуться к рассадке
+            </Button>
+          ) : null}
+
           {feedback?.message ? (
             <span
               className={`seat-save-status seat-save-status--${feedback.tone}`}
@@ -1312,6 +1376,13 @@ export function SeatingLayoutEditor({
                 variant="layout"
               />
             )}
+
+            {isSeatingDone && reconcileNotice ? (
+              <div className="seat-reconcile-status" role="status">
+                После изменения схемы сохранено {reconcileNotice.keptCount} посадок,{" "}
+                {reconcileNotice.returnedCount} гостей/резервов вернулись в список.
+              </div>
+            ) : null}
           </div>
 
           <aside className="seat-side-panel">
@@ -1438,6 +1509,31 @@ function manualDropRejectionFeedback(
     default:
       return null;
   }
+}
+
+// PR 17: the status shown after a reconcile/seating commit. When the geometry
+// change freed occupants, surface how many placements survived and how many guests
+// /reserves went back to "Не рассажены"; otherwise a calm success/overflow note.
+function buildSeatingFeedback(
+  counts: SeatingReconcileCounts,
+  overflowCount: number,
+): EditorFeedback {
+  if (counts.returnedCount > 0) {
+    const overflow = overflowCount > 0 ? ` Не поместились: ${overflowCount}.` : "";
+    return {
+      message: `После изменения схемы сохранено ${counts.keptCount} посадок, ${counts.returnedCount} гостей/резервов вернулись в список.${overflow}`,
+      tone: "muted",
+    };
+  }
+
+  if (overflowCount > 0) {
+    return {
+      message: `Рассадка сохранена. Не поместились: ${overflowCount}.`,
+      tone: "muted",
+    };
+  }
+
+  return { message: "Рассадка сохранена.", tone: "success" };
 }
 
 function formatAutoAssignSaveError(error: unknown): string {

@@ -5619,6 +5619,18 @@ a {
   background: rgba(84, 214, 196, 0.04);
 }
 
+/* PR 17: reconcile status shown after a table geometry change frees occupants. */
+.seat-reconcile-status {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(240, 200, 120, 0.35);
+  border-radius: 10px;
+  background: rgba(240, 200, 120, 0.08);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .seat-controls-label {
   margin-right: 2px;
   color: var(--text-muted);

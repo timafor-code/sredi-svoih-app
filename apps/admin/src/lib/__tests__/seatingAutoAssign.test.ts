@@ -5,8 +5,10 @@ import {
   deriveSeatingAssignmentRestoreState,
   seatIndexFromSeatKey,
 } from "../seatingAutoAssign";
+import { reconcileSeatingAssignments } from "../seatingAssignmentReconcile";
 import { TABLE_H, TABLE_W, computeTableSeats } from "../seatingGeometry";
 import type {
+  SeatingAssignment,
   SeatingGuestPoolItem,
   SeatingTable,
 } from "../../types/seating";
@@ -527,6 +529,89 @@ test("a placed reserve does not count as an occupied registration seat", () => {
     state.occupants.filter((occupant) => occupant.type === "reserve").length,
     1,
     "reserve rendered as an occupant",
+  );
+});
+
+test("repeat auto after geometry reconcile preserves locked/manual/reserve placements", () => {
+  const tables = defaultTables();
+  const geometry = computeTableSeats({ tables });
+  const guests = Array.from({ length: 4 }, (_, i) => makeGuest(i + 1));
+  const regularIndexes = geometry.seats
+    .map((seat, index) => ({ seat, index }))
+    .filter(({ seat }) => !seat.isRabbiTable)
+    .map(({ index }) => index);
+  const manualIndex = regularIndexes[0];
+  const reserveIndex = regularIndexes[1];
+
+  const preserved: SeatingAssignment[] = [
+    {
+      guestInitials: guests[0].initials,
+      guestLabel: guests[0].displayName,
+      id: "manual-1",
+      layoutId: "layout-1",
+      locked: true,
+      placementSource: "manual",
+      registrationId: guests[0].registrationId,
+      seatKey: `${geometry.seats[manualIndex].tableId}:${seatStable(geometry, manualIndex)}`,
+      type: "guest",
+    },
+    {
+      guestInitials: "Рез",
+      guestLabel: "Гость раввина",
+      id: "reserve-1",
+      layoutId: "layout-1",
+      locked: true,
+      placementSource: "manual",
+      registrationId: null,
+      seatKey: `${geometry.seats[reserveIndex].tableId}:${seatStable(geometry, reserveIndex)}`,
+      type: "reserve",
+    },
+  ];
+
+  // The "regular" table is moved (same client_table_id) — seat keys still resolve.
+  const movedGeometry = computeTableSeats({
+    tables: [
+      makeTable({ id: "rabbi", cx: 100, cy: 100, isRabbiTable: true }),
+      makeTable({ id: "regular", cx: 380, cy: 360, isRabbiTable: false }),
+    ],
+  });
+
+  // 1) Reconcile preserves both placements; 2) auto only fills the rest.
+  const reconcile = reconcileSeatingAssignments({
+    assignments: preserved,
+    geometry: movedGeometry,
+    guestPool: guests,
+  });
+  assertEqual(reconcile.counts.keptCount, 2, "manual guest + reserve preserved");
+  assertEqual(reconcile.counts.returnedCount, 0, "nothing returned on a pure move");
+
+  const result = autoAssignSeating({
+    geometry: movedGeometry,
+    guestPool: guests,
+    lockedAssignments: reconcile.keptAssignments,
+    tables: [
+      makeTable({ id: "rabbi", cx: 100, cy: 100, isRabbiTable: true }),
+      makeTable({ id: "regular", cx: 380, cy: 360, isRabbiTable: false }),
+    ],
+  });
+
+  // Locked seats are not reused, and neither the manual guest nor the reserve is
+  // re-seated by auto (auto seats only the remaining registration guests).
+  assert(
+    result.assignedSeats.every(
+      (seat) => seat.seatIndex !== manualIndex && seat.seatIndex !== reserveIndex,
+    ),
+    "locked manual/reserve seats are left untouched",
+  );
+  assert(
+    result.assignedSeats.every(
+      (seat) => seat.guest.registrationId !== guests[0].registrationId,
+    ),
+    "manually locked guest is excluded from the auto queue",
+  );
+  assert(
+    result.assignedSeats.every((seat) => seat.guest.registrationId !== null),
+    "auto never seats reserves",
   );
 });
 
