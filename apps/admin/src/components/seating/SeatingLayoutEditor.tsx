@@ -24,15 +24,18 @@ import {
   listSeatingTemplates,
   saveSeatingLayout,
 } from "../../services/adminSeatingService";
+import { getAdminRegistrationCapacityGuestPool } from "../../services/adminRegistrationCapacityService";
 import type { AdminEventOccurrence } from "../../types/eventOccurrences";
 import type { AdminRegistrationCapacityBucket } from "../../types/registrationCapacity";
 import type { AdminRegistrationEventSummary } from "../../types/registrations";
 import type {
   SeatingConnection,
+  SeatingGuestPoolItem,
   SeatingLayoutRow,
   SeatingTable,
   SeatingTemplate,
 } from "../../types/seating";
+import { SeatingAssignmentsPanel } from "./SeatingAssignmentsPanel";
 import { SeatingCanvas } from "./SeatingCanvas";
 import {
   DEFAULT_SEATING_TEMPLATE_VALUE,
@@ -75,10 +78,13 @@ export function SeatingLayoutEditor({
 }) {
   const [connections, setConnections] = useState<SeatingConnection[]>([]);
   const [feedback, setFeedback] = useState<EditorFeedback | null>(null);
+  const [guestPool, setGuestPool] = useState<SeatingGuestPoolItem[]>([]);
+  const [guestPoolError, setGuestPoolError] = useState<string | null>(null);
   const [activeTemplateValue, setActiveTemplateValue] =
     useState<SeatingTemplateValue>(DEFAULT_SEATING_TEMPLATE_VALUE);
   const [isApplyingTemplate, setIsApplyingTemplate] = useState(false);
   const [isDeletingTemplate, setIsDeletingTemplate] = useState(false);
+  const [isGuestPoolLoading, setIsGuestPoolLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
@@ -181,6 +187,51 @@ export function SeatingLayoutEditor({
       .finally(() => {
         if (!cancelled) {
           setIsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [slot]);
+
+  useEffect(() => {
+    if (!slot) {
+      setGuestPool([]);
+      setGuestPoolError(null);
+      setIsGuestPoolLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    setGuestPool([]);
+    setGuestPoolError(null);
+    setIsGuestPoolLoading(true);
+
+    getAdminRegistrationCapacityGuestPool({
+      capacityUnitId: slot.bucket.capacityUnitId,
+      eventId: slot.event.eventId,
+      occurrenceId: slot.occurrence?.id ?? null,
+    })
+      .then((nextGuestPool) => {
+        if (!cancelled) {
+          setGuestPool(nextGuestPool);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setGuestPool([]);
+          setGuestPoolError(
+            error instanceof Error
+              ? error.message
+              : "Не удалось загрузить гостей для рассадки.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsGuestPoolLoading(false);
         }
       });
 
@@ -775,23 +826,31 @@ export function SeatingLayoutEditor({
             />
           </div>
 
-          <aside className="seat-layout-panel">
-            <h4>Фигура столов</h4>
-            <p className="seat-layout-note">
-              Пустые серые кружки показывают потенциальные физические места.
-              Раввинский стол подсвечен золотым; головное место отмечено звездой.
-            </p>
-            <div className="seat-legend">
-              <span>
-                <i className="seat-legend__empty" /> Потенциальное место
-              </span>
-              <span>
-                <i className="seat-legend__rabbi" /> Раввинский резерв
-              </span>
-              <span>
-                <i className="seat-legend__head" /> Головное место
-              </span>
-            </div>
+          <aside className="seat-side-panel">
+            <SeatingAssignmentsPanel
+              error={guestPoolError}
+              guests={guestPool}
+              isLoading={isGuestPoolLoading}
+            />
+
+            <section className="seat-layout-panel">
+              <h4>Фигура столов</h4>
+              <p className="seat-layout-note">
+                Пустые серые кружки показывают потенциальные физические места.
+                Раввинский стол подсвечен золотым; головное место отмечено звездой.
+              </p>
+              <div className="seat-legend">
+                <span>
+                  <i className="seat-legend__empty" /> Потенциальное место
+                </span>
+                <span>
+                  <i className="seat-legend__rabbi" /> Раввинский резерв
+                </span>
+                <span>
+                  <i className="seat-legend__head" /> Головное место
+                </span>
+              </div>
+            </section>
           </aside>
         </div>
       </section>

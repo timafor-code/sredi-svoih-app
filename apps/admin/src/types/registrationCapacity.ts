@@ -26,6 +26,22 @@ export type AdminRegistrationCapacityReservationRow = {
   created_at: string;
 };
 
+export type AdminRegistrationCapacityReservation = {
+  id: string;
+  registrationId: string;
+  eventId: string;
+  occurrenceId: string | null;
+  capacityUnitId: string;
+  optionId: string | null;
+  capacityUnitKeySnapshot: string;
+  capacityUnitTitleSnapshot: string;
+  optionTitleSnapshot: string | null;
+  quantity: number;
+  seatsPerQuantity: number;
+  seatsCount: number;
+  createdAt: string;
+};
+
 export type AdminRegistrationCapacityStatusCounts = {
   confirmed: number;
   pending: number;
@@ -140,3 +156,11 @@ export type ListAdminRegistrationCapacityBucketsParams = {
   eventId: string;
   occurrenceId: string | null;
 };
+
+export type ListAdminRegistrationCapacityReservationsParams =
+  ListAdminRegistrationCapacityBucketsParams & {
+    capacityUnitId: string;
+  };
+
+export type GetAdminRegistrationCapacityGuestPoolParams =
+  ListAdminRegistrationCapacityReservationsParams;

@@ -18,13 +18,17 @@ block B PRs and may be extended in later ones.
   registration capacity buckets. It adds the modal, toolbar, canvas/stage and
   table-geometry controls only. No guests, auto-seating, manual guest drag/drop,
   reserves, real template library, capacity summary or capacity sync.
-- **PR 12 (this revision):** the real seating template library in the editor:
+- **PR 12:** the real seating template library in the editor:
   client-side built-in templates, user templates from the existing seating
   service/RPC, apply, save current layout as template, and soft delete user
   templates. Still no guests, assignments UI, auto-seating, reserves, capacity
   summary or capacity sync.
-- **Later PRs:** assignment UI, auto-seating, locked/manual assignments,
-  reserves, capacity summary, capacity sync.
+- **PR 13 (this revision):** seating assignments foundation for the selected
+  registration capacity bucket. The editor now loads the real read-only guest
+  pool and renders the "Не рассажены" panel, but it still does not place guests,
+  save assignments, auto-seat, drag/drop, create reserves or change capacity.
+- **Later PRs:** auto-seating, locked/manual assignments, reserves, capacity
+  summary, capacity sync.
 
 The browser admin client talks to all of this through the normal authenticated
 Supabase session. No service role or Admin API is used anywhere in the seating
@@ -273,11 +277,12 @@ routing keys (`eventId` / `occurrenceId` / `capacityUnitId`) live **inside** the
 save payload by design (PR 8); the service types them explicitly rather than
 hiding them.
 
-## Layout editor UI (PR 11–12)
+## Layout editor UI (PR 11–13)
 
 PR 11 added the first production React UI for the seating layout editor in
 web-admin registrations. PR 12 replaces the placeholder template controls with
-the real template library. The source of truth for visual behaviour is
+the real template library. PR 13 adds the read-only guest pool foundation. The
+source of truth for visual behaviour is
 `docs/prototype/registrations-improved-seating-v15.html`, ported into React
 components rather than mounted as prototype HTML.
 
@@ -308,13 +313,50 @@ Implemented scope:
     and saving through `saveSeatingLayout()`.
 - Save through `saveSeatingLayout`, using the existing v15-compatible payload
   and the authenticated admin Supabase client.
+- `SeatingAssignmentsPanel` in the editor side panel.
+- Real "Не рассажены" guest pool for the selected
+  `(event_id, occurrence_id, capacity_unit_id)` bucket.
+- Guest chips with display name, initials, source label (participant/guest),
+  registration status/payment labels already available in the registration UI,
+  and selected option labels when available.
 
-Explicitly not included in PR 11:
+### Guest pool model (PR 13)
 
-- real guests or the "Не рассажены" pool;
+The guest pool is a read-only view over existing registration/capacity data. It
+is not `event_seating_assignments` and opening the modal does not write seating
+assignment rows.
+
+The pool is built from:
+
+- active registrations returned by the existing `admin_list_event_registrations`
+  RPC, paged by status;
+- durable `event_registration_capacity_reservations` rows for the selected
+  capacity unit, read through the authenticated Supabase client and RLS;
+- a read-only fallback from `event_participation_option_capacity_units` mappings
+  for older registrations that have seat-taking selected options but no durable
+  reservation row yet.
+
+Active pool statuses for PR 13 are `confirmed`, `pending`, and `attended`.
+`cancelled`, `rejected`, `waitlisted`, and `no_show` are not rendered as active
+guests. Pending is included because the current registration capacity analytics
+already treats pending registrations as seat obligations.
+
+Donation options and non-capacity options do not create guest pool items. A pool
+item is one seat obligation in the selected bucket: the main participant first,
+then registration guests by index/name. If a registration has more seat
+obligations than named guests, the remaining real obligations are shown as
+numbered unnamed guests tied to the registration.
+
+Initials are derived from the first two non-empty name parts, using locale-aware
+uppercase for Russian/Latin names and `?` as the safe fallback for empty names.
+
+Explicitly not included in PR 13:
+
+- placing guests on seats;
 - auto-seating;
 - manual guest drag/drop;
 - reserves;
+- saving real seating assignments;
 - capacity summary, capacity sync or any change to
   `event_capacity_units.capacity`.
 
@@ -401,3 +443,28 @@ Run by the project owner; not executed by Codex.
 20. Confirm `event_capacity_units.capacity` did not change.
 21. Confirm registrations table/detail modal/export/refresh still work.
 22. Confirm browser smoke was not run by Codex.
+
+## Manual smoke checklist (PR 13)
+
+Not run by Codex. Manual smoke is performed by the project owner.
+
+1. Open web-admin registrations page.
+2. Select an event/date with capacity buckets.
+3. Click "Схема рассадки" for a bucket with registrations.
+4. Confirm seating modal opens.
+5. Confirm panel "Не рассажены" appears.
+6. Confirm real participant/guest names from the selected bucket appear in the
+   panel.
+7. Confirm initials render correctly for Russian and Latin names.
+8. Confirm empty state appears for a bucket without guests.
+9. Confirm donation-only options do not create seat guests.
+10. Confirm cancelled/rejected/no_show registrations are not shown as active
+    guests.
+11. Confirm no guests are placed on seats automatically.
+12. Confirm no drag/drop behavior is available yet.
+13. Confirm no seating assignment rows are created by just opening the modal.
+14. Confirm template selector from PR 12 still works.
+15. Confirm table editing from PR 11 still works.
+16. Confirm `event_capacity_units.capacity` did not change.
+17. Confirm registrations table/detail modal/export/refresh still work.
+18. Confirm browser smoke was not run by Codex.
