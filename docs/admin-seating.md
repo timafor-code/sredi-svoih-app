@@ -27,13 +27,20 @@ block B PRs and may be extended in later ones.
   registration capacity bucket. The editor now loads the real read-only guest
   pool and renders the "Не рассажены" panel, but it still does not place guests,
   save assignments, auto-seat, drag/drop, create reserves or change capacity.
-- **PR 14 (this revision):** deterministic auto seating for the selected
+- **PR 14:** deterministic auto seating for the selected
   registration capacity bucket. The editor adds "Сделать рассадку", distributes
   active guests across the physical geometry, saves generated assignments through
   the existing seating RPC, renders occupied seats with initials and leaves
   overflow guests in "Не рассажены".
-- **Later PRs:** manual drag/drop, user reserves, geometry-change reconcile,
-  capacity summary, capacity sync.
+- **PR 15 (this revision):** manual drag/drop seating management on top of auto
+  seating. The editor lets an admin drag a guest from "Не рассажены" onto a free
+  seat, move a seated guest to another free seat, swap two seated guests, and drag
+  a seated guest back to "Не рассажены". Manual placements are marked manual/locked,
+  saved through the existing assignment RPC, restored on reopen, and preserved by a
+  repeat auto seating. No reserves, no geometry-change reconcile, no capacity
+  summary/sync, and no change to `event_capacity_units.capacity`.
+- **Later PRs:** user reserves, geometry-change reconcile, capacity summary,
+  capacity sync.
 
 The browser admin client talks to all of this through the normal authenticated
 Supabase session. No service role or Admin API is used anywhere in the seating
@@ -470,6 +477,92 @@ sets `template_id` only for real user-template UUIDs; built-in choices stay
 `null`. Every apply/save path keeps exactly one rabbi table before calling the
 write RPC.
 
+### Manual drag/drop (PR 15)
+
+PR 15 adds manual seating on top of the PR 14 auto flow. It ports the v15
+prototype's `wireSeatDnD` / `seatDrop` / `persistSeat` / `restoreSeat` behaviour
+into pure TypeScript and production React, without mounting prototype HTML or
+touching the DOM globally. The pure logic lives in
+`apps/admin/src/lib/seatingDragDrop.ts` (`applySeatingDragDrop`) and is covered by
+`apps/admin/src/lib/__tests__/seatingDragDrop.test.ts`.
+
+Manual drag/drop is available only in the occupied ("рассадка сделана") view, in
+the **current, unchanged geometry**. The drag handlers are wired on the canvas
+seats (`SeatingCanvas`) and on the pool chips / pool drop zone
+(`SeatingAssignmentsPanel`); the orchestration lives in `SeatingLayoutEditor`.
+
+Supported moves (mirroring the prototype `seatDrop`):
+
+- **pool → free seat** — place an unassigned guest on an empty physical seat.
+- **seat → free seat** — move a seated guest to another empty seat.
+- **seat → occupied seat** — swap the two seated guests.
+- **pool → occupied seat** — seat the dragged guest and return the displaced one
+  to "Не рассажены".
+- **seat → "Не рассажены"** — unassign a seated guest back to the pool.
+
+Seat validity (rejected as no-ops, surfaced as a short message where useful):
+
+- a drop on the **same** seat is a no-op;
+- an ordinary guest cannot be dropped on a **rabbi-reserved** seat; only an
+  explicit rabbi guest (an existing rabbi marker in the pool data) may sit there,
+  matching auto seating — the editor never invents a rabbi;
+- an out-of-range / non-existent seat is rejected;
+- a guest already seated cannot be placed a second time (no duplicate
+  assignment); each occupied seat holds at most one assignment.
+
+#### One source of truth
+
+The editor keeps a single `assignments` array. The canvas occupants, the
+"Не рассажены" panel and the status line all derive from it through
+`deriveSeatingAssignmentRestoreState`, so the panel and canvas can never drift
+apart. A manual move computes the next array with `applySeatingDragDrop` and feeds
+it straight back into the same state; unassigned guests are always
+`guestPool − placed assignments`, and the occupied count is the placed
+assignments.
+
+#### Manual / locked metadata
+
+A manual placement is marked `placementSource: "manual"` and `locked: true` on the
+assignment (and carried on the derived occupant). This is **UI-safe** metadata:
+`admin_save_seating_assignments` only reads the known v15 entry keys, so the
+markers are sent for client round-tripping and are **not** persisted as DB
+columns — no new migration and no new write RPC. Because the marker cannot be
+read back from the database, after a reopen the editor treats **every currently
+placed assignment as locked** for the next auto seating. That is the documented,
+conservative behaviour: a saved arrangement is never silently reshuffled.
+
+#### Persistence
+
+"Сохранить" persists the current `assignments` through the existing
+`saveSeatingAssignments()` / `admin_save_seating_assignments` (placed entries in
+`chairs[]`, pooled entries in `pool[]`), exactly as PR 14 did — manual moves only
+change which entries are placed. Success is shown only after the assignment save
+succeeds; a failure keeps the editor in an error state and logs the raw backend
+detail to the console. Seat keys are always built from the stable
+`client_table_id` (via `seatingSeatKey`), never the volatile DB row id, so manual
+placements survive a save → reopen cycle just like auto ones (this is the PR 14
+bugfix that PR 15 must not break).
+
+#### Repeat auto seating
+
+Clicking the auto-seating action again after manual placements keeps every
+currently placed guest where they are and only seats the still-unassigned pool
+guests into the remaining empty seats:
+
+- `autoAssignSeating` accepts `lockedAssignments`; their seats are treated as
+  occupied (blocked) and their guests are dropped from the queue;
+- the editor passes all currently placed assignments as locked and merges the new
+  auto assignments on top;
+- ordinary guests still never land on rabbi-reserved seats, and overflow stays in
+  "Не рассажены".
+
+Explicitly **not** included in PR 15 (kept for later PRs):
+
+- user reserves, `+ Резерв`, or `SeatingReserveDialog` — **PR 16**;
+- edit-preserve / reconcile after a geometry change — **PR 17**;
+- capacity summary or capacity sync — **PR 18/19**;
+- family/group seating; and no change to `event_capacity_units.capacity`.
+
 ### Field mapping (snake_case RPC ↔ camelCase model)
 
 The read RPC return `to_jsonb(...)` of the DB rows (snake_case); the write RPC
@@ -591,3 +684,31 @@ Not run by Codex. Manual smoke is performed by the project owner.
 18. Confirm table editing from PR 11 still works before auto seating.
 19. Confirm registrations table/detail modal/export/refresh still work.
 20. Confirm browser smoke was not run by Codex.
+
+## Manual smoke checklist (PR 15)
+
+Not run by Claude Code. Manual smoke is performed by the project owner.
+
+1. Open web-admin registrations page.
+2. Open the seating modal for a bucket with guests.
+3. Click "Сделать рассадку".
+4. Confirm auto seating still works and survives save/reopen.
+5. Drag a guest from "Не рассажены" onto an empty seat.
+6. Confirm the seat becomes occupied with initials.
+7. Drag an occupied seat to another empty seat.
+8. Confirm the guest moves.
+9. Drag one occupied seat onto another occupied seat.
+10. Confirm the two guests swap seats.
+11. Drag an occupied seat back to "Не рассажены".
+12. Confirm the guest returns to the pool and the seat becomes empty.
+13. Save, close, reopen the same bucket.
+14. Confirm manual placements are restored.
+15. Click "Дорассадить свободных" (repeat auto) after manual placement.
+16. Confirm manual/locked placements are preserved and only free seats are filled.
+17. Confirm ordinary guests cannot be dropped onto rabbi-reserved seats.
+18. Confirm mapped "Весь шабат" still works without slot mismatch.
+19. Confirm donation-only options do not enter the pool.
+20. Confirm `event_capacity_units.capacity` did not change.
+21. Confirm no reserves UI is available yet.
+22. Confirm registrations table/detail modal/export/refresh still work.
+23. Confirm browser smoke was not run by Claude Code.

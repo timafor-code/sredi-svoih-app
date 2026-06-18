@@ -407,6 +407,56 @@ test("reopen keyed by volatile table ids orphans saved seats (identity must be c
   );
 });
 
+test("repeat auto seating preserves locked placements and only seats the pool", () => {
+  const tables = defaultTables();
+  const geometry = computeTableSeats({ tables });
+  const guests = Array.from({ length: 4 }, (_, i) => makeGuest(i + 1));
+  // Guest 1 is manually locked onto a specific non-rabbi seat.
+  const lockedSeatIndex = geometry.seats.findIndex((seat) => !seat.isRabbiTable);
+  const lockedSeatKey = `${geometry.seats[lockedSeatIndex].tableId}:${seatStable(
+    geometry,
+    lockedSeatIndex,
+  )}`;
+  const lockedAssignments = [
+    {
+      guestInitials: guests[0].initials,
+      guestLabel: guests[0].displayName,
+      id: "locked-1",
+      layoutId: "layout-1",
+      locked: true,
+      placementSource: "manual" as const,
+      registrationId: guests[0].registrationId,
+      seatKey: lockedSeatKey,
+      type: "guest" as const,
+    },
+  ];
+
+  const result = autoAssignSeating({ guestPool: guests, lockedAssignments, tables });
+
+  // The locked seat is not reused by auto seating, and its guest is not re-seated.
+  assert(
+    result.assignedSeats.every((seat) => seat.seatIndex !== lockedSeatIndex),
+    "locked seat is left untouched by auto",
+  );
+  assert(
+    result.assignedSeats.every((seat) => seat.guest.registrationId !== guests[0].registrationId),
+    "locked guest is excluded from the auto queue",
+  );
+  // The other three pool guests are seated.
+  assertEqual(result.assignedSeats.length, 3, "remaining pool guests seated");
+});
+
+function seatStable(geometry: ReturnType<typeof computeTableSeats>, index: number): string {
+  const seat = geometry.seats[index];
+  if (seat.kind === "side" && seat.edge && typeof seat.slot === "number") {
+    return `side:${seat.edge}:${seat.slot}`;
+  }
+  if (seat.kind === "end" && seat.end) {
+    return `end:${seat.end}`;
+  }
+  return `legacy:${index}`;
+}
+
 console.log(
   `\nSeating auto-assign tests: ${passed} passed, ${failures.length} failed`,
 );

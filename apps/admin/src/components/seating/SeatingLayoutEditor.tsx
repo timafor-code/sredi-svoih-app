@@ -18,11 +18,16 @@ import {
   tableSideSeats,
 } from "../../lib/seatingGeometry";
 import {
-  autoAssignResultToPayloadEntries,
   autoAssignResultToAssignments,
   autoAssignSeating,
   deriveSeatingAssignmentRestoreState,
 } from "../../lib/seatingAutoAssign";
+import {
+  applySeatingDragDrop,
+  type SeatingDragDropRejection,
+  type SeatingDragSourceRef,
+  type SeatingDropTargetRef,
+} from "../../lib/seatingDragDrop";
 import {
   createSeatingTemplateFromLayout,
   deleteSeatingTemplate,
@@ -88,6 +93,7 @@ export function SeatingLayoutEditor({
 }) {
   const [connections, setConnections] = useState<SeatingConnection[]>([]);
   const [assignments, setAssignments] = useState<SeatingAssignment[]>([]);
+  const [dragSource, setDragSource] = useState<SeatingDragSourceRef | null>(null);
   const [feedback, setFeedback] = useState<EditorFeedback | null>(null);
   const [guestPool, setGuestPool] = useState<SeatingGuestPoolItem[]>([]);
   const [guestPoolError, setGuestPoolError] = useState<string | null>(null);
@@ -129,6 +135,7 @@ export function SeatingLayoutEditor({
       setActiveTemplateValue(DEFAULT_SEATING_TEMPLATE_VALUE);
       setAssignments([]);
       setConnections([]);
+      setDragSource(null);
       setIsAutoAssigning(false);
       setIsSeatingDone(false);
       setSelectedTableId(null);
@@ -403,6 +410,8 @@ export function SeatingLayoutEditor({
     hasGuestPoolMismatch ||
     guestPool.length === 0 ||
     geometry.physicalSeatCount === 0;
+  const manualSeatingEnabled =
+    isSeatingDone && hasValidGeometry && !isLoading && !isSaving && !isAutoAssigning;
 
   useEffect(() => {
     if (!slot || !hasGuestPoolMismatch) {
@@ -876,16 +885,26 @@ export function SeatingLayoutEditor({
 
     const nextTables = normalizeEditorTables(tables);
     const nextConnections = filterConnectionsForTables(connections, nextTables);
+    const autoGeometry = computeTableSeats({
+      connections: nextConnections,
+      tables: nextTables,
+    });
+    // PR 15: a repeat auto seating keeps every currently placed guest (manual or
+    // earlier auto) and only fills the remaining empty seats with pool guests.
+    const lockedAssignments = isSeatingDone
+      ? currentAssignments.filter((assignment) => assignment.seatKey)
+      : [];
     const result = autoAssignSeating({
       capacityUnitId: slot.bucket.capacityUnitId,
       connections: nextConnections,
-      geometry: computeTableSeats({ connections: nextConnections, tables: nextTables }),
+      geometry: autoGeometry,
       guestPool,
+      lockedAssignments,
       occurrenceId: slot.occurrence?.id ?? null,
       tables: nextTables,
     });
 
-    if (result.warning?.code === "empty_guest_pool") {
+    if (result.warning?.code === "empty_guest_pool" && lockedAssignments.length === 0) {
       setFeedback({ message: "Нет гостей для авторассадки.", tone: "muted" });
       return;
     }
@@ -898,7 +917,11 @@ export function SeatingLayoutEditor({
       return;
     }
 
-    const payloadEntries = autoAssignResultToPayloadEntries(result);
+    const mergedAssignments = [
+      ...lockedAssignments,
+      ...autoAssignResultToAssignments(result),
+    ];
+    const payloadEntries = assignmentsToPayloadEntries(mergedAssignments);
     const nextSelectedTableId = null;
 
     setIsAutoAssigning(true);
@@ -936,11 +959,12 @@ export function SeatingLayoutEditor({
       .then(() => {
         commitGeometry({
           nextConnections,
-          nextSelectedTableId: isSeatingDone ? null : nextSelectedTableId,
+          nextSelectedTableId,
           nextTables,
           templateValue: activeTemplateValue,
         });
-        setAssignments(autoAssignResultToAssignments(result));
+        setDragSource(null);
+        setAssignments(mergedAssignments);
         setIsSeatingDone(true);
         setFeedback({
           message:
@@ -965,7 +989,9 @@ export function SeatingLayoutEditor({
     autoAssignDisabled,
     commitGeometry,
     connections,
+    currentAssignments,
     guestPool,
+    isSeatingDone,
     saveLayoutGeometry,
     slot,
     tables,
@@ -984,6 +1010,7 @@ export function SeatingLayoutEditor({
       return;
     }
 
+    setDragSource(null);
     setIsSeatingDone(false);
     setSelectedTableId(pickSelectedTableId(tables));
     setFeedback({
@@ -992,6 +1019,65 @@ export function SeatingLayoutEditor({
       tone: "muted",
     });
   }, [isSeatingDone, tables]);
+
+  const handleManualDragEnd = useCallback(() => {
+    setDragSource(null);
+  }, []);
+
+  const handleSeatDragStart = useCallback((seatIndex: number) => {
+    setDragSource({ kind: "seat", seatIndex });
+  }, []);
+
+  const handleGuestDragStart = useCallback((guestKey: string) => {
+    setDragSource({ kind: "pool", guestKey });
+  }, []);
+
+  const handleManualDrop = useCallback(
+    (target: SeatingDropTargetRef) => {
+      if (!dragSource || !manualSeatingEnabled) {
+        setDragSource(null);
+        return;
+      }
+
+      const result = applySeatingDragDrop({
+        assignments: currentAssignments,
+        geometry,
+        guestPool,
+        source: dragSource,
+        target,
+      });
+
+      setDragSource(null);
+
+      if (!result.changed) {
+        const rejectionFeedback = result.rejection
+          ? manualDropRejectionFeedback(result.rejection)
+          : null;
+        if (rejectionFeedback) {
+          setFeedback(rejectionFeedback);
+        }
+        return;
+      }
+
+      setAssignments(result.assignments);
+      setFeedback({
+        message: "Изменения рассадки не сохранены. Нажмите «Сохранить».",
+        tone: "muted",
+      });
+    },
+    [currentAssignments, dragSource, geometry, guestPool, manualSeatingEnabled],
+  );
+
+  const handleSeatDrop = useCallback(
+    (seatIndex: number) => {
+      handleManualDrop({ kind: "seat", seatIndex });
+    },
+    [handleManualDrop],
+  );
+
+  const handlePoolDrop = useCallback(() => {
+    handleManualDrop({ kind: "pool" });
+  }, [handleManualDrop]);
 
   if (!slot || typeof document === "undefined") {
     return null;
@@ -1043,16 +1129,18 @@ export function SeatingLayoutEditor({
             templates={templates}
           />
 
-          {!isSeatingDone ? (
-            <Button
-              disabled={autoAssignDisabled}
-              onClick={handleAutoAssign}
-              size="sm"
-              variant="success"
-            >
-              {isAutoAssigning ? "Делаем рассадку..." : "Сделать рассадку"}
-            </Button>
-          ) : null}
+          <Button
+            disabled={autoAssignDisabled}
+            onClick={handleAutoAssign}
+            size="sm"
+            variant="success"
+          >
+            {isAutoAssigning
+              ? "Делаем рассадку..."
+              : isSeatingDone
+                ? "Дорассадить свободных"
+                : "Сделать рассадку"}
+          </Button>
 
           {feedback?.message ? (
             <span
@@ -1085,7 +1173,11 @@ export function SeatingLayoutEditor({
                 connections={connections}
                 geometry={geometry}
                 isSeatingDone={isSeatingDone}
+                manualSeatingEnabled={manualSeatingEnabled}
                 onMoveTable={handleMoveTable}
+                onSeatDragEnd={handleManualDragEnd}
+                onSeatDragStart={handleSeatDragStart}
+                onSeatDrop={handleSeatDrop}
                 onSelectTable={setSelectedTableId}
                 occupants={seatOccupants}
                 selectedTableId={selectedTableId}
@@ -1147,6 +1239,10 @@ export function SeatingLayoutEditor({
               guests={visibleGuestPool}
               isSeatingDone={isSeatingDone}
               isLoading={isGuestPoolLoading}
+              manualSeatingEnabled={manualSeatingEnabled}
+              onGuestDragEnd={handleManualDragEnd}
+              onGuestDragStart={handleGuestDragStart}
+              onPoolDrop={handlePoolDrop}
               warning={guestPoolWarning}
             />
 
@@ -1227,6 +1323,27 @@ function formatLayoutSaveError(error: unknown, expectedAssignmentsSave: boolean)
   return error instanceof Error
     ? error.message
     : "Не удалось сохранить схему рассадки.";
+}
+
+function manualDropRejectionFeedback(
+  reason: SeatingDragDropRejection,
+): EditorFeedback | null {
+  switch (reason) {
+    case "rabbi_reserved_seat":
+      return {
+        message:
+          "Это место раввинского стола — обычного гостя сюда посадить нельзя.",
+        tone: "error",
+      };
+    case "duplicate_guest":
+      return { message: "Этот гость уже рассажен.", tone: "muted" };
+    case "noop":
+    case "missing_guest":
+    case "missing_source_occupant":
+    case "seat_out_of_range":
+    default:
+      return null;
+  }
 }
 
 function formatAutoAssignSaveError(error: unknown): string {

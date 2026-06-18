@@ -53,6 +53,15 @@ export type SeatingAutoAssignInput = {
   connections?: readonly SeatingConnection[];
   geometry?: SeatingGeometryResult;
   guestPool: readonly SeatingGuestPoolItem[];
+  /**
+   * PR 15: assignments that must be preserved by a repeat auto seating. Their
+   * seats are treated as occupied (blocked) and their guests are excluded from
+   * the queue, so auto seating only fills the remaining empty seats with the
+   * still-unassigned pool guests. The locked assignments themselves are NOT
+   * returned in `assignedSeats`; the caller keeps them and merges the new
+   * assignments on top (see `SeatingLayoutEditor.handleAutoAssign`).
+   */
+  lockedAssignments?: readonly SeatingAssignment[];
   occurrenceId?: string | null;
   rabbiGuestKeys?: readonly string[];
   tables: readonly SeatingTable[];
@@ -91,6 +100,7 @@ export function autoAssignSeating({
   connections = [],
   geometry: providedGeometry,
   guestPool,
+  lockedAssignments = [],
   occurrenceId,
   rabbiGuestKeys = [],
   tables,
@@ -127,16 +137,31 @@ export function autoAssignSeating({
     };
   }
 
+  // PR 15: keep locked/manual placements where they are. Their seats are blocked
+  // and their guests are dropped from the queue, so auto only fills the rest.
+  const locked = resolveLockedPlacements(lockedAssignments, geometry);
   const headIndex = resolveHeadIndex(geometry, tables);
   const blockedRabbiSeats = blockedRabbiSeatIndexes(geometry, tables);
-  const blockedSeats = new Set([...blockedRabbiSeats, ...blockedSeatIndexes]);
-  const rabbiGuest = activeGuests.find((guest) =>
+  const blockedSeats = new Set([
+    ...blockedRabbiSeats,
+    ...blockedSeatIndexes,
+    ...locked.seatIndexes,
+  ]);
+  const queueGuests = activeGuests.filter(
+    (guest) => !locked.guestSignatures.has(guestPoolSignature(guest)),
+  );
+  const rabbiGuest = queueGuests.find((guest) =>
     isExplicitRabbiGuest(guest, rabbiGuestKeys),
   );
   const assignedSeats: SeatingAutoAssignedSeat[] = [];
-  const queue = activeGuests.filter((guest) => guest !== rabbiGuest);
+  const queue = queueGuests.filter((guest) => guest !== rabbiGuest);
 
-  if (rabbiGuest && headIndex >= 0 && geometry.seats[headIndex]) {
+  if (
+    rabbiGuest &&
+    headIndex >= 0 &&
+    geometry.seats[headIndex] &&
+    !locked.seatIndexes.has(headIndex)
+  ) {
     assignedSeats.push({
       guest: rabbiGuest,
       isRabbiHead: true,
@@ -258,6 +283,8 @@ export function deriveSeatingAssignmentRestoreState({
       initials: normalizedAssignment.guestInitials?.trim() || "?",
       isRabbiHead:
         seatIndex === geometry.headIndex && Boolean(geometry.seats[seatIndex]?.isRabbiTable),
+      locked: normalizedAssignment.locked,
+      placementSource: normalizedAssignment.placementSource,
       registrationId: normalizedAssignment.registrationId,
       seatIndex,
       seatKey: normalizedAssignment.seatKey,
@@ -478,6 +505,46 @@ function assignmentGuestSignature(
     (label ?? "").trim().toLocaleLowerCase("ru-RU"),
     (initials ?? "").trim().toLocaleLowerCase("ru-RU"),
   ].join("|");
+}
+
+function guestPoolSignature(guest: SeatingGuestPoolItem): string {
+  return assignmentGuestSignature(guest.registrationId, guest.displayName, guest.initials);
+}
+
+/**
+ * PR 15: resolve the seats and guests that a repeat auto seating must preserve.
+ * Only placed assignments whose `seat_key` resolves to a valid seat in the
+ * current geometry are kept; unresolved ones are ignored so they do not block a
+ * phantom seat.
+ */
+function resolveLockedPlacements(
+  lockedAssignments: readonly SeatingAssignment[],
+  geometry: SeatingGeometryResult,
+): { seatIndexes: Set<number>; guestSignatures: Set<string> } {
+  const seatIndexes = new Set<number>();
+  const guestSignatures = new Set<string>();
+
+  lockedAssignments.forEach((assignment) => {
+    if (!assignment.seatKey) {
+      return;
+    }
+
+    const seatIndex = seatIndexFromSeatKey(assignment.seatKey, geometry);
+    if (seatIndex === null || seatIndexes.has(seatIndex)) {
+      return;
+    }
+
+    seatIndexes.add(seatIndex);
+    guestSignatures.add(
+      assignmentGuestSignature(
+        assignment.registrationId,
+        assignment.guestLabel,
+        assignment.guestInitials,
+      ),
+    );
+  });
+
+  return { seatIndexes, guestSignatures };
 }
 
 function seatStablePart(seat: ComputedSeat): string | null {
