@@ -1,4 +1,5 @@
 import { requireSupabaseClient } from "./supabaseClient";
+import { listEventRegistrations } from "./adminEventsService";
 import type {
   AdminRegistrationCapacityAnalytics,
   AdminRegistrationCapacityAnalyticsRpcRow,
@@ -6,10 +7,19 @@ import type {
   AdminRegistrationCapacityBucketAggregate,
   AdminRegistrationCapacityBucketOptionBreakdown,
   AdminRegistrationCapacityOptionStat,
+  AdminRegistrationCapacityReservation,
+  AdminRegistrationCapacityReservationRow,
   AdminRegistrationCapacityStatusCounts,
   AdminRegistrationCapacityTotals,
+  GetAdminRegistrationCapacityGuestPoolParams,
   ListAdminRegistrationCapacityBucketsParams,
+  ListAdminRegistrationCapacityReservationsParams,
 } from "../types/registrationCapacity";
+import type {
+  AdminEventRegistrationRow,
+  AdminRegistrationStatus,
+} from "../types/registrations";
+import type { SeatingGuestPoolItem } from "../types/seating";
 
 type SupabaseSelectError = {
   message?: string;
@@ -18,6 +28,46 @@ type SupabaseSelectError = {
 };
 
 type JsonRecord = Record<string, unknown>;
+
+type OptionCapacityUnitMappingRowForGuestPool = {
+  option_id: string | null;
+  capacity_unit_id: string | null;
+  seats_per_quantity: number | string | null;
+};
+
+type RegistrationSeatObligation = {
+  optionTitles: string[];
+  seatsCount: number;
+};
+
+const REGISTRATION_CAPACITY_RESERVATION_FIELDS = `
+  id,
+  registration_id,
+  event_id,
+  occurrence_id,
+  capacity_unit_id,
+  option_id,
+  capacity_unit_key_snapshot,
+  capacity_unit_title_snapshot,
+  option_title_snapshot,
+  quantity,
+  seats_per_quantity,
+  seats_count,
+  created_at
+`;
+
+const OPTION_CAPACITY_UNIT_MAPPING_FIELDS_FOR_GUEST_POOL = `
+  option_id,
+  capacity_unit_id,
+  seats_per_quantity
+`;
+
+const REGISTRATION_GUEST_POOL_PAGE_SIZE = 200;
+const SEATING_GUEST_POOL_STATUSES = [
+  "confirmed",
+  "pending",
+  "attended",
+] as const satisfies readonly AdminRegistrationStatus[];
 
 function formatSupabaseError(action: string, error: SupabaseSelectError): string {
   const details = [error.message, error.details, error.hint].filter(Boolean).join(" ");
@@ -223,6 +273,26 @@ function normalizeCapacityBucket(value: JsonRecord): AdminRegistrationCapacityBu
   };
 }
 
+function normalizeCapacityReservation(
+  row: Partial<AdminRegistrationCapacityReservationRow>,
+): AdminRegistrationCapacityReservation {
+  return {
+    id: requiredString(row.id, ""),
+    registrationId: requiredString(row.registration_id, ""),
+    eventId: requiredString(row.event_id, ""),
+    occurrenceId: nullableString(row.occurrence_id),
+    capacityUnitId: requiredString(row.capacity_unit_id, ""),
+    optionId: nullableString(row.option_id),
+    capacityUnitKeySnapshot: requiredString(row.capacity_unit_key_snapshot, ""),
+    capacityUnitTitleSnapshot: requiredString(row.capacity_unit_title_snapshot, ""),
+    optionTitleSnapshot: nullableString(row.option_title_snapshot),
+    quantity: safeNumber(row.quantity, 0),
+    seatsPerQuantity: safeNumber(row.seats_per_quantity, 1),
+    seatsCount: safeNumber(row.seats_count, 0),
+    createdAt: requiredString(row.created_at, ""),
+  };
+}
+
 function normalizeCapacityBuckets(value: unknown): AdminRegistrationCapacityBucket[] {
   return toRecordArray(value)
     .map(normalizeCapacityBucket)
@@ -294,4 +364,341 @@ export async function listAdminRegistrationCapacityBuckets(
 ): Promise<AdminRegistrationCapacityBucket[]> {
   const analytics = await getAdminRegistrationCapacityAnalytics(params);
   return analytics.buckets;
+}
+
+export async function listAdminRegistrationCapacityReservations(
+  params: ListAdminRegistrationCapacityReservationsParams,
+): Promise<AdminRegistrationCapacityReservation[]> {
+  const supabase = requireSupabaseClient();
+  let query = supabase
+    .from("event_registration_capacity_reservations")
+    .select(REGISTRATION_CAPACITY_RESERVATION_FIELDS)
+    .eq("event_id", params.eventId)
+    .eq("capacity_unit_id", params.capacityUnitId);
+
+  query = params.occurrenceId
+    ? query.eq("occurrence_id", params.occurrenceId)
+    : query.is("occurrence_id", null);
+
+  const { data, error } = await query.order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error(formatSupabaseError("List registration capacity reservations", error));
+  }
+
+  return ((data ?? []) as AdminRegistrationCapacityReservationRow[])
+    .map(normalizeCapacityReservation)
+    .filter(
+      (reservation) =>
+        reservation.registrationId.length > 0 &&
+        reservation.capacityUnitId === params.capacityUnitId,
+    );
+}
+
+export async function getAdminRegistrationCapacityGuestPool(
+  params: GetAdminRegistrationCapacityGuestPoolParams,
+): Promise<SeatingGuestPoolItem[]> {
+  const [registrations, reservations, optionMappings] = await Promise.all([
+    listActiveRegistrationsForGuestPool(params),
+    listAdminRegistrationCapacityReservations(params),
+    listOptionCapacityUnitMappingsForGuestPool(params),
+  ]);
+  const obligations = buildRegistrationSeatObligations({
+    capacityUnitId: params.capacityUnitId,
+    optionMappings,
+    registrations,
+    reservations,
+  });
+
+  return buildSeatingGuestPool({
+    obligations,
+    params,
+    registrations,
+  });
+}
+
+async function listActiveRegistrationsForGuestPool(
+  params: ListAdminRegistrationCapacityBucketsParams,
+): Promise<AdminEventRegistrationRow[]> {
+  const pagesByStatus = await Promise.all(
+    SEATING_GUEST_POOL_STATUSES.map((status) =>
+      listRegistrationsForGuestPoolStatus(params, status),
+    ),
+  );
+  const byId = new Map<string, AdminEventRegistrationRow>();
+
+  pagesByStatus.flat().forEach((registration) => {
+    if (registration.id) {
+      byId.set(registration.id, registration);
+    }
+  });
+
+  return Array.from(byId.values()).sort(compareRegistrationsForGuestPool);
+}
+
+async function listRegistrationsForGuestPoolStatus(
+  params: ListAdminRegistrationCapacityBucketsParams,
+  status: AdminRegistrationStatus,
+): Promise<AdminEventRegistrationRow[]> {
+  const registrations: AdminEventRegistrationRow[] = [];
+  let offset = 0;
+
+  while (true) {
+    const page = await listEventRegistrations({
+      eventId: params.eventId,
+      limit: REGISTRATION_GUEST_POOL_PAGE_SIZE,
+      occurrenceId: params.occurrenceId,
+      offset,
+      search: null,
+      status,
+    });
+
+    registrations.push(...page);
+
+    if (page.length < REGISTRATION_GUEST_POOL_PAGE_SIZE) {
+      break;
+    }
+
+    offset += page.length;
+  }
+
+  return registrations;
+}
+
+async function listOptionCapacityUnitMappingsForGuestPool(
+  params: GetAdminRegistrationCapacityGuestPoolParams,
+): Promise<OptionCapacityUnitMappingRowForGuestPool[]> {
+  const supabase = requireSupabaseClient();
+  const { data, error } = await supabase
+    .from("event_participation_option_capacity_units")
+    .select(OPTION_CAPACITY_UNIT_MAPPING_FIELDS_FOR_GUEST_POOL)
+    .eq("event_id", params.eventId)
+    .eq("capacity_unit_id", params.capacityUnitId);
+
+  if (error) {
+    throw new Error(formatSupabaseError("List option capacity unit mappings", error));
+  }
+
+  return ((data ?? []) as OptionCapacityUnitMappingRowForGuestPool[]).filter(
+    (row) => Boolean(row.option_id && row.capacity_unit_id === params.capacityUnitId),
+  );
+}
+
+function buildRegistrationSeatObligations({
+  capacityUnitId,
+  optionMappings,
+  registrations,
+  reservations,
+}: {
+  capacityUnitId: string;
+  optionMappings: OptionCapacityUnitMappingRowForGuestPool[];
+  registrations: AdminEventRegistrationRow[];
+  reservations: AdminRegistrationCapacityReservation[];
+}): Map<string, RegistrationSeatObligation> {
+  const obligations = new Map<string, RegistrationSeatObligation>();
+  const realReservationKeys = new Set<string>();
+  const mappingByOptionId = new Map(
+    optionMappings
+      .map((mapping) => {
+        const optionId = nullableString(mapping.option_id);
+        return optionId ? [optionId, mapping] as const : null;
+      })
+      .filter((entry): entry is readonly [string, OptionCapacityUnitMappingRowForGuestPool] =>
+        Boolean(entry),
+      ),
+  );
+
+  reservations.forEach((reservation) => {
+    if (reservation.capacityUnitId !== capacityUnitId) {
+      return;
+    }
+
+    addSeatObligation(
+      obligations,
+      reservation.registrationId,
+      reservation.seatsCount,
+      reservation.optionTitleSnapshot,
+    );
+    realReservationKeys.add(
+      registrationOptionKey(reservation.registrationId, reservation.optionId),
+    );
+  });
+
+  registrations.forEach((registration) => {
+    registration.selectedOptions.forEach((option) => {
+      const optionId = option.optionId;
+
+      if (
+        !optionId ||
+        option.isDonation ||
+        option.countsTowardCapacity === false ||
+        realReservationKeys.has(registrationOptionKey(registration.id, optionId))
+      ) {
+        return;
+      }
+
+      const mapping = mappingByOptionId.get(optionId);
+
+      if (!mapping) {
+        return;
+      }
+
+      addSeatObligation(
+        obligations,
+        registration.id,
+        option.quantity * Math.max(1, safeNumber(mapping.seats_per_quantity, 1)),
+        option.title,
+      );
+    });
+  });
+
+  return obligations;
+}
+
+function buildSeatingGuestPool({
+  obligations,
+  params,
+  registrations,
+}: {
+  obligations: Map<string, RegistrationSeatObligation>;
+  params: GetAdminRegistrationCapacityGuestPoolParams;
+  registrations: AdminEventRegistrationRow[];
+}): SeatingGuestPoolItem[] {
+  return registrations.flatMap((registration) => {
+    const obligation = obligations.get(registration.id);
+    const seatsCount = Math.max(0, Math.floor(obligation?.seatsCount ?? 0));
+
+    if (seatsCount === 0) {
+      return [];
+    }
+
+    const participantName = safeDisplayName(registration.participantDisplayName, "Участник");
+    const optionTitles = obligation?.optionTitles ?? [];
+    const items: SeatingGuestPoolItem[] = [
+      {
+        capacityUnitId: params.capacityUnitId,
+        displayName: participantName,
+        email: registration.email,
+        guestIndex: null,
+        guestName: null,
+        id: seatingGuestPoolKey(registration.id, "participant", 0, params.capacityUnitId),
+        initials: seatInitials(participantName),
+        key: seatingGuestPoolKey(registration.id, "participant", 0, params.capacityUnitId),
+        occurrenceId: params.occurrenceId,
+        optionTitles,
+        participantDisplayName: participantName,
+        participantUserId: registration.userId || null,
+        paymentStatus: registration.paymentStatus,
+        phone: registration.phone,
+        registrationId: registration.id,
+        source: "participant",
+        sourceLabel: "Участник",
+        status: registration.status,
+      },
+    ];
+    const guestNames = normalizeGuestNames(registration.guestNames);
+
+    for (let index = 0; index < seatsCount - 1; index += 1) {
+      const guestIndex = index + 1;
+      const guestName = guestNames[index] ?? null;
+      const displayName =
+        guestName ?? `Гость ${guestIndex} · ${participantName}`;
+
+      items.push({
+        capacityUnitId: params.capacityUnitId,
+        displayName,
+        email: registration.email,
+        guestIndex,
+        guestName,
+        id: seatingGuestPoolKey(registration.id, "guest", guestIndex, params.capacityUnitId),
+        initials: seatInitials(guestName ?? `Гость ${guestIndex}`),
+        key: seatingGuestPoolKey(registration.id, "guest", guestIndex, params.capacityUnitId),
+        occurrenceId: params.occurrenceId,
+        optionTitles,
+        participantDisplayName: participantName,
+        participantUserId: registration.userId || null,
+        paymentStatus: registration.paymentStatus,
+        phone: registration.phone,
+        registrationId: registration.id,
+        source: "guest",
+        sourceLabel: "Гость",
+        status: registration.status,
+      });
+    }
+
+    return items;
+  });
+}
+
+function addSeatObligation(
+  obligations: Map<string, RegistrationSeatObligation>,
+  registrationId: string,
+  seatsCount: number,
+  optionTitle: string | null,
+) {
+  if (!registrationId || seatsCount <= 0) {
+    return;
+  }
+
+  const current = obligations.get(registrationId) ?? {
+    optionTitles: [],
+    seatsCount: 0,
+  };
+  const title = optionTitle?.trim();
+
+  obligations.set(registrationId, {
+    optionTitles:
+      title && !current.optionTitles.includes(title)
+        ? [...current.optionTitles, title]
+        : current.optionTitles,
+    seatsCount: current.seatsCount + Math.floor(seatsCount),
+  });
+}
+
+function compareRegistrationsForGuestPool(
+  left: AdminEventRegistrationRow,
+  right: AdminEventRegistrationRow,
+): number {
+  const leftTime = new Date(left.registeredAt || left.createdAt).getTime();
+  const rightTime = new Date(right.registeredAt || right.createdAt).getTime();
+
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
+    return rightTime - leftTime;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+function normalizeGuestNames(guestNames: string[]): string[] {
+  return guestNames
+    .map((guestName) => guestName.trim())
+    .filter((guestName) => guestName.length > 0);
+}
+
+function registrationOptionKey(registrationId: string, optionId: string | null): string {
+  return `${registrationId}:${optionId ?? ""}`;
+}
+
+function safeDisplayName(name: string | null | undefined, fallback: string): string {
+  const trimmed = name?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : fallback;
+}
+
+export function seatInitials(name: string | null | undefined): string {
+  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  const initials = parts
+    .slice(0, 2)
+    .map((part) => Array.from(part)[0]?.toLocaleUpperCase("ru-RU") ?? "")
+    .join("");
+
+  return initials || "?";
+}
+
+function seatingGuestPoolKey(
+  registrationId: string,
+  source: "participant" | "guest",
+  index: number,
+  capacityUnitId: string,
+): string {
+  return `${registrationId}:${capacityUnitId}:${source}:${index}`;
 }

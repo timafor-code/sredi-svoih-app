@@ -255,6 +255,37 @@ export interface SeatingCapacitySummary {
   physicalOverflow: number;
 }
 
+export type SeatingGuestPoolSource = "participant" | "guest";
+
+/**
+ * A read-only seat obligation for the selected registration capacity bucket.
+ *
+ * PR 13 renders these in the "Не рассажены" panel only. They are not seating
+ * assignments yet and are never written back to `event_seating_assignments` by
+ * this model.
+ */
+export interface SeatingGuestPoolItem {
+  /** Stable React key / future assignment candidate id. */
+  id: string;
+  key: string;
+  displayName: string;
+  initials: string;
+  registrationId: string;
+  participantUserId: string | null;
+  participantDisplayName: string | null;
+  email: string | null;
+  phone: string | null;
+  guestIndex: number | null;
+  guestName: string | null;
+  source: SeatingGuestPoolSource;
+  sourceLabel: string;
+  status: string | null;
+  paymentStatus: string | null;
+  optionTitles: string[];
+  capacityUnitId: string;
+  occurrenceId: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Raw RPC rows (snake_case, as returned by the read/write RPC)
 // ---------------------------------------------------------------------------
