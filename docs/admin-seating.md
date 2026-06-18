@@ -57,7 +57,14 @@ block B PRs and may be extended in later ones.
   physical seats only after a confirmation dialog and the role-checked
   `admin_update_capacity_unit_limit` RPC. There is still no auto-sync when
   tables are edited or saved.
-- **Later PRs:** responsive polish (PR 20).
+- **PR 20 (this revision):** responsive polish for the web-admin seating modal:
+  smaller viewport behavior, scroll-safe canvas/assignments areas, minimal
+  zoom/fit controls, keyboard shortcuts, clearer loading/empty/error states and
+  stricter disabled toolbar states. The same polish pass moves the
+  capacity/status metrics into compact cards in the right column and uses the
+  footer for keyboard shortcuts, including `N` to add a table. No backend,
+  capacity, registration, seating algorithm or RPC behavior changes.
+- **Later PRs:** docs and checklists (PR 21).
 
 The browser admin client talks to all of this through the normal authenticated
 Supabase session. No service role or Admin API is used anywhere in the seating
@@ -773,15 +780,11 @@ editing the table geometry must never change `event_capacity_units.capacity`.
 
 The pure math lives in `apps/admin/src/lib/seatingCapacity.ts`
 (`computeSeatingCapacitySummary`) and is covered by
-`apps/admin/src/lib/__tests__/seatingCapacity.test.ts`. The
-`SeatingCapacitySummary` component renders it **inline as the single footer
-status line** in `SeatingLayoutEditor` (it takes `leadingParts`/`trailingParts`
-so the state-specific bits — table count, rabbi reserve, seams/mode,
-`не рассажены`, `фигура зафиксирована` — stay on the same line instead of a
-separate row below the modal) and does no IO. `occupiedSeats` is the bucket's
+`apps/admin/src/lib/__tests__/seatingCapacity.test.ts`. The current modal renders
+these numbers through `SeatingMetricsPanel` as compact cards in the right column,
+next to the assignments panel, and does no IO. `occupiedSeats` is the bucket's
 registration occupancy; `reserveSeats` is the count of reserves currently placed
-on physical seats (reserves take a chair but are **not** registration
-occupancy).
+on physical seats (reserves take a chair but are **not** registration occupancy).
 
 Formulas (all guard a `null` limit before any arithmetic — never `null − число`,
 so no `NaN` reaches the UI):
@@ -806,17 +809,15 @@ All numeric inputs are sanitised to finite, non-negative values, and a
 non-positive or non-finite limit collapses to `null`, so the summary can never
 render `NaN` or a negative count.
 
-UI strings (the capacity segments are spliced into the one footer status line
-between `leadingParts` and `trailingParts`):
+UI strings (PR 20 presents these as right-column metric cards instead of a long
+footer status line):
 
-- normal segments:
-  `80 физ. мест · лимит 70 · занято 55 · свободно по лимиту 15 · физически свободно 25`
-  (a `· резервов N` segment is appended when reserves occupy seats);
-- no limit: the limit segment is `без лимита` and the `свободно по лимиту`
-  segment is omitted;
-- shortage (`missingPhysical > 0`): the capacity segments end with
-  `не хватает N физических мест` and a compact red warning is appended to the
-  same status area: `Не хватает физических мест: 68 гостей на 60 стульев`;
+- normal cards include physical seats, limit, occupied seats, free by limit and
+  physically free seats;
+- no limit: the limit card shows `∞` / `без лимита` and the `свободно по лимиту`
+  card is omitted;
+- shortage (`missingPhysical > 0`): a compact red warning appears under the
+  cards: `Не хватает физических мест: 68 гостей на 60 стульев`;
 - spare physical seats (`physicalOverflow > 0`, no shortage): no extra note — the
   slack simply shows as positive `свободно по лимиту` / `физически свободно`.
 
@@ -827,7 +828,7 @@ logic. It only reads the existing numbers for display.
 
 ### Capacity limit sync action (PR 19)
 
-PR 19 adds one explicit admin action next to the PR 18 summary:
+PR 19 adds one explicit admin action next to the PR 18/20 metrics:
 `Обновить лимит слота до количества физических мест`. It appears only when a
 selected capacity bucket has a `capacityUnitId`, the loaded layout has more than
 zero physical seats, the physical count differs from the current
@@ -873,6 +874,56 @@ The backend RPC enforces the same floor, so a crafted client cannot lower the
 limit below already occupied seats. On success the seating modal updates its
 local capacity summary immediately, the registrations page reloads capacity
 analytics, and the existing toast pattern reports success.
+
+### Responsive polish (PR 20)
+
+PR 20 is a web-admin UI polish pass only. It does not change Supabase schema,
+RPCs, seating persistence, capacity formulas, registration behavior, auto
+seating, manual drag/drop assignment logic, reserves or reconcile formulas.
+
+Responsive modal behavior:
+
+- The seating modal uses a constrained viewport height so the header, top
+  toolbar, canvas area, footer shortcut controls and assignments panel remain in
+  the same modal flow on smaller windows.
+- The canvas area owns its overflow and can scroll independently. The
+  assignments panel also scrolls independently, and on narrow screens it moves
+  below the canvas instead of squeezing the table geometry.
+- Capacity/status metrics live in the right column as compact cards with the
+  missing-physical warning and capacity-sync action attached to that block.
+- Toolbar/shortcut rows can wrap and scroll within their own namespaced seating
+  containers, so they do not overlap the canvas.
+
+Canvas controls:
+
+- The canvas keeps the existing table/chair coordinate model. PR 20 only changes
+  the viewport shell around it.
+- The canvas has minimal zoom controls (`-`, `+`, percent indicator) and
+  `По размеру` fit-to-view. The scroll box size follows the current visual scale,
+  so large layouts remain inspectable without changing saved geometry.
+
+Keyboard shortcuts:
+
+- `N` — добавить стол; works only when table editing is allowed.
+- `Delete` / `Backspace`: delete the selected table only when table editing is
+  allowed, a table is selected, and it is not the last required table.
+- `Escape`: cancel current selection/drag/dialog state safely. If nothing inside
+  the modal is active, Escape can close the seating modal as before.
+- `R`: rotate the selected table by 90 degrees only when table editing is
+  allowed.
+- Shortcuts are ignored while focus is in `input`, `textarea`, `select` or a
+  `contenteditable` element.
+
+Disabled/loading/error states:
+
+- Layout actions are disabled while the modal is loading, saving, auto seating,
+  applying/saving/deleting templates, syncing capacity or loading the guest pool.
+- Toolbar buttons are also disabled when no table is selected, when seating is
+  done/locked, when there is no valid layout, or when deleting would remove the
+  last required table.
+- Layout loading, layout load failure, guest-pool loading/error and empty guest
+  states render as readable inline states instead of relying on crashes or hidden
+  failures.
 
 ### Field mapping (snake_case RPC ↔ camelCase model)
 
@@ -1140,3 +1191,28 @@ Not run by Codex. Manual smoke is performed by the project owner.
    without `NaN`.
 10. Confirm no auto-sync happens when adding/removing/moving tables.
 11. Confirm no service role or Admin API is used in browser code.
+
+## Manual smoke checklist (PR 20)
+
+Not run by Codex. Manual smoke is performed by the project owner.
+
+1. Open web-admin registrations page.
+2. Open seating modal on desktop width.
+3. Reduce browser height/width and confirm header, canvas, toolbar, footer and
+   assignments panel remain usable.
+4. Confirm the right column shows compact metric cards, the capacity-sync action
+   remains next to them when applicable, and no long capacity/status line remains
+   in the footer.
+5. Confirm the footer shortcut legend wraps without horizontal overflow.
+6. Confirm canvas can be scrolled/fit/zoomed according to implemented behavior.
+7. Press N: a table is added only when editing is allowed.
+8. Select a table and press R: table rotates only when editing is allowed.
+9. Select a table and press Delete/Backspace: table deletes only when editing is
+   allowed.
+10. Press Escape during selection/drag/dialog states: state cancels safely without
+   crash.
+11. Focus an input/select and press shortcuts: shortcuts must not fire.
+12. Confirm disabled states for no selected table, loading, saving, auto-assign,
+   capacity sync, template apply and locked seating modes.
+13. Confirm empty/loading/error states are readable.
+14. Confirm no backend/network/security changes were introduced.

@@ -59,8 +59,8 @@ import type {
 } from "../../types/seating";
 import { SeatingAssignmentsPanel } from "./SeatingAssignmentsPanel";
 import { SeatingCanvas } from "./SeatingCanvas";
-import { SeatingCapacitySummary } from "./SeatingCapacitySummary";
 import { SeatingCapacitySyncDialog } from "./SeatingCapacitySyncDialog";
+import { SeatingMetricsPanel } from "./SeatingMetricsPanel";
 import { SeatingReserveDialog } from "./SeatingReserveDialog";
 import {
   DEFAULT_SEATING_TEMPLATE_VALUE,
@@ -71,7 +71,7 @@ import {
   type BuiltInSeatingTemplateId,
   type SeatingTemplateValue,
 } from "./SeatingTemplateSelector";
-import { SeatingToolbar } from "./SeatingToolbar";
+import { SeatingShortcutLegend, SeatingToolbar } from "./SeatingToolbar";
 
 export type SeatingLayoutEditorSlot = {
   bucket: AdminRegistrationCapacityBucket;
@@ -111,6 +111,8 @@ export function SeatingLayoutEditor({
   const [feedback, setFeedback] = useState<EditorFeedback | null>(null);
   const [guestPool, setGuestPool] = useState<SeatingGuestPoolItem[]>([]);
   const [guestPoolError, setGuestPoolError] = useState<string | null>(null);
+  const [layoutLoadError, setLayoutLoadError] = useState<string | null>(null);
+  const [canvasCancelVersion, setCanvasCancelVersion] = useState(0);
   const [capacityLimitOverride, setCapacityLimitOverride] = useState<
     number | null | undefined
   >(undefined);
@@ -139,35 +141,14 @@ export function SeatingLayoutEditor({
 
   useEffect(() => {
     if (!slot) {
-      return undefined;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        // While the reserve dialog is open, Escape closes only the dialog (it has
-        // its own handler); it must not also close the whole seating modal.
-        if (isReserveDialogOpen) {
-          return;
-        }
-        onClose();
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isReserveDialogOpen, onClose, slot]);
-
-  useEffect(() => {
-    if (!slot) {
       setActiveTemplateValue(DEFAULT_SEATING_TEMPLATE_VALUE);
       setAssignments([]);
       setCapacityLimitOverride(undefined);
       setCapacitySyncError(null);
       setConnections([]);
       setDragSource(null);
+      setLayoutLoadError(null);
+      setCanvasCancelVersion((version) => version + 1);
       setIsCapacitySyncDialogOpen(false);
       setIsCapacitySyncing(false);
       setIsAutoAssigning(false);
@@ -185,6 +166,8 @@ export function SeatingLayoutEditor({
     setFeedback({ message: "Загружаем схему...", tone: "muted" });
     setCapacityLimitOverride(undefined);
     setCapacitySyncError(null);
+    setLayoutLoadError(null);
+    setCanvasCancelVersion((version) => version + 1);
     setIsReserveDialogOpen(false);
     setIsCapacitySyncDialogOpen(false);
     setIsCapacitySyncing(false);
@@ -220,6 +203,7 @@ export function SeatingLayoutEditor({
 
         setTables(nextTables);
         setConnections(nextConnections);
+        setLayoutLoadError(null);
         setAssignments(layout?.assignments ?? []);
         setIsSeatingDone(Boolean(layout?.seatingDone));
         setActiveTemplateValue(
@@ -248,6 +232,11 @@ export function SeatingLayoutEditor({
         setIsSeatingDone(false);
         setActiveTemplateValue(DEFAULT_SEATING_TEMPLATE_VALUE);
         setSelectedTableId(pickSelectedTableId(fallbackTables));
+        const layoutErrorMessage =
+          error instanceof Error
+            ? error.message
+            : "Не удалось загрузить схему рассадки.";
+        setLayoutLoadError(layoutErrorMessage);
         setFeedback({
           message:
             error instanceof Error
@@ -437,7 +426,6 @@ export function SeatingLayoutEditor({
       ? capacityLimitOverride
       : slot?.bucket.capacity ?? null;
   const canPerformAdminActions = auth.canAccessAdmin && (auth.isAdmin || auth.isEventManager);
-  const seatsModeLabel = useMemo(() => formatSeatsMode(tables), [tables]);
   const rabbiReserveCount = useMemo(
     () => geometry.seats.filter((seat) => seat.isRabbiTable).length,
     [geometry.seats],
@@ -449,7 +437,57 @@ export function SeatingLayoutEditor({
     isApplyingTemplate ||
     isDeletingTemplate ||
     isSavingTemplate;
-  const saveDisabled = !slot || !hasValidGeometry || isTemplateBusy || isAutoAssigning;
+  const layoutBusyReason = getLayoutBusyReason({
+    isApplyingTemplate,
+    isAutoAssigning,
+    isCapacitySyncing,
+    isDeletingTemplate,
+    isGuestPoolLoading,
+    isLoading,
+    isSaving,
+    isSavingTemplate,
+  });
+  const isLayoutActionBusy = Boolean(layoutBusyReason);
+  const canEditLayout = Boolean(slot) && !isSeatingDone && !isLayoutActionBusy;
+  const canAddTable = canEditLayout;
+  const canRotateSelectedTable = canEditLayout && Boolean(selectedTable);
+  const canChangeSelectedTableSideSeats = canEditLayout && Boolean(selectedTable);
+  const canSetAllSideSeats = canEditLayout && tables.length > 0;
+  const canRemoveSelectedTable =
+    canEditLayout && Boolean(selectedTable) && tables.length > 1;
+  const addTableDisabledReason = layoutBusyReason ?? (isSeatingDone ? "Рассадка зафиксирована." : null);
+  const rotateTableDisabledReason =
+    layoutBusyReason ??
+    (isSeatingDone
+      ? "Рассадка зафиксирована."
+      : selectedTable
+        ? null
+        : "Выберите стол для поворота.");
+  const sideSeatsDisabledReason =
+    layoutBusyReason ??
+    (isSeatingDone
+      ? "Рассадка зафиксирована."
+      : selectedTable
+        ? null
+        : "Выберите стол для изменения мест.");
+  const allSideSeatsDisabledReason =
+    layoutBusyReason ??
+    (isSeatingDone
+      ? "Рассадка зафиксирована."
+      : tables.length > 0
+        ? null
+        : "Сначала добавьте стол.");
+  const removeTableDisabledReason =
+    layoutBusyReason ??
+    (isSeatingDone
+      ? "Рассадка зафиксирована."
+      : selectedTable
+        ? tables.length <= 1
+          ? "Нельзя удалить последний обязательный стол."
+          : null
+        : "Выберите стол для удаления.");
+  const saveDisabled =
+    !slot || !hasValidGeometry || isLayoutActionBusy;
   const autoAssignDisabled =
     !slot ||
     !hasValidGeometry ||
@@ -457,12 +495,23 @@ export function SeatingLayoutEditor({
     isGuestPoolLoading ||
     isSaving ||
     isAutoAssigning ||
+    isCapacitySyncing ||
     isTemplateBusy ||
     hasGuestPoolMismatch ||
     guestPool.length === 0 ||
     geometry.physicalSeatCount === 0;
+  const autoAssignDisabledReason = autoAssignDisabled
+    ? getAutoAssignDisabledReason({
+        guestPoolLength: guestPool.length,
+        hasGuestPoolMismatch,
+        hasValidGeometry,
+        isLayoutActionBusy,
+        layoutBusyReason,
+        physicalSeatCount: geometry.physicalSeatCount,
+      })
+    : null;
   const manualSeatingEnabled =
-    isSeatingDone && hasValidGeometry && !isLoading && !isSaving && !isAutoAssigning;
+    isSeatingDone && hasValidGeometry && !isLayoutActionBusy;
   const canShowCapacitySyncAction = Boolean(
     slot?.bucket.capacityUnitId &&
       canPerformAdminActions &&
@@ -564,7 +613,7 @@ export function SeatingLayoutEditor({
   ]);
 
   const handleAddTable = useCallback(() => {
-    if (isSeatingDone) {
+    if (!canAddTable) {
       return;
     }
 
@@ -585,11 +634,11 @@ export function SeatingLayoutEditor({
 
     setTables(nextTables);
     setSelectedTableId(nextTable.id);
-  }, [isSeatingDone, selectedTableId, tables]);
+  }, [canAddTable, selectedTableId, tables]);
 
   const handleMoveTable = useCallback(
     (tableId: string, center: { cx: number; cy: number }) => {
-      if (isSeatingDone) {
+      if (!canEditLayout) {
         return;
       }
 
@@ -606,15 +655,11 @@ export function SeatingLayoutEditor({
         currentConnections.filter((connection) => !connectionTouchesTable(connection, tableId)),
       );
     },
-    [isSeatingDone],
+    [canEditLayout],
   );
 
   const handleRemoveTable = useCallback(() => {
-    if (isSeatingDone) {
-      return;
-    }
-
-    if (!selectedTableId || tables.length <= 1) {
+    if (!canRemoveSelectedTable || !selectedTableId) {
       return;
     }
 
@@ -629,14 +674,10 @@ export function SeatingLayoutEditor({
       ),
     );
     setSelectedTableId(pickSelectedTableId(nextTables));
-  }, [isSeatingDone, selectedTableId, tables]);
+  }, [canRemoveSelectedTable, selectedTableId, tables]);
 
   const handleRotateTable = useCallback(() => {
-    if (isSeatingDone) {
-      return;
-    }
-
-    if (!selectedTableId) {
+    if (!canRotateSelectedTable || !selectedTableId) {
       return;
     }
 
@@ -657,14 +698,10 @@ export function SeatingLayoutEditor({
         (connection) => !connectionTouchesTable(connection, selectedTableId),
       ),
     );
-  }, [isSeatingDone, selectedTableId]);
+  }, [canRotateSelectedTable, selectedTableId]);
 
   const handleToggleSelectedSideSeats = useCallback(() => {
-    if (isSeatingDone) {
-      return;
-    }
-
-    if (!selectedTableId) {
+    if (!canChangeSelectedTableSideSeats || !selectedTableId) {
       return;
     }
 
@@ -677,17 +714,17 @@ export function SeatingLayoutEditor({
         ),
       ),
     );
-  }, [isSeatingDone, selectedTableId]);
+  }, [canChangeSelectedTableSideSeats, selectedTableId]);
 
   const handleSetAllSideSeats = useCallback((sideSeats: 2 | 3) => {
-    if (isSeatingDone) {
+    if (!canSetAllSideSeats) {
       return;
     }
 
     setTables((currentTables) =>
       ensureOneRabbiTable(currentTables.map((table) => ({ ...table, sideSeats }))),
     );
-  }, [isSeatingDone]);
+  }, [canSetAllSideSeats]);
 
   const saveLayoutGeometry = useCallback(
     async ({
@@ -748,7 +785,7 @@ export function SeatingLayoutEditor({
 
   const handleTemplateChange = useCallback(
     (value: SeatingTemplateValue) => {
-      if (!slot || value === activeTemplateValue || isSeatingDone) {
+      if (!slot || value === activeTemplateValue || isSeatingDone || isLayoutActionBusy) {
         return;
       }
 
@@ -814,6 +851,7 @@ export function SeatingLayoutEditor({
       capacityLimit,
       commitGeometry,
       geometry.physicalSeatCount,
+      isLayoutActionBusy,
       isSeatingDone,
       saveLayoutGeometry,
       slot,
@@ -822,7 +860,7 @@ export function SeatingLayoutEditor({
   );
 
   const handleSaveTemplate = useCallback(() => {
-    if (!slot || !hasValidGeometry || isSeatingDone) {
+    if (!slot || !hasValidGeometry || isSeatingDone || isLayoutActionBusy) {
       return;
     }
 
@@ -880,6 +918,7 @@ export function SeatingLayoutEditor({
     commitGeometry,
     connections,
     hasValidGeometry,
+    isLayoutActionBusy,
     isSeatingDone,
     refreshTemplates,
     saveLayoutGeometry,
@@ -933,7 +972,7 @@ export function SeatingLayoutEditor({
   );
 
   const handleSave = useCallback(() => {
-    if (!slot || !hasValidGeometry) {
+    if (saveDisabled) {
       return;
     }
 
@@ -1006,9 +1045,9 @@ export function SeatingLayoutEditor({
     commitGeometry,
     connections,
     currentAssignments,
-    hasValidGeometry,
     isSeatingDone,
     saveLayoutGeometry,
+    saveDisabled,
     selectedTableId,
     slot,
     tables,
@@ -1174,14 +1213,14 @@ export function SeatingLayoutEditor({
   }, [autoAssignDisabled, performSeating, slot]);
 
   const handleReturnToSeating = useCallback(() => {
-    if (!slot || !isEditingAfterSeating || isAutoAssigning || isSaving || isLoading) {
+    if (!slot || !isEditingAfterSeating || isLayoutActionBusy) {
       return;
     }
     performSeating(false);
-  }, [isAutoAssigning, isEditingAfterSeating, isLoading, isSaving, performSeating, slot]);
+  }, [isEditingAfterSeating, isLayoutActionBusy, performSeating, slot]);
 
   const handleEditTablesAfterSeating = useCallback(() => {
-    if (!isSeatingDone) {
+    if (!isSeatingDone || isLayoutActionBusy) {
       return;
     }
 
@@ -1203,7 +1242,7 @@ export function SeatingLayoutEditor({
         "Режим редактирования включён. Гости скрыты; assignments сохранятся и будут восстановлены при возврате к рассадке.",
       tone: "muted",
     });
-  }, [isSeatingDone, tables]);
+  }, [isLayoutActionBusy, isSeatingDone, tables]);
 
   const handleManualDragEnd = useCallback(() => {
     setDragSource(null);
@@ -1308,12 +1347,95 @@ export function SeatingLayoutEditor({
     setDragSource({ kind: "reserve", reserveId });
   }, []);
 
+  useEffect(() => {
+    if (!slot) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isShortcutEditableTarget(event.target)) {
+        return;
+      }
+
+      if (event.key === "Escape") {
+        if (isReserveDialogOpen || isCapacitySyncDialogOpen) {
+          return;
+        }
+
+        if (dragSource || selectedTableId) {
+          event.preventDefault();
+          setDragSource(null);
+          setSelectedTableId(null);
+          setCanvasCancelVersion((version) => version + 1);
+          return;
+        }
+
+        onClose();
+        return;
+      }
+
+      if (event.repeat || event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+      }
+
+      if (event.code === "KeyN" || event.key.toLowerCase() === "n") {
+        if (!canAddTable) {
+          return;
+        }
+
+        event.preventDefault();
+        handleAddTable();
+        return;
+      }
+
+      if (event.key === "Delete" || event.key === "Backspace") {
+        event.preventDefault();
+
+        if (!canRemoveSelectedTable) {
+          return;
+        }
+
+        handleRemoveTable();
+        return;
+      }
+
+      if (event.key.toLowerCase() === "r") {
+        if (!canRotateSelectedTable) {
+          return;
+        }
+
+        event.preventDefault();
+        handleRotateTable();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [
+    canAddTable,
+    canRemoveSelectedTable,
+    canRotateSelectedTable,
+    dragSource,
+    handleAddTable,
+    handleRemoveTable,
+    handleRotateTable,
+    isCapacitySyncDialogOpen,
+    isReserveDialogOpen,
+    onClose,
+    selectedTableId,
+    slot,
+  ]);
+
   const capacitySyncButton = canShowCapacitySyncAction ? (
     <Button
       className="seat-capacity-sync-button"
-      disabled={isCapacitySyncing || isSaving || isAutoAssigning || isTemplateBusy}
+      disabled={isLayoutActionBusy}
       onClick={handleOpenCapacitySyncDialog}
       size="sm"
+      title={layoutBusyReason ?? "Обновить лимит выбранного слота вручную"}
       variant="secondary"
     >
       Обновить лимит слота до количества физических мест
@@ -1357,8 +1479,8 @@ export function SeatingLayoutEditor({
 
         <div className="seat-toolbar">
           <SeatingTemplateSelector
-            canSaveTemplate={hasValidGeometry && !isSeatingDone}
-            disabled={isLoading || isSaving || isAutoAssigning || isSeatingDone}
+            canSaveTemplate={hasValidGeometry && !isSeatingDone && !isLayoutActionBusy}
+            disabled={isLayoutActionBusy || isSeatingDone}
             isApplyingTemplate={isApplyingTemplate}
             isDeletingTemplate={isDeletingTemplate}
             isLoadingTemplates={isTemplateListLoading}
@@ -1374,6 +1496,7 @@ export function SeatingLayoutEditor({
             disabled={autoAssignDisabled}
             onClick={handleAutoAssign}
             size="sm"
+            title={autoAssignDisabledReason ?? "Сделать рассадку по текущей схеме"}
             variant="success"
           >
             {isAutoAssigning
@@ -1385,9 +1508,10 @@ export function SeatingLayoutEditor({
 
           {isEditingAfterSeating && !isSeatingDone ? (
             <Button
-              disabled={isLoading || isSaving || isAutoAssigning || !hasValidGeometry}
+              disabled={isLayoutActionBusy || !hasValidGeometry}
               onClick={handleReturnToSeating}
               size="sm"
+              title={layoutBusyReason ?? "Вернуться к рассадке с сохранением возможных посадок"}
               variant="secondary"
             >
               Вернуться к рассадке
@@ -1405,9 +1529,10 @@ export function SeatingLayoutEditor({
 
           <Button
             className="seat-toolbar__save"
-            disabled={saveDisabled || isLoading || isSaving}
+            disabled={saveDisabled}
             onClick={handleSave}
             size="sm"
+            title={saveDisabled ? layoutBusyReason ?? "Нужна валидная схема с одним раввинским столом." : "Сохранить схему"}
             variant="gold"
           >
             {isSaving ? "Сохраняем..." : "Сохранить"}
@@ -1416,12 +1541,25 @@ export function SeatingLayoutEditor({
 
         <div className="seat-body">
           <div className="seat-stage">
+            <div className="seat-canvas-shell">
+              {layoutLoadError ? (
+                <div className="seat-canvas-banner seat-canvas-banner--error" role="alert">
+                  <strong>Не удалось загрузить сохраненную схему.</strong>
+                  <span>{layoutLoadError}</span>
+                </div>
+              ) : null}
+
             {isLoading && tables.length === 0 ? (
               <div className="seat-canvas-state" role="status">
                 Загружаем схему...
               </div>
+            ) : tables.length === 0 ? (
+              <div className="seat-canvas-state" role="status">
+                Нет схемы для выбранного слота.
+              </div>
             ) : (
               <SeatingCanvas
+                cancelVersion={canvasCancelVersion}
                 connections={connections}
                 geometry={geometry}
                 isSeatingDone={isSeatingDone}
@@ -1436,62 +1574,41 @@ export function SeatingLayoutEditor({
                 tables={tables}
               />
             )}
+            </div>
 
             {isSeatingDone ? (
               <div className="seat-layout-controls seat-layout-controls--locked">
                 <span className="seat-controls-label">Рассадка</span>
                 <Button
-                  disabled={isLoading || isSaving || isAutoAssigning}
+                  disabled={isLayoutActionBusy}
                   onClick={handleEditTablesAfterSeating}
                   size="sm"
+                  title={layoutBusyReason ?? "Редактировать столы с сохранением текущей рассадки"}
                   variant="secondary"
                 >
                   Редактировать столы
                 </Button>
                 <span className="seat-toolbar__sep" />
-                <SeatingCapacitySummary
-                  capacityLimit={capacityLimit}
-                  occupiedSeats={slot.bucket.occupiedSeats}
-                  physicalSeatCount={geometry.physicalSeatCount}
-                  reserveSeats={placedReserveCount}
-                  leadingParts={[`${tables.length} стол.`]}
-                  trailingParts={[
-                    `раввинский резерв ${rabbiReserveCount}`,
-                    `${unassignedGuestPool.length} не рассажены`,
-                    "фигура зафиксирована",
-                  ]}
-                />
-                {capacitySyncButton}
+                <SeatingShortcutLegend />
               </div>
             ) : (
               <SeatingToolbar
-                hasSelectedTable={Boolean(selectedTable)}
-                isLoading={isLoading}
+                addDisabled={!canAddTable}
+                addDisabledReason={addTableDisabledReason}
+                allSideSeatsDisabled={!canSetAllSideSeats}
+                allSideSeatsDisabledReason={allSideSeatsDisabledReason}
                 onAddTable={handleAddTable}
                 onRemoveTable={handleRemoveTable}
                 onRotateTable={handleRotateTable}
                 onSetAllSideSeats={handleSetAllSideSeats}
                 onToggleSelectedSideSeats={handleToggleSelectedSideSeats}
-                removeDisabled={!selectedTable || tables.length <= 1}
+                removeDisabled={!canRemoveSelectedTable}
+                removeDisabledReason={removeTableDisabledReason}
+                rotateDisabled={!canRotateSelectedTable}
+                rotateDisabledReason={rotateTableDisabledReason}
                 selectedTableSideSeats={selectedTable ? tableSideSeats(selectedTable) : null}
-                statusSummary={
-                  <>
-                    <SeatingCapacitySummary
-                      capacityLimit={capacityLimit}
-                      occupiedSeats={slot.bucket.occupiedSeats}
-                      physicalSeatCount={geometry.physicalSeatCount}
-                      reserveSeats={placedReserveCount}
-                      leadingParts={[`${tables.length} стол.`]}
-                      trailingParts={[
-                        `${geometry.seams.length} стык.`,
-                        seatsModeLabel,
-                        `раввинский резерв ${rabbiReserveCount}`,
-                        "фигура без рассадки",
-                      ]}
-                    />
-                    {capacitySyncButton}
-                  </>
-                }
+                sideSeatsDisabled={!canChangeSelectedTableSideSeats}
+                sideSeatsDisabledReason={sideSeatsDisabledReason}
                 tableCount={tables.length}
                 variant="layout"
               />
@@ -1506,6 +1623,17 @@ export function SeatingLayoutEditor({
           </div>
 
           <aside className="seat-side-panel">
+            <SeatingMetricsPanel
+              action={capacitySyncButton}
+              capacityLimit={capacityLimit}
+              occupiedSeats={slot.bucket.occupiedSeats}
+              physicalSeatCount={geometry.physicalSeatCount}
+              rabbiReserveCount={rabbiReserveCount}
+              reserveSeats={placedReserveCount}
+              tableCount={tables.length}
+              unseatedCount={unassignedGuestPool.length + pooledReserves.length}
+            />
+
             <SeatingAssignmentsPanel
               canAddReserve={manualSeatingEnabled}
               error={guestPoolError}
@@ -1567,6 +1695,111 @@ export function SeatingLayoutEditor({
     </div>,
     document.body,
   );
+}
+
+function getLayoutBusyReason({
+  isApplyingTemplate,
+  isAutoAssigning,
+  isCapacitySyncing,
+  isDeletingTemplate,
+  isGuestPoolLoading,
+  isLoading,
+  isSaving,
+  isSavingTemplate,
+}: {
+  isApplyingTemplate: boolean;
+  isAutoAssigning: boolean;
+  isCapacitySyncing: boolean;
+  isDeletingTemplate: boolean;
+  isGuestPoolLoading: boolean;
+  isLoading: boolean;
+  isSaving: boolean;
+  isSavingTemplate: boolean;
+}): string | null {
+  if (isLoading) {
+    return "Загружаем схему.";
+  }
+
+  if (isGuestPoolLoading) {
+    return "Загружаем гостей.";
+  }
+
+  if (isSaving) {
+    return "Сохраняем изменения.";
+  }
+
+  if (isAutoAssigning) {
+    return "Идет авторассадка.";
+  }
+
+  if (isCapacitySyncing) {
+    return "Обновляем лимит слота.";
+  }
+
+  if (isApplyingTemplate) {
+    return "Применяем шаблон.";
+  }
+
+  if (isSavingTemplate) {
+    return "Сохраняем шаблон.";
+  }
+
+  if (isDeletingTemplate) {
+    return "Удаляем шаблон.";
+  }
+
+  return null;
+}
+
+function getAutoAssignDisabledReason({
+  guestPoolLength,
+  hasGuestPoolMismatch,
+  hasValidGeometry,
+  isLayoutActionBusy,
+  layoutBusyReason,
+  physicalSeatCount,
+}: {
+  guestPoolLength: number;
+  hasGuestPoolMismatch: boolean;
+  hasValidGeometry: boolean;
+  isLayoutActionBusy: boolean;
+  layoutBusyReason: string | null;
+  physicalSeatCount: number;
+}): string {
+  if (isLayoutActionBusy) {
+    return layoutBusyReason ?? "Идет операция.";
+  }
+
+  if (!hasValidGeometry) {
+    return "Нужна валидная схема с одним раввинским столом.";
+  }
+
+  if (hasGuestPoolMismatch) {
+    return "Список гостей не загружен для занятого слота.";
+  }
+
+  if (guestPoolLength === 0) {
+    return "Нет гостей для рассадки.";
+  }
+
+  if (physicalSeatCount === 0) {
+    return "В схеме нет физических мест.";
+  }
+
+  return "Авторассадка недоступна.";
+}
+
+function isShortcutEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (target.isContentEditable) {
+    return true;
+  }
+
+  const tagName = target.tagName.toLowerCase();
+  return tagName === "input" || tagName === "textarea" || tagName === "select";
 }
 
 function assignmentsToPayloadEntries(assignments: SeatingAssignment[]): {
@@ -2059,25 +2292,6 @@ function connectionTouchesTable(connection: SeatingConnection, tableId: string):
 
 function pickSelectedTableId(tables: SeatingTable[]): string | null {
   return tables.find((table) => table.isRabbiTable)?.id ?? tables[0]?.id ?? null;
-}
-
-function formatSeatsMode(tables: SeatingTable[]): string {
-  if (tables.length === 0) {
-    return "нет столов";
-  }
-
-  const allTwo = tables.every((table) => tableSideSeats(table) === 2);
-  const allThree = tables.every((table) => tableSideSeats(table) === 3);
-
-  if (allTwo) {
-    return "2 места/стор.";
-  }
-
-  if (allThree) {
-    return "3 места/стор.";
-  }
-
-  return "смешанная вместимость";
 }
 
 function formatSlotTitle(slot: SeatingLayoutEditorSlot): string {
