@@ -5637,6 +5637,104 @@ a {
   line-height: 1.35;
 }
 
+.seat-capacity-sync-button {
+  flex: 0 1 auto;
+  max-width: 320px;
+  white-space: normal;
+  line-height: 1.2;
+}
+
+.seat-capacity-sync-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1090;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(5, 5, 10, 0.74);
+  backdrop-filter: blur(12px);
+}
+
+.seat-capacity-sync-dialog {
+  display: grid;
+  width: min(460px, 100%);
+  gap: 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 16px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.seat-capacity-sync-dialog__head {
+  display: grid;
+  gap: 5px;
+}
+
+.seat-capacity-sync-dialog__head span {
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.seat-capacity-sync-dialog__head h3,
+.seat-capacity-sync-dialog__body p,
+.seat-capacity-sync-dialog__warning,
+.seat-capacity-sync-dialog__error {
+  margin: 0;
+}
+
+.seat-capacity-sync-dialog__head h3 {
+  color: var(--text);
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.seat-capacity-sync-dialog__body {
+  display: grid;
+  gap: 6px;
+}
+
+.seat-capacity-sync-dialog__body p {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.seat-capacity-sync-dialog__muted {
+  color: var(--text-muted) !important;
+  font-weight: 650 !important;
+}
+
+.seat-capacity-sync-dialog__warning,
+.seat-capacity-sync-dialog__error {
+  border: 1px solid rgba(229, 44, 54, 0.36);
+  border-radius: 8px;
+  padding: 9px 11px;
+  background: rgba(229, 44, 54, 0.1);
+  color: #ff9ca2;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.seat-capacity-sync-dialog__warning {
+  border-color: rgba(242, 184, 75, 0.38);
+  background: rgba(242, 184, 75, 0.09);
+  color: #ffd27a;
+}
+
+.seat-capacity-sync-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .seat-controls-label {
   margin-right: 2px;
   color: var(--text-muted);
@@ -6279,6 +6377,12 @@ a {
 
   .seat-layout-controls {
     align-content: start;
+  }
+
+  .seat-capacity-sync-button,
+  .seat-capacity-sync-dialog__actions .button {
+    width: 100%;
+    max-width: none;
   }
 
   .seat-template-selector,

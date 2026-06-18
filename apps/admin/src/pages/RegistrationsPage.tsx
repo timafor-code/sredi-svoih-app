@@ -628,6 +628,27 @@ export function RegistrationsPage() {
     [eventHasOccurrences, selectedEvent, selectedOccurrence],
   );
 
+  const handleCapacityLimitUpdated = useCallback(
+    (_capacityUnitId: string, capacity: number | null) => {
+      pushToast(
+        "success",
+        capacity === null
+          ? "Лимит регистрации снят."
+          : "Лимит регистрации обновлён.",
+      );
+
+      void loadCapacityAnalytics({ silent: true }).catch((nextError) => {
+        pushToast(
+          "error",
+          nextError instanceof Error
+            ? nextError.message
+            : "Не удалось обновить данные занятости мест.",
+        );
+      });
+    },
+    [loadCapacityAnalytics, pushToast],
+  );
+
   const refreshAll = useCallback(() => {
     void Promise.all([
       loadRegistrationEventSummaries(),
@@ -882,6 +903,7 @@ export function RegistrationsPage() {
       />
 
       <SeatingLayoutEditor
+        onCapacityLimitUpdated={handleCapacityLimitUpdated}
         onClose={() => setSeatingEditorSlot(null)}
         slot={seatingEditorSlot}
       />
