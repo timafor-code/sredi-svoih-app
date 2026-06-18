@@ -11,6 +11,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import type {
   SeatingConnection,
   SeatingGeometryResult,
+  SeatingSeatOccupant,
   SeatingTable,
 } from "../../types/seating";
 
@@ -29,15 +30,19 @@ type DragState = {
 export function SeatingCanvas({
   connections,
   geometry,
+  isSeatingDone,
   onMoveTable,
   onSelectTable,
+  occupants,
   selectedTableId,
   tables,
 }: {
   connections: SeatingConnection[];
   geometry: SeatingGeometryResult;
+  isSeatingDone: boolean;
   onMoveTable: (tableId: string, center: { cx: number; cy: number }) => void;
   onSelectTable: (tableId: string) => void;
+  occupants: SeatingSeatOccupant[];
   selectedTableId: string | null;
   tables: SeatingTable[];
 }) {
@@ -57,6 +62,14 @@ export function SeatingCanvas({
     });
     return ids;
   }, [connections]);
+
+  const occupantsBySeat = useMemo(() => {
+    const bySeat = new Map<number, SeatingSeatOccupant>();
+    occupants.forEach((occupant) => {
+      bySeat.set(occupant.seatIndex, occupant);
+    });
+    return bySeat;
+  }, [occupants]);
 
   const fitSeatCanvas = useCallback(() => {
     const wrap = wrapRef.current;
@@ -128,6 +141,10 @@ export function SeatingCanvas({
 
   const handleTablePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>, table: SeatingTable) => {
+      if (isSeatingDone) {
+        return;
+      }
+
       if (event.button !== 0) {
         return;
       }
@@ -142,7 +159,7 @@ export function SeatingCanvas({
         startY: event.clientY,
       });
     },
-    [onSelectTable],
+    [isSeatingDone, onSelectTable],
   );
 
   const canvasStyle: CSSProperties = {
@@ -161,7 +178,7 @@ export function SeatingCanvas({
         style={canvasStyle}
       >
         {tables.map((table, index) => {
-          const selected = table.id === selectedTableId;
+          const selected = !isSeatingDone && table.id === selectedTableId;
           const sideSeats = table.sideSeats === 2 ? 2 : 3;
           const tableStyle: CSSProperties = {
             height: table.h,
@@ -173,10 +190,10 @@ export function SeatingCanvas({
 
           return (
             <div
-              aria-pressed={selected}
+              aria-pressed={isSeatingDone ? undefined : selected}
               className={[
                 "seat-table",
-                "seat-table--editable",
+                isSeatingDone ? "seat-table--locked" : "seat-table--editable",
                 selected ? "seat-table--selected" : "",
                 connectedTableIds.has(table.id) ? "seat-table--connected" : "",
                 table.isRabbiTable ? "seat-table--rabbi" : "",
@@ -185,15 +202,19 @@ export function SeatingCanvas({
                 .join(" ")}
               key={table.id}
               onKeyDown={(event) => {
+                if (isSeatingDone) {
+                  return;
+                }
+
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
                   onSelectTable(table.id);
                 }
               }}
               onPointerDown={(event) => handleTablePointerDown(event, table)}
-              role="button"
+              role={isSeatingDone ? "img" : "button"}
               style={tableStyle}
-              tabIndex={0}
+              tabIndex={isSeatingDone ? -1 : 0}
               title={`Стол ${index + 1}. Перетащите стол по схеме; поворот — кнопкой ↻ 90°.`}
             >
               <span className="seat-table__label">
@@ -219,14 +240,18 @@ export function SeatingCanvas({
 
         {geometry.seats.map((seat, index) => {
           const isHead = index === geometry.headIndex;
+          const occupant = occupantsBySeat.get(index);
+          const isOccupied = Boolean(occupant);
 
           return (
             <div
+              aria-label={occupant ? occupant.displayName : undefined}
               className={[
                 "seat",
-                "seat--empty",
-                "seat--preview",
+                isOccupied ? "seat--occupied" : "seat--empty",
+                !isSeatingDone ? "seat--preview" : "",
                 seat.isRabbiTable ? "seat--rabbi-reserved" : "",
+                occupant?.isRabbiHead ? "seat--rabbi-head" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
@@ -235,13 +260,25 @@ export function SeatingCanvas({
                 left: seat.x - SEAT_SIZE / 2,
                 top: seat.y - SEAT_SIZE / 2,
               }}
-              title={
+              title={occupant ? occupant.displayName : (
                 seat.isRabbiTable
                   ? "Потенциальное место раввинского стола"
                   : "Потенциальное физическое место"
-              }
+              )}
             >
-              {isHead ? (
+              {occupant ? (
+                <span
+                  className={[
+                    "seat-occupant",
+                    occupant.isRabbiHead ? "seat-occupant--rabbi" : "seat-occupant--guest",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  {occupant.initials}
+                </span>
+              ) : null}
+              {!occupant && isHead ? (
                 <span aria-label="Головное место раввина" className="seat-head-mark">
                   ★
                 </span>

@@ -232,6 +232,18 @@ export interface SeatingAssignment {
   type: SeatingAssignmentType;
 }
 
+/** Display occupant derived from a saved/auto-generated seating assignment. */
+export interface SeatingSeatOccupant {
+  displayName: string;
+  id: string;
+  initials: string;
+  isRabbiHead?: boolean;
+  registrationId: string | null;
+  seatIndex: number;
+  seatKey: string;
+  type: SeatingAssignmentType;
+}
+
 /**
  * Display-only capacity summary shape (the v15 status line). This PR ships the
  * TYPE only — the formulas (PLAN §1) and the UI land in PR 18
@@ -256,6 +268,10 @@ export interface SeatingCapacitySummary {
 }
 
 export type SeatingGuestPoolSource = "participant" | "guest";
+export type SeatingGuestPoolObligationSource =
+  | "reservation"
+  | "mapped_option"
+  | "mixed";
 
 /**
  * A read-only seat obligation for the selected registration capacity bucket.
@@ -282,6 +298,9 @@ export interface SeatingGuestPoolItem {
   status: string | null;
   paymentStatus: string | null;
   optionTitles: string[];
+  optionIds: string[];
+  capacityReservationIds: string[];
+  seatObligationSource: SeatingGuestPoolObligationSource;
   capacityUnitId: string;
   occurrenceId: string | null;
 }

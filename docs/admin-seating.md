@@ -23,12 +23,17 @@ block B PRs and may be extended in later ones.
   service/RPC, apply, save current layout as template, and soft delete user
   templates. Still no guests, assignments UI, auto-seating, reserves, capacity
   summary or capacity sync.
-- **PR 13 (this revision):** seating assignments foundation for the selected
+- **PR 13:** seating assignments foundation for the selected
   registration capacity bucket. The editor now loads the real read-only guest
   pool and renders the "Не рассажены" panel, but it still does not place guests,
   save assignments, auto-seat, drag/drop, create reserves or change capacity.
-- **Later PRs:** auto-seating, locked/manual assignments, reserves, capacity
-  summary, capacity sync.
+- **PR 14 (this revision):** deterministic auto seating for the selected
+  registration capacity bucket. The editor adds "Сделать рассадку", distributes
+  active guests across the physical geometry, saves generated assignments through
+  the existing seating RPC, renders occupied seats with initials and leaves
+  overflow guests in "Не рассажены".
+- **Later PRs:** manual drag/drop, user reserves, geometry-change reconcile,
+  capacity summary, capacity sync.
 
 The browser admin client talks to all of this through the normal authenticated
 Supabase session. No service role or Admin API is used anywhere in the seating
@@ -93,6 +98,18 @@ The persisted shapes drawn from it:
   `cx`, `cy`, `w`, `h`, `angle` (one of `0/90/180/270`), `long_side_seats`
   (= prototype `sideSeats`, one of `2/3`), and `is_rabbi_table`. The prototype
   has no round tables, so there is no `is_round` column.
+
+  **Table identity is `client_table_id`, not the DB row `id`.** Every seat key,
+  connection endpoint and saved assignment is built from `client_table_id`, so it
+  is the only stable handle across a save → reopen cycle. The read RPC returns
+  `to_jsonb(st.*)`, which carries *both* the volatile `event_seating_tables.id`
+  uuid and `client_table_id`; `normalizeTable` therefore prefers
+  `client_table_id` (falling back to `id` only for template snapshots, whose v15
+  camelCase rows have no `client_table_id`). Re-keying tables to the DB uuid on
+  reopen would orphan every saved `seat_key` — the canvas would reopen empty, the
+  status line would show 0 occupied, and the editor would raise the false "часть
+  сохранённых мест больше не существует" warning even though geometry is
+  unchanged.
 
 - **Connection** (prototype `tableConnections[]`):
   `{ aTableId, aEnd, bTableId, bEnd, x, y }`.
@@ -248,10 +265,11 @@ without translation.
 PR 10 had no canvas and no UI. The first layout editor UI lands in PR 11. PR 12
 uses this service layer for the real template selector: list templates, save the
 current layout before creating a user template, soft-delete a user template, and
-apply user-template geometry through the existing save-layout contract. Auto
-seating, guest drag/drop, reserves and the capacity summary are still later PRs
-(13–18). `SeatingCapacitySummary` here is a **type only** — its formulas and UI
-arrive in PR 18.
+apply user-template geometry through the existing save-layout contract. PR 13
+adds the real guest pool, and PR 14 uses `saveSeatingAssignments()` for the
+first generated assignment flow. Manual drag/drop, user reserves and the
+capacity summary are still later PRs (15–18). `SeatingCapacitySummary` here is a
+**type only** — its formulas and UI arrive in PR 18.
 
 **This PR does not change the registration limit.** The service never reads or
 writes `event_capacity_units.capacity`. The `capacity` field on the save payload
@@ -277,11 +295,12 @@ routing keys (`eventId` / `occurrenceId` / `capacityUnitId`) live **inside** the
 save payload by design (PR 8); the service types them explicitly rather than
 hiding them.
 
-## Layout editor UI (PR 11–13)
+## Layout editor UI (PR 11–14)
 
 PR 11 added the first production React UI for the seating layout editor in
 web-admin registrations. PR 12 replaces the placeholder template controls with
-the real template library. PR 13 adds the read-only guest pool foundation. The
+the real template library. PR 13 adds the read-only guest pool foundation. PR 14
+adds deterministic auto seating and assignment save. The
 source of truth for visual behaviour is
 `docs/prototype/registrations-improved-seating-v15.html`, ported into React
 components rather than mounted as prototype HTML.
@@ -319,6 +338,13 @@ Implemented scope:
 - Guest chips with display name, initials, source label (participant/guest),
   registration status/payment labels already available in the registration UI,
   and selected option labels when available.
+- `seatingAutoAssign` pure logic for deterministic generated assignments.
+- "Сделать рассадку" action in the seating editor.
+- Occupied physical seats rendered with guest initials after auto seating.
+- The "Не рассажены" panel filtered to overflow/unassigned guests after auto
+  seating.
+- Assignment save through the existing `saveSeatingAssignments()` service and
+  `admin_save_seating_assignments` RPC.
 
 ### Guest pool model (PR 13)
 
@@ -332,9 +358,18 @@ The pool is built from:
   RPC, paged by status;
 - durable `event_registration_capacity_reservations` rows for the selected
   capacity unit, read through the authenticated Supabase client and RLS;
-- a read-only fallback from `event_participation_option_capacity_units` mappings
-  for older registrations that have seat-taking selected options but no durable
-  reservation row yet.
+- read-only option-capacity obligations from
+  `event_participation_option_capacity_units` for active, non-donation,
+  capacity-counting selected options when a matching durable reservation row is
+  not present.
+
+This mirrors the registration capacity analytics fallback. The fallback is still
+bucket-level identity, not title matching: the client uses `option_id`,
+`event_id`, `occurrence_id`, and `capacity_unit_id` to prove that the selected
+option maps to the current bucket. The `admin_save_seating_assignments` RPC
+validates the same two accepted obligation sources: durable reservation rows or
+active mapped option selections. Donation-only selections, non-capacity options,
+and inactive registration statuses are rejected/excluded.
 
 Active pool statuses for PR 13 are `confirmed`, `pending`, and `attended`.
 `cancelled`, `rejected`, `waitlisted`, and `no_show` are not rendered as active
@@ -346,6 +381,11 @@ item is one seat obligation in the selected bucket: the main participant first,
 then registration guests by index/name. If a registration has more seat
 obligations than named guests, the remaining real obligations are shown as
 numbered unnamed guests tied to the registration.
+
+Mapped multi-meal options such as "Весь шабат" appear in buckets such as
+`friday_dinner` or `shabbat_lunch` only when the selected option has a mapping
+to that capacity unit (or a durable reservation row for it). Guests from other
+capacity units are not included in the seating pool for the selected bucket.
 
 Initials are derived from the first two non-empty name parts, using locale-aware
 uppercase for Russian/Latin names and `?` as the safe fallback for empty names.
@@ -359,6 +399,63 @@ Explicitly not included in PR 13:
 - saving real seating assignments;
 - capacity summary, capacity sync or any change to
   `event_capacity_units.capacity`.
+
+### Auto seating (PR 14)
+
+PR 14 is the first real assignment flow. It ports the v15 prototype behaviour
+from `seatMakeSeating`, `autoArrange`, `spreadSeatIndexes`,
+`rabbiSeatIndexes`, `pickRabbiHeadIndex` and the post-auto rendering rules, but
+keeps it as production React and pure TypeScript rather than copying prototype
+HTML.
+
+Algorithm:
+
+- The input is the current seating geometry (`tables` + `connections`, computed
+  through `computeTableSeats`) and the current active guest pool for the
+  selected `(event_id, occurrence_id, capacity_unit_id)` bucket.
+- Guests are not randomized and are not read from the DOM. The same input yields
+  the same assignments.
+- The rabbi/head seat is computed by the geometry layer. All seats belonging to
+  the rabbi table are blocked for ordinary guests.
+- If the guest pool contains an explicit rabbi guest marker, that real guest is
+  placed on the head seat. If there is no explicit rabbi guest, the head seat
+  remains visually marked/reserved by geometry and no fake "Раввин" assignment
+  is created.
+- Regular guests are distributed over non-rabbi, non-blocked seats using
+  `spreadSeatIndexes`, so auto seating spreads people across the physical
+  figure instead of filling the first N chairs.
+- If physical seats are insufficient, the overflow guests remain in
+  "Не рассажены" and a warning is shown. They are also sent in the v15-compatible
+  `pool[]` payload.
+- If the guest pool is empty or there are no tables, the editor shows a
+  no-op/warning state and does not crash.
+
+Persistence:
+
+- Clicking "Сделать рассадку" first saves the current layout geometry through
+  `saveSeatingLayout()` so the layout row exists for the slot.
+- It then saves generated `chairs[]` and overflow `pool[]` through
+  `saveSeatingAssignments()` / `admin_save_seating_assignments`.
+- After assignment save succeeds, the layout is saved with `seatingDone = true`
+  and the table figure is locked in the editor.
+- Assignment rows reference only registrations from the selected bucket. No
+  user reserve rows are created in PR 14.
+- Auto seating does not create `event_registration`, does not change
+  registration statuses, does not touch payment, and does not write
+  `event_capacity_units.capacity`.
+
+Explicitly not included in PR 14:
+
+- manual drag/drop, swap, seat-to-pool or any `wireSeatDnD` / `seatDrop` flow
+  (PR 15);
+- user reserves or `SeatingReserveDialog` (PR 16);
+- edit-preserve/reconcile after geometry changes (PR 17);
+- capacity summary or capacity sync (PR 18/19).
+
+When an admin chooses to edit tables after auto seating, the UI shows a
+confirmation. If confirmed, guests are hidden while editing and the current
+assignments remain saved as the current state; full reconcile is intentionally
+left for PR 17.
 
 The editor always keeps exactly one `isRabbiTable` in local UI state before
 save. A new empty slot starts with one rabbi table. If the selected rabbi table
@@ -468,3 +565,29 @@ Not run by Codex. Manual smoke is performed by the project owner.
 16. Confirm `event_capacity_units.capacity` did not change.
 17. Confirm registrations table/detail modal/export/refresh still work.
 18. Confirm browser smoke was not run by Codex.
+
+## Manual smoke checklist (PR 14)
+
+Not run by Codex. Manual smoke is performed by the project owner.
+
+1. Open web-admin registrations page.
+2. Select an event/date with capacity buckets.
+3. Click "Схема рассадки" for a bucket with registrations.
+4. Confirm seating modal opens.
+5. Confirm panel "Не рассажены" shows real guests.
+6. Confirm button "Сделать рассадку" appears.
+7. Click "Сделать рассадку".
+8. Confirm guests are placed on physical seats.
+9. Confirm initials render on occupied seats.
+10. Confirm ordinary guests are not placed at the rabbi table.
+11. Confirm rabbi/head seat behavior follows the current data/geometry.
+12. Confirm overflow guests remain in "Не рассажены" if seats are insufficient.
+13. Confirm no drag/drop behavior is available yet.
+14. Confirm no user reserves UI is available yet.
+15. Confirm generated assignments persist after save/reopen if backend save is
+    in scope and succeeds.
+16. Confirm `event_capacity_units.capacity` did not change.
+17. Confirm template selector from PR 12 still works.
+18. Confirm table editing from PR 11 still works before auto seating.
+19. Confirm registrations table/detail modal/export/refresh still work.
+20. Confirm browser smoke was not run by Codex.

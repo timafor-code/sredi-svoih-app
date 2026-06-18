@@ -18,10 +18,17 @@ import {
   tableSideSeats,
 } from "../../lib/seatingGeometry";
 import {
+  autoAssignResultToPayloadEntries,
+  autoAssignResultToAssignments,
+  autoAssignSeating,
+  deriveSeatingAssignmentRestoreState,
+} from "../../lib/seatingAutoAssign";
+import {
   createSeatingTemplateFromLayout,
   deleteSeatingTemplate,
   getSeatingLayout,
   listSeatingTemplates,
+  saveSeatingAssignments,
   saveSeatingLayout,
 } from "../../services/adminSeatingService";
 import { getAdminRegistrationCapacityGuestPool } from "../../services/adminRegistrationCapacityService";
@@ -29,6 +36,9 @@ import type { AdminEventOccurrence } from "../../types/eventOccurrences";
 import type { AdminRegistrationCapacityBucket } from "../../types/registrationCapacity";
 import type { AdminRegistrationEventSummary } from "../../types/registrations";
 import type {
+  SeatingAssignment,
+  SeatingAssignmentEntry,
+  SeatingAssignmentsSaveResult,
   SeatingConnection,
   SeatingGuestPoolItem,
   SeatingLayoutRow,
@@ -77,6 +87,7 @@ export function SeatingLayoutEditor({
   slot: SeatingLayoutEditorSlot | null;
 }) {
   const [connections, setConnections] = useState<SeatingConnection[]>([]);
+  const [assignments, setAssignments] = useState<SeatingAssignment[]>([]);
   const [feedback, setFeedback] = useState<EditorFeedback | null>(null);
   const [guestPool, setGuestPool] = useState<SeatingGuestPoolItem[]>([]);
   const [guestPoolError, setGuestPoolError] = useState<string | null>(null);
@@ -84,12 +95,14 @@ export function SeatingLayoutEditor({
     useState<SeatingTemplateValue>(DEFAULT_SEATING_TEMPLATE_VALUE);
   const [isApplyingTemplate, setIsApplyingTemplate] = useState(false);
   const [isDeletingTemplate, setIsDeletingTemplate] = useState(false);
+  const [isAutoAssigning, setIsAutoAssigning] = useState(false);
   const [isGuestPoolLoading, setIsGuestPoolLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [isTemplateListLoading, setIsTemplateListLoading] = useState(false);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  const [isSeatingDone, setIsSeatingDone] = useState(false);
   const [tables, setTables] = useState<SeatingTable[]>([]);
   const [templates, setTemplates] = useState<SeatingTemplate[]>([]);
 
@@ -114,7 +127,10 @@ export function SeatingLayoutEditor({
   useEffect(() => {
     if (!slot) {
       setActiveTemplateValue(DEFAULT_SEATING_TEMPLATE_VALUE);
+      setAssignments([]);
       setConnections([]);
+      setIsAutoAssigning(false);
+      setIsSeatingDone(false);
       setSelectedTableId(null);
       setTables([]);
       return undefined;
@@ -126,6 +142,7 @@ export function SeatingLayoutEditor({
     setActiveTemplateValue(DEFAULT_SEATING_TEMPLATE_VALUE);
     setIsLoading(true);
     setIsApplyingTemplate(false);
+    setIsAutoAssigning(false);
     setIsDeletingTemplate(false);
     setIsSaving(false);
     setIsSavingTemplate(false);
@@ -152,12 +169,14 @@ export function SeatingLayoutEditor({
 
         setTables(nextTables);
         setConnections(nextConnections);
+        setAssignments(layout?.assignments ?? []);
+        setIsSeatingDone(Boolean(layout?.seatingDone));
         setActiveTemplateValue(
           layout?.templateId
             ? userSeatingTemplateValue(layout.templateId)
             : DEFAULT_SEATING_TEMPLATE_VALUE,
         );
-        setSelectedTableId(pickSelectedTableId(nextTables));
+        setSelectedTableId(layout?.seatingDone ? null : pickSelectedTableId(nextTables));
         setFeedback(
           layout
             ? null
@@ -174,6 +193,8 @@ export function SeatingLayoutEditor({
         ]);
         setTables(fallbackTables);
         setConnections([]);
+        setAssignments([]);
+        setIsSeatingDone(false);
         setActiveTemplateValue(DEFAULT_SEATING_TEMPLATE_VALUE);
         setSelectedTableId(pickSelectedTableId(fallbackTables));
         setFeedback({
@@ -316,6 +337,49 @@ export function SeatingLayoutEditor({
     () => computeTableSeats({ connections, tables }),
     [connections, tables],
   );
+  const assignmentRestoreState = useMemo(
+    () =>
+      deriveSeatingAssignmentRestoreState({
+        assignments,
+        geometry,
+        guestPool,
+      }),
+    [assignments, geometry, guestPool],
+  );
+  const seatOccupants = useMemo(
+    () => (isSeatingDone ? assignmentRestoreState.occupants : []),
+    [assignmentRestoreState.occupants, isSeatingDone],
+  );
+  const currentAssignments = useMemo(
+    () => (isSeatingDone ? assignmentRestoreState.currentAssignments : assignments),
+    [assignmentRestoreState.currentAssignments, assignments, isSeatingDone],
+  );
+  const unassignedGuestPool = useMemo(
+    () => (isSeatingDone ? assignmentRestoreState.unassignedGuests : guestPool),
+    [assignmentRestoreState.unassignedGuests, guestPool, isSeatingDone],
+  );
+  const visibleGuestPool = unassignedGuestPool;
+  const hasBucketOccupancy = Boolean(
+    slot &&
+      ((slot.bucket.occupiedSeats ?? 0) > 0 ||
+        (slot.bucket.reservationsCount ?? 0) > 0),
+  );
+  const hasGuestPoolMismatch = Boolean(
+    slot &&
+      !isGuestPoolLoading &&
+      !guestPoolError &&
+      hasBucketOccupancy &&
+      guestPool.length === 0,
+  );
+  const invalidSeatKeyWarning =
+    isSeatingDone && assignmentRestoreState.invalidAssignments.length > 0
+      ? "Часть сохранённых мест больше не существует в текущей схеме."
+      : null;
+  const guestPoolWarning =
+    invalidSeatKeyWarning ??
+    (hasGuestPoolMismatch
+      ? "Есть занятые места, но список гостей для рассадки не загружен."
+      : null);
 
   const capacityLimit = slot?.bucket.effectiveCapacity ?? slot?.bucket.capacity ?? null;
   const capacityLabel = formatCapacityLimit(capacityLimit);
@@ -327,9 +391,38 @@ export function SeatingLayoutEditor({
     isApplyingTemplate ||
     isDeletingTemplate ||
     isSavingTemplate;
-  const saveDisabled = !slot || !hasValidGeometry || isTemplateBusy;
+  const saveDisabled = !slot || !hasValidGeometry || isTemplateBusy || isAutoAssigning;
+  const autoAssignDisabled =
+    !slot ||
+    !hasValidGeometry ||
+    isLoading ||
+    isGuestPoolLoading ||
+    isSaving ||
+    isAutoAssigning ||
+    isTemplateBusy ||
+    hasGuestPoolMismatch ||
+    guestPool.length === 0 ||
+    geometry.physicalSeatCount === 0;
+
+  useEffect(() => {
+    if (!slot || !hasGuestPoolMismatch) {
+      return;
+    }
+
+    console.warn("Seating guest pool empty despite bucket occupancy", {
+      capacityUnitId: slot.bucket.capacityUnitId,
+      eventId: slot.event.eventId,
+      occurrenceId: slot.occurrence?.id ?? null,
+      occupiedSeats: slot.bucket.occupiedSeats,
+      reservationsCount: slot.bucket.reservationsCount,
+    });
+  }, [hasGuestPoolMismatch, slot]);
 
   const handleAddTable = useCallback(() => {
+    if (isSeatingDone) {
+      return;
+    }
+
     const currentTables =
       tables.length > 0
         ? tables
@@ -347,10 +440,14 @@ export function SeatingLayoutEditor({
 
     setTables(nextTables);
     setSelectedTableId(nextTable.id);
-  }, [selectedTableId, tables]);
+  }, [isSeatingDone, selectedTableId, tables]);
 
   const handleMoveTable = useCallback(
     (tableId: string, center: { cx: number; cy: number }) => {
+      if (isSeatingDone) {
+        return;
+      }
+
       setTables((currentTables) =>
         ensureOneRabbiTable(
           currentTables.map((table) =>
@@ -364,10 +461,14 @@ export function SeatingLayoutEditor({
         currentConnections.filter((connection) => !connectionTouchesTable(connection, tableId)),
       );
     },
-    [],
+    [isSeatingDone],
   );
 
   const handleRemoveTable = useCallback(() => {
+    if (isSeatingDone) {
+      return;
+    }
+
     if (!selectedTableId || tables.length <= 1) {
       return;
     }
@@ -383,9 +484,13 @@ export function SeatingLayoutEditor({
       ),
     );
     setSelectedTableId(pickSelectedTableId(nextTables));
-  }, [selectedTableId, tables]);
+  }, [isSeatingDone, selectedTableId, tables]);
 
   const handleRotateTable = useCallback(() => {
+    if (isSeatingDone) {
+      return;
+    }
+
     if (!selectedTableId) {
       return;
     }
@@ -407,9 +512,13 @@ export function SeatingLayoutEditor({
         (connection) => !connectionTouchesTable(connection, selectedTableId),
       ),
     );
-  }, [selectedTableId]);
+  }, [isSeatingDone, selectedTableId]);
 
   const handleToggleSelectedSideSeats = useCallback(() => {
+    if (isSeatingDone) {
+      return;
+    }
+
     if (!selectedTableId) {
       return;
     }
@@ -423,22 +532,28 @@ export function SeatingLayoutEditor({
         ),
       ),
     );
-  }, [selectedTableId]);
+  }, [isSeatingDone, selectedTableId]);
 
   const handleSetAllSideSeats = useCallback((sideSeats: 2 | 3) => {
+    if (isSeatingDone) {
+      return;
+    }
+
     setTables((currentTables) =>
       ensureOneRabbiTable(currentTables.map((table) => ({ ...table, sideSeats }))),
     );
-  }, []);
+  }, [isSeatingDone]);
 
   const saveLayoutGeometry = useCallback(
     async ({
       nextConnections,
+      nextSeatingDone = false,
       nextSelectedTableId,
       nextTables,
       templateValue,
     }: {
       nextConnections: SeatingConnection[];
+      nextSeatingDone?: boolean;
       nextSelectedTableId: string | null;
       nextTables: SeatingTable[];
       templateValue: SeatingTemplateValue;
@@ -458,8 +573,8 @@ export function SeatingLayoutEditor({
         occurrenceId: slot.occurrence?.id ?? null,
         pool: [],
         reserveIds: [],
-        seatingDone: false,
-        selectedTableId: nextSelectedTableId,
+        seatingDone: nextSeatingDone,
+        selectedTableId: nextSeatingDone ? null : nextSelectedTableId,
         tableConnections: nextConnections,
       });
     },
@@ -488,7 +603,7 @@ export function SeatingLayoutEditor({
 
   const handleTemplateChange = useCallback(
     (value: SeatingTemplateValue) => {
-      if (!slot || value === activeTemplateValue) {
+      if (!slot || value === activeTemplateValue || isSeatingDone) {
         return;
       }
 
@@ -554,6 +669,7 @@ export function SeatingLayoutEditor({
       capacityLimit,
       commitGeometry,
       geometry.physicalSeatCount,
+      isSeatingDone,
       saveLayoutGeometry,
       slot,
       templates,
@@ -561,7 +677,7 @@ export function SeatingLayoutEditor({
   );
 
   const handleSaveTemplate = useCallback(() => {
-    if (!slot || !hasValidGeometry) {
+    if (!slot || !hasValidGeometry || isSeatingDone) {
       return;
     }
 
@@ -580,6 +696,7 @@ export function SeatingLayoutEditor({
 
     void saveLayoutGeometry({
       nextConnections,
+      nextSeatingDone: isSeatingDone,
       nextSelectedTableId,
       nextTables,
       templateValue: activeTemplateValue,
@@ -587,7 +704,7 @@ export function SeatingLayoutEditor({
       .then((nextLayout) => {
         commitGeometry({
           nextConnections,
-          nextSelectedTableId,
+          nextSelectedTableId: isSeatingDone ? null : nextSelectedTableId,
           nextTables,
           templateValue: activeTemplateValue,
         });
@@ -618,6 +735,7 @@ export function SeatingLayoutEditor({
     commitGeometry,
     connections,
     hasValidGeometry,
+    isSeatingDone,
     refreshTemplates,
     saveLayoutGeometry,
     selectedTableId,
@@ -676,17 +794,45 @@ export function SeatingLayoutEditor({
 
     const nextTables = normalizeEditorTables(tables);
     const nextConnections = filterConnectionsForTables(connections, nextTables);
-    const nextSelectedTableId = selectedTableId ?? pickSelectedTableId(nextTables);
+    const nextSelectedTableId = isSeatingDone
+      ? null
+      : selectedTableId ?? pickSelectedTableId(nextTables);
+    const assignmentPayloadEntries = isSeatingDone
+      ? assignmentsToPayloadEntries(currentAssignments)
+      : null;
 
     setIsSaving(true);
     setFeedback({ message: "Сохраняем схему...", tone: "muted" });
 
     void saveLayoutGeometry({
       nextConnections,
+      nextSeatingDone: isSeatingDone,
       nextSelectedTableId,
       nextTables,
       templateValue: activeTemplateValue,
     })
+      .then(() => {
+        if (!assignmentPayloadEntries) {
+          return null;
+        }
+
+        // PR 14 persistence: layout save keeps geometry only; assignments are
+        // replaced by the dedicated RPC and must succeed before showing success.
+        return saveSeatingAssignments({
+          capacityUnitId: slot.bucket.capacityUnitId,
+          chairs: assignmentPayloadEntries.chairs,
+          eventId: slot.event.eventId,
+          occurrenceId: slot.occurrence?.id ?? null,
+          pool: assignmentPayloadEntries.pool,
+          reserveIds: [],
+        }).then((saveResult) => {
+          assertAssignmentSaveResultMatchesPayload(
+            saveResult,
+            assignmentPayloadEntries,
+          );
+          return saveResult;
+        });
+      })
       .then(() => {
         commitGeometry({
           nextConnections,
@@ -694,14 +840,16 @@ export function SeatingLayoutEditor({
           nextTables,
           templateValue: activeTemplateValue,
         });
-        setFeedback({ message: "Схема сохранена.", tone: "success" });
+        setFeedback({
+          message: isSeatingDone
+            ? "Схема и рассадка сохранены."
+            : "Схема сохранена.",
+          tone: "success",
+        });
       })
       .catch((error) => {
         setFeedback({
-          message:
-            error instanceof Error
-              ? error.message
-              : "Не удалось сохранить схему рассадки.",
+          message: formatLayoutSaveError(error, isSeatingDone),
           tone: "error",
         });
       })
@@ -712,12 +860,138 @@ export function SeatingLayoutEditor({
     activeTemplateValue,
     commitGeometry,
     connections,
+    currentAssignments,
     hasValidGeometry,
+    isSeatingDone,
     saveLayoutGeometry,
     selectedTableId,
     slot,
     tables,
   ]);
+
+  const handleAutoAssign = useCallback(() => {
+    if (!slot || autoAssignDisabled) {
+      return;
+    }
+
+    const nextTables = normalizeEditorTables(tables);
+    const nextConnections = filterConnectionsForTables(connections, nextTables);
+    const result = autoAssignSeating({
+      capacityUnitId: slot.bucket.capacityUnitId,
+      connections: nextConnections,
+      geometry: computeTableSeats({ connections: nextConnections, tables: nextTables }),
+      guestPool,
+      occurrenceId: slot.occurrence?.id ?? null,
+      tables: nextTables,
+    });
+
+    if (result.warning?.code === "empty_guest_pool") {
+      setFeedback({ message: "Нет гостей для авторассадки.", tone: "muted" });
+      return;
+    }
+
+    if (result.warning?.code === "no_tables") {
+      setFeedback({
+        message: "Сначала добавьте столы в схему рассадки.",
+        tone: "error",
+      });
+      return;
+    }
+
+    const payloadEntries = autoAssignResultToPayloadEntries(result);
+    const nextSelectedTableId = null;
+
+    setIsAutoAssigning(true);
+    setFeedback({ message: "Делаем рассадку...", tone: "muted" });
+
+    void saveLayoutGeometry({
+      nextConnections,
+      nextSeatingDone: false,
+      nextSelectedTableId: pickSelectedTableId(nextTables),
+      nextTables,
+      templateValue: activeTemplateValue,
+    })
+      .then(() =>
+        saveSeatingAssignments({
+          capacityUnitId: slot.bucket.capacityUnitId,
+          chairs: payloadEntries.chairs,
+          eventId: slot.event.eventId,
+          occurrenceId: slot.occurrence?.id ?? null,
+          pool: payloadEntries.pool,
+          reserveIds: [],
+        }),
+      )
+      .then((saveResult) => {
+        assertAssignmentSaveResultMatchesPayload(saveResult, payloadEntries);
+      })
+      .then(() =>
+        saveLayoutGeometry({
+          nextConnections,
+          nextSeatingDone: true,
+          nextSelectedTableId,
+          nextTables,
+          templateValue: activeTemplateValue,
+        }),
+      )
+      .then(() => {
+        commitGeometry({
+          nextConnections,
+          nextSelectedTableId: isSeatingDone ? null : nextSelectedTableId,
+          nextTables,
+          templateValue: activeTemplateValue,
+        });
+        setAssignments(autoAssignResultToAssignments(result));
+        setIsSeatingDone(true);
+        setFeedback({
+          message:
+            result.remainingUnassignedGuests.length > 0
+              ? `Рассадка сохранена. Не поместились: ${result.remainingUnassignedGuests.length}.`
+              : "Рассадка сохранена.",
+          tone: result.remainingUnassignedGuests.length > 0 ? "muted" : "success",
+        });
+      })
+      .catch((error) => {
+        console.error("Auto seating save failed", error);
+        setFeedback({
+          message: formatAutoAssignSaveError(error),
+          tone: "error",
+        });
+      })
+      .finally(() => {
+        setIsAutoAssigning(false);
+      });
+  }, [
+    activeTemplateValue,
+    autoAssignDisabled,
+    commitGeometry,
+    connections,
+    guestPool,
+    saveLayoutGeometry,
+    slot,
+    tables,
+  ]);
+
+  const handleEditTablesAfterSeating = useCallback(() => {
+    if (!isSeatingDone) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Рассадка уже сделана. В режиме редактирования гости будут скрыты, текущие assignments сохранятся как current state. Полный reconcile после изменения геометрии будет в PR 17. Продолжить?",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsSeatingDone(false);
+    setSelectedTableId(pickSelectedTableId(tables));
+    setFeedback({
+      message:
+        "Режим редактирования включён. Гости скрыты; сохранённые assignments не пересчитываются до PR 17.",
+      tone: "muted",
+    });
+  }, [isSeatingDone, tables]);
 
   if (!slot || typeof document === "undefined") {
     return null;
@@ -756,8 +1030,8 @@ export function SeatingLayoutEditor({
 
         <div className="seat-toolbar">
           <SeatingTemplateSelector
-            canSaveTemplate={hasValidGeometry}
-            disabled={isLoading || isSaving}
+            canSaveTemplate={hasValidGeometry && !isSeatingDone}
+            disabled={isLoading || isSaving || isAutoAssigning || isSeatingDone}
             isApplyingTemplate={isApplyingTemplate}
             isDeletingTemplate={isDeletingTemplate}
             isLoadingTemplates={isTemplateListLoading}
@@ -768,6 +1042,17 @@ export function SeatingLayoutEditor({
             selectedValue={activeTemplateValue}
             templates={templates}
           />
+
+          {!isSeatingDone ? (
+            <Button
+              disabled={autoAssignDisabled}
+              onClick={handleAutoAssign}
+              size="sm"
+              variant="success"
+            >
+              {isAutoAssigning ? "Делаем рассадку..." : "Сделать рассадку"}
+            </Button>
+          ) : null}
 
           {feedback?.message ? (
             <span
@@ -799,38 +1084,70 @@ export function SeatingLayoutEditor({
               <SeatingCanvas
                 connections={connections}
                 geometry={geometry}
+                isSeatingDone={isSeatingDone}
                 onMoveTable={handleMoveTable}
                 onSelectTable={setSelectedTableId}
+                occupants={seatOccupants}
                 selectedTableId={selectedTableId}
                 tables={tables}
               />
             )}
 
-            <SeatingToolbar
-              capacityLabel={capacityLabel}
-              hasSelectedTable={Boolean(selectedTable)}
-              isLoading={isLoading}
-              onAddTable={handleAddTable}
-              onRemoveTable={handleRemoveTable}
-              onRotateTable={handleRotateTable}
-              onSetAllSideSeats={handleSetAllSideSeats}
-              onToggleSelectedSideSeats={handleToggleSelectedSideSeats}
-              physicalSeatCount={geometry.physicalSeatCount}
-              rabbiReserveCount={geometry.seats.filter((seat) => seat.isRabbiTable).length}
-              removeDisabled={!selectedTable || tables.length <= 1}
-              seamCount={geometry.seams.length}
-              seatsModeLabel={seatsModeLabel}
-              selectedTableSideSeats={selectedTable ? tableSideSeats(selectedTable) : null}
-              tableCount={tables.length}
-              variant="layout"
-            />
+            {isSeatingDone ? (
+              <div className="seat-layout-controls seat-layout-controls--locked">
+                <span className="seat-controls-label">Рассадка</span>
+                <Button
+                  disabled={isLoading || isSaving || isAutoAssigning}
+                  onClick={handleEditTablesAfterSeating}
+                  size="sm"
+                  variant="secondary"
+                >
+                  Редактировать столы
+                </Button>
+                <span className="seat-toolbar__sep" />
+                <span className="seat-count" aria-live="polite">
+                  <span className="seat-count__main">
+                    {tables.length} стол. · {geometry.physicalSeatCount} мест
+                  </span>
+                  <span className="seat-count__sub">
+                    занято {assignmentRestoreState.occupiedCount} · свободно{" "}
+                    {Math.max(0, geometry.physicalSeatCount - assignmentRestoreState.occupiedCount)} ·
+                    раввинский резерв{" "}
+                    {geometry.seats.filter((seat) => seat.isRabbiTable).length} ·{" "}
+                    {capacityLabel} · {unassignedGuestPool.length} не рассажены ·
+                    фигура зафиксирована
+                  </span>
+                </span>
+              </div>
+            ) : (
+              <SeatingToolbar
+                capacityLabel={capacityLabel}
+                hasSelectedTable={Boolean(selectedTable)}
+                isLoading={isLoading}
+                onAddTable={handleAddTable}
+                onRemoveTable={handleRemoveTable}
+                onRotateTable={handleRotateTable}
+                onSetAllSideSeats={handleSetAllSideSeats}
+                onToggleSelectedSideSeats={handleToggleSelectedSideSeats}
+                physicalSeatCount={geometry.physicalSeatCount}
+                rabbiReserveCount={geometry.seats.filter((seat) => seat.isRabbiTable).length}
+                removeDisabled={!selectedTable || tables.length <= 1}
+                seamCount={geometry.seams.length}
+                seatsModeLabel={seatsModeLabel}
+                selectedTableSideSeats={selectedTable ? tableSideSeats(selectedTable) : null}
+                tableCount={tables.length}
+                variant="layout"
+              />
+            )}
           </div>
 
           <aside className="seat-side-panel">
             <SeatingAssignmentsPanel
               error={guestPoolError}
-              guests={guestPool}
+              guests={visibleGuestPool}
+              isSeatingDone={isSeatingDone}
               isLoading={isGuestPoolLoading}
+              warning={guestPoolWarning}
             />
 
             <section className="seat-layout-panel">
@@ -857,6 +1174,73 @@ export function SeatingLayoutEditor({
     </div>,
     document.body,
   );
+}
+
+function assignmentsToPayloadEntries(assignments: SeatingAssignment[]): {
+  chairs: SeatingAssignmentEntry[];
+  pool: SeatingAssignmentEntry[];
+} {
+  return {
+    chairs: assignments
+      .filter((assignment) => assignment.seatKey)
+      .map(assignmentToPayloadEntry),
+    pool: assignments
+      .filter((assignment) => !assignment.seatKey)
+      .map(assignmentToPayloadEntry),
+  };
+}
+
+function assignmentToPayloadEntry(assignment: SeatingAssignment): SeatingAssignmentEntry {
+  return {
+    initials: assignment.guestInitials,
+    name: assignment.guestLabel,
+    registrationId: assignment.registrationId,
+    seatKey: assignment.seatKey,
+    type: assignment.type,
+  };
+}
+
+function assertAssignmentSaveResultMatchesPayload(
+  saveResult: SeatingAssignmentsSaveResult,
+  payloadEntries: {
+    chairs: SeatingAssignmentEntry[];
+    pool: SeatingAssignmentEntry[];
+  },
+): void {
+  const entries = [...payloadEntries.chairs, ...payloadEntries.pool];
+  const reserveCount = entries.filter((entry) => entry.type === "reserve").length;
+
+  if (
+    saveResult.placedCount !== payloadEntries.chairs.length ||
+    saveResult.pooledCount !== payloadEntries.pool.length ||
+    saveResult.reserveCount !== reserveCount
+  ) {
+    throw new Error("Seating assignments save returned unexpected row counts.");
+  }
+}
+
+function formatLayoutSaveError(error: unknown, expectedAssignmentsSave: boolean): string {
+  if (expectedAssignmentsSave) {
+    return formatAutoAssignSaveError(error);
+  }
+
+  return error instanceof Error
+    ? error.message
+    : "Не удалось сохранить схему рассадки.";
+}
+
+function formatAutoAssignSaveError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (message.includes("does not belong to this event/occurrence/capacity unit")) {
+    return "Не удалось сохранить рассадку: часть гостей не относится к выбранному слоту мест.";
+  }
+
+  if (message.includes("unexpected row counts")) {
+    return "Не удалось подтвердить сохранение рассадки. Обновите данные и попробуйте ещё раз.";
+  }
+
+  return "Не удалось сохранить рассадку. Обновите данные и попробуйте ещё раз.";
 }
 
 type TemplateGeometry = {

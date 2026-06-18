@@ -5615,6 +5615,10 @@ a {
   background: rgba(255, 255, 255, 0.025);
 }
 
+.seat-layout-controls--locked {
+  background: rgba(84, 214, 196, 0.04);
+}
+
 .seat-controls-label {
   margin-right: 2px;
   color: var(--text-muted);
@@ -5665,6 +5669,13 @@ a {
     rgba(255, 255, 255, 0.04)
   );
   outline: 0;
+}
+
+.seat-table--locked {
+  z-index: 2;
+  cursor: default;
+  pointer-events: none;
+  transform-origin: center center;
 }
 
 .seat-table--selected {
@@ -5764,6 +5775,14 @@ a {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
 }
 
+.seat--occupied {
+  border: 1px solid rgba(84, 214, 196, 0.5);
+  background: linear-gradient(135deg, rgba(84, 214, 196, 0.86), rgba(107, 127, 212, 0.9));
+  box-shadow:
+    0 5px 14px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
 .seat--preview {
   border-color: rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.035);
@@ -5779,6 +5798,28 @@ a {
 
 .seat--rabbi-reserved.seat--empty {
   border-color: rgba(242, 184, 75, 0.42);
+}
+
+.seat--rabbi-head {
+  border-color: rgba(242, 184, 75, 0.72);
+  background: linear-gradient(135deg, var(--gold), #e09200);
+}
+
+.seat-occupant {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0;
+  line-height: 1;
+  place-items: center;
+  text-align: center;
+}
+
+.seat-occupant--rabbi {
+  color: #1d1506;
 }
 
 .seat-head-mark {
@@ -5845,6 +5886,14 @@ a {
 
 .seat-pool__empty--error {
   color: #ff9ca2;
+}
+
+.seat-pool__empty--warning {
+  color: #ffd27a;
+}
+
+.seat-pool__empty--success {
+  color: var(--green);
 }
 
 .seat-guest-chip {
