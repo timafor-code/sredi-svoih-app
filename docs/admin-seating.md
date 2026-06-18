@@ -14,12 +14,17 @@ block B PRs and may be extended in later ones.
 - **PR 10:** the full **typed service layer** over the read/write
   RPC (`adminSeatingService.ts` + the service-layer types in `types/seating.ts`).
   Still no canvas and no UI — see "Service layer" below.
-- **PR 11 (this revision):** the first web-admin seating layout editor UI for
+- **PR 11:** the first web-admin seating layout editor UI for
   registration capacity buckets. It adds the modal, toolbar, canvas/stage and
   table-geometry controls only. No guests, auto-seating, manual guest drag/drop,
   reserves, real template library, capacity summary or capacity sync.
-- **Later PRs:** template library UI, assignment UI, auto-seating,
-  locked/manual assignments, reserves, capacity summary, capacity sync.
+- **PR 12 (this revision):** the real seating template library in the editor:
+  client-side built-in templates, user templates from the existing seating
+  service/RPC, apply, save current layout as template, and soft delete user
+  templates. Still no guests, assignments UI, auto-seating, reserves, capacity
+  summary or capacity sync.
+- **Later PRs:** assignment UI, auto-seating, locked/manual assignments,
+  reserves, capacity summary, capacity sync.
 
 The browser admin client talks to all of this through the normal authenticated
 Supabase session. No service role or Admin API is used anywhere in the seating
@@ -49,6 +54,13 @@ model.
   `activeTemplateId`: a builtin/grid/blank choice has no saved-template row, so
   the instance keeps its own geometry. `capacity_limit_snapshot` is nullable and
   `null` means *no limit*, matching `event_capacity_units.capacity`.
+
+Applying a template always writes geometry into the current slot's layout
+instance. It does not bind future edits back to the template: after apply,
+moving or rotating a table changes only the layout instance. Built-in templates
+do not create backend template rows. User templates are read from
+`event_seating_layout_templates`; deleting one flips `is_active = false` and
+does not delete or rewrite any existing layout instance.
 
 An instance owns three child collections:
 
@@ -229,10 +241,13 @@ section), built on top of and reusing the geometry types (`SeatingTable`,
 `SeatingConnection`) so a loaded layout feeds straight into `seatingGeometry.ts`
 without translation.
 
-PR 10 had no canvas and no UI. The first layout editor UI lands in PR 11; the
-real template selector, auto-seating, guest drag/drop, reserves and the capacity
-summary are still later PRs (12–18). `SeatingCapacitySummary` here is a **type
-only** — its formulas and UI arrive in PR 18.
+PR 10 had no canvas and no UI. The first layout editor UI lands in PR 11. PR 12
+uses this service layer for the real template selector: list templates, save the
+current layout before creating a user template, soft-delete a user template, and
+apply user-template geometry through the existing save-layout contract. Auto
+seating, guest drag/drop, reserves and the capacity summary are still later PRs
+(13–18). `SeatingCapacitySummary` here is a **type only** — its formulas and UI
+arrive in PR 18.
 
 **This PR does not change the registration limit.** The service never reads or
 writes `event_capacity_units.capacity`. The `capacity` field on the save payload
@@ -258,22 +273,39 @@ routing keys (`eventId` / `occurrenceId` / `capacityUnitId`) live **inside** the
 save payload by design (PR 8); the service types them explicitly rather than
 hiding them.
 
-## Layout editor UI (PR 11)
+## Layout editor UI (PR 11–12)
 
-PR 11 adds the first production React UI for the seating layout editor in
-web-admin registrations. The source of truth for visual behaviour is
+PR 11 added the first production React UI for the seating layout editor in
+web-admin registrations. PR 12 replaces the placeholder template controls with
+the real template library. The source of truth for visual behaviour is
 `docs/prototype/registrations-improved-seating-v15.html`, ported into React
 components rather than mounted as prototype HTML.
 
 Implemented scope:
 
 - `SeatingLayoutEditor` modal opened from each registration capacity bucket.
-- `SeatingToolbar` with the template placeholder controls and table editing
-  buttons.
+- `SeatingTemplateSelector` with built-in templates and user templates from the
+  existing seating service/RPC.
+- `SeatingToolbar` with table editing buttons.
 - `SeatingCanvas` with fit/scale behaviour, editable tables, potential physical
   seats, rabbi table styling and the centered head-seat star.
 - Geometry-only editing: add/select/move/delete tables, rotate by 90 degrees,
   switch selected/all tables between 2 and 3 long-side seats.
+- Built-in templates:
+  - `builtin:blank` / "Пустой конструктор": a safe default constructor with one
+    rabbi table.
+  - `builtin:holiday_p_row` / "П + ряд — праздничная схема": generated from the
+    prototype holiday layout, using geometry constants rather than hardcoded UI
+    pixels.
+  - `builtin:grid` / "Сетка отдельных столов": generated as a table grid sized
+    from the current slot capacity when available.
+- User templates:
+  - listed via `listSeatingTemplates()`;
+  - saved via `saveSeatingLayout()` followed by
+    `createSeatingTemplateFromLayout(layoutId, title)`;
+  - soft-deleted via `deleteSeatingTemplate(templateId)`;
+  - applied by cloning the template snapshot into the current layout instance
+    and saving through `saveSeatingLayout()`.
 - Save through `saveSeatingLayout`, using the existing v15-compatible payload
   and the authenticated admin Supabase client.
 
@@ -283,8 +315,6 @@ Explicitly not included in PR 11:
 - auto-seating;
 - manual guest drag/drop;
 - reserves;
-- real template library, built-in template UI, save-as-template or delete
-  template;
 - capacity summary, capacity sync or any change to
   `event_capacity_units.capacity`.
 
@@ -293,9 +323,13 @@ save. A new empty slot starts with one rabbi table. If the selected rabbi table
 is removed while other tables exist, the next remaining table becomes the single
 rabbi table; the last remaining table cannot be deleted.
 
-The "Готовая расстановка" control is intentionally a PR 11 stub with only
-"Пустой конструктор". "Сохранить как шаблон" and "Удалить шаблон" are disabled
-until PR 12.
+Templates remain geometry-only. Save-as-template stores tables, connections and
+snapshot canvas metadata through the backend template RPC. It does not store
+guests, assignments, the future unplaced pool, reserves, or capacity as source
+of truth. Apply-template replaces the current slot's tables/connections and
+sets `template_id` only for real user-template UUIDs; built-in choices stay
+`null`. Every apply/save path keeps exactly one rabbi table before calling the
+write RPC.
 
 ### Field mapping (snake_case RPC ↔ camelCase model)
 
@@ -341,7 +375,7 @@ Run by the project owner; not executed by Codex.
    on a built-in template it is rejected.
 7. As a non-manager (or member of another community), every call is rejected.
 
-## Manual browser checklist (PR 11)
+## Manual browser checklist (PR 12)
 
 Run by the project owner; not executed by Codex.
 
@@ -349,22 +383,21 @@ Run by the project owner; not executed by Codex.
 2. Select an event/date with capacity buckets.
 3. Click "Схема рассадки".
 4. Confirm seating modal opens.
-5. Confirm UI visually follows
-   `docs/prototype/registrations-improved-seating-v15.html`.
-6. Confirm one default rabbi table appears.
-7. Confirm rabbi table has golden style and centered head star.
-8. Add a table.
-9. Select and move a table.
-10. Rotate selected table by 90 degrees.
-11. Switch selected table between 2 and 3 seats per long side.
-12. Apply all tables 2 seats per side.
-13. Apply all tables 3 seats per side.
-14. Delete a non-rabbi table.
-15. Confirm the last/rabbi table cannot be deleted in a way that leaves no
-    rabbi table.
-16. Confirm template dropdown only has "Пустой конструктор".
-17. Confirm "Сохранить как шаблон" and "Удалить шаблон" are disabled.
-18. Save layout.
-19. Close and reopen modal.
-20. Confirm registrations table/detail modal/export/refresh still work.
-21. Confirm browser smoke was not run by Codex.
+5. Confirm template dropdown shows built-in templates.
+6. Select "Пустой конструктор".
+7. Confirm empty/default constructor layout is applied safely.
+8. Select "П + ряд — праздничная схема".
+9. Confirm generated tables appear.
+10. Confirm exactly one rabbi table exists.
+11. Select "Сетка отдельных столов".
+12. Confirm generated grid appears.
+13. Move/rotate/change seats on tables.
+14. Save current layout as a user template with a custom title.
+15. Confirm the new template appears in the dropdown under user templates.
+16. Apply the saved user template to the current slot.
+17. Confirm guests/assignments are not copied.
+18. Delete the user template.
+19. Confirm built-in templates cannot be deleted.
+20. Confirm `event_capacity_units.capacity` did not change.
+21. Confirm registrations table/detail modal/export/refresh still work.
+22. Confirm browser smoke was not run by Codex.

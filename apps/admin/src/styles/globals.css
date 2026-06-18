@@ -5452,8 +5452,21 @@ a {
   gap: 8px;
 }
 
+.seat-template-selector {
+  flex: 1 1 560px;
+}
+
+.seat-template-selector[aria-busy="true"] .seat-template-field {
+  border-color: rgba(242, 184, 75, 0.24);
+}
+
+.seat-template-selector .button {
+  flex: 0 0 auto;
+}
+
 .seat-template-field {
   display: flex;
+  flex: 1 1 310px;
   align-items: center;
   gap: 8px;
   min-height: 32px;
@@ -5474,6 +5487,7 @@ a {
 .seat-template-field select {
   min-width: 250px;
   max-width: 360px;
+  width: 100%;
   height: 30px;
   border: 0;
   outline: 0;
@@ -5492,15 +5506,27 @@ a {
   color: var(--text);
 }
 
+.seat-template-field optgroup {
+  background: var(--surface-strong);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .seat-toolbar__save {
   margin-left: auto;
 }
 
+.seat-toolbar .seat-save-status + .seat-toolbar__save {
+  margin-left: 0;
+}
+
 .seat-save-status {
   margin-left: auto;
+  max-width: min(360px, 100%);
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 750;
+  line-height: 1.25;
 }
 
 .seat-save-status--success {
@@ -5851,6 +5877,11 @@ a {
 
   .seat-layout-controls {
     align-content: start;
+  }
+
+  .seat-template-selector,
+  .seat-template-field {
+    flex-basis: 100%;
   }
 
   .seat-template-field select {
