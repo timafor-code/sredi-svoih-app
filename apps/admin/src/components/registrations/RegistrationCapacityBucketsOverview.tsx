@@ -86,14 +86,14 @@ export function RegistrationCapacityBucketsOverview({
   analyticsError,
   analyticsLoading,
   event,
-  onOpenSeatingPlaceholder,
+  onOpenSeating,
   selectedOccurrence,
 }: {
   analytics: AdminRegistrationCapacityAnalytics | null;
   analyticsError: string | null;
   analyticsLoading: boolean;
   event: AdminRegistrationEventSummary;
-  onOpenSeatingPlaceholder: (bucket: AdminRegistrationCapacityBucket) => void;
+  onOpenSeating: (bucket: AdminRegistrationCapacityBucket) => void;
   selectedOccurrence: AdminEventOccurrence | null;
 }) {
   const [mode, setMode] = useState<CapacityOverviewMode>("buckets");
@@ -190,7 +190,7 @@ export function RegistrationCapacityBucketsOverview({
             analyticsError,
             analyticsLoading,
             bucketViews,
-            onOpenSeatingPlaceholder,
+            onOpenSeating,
           })
         ) : mode === "total" ? (
           renderTotal({
@@ -364,12 +364,12 @@ function renderBuckets({
   analyticsError,
   analyticsLoading,
   bucketViews,
-  onOpenSeatingPlaceholder,
+  onOpenSeating,
 }: {
   analyticsError: string | null;
   analyticsLoading: boolean;
   bucketViews: CapacityBucketView[];
-  onOpenSeatingPlaceholder: (bucket: AdminRegistrationCapacityBucket) => void;
+  onOpenSeating: (bucket: AdminRegistrationCapacityBucket) => void;
 }) {
   if (analyticsLoading && bucketViews.length === 0) {
     return renderSoftState("Загружаем слоты мест...");
@@ -403,22 +403,26 @@ function renderBuckets({
         return (
           <div className="registration-capacity-bucket-row" key={bucket.capacityUnitId}>
             <div className="registration-capacity-bucket-row__head">
-              <div className="registration-capacity-bucket-row__title">
-                <strong>{title}</strong>
-                {bucketKey ? <span>{bucketKey}</span> : null}
+              <div className="registration-capacity-bucket-row__summary">
+                <div className="registration-capacity-bucket-row__title">
+                  <strong>{title}</strong>
+                  {bucketKey ? <span>{bucketKey}</span> : null}
+                </div>
+                <div className="registration-capacity-bucket-row__count">
+                  <strong>{occupiedLabel}</strong>
+                  <span>{remainingLabel}</span>
+                </div>
               </div>
-              <div className="registration-capacity-bucket-row__count">
-                <strong>{occupiedLabel}</strong>
-                <span>{remainingLabel}</span>
+              <div className="registration-capacity-bucket-row__actions">
+                <button
+                  className="registration-capacity-bucket-row__seat-button"
+                  onClick={() => onOpenSeating(bucket)}
+                  title="Открыть редактор схемы рассадки"
+                  type="button"
+                >
+                  Схема рассадки
+                </button>
               </div>
-              <button
-                className="registration-capacity-bucket-row__seat-button"
-                onClick={() => onOpenSeatingPlaceholder(bucket)}
-                title="Редактор рассадки будет добавлен отдельным PR"
-                type="button"
-              >
-                Схема рассадки
-              </button>
             </div>
 
             <RegistrationCapacityMeter

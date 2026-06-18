@@ -11,10 +11,14 @@ block B PRs and may be extended in later ones.
   only minimal wrappers in `adminSeatingService.ts`.
 - **PR 9:** pure seating geometry layer (`apps/admin/src/lib/seatingGeometry.ts`)
   and the geometry types in `apps/admin/src/types/seating.ts`. No IO, no UI.
-- **PR 10 (this revision):** the full **typed service layer** over the read/write
+- **PR 10:** the full **typed service layer** over the read/write
   RPC (`adminSeatingService.ts` + the service-layer types in `types/seating.ts`).
   Still no canvas and no UI — see "Service layer" below.
-- **Later PRs:** layout editor / canvas, template selector UI, auto-seating,
+- **PR 11 (this revision):** the first web-admin seating layout editor UI for
+  registration capacity buckets. It adds the modal, toolbar, canvas/stage and
+  table-geometry controls only. No guests, auto-seating, manual guest drag/drop,
+  reserves, real template library, capacity summary or capacity sync.
+- **Later PRs:** template library UI, assignment UI, auto-seating,
   locked/manual assignments, reserves, capacity summary, capacity sync.
 
 The browser admin client talks to all of this through the normal authenticated
@@ -225,10 +229,10 @@ section), built on top of and reusing the geometry types (`SeatingTable`,
 `SeatingConnection`) so a loaded layout feeds straight into `seatingGeometry.ts`
 without translation.
 
-**This PR has no canvas and no UI.** The layout editor / canvas, the template
-selector, auto-seating, drag/drop, reserves and the capacity summary are all
-later PRs (11–18). `SeatingCapacitySummary` here is a **type only** — its formulas
-and UI arrive in PR 18.
+PR 10 had no canvas and no UI. The first layout editor UI lands in PR 11; the
+real template selector, auto-seating, guest drag/drop, reserves and the capacity
+summary are still later PRs (12–18). `SeatingCapacitySummary` here is a **type
+only** — its formulas and UI arrive in PR 18.
 
 **This PR does not change the registration limit.** The service never reads or
 writes `event_capacity_units.capacity`. The `capacity` field on the save payload
@@ -253,6 +257,45 @@ is accepted for v15 parity only; the RPC ignores it and derives
 routing keys (`eventId` / `occurrenceId` / `capacityUnitId`) live **inside** the
 save payload by design (PR 8); the service types them explicitly rather than
 hiding them.
+
+## Layout editor UI (PR 11)
+
+PR 11 adds the first production React UI for the seating layout editor in
+web-admin registrations. The source of truth for visual behaviour is
+`docs/prototype/registrations-improved-seating-v15.html`, ported into React
+components rather than mounted as prototype HTML.
+
+Implemented scope:
+
+- `SeatingLayoutEditor` modal opened from each registration capacity bucket.
+- `SeatingToolbar` with the template placeholder controls and table editing
+  buttons.
+- `SeatingCanvas` with fit/scale behaviour, editable tables, potential physical
+  seats, rabbi table styling and the centered head-seat star.
+- Geometry-only editing: add/select/move/delete tables, rotate by 90 degrees,
+  switch selected/all tables between 2 and 3 long-side seats.
+- Save through `saveSeatingLayout`, using the existing v15-compatible payload
+  and the authenticated admin Supabase client.
+
+Explicitly not included in PR 11:
+
+- real guests or the "Не рассажены" pool;
+- auto-seating;
+- manual guest drag/drop;
+- reserves;
+- real template library, built-in template UI, save-as-template or delete
+  template;
+- capacity summary, capacity sync or any change to
+  `event_capacity_units.capacity`.
+
+The editor always keeps exactly one `isRabbiTable` in local UI state before
+save. A new empty slot starts with one rabbi table. If the selected rabbi table
+is removed while other tables exist, the next remaining table becomes the single
+rabbi table; the last remaining table cannot be deleted.
+
+The "Готовая расстановка" control is intentionally a PR 11 stub with only
+"Пустой конструктор". "Сохранить как шаблон" and "Удалить шаблон" are disabled
+until PR 12.
 
 ### Field mapping (snake_case RPC ↔ camelCase model)
 
@@ -297,3 +340,31 @@ Run by the project owner; not executed by Codex.
 6. `admin_delete_seating_template` on a user template flips `is_active = false`;
    on a built-in template it is rejected.
 7. As a non-manager (or member of another community), every call is rejected.
+
+## Manual browser checklist (PR 11)
+
+Run by the project owner; not executed by Codex.
+
+1. Open web-admin registrations page.
+2. Select an event/date with capacity buckets.
+3. Click "Схема рассадки".
+4. Confirm seating modal opens.
+5. Confirm UI visually follows
+   `docs/prototype/registrations-improved-seating-v15.html`.
+6. Confirm one default rabbi table appears.
+7. Confirm rabbi table has golden style and centered head star.
+8. Add a table.
+9. Select and move a table.
+10. Rotate selected table by 90 degrees.
+11. Switch selected table between 2 and 3 seats per long side.
+12. Apply all tables 2 seats per side.
+13. Apply all tables 3 seats per side.
+14. Delete a non-rabbi table.
+15. Confirm the last/rabbi table cannot be deleted in a way that leaves no
+    rabbi table.
+16. Confirm template dropdown only has "Пустой конструктор".
+17. Confirm "Сохранить как шаблон" and "Удалить шаблон" are disabled.
+18. Save layout.
+19. Close and reopen modal.
+20. Confirm registrations table/detail modal/export/refresh still work.
+21. Confirm browser smoke was not run by Codex.

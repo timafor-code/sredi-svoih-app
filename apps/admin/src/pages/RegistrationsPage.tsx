@@ -15,6 +15,10 @@ import { RegistrationEventsPanel } from "../components/registrations/Registratio
 import { RegistrationMainActions } from "../components/registrations/RegistrationMainActions";
 import { RegistrationsState } from "../components/registrations/RegistrationsState";
 import { RegistrationsTable } from "../components/registrations/RegistrationsTable";
+import {
+  SeatingLayoutEditor,
+  type SeatingLayoutEditorSlot,
+} from "../components/seating/SeatingLayoutEditor";
 import { listAdminEventOccurrences } from "../services/adminEventOccurrencesService";
 import { getAdminRegistrationCapacityAnalytics } from "../services/adminRegistrationCapacityService";
 import {
@@ -154,6 +158,8 @@ export function RegistrationsPage() {
   const [actionInFlight, setActionInFlight] = useState<ActionInFlight | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [excelExportLoading, setExcelExportLoading] = useState(false);
+  const [seatingEditorSlot, setSeatingEditorSlot] =
+    useState<SeatingLayoutEditorSlot | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const pushToast = useCallback((kind: ToastKind, message: string) => {
@@ -607,9 +613,20 @@ export function RegistrationsPage() {
     setSelectedRegistrationId(null);
   }, []);
 
-  const handleOpenSeatingPlaceholder = useCallback(() => {
-    pushToast("success", "Редактор рассадки будет добавлен отдельным PR.");
-  }, [pushToast]);
+  const handleOpenSeating = useCallback(
+    (bucket: AdminRegistrationCapacityBucket) => {
+      if (!selectedEvent) {
+        return;
+      }
+
+      setSeatingEditorSlot({
+        bucket,
+        event: selectedEvent,
+        occurrence: eventHasOccurrences ? selectedOccurrence : null,
+      });
+    },
+    [eventHasOccurrences, selectedEvent, selectedOccurrence],
+  );
 
   const refreshAll = useCallback(() => {
     void Promise.all([
@@ -726,7 +743,7 @@ export function RegistrationsPage() {
                 analyticsError={capacityAnalyticsError}
                 analyticsLoading={capacityAnalyticsLoading}
                 event={selectedEvent}
-                onOpenSeatingPlaceholder={handleOpenSeatingPlaceholder}
+                onOpenSeating={handleOpenSeating}
                 selectedOccurrence={eventHasOccurrences ? selectedOccurrence : null}
               />
 
@@ -862,6 +879,11 @@ export function RegistrationsPage() {
         onAction={requestRegistrationAction}
         onClose={handleCloseRegistrationModal}
         registration={selectedRegistration}
+      />
+
+      <SeatingLayoutEditor
+        onClose={() => setSeatingEditorSlot(null)}
+        slot={seatingEditorSlot}
       />
 
       {pendingAction ? (
