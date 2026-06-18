@@ -39,8 +39,16 @@ block B PRs and may be extended in later ones.
   saved through the existing assignment RPC, restored on reopen, and preserved by a
   repeat auto seating. No reserves, no geometry-change reconcile, no capacity
   summary/sync, and no change to `event_capacity_units.capacity`.
-- **Later PRs:** user reserves, geometry-change reconcile, capacity summary,
-  capacity sync.
+- **PR 16:** operational reserves (`+ Резерв`) placed on physical seats without
+  changing the registration count.
+- **PR 17 (this revision):** edit-preserve / reconcile after a table geometry
+  change. Entering "Редактировать столы" hides guests/reserves and keeps the
+  current assignments; returning to seating (or "Сделать рассадку") reconciles the
+  preserved placements with the new geometry — valid seats are kept (manual/locked
+  and reserves win conflicts), missing/blocked/duplicate occupants return to
+  "Не рассажены", and a short warning reports how many placements were preserved vs
+  returned. No change to `event_capacity_units.capacity`.
+- **Later PRs:** capacity summary (PR 18), capacity sync (PR 19).
 
 The browser admin client talks to all of this through the normal authenticated
 Supabase session. No service role or Admin API is used anywhere in the seating
@@ -639,6 +647,75 @@ Save / reopen:
   metadata column for assignments and adding one would be out of scope for this
   PR. Only the UI label is collected and persisted.
 
+### Edit-preserve / reconcile (PR 17)
+
+PR 17 adds a correct edit-mode cycle so an admin can fix the table figure after a
+seating without losing the work: **«Редактировать столы» → гости скрыты → схема
+меняется → «Сделать рассадку» / «Вернуться к рассадке» → старая рассадка
+восстановлена насколько возможно.** The pure logic lives in
+`apps/admin/src/lib/seatingAssignmentReconcile.ts`
+(`reconcileSeatingAssignments`) and is covered by
+`apps/admin/src/lib/__tests__/seatingAssignmentReconcile.test.ts`. It ports the
+spirit of the v15 prototype `applyGeometry(st,{preserveIndex})` /
+`seatEditTables` / `seatMakeSeating` behaviour, but reconciles on the **stable
+`client_table_id`-based seat keys** rather than positional chair indexes, so a
+table that merely moves keeps its occupants while a table that is deleted frees
+them.
+
+Edit mode:
+
+- Clicking "Редактировать столы" leaves seating mode (`seatingDone = false`) but
+  **does not delete assignments** — they are preserved in editor state and are
+  never wiped by an accidental empty `admin_save_seating_assignments`.
+- While editing geometry the canvas hides occupants and the panel is
+  non-interactive (no drag/drop), so the admin edits tables, not people. Add /
+  move / rotate / delete tables and the 2↔3 seat controls work exactly as in the
+  layout editor (PR 11).
+
+Reconcile (on "Вернуться к рассадке" or "Сделать рассадку"):
+
+- The physical seats are recomputed for the new geometry, then
+  `reconcileSeatingAssignments` reconciles the preserved assignments:
+  - seat key still resolves to a seat → **keep** the placement;
+  - seat key no longer resolves (table/seat gone) → **return to "Не рассажены"**;
+  - seat became rabbi-reserved or is otherwise blocked → ordinary guests are
+    returned; **reserves and explicit rabbi guests may stay** on rabbi seats;
+  - two placements resolve to the same seat → the higher-priority one stays, the
+    other is returned;
+  - the same guest/reserve placed twice → the higher-priority placement stays, the
+    redundant one is dropped;
+  - a guest whose registration is no longer in the active bucket (donation-only,
+    cancelled, foreign slot) is surfaced as an orphan and **not rendered as
+    occupied**.
+- **Manual/locked placements (PR 15) and reserves (PR 16) win every conflict**, so
+  a reconcile never reshuffles them. Mapped "Весь шабат" obligations stay valid
+  while the bucket obligation exists; donation-only options remain excluded from
+  the pool and can never be seated.
+- "Вернуться к рассадке" restores only (freed occupants stay in the pool);
+  "Сделать рассадку" runs the same reconcile **first** and then auto-seats only the
+  still-unassigned / unlocked registration guests into the remaining free seats,
+  preserving manual/locked and reserve placements.
+
+Single source of truth and counts:
+
+- `currentAssignments` stays the only source of truth; the canvas, panel and
+  status line all derive from it, the unassigned pool is `active guestPool − valid
+  placements`, the occupied **physical** count includes guests + reserves, and the
+  **registration** occupied count still excludes reserves.
+- After a reconcile the editor shows a short status block:
+  «После изменения схемы сохранено N посадок, M гостей/резервов вернулись в
+  список.» When nothing was lost there is no warning, only a calm success message.
+  The full capacity summary is still **PR 18** and capacity sync is **PR 19**.
+
+Persistence:
+
+- A reconcile saves the layout geometry and the reconciled assignments through the
+  existing `saveSeatingLayout()` / `saveSeatingAssignments()` — no new migration and
+  no new write RPC. The save layout RPC never touches assignments, and the
+  assignments payload after reconcile contains only valid entries (reserves remain
+  `assignment_type='reserve'`, `registration_id IS NULL`). Success is shown only
+  after both relevant saves succeed.
+
 ### Field mapping (snake_case RPC ↔ camelCase model)
 
 The read RPC return `to_jsonb(...)` of the DB rows (snake_case); the write RPC
@@ -820,3 +897,36 @@ Not run by Claude Code. Manual smoke is performed by the project owner.
 20. Confirm no capacity summary/sync UI is available yet.
 21. Confirm registrations table/detail modal/export/refresh still work.
 22. Confirm browser smoke was not run by Claude Code.
+
+## Manual smoke checklist (PR 17)
+
+Not run by Claude Code. Manual smoke is performed by the project owner.
+
+1. Open web-admin registrations page.
+2. Open the seating modal for a bucket with guests.
+3. Click "Сделать рассадку".
+4. Save, close, reopen, confirm assignments still restore.
+5. Drag a guest manually to another seat.
+6. Add and seat a reserve.
+7. Click "Редактировать столы".
+8. Confirm guests/reserves are hidden or disabled while editing geometry.
+9. Move a table without changing its seats.
+10. Exit edit-mode / return to seating ("Вернуться к рассадке" or "Сделать
+    рассадку").
+11. Confirm existing placements are preserved.
+12. Save, close, reopen, confirm placements are still restored.
+13. Click "Редактировать столы" again.
+14. Delete or change a table so one assigned seat disappears.
+15. Exit edit-mode / return to seating.
+16. Confirm the guest/reserve from the missing seat returns to "Не рассажены".
+17. Confirm the warning shows how many placements were preserved/returned.
+18. Confirm manual/locked placements have priority when still valid.
+19. Run "Дорассадить свободных".
+20. Confirm preserved manual/reserve placements are not overwritten.
+21. Confirm ordinary guests still cannot be placed on rabbi-reserved seats.
+22. Confirm mapped "Весь шабат" still works without slot mismatch.
+23. Confirm donation-only options do not enter the pool.
+24. Confirm `event_capacity_units.capacity` did not change.
+25. Confirm no capacity summary/sync UI is available yet.
+26. Confirm registrations table/detail modal/export/refresh still work.
+27. Confirm browser smoke was not run by Claude Code.
