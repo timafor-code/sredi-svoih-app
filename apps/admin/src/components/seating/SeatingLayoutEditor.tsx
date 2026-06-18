@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 
 import { formatDateTime } from "../registrations/formatters";
 import { Button } from "../ui/Button";
+import { useAdminAuth } from "../../context/AdminAuthContext";
 import {
   CHAIR_OFFSET,
   TABLE_H,
@@ -40,6 +41,7 @@ import {
   saveSeatingAssignments,
   saveSeatingLayout,
 } from "../../services/adminSeatingService";
+import { updateCapacityUnitLimit } from "../../services/adminCapacityService";
 import { getAdminRegistrationCapacityGuestPool } from "../../services/adminRegistrationCapacityService";
 import type { AdminEventOccurrence } from "../../types/eventOccurrences";
 import type { AdminRegistrationCapacityBucket } from "../../types/registrationCapacity";
@@ -58,6 +60,7 @@ import type {
 import { SeatingAssignmentsPanel } from "./SeatingAssignmentsPanel";
 import { SeatingCanvas } from "./SeatingCanvas";
 import { SeatingCapacitySummary } from "./SeatingCapacitySummary";
+import { SeatingCapacitySyncDialog } from "./SeatingCapacitySyncDialog";
 import { SeatingReserveDialog } from "./SeatingReserveDialog";
 import {
   DEFAULT_SEATING_TEMPLATE_VALUE,
@@ -93,18 +96,27 @@ let clientTableSequence = 0;
 let clientReserveSequence = 0;
 
 export function SeatingLayoutEditor({
+  onCapacityLimitUpdated,
   onClose,
   slot,
 }: {
+  onCapacityLimitUpdated?: (capacityUnitId: string, capacity: number | null) => void;
   onClose: () => void;
   slot: SeatingLayoutEditorSlot | null;
 }) {
+  const auth = useAdminAuth();
   const [connections, setConnections] = useState<SeatingConnection[]>([]);
   const [assignments, setAssignments] = useState<SeatingAssignment[]>([]);
   const [dragSource, setDragSource] = useState<SeatingDragSourceRef | null>(null);
   const [feedback, setFeedback] = useState<EditorFeedback | null>(null);
   const [guestPool, setGuestPool] = useState<SeatingGuestPoolItem[]>([]);
   const [guestPoolError, setGuestPoolError] = useState<string | null>(null);
+  const [capacityLimitOverride, setCapacityLimitOverride] = useState<
+    number | null | undefined
+  >(undefined);
+  const [capacitySyncError, setCapacitySyncError] = useState<string | null>(null);
+  const [isCapacitySyncDialogOpen, setIsCapacitySyncDialogOpen] = useState(false);
+  const [isCapacitySyncing, setIsCapacitySyncing] = useState(false);
   const [activeTemplateValue, setActiveTemplateValue] =
     useState<SeatingTemplateValue>(DEFAULT_SEATING_TEMPLATE_VALUE);
   const [isApplyingTemplate, setIsApplyingTemplate] = useState(false);
@@ -152,8 +164,12 @@ export function SeatingLayoutEditor({
     if (!slot) {
       setActiveTemplateValue(DEFAULT_SEATING_TEMPLATE_VALUE);
       setAssignments([]);
+      setCapacityLimitOverride(undefined);
+      setCapacitySyncError(null);
       setConnections([]);
       setDragSource(null);
+      setIsCapacitySyncDialogOpen(false);
+      setIsCapacitySyncing(false);
       setIsAutoAssigning(false);
       setIsEditingAfterSeating(false);
       setReconcileNotice(null);
@@ -167,7 +183,11 @@ export function SeatingLayoutEditor({
     let cancelled = false;
 
     setFeedback({ message: "Загружаем схему...", tone: "muted" });
+    setCapacityLimitOverride(undefined);
+    setCapacitySyncError(null);
     setIsReserveDialogOpen(false);
+    setIsCapacitySyncDialogOpen(false);
+    setIsCapacitySyncing(false);
     setIsEditingAfterSeating(false);
     setReconcileNotice(null);
     setActiveTemplateValue(DEFAULT_SEATING_TEMPLATE_VALUE);
@@ -412,7 +432,11 @@ export function SeatingLayoutEditor({
       ? "Есть занятые места, но список гостей для рассадки не загружен."
       : null);
 
-  const capacityLimit = slot?.bucket.effectiveCapacity ?? slot?.bucket.capacity ?? null;
+  const capacityLimit =
+    capacityLimitOverride !== undefined
+      ? capacityLimitOverride
+      : slot?.bucket.capacity ?? null;
+  const canPerformAdminActions = auth.canAccessAdmin && (auth.isAdmin || auth.isEventManager);
   const seatsModeLabel = useMemo(() => formatSeatsMode(tables), [tables]);
   const rabbiReserveCount = useMemo(
     () => geometry.seats.filter((seat) => seat.isRabbiTable).length,
@@ -439,6 +463,14 @@ export function SeatingLayoutEditor({
     geometry.physicalSeatCount === 0;
   const manualSeatingEnabled =
     isSeatingDone && hasValidGeometry && !isLoading && !isSaving && !isAutoAssigning;
+  const canShowCapacitySyncAction = Boolean(
+    slot?.bucket.capacityUnitId &&
+      canPerformAdminActions &&
+      !isLoading &&
+      hasValidGeometry &&
+      geometry.physicalSeatCount > 0 &&
+      capacityLimit !== geometry.physicalSeatCount,
+  );
   // PR 16: unseated reserves live in the assignments array as pooled
   // (`seatKey === null`) `type: "reserve"` entries; placed reserves are occupants.
   const pooledReserves = useMemo(
@@ -465,6 +497,71 @@ export function SeatingLayoutEditor({
       reservationsCount: slot.bucket.reservationsCount,
     });
   }, [hasGuestPoolMismatch, slot]);
+
+  const handleOpenCapacitySyncDialog = useCallback(() => {
+    setCapacitySyncError(null);
+    setIsCapacitySyncDialogOpen(true);
+  }, []);
+
+  const handleCancelCapacitySyncDialog = useCallback(() => {
+    if (isCapacitySyncing) {
+      return;
+    }
+
+    setCapacitySyncError(null);
+    setIsCapacitySyncDialogOpen(false);
+  }, [isCapacitySyncing]);
+
+  const handleConfirmCapacitySync = useCallback(() => {
+    if (!slot || isCapacitySyncing) {
+      return;
+    }
+
+    const nextCapacity = Math.max(0, Math.round(geometry.physicalSeatCount));
+    const occupiedSeats = Math.max(0, Math.round(slot.bucket.occupiedSeats ?? 0));
+
+    if (nextCapacity <= 0 || nextCapacity === capacityLimit) {
+      return;
+    }
+
+    if (nextCapacity < occupiedSeats) {
+      setCapacitySyncError(
+        `Нельзя понизить лимит до ${formatCount(nextCapacity)}: уже занято ${formatCount(
+          occupiedSeats,
+        )} мест. Сначала разберите регистрации или добавьте физические места.`,
+      );
+      return;
+    }
+
+    setIsCapacitySyncing(true);
+    setCapacitySyncError(null);
+    setFeedback({ message: "Обновляем лимит регистрации...", tone: "muted" });
+
+    void updateCapacityUnitLimit(slot.bucket.capacityUnitId, nextCapacity)
+      .then((updatedUnit) => {
+        setCapacityLimitOverride(updatedUnit.capacity);
+        setIsCapacitySyncDialogOpen(false);
+        setFeedback({
+          message: `Лимит регистрации обновлён до ${formatCount(updatedUnit.capacity ?? nextCapacity)}.`,
+          tone: "success",
+        });
+        onCapacityLimitUpdated?.(updatedUnit.id, updatedUnit.capacity);
+      })
+      .catch((error) => {
+        const message = formatCapacitySyncError(error);
+        setCapacitySyncError(message);
+        setFeedback({ message, tone: "error" });
+      })
+      .finally(() => {
+        setIsCapacitySyncing(false);
+      });
+  }, [
+    capacityLimit,
+    geometry.physicalSeatCount,
+    isCapacitySyncing,
+    onCapacityLimitUpdated,
+    slot,
+  ]);
 
   const handleAddTable = useCallback(() => {
     if (isSeatingDone) {
@@ -1211,6 +1308,18 @@ export function SeatingLayoutEditor({
     setDragSource({ kind: "reserve", reserveId });
   }, []);
 
+  const capacitySyncButton = canShowCapacitySyncAction ? (
+    <Button
+      className="seat-capacity-sync-button"
+      disabled={isCapacitySyncing || isSaving || isAutoAssigning || isTemplateBusy}
+      onClick={handleOpenCapacitySyncDialog}
+      size="sm"
+      variant="secondary"
+    >
+      Обновить лимит слота до количества физических мест
+    </Button>
+  ) : null;
+
   if (!slot || typeof document === "undefined") {
     return null;
   }
@@ -1352,6 +1461,7 @@ export function SeatingLayoutEditor({
                     "фигура зафиксирована",
                   ]}
                 />
+                {capacitySyncButton}
               </div>
             ) : (
               <SeatingToolbar
@@ -1365,19 +1475,22 @@ export function SeatingLayoutEditor({
                 removeDisabled={!selectedTable || tables.length <= 1}
                 selectedTableSideSeats={selectedTable ? tableSideSeats(selectedTable) : null}
                 statusSummary={
-                  <SeatingCapacitySummary
-                    capacityLimit={capacityLimit}
-                    occupiedSeats={slot.bucket.occupiedSeats}
-                    physicalSeatCount={geometry.physicalSeatCount}
-                    reserveSeats={placedReserveCount}
-                    leadingParts={[`${tables.length} стол.`]}
-                    trailingParts={[
-                      `${geometry.seams.length} стык.`,
-                      seatsModeLabel,
-                      `раввинский резерв ${rabbiReserveCount}`,
-                      "фигура без рассадки",
-                    ]}
-                  />
+                  <>
+                    <SeatingCapacitySummary
+                      capacityLimit={capacityLimit}
+                      occupiedSeats={slot.bucket.occupiedSeats}
+                      physicalSeatCount={geometry.physicalSeatCount}
+                      reserveSeats={placedReserveCount}
+                      leadingParts={[`${tables.length} стол.`]}
+                      trailingParts={[
+                        `${geometry.seams.length} стык.`,
+                        seatsModeLabel,
+                        `раввинский резерв ${rabbiReserveCount}`,
+                        "фигура без рассадки",
+                      ]}
+                    />
+                    {capacitySyncButton}
+                  </>
                 }
                 tableCount={tables.length}
                 variant="layout"
@@ -1437,6 +1550,18 @@ export function SeatingLayoutEditor({
         <SeatingReserveDialog
           onClose={handleCancelReserve}
           onCreate={handleCreateReserve}
+        />
+      ) : null}
+
+      {isCapacitySyncDialogOpen ? (
+        <SeatingCapacitySyncDialog
+          capacityLimit={capacityLimit}
+          error={capacitySyncError}
+          isSubmitting={isCapacitySyncing}
+          occupiedSeats={slot.bucket.occupiedSeats}
+          onCancel={handleCancelCapacitySyncDialog}
+          onConfirm={handleConfirmCapacitySync}
+          physicalSeatCount={geometry.physicalSeatCount}
         />
       ) : null}
     </div>,
@@ -1555,6 +1680,28 @@ function formatAutoAssignSaveError(error: unknown): string {
   }
 
   return "Не удалось сохранить рассадку. Обновите данные и попробуйте ещё раз.";
+}
+
+function formatCapacitySyncError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (message.includes("Capacity cannot be lower than occupied seats")) {
+    return "Нельзя обновить лимит: уже занято больше мест, чем в схеме.";
+  }
+
+  if (message.includes("Admin role required")) {
+    return "Недостаточно прав для обновления лимита регистрации.";
+  }
+
+  if (message.includes("Auth required")) {
+    return "Нужно войти в admin UI, чтобы обновить лимит регистрации.";
+  }
+
+  return message || "Не удалось обновить лимит регистрации.";
+}
+
+function formatCount(value: number): string {
+  return new Intl.NumberFormat("ru-RU").format(value);
 }
 
 type TemplateGeometry = {

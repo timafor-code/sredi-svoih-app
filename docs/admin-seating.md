@@ -52,7 +52,12 @@ block B PRs and may be extended in later ones.
   It makes the difference between the physical seats from the table geometry and
   the registration limit explicit, and changes nothing else: no capacity sync, no
   new RPC, no migration, and no change to `event_capacity_units.capacity`.
-- **Later PRs:** capacity sync (PR 19).
+- **PR 19 (this revision):** explicit admin capacity sync action. The seating
+  modal can update `event_capacity_units.capacity` to the current number of
+  physical seats only after a confirmation dialog and the role-checked
+  `admin_update_capacity_unit_limit` RPC. There is still no auto-sync when
+  tables are edited or saved.
+- **Later PRs:** responsive polish (PR 20).
 
 The browser admin client talks to all of this through the normal authenticated
 Supabase session. No service role or Admin API is used anywhere in the seating
@@ -267,8 +272,35 @@ create-from-template RPC derive `event_seating_layouts.capacity_limit_snapshot`
 event_capacity_units`), ignoring any `capacity` value in the payload. The
 snapshot is a non-authoritative display value only; the real limit lives in
 `event_capacity_units.capacity` and changing it is a separate, explicit admin
-action (planned for PR 19). A seating save can therefore never silently raise or
+action (PR 19). A seating save can therefore never silently raise or
 lower who may register.
+
+## Capacity limit RPC (PR 19)
+
+`admin_update_capacity_unit_limit(capacity_unit_id uuid, new_capacity integer)`
+is the only PR 19 backend write. It is `security definer`, gates on `auth.uid()`,
+checks `has_community_role(community_id, array['admin', 'event_manager'])`, and
+first proves that the capacity unit belongs to an event in a community available
+to that admin/event_manager.
+
+The RPC updates only `event_capacity_units.capacity`. It does not touch seating
+layouts, seating assignments, registrations, reservations, payment or donation
+data. `new_capacity` may be `null` because the column allows it, but the PR 19 UI
+does not expose a generic editor; the visible action sets the limit to the
+current physical seat count.
+
+Validation:
+
+- rejects anonymous calls;
+- rejects missing `capacity_unit_id`;
+- rejects `new_capacity <= 0` when a numeric limit is provided;
+- locks the capacity unit row before counting/updating, matching the public
+  registration capacity check's concurrency shape;
+- counts active registration capacity reservations for the unit with statuses
+  `confirmed`, `pending`, `attended`, `no_show`;
+- because the RPC has no occurrence argument, treats the safe occupied floor as
+  the maximum occupied seats in any occurrence/null scope for that unit;
+- blocks lowering the limit below that occupied floor.
 
 ## Service layer (PR 10)
 
@@ -290,10 +322,16 @@ first generated assignment flow. Manual drag/drop, user reserves and the
 capacity summary are still later PRs (15–18). `SeatingCapacitySummary` here is a
 **type only** — its formulas and UI arrive in PR 18.
 
-**This PR does not change the registration limit.** The service never reads or
-writes `event_capacity_units.capacity`. The `capacity` field on the save payload
-is accepted for v15 parity only; the RPC ignores it and derives
-`capacity_limit_snapshot` server-side (see "Capacity is never changed" above).
+Through PR 18, the seating service never changed the registration limit. The
+`capacity` field on the save payload is accepted for v15 parity only; the seating
+write RPC ignores it and derives `capacity_limit_snapshot` server-side (see
+"Capacity is never changed" above).
+
+PR 19 adds a separate `apps/admin/src/services/adminCapacityService.ts` wrapper
+for `admin_update_capacity_unit_limit(capacity_unit_id, new_capacity)`. It uses
+the normal authenticated Supabase client and writes only through the RPC/RLS
+path. It is not part of `saveSeatingLayout()` and is never called by table
+editing, drag/drop, reserves or auto seating.
 
 ### Public service functions
 
@@ -782,11 +820,59 @@ between `leadingParts` and `trailingParts`):
 - spare physical seats (`physicalOverflow > 0`, no shortage): no extra note — the
   slack simply shows as positive `свободно по лимиту` / `физически свободно`.
 
-This PR explicitly does **not**: change `event_capacity_units.capacity`; add a
+PR 18 explicitly did **not**: change `event_capacity_units.capacity`; add a
 capacity-sync button; add `admin_update_capacity_unit_limit`; add any migration;
 or change the registration / seating-write / auto-seating / drag-drop / reserves
-logic (it only reads the existing numbers for display). Capacity sync remains
-PR 19.
+logic. It only reads the existing numbers for display.
+
+### Capacity limit sync action (PR 19)
+
+PR 19 adds one explicit admin action next to the PR 18 summary:
+`Обновить лимит слота до количества физических мест`. It appears only when a
+selected capacity bucket has a `capacityUnitId`, the loaded layout has more than
+zero physical seats, the physical count differs from the current
+`event_capacity_units.capacity`, and the current admin UI user can perform admin
+actions (`admin` or `event_manager`).
+
+The button never runs automatically. Adding, deleting, moving or rotating tables,
+applying/saving templates, saving the layout, auto seating, manual drag/drop and
+reserves still leave `event_capacity_units.capacity` unchanged. The only write is
+the confirmation dialog's call to `admin_update_capacity_unit_limit`, using the
+normal authenticated Supabase client.
+
+Confirmation cases:
+
+```
+Сейчас лимит регистрации: 70.
+В схеме физических мест: 80.
+Увеличить лимит регистрации до 80?
+Это откроет 10 новых мест для публичной записи.
+```
+
+```
+Сейчас лимит регистрации: 80.
+В схеме физических мест: 70.
+Понизить лимит регистрации до 70?
+Это ограничит публичную запись.
+```
+
+```
+Сейчас лимит регистрации: без лимита.
+В схеме физических мест: 64.
+Установить лимит регистрации 64?
+```
+
+If the physical count is below occupied registration seats, the dialog disables
+the confirm action and shows:
+
+```
+Нельзя понизить лимит до 60: уже занято 68 мест. Сначала разберите регистрации или добавьте физические места.
+```
+
+The backend RPC enforces the same floor, so a crafted client cannot lower the
+limit below already occupied seats. On success the seating modal updates its
+local capacity summary immediately, the registrations page reloads capacity
+analytics, and the existing toast pattern reports success.
 
 ### Field mapping (snake_case RPC ↔ camelCase model)
 
@@ -1031,3 +1117,26 @@ Not run by Claude Code. Manual smoke is performed by the project owner.
     reserves from earlier PRs still work.
 14. Confirm registrations table/detail modal/export/refresh still work.
 15. Confirm browser smoke was not run by Claude Code.
+
+## Manual smoke checklist (PR 19)
+
+Not run by Codex. Manual smoke is performed by the project owner.
+
+1. Open web-admin registrations page.
+2. Open seating modal for a bucket where physical seats differ from capacity
+   limit.
+3. Confirm button "Обновить лимит слота до количества физических мест" is
+   visible.
+4. For limit 70 / physical 80, confirm dialog warns that 10 new public
+   registration seats will open.
+5. Confirm after approval the capacity summary shows limit 80.
+6. Confirm `event_capacity_units.capacity` changed only after explicit
+   confirmation.
+7. For physical seats below current limit, confirm dialog warns about lowering
+   the limit.
+8. If occupied seats exceed physical seats, confirm UI blocks the update and
+   backend RPC rejects it.
+9. For no-limit bucket, confirm dialog can set numeric limit to physical seats
+   without `NaN`.
+10. Confirm no auto-sync happens when adding/removing/moving tables.
+11. Confirm no service role or Admin API is used in browser code.
