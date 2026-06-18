@@ -1,17 +1,5 @@
 import { Button } from "../ui/Button";
 
-type SaveStatusTone = "muted" | "success" | "error";
-
-type TemplateToolbarProps = {
-  isLoading: boolean;
-  isSaving: boolean;
-  onSave: () => void;
-  saveDisabled: boolean;
-  statusMessage: string | null;
-  statusTone: SaveStatusTone;
-  variant: "templates";
-};
-
 type LayoutToolbarProps = {
   capacityLabel: string;
   hasSelectedTable: boolean;
@@ -31,49 +19,9 @@ type LayoutToolbarProps = {
   variant: "layout";
 };
 
-export type SeatingToolbarProps = TemplateToolbarProps | LayoutToolbarProps;
+export type SeatingToolbarProps = LayoutToolbarProps;
 
 export function SeatingToolbar(props: SeatingToolbarProps) {
-  if (props.variant === "templates") {
-    return (
-      <div className="seat-toolbar">
-        <div className="seat-layouts">
-          <label className="seat-template-field">
-            <span>Готовая расстановка</span>
-            <select aria-label="Готовая расстановка столов" value="builtin:blank" disabled>
-              <option value="builtin:blank">Пустой конструктор</option>
-            </select>
-          </label>
-          <Button disabled size="sm" variant="secondary">
-            Сохранить как шаблон
-          </Button>
-          <Button disabled size="sm" variant="secondary">
-            Удалить шаблон
-          </Button>
-        </div>
-
-        {props.statusMessage ? (
-          <span
-            className={`seat-save-status seat-save-status--${props.statusTone}`}
-            role={props.statusTone === "error" ? "alert" : "status"}
-          >
-            {props.statusMessage}
-          </span>
-        ) : null}
-
-        <Button
-          className="seat-toolbar__save"
-          disabled={props.saveDisabled || props.isLoading || props.isSaving}
-          onClick={props.onSave}
-          size="sm"
-          variant="gold"
-        >
-          {props.isSaving ? "Сохраняем..." : "Сохранить"}
-        </Button>
-      </div>
-    );
-  }
-
   const selectedSideSeats = props.selectedTableSideSeats === 2 ? 2 : 3;
 
   return (
