@@ -7136,6 +7136,21 @@ a {
   font-weight: 750;
 }
 
+.registrations-table-panel__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.registrations-table-panel__divider {
+  width: 1px;
+  min-height: 30px;
+  background: var(--glass-border);
+}
+
 .registrations-pagination {
   display: flex;
   flex-wrap: wrap;
@@ -8189,17 +8204,27 @@ a {
   }
 
   .registrations-main-actions,
+  .registrations-table-panel__tools,
   .registrations-pagination {
     justify-content: stretch;
   }
 
   .registrations-main-actions .button,
+  .registrations-table-panel__tools .button,
   .registrations-pagination .button,
   .member-membership-action-panel .button,
   .member-membership-actions .button,
   .member-membership-quick-actions .button,
   .registration-detail-actions .button {
     flex: 1;
+  }
+
+  .registrations-table-panel__tools {
+    align-items: stretch;
+  }
+
+  .registrations-table-panel__divider {
+    display: none;
   }
 
   .data-table--registrations {
