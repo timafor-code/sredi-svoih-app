@@ -465,9 +465,6 @@ export function RegistrationsPage() {
   );
   const exportOccurrence =
     eventHasOccurrences && selectedOccurrence ? selectedOccurrence : null;
-  const exportHint = exportOccurrence
-    ? "Экспорт выбранного сеанса"
-    : "Экспорт всех записей события";
   const excelExportDisabled =
     !selectedEvent || registrationsLoading || eventsLoading || excelExportLoading;
   const excelExportLabel = excelExportLoading ? "Готовим Excel..." : "Экспорт Excel";
@@ -797,16 +794,13 @@ export function RegistrationsPage() {
                   <div className="registrations-table-panel__tools">
                     <div className="registrations-export-group">
                       <Button
-                        aria-label={`${excelExportLabel}. ${exportHint}`}
                         disabled={excelExportDisabled}
                         onClick={handleExportExcel}
                         size="sm"
-                        title={exportHint}
                         variant="gold"
                       >
                         {excelExportLabel}
                       </Button>
-                      <small className="registrations-export-hint">{exportHint}</small>
                     </div>
                     <span
                       aria-hidden="true"
