@@ -465,9 +465,9 @@ export function RegistrationsPage() {
   );
   const exportOccurrence =
     eventHasOccurrences && selectedOccurrence ? selectedOccurrence : null;
-  const exportHint = exportOccurrence
-    ? "Экспорт выбранного сеанса"
-    : "Экспорт всех записей события";
+  const excelExportDisabled =
+    !selectedEvent || registrationsLoading || eventsLoading || excelExportLoading;
+  const excelExportLabel = excelExportLoading ? "Готовим Excel..." : "Экспорт Excel";
 
   const filteredEvents = useMemo(() => {
     const normalizedQuery = eventQuery.trim().toLocaleLowerCase("ru");
@@ -732,15 +732,6 @@ export function RegistrationsPage() {
                 </div>
                 <RegistrationMainActions
                   eventsLoading={eventsLoading}
-                  excelExportLoading={excelExportLoading}
-                  exportDisabled={
-                    !selectedEvent ||
-                    registrationsLoading ||
-                    eventsLoading ||
-                    excelExportLoading
-                  }
-                  exportHint={exportHint}
-                  onExportExcel={handleExportExcel}
                   onRefresh={refreshAll}
                   registrationsLoading={registrationsLoading}
                 />
@@ -800,27 +791,43 @@ export function RegistrationsPage() {
                   <span>
                     Показано {registrationRangeStart}-{registrationRangeEnd}
                   </span>
-                  <div className="registrations-pagination">
-                    <Button
-                      disabled={!hasPreviousPage || registrationsLoading}
-                      onClick={() =>
-                        setOffset((currentOffset) =>
-                          Math.max(0, currentOffset - REGISTRATION_PAGE_SIZE),
-                        )
-                      }
-                      size="sm"
-                    >
-                      Назад
-                    </Button>
-                    <Button
-                      disabled={!hasNextPage || registrationsLoading}
-                      onClick={() =>
-                        setOffset((currentOffset) => currentOffset + REGISTRATION_PAGE_SIZE)
-                      }
-                      size="sm"
-                    >
-                      Далее
-                    </Button>
+                  <div className="registrations-table-panel__tools">
+                    <div className="registrations-export-group">
+                      <Button
+                        disabled={excelExportDisabled}
+                        onClick={handleExportExcel}
+                        size="sm"
+                        variant="gold"
+                      >
+                        {excelExportLabel}
+                      </Button>
+                    </div>
+                    <span
+                      aria-hidden="true"
+                      className="registrations-table-panel__divider"
+                    />
+                    <div className="registrations-pagination">
+                      <Button
+                        disabled={!hasPreviousPage || registrationsLoading}
+                        onClick={() =>
+                          setOffset((currentOffset) =>
+                            Math.max(0, currentOffset - REGISTRATION_PAGE_SIZE),
+                          )
+                        }
+                        size="sm"
+                      >
+                        Назад
+                      </Button>
+                      <Button
+                        disabled={!hasNextPage || registrationsLoading}
+                        onClick={() =>
+                          setOffset((currentOffset) => currentOffset + REGISTRATION_PAGE_SIZE)
+                        }
+                        size="sm"
+                      >
+                        Далее
+                      </Button>
+                    </div>
                   </div>
                 </div>
 

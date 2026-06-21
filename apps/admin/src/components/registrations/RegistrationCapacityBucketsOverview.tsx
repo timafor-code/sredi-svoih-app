@@ -456,7 +456,7 @@ function renderBuckets({
 }
 
 function BucketBreakdown({ bucket }: { bucket: CapacityBucketView }) {
-  const [view, setView] = useState<BucketBreakdownView>("list");
+  const [view, setView] = useState<BucketBreakdownView>("chart");
   const { entries, note, summary } = buildBucketBreakdown(bucket);
   const chartGradient = buildBucketBreakdownGradient(entries);
   const canShowChart = chartGradient !== null;
