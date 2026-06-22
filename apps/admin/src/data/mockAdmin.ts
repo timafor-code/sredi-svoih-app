@@ -90,19 +90,6 @@ export const mockMembers = [
   },
 ] as const;
 
-export const mockInvites = [
-  {
-    code: "DEV-SREDI-2026",
-    role: "event_manager",
-    usage: "2 из 10",
-  },
-  {
-    code: "TOUR-MAY-2026",
-    role: "member",
-    usage: "5 из 25",
-  },
-] as const;
-
 export const communitySettings = [
   {
     label: "Название",
@@ -119,6 +106,11 @@ export const communitySettings = [
 ] as const;
 
 export const futureFeatures: Partial<Record<AdminSection, string[]>> = {
+  invites: [
+    "Invite backend и выдача кодов не входят в beta v1",
+    "Email invitations не входят в beta v1",
+    "Beta-доступ выдаётся вручную через Supabase Auth, profiles и community_memberships",
+  ],
   contacts: ["Раввин и администратор", "Координатор событий", "WhatsApp / Telegram", "Телефон и адрес общины"],
   notifications: ["Объявления участникам", "Push-уведомления", "Рассылки по записавшимся", "Напоминания о событиях"],
   media: ["Афиши событий", "Логотип общины", "Загрузка изображений", "Медиатека"],

@@ -12,6 +12,12 @@
 
 Privacy boundary: prayer tracker приватный. `prayer_activity_logs` нельзя читать или показывать в admin UI. В админке участников можно показывать профиль, членство и регистрации на события.
 
+## Beta access
+
+В Phase 1 закрытый beta-доступ выдаётся вручную владельцем проекта или админом. Для доступа нужен пользователь в hosted Supabase Auth, `profiles` row и active `community_memberships` row в beta community с ролью `admin` или `event_manager`.
+
+Не создавать invite codes, invite backend или email invitations для beta v1. Не редактировать `auth.users` напрямую, не использовать Supabase Admin API, service-role key или server-only secrets в browser-admin.
+
 ## SPA hosting
 
 `apps/admin` хостится как static SPA на выбранном staging web host. Хост должен уметь:
@@ -125,6 +131,7 @@ Phase 2 admin import потребует Edge Function boundary. Для неё з
 - Beta community exists.
 - Admin membership active.
 - Event manager membership active.
+- Beta users have hosted Supabase Auth access, `profiles` rows and active `community_memberships` rows; invite codes are not part of beta v1.
 - `npm run admin:build` passes.
 - `apps/admin/dist` опубликован на static SPA host.
 - Admin URL opens: `STAGING_ADMIN_URL`.
