@@ -25,12 +25,17 @@ web-admin button
 
 ## Phase 2 boundaries
 
-Этот PR только фиксирует архитектуру и не меняет код. Следующие части Phase 2 идут отдельно:
+Current update for `feature/admin-import-edge-foundation`: this branch adds
+`supabase/functions/admin-website-import` as the first browser-triggered backend
+boundary, but only for auth, CORS, and health. It does not fetch the website,
+parse HTML, call write RPC, create import runs, create import items, publish
+events, or add an admin UI button.
 
-- write RPC;
-- Supabase Edge Function;
-- parser dry-run;
-- `apply_review_only`;
+Remaining Phase 2 work after this foundation:
+
+- Edge parser/fetch dry-run;
+- Edge integration with write RPC;
+- `apply_review_only` execution;
 - import button UI;
 - run history UI;
 - dedupe review UI.
@@ -249,6 +254,23 @@ cd F:\2026\SS-App\code\sredi-svoih-app; npm run import:events -- --apply --assum
 ## Правила безопасности
 
 ### Admin-triggered import boundary
+
+Current health-only endpoint:
+
+- `POST /functions/v1/admin-website-import` expects
+  `Authorization: Bearer <user-session-access-token>`;
+- `OPTIONS` answers CORS preflight;
+- `ADMIN_WEB_ORIGIN` must be set to the exact admin SPA origin, never `*`;
+- local dev also uses an explicit origin, for example the actual Vite admin
+  dev origin;
+- the Edge Function uses the anon/publishable key and the caller's user token;
+- token validation uses `auth.getUser()`, not Supabase Admin API;
+- role validation uses user-scoped RLS reads from `profiles` and
+  `community_memberships`;
+- only active `admin` and `event_manager` memberships can receive health OK;
+- response body is safe health JSON with `ok`, `mode`, `userRole`, and
+  `communityId` when available;
+- parser/apply/review writes are intentionally out of scope for this endpoint.
 
 Для будущего import button браузерный admin-клиент использует только обычный authenticated Supabase client и user session token. Браузер не получает service-role key, `DATABASE_URL`, server-only secrets или Supabase Admin API credentials.
 
