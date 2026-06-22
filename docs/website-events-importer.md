@@ -47,7 +47,7 @@ Explicit rules:
 - no raw `auth.users` access;
 - dedupe statuses live in `raw_payload.importReview.dedupe` JSON, not in `event_import_items.status` or `event_import_runs.status` table status columns.
 
-Detailed dedupe JSON contract будет зафиксирован следующим PR `feature/admin-import-dedupe-contract`. Этот PR фиксирует только boundary: dedupe/review status не расширяет table CHECK constraints и не добавляет `duplicate` / `possible_duplicate` в table status columns.
+Detailed v1 dedupe JSON contract зафиксирован в [admin-import-dedupe-contract.md](admin-import-dedupe-contract.md). И текущий CLI, и будущая Edge Function должны писать **одинаковую** форму `raw_payload.importReview.dedupe`. Dedupe/review status не расширяет table CHECK constraints и не добавляет `duplicate` / `possible_duplicate` в table status columns. В этом PR importer writes не меняются.
 
 ## Запуск
 
@@ -239,13 +239,13 @@ Service role ключ не используется нигде.
 
 ### Dedupe status boundary
 
-До отдельного PR `feature/admin-import-dedupe-contract` dedupe status считается частью JSON review payload:
+Dedupe status — часть JSON review payload, его v1 contract зафиксирован в [admin-import-dedupe-contract.md](admin-import-dedupe-contract.md):
 
 ```text
 event_import_items.raw_payload.importReview.dedupe
 ```
 
-Не расширять `event_import_items.status` или `event_import_runs.status` ради dedupe states. Не добавлять `duplicate` или `possible_duplicate` в table CHECK constraints в этом architecture PR.
+И текущий CLI, и будущая Edge Function должны писать одинаковую форму этого объекта (в будущих implementation PRs — в этом PR importer writes не меняются). Не расширять `event_import_items.status` или `event_import_runs.status` ради dedupe states. Не добавлять `duplicate` или `possible_duplicate` в table CHECK constraints.
 
 ## Review report
 
