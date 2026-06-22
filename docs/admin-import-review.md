@@ -1,11 +1,14 @@
 # Admin import review
 
-Current status: `apply_review_only` Edge integration is implemented in
-`supabase/functions/admin-website-import`. Older "future/docs-only" language in
-this document describes the phased plan history; the current runtime boundary is
-documented below.
+Current status: web-admin can trigger the `apply_review_only` Edge integration
+implemented in `supabase/functions/admin-website-import`. Older phased-plan
+language remains only where it describes future run history and dedupe review
+work.
 
-Этот документ фиксирует final architecture для Phase 2 admin-triggered import v2. PR является docs-only: код, schema, migrations, Edge Functions, RPC, importer script и `apps/admin` UI не меняются.
+Этот документ фиксирует final architecture для Phase 2 admin-triggered import v2.
+Текущий UI PR добавляет только кнопку запуска импорта в очередь проверки,
+browser service и документацию; schema, migrations, Edge Function, RPC,
+importer script и mobile flow не меняются.
 
 Phase 1 server/staging beta v1 завершена без import button. Текущий importer из `scripts/importWebsiteEvents.mjs` остаётся временным owner/dev-only CLI flow до отдельных Phase 2 PRs. Он не является beta-admin UI и не переносится в Edge Function "как есть".
 
@@ -31,11 +34,12 @@ Current implementation in `supabase/functions/admin-website-import` keeps
 health and dry-run modes and adds `apply_review_only` as the review-write mode.
 It uses the normal authenticated Supabase client with the caller's user session
 token and calls the existing write RPC. It does not use a service-role key,
-Supabase Admin API, `DATABASE_URL`, or raw `auth.users` reads.
+Supabase Admin API, server-only database connection strings, or raw
+`auth.users` reads.
 
 `sourceUrl` is validated through the shared website parser allowlist before any
 website fetch. Only `sredisvoih.com` and `www.sredisvoih.com` are accepted.
-The browser/admin UI never receives `DATABASE_URL` or server-only secrets.
+The browser/admin UI never receives server-only secrets.
 
 Runtime flow:
 
@@ -58,6 +62,39 @@ returns a clean conflict-style payload with `ok: false`,
 fetch fails after a run was opened, the run is finalized as `failed` with a safe
 error message. Detail fetch/parse failures are saved as item errors and the run
 continues.
+
+## Web-admin run button
+
+`apps/admin/src/pages/ImportReviewPage.tsx` includes the button
+`Запустить импорт в очередь проверки`. Before invoking the backend it shows a
+confirmation dialog explaining that the site event page will be loaded, a new
+import run will be created, events will not be published automatically, and
+ambiguous items will go to the review queue.
+
+The button uses the normal authenticated Supabase browser client and invokes
+`admin-website-import` with this payload only:
+
+```json
+{ "mode": "apply_review_only" }
+```
+
+The UI does not expose advanced modes, `sourceUrl` override, dry-run controls,
+scheduling, run history, or dedupe review UI. The Edge Function performs role
+checks and writes through the RPC boundary.
+
+After a successful run, the UI shows the safe Edge summary, including `runId`,
+found/parsed/error counts, and import item counts when those fields are present
+in the response. It then reloads the current import review queue using the same
+`admin_list_import_items_needing_review` page mechanism.
+
+This import creates or updates only `event_import_runs` and
+`event_import_items`. It does not create events, does not update events, does
+not publish events, and does not auto-publish.
+
+If another active run is already open for the same source, the button may show a
+friendly `import_already_running` error. Timeout/network, access-denied,
+invalid-source-url, and parser-error responses are surfaced as safe admin
+messages without crashing the UI.
 
 ## Write-RPC boundary
 
@@ -126,7 +163,7 @@ Browser-admin работает только через обычный authentica
 Запрещено:
 
 - service-role key в browser-admin или browser-triggered import flow;
-- `DATABASE_URL` в `apps/admin`;
+- server-only database connection strings в `apps/admin`;
 - Supabase Admin API;
 - raw `auth.users` reads/writes;
 - server-only secrets в browser env;
@@ -134,7 +171,7 @@ Browser-admin работает только через обычный authentica
 
 Edge Function и write RPC должны проверять `auth.uid()` и роль пользователя. Админские действия остаются на RLS/RPC boundary. Events не публикуются автоматически.
 
-Privacy boundary: prayer tracker приватный. Этот docs-only PR не читает и не показывает `prayer_activity_logs` и не меняет participants, registrations, seating или prayer tracker flows.
+Privacy boundary: prayer tracker приватный. Этот admin import flow не читает и не показывает `prayer_activity_logs` и не меняет participants, registrations, seating или prayer tracker flows.
 
 ## Dedupe boundary
 
@@ -159,13 +196,13 @@ Table status columns должны оставаться техническими 
 
 ## Phase 2 PR boundaries
 
-Архитектура зафиксирована отдельным docs-only PR. Реализация разбита на отдельные PRs:
+Архитектура зафиксирована отдельным docs PR. Реализация разбита на отдельные PRs:
 
 - write RPC — **реализовано** (см. [Write-RPC boundary](#write-rpc-boundary), migration `20260622140000_admin_import_write_rpc.sql`);
 - Supabase Edge Function health/CORS/auth foundation - **implemented**;
 - parser dry-run - **implemented**;
 - `apply_review_only` Edge-to-write-RPC integration - **implemented**;
-- import button UI;
+- import button UI - **implemented**;
 - run history UI;
 - dedupe review UI;
 - detailed dedupe JSON contract — зафиксирован в [admin-import-dedupe-contract.md](admin-import-dedupe-contract.md).
@@ -175,9 +212,7 @@ Table status columns должны оставаться техническими 
 - schema changes;
 - migrations;
 - importer execution;
-- import button;
 - changes to `scripts/importWebsiteEvents.mjs`;
-- changes to `apps/admin`;
 - backend/RPC changes beyond the existing write-RPC contract;
 - mobile, registrations, seating или prayer tracker changes.
 
@@ -194,3 +229,11 @@ Table status columns должны оставаться техническими 
 - final explicit action by an authorized admin/event manager.
 
 Until that review action exists, imported items remain review data and must not become public events automatically.
+
+## Manual smoke
+
+Manual smoke for this admin import button is performed by the project owner. The
+expected manual check is: sign in as an authorized admin/event manager, open the
+import review page, confirm `Запустить импорт в очередь проверки`, verify that
+the summary and run id are shown, verify the review queue reloads, and confirm
+that no events were created, updated, or published automatically.

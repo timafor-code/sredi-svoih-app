@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 
 import { EventForm } from "../components/events/EventForm";
+import { AdminWebsiteImportRunner } from "../components/import/AdminWebsiteImportRunner";
 import { listAdminEventCategories } from "../services/eventCategoriesService";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -295,8 +296,8 @@ export function ImportReviewPage({
         <h1>Импорт с сайта</h1>
         <p>
           Проверка импорта. Из деталей можно проигнорировать элемент или создать
-          событие-черновик через отдельные RPC; публикация и запуск импорта остаются
-          вне этой страницы.
+          событие-черновик через отдельные RPC; публикация остаётся отдельным ручным
+          действием.
         </p>
       </section>
 
@@ -312,6 +313,8 @@ export function ImportReviewPage({
           </p>
         </div>
       </GlassCard>
+
+      <AdminWebsiteImportRunner onImportFinished={loadItems} />
 
       {successMessage ? (
         <div className="import-review-status import-review-status--success" role="status">
