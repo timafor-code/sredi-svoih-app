@@ -1,8 +1,10 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 
 import { getSectionTitle } from "../../data/navigation";
 import type { AdminMembership, AdminProfile, AdminRole } from "../../types/auth";
 import type { AdminSection } from "../../types/admin";
+import { AdminFeedbackButton } from "../feedback/AdminFeedbackButton";
+import { AdminFeedbackDialog } from "../feedback/AdminFeedbackDialog";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 
@@ -32,6 +34,14 @@ export function AdminLayout({
   sessionEmail,
 }: AdminLayoutProps) {
   const sectionTitle = getSectionTitle(activeSection);
+  const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
+  const canSubmitFeedback = role === "admin" || role === "event_manager";
+  const openFeedbackDialog = useCallback(() => {
+    setIsFeedbackDialogOpen(true);
+  }, []);
+  const closeFeedbackDialog = useCallback(() => {
+    setIsFeedbackDialogOpen(false);
+  }, []);
 
   return (
     <div className="admin-layout">
@@ -55,6 +65,14 @@ export function AdminLayout({
           sessionEmail={sessionEmail}
         />
         <main className="admin-layout__content">{children}</main>
+        {canSubmitFeedback ? <AdminFeedbackButton onClick={openFeedbackDialog} /> : null}
+        {canSubmitFeedback && isFeedbackDialogOpen ? (
+          <AdminFeedbackDialog
+            onClose={closeFeedbackDialog}
+            section={activeSection}
+            sectionTitle={sectionTitle}
+          />
+        ) : null}
       </div>
     </div>
   );

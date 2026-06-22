@@ -518,6 +518,189 @@ a {
   color: #ff9ca2;
 }
 
+.admin-feedback-button {
+  position: fixed;
+  z-index: 34;
+  right: 24px;
+  bottom: 24px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+}
+
+.admin-feedback-dialog-backdrop {
+  position: fixed;
+  z-index: 1120;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(8, 8, 17, 0.74);
+  backdrop-filter: blur(12px);
+}
+
+.admin-feedback-dialog {
+  display: grid;
+  width: min(100%, 560px);
+  max-height: min(680px, calc(100vh - 48px));
+  gap: 16px;
+  overflow: auto;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 18px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.admin-feedback-dialog__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.admin-feedback-dialog__head span,
+.admin-feedback-dialog__fieldset legend {
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.admin-feedback-dialog__head h2 {
+  margin: 4px 0 6px;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.admin-feedback-dialog__head p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.admin-feedback-dialog__form,
+.admin-feedback-dialog__message {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-feedback-dialog__fieldset {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.admin-feedback-dialog__severity {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.admin-feedback-dialog__severity-option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0 8px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease;
+}
+
+.admin-feedback-dialog__severity-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.admin-feedback-dialog__severity-option:hover,
+.admin-feedback-dialog__severity-option--active {
+  border-color: rgba(242, 184, 75, 0.38);
+  background: rgba(242, 184, 75, 0.14);
+  color: var(--text);
+}
+
+.admin-feedback-dialog__message span {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.admin-feedback-dialog__message textarea {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  outline: 0;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.admin-feedback-dialog__message textarea:focus {
+  border-color: rgba(242, 184, 75, 0.62);
+}
+
+.admin-feedback-dialog__message textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.admin-feedback-dialog__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.admin-feedback-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.admin-feedback-dialog__status {
+  min-height: 20px;
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.admin-feedback-dialog__status--success {
+  color: var(--green);
+}
+
+.admin-feedback-dialog__status--error {
+  color: #ff9ca2;
+}
+
 .role-select {
   display: flex;
   align-items: center;
@@ -8004,8 +8187,31 @@ a {
     padding: 14px;
   }
 
+  .admin-feedback-button {
+    right: 14px;
+    bottom: 14px;
+    width: calc(100% - 28px);
+  }
+
+  .admin-feedback-dialog-backdrop {
+    padding: 0;
+  }
+
+  .admin-feedback-dialog {
+    width: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    padding: 14px;
+  }
+
+  .admin-feedback-dialog__severity {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .import-workflow-dialog__head,
   .import-workflow-dialog__actions,
+  .admin-feedback-dialog__head,
+  .admin-feedback-dialog__actions,
   .import-detail-drawer__head,
   .member-detail-drawer__head,
   .import-detail-actions__head,
