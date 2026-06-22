@@ -90,21 +90,6 @@ export const mockMembers = [
   },
 ] as const;
 
-export const communitySettings = [
-  {
-    label: "Название",
-    value: "Среди Своих",
-  },
-  {
-    label: "Timezone",
-    value: "Europe/Moscow",
-  },
-  {
-    label: "Адрес по умолчанию",
-    value: "Москва, общинный центр",
-  },
-] as const;
-
 export const futureFeatures: Partial<Record<AdminSection, string[]>> = {
   invites: [
     "Invite backend и выдача кодов не входят в beta v1",
