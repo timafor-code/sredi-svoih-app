@@ -6,11 +6,31 @@
 
 Финальный release gate перед выдачей staging-ссылки beta-админам: [Admin beta v1 release checklist](admin-beta-v1-release-checklist.md).
 
+## Phase 2 import note
+
+Phase 2 переводит импорт событий с сайта из owner-only CLI/dev flow в безопасный admin-triggered backend flow. Этот PR только фиксирует архитектуру и не реализует import button, Edge Function, write RPC, parser dry-run, `apply_review_only`, run history или dedupe review UI.
+
+Target architecture:
+
+```text
+web-admin button
+  -> Supabase Edge Function
+  -> parser/fetch
+  -> write RPC
+  -> event_import_runs
+  -> event_import_items
+  -> review queue
+```
+
+Default mode будущего admin import: `apply_review_only`. Events не публикуются автоматически, import items идут в review queue для human review.
+
 ## Access model
 
 `apps/admin` работает через обычный authenticated Supabase client в браузере. Клиент использует anon/publishable key, пользовательскую Supabase session и RLS/RPC.
 
 Админские действия должны оставаться на границе RLS/RPC. Не использовать Supabase Admin API, service-role key или серверные connection strings в browser-admin.
+
+Для будущего import button browser-admin также остаётся обычным authenticated client. Браузер может вызвать только backend boundary с user session token; он не получает service-role key, `DATABASE_URL`, server-only secrets, Supabase Admin API credentials или прямую возможность писать import tables.
 
 Privacy boundary: prayer tracker приватный. `prayer_activity_logs` нельзя читать или показывать в admin UI. В админке участников можно показывать профиль, членство и регистрации на события.
 
@@ -121,11 +141,21 @@ STAGING_ADMIN_URL/auth/callback
 
 Phase 2 admin import потребует Edge Function boundary. Для неё заранее учитывать:
 
-- CORS должен разрешать admin SPA origin `STAGING_ADMIN_URL`;
+- CORS должен явно разрешать admin SPA origin `STAGING_ADMIN_URL`;
+- preflight должен разрешать `Authorization` и нужные content headers для admin SPA;
 - browser-admin должен передавать `Authorization: Bearer <user-session-access-token>`;
-- функция должна валидировать пользователя и роль через обычную user session;
+- функция должна валидировать пользователя через обычную user session;
+- Edge Function и write RPC должны проверять `auth.uid()` и role;
+- write path должен идти через authenticated RPC/RLS boundary;
 - service-role key не использовать для browser-triggered admin flow;
-- auto-publish и импорт с кнопки не входят в Phase 1.
+- Supabase Admin API не использовать для import trigger;
+- `DATABASE_URL` не добавлять в `apps/admin`;
+- raw `auth.users` не читать и не менять;
+- default mode для будущего button: `apply_review_only`;
+- auto-publish запрещён, events не публикуются автоматически;
+- import button не реализуется этим PR.
+
+Dedupe status boundary: detailed JSON contract будет отдельным PR `feature/admin-import-dedupe-contract`. В этом architecture PR dedupe/review statuses живут в `event_import_items.raw_payload.importReview.dedupe`, а не в `event_import_items.status` или `event_import_runs.status`. Не добавлять `duplicate` / `possible_duplicate` в table CHECK constraints.
 
 ## Settings health check
 
@@ -157,6 +187,8 @@ Health-check не показывает secret values, JWT, raw session token, an
 - Settings показывает real community data для active `admin`, а не mock community settings.
 - Settings → Адреса общины продолжают читать и сохранять адреса как раньше.
 - Settings → Health check показывает базовые ok/skipped/warning/error статусы без secrets/JWT/anon key values.
+- Import button с сайта ещё отсутствует в этом PR.
+- Future Edge Function CORS должен разрешать `STAGING_ADMIN_URL` до включения import button.
 
 ## Overview beta checklist
 
@@ -200,3 +232,4 @@ Broken env:
 - Войти как active `event_manager`.
 - Проверить, что login redirect возвращает на staging admin URL.
 - Проверить, что docs не предлагают Supabase Admin API, service-role key или server-only secrets для browser-admin.
+- Проверить, что import button с сайта ещё не появился в этом PR.
