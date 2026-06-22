@@ -54,7 +54,7 @@ Privacy boundary: prayer tracker приватный. Этот docs-only PR не 
 
 ## Dedupe boundary
 
-Детальный JSON contract будет следующим PR `feature/admin-import-dedupe-contract`. Этот PR фиксирует только boundary: dedupe/review statuses живут в JSON payload, а не в table status columns.
+Детальный v1 JSON contract зафиксирован в [admin-import-dedupe-contract.md](admin-import-dedupe-contract.md). Boundary остаётся прежним: dedupe/review statuses живут в JSON payload, а не в table status columns.
 
 Canonical place для dedupe status:
 
@@ -62,7 +62,9 @@ Canonical place для dedupe status:
 event_import_items.raw_payload.importReview.dedupe
 ```
 
-Не расширять в этом PR:
+Review queue читает dedupe state из `raw_payload.importReview.dedupe`, а не из `event_import_items.status` или `event_import_runs.status`. Table status expansion для dedupe не предлагается.
+
+Не расширять:
 
 - `event_import_items.status`;
 - `event_import_runs.status`;
@@ -82,7 +84,7 @@ Table status columns должны оставаться техническими 
 - import button UI;
 - run history UI;
 - dedupe review UI;
-- detailed dedupe JSON contract в `feature/admin-import-dedupe-contract`.
+- detailed dedupe JSON contract — зафиксирован в [admin-import-dedupe-contract.md](admin-import-dedupe-contract.md).
 
 Не делать в этом PR:
 
