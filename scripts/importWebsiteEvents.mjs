@@ -745,6 +745,129 @@ function buildImportReview(signals, dateConfidence, parsedDate, options) {
 }
 
 // ============================================================
+// Dedupe contract (v1)
+// ============================================================
+//
+// Shared v1 dedupe state written to:
+//   event_import_items.raw_payload.importReview.dedupe
+//
+// See docs/admin-import-dedupe-contract.md and the type-only reference in
+// src/types/importDedupe.ts. Both this owner/dev-only CLI and the future
+// Supabase Edge Function must write the SAME shape so the review queue can read
+// it uniformly. Dedupe state lives only in the JSON review payload — it never
+// extends event_import_items.status or event_import_runs.status.
+//
+// The shared TS type (src/types/importDedupe.ts) is intentionally not imported
+// here: it is a type-only module and pulling it into this plain .mjs CLI would
+// add a build/transpile dependency for no runtime benefit. The shape below is
+// kept in sync with that file and the contract doc by hand.
+
+const DEDUPE_CONTRACT_VERSION = 1;
+
+function canonicalizeSourceUrl(value) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+    // Strip query/hash so the canonical URL is stable for comparison.
+    url.search = '';
+    url.hash = '';
+    return url.href;
+  } catch {
+    return value;
+  }
+}
+
+function computeContentHash(item) {
+  const normalized = [
+    'v1',
+    normalizeTitle(item.title ?? ''),
+    item.startsAt ?? '',
+    compactText(item.description ?? ''),
+  ].join('\n');
+
+  return `sha256:${createHash('sha256').update(normalized).digest('hex')}`;
+}
+
+// Baseline dedupe attached at parse time. No DB lookup has happened yet, so the
+// status is the optimistic default ("new") and matchedBy is empty. applyImport
+// finalizes status/matchedBy/matchedEventId/manualOverride against the DB before
+// the item is written.
+function buildDedupe(item, overrides = {}) {
+  return {
+    version: DEDUPE_CONTRACT_VERSION,
+    status: overrides.status ?? 'new',
+    reason: overrides.reason ?? 'Parsed card; not yet checked against existing events.',
+    matchedBy: overrides.matchedBy ?? [],
+    matchedEventId: overrides.matchedEventId ?? null,
+    matchedImportItemId: overrides.matchedImportItemId ?? null,
+    manualOverride: overrides.manualOverride ?? false,
+    contentHash: overrides.contentHash ?? computeContentHash(item),
+    canonicalSourceUrl: canonicalizeSourceUrl(item.sourceUrl ?? null),
+    sourceExternalId: item.externalId ?? null,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+// Carries the stable, content-derived fields of the parse-time baseline
+// (contentHash, canonicalSourceUrl, sourceExternalId) and overlays the
+// DB-derived outcome (status/reason/matchedBy/...). checkedAt is refreshed to
+// the moment of the apply-time dedupe decision.
+function finalizeDedupe(baseDedupe, outcome) {
+  const base = baseDedupe ?? {};
+
+  return {
+    version: DEDUPE_CONTRACT_VERSION,
+    status: outcome.status,
+    reason: outcome.reason,
+    matchedBy: outcome.matchedBy ?? [],
+    matchedEventId: outcome.matchedEventId ?? null,
+    matchedImportItemId: outcome.matchedImportItemId ?? base.matchedImportItemId ?? null,
+    manualOverride: outcome.manualOverride ?? false,
+    contentHash: base.contentHash ?? null,
+    canonicalSourceUrl: base.canonicalSourceUrl ?? null,
+    sourceExternalId: base.sourceExternalId ?? null,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+// Maps the existing createOrUpdateEvent action to a v1 dedupe outcome. Events
+// are linked by the stable key source_type=website_scrape + source_external_id,
+// so a matched existing event is reported via the `source_external_id` signal.
+function dedupeOutcomeForEventAction(action, eventId) {
+  if (action === 'manual_override') {
+    return {
+      status: 'manual_override_skipped',
+      reason: 'Matched existing event protected by manual_override; not overwritten.',
+      matchedBy: ['source_external_id'],
+      matchedEventId: eventId,
+      manualOverride: true,
+    };
+  }
+
+  if (action === 'updated') {
+    return {
+      status: 'updated_existing',
+      reason: 'Matched existing event by source_external_id; content updated.',
+      matchedBy: ['source_external_id'],
+      matchedEventId: eventId,
+      manualOverride: false,
+    };
+  }
+
+  // action === 'created'
+  return {
+    status: 'new',
+    reason: 'No existing event matched by stable key; created new event.',
+    matchedBy: [],
+    matchedEventId: null,
+    manualOverride: false,
+  };
+}
+
+// ============================================================
 // Location / category helpers
 // ============================================================
 
@@ -900,6 +1023,16 @@ function parseDetailPage(html, card, sourceUrl, options = {}) {
 
   const importReview = buildImportReview(signals, dateConfidence, parsedDate, options);
 
+  // Attach the parse-time baseline dedupe (no DB lookup yet). applyImport
+  // finalizes it against the DB before the item is written.
+  importReview.dedupe = buildDedupe({
+    title,
+    startsAt: parsedDate.startsAt,
+    description,
+    sourceUrl: card.detailUrl,
+    externalId: card.externalId,
+  });
+
   return {
     externalId: card.externalId,
     sourceUrl: card.detailUrl,
@@ -1031,6 +1164,11 @@ function printDryRunSummary(result, options = {}) {
     console.log(`   image_url: ${item.imageUrl ?? '(none)'}`);
     console.log(`   registration: ${item.registrationMode}${item.registrationUrl ? ` (${item.registrationUrl})` : ''}`);
     console.log(`   raw_date_text: ${item.rawDateText ?? '(none)'}`);
+
+    const dedupe = item.importReview?.dedupe;
+    if (dedupe) {
+      console.log(`   dedupe (pre-apply, not checked against DB): contentHash=${dedupe.contentHash}`);
+    }
 
     if (item.startsAt) {
       console.log(`   starts_at: ${item.startsAt}`);
@@ -1472,10 +1610,21 @@ async function applyImport(options) {
     for (const { item, error } of result.items) {
       if (error) {
         summary.errorCount += 1;
+        const dedupe = buildDedupe(
+          {
+            title: item.title,
+            startsAt: item.startsAt,
+            description: null,
+            sourceUrl: item.sourceUrl,
+            externalId: item.externalId,
+          },
+          { status: 'error', reason: error.message },
+        );
         await insertImportItem(client, source.id, run.id, item, 'error', null, {
           ...item.rawPayload,
           import_status: 'error',
           import_error: error.message,
+          importReview: { ...(item.importReview ?? {}), dedupe },
         });
         console.warn(`[error] ${item.sourceUrl}: ${error.message}`);
         continue;
@@ -1509,9 +1658,17 @@ async function applyImport(options) {
 
         const isManualOverride = eventResult.action === 'manual_override';
         const itemStatus = isManualOverride ? 'ignored' : 'linked';
-        const reviewWithOverride = isManualOverride
-          ? { ...importReview, reason: `${importReview?.reason ?? ''} manual_override protected.`.trim() }
-          : importReview;
+        const dedupe = finalizeDedupe(
+          importReview?.dedupe,
+          dedupeOutcomeForEventAction(eventResult.action, eventResult.eventId),
+        );
+        const reviewWithDedupe = {
+          ...importReview,
+          dedupe,
+          ...(isManualOverride
+            ? { reason: `${importReview?.reason ?? ''} manual_override protected.`.trim() }
+            : {}),
+        };
 
         await insertImportItem(
           client,
@@ -1528,7 +1685,7 @@ async function applyImport(options) {
               : null,
             linked_event_id: eventResult.eventId,
             event_action: eventResult.action,
-            importReview: reviewWithOverride,
+            importReview: reviewWithDedupe,
           },
         );
       } else {
@@ -1563,6 +1720,10 @@ async function applyImport(options) {
             ...importReview,
             draftEventCreated: !isManualOverride,
             draftEventId: eventResult.eventId,
+            dedupe: finalizeDedupe(
+              importReview?.dedupe,
+              dedupeOutcomeForEventAction(eventResult.action, eventResult.eventId),
+            ),
           };
 
           await insertImportItem(
@@ -1596,13 +1757,23 @@ async function applyImport(options) {
             ? `No suggestedStartsAt available for draft creation (dateConfidence=${dateConfidence}).`
             : null;
 
+          // No event lookup happens for non-confident items, so no existing
+          // event is linked: the dedupe outcome is "new" (not a duplicate).
+          const dedupe = finalizeDedupe(importReview?.dedupe, {
+            status: 'new',
+            reason: 'No existing event linked; saved for manual review (date not confident).',
+            matchedBy: [],
+            matchedEventId: null,
+            manualOverride: false,
+          });
+
           await insertImportItem(client, source.id, run.id, item, 'ignored', null, {
             ...item.rawPayload,
             import_status: 'ignored',
             import_status_reason: importReview?.reason ?? item.dateWarning,
             importReview: draftSkipReason
-              ? { ...importReview, draftSkipReason }
-              : importReview,
+              ? { ...importReview, draftSkipReason, dedupe }
+              : { ...importReview, dedupe },
           });
 
           console.warn(`[needs_review] ${item.title}: ${importReview?.reason ?? item.dateWarning}`);
@@ -1730,6 +1901,16 @@ async function runReviewReport(options) {
 
         if (review.suggestedStartsAt) {
           console.log(`   suggestedStartsAt: ${review.suggestedStartsAt}`);
+        }
+
+        if (review.dedupe) {
+          console.log(`   dedupe.status:   ${review.dedupe.status ?? '(unknown)'}`);
+          console.log(`   dedupe.reason:   ${review.dedupe.reason ?? '(none)'}`);
+          console.log(`   dedupe.matchedBy: ${(review.dedupe.matchedBy ?? []).join(', ') || '(none)'}`);
+
+          if (review.dedupe.matchedEventId) {
+            console.log(`   dedupe.matchedEventId: ${review.dedupe.matchedEventId}`);
+          }
         }
       } else {
         const legacyReason = row.raw_payload?.import_status_reason;
