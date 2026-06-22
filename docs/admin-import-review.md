@@ -1,5 +1,10 @@
 # Admin import review
 
+Current status: `apply_review_only` Edge integration is implemented in
+`supabase/functions/admin-website-import`. Older "future/docs-only" language in
+this document describes the phased plan history; the current runtime boundary is
+documented below.
+
 Этот документ фиксирует final architecture для Phase 2 admin-triggered import v2. PR является docs-only: код, schema, migrations, Edge Functions, RPC, importer script и `apps/admin` UI не меняются.
 
 Phase 1 server/staging beta v1 завершена без import button. Текущий importer из `scripts/importWebsiteEvents.mjs` остаётся временным owner/dev-only CLI flow до отдельных Phase 2 PRs. Он не является beta-admin UI и не переносится в Edge Function "как есть".
@@ -19,6 +24,40 @@ web-admin button
 Default mode: `apply_review_only`.
 
 В этом режиме backend flow создаёт import run и import items для проверки человеком. Import items попадают в review queue, а не напрямую в published events. No auto-publish: событие не становится published только потому, что parser нашёл карточку на сайте или смог уверенно распарсить дату.
+
+## Current Edge apply_review_only integration
+
+Current implementation in `supabase/functions/admin-website-import` keeps
+health and dry-run modes and adds `apply_review_only` as the review-write mode.
+It uses the normal authenticated Supabase client with the caller's user session
+token and calls the existing write RPC. It does not use a service-role key,
+Supabase Admin API, `DATABASE_URL`, or raw `auth.users` reads.
+
+`sourceUrl` is validated through the shared website parser allowlist before any
+website fetch. Only `sredisvoih.com` and `www.sredisvoih.com` are accepted.
+The browser/admin UI never receives `DATABASE_URL` or server-only secrets.
+
+Runtime flow:
+
+1. validate CORS, auth, and active `admin` / `event_manager` access;
+2. validate parser options and allowlisted `sourceUrl`;
+3. resolve the active `sredi_svoih_events` import source visible to the caller;
+4. call `admin_begin_import_run` with mode `apply_review_only`;
+5. fetch and parse the website through the shared parser;
+6. call `admin_upsert_import_item` for each parsed item;
+7. call `admin_finalize_import_run` with `success` and safe summary counts.
+
+This writes only `event_import_runs` and `event_import_items`. It never creates
+events, never updates events, never publishes events, and never auto-publishes.
+Item table statuses remain only `new | linked | ignored | error`; dedupe states
+stay inside `raw_payload.importReview.dedupe`.
+
+If `admin_begin_import_run` returns `import_already_running`, the Edge Function
+returns a clean conflict-style payload with `ok: false`,
+`error: "import_already_running"`, and a safe message. If the parser or list
+fetch fails after a run was opened, the run is finalized as `failed` with a safe
+error message. Detail fetch/parse failures are saved as item errors and the run
+continues.
 
 ## Write-RPC boundary
 
@@ -123,9 +162,9 @@ Table status columns должны оставаться техническими 
 Архитектура зафиксирована отдельным docs-only PR. Реализация разбита на отдельные PRs:
 
 - write RPC — **реализовано** (см. [Write-RPC boundary](#write-rpc-boundary), migration `20260622140000_admin_import_write_rpc.sql`);
-- Supabase Edge Function;
-- parser dry-run;
-- `apply_review_only`;
+- Supabase Edge Function health/CORS/auth foundation - **implemented**;
+- parser dry-run - **implemented**;
+- `apply_review_only` Edge-to-write-RPC integration - **implemented**;
 - import button UI;
 - run history UI;
 - dedupe review UI;
@@ -133,15 +172,13 @@ Table status columns должны оставаться техническими 
 
 Не делать в этом PR:
 
-- code changes;
 - schema changes;
 - migrations;
 - importer execution;
-- Edge Functions;
 - import button;
 - changes to `scripts/importWebsiteEvents.mjs`;
 - changes to `apps/admin`;
-- backend/RPC changes;
+- backend/RPC changes beyond the existing write-RPC contract;
 - mobile, registrations, seating или prayer tracker changes.
 
 ## Manual review expectation

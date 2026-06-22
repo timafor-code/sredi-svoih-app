@@ -580,6 +580,18 @@ async function buildErrorItem(card, error) {
       reason: safeError.message,
     },
   );
+  const importReview = {
+    dateConfidence: "none",
+    dateStatus: "needs_review",
+    reason: safeError.message,
+    rawDateText: null,
+    rawTimeText: null,
+    inferred: false,
+    assumedYear: null,
+    suggestedStartsAt: null,
+    parserVersion: WEBSITE_EVENTS_PARSER_VERSION,
+    dedupe,
+  };
 
   return {
     sourceExternalId: card.sourceExternalId,
@@ -592,18 +604,7 @@ async function buildErrorItem(card, error) {
     rawDateText: null,
     dateWarning: safeError.message,
     dateConfidence: "none",
-    importReview: {
-      dateConfidence: "none",
-      dateStatus: "needs_review",
-      reason: safeError.message,
-      rawDateText: null,
-      rawTimeText: null,
-      inferred: false,
-      assumedYear: null,
-      suggestedStartsAt: null,
-      parserVersion: WEBSITE_EVENTS_PARSER_VERSION,
-      dedupe,
-    },
+    importReview,
     locationName: DEFAULT_LOCATION_NAME,
     address: DEFAULT_ADDRESS,
     parsedLocation: null,
@@ -616,6 +617,7 @@ async function buildErrorItem(card, error) {
       parser_name: WEBSITE_EVENTS_PARSER_NAME,
       parser_version: WEBSITE_EVENTS_PARSER_VERSION,
       card: card.rawCardPayload,
+      importReview,
       parse_error: safeError,
     },
   };
