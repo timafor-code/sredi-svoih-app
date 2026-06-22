@@ -134,6 +134,12 @@ Phase 2 admin import потребует Edge Function boundary. Для неё з
 - Login redirect returns to admin URL.
 - `NoAccess` не появляется для active `admin` и active `event_manager`.
 
+## Overview beta checklist
+
+- Overview не должен показывать fake KPI, mock dashboard, charts или production analytics.
+- Beta landing должен честно показывать текущего пользователя, role и community активной session.
+- `event_manager` не должен видеть admin-only shortcuts на Overview.
+
 ## Manual smoke
 
 Not run by Codex. Manual smoke is performed by the project owner.

@@ -1,38 +1,5 @@
 import type { AdminSection, AdminBadge } from "../types/admin";
 
-export const overviewKpis = [
-  {
-    label: "Опубликовано",
-    value: "12",
-    meta: "видимы участникам",
-    tone: "green",
-  },
-  {
-    label: "Черновики",
-    value: "4",
-    meta: "готовятся к публикации",
-    tone: "gold",
-  },
-  {
-    label: "Требуют проверки",
-    value: "3",
-    meta: "из импорта с сайта",
-    tone: "red",
-  },
-  {
-    label: "Pending-заявки",
-    value: "7",
-    meta: "ожидают решения",
-    tone: "blue",
-  },
-] as const;
-
-export const nextSteps = [
-  "Подключить Supabase Auth и реальные права доступа в отдельном PR.",
-  "Перенести review-flow импорта из прототипа на реальные таблицы позже.",
-  "Развернуть управление событиями после согласования backend-контрактов.",
-];
-
 export const mockEvents: Array<{
   title: string;
   date: string;

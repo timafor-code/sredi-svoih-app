@@ -739,56 +739,84 @@ a {
   line-height: 1.65;
 }
 
-.kpi-grid,
 .card-grid {
   display: grid;
   gap: 12px;
 }
 
-.kpi-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+.overview-identity-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 
-.kpi-card {
+.overview-fact-card {
   display: grid;
   gap: 8px;
-  min-height: 126px;
+  min-height: 124px;
 }
 
-.kpi-card span {
+.overview-fact-card span {
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 750;
   text-transform: uppercase;
 }
 
-.kpi-card strong {
+.overview-fact-card strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--text);
-  font-size: 31px;
-  line-height: 1;
+  font-size: 19px;
+  line-height: 1.2;
 }
 
-.kpi-card p {
+.overview-fact-card p,
+.overview-helper {
   margin: 0;
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.5;
 }
 
-.kpi-card--red {
-  border-color: rgba(229, 44, 54, 0.24);
+.overview-panel {
+  min-width: 0;
 }
 
-.kpi-card--gold {
-  border-color: rgba(242, 184, 75, 0.24);
+.overview-panel--note {
+  border-left: 3px solid var(--red);
 }
 
-.kpi-card--green {
-  border-color: rgba(53, 199, 89, 0.24);
+.overview-link-list {
+  display: grid;
+  gap: 0;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
 }
 
-.kpi-card--blue {
-  border-color: rgba(107, 127, 212, 0.28);
+.overview-link-list li {
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid var(--glass-border);
+  padding: 11px 0;
+}
+
+.overview-link-list li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.overview-link-list strong {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.overview-link-list span {
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .content-grid {
@@ -7929,9 +7957,9 @@ a {
     min-width: 180px;
   }
 
-  .kpi-grid,
   .card-grid--three,
   .card-grid--two,
+  .overview-identity-grid,
   .content-grid--wide-left {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -8028,9 +8056,9 @@ a {
     flex: 1;
   }
 
-  .kpi-grid,
   .card-grid--three,
   .card-grid--two,
+  .overview-identity-grid,
   .content-grid--wide-left {
     grid-template-columns: 1fr;
   }
