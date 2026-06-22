@@ -33,9 +33,9 @@ VITE_SUPABASE_ANON_KEY=<hosted-anon-or-publishable-key>
 VITE_ADMIN_ENV_LABEL=staging
 ```
 
-`VITE_ADMIN_ENV_LABEL` необязателен для текущего login flow и может использоваться как marker окружения. Реальные значения env нельзя коммитить; `.env.local` остаётся локальным файлом.
+`VITE_ADMIN_ENV_LABEL` необязателен и нужен только как визуальная пометка окружения в compact context текущего пользователя, например `staging`, `prod` или `local`. Он не влияет на auth, роли, RLS/RPC или доступы. Реальные значения env нельзя коммитить; `.env.local` остаётся локальным файлом.
 
-Реальные права доступа всё равно должны проверяться на стороне Supabase через RLS/RPC и отдельные backend-контракты.
+Реальные права доступа всё равно должны проверяться на стороне Supabase через RLS/RPC и отдельные backend-контракты. Не добавляйте в browser-admin service-role ключи, Supabase Admin API credentials или server-only database connection env vars.
 
 ## Staging deploy
 
@@ -51,7 +51,7 @@ VITE_ADMIN_ENV_LABEL=staging
 - В hosted Supabase Dashboard для staging project нужно поставить Auth `site_url` в staging admin URL и добавить тот же URL в allowed/additional redirect URLs.
 - Production admin URL добавляется позже отдельным шагом, когда он будет готов.
 
-В Phase 1 кнопка импорта с сайта не добавляется. Импорт временно выполняет владелец проекта через CLI/dev flow вне browser-admin.
+В Phase 1 кнопка импорта с сайта не добавляется. Импорт временно выполняет владелец проекта через CLI/dev flow вне browser-admin, с server-side connection string вне браузера.
 
 ## Локальный запуск
 

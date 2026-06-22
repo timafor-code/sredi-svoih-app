@@ -15,9 +15,16 @@ export type AdminProfile = {
   city: string | null;
 };
 
+export type AdminCommunitySummary = {
+  id?: string | null;
+  name?: string | null;
+};
+
 export type AdminMembership = {
   id: string;
   community_id: string;
+  community_name?: string | null;
+  community?: AdminCommunitySummary | null;
   user_id: string;
   role: AdminRole;
   status: AdminMembershipStatus;
