@@ -52,7 +52,7 @@ Write-RPC слой реализован в migration `supabase/migrations/202606
 
 ### Already-running guard
 
-`admin_begin_import_run` защищает от параллельных запусков для одного source, используя server-side `now()` (не browser/device time) и существующую колонку `started_at` (новые колонки не добавляются):
+`admin_begin_import_run` защищает от параллельных запусков для одного source, используя server-side `now()` (не browser/device time) плюс transaction-scoped advisory lock per source, и существующую колонку `started_at` (новые колонки не добавляются):
 
 - если для source есть активный `status = 'started'` run, начатый в пределах stale-порога (**30 минут**) — запрос отклоняется ошибкой `import_already_running`;
 - если активный `started` run старше порога — он помечается `status = 'failed'` с `error = 'stale_import_run_timed_out'`, после чего создаётся новый run.

@@ -129,6 +129,12 @@ begin
 
   v_community_id := public.admin_assert_import_runner_access(v_source_id);
 
+  -- Serialise begin-run per source within this transaction. The advisory lock is
+  -- transaction-scoped (released at commit/rollback) and keyed on the source id,
+  -- so concurrent begin calls for the same source run the already-running guard
+  -- one at a time instead of racing. No table constraint is added.
+  perform pg_advisory_xact_lock(hashtextextended(v_source_id::text, 0));
+
   -- Mode: only apply_review_only is supported in this PR (no auto-publish).
   v_mode := lower(coalesce(nullif(btrim(v_payload ->> 'mode'), ''), 'apply_review_only'));
   if v_mode <> 'apply_review_only' then
