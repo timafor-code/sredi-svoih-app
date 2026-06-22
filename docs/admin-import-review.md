@@ -20,6 +20,51 @@ Default mode: `apply_review_only`.
 
 В этом режиме backend flow создаёт import run и import items для проверки человеком. Import items попадают в review queue, а не напрямую в published events. No auto-publish: событие не становится published только потому, что parser нашёл карточку на сайте или смог уверенно распарсить дату.
 
+## Write-RPC boundary
+
+Write-RPC слой реализован в migration `supabase/migrations/20260622140000_admin_import_write_rpc.sql`. Это первый implementation-PR Phase 2 (PR 14): он создаёт безопасный backend write boundary и пишет **только** `event_import_runs` и `event_import_items`.
+
+Важно про границы этого слоя:
+
+- write boundary пишет только `event_import_runs` и `event_import_items`;
+- он **не** создаёт, не обновляет и не публикует events;
+- он не трогает registrations, seating, mobile, participants или prayer tracker;
+- он не реализует Edge Function, parser, importer или UI (это отдельные будущие PRs);
+- браузер-admin не пишет import-таблицы напрямую — только через эти RPC.
+
+### Allowed roles
+
+Все RPC требуют `auth.uid()` и активное членство в community с ролью `admin` или `event_manager`. Community **всегда** выводится server-side из import source (`event_import_sources.community_id`) и сверяется с активным членством вызывающего. `community_id` из payload никогда не читается и не принимается — спуфинг community невозможен.
+
+Централизованная проверка — `admin_assert_import_runner_access(p_source_id uuid)`. Она поднимает понятные ошибки:
+
+- `unauthenticated` — нет `auth.uid()`;
+- `import_source_not_found` — source с таким id не существует;
+- `import_source_forbidden` — source существует, но у пользователя нет активной admin/event_manager роли в его community (включая случай, когда source принадлежит чужой community).
+
+### begin / upsert / finalize lifecycle
+
+Один import run проходит через три RPC:
+
+1. `admin_begin_import_run(payload jsonb)` — payload `{ "sourceId": "<uuid>", "mode": "apply_review_only" }` (snake_case `source_id` принимается defensively). Валидирует доступ, применяет already-running guard, создаёт `event_import_runs` со `status = 'started'` и возвращает safe run info (`runId`, `sourceId`, `communityId`, `status`, `mode`, `startedAt`).
+2. `admin_upsert_import_item(p_run_id uuid, payload jsonb)` — пишет один item в `event_import_items` для открытого run. Валидирует доступ через source открытого run и требует `run.status = 'started'`. Идемпотентный upsert внутри run по ключу `(run_id, external_id)`, когда `external_id` присутствует; items без `external_id` всегда вставляются (в схеме нет UNIQUE-ограничения на `(source_id, external_id)`, и этот PR его не добавляет — cross-run dedupe остаётся задачей review queue).
+3. `admin_finalize_import_run(p_run_id uuid, payload jsonb)` — закрывает открытый run. Допустимые финальные статусы только `success` или `failed`. Обновляются только уже существующие summary/error колонки (`finished_at`, `error`, `found_count`, `created_count`, `updated_count`). Items не мутируются.
+
+### Already-running guard
+
+`admin_begin_import_run` защищает от параллельных запусков для одного source, используя server-side `now()` (не browser/device time) плюс transaction-scoped advisory lock per source, и существующую колонку `started_at` (новые колонки не добавляются):
+
+- если для source есть активный `status = 'started'` run, начатый в пределах stale-порога (**30 минут**) — запрос отклоняется ошибкой `import_already_running`;
+- если активный `started` run старше порога — он помечается `status = 'failed'` с `error = 'stale_import_run_timed_out'`, после чего создаётся новый run.
+
+### No auto-publish, no events writes
+
+Default (и единственный поддерживаемый) mode — `apply_review_only`. Любое другое значение `mode` отклоняется (`import_mode_unsupported`). RPC никогда не публикует событие и не пишет в таблицу `events`. `linkedEventId` у item принимается только как ссылка и валидируется на принадлежность той же community (read-only проверка) — запись в `events` не выполняется.
+
+### Table statuses не расширяются
+
+Этот слой не расширяет CHECK-ограничения. Item-статусы берутся только из `new | linked | ignored | error`, финальные run-статусы — только `success | failed`. Dedupe/review state передаётся внутри `raw_payload.importReview.dedupe` и сохраняется как есть; он никогда не попадает в status-колонку (см. [admin-import-dedupe-contract.md](admin-import-dedupe-contract.md)).
+
 ## Review queue contract
 
 Review queue является обязательным human-review layer между импортом и публикацией. Она нужна для проверки дат, описаний, мест, dedupe-сигналов и manual override cases до появления события в публичном календаре.
@@ -75,9 +120,9 @@ Table status columns должны оставаться техническими 
 
 ## Phase 2 PR boundaries
 
-Этот PR только фиксирует architecture. Реализация будет разбита на отдельные PRs:
+Архитектура зафиксирована отдельным docs-only PR. Реализация разбита на отдельные PRs:
 
-- write RPC;
+- write RPC — **реализовано** (см. [Write-RPC boundary](#write-rpc-boundary), migration `20260622140000_admin_import_write_rpc.sql`);
 - Supabase Edge Function;
 - parser dry-run;
 - `apply_review_only`;
