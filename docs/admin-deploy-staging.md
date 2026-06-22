@@ -125,6 +125,16 @@ Phase 2 admin import потребует Edge Function boundary. Для неё з
 - service-role key не использовать для browser-triggered admin flow;
 - auto-publish и импорт с кнопки не входят в Phase 1.
 
+## Settings health check
+
+В web-admin открыть Settings → Health check и нажать `Проверить снова`, если нужно повторить проверку после изменения staging env или Supabase доступа.
+
+Health-check является лёгким smoke-индикатором готовности окружения, а не security scanner, SQL console или deep diagnostics. Он проверяет только безопасные read-only признаки через обычный authenticated Supabase client: наличие browser Supabase config, session, active membership, текущую role, выбранную community и доступность существующих read/RPC/service layers для events, import review, registrations и members.
+
+Health-check не показывает secret values, JWT, raw session token, anon key value, service-role key, server-only env, SQL/debug internals или данные prayer tracker.
+
+Для `event_manager` members-only check должен быть skipped/not allowed как ожидаемое поведение. В текущей навигации Settings доступны admin-only; event_manager smoke ниже проверяет, что admin-only доступ не расширился.
+
 ## Staging checklist
 
 - Supabase migrations applied на staging project.
@@ -140,6 +150,7 @@ Phase 2 admin import потребует Edge Function boundary. Для неё з
 - Hosted Supabase Auth allowed/additional redirect URLs содержат `STAGING_ADMIN_URL`.
 - Login redirect returns to admin URL.
 - `NoAccess` не появляется для active `admin` и active `event_manager`.
+- Settings → Health check показывает базовые ok/skipped/warning/error статусы без secrets/JWT/anon key values.
 
 ## Overview beta checklist
 
@@ -150,6 +161,28 @@ Phase 2 admin import потребует Edge Function boundary. Для неё з
 ## Manual smoke
 
 Not run by Codex. Manual smoke is performed by the project owner.
+
+Admin:
+
+- Войти как active `admin`.
+- Открыть Settings → Health check.
+- Нажать `Проверить снова`.
+- Ожидать `ok` для Supabase configured, session exists, membership exists, current role, selected community, events, import review, registrations и members.
+- Проверить, что на экране нет JWT, raw session token, anon key value, service-role key, server-only env или SQL/debug details.
+
+Event manager:
+
+- Войти как active `event_manager`.
+- Проверить, что Overview/Events/Import review/Registrations доступны как раньше.
+- Проверить, что Settings/Members остаются admin-only в текущей навигации.
+- Если health-check запускается в build/route, где он доступен event_manager, members-only check должен быть `skipped`, а не failure.
+
+Broken env:
+
+- На отдельном staging preview с намеренно неполным browser Supabase config открыть web-admin.
+- Ожидать safe error/config state без secret values.
+- Health-check, если доступен, должен показывать Supabase configured как `error`, остальные backend checks как `skipped`.
+- Восстановить env и повторить build/deploy перед основным smoke.
 
 - Проверить hosted Supabase Auth URL settings.
 - Открыть staging admin URL.
