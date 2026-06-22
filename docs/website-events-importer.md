@@ -1,9 +1,57 @@
 # Website Events Importer
 
 Локальный importer событий сайта `https://www.sredisvoih.com/events/` живёт в `scripts/importWebsiteEvents.mjs`.
-Это dev/backend tool: он не импортируется из React Native приложения и не является частью Expo bundle.
+Это owner/dev-only backend tool: он не импортируется из React Native приложения, не является частью Expo bundle и не является beta-admin UI.
+
+Phase 1 server/staging beta v1 завершается без import button в `apps/admin`. До реализации Phase 2 текущий CLI остаётся временным owner-only/dev flow вне browser-admin. Его можно использовать только как локальный инструмент владельца проекта или разработчика, а не как модель доступа для админов в браузере.
+
+## Phase 2 target architecture
+
+Final architecture для admin-triggered import v2:
+
+```text
+web-admin button
+  -> Supabase Edge Function
+  -> parser/fetch
+  -> write RPC
+  -> event_import_runs
+  -> event_import_items
+  -> review queue
+```
+
+В Phase 2 importer должен перейти на backend boundary: browser-admin вызывает только безопасный authenticated flow, Edge Function проверяет пользователя и роль, write RPC пишет runs/items, а результат попадает в review queue. События не публикуются автоматически.
+
+Текущий CLI не переносится в Edge Function "как есть". Parser/fetch, write RPC, режим `apply_review_only`, import button, run history и dedupe review UI будут выделены в отдельные PR с отдельными контрактами и проверками.
+
+## Phase 2 boundaries
+
+Этот PR только фиксирует архитектуру и не меняет код. Следующие части Phase 2 идут отдельно:
+
+- write RPC;
+- Supabase Edge Function;
+- parser dry-run;
+- `apply_review_only`;
+- import button UI;
+- run history UI;
+- dedupe review UI.
+
+Default mode для будущего admin-triggered import: `apply_review_only`. Это означает запись `event_import_runs` и `event_import_items` для ручной проверки, без прямой публикации событий.
+
+Explicit rules:
+
+- no auto-publish;
+- no direct browser DB writes;
+- no `DATABASE_URL` in `apps/admin`;
+- no service-role key in browser-admin or browser-triggered import flow;
+- no Supabase Admin API;
+- no raw `auth.users` access;
+- dedupe statuses live in `raw_payload.importReview.dedupe` JSON, not in `event_import_items.status` or `event_import_runs.status` table status columns.
+
+Detailed dedupe JSON contract будет зафиксирован следующим PR `feature/admin-import-dedupe-contract`. Этот PR фиксирует только boundary: dedupe/review status не расширяет table CHECK constraints и не добавляет `duplicate` / `possible_duplicate` в table status columns.
 
 ## Запуск
+
+Команды ниже относятся только к текущему owner/dev-only CLI. Они не запускаются из browser-admin и не описывают будущую beta-admin кнопку.
 
 Dry-run — ничего не пишет в БД, показывает что было бы сделано:
 
@@ -11,7 +59,7 @@ Dry-run — ничего не пишет в БД, показывает что б
 cd F:\2026\SS-App\code\sredi-svoih-app; npm run import:events:dry
 ```
 
-Apply — пишет import run/items и безопасно создаёт или обновляет события:
+Apply — owner/dev-only режим, который пишет import run/items и по текущему CLI-контракту может создать или обновить события:
 
 ```powershell
 cd F:\2026\SS-App\code\sredi-svoih-app; npm run import:events -- --limit 3 --apply
@@ -49,12 +97,20 @@ postgresql://postgres:postgres@127.0.0.1:54322/postgres
 
 `.env.local` можно использовать локально, но он игнорируется Git. Публичные Expo-переменные не используются importer-ом.
 
+`DATABASE_URL` остаётся только локальным/server-side dev secret для CLI. Его нельзя добавлять в `apps/admin`, browser env или staging SPA settings.
+
 ## Таблицы
 
-Пайплайн:
+Текущий CLI-пайплайн:
 
 ```text
 website -> parser -> event_import_runs -> event_import_items -> events -> app
+```
+
+Целевой Phase 2 admin pipeline:
+
+```text
+web-admin button -> Supabase Edge Function -> parser/fetch -> write RPC -> event_import_runs -> event_import_items -> review queue
 ```
 
 Importer использует:
@@ -69,6 +125,8 @@ communities
 
 Source ищется или создаётся с `parser_name = sredi_svoih_events`.
 События связываются по стабильному ключу `source_type = website_scrape` + `source_external_id`.
+
+В целевом Phase 2 flow browser-admin не пишет напрямую в эти таблицы. Запись выполняется через backend boundary: Edge Function + authenticated write RPC с проверкой `auth.uid()` и роли.
 
 ## Классификация качества даты (dateConfidence)
 
@@ -147,6 +205,12 @@ cd F:\2026\SS-App\code\sredi-svoih-app; npm run import:events -- --apply --assum
 
 ## Правила безопасности
 
+### Admin-triggered import boundary
+
+Для будущего import button браузерный admin-клиент использует только обычный authenticated Supabase client и user session token. Браузер не получает service-role key, `DATABASE_URL`, server-only secrets или Supabase Admin API credentials.
+
+Edge Function и write RPC должны проверять `auth.uid()` и роль пользователя через RLS/RPC boundary. Parser/fetch и запись runs/items выполняются на backend стороне. События не публикуются автоматически: import items идут в review queue.
+
 ### manual_override защита
 
 `events.manual_override = true` не перетирается. В этом случае:
@@ -164,10 +228,24 @@ cd F:\2026\SS-App\code\sredi-svoih-app; npm run import:events -- --apply --assum
 Importer использует прямое PostgreSQL-подключение (`DATABASE_URL`), не Supabase JS client.
 Service role ключ не используется нигде.
 
+Для `apps/admin` и будущего browser-triggered import flow также запрещены service-role key, Supabase Admin API и server-only database credentials.
+
 ### Нет публикации с сомнительной датой
 
 События с `dateConfidence != 'confident'` не получают `status = 'published'`.
 Даже с `--assume-year` и `--create-drafts` создаётся только `draft/hidden`.
+
+В Phase 2 default mode будет строже: `apply_review_only` не публикует события автоматически даже при confident parse. Публикация возможна только после явного review/action отдельным безопасным flow.
+
+### Dedupe status boundary
+
+До отдельного PR `feature/admin-import-dedupe-contract` dedupe status считается частью JSON review payload:
+
+```text
+event_import_items.raw_payload.importReview.dedupe
+```
+
+Не расширять `event_import_items.status` или `event_import_runs.status` ради dedupe states. Не добавлять `duplicate` или `possible_duplicate` в table CHECK constraints в этом architecture PR.
 
 ## Review report
 
@@ -240,6 +318,9 @@ Apply summary: run_id=...
 
 - Не импортируется в React Native клиент (`app/`, `src/`)
 - Не использует Supabase JS client или service role key
+- Не является beta-admin UI и не добавляет import button в `apps/admin`
+- Не добавляет `DATABASE_URL` в `apps/admin`
+- Не использует Supabase Admin API и не читает raw `auth.users`
 - Не создаёт published-события без уверенной даты
 - Не перетирает `events.manual_override = true`
 - Не затрагивает Auth / invite / membership flow
