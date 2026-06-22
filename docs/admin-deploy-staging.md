@@ -129,6 +129,8 @@ Phase 2 admin import потребует Edge Function boundary. Для неё з
 
 В web-admin открыть Settings → Health check и нажать `Проверить снова`, если нужно повторить проверку после изменения staging env или Supabase доступа.
 
+Settings показывает read-only данные текущей active community из Supabase: `id`, `name`, `timezone`, `website_url` если он заполнен, и дату создания если она доступна в schema. Эти данные читаются browser-admin через обычный authenticated Supabase client и RLS, без service-role key, Supabase Admin API или server-only connection strings.
+
 Health-check является лёгким smoke-индикатором готовности окружения, а не security scanner, SQL console или deep diagnostics. Он проверяет только безопасные read-only признаки через обычный authenticated Supabase client: наличие browser Supabase config, session, active membership, текущую role, выбранную community и доступность существующих read/RPC/service layers для events, import review, registrations и members.
 
 Health-check не показывает secret values, JWT, raw session token, anon key value, service-role key, server-only env, SQL/debug internals или данные prayer tracker.
@@ -150,6 +152,8 @@ Health-check не показывает secret values, JWT, raw session token, an
 - Hosted Supabase Auth allowed/additional redirect URLs содержат `STAGING_ADMIN_URL`.
 - Login redirect returns to admin URL.
 - `NoAccess` не появляется для active `admin` и active `event_manager`.
+- Settings показывает real community data для active `admin`, а не mock community settings.
+- Settings → Адреса общины продолжают читать и сохранять адреса как раньше.
 - Settings → Health check показывает базовые ok/skipped/warning/error статусы без secrets/JWT/anon key values.
 
 ## Overview beta checklist
@@ -165,6 +169,9 @@ Not run by Codex. Manual smoke is performed by the project owner.
 Admin:
 
 - Войти как active `admin`.
+- Открыть Settings.
+- Проверить, что карточка общины показывает real community data: `id`, `name`, `timezone`, `website_url` если заполнен, и дату создания если она доступна.
+- Проверить, что Settings → Адреса общины загружаются и существующий add/edit/archive flow не сломан.
 - Открыть Settings → Health check.
 - Нажать `Проверить снова`.
 - Ожидать `ok` для Supabase configured, session exists, membership exists, current role, selected community, events, import review, registrations и members.
@@ -174,7 +181,7 @@ Event manager:
 
 - Войти как active `event_manager`.
 - Проверить, что Overview/Events/Import review/Registrations доступны как раньше.
-- Проверить, что Settings/Members остаются admin-only в текущей навигации.
+- Проверить, что Settings/Members остаются admin-only в текущей навигации и event_manager не может открыть Settings.
 - Если health-check запускается в build/route, где он доступен event_manager, members-only check должен быть `skipped`, а не failure.
 
 Broken env:

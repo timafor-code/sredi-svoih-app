@@ -4,7 +4,7 @@ import { AdminHealthCheck } from "../components/settings/AdminHealthCheck";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
-import { communitySettings } from "../data/mockAdmin";
+import { getAdminCommunity } from "../services/adminCommunityService";
 import {
   archiveAdminCommunityLocation,
   createAdminCommunityLocation,
@@ -12,6 +12,7 @@ import {
   updateAdminCommunityLocation,
 } from "../services/communityLocationsService";
 import { useAdminAuth } from "../store/useAdminAuth";
+import type { AdminCommunity } from "../types/community";
 import type { AdminCommunityLocation } from "../types/communityLocations";
 
 type LocationFormState = {
@@ -34,6 +35,9 @@ export function SettingsPage() {
   const auth = useAdminAuth();
   const communityId = auth.membership?.community_id ?? null;
   const canManageLocations = auth.isAdmin && Boolean(communityId);
+  const [community, setCommunity] = useState<AdminCommunity | null>(null);
+  const [communityLoading, setCommunityLoading] = useState(false);
+  const [communityError, setCommunityError] = useState<string | null>(null);
   const [locations, setLocations] = useState<AdminCommunityLocation[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(false);
   const [locationsError, setLocationsError] = useState<string | null>(null);
@@ -41,6 +45,33 @@ export function SettingsPage() {
   const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
   const [savingLocation, setSavingLocation] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  const loadCommunity = useCallback(async () => {
+    if (!communityId) {
+      setCommunity(null);
+      setCommunityLoading(false);
+      setCommunityError(null);
+      return;
+    }
+
+    setCommunityLoading(true);
+    setCommunityError(null);
+
+    try {
+      const nextCommunity = await getAdminCommunity(communityId);
+      setCommunity(nextCommunity);
+      if (!nextCommunity) {
+        setCommunityError("Не удалось найти активную общину для текущей membership.");
+      }
+    } catch (error) {
+      setCommunity(null);
+      setCommunityError(
+        error instanceof Error ? error.message : "Не удалось загрузить данные общины.",
+      );
+    } finally {
+      setCommunityLoading(false);
+    }
+  }, [communityId]);
 
   const loadLocations = useCallback(async () => {
     if (!communityId) {
@@ -65,6 +96,10 @@ export function SettingsPage() {
       setLocationsLoading(false);
     }
   }, [communityId]);
+
+  useEffect(() => {
+    void loadCommunity();
+  }, [loadCommunity]);
 
   useEffect(() => {
     void loadLocations();
@@ -183,6 +218,8 @@ export function SettingsPage() {
     }
   };
 
+  const communitySettingRows = buildCommunitySettingRows(community);
+
   return (
     <div className="page-stack">
       <section className="page-header">
@@ -192,10 +229,32 @@ export function SettingsPage() {
       </section>
 
       <GlassCard className="settings-list" elevated>
-        {communitySettings.map((setting) => (
+        {communityLoading ? (
+          <div className="event-form-notice">Загружаем данные общины...</div>
+        ) : null}
+
+        {communityError ? (
+          <div className="form-error" role="alert">
+            {communityError}
+          </div>
+        ) : null}
+
+        {!communityLoading && !communityError && communitySettingRows.length === 0 ? (
+          <div className="event-form-notice">Данные общины пока недоступны.</div>
+        ) : null}
+
+        {communitySettingRows.map((setting) => (
           <div className="settings-list__row" key={setting.label}>
             <span>{setting.label}</span>
-            <strong>{setting.value}</strong>
+            <strong>
+              {setting.href ? (
+                <a href={setting.href} rel="noreferrer" target="_blank">
+                  {setting.value}
+                </a>
+              ) : (
+                setting.value
+              )}
+            </strong>
           </div>
         ))}
       </GlassCard>
@@ -375,4 +434,52 @@ function parseSortOrder(value: string): number | null {
 
   const parsed = Number(normalized);
   return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function buildCommunitySettingRows(
+  community: AdminCommunity | null,
+): Array<{ label: string; value: string; href?: string }> {
+  if (!community) {
+    return [];
+  }
+
+  const rows: Array<{ label: string; value: string; href?: string }> = [
+    { label: "Название", value: community.name },
+    { label: "ID", value: community.id },
+    { label: "Timezone", value: community.timezone ?? "Не указан" },
+  ];
+
+  if (community.websiteUrl) {
+    const href = getSafeWebsiteHref(community.websiteUrl);
+    rows.push(
+      href
+        ? { label: "Website", value: community.websiteUrl, href }
+        : { label: "Website", value: community.websiteUrl },
+    );
+  }
+
+  if (community.createdAt) {
+    rows.push({
+      label: "Создана",
+      value: formatCommunityTimestamp(community.createdAt),
+    });
+  }
+
+  return rows;
+}
+
+function getSafeWebsiteHref(value: string): string | undefined {
+  return /^https?:\/\//i.test(value) ? value : undefined;
+}
+
+function formatCommunityTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
