@@ -43,12 +43,6 @@ export const navigationGroups: NavigationGroup[] = [
         roles: ["admin"],
       },
       {
-        section: "invites",
-        label: "Приглашения",
-        icon: "◇",
-        roles: ["admin"],
-      },
-      {
         section: "settings",
         label: "Настройки",
         icon: "⚙",
@@ -59,6 +53,13 @@ export const navigationGroups: NavigationGroup[] = [
   {
     label: "Позже",
     items: [
+      {
+        section: "invites",
+        label: "Приглашения",
+        icon: "◇",
+        roles: ["admin"],
+        isFuture: true,
+      },
       {
         section: "contacts",
         label: "Контакты общины",
