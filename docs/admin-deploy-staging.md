@@ -8,7 +8,12 @@
 
 ## Phase 2 import note
 
-Phase 2 переводит импорт событий с сайта из owner-only CLI/dev flow в безопасный admin-triggered backend flow. Этот PR только фиксирует архитектуру и не реализует import button, Edge Function, write RPC, parser dry-run, `apply_review_only`, run history или dedupe review UI.
+Current update for `feature/admin-import-edge-foundation`: this branch adds the
+first `admin-website-import` Supabase Edge Function skeleton, but only as an
+auth/CORS/health foundation. It does not fetch the website, parse HTML, call
+write RPC, create import runs/items, change events, or add an admin UI button.
+
+Phase 2 переводит импорт событий с сайта из owner-only CLI/dev flow в безопасный admin-triggered backend flow. Текущий foundation PR реализует только health-only Edge Function skeleton и не реализует import button, parser dry-run, `apply_review_only`, run history или dedupe review UI.
 
 Target architecture:
 
@@ -139,7 +144,29 @@ STAGING_ADMIN_URL/auth/callback
 
 ## Edge Functions future note
 
-Phase 2 admin import потребует Edge Function boundary. Для неё заранее учитывать:
+Current Phase 2 foundation adds `admin-website-import` as a health-only
+Supabase Edge Function. Deploy/config requirements:
+
+- set `ADMIN_WEB_ORIGIN` on the Edge Function to the exact admin SPA origin,
+  for example the same value as `STAGING_ADMIN_URL`;
+- do not use `*` as an allowed origin for staging or production;
+- for local development, set an explicit local origin such as
+  `http://127.0.0.1:5173` or the actual Vite admin dev origin;
+- browser-admin calls the function with
+  `Authorization: Bearer <user-session-access-token>`;
+- the function creates a normal user-scoped Supabase client with the
+  anon/publishable key and validates the token with `auth.getUser()`;
+- role access is checked through RLS-backed `profiles` and
+  `community_memberships` reads for active `admin` or `event_manager`;
+- service-role keys, Supabase Admin API, raw `auth.users`, and server-only
+  database credentials are not used by this browser-triggered Edge flow;
+- current response is only safe health JSON:
+  `{"ok":true,"mode":"health","userRole":"admin|event_manager","communityId":"..."}`;
+- parser, apply, review writes, import runs, import items, and event changes
+  are deferred to later PRs.
+
+Full Phase 2 admin import will continue to build on this Edge Function boundary.
+Before parser/write enablement, keep these rules:
 
 - CORS должен явно разрешать admin SPA origin `STAGING_ADMIN_URL`;
 - preflight должен разрешать `Authorization` и нужные content headers для admin SPA;
@@ -170,6 +197,10 @@ Health-check не показывает secret values, JWT, raw session token, an
 Для `event_manager` members-only check должен быть skipped/not allowed как ожидаемое поведение. В текущей навигации Settings доступны admin-only; event_manager smoke ниже проверяет, что admin-only доступ не расширился.
 
 ## Staging checklist
+
+- Edge Function `ADMIN_WEB_ORIGIN` is set to the exact admin SPA origin before manual smoke.
+- Edge Function CORS allows `POST`, `OPTIONS`, `Authorization`, `apikey`, `x-client-info`, and `content-type`.
+- `admin-website-import` remains health-only until parser/apply/review-write PRs land.
 
 - Supabase migrations applied на staging project.
 - Beta community exists.
