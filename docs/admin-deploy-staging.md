@@ -1,0 +1,147 @@
+# Admin staging deploy
+
+Этот документ фиксирует Phase 1 server beta v1 для `apps/admin`: выложить web-admin на staging так, чтобы первый login не сломался из-за Supabase Auth redirects. PR документационный: UI, DB schema, CI/CD, Docker/Nginx, mobile и registrations/seating код не меняются.
+
+В Phase 1 кнопки импорта с сайта нет. Импорт временно выполняет владелец проекта через CLI/dev flow вне browser-admin.
+
+## Access model
+
+`apps/admin` работает через обычный authenticated Supabase client в браузере. Клиент использует anon/publishable key, пользовательскую Supabase session и RLS/RPC.
+
+Админские действия должны оставаться на границе RLS/RPC. Не использовать Supabase Admin API, service-role key или серверные connection strings в browser-admin.
+
+Privacy boundary: prayer tracker приватный. `prayer_activity_logs` нельзя читать или показывать в admin UI. В админке участников можно показывать профиль, членство и регистрации на события.
+
+## SPA hosting
+
+`apps/admin` хостится как static SPA на выбранном staging web host. Хост должен уметь:
+
+- принимать build output из `apps/admin/dist`;
+- отдавать assets из `dist/assets`;
+- возвращать `index.html` для SPA routes и auth callback paths;
+- обслуживать staging admin URL по HTTPS.
+
+Canonical public URL staging web-admin:
+
+```text
+STAGING_ADMIN_URL=https://<admin-staging-host>
+```
+
+Перед выкладкой замените placeholder на реальный URL выбранного хостинга и используйте ровно это значение в hosting settings и Supabase Auth settings.
+
+Build из корня репозитория:
+
+```powershell
+npm run admin:build
+```
+
+Публикуемый каталог:
+
+```text
+apps/admin/dist
+```
+
+SPA fallback: любые запросы к несуществующим static files должны возвращать `apps/admin/dist/index.html`, а не 404. Это важно для будущих callback paths вроде `/auth/callback` и для прямого открытия URL после redirect. Asset-файлы из `/assets/*` должны продолжать отдаваться как файлы.
+
+## Admin env
+
+Staging host должен получить только browser-safe env vars:
+
+```text
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_ANON_KEY=<hosted-anon-or-publishable-key>
+VITE_ADMIN_ENV_LABEL=staging
+```
+
+`VITE_SUPABASE_URL` указывает на hosted Supabase project для staging. `VITE_SUPABASE_ANON_KEY` должен быть anon/publishable key этого project. `VITE_ADMIN_ENV_LABEL=staging` необязателен для текущего login flow, но полезен как явный marker окружения.
+
+Не коммитить `.env.local`. Не добавлять server-only secrets в `apps/admin`.
+
+## Supabase Auth redirects
+
+В hosted Supabase Dashboard для staging project обновите Auth URL configuration:
+
+- `site_url`: `STAGING_ADMIN_URL`;
+- allowed/additional redirect URLs: `STAGING_ADMIN_URL`;
+- если используется dedicated callback path: `STAGING_ADMIN_URL/auth/callback`;
+- local URLs можно оставить только если они нужны для local development;
+- production admin URL добавить позже отдельным PR/шагом, когда production web-admin будет готов.
+
+`supabase/config.toml` в репозитории относится к локальному Supabase runtime. Его `[auth].site_url` и `additional_redirect_urls` не настраивают hosted Supabase project автоматически. Для staging нужно менять именно hosted Supabase Dashboard settings.
+
+Текущий admin login использует email/password и не делает внешний OAuth redirect. Однако hosted Auth redirects всё равно должны быть подготовлены для confirmation/recovery/provider flows и будущих callback сценариев. Supabase redirect allowlist должна содержать exact URL без query/hash; query params и hash fragment приходят уже поверх разрешённого URL.
+
+## Login callback
+
+Минимально разрешить:
+
+```text
+STAGING_ADMIN_URL
+STAGING_ADMIN_URL/
+```
+
+Если redirect flow настроен на dedicated callback path, дополнительно разрешить:
+
+```text
+STAGING_ADMIN_URL/auth/callback
+```
+
+Хостинг должен отдавать `index.html` на этот callback path, чтобы Vite SPA загрузилась и Supabase client смог обработать session в URL.
+
+При redirect loop проверить:
+
+- hosted Supabase `site_url` не указывает на localhost, mobile app или production URL;
+- exact staging admin URL добавлен в allowed/additional redirect URLs;
+- staging env vars указывают на hosted staging Supabase project, а не на local Supabase;
+- static host не отдаёт 404 на callback path и не удаляет hash/query из URL;
+- browser не держит старую session от другого Supabase project;
+- redirect происходит по HTTPS canonical URL без лишнего slash/path mismatch.
+
+При `NoAccess` проверить:
+
+- пользователь действительно вошёл в staging Supabase project;
+- у пользователя есть `profiles` row;
+- существует beta community;
+- есть active `community_memberships` row для этого пользователя;
+- role равен `admin` или `event_manager`;
+- membership не `pending`, `suspended` или `left`;
+- RLS/RPC возвращают профиль и membership для текущей user session.
+
+`NoAccess` обычно означает проблему членства/роли/RLS, а не проблему Auth redirect.
+
+## Edge Functions future note
+
+Phase 2 admin import потребует Edge Function boundary. Для неё заранее учитывать:
+
+- CORS должен разрешать admin SPA origin `STAGING_ADMIN_URL`;
+- browser-admin должен передавать `Authorization: Bearer <user-session-access-token>`;
+- функция должна валидировать пользователя и роль через обычную user session;
+- service-role key не использовать для browser-triggered admin flow;
+- auto-publish и импорт с кнопки не входят в Phase 1.
+
+## Staging checklist
+
+- Supabase migrations applied на staging project.
+- Beta community exists.
+- Admin membership active.
+- Event manager membership active.
+- `npm run admin:build` passes.
+- `apps/admin/dist` опубликован на static SPA host.
+- Admin URL opens: `STAGING_ADMIN_URL`.
+- SPA fallback возвращает `index.html` для callback/non-asset paths.
+- Hosted Supabase Auth `site_url` равен `STAGING_ADMIN_URL`.
+- Hosted Supabase Auth allowed/additional redirect URLs содержат `STAGING_ADMIN_URL`.
+- Login redirect returns to admin URL.
+- `NoAccess` не появляется для active `admin` и active `event_manager`.
+
+## Manual smoke
+
+Not run by Codex. Manual smoke is performed by the project owner.
+
+- Проверить hosted Supabase Auth URL settings.
+- Открыть staging admin URL.
+- Войти как active `admin`.
+- Выйти и войти повторно.
+- Войти как active `event_manager`.
+- Проверить, что login redirect возвращает на staging admin URL.
+- Проверить, что docs не предлагают Supabase Admin API, service-role key или server-only secrets для browser-admin.
