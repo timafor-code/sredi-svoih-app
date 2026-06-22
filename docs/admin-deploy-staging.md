@@ -131,7 +131,7 @@ Phase 2 admin import потребует Edge Function boundary. Для неё з
 - Beta community exists.
 - Admin membership active.
 - Event manager membership active.
-- Beta users have hosted Supabase Auth access, `profiles` rows and active `community_memberships` rows; invite codes are not part of beta v1.
+- Beta users have hosted Supabase Auth access, `profiles` rows and active `community_memberships` rows; use [admin beta access](admin-beta-access.md) for the manual runbook.
 - `npm run admin:build` passes.
 - `apps/admin/dist` опубликован на static SPA host.
 - Admin URL opens: `STAGING_ADMIN_URL`.
