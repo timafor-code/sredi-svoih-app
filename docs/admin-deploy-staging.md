@@ -4,6 +4,8 @@
 
 В Phase 1 кнопки импорта с сайта нет. Импорт временно выполняет владелец проекта через CLI/dev flow вне browser-admin.
 
+Финальный release gate перед выдачей staging-ссылки beta-админам: [Admin beta v1 release checklist](admin-beta-v1-release-checklist.md).
+
 ## Access model
 
 `apps/admin` работает через обычный authenticated Supabase client в браузере. Клиент использует anon/publishable key, пользовательскую Supabase session и RLS/RPC.

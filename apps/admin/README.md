@@ -39,7 +39,10 @@ VITE_ADMIN_ENV_LABEL=staging
 
 ## Staging deploy
 
-Подробная инструкция находится в `docs/admin-deploy-staging.md`.
+Staging/beta docs:
+
+- [Admin staging deploy](../../docs/admin-deploy-staging.md)
+- [Admin beta v1 release checklist](../../docs/admin-beta-v1-release-checklist.md)
 
 Короткая версия:
 
