@@ -107,6 +107,8 @@ Dry-run is requested explicitly:
 Supported dry-run options:
 
 - `sourceUrl`: optional list page URL, default `https://www.sredisvoih.com/events/`;
+  dry-run fetch is allowlisted to `sredisvoih.com` and
+  `www.sredisvoih.com` only;
 - `limit`: optional card limit, default `10`, capped at `20`;
 - `fetchDetails`: optional boolean, default `true`;
 - `assumeYear`: optional year for partial date suggestions;
@@ -142,10 +144,17 @@ detail fetch or detail parse failed.
 
 Dry-run failure policy:
 
+- invalid `sourceUrl` returns `invalid_source_url` before any website fetch;
 - list page fetch failure returns an error response for the whole function;
 - detail page fetch/parse failure is attached to that item and the run
   continues;
 - no DB write is attempted in either success or item-error cases.
+
+Dry-run never fetches arbitrary hosts. `sourceUrl` and parsed detail-page URLs
+must use `http` or `https` and host `sredisvoih.com` or `www.sredisvoih.com`.
+`localhost`, `127.0.0.1`, private IP hosts, `file://`, `data://`, and all other
+schemes/hosts are rejected or skipped before fetch. Custom ports are also
+rejected, as are URLs with embedded credentials.
 
 Dry-run does **not** create `event_import_runs`, does **not** create
 `event_import_items`, and does **not** create, update, or publish `events`.
@@ -347,6 +356,7 @@ Current Edge endpoint:
   `communityId` when available;
 - dry-run response body is safe parser summary JSON with counts,
   `itemsPreview`, and `parserErrors`;
+- dry-run fetch is restricted to `sredisvoih.com` and `www.sredisvoih.com`;
 - dry-run performs parser/fetch only and does not write to DB;
 - apply/review writes are intentionally out of scope for this endpoint.
 

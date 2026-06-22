@@ -3,6 +3,10 @@ import { load } from "npm:cheerio@1.2.0/slim";
 
 export const DEFAULT_WEBSITE_EVENTS_SOURCE_URL =
   "https://www.sredisvoih.com/events/";
+export const ALLOWED_WEBSITE_EVENTS_SOURCE_HOSTS = [
+  "sredisvoih.com",
+  "www.sredisvoih.com",
+];
 export const WEBSITE_EVENTS_PARSER_NAME = "sredi_svoih_events";
 export const WEBSITE_EVENTS_PARSER_VERSION = "1.1.0";
 export const DEFAULT_DRY_RUN_LIMIT = 10;
@@ -310,7 +314,7 @@ async function parseListPage(html, sourceUrl) {
     const detailHref = card.find("a.events__event__link").first().attr("href") ??
       card.find('a[href*="/events/"]').first().attr("href");
     const detailUrl = absoluteUrl(detailHref, sourceUrl);
-    const canonicalDetailUrl = detailUrl ? normalizeSourceUrl(detailUrl) : null;
+    const canonicalDetailUrl = detailUrl ? safeNormalizeSourceUrl(detailUrl) : null;
 
     if (!canonicalDetailUrl || isEventsIndexUrl(canonicalDetailUrl)) {
       return;
@@ -356,7 +360,7 @@ async function parseListPage(html, sourceUrl) {
   if (cards.length === 0) {
     $('a[href*="/events/"]').each((_, element) => {
       const detailUrl = absoluteUrl($(element).attr("href"), sourceUrl);
-      const canonicalDetailUrl = detailUrl ? normalizeSourceUrl(detailUrl) : null;
+      const canonicalDetailUrl = detailUrl ? safeNormalizeSourceUrl(detailUrl) : null;
 
       if (!canonicalDetailUrl || isEventsIndexUrl(canonicalDetailUrl)) {
         return;
@@ -700,17 +704,53 @@ export function normalizeSourceUrl(value) {
     const url = new URL(value);
 
     if (url.protocol !== "https:" && url.protocol !== "http:") {
-      throw new Error("unsupported protocol");
+      throw new WebsiteEventsParserError(
+        "invalid_source_url",
+        "sourceUrl must use http or https.",
+      );
+    }
+
+    if (!ALLOWED_WEBSITE_EVENTS_SOURCE_HOSTS.includes(url.hostname.toLowerCase())) {
+      throw new WebsiteEventsParserError(
+        "invalid_source_url",
+        "sourceUrl host must be sredisvoih.com or www.sredisvoih.com.",
+      );
+    }
+
+    if (url.port) {
+      throw new WebsiteEventsParserError(
+        "invalid_source_url",
+        "sourceUrl must not include a custom port.",
+      );
+    }
+
+    if (url.username || url.password) {
+      throw new WebsiteEventsParserError(
+        "invalid_source_url",
+        "sourceUrl must not include credentials.",
+      );
     }
 
     url.search = "";
     url.hash = "";
     return url.href;
-  } catch {
+  } catch (error) {
+    if (error instanceof WebsiteEventsParserError) {
+      throw error;
+    }
+
     throw new WebsiteEventsParserError(
       "invalid_source_url",
-      "sourceUrl must be a valid http(s) URL.",
+      "sourceUrl must be a valid http(s) URL for sredisvoih.com or www.sredisvoih.com.",
     );
+  }
+}
+
+function safeNormalizeSourceUrl(value) {
+  try {
+    return normalizeSourceUrl(value);
+  } catch {
+    return null;
   }
 }
 
