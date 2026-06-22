@@ -1,8 +1,9 @@
 # Admin Feedback
 
-This document describes the backend foundation for beta feedback in web-admin.
-This PR adds database schema and one write RPC only. It does not add UI, routes,
-feedback inboxes, screenshots, uploads, or GitHub issue creation.
+This document describes the backend foundation and Phase 1 submit UI for beta
+feedback in web-admin. PR #218 added the database schema and one write RPC. The
+current UI PR adds a submit-only button/dialog that calls that RPC. It does not
+add routes, feedback inboxes, screenshots, uploads, or GitHub issue creation.
 
 ## Purpose
 
@@ -71,8 +72,58 @@ can create feedback. The RPC looks up the caller in `community_memberships`,
 requires exactly one active managed community for this beta v1 write path, and
 never reads or writes `auth.users` directly.
 
+In web-admin, the feedback button is available in the beta admin layout for
+`admin` and `event_manager` users. The UI uses the regular authenticated
+Supabase client and submits through `public.admin_create_feedback(payload jsonb)`.
+
+## UI Flow
+
+The admin layout renders an `Оставить замечание` button on every page that uses
+`AdminLayout`. The button opens a modal dialog with:
+
+- a severity selector with the backend-supported values `note`, `issue`,
+  `blocker`, and `idea`;
+- a message textarea capped to the backend message limit;
+- cancel/close controls that are disabled during submit;
+- success and error states after the RPC response.
+
+On submit, the browser sends only the RPC payload. The UI includes:
+
+- `section`: the current admin section from `AdminLayout`;
+- `severity`: one of the four supported values;
+- `message`: the trimmed textarea value;
+- `url`: the current browser URL when available;
+- `user_agent`: the browser user agent when available;
+- optional `entity_type` and `entity_id` only when a caller can provide that
+  context without expanding page scope.
+
+The submit UI does not insert directly into `public.admin_feedback`, does not
+list feedback, and does not use service-role credentials or the Supabase Admin
+API.
+
+## Manual Smoke
+
+Manual browser smoke is expected to be run by the project owner against the
+server/staging beta admin.
+
+Suggested checklist:
+
+- Sign in as a beta `admin` user and confirm the `Оставить замечание` button is
+  visible across admin layout pages.
+- Open the dialog from at least the overview page and one workflow page.
+- Submit each severity value (`note`, `issue`, `blocker`, `idea`) with a short
+  message and confirm the success state appears.
+- Try an empty message and confirm submit is blocked.
+- Temporarily force an RPC/auth failure if practical and confirm the error state
+  is visible.
+- Confirm the stored payload contains the expected `section`, `url`,
+  `user_agent`, `severity`, and `message` values.
+- Sign in as a beta `event_manager` and confirm the same submit flow is
+  available.
+
 ## Out Of Scope
 
-The admin UI for submitting feedback will be added in a separate PR. Feedback
-list/inbox views, screenshot or attachment uploads, and GitHub issue creation
-are intentionally not part of this foundation PR.
+Feedback list/inbox views, screenshot or attachment uploads, file storage,
+GitHub issue creation, and GitHub integration are intentionally not part of this
+PR. This PR also does not add import buttons or change registrations, seating,
+mobile, invite access, backend schema, migrations, or RPC definitions.
