@@ -10,6 +10,8 @@ Source of truth для полного UX остаётся `docs/prototype/admin-
 
 ## Environment
 
+`apps/admin` использует только обычный browser-safe Supabase client с пользовательской сессией. Админские действия должны проходить через RLS/RPC. Серверные ключи повышенных прав, Supabase Admin API и серверные connection strings нельзя добавлять в браузерную админку.
+
 Создайте локальный файл:
 
 ```bash
@@ -23,9 +25,33 @@ VITE_SUPABASE_URL=http://127.0.0.1:54321
 VITE_SUPABASE_ANON_KEY=replace-with-local-anon-key
 ```
 
-В репозиторий нельзя добавлять реальные значения из локального окружения. `apps/admin` использует только browser-safe anon/publishable key. Серверные ключи повышенных прав и серверные административные методы Supabase в браузере не используются.
+Для staging-хостинга задайте env vars в настройках выбранного static SPA host:
+
+```bash
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_ANON_KEY=<hosted-anon-or-publishable-key>
+VITE_ADMIN_ENV_LABEL=staging
+```
+
+`VITE_ADMIN_ENV_LABEL` необязателен для текущего login flow и может использоваться как marker окружения. Реальные значения env нельзя коммитить; `.env.local` остаётся локальным файлом.
 
 Реальные права доступа всё равно должны проверяться на стороне Supabase через RLS/RPC и отдельные backend-контракты.
+
+## Staging deploy
+
+Подробная инструкция находится в `docs/admin-deploy-staging.md`.
+
+Короткая версия:
+
+- `apps/admin` хостится как static Vite SPA.
+- Сборка запускается из корня репозитория командой `npm run admin:build`.
+- Build output для публикации: `apps/admin/dist`.
+- Public staging URL web-admin должен быть зафиксирован как один canonical URL, например `https://<admin-staging-host>`.
+- Static host должен отдавать `index.html` для всех SPA routes/callback paths, которые не являются реальными asset-файлами.
+- В hosted Supabase Dashboard для staging project нужно поставить Auth `site_url` в staging admin URL и добавить тот же URL в allowed/additional redirect URLs.
+- Production admin URL добавляется позже отдельным шагом, когда он будет готов.
+
+В Phase 1 кнопка импорта с сайта не добавляется. Импорт временно выполняет владелец проекта через CLI/dev flow вне browser-admin.
 
 ## Локальный запуск
 
