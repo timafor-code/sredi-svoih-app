@@ -2,166 +2,208 @@
 
 Production page: `apps/admin/src/pages/RegistrationsPage.tsx`.
 
-The admin registrations workspace uses the regular authenticated Supabase client. Admin reads and writes stay behind RPC/RLS policies; the browser code must not use privileged server keys, Supabase Admin API, server-only database connection strings, or direct access to `auth.users`.
+Final state for registrations v15 after PRs #192-#198 and the follow-up seating
+series through PR #213. The page uses the regular authenticated Supabase client.
+Admin reads/writes stay behind RPC/RLS policies; browser code must not use
+privileged server keys, Supabase Admin API access, server-only database
+connection strings, or direct access to `auth.users`.
 
-## Current architecture
+## Status
 
-- `RegistrationsPage.tsx` owns page state, loading, filtering, pagination, Excel export, toasts, occurrence selection, and registration status actions.
-- `apps/admin/src/components/registrations/RegistrationEventsPanel.tsx` renders the events list and event search.
-- `RegistrationCapacityBucketsOverview.tsx` renders capacity totals, option stats, and capacity bucket rows from `admin_get_registration_capacity_analytics`.
-- `RegistrationsTable.tsx` renders the registrations table. A row click opens the participant detail modal; row action buttons keep their own click handling.
-- `RegistrationDetailPanel.tsx` renders participant profile, contacts, event/session data, selected options, guests/comment, payment data, history, and status controls. It is now used inside the modal instead of a permanent right-side panel.
+Registrations v15 is implemented for the admin workflow:
 
-## v15 reference
+- event list/search and selected event workspace;
+- occurrence selector;
+- compact/collapsible capacity card;
+- capacity analytics from `admin_get_registration_capacity_analytics`;
+- bucket breakdown with list and donut/chart modes;
+- registrations table with row click/keyboard access and participant detail
+  modal;
+- status and attendance actions;
+- Excel export from the registrations table header;
+- seating editor opened from capacity buckets.
 
-The UX reference prototype is committed at:
+The seating editor is now an implemented part of the registrations workspace,
+not future work or a placeholder. Details are documented in
+`docs/admin-seating.md`.
 
-`docs/prototype/registrations-improved-seating-v15.html`
+## Architecture
 
-This file is a reference document only. Production code should not copy the prototype's full HTML, CSS, JavaScript, seating editor, drag-and-drop, table templates, persistence, or mock data.
+- `RegistrationsPage.tsx` owns selected event/occurrence state, data loading,
+  filters, pagination, toasts, status actions, Excel export, and seating modal
+  state.
+- `RegistrationEventsPanel.tsx` renders the event list and event search.
+- `RegistrationCapacityBucketsOverview.tsx` renders capacity totals, capacity
+  modes, bucket rows, bucket breakdown, and the seating entry point.
+- `RegistrationsTable.tsx` renders the registration table. Header actions include
+  refresh/export; row activation opens the detail modal.
+- `RegistrationDetailPanel.tsx` renders participant profile, contacts,
+  event/session data, selected options, guests/comment, payment data, history,
+  and status controls.
+- `SeatingLayoutEditor.tsx` handles bucket-specific seating layouts, templates,
+  auto seating, manual drag/drop, reserves, capacity summary, and capacity sync.
 
-## This PR
+## Capacity Analytics RPC
 
-- Adds detailed bucket breakdown inside the production "Места и регистрации" card.
-- Uses the existing `admin_get_registration_capacity_analytics` service/RPC data as the source of truth for buckets, totals, options, unique guests, multi-meal guests, and donations.
-- Shows which participation options contributed to each capacity bucket, including registration count, quantity count, seat count, and contribution percentage.
-- Shows remaining/free seats as a separate row in each bucket breakdown.
-- Marks donations and `counts_toward_capacity = false` options as "не занимает место" when those rows are present in the analytics payload.
-- Adds a lightweight list/chart toggle for bucket breakdowns. The chart uses CSS `conic-gradient`; there is no Chart.js, CDN, or new npm dependency.
-- Keeps the v15 layout shell, compact/collapsible capacity card, registration detail modal, row click/Enter behavior, seating placeholder button, export, refresh, pagination, occurrence selector, and status actions unchanged.
-- Keeps backend/RPC, seating editor/backend work, Excel export changes, and registration business logic out of production scope.
+`admin_get_registration_capacity_analytics` is the source of truth for the
+capacity card. Client code should not rebuild bucket occupancy from registration
+rows when the analytics payload already contains bucket data.
 
-## v15 capacity card UI
+The RPC returns one analytics row for the selected event/occurrence scope:
 
-The card header shows "Места и регистрации" with the selected event date/session scope. The card starts in a compact state: quick-pills stay visible, while the detailed area can be expanded or collapsed from the header toggle.
+- `event_id`;
+- `occurrence_id`;
+- `totals`;
+- `bucket_aggregate`;
+- `buckets`;
+- `option_stats`;
+- `donation_options`.
 
-Quick-pills show the main capacity buckets with occupied/capacity values and a progress bar. Buckets near capacity get an attention state. The compact strip also shows unique people and guests that occupy multiple meal/capacity slots when the analytics payload provides those values.
+`totals` includes registration status counts, active registration/seat counts,
+unique registered users, unique guest/person counts, multi-meal guests,
+sponsor/donation counts, legacy capacity values, remaining/free seats, and
+fill/free percentages.
 
-The detailed area has four modes:
+`buckets` includes one row per `event_capacity_units` entry:
 
-- `По слотам мест`: renders one row per capacity bucket with title, key/code, occupied/capacity, remaining seats, fill percent, reservation count, detailed option breakdown, free-seat row, and the existing "Схема рассадки" button.
-- `Все места выбранной даты`: renders total occupied seats, total capacity, remaining/free seats, and fill percent. Unlimited/null capacity is displayed as "без лимита" and never as `NaN`.
-- `По вариантам участия`: for events with capacity buckets, renders seat-taking rows aggregated from `buckets[].optionBreakdown` so it stays consistent with `По слотам мест`; donation and `counts_toward_capacity = false` options are added as separate non-seat rows.
-- `Уникальные гости`: renders unique people/guests, multi-meal guests, sponsors/donations, donation options when present, and total occupied seats with graceful fallbacks for missing analytics fields.
+- `capacityUnitId`, `key`/`code`, and title;
+- raw `event_capacity_units.capacity`;
+- effective capacity values for the selected scope;
+- occupied seats;
+- remaining/free seats;
+- fill/free percentages;
+- reservation/obligation count;
+- option titles and `optionBreakdown`.
 
-The "Схема рассадки" button remains a safe placeholder. It does not open a seating editor, create backend calls, or persist seating data; it only shows the existing toast that the seating editor will be added in a separate PR.
+Mapped capacity units use `event_registration_capacity_reservations` as the
+primary occupancy source. For legacy/test rows without reservation rows, the RPC
+adds a read-only fallback from option-to-capacity-unit mappings. That fallback
+does not insert reservations, change registration state, or change
+`event_capacity_units.capacity`.
 
-## Capacity analytics RPC
+Donation options and options with `counts_toward_capacity = false` do not occupy
+seats. They are returned for display with donation/non-seat markers.
 
-`admin_get_registration_capacity_analytics` is called from the regular authenticated Supabase client. It is a `security definer` RPC guarded by the event's `admin` / `event_manager` community role checks; browser code must not use service-role credentials or Supabase Admin API for this data.
+## Capacity Card Modes
 
-The RPC returns one row:
+The capacity card starts compact and can expand into detailed modes:
 
-- `event_id`
-- `occurrence_id`
-- `totals`
-- `bucket_aggregate`
-- `buckets`
-- `option_stats`
-- `donation_options`
+- by capacity slots: one row per bucket with occupied/capacity, remaining seats,
+  fill percentage, reservation count, breakdown, and seating editor action;
+- all seats for selected date: aggregate occupied/capacity/free/fill values;
+- by participation options: seat-taking option rows aggregated from
+  `buckets[].optionBreakdown`, plus donation/non-seat rows from `option_stats`
+  and `donation_options`;
+- unique guests: unique people/guest metrics, multi-meal guests, sponsors,
+  donations, and occupied-seat totals.
 
-`totals` includes:
+Null/unlimited capacity renders as no limit and must not produce `NaN`,
+negative-only noise, or a fake zero-capacity state.
 
-- total registrations in the requested event/occurrence scope;
-- status counts for `confirmed`, `pending`, `waitlisted`, `cancelled`, `rejected`, `attended`, and `no_show`;
-- active registration and active seat counts using the existing capacity-occupied status set: `confirmed`, `pending`, `attended`, `no_show`;
-- best-effort unique registered users, unique guest names, and unique people counts;
-- multi-meal guest count based on active registrations that reserve more than one capacity unit;
-- sponsor/donation counts and quantities;
-- legacy scope capacity, remaining/free seats, and fill/free percentages.
+## Bucket Breakdown
 
-`buckets` includes one entry per `event_capacity_units` row:
+Bucket breakdown is driven by the analytics payload.
 
-- `capacityUnitId`, `key` / `code`, and `title`;
-- raw capacity unit `capacity` without changing `event_capacity_units.capacity` semantics;
-- effective capacity fields based on the current event/occurrence fallback capacity;
-- occupied seats from `event_registration_capacity_reservations` plus the read-only fallback described below;
-- remaining/free seats, fill/free percentages, reservation/obligation count, option titles, and option breakdown.
+The default view is the donut/chart breakdown after PR #213, with a list view
+available through the local toggle. The chart uses CSS `conic-gradient` and does
+not add Chart.js, CDN scripts, or a new npm dependency.
 
-Seat occupancy for mapped capacity units uses `event_registration_capacity_reservations` as the primary source of truth. This preserves the current registration flow behavior where one registration can create multiple seat obligations, for example a package option reserving both `friday_dinner` and `shabbat_lunch`.
-
-For legacy/test registrations that have active seat-taking option selections but no matching rows in `event_registration_capacity_reservations`, the RPC builds a read-only fallback obligation from the option-to-capacity-unit mappings in `event_participation_option_capacity_units`. The fallback:
-
-- only considers active registrations (`confirmed`, `pending`, `attended`, `no_show`);
-- ignores donation options (`is_donation = true`) and non-capacity options (`counts_toward_capacity = false`), which never create a fallback obligation;
-- computes seats with the same model the registration flow uses (`quantity * seats_per_quantity` from the mapping);
-- expands a multi-unit option (for example "Весь Шабат") into every mapped capacity unit, so it lands in both `friday_dinner` and `shabbat_lunch`;
-- skips any `registration_id` + `option_id` + `capacity_unit_id` triple that already has a real reservation row, so existing reservations are never double-counted.
-
-Because the fallback contributes to the same `occupiedSeats`, `optionBreakdown`, and `optionTitles` outputs, `reservationsCount` is the count of all bucket obligations including fallback obligations, not only physical reservation rows.
-
-The fallback is strictly read-only inside the RPC: it does not insert into `event_registration_capacity_reservations`, does not change `event_capacity_units.capacity`, does not change the registration/cancel/reject flow, and does not affect public registration. After this hotfix, the bucket breakdown work continues in PR #196 (`feature/admin-registrations-bucket-breakdown`).
-
-Donation options and options with `counts_toward_capacity = false` do not occupy seats and do not create capacity reservations. They are returned in `option_stats` and `donation_options` with `isDonation` / `countsTowardCapacity` markers so the UI can display them without counting them as occupied capacity.
-
-This PR does not change the RPC, migrations, RLS, capacity semantics, or browser access pattern. Bucket detail percentages are presentation-level derivations from the existing payload:
-
-- option contribution percent is `optionSeats / occupiedSeats` when occupied seats are known;
-- free percent is `remainingSeats / capacity` when a finite capacity is known;
-- null/unlimited capacity, zero occupied seats, missing remaining seats, and empty breakdown arrays render without `NaN`.
-
-## Bucket breakdown
-
-Each row in `По слотам мест` now has a scoped `.bucket-breakdown` section labelled "Из чего сложилось".
-
-The default list view renders one row per `optionBreakdown` entry with:
+Each breakdown uses `optionBreakdown` rows for:
 
 - option title;
-- registration count and quantity count;
+- registration count;
+- quantity count;
 - occupied seat count;
-- percentage contribution inside the bucket;
-- donation / non-seat marker when `isDonation` is true or `countsTowardCapacity` is false.
+- contribution percentage inside the bucket;
+- donation/non-seat marker when relevant.
 
-The list also adds a free-seat row when `effectiveRemainingSeats` is available. If the RPC does not return `optionBreakdown`, the UI keeps the bucket totals visible, shows a safe fallback row for occupied seats without option detail when needed, and prints a small note instead of trying to rebuild source-of-truth from registrations on the client.
+The UI also shows a free-seat row when remaining seats are known. If a bucket has
+occupied seats but no option detail, the UI keeps the bucket total visible and
+shows a safe fallback row instead of reconstructing source-of-truth client-side.
 
-The chart view is available from the small toggle inside the breakdown when there is at least one positive chart segment. It uses CSS `conic-gradient` and the same rows as the list. Donation/non-seat rows stay visible in the legend but do not add occupied capacity.
+## Excel Export
 
-## Capacity/options consistency
+`apps/admin/src/services/registrationExcelExport.ts` builds the workbook from
+the same `listEventRegistrations` data the page already loads. It does not need
+a separate migration or a seating RPC call.
 
-For bucket-based events, capacity occupancy is owned by `buckets` in the analytics response:
+After PR #213, the export action lives in the registrations table header, not in
+the page-level main action cluster. It respects the selected occurrence scope
+when one is selected, or exports all event registrations otherwise.
 
-- `По слотам мест` reads `buckets[].occupiedSeats` and `buckets[].optionBreakdown`;
-- `По вариантам участия` aggregates seat-taking rows from the same `buckets[].optionBreakdown`;
-- `option_stats` / `donation_options` are used in this mode only for donation and other non-seat rows, or as a fallback when the event has no capacity buckets.
+The workbook includes the existing operational columns:
 
-This avoids showing a seat-taking participation option as occupied when the selected event/occurrence has zero occupied seats in the bucket source of truth. If a bucket has occupied seats but no option breakdown, the UI shows a "Места без детализации" fallback row instead of rebuilding capacity from registration rows on the client.
+- event and occurrence;
+- participant name, email, and phone;
+- registration status and payment status;
+- selected participation options;
+- occupied capacity seats;
+- capacity/session obligations;
+- guests and comments;
+- donation details;
+- amount/currency;
+- registration/confirmation/cancellation timestamps;
+- multi-meal marker.
 
-## Excel export
+Donation and non-capacity options stay out of occupied-seat totals and
+capacity/session obligations. A donation-only registration therefore exports as
+zero occupied seats with no multi-meal marker.
 
-`apps/admin/src/services/registrationExcelExport.ts` builds the registrations workbook
-from the same `listEventRegistrations` data the page already loads — no extra RPC or
-migration. The export covers the selected occurrence (`exportOccurrence`) or all
-registrations, and keeps the existing columns (event, occurrence date/title, full name,
-email, phone, status, payment, participation options, seat count, guests, comment, amount,
-currency, registered/confirmed/cancelled timestamps).
+Seat-by-seat seating assignment export is not implemented in this scope. The
+current Excel export reports registration and capacity obligations, not final
+table/chair placements.
 
-The operational columns added on top read `registration.selectedOptions`:
+## Seating Integration
 
-- **Занятые места (по capacity)** — sum of `seatsCount` over options with
-  `countsTowardCapacity === true`. Donations are excluded.
-- **Обязательства по сеансам** — comma-separated list of the seat-taking options with their
-  count (e.g. `Пятничный ужин ×1, Субботний обед ×1`). One registration can carry several
-  obligations, porting the «Весь Шабат → friday_dinner + shabbat_lunch» logic.
-- **Пожертвования** — separate column listing options with `isDonation === true` (title plus
-  amount/currency). Donations are also removed from «Варианты участия», so no seat is ever
-  double-counted.
-- **Multi-meal (неск. сеансов)** — marks a unique guest who occupies seats across more than
-  one capacity bucket (distinct `optionType`): `Нет` for a single bucket, `Да · N сеансов`
-  for several, empty when the registration takes no seat (donation-only).
+The capacity bucket row opens `SeatingLayoutEditor` for the concrete selected
+slot: `(event_id, occurrence_id, capacity_unit_id)`.
 
-Doctrine: a donation never occupies a seat (schema-level `v_has_non_donation_selection`). In
-the export this means `isDonation` / `!countsTowardCapacity` options stay out of «Занятые
-места» and «Обязательства по сеансам». A donation-only registration therefore shows `0`
-occupied seats and an empty multi-meal marker.
+Implemented seating integration:
 
-Seating assignments (table/seat placement) are intentionally **out of scope** here — there is
-no seating data yet. The export reports capacity obligations only; seat-by-seat data lands
-with the seating editor in a later PR.
+- load/save bucket layout instances;
+- built-in and saved templates;
+- real guest pool from the selected bucket;
+- deterministic auto seating;
+- manual drag/drop;
+- reserves;
+- edit-preserve reconcile;
+- capacity summary;
+- explicit capacity sync confirmation.
 
-## Next seating work
+The seating flow keeps the registration capacity invariant from
+`docs/admin-seating.md`: table geometry does not automatically change
+`event_capacity_units.capacity`.
 
-The seating editor, seating data types, backend/RPC/RLS changes, canvas, drag-and-drop, table templates, and save flow should be implemented in separate follow-up PRs.
+## Manual Smoke Checklist
 
-## Next PR
+Not run by Codex. Manual smoke is performed by the project owner.
 
-`feature/admin-registrations-export-v15`
+1. Open web-admin -> Registrations.
+2. Select an event.
+3. Select an occurrence.
+4. Check the capacity card.
+5. Switch capacity card modes.
+6. Check bucket breakdown donut/list views.
+7. Click Excel export from the registrations table header.
+8. Open the seating modal for a capacity bucket.
+9. Create and edit tables.
+10. Verify the rabbi table.
+11. Save the layout.
+12. Save as template.
+13. Apply the template to another slot.
+14. Run auto seating.
+15. Manually drag a guest.
+16. Add a reserve.
+17. Change geometry and verify the reconcile warning.
+18. Check the capacity summary.
+19. Check the capacity sync confirmation.
+20. Confirm the registration limit does not change without explicit action.
+
+## Out of Scope / Next PR
+
+- seat-by-seat seating assignment export;
+- print/PDF seating chart;
+- family/group seating;
+- mobile seating;
+- payment gateway;
+- advanced conflict/audit reports.
