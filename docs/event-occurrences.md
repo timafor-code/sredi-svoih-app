@@ -96,6 +96,34 @@ same authenticated `admin_replace_event_occurrences` RPC flow as manual admin
 edits. The parent `events` row is not archived, and
 `event_registrations` rows and statuses are not changed.
 
+## Web-admin server registration state
+
+The web-admin occurrence constructor reads registration-window state from the
+admin occurrence read RPC. It does not run a separate browser/device timing
+engine to decide whether registration is open, not yet open, closed, or
+unavailable.
+
+`admin_list_event_occurrences(p_event_id)` returns the occurrence fields plus:
+
+- `server_now`
+- `registration_state`: `open`, `not_yet_open`, `closed`, or `unavailable`
+- `registration_state_reason`
+- `is_registration_always_open`
+
+The admin TypeScript service maps these fields to camelCase:
+
+- `serverNow`
+- `registrationState`
+- `registrationStateReason`
+- `isRegistrationAlwaysOpen`
+
+Admin registration-state badges are rendered from `registration_state`.
+Always-open rows use `registration_state = 'open'` together with
+`is_registration_always_open = true` to show that registration is open and open
+always. The UI may still format stored timestamps for editing and display, but
+it must not recalculate registration availability from local `new Date()`,
+`Date.now()`, or a separate timing helper.
+
 ## Access
 
 Active occurrences are visible when their parent event is visible:
@@ -109,7 +137,7 @@ The RPC layer follows the same visibility checks:
 
 - `list_event_occurrences(p_event_id)` returns active visible occurrences
 - `admin_list_event_occurrences(p_event_id)` returns all occurrences for one
-  event to event managers/admins
+  event to event managers/admins, including server registration state fields
 - `admin_replace_event_occurrences(p_event_id, p_occurrences)` replaces the
   occurrence list for one event without touching participation options or
   existing registrations
@@ -196,8 +224,8 @@ disabled with the same window labels described above.
 ## Server-side registration window state
 
 PostgreSQL `now()` is the source of truth for occurrence registration-window
-state. The mobile app must not decide whether registration is open or closed
-from device time.
+state. The mobile app and web-admin UI must not decide whether registration is
+open or closed from device time.
 
 `list_event_occurrences(p_event_id)` returns the occurrence fields plus:
 
@@ -249,6 +277,22 @@ The legacy `register_for_event` RPC is not occurrence-window-aware and must not
 be considered final backend protection for recurring events. Until
 `internal_free` registration is moved to an occurrence-aware RPC, the mobile UI
 guard only prevents accidental client-side entry and is not a security boundary.
+
+## Manual smoke scenarios
+
+For web-admin occurrence state, manually verify:
+
+- an active occurrence with no registration window shows
+  `Регистрация открыта` and `открыта всегда`
+- an active occurrence with `registration_opens_at` in the future shows
+  `Регистрация ещё не началась`
+- an active occurrence whose `registration_closes_at` is in the past shows
+  `Регистрация закрыта`
+- a hidden, cancelled, or archived occurrence shows `Сеанс недоступен`
+- changing the browser/device clock does not change these badges after data is
+  loaded from the server
+- saving occurrence edits refreshes the list and keeps badges based on
+  `admin_list_event_occurrences`, not the write RPC response
 
 ## Mobile "My registrations"
 

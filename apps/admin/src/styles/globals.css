@@ -3936,7 +3936,7 @@ a {
 
 .event-occurrence-row {
   display: grid;
-  grid-template-columns: minmax(116px, 0.34fr) minmax(0, 1fr) auto minmax(122px, auto) auto;
+  grid-template-columns: minmax(116px, 0.34fr) minmax(0, 1fr) auto auto minmax(122px, auto) auto;
   align-items: center;
   gap: 10px;
   border: 1px solid var(--glass-border);
@@ -4052,6 +4052,43 @@ a {
 
 .event-occurrence-row__status--archived {
   color: var(--text-muted);
+}
+
+.event-occurrence-row__registration-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  min-height: 22px;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: var(--glass);
+  color: var(--text-soft);
+  font-size: 10px;
+  font-weight: 850;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+}
+
+.event-occurrence-row__registration-state--open {
+  border-color: rgba(53, 199, 89, 0.28);
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.event-occurrence-row__registration-state--not_yet_open {
+  border-color: rgba(242, 184, 75, 0.35);
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
+.event-occurrence-row__registration-state--closed,
+.event-occurrence-row__registration-state--unavailable {
+  border-color: rgba(229, 44, 54, 0.3);
+  background: var(--red-soft);
+  color: #ff9ca2;
 }
 
 .event-occurrence-row__status-select {
@@ -4266,11 +4303,13 @@ a {
 
   .event-occurrence-row__date,
   .event-occurrence-row__body,
+  .event-occurrence-row__registration-state,
   .event-occurrence-row__status-select {
     grid-column: 1 / -1;
   }
 
-  .event-occurrence-row__status {
+  .event-occurrence-row__status,
+  .event-occurrence-row__registration-state {
     justify-self: start;
   }
 

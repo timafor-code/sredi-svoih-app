@@ -1,8 +1,10 @@
 import { requireSupabaseClient } from "./supabaseClient";
-import type {
-  AdminEventOccurrence,
-  AdminEventOccurrenceInput,
-  AdminEventOccurrenceRow,
+import {
+  ADMIN_EVENT_OCCURRENCE_REGISTRATION_STATES,
+  type AdminEventOccurrenceRegistrationState,
+  type AdminEventOccurrence,
+  type AdminEventOccurrenceInput,
+  type AdminEventOccurrenceRow,
 } from "../types/eventOccurrences";
 
 type SupabaseSelectError = {
@@ -25,6 +27,21 @@ type EventOccurrenceRpcPayload = {
   status: string;
   sortOrder: number;
 };
+
+function isRegistrationState(
+  value: unknown,
+): value is AdminEventOccurrenceRegistrationState {
+  return (
+    typeof value === "string" &&
+    (ADMIN_EVENT_OCCURRENCE_REGISTRATION_STATES as readonly string[]).includes(value)
+  );
+}
+
+function requiredRegistrationState(
+  value: unknown,
+): AdminEventOccurrenceRegistrationState {
+  return isRegistrationState(value) ? value : "unavailable";
+}
 
 function formatSupabaseError(action: string, error: SupabaseSelectError): string {
   const details = [error.message, error.details, error.hint].filter(Boolean).join(" ");
@@ -110,6 +127,10 @@ export function normalizeAdminEventOccurrenceRow(
     sortOrder: safeNumber(row.sort_order, 0),
     createdAt: requiredString(row.created_at, ""),
     updatedAt: requiredString(row.updated_at, ""),
+    serverNow: nullableString(row.server_now),
+    isRegistrationAlwaysOpen: nullableBoolean(row.is_registration_always_open) === true,
+    registrationState: requiredRegistrationState(row.registration_state),
+    registrationStateReason: nullableString(row.registration_state_reason),
   };
 }
 
@@ -155,7 +176,7 @@ export async function replaceAdminEventOccurrences(
 ): Promise<AdminEventOccurrence[]> {
   const supabase = requireSupabaseClient();
   const payload = occurrences.map(toRpcPayload);
-  const { data, error } = await supabase.rpc("admin_replace_event_occurrences", {
+  const { error } = await supabase.rpc("admin_replace_event_occurrences", {
     p_event_id: eventId,
     p_occurrences: payload,
   });
@@ -164,7 +185,5 @@ export async function replaceAdminEventOccurrences(
     throw new Error(formatSupabaseError("Replace event occurrences", error));
   }
 
-  return sortOccurrences(
-    ((data ?? []) as AdminEventOccurrenceRow[]).map(normalizeAdminEventOccurrenceRow),
-  );
+  return listAdminEventOccurrences(eventId);
 }

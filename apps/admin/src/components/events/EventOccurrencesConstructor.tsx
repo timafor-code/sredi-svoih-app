@@ -10,6 +10,7 @@ import {
   ADMIN_EVENT_OCCURRENCE_STATUSES,
   type AdminEventOccurrence,
   type AdminEventOccurrenceInput,
+  type AdminEventOccurrenceRegistrationState,
   type AdminEventOccurrenceStatus,
 } from "../../types/eventOccurrences";
 
@@ -20,6 +21,16 @@ const STATUS_LABELS: Record<AdminEventOccurrenceStatus, string> = {
   hidden: "Скрыта",
   cancelled: "Отменена",
   archived: "В архиве",
+};
+
+const REGISTRATION_STATE_LABELS: Record<
+  AdminEventOccurrenceRegistrationState,
+  string
+> = {
+  open: "Регистрация открыта",
+  not_yet_open: "Регистрация ещё не началась",
+  closed: "Регистрация закрыта",
+  unavailable: "Сеанс недоступен",
 };
 
 type GeneratorPreset = "weekly_shabbat" | "weekly_sunday_school" | "custom_weekly";
@@ -101,6 +112,10 @@ type DraftOccurrence = {
   requiresApproval: boolean;
   status: AdminEventOccurrenceStatus;
   sortOrder: string;
+  serverNow: string | null;
+  registrationState: AdminEventOccurrenceRegistrationState;
+  registrationStateReason: string | null;
+  isRegistrationAlwaysOpen: boolean;
 };
 
 type DraftErrors = Partial<Record<keyof DraftOccurrence, string>>;
@@ -351,6 +366,10 @@ function buildDraftFromOccurrence(
     requiresApproval: occurrence.requiresApproval === true,
     status,
     sortOrder: String(occurrence.sortOrder),
+    serverNow: occurrence.serverNow,
+    registrationState: occurrence.registrationState,
+    registrationStateReason: occurrence.registrationStateReason,
+    isRegistrationAlwaysOpen: occurrence.isRegistrationAlwaysOpen,
   };
 }
 
@@ -371,6 +390,10 @@ function buildEmptyDraft(index: number, timezone: string): DraftOccurrence {
     requiresApproval: false,
     status: "active",
     sortOrder: String(index),
+    serverNow: null,
+    registrationState: "unavailable",
+    registrationStateReason: null,
+    isRegistrationAlwaysOpen: false,
   };
 }
 
@@ -742,6 +765,10 @@ function buildGeneratorPreview(
       requiresApproval: false,
       status: "active",
       sortOrder: String(drafts.length + index),
+      serverNow: null,
+      registrationState: "unavailable",
+      registrationStateReason: null,
+      isRegistrationAlwaysOpen: false,
     };
     const validation = validateDraft(draft, drafts.length + index);
     if (!validation.ok) {
@@ -1829,6 +1856,7 @@ function OccurrenceRow({
   const timeLabel = formatDraftTimeRange(draft);
   const title = draft.title.trim();
   const statusLabel = STATUS_LABELS[draft.status];
+  const registrationStateLabel = formatRegistrationStateLabel(draft);
   const rowClassName = [
     "event-occurrence-row",
     `event-occurrence-row--${draft.status}`,
@@ -1858,6 +1886,12 @@ function OccurrenceRow({
         className={`event-occurrence-row__status event-occurrence-row__status--${draft.status}`}
       >
         {statusLabel}
+      </span>
+
+      <span
+        className={`event-occurrence-row__registration-state event-occurrence-row__registration-state--${draft.registrationState}`}
+      >
+        {registrationStateLabel}
       </span>
 
       <select
@@ -1977,14 +2011,9 @@ function buildSummary(
     eventCapacity === null
       ? `${withOwnCapacity} с лимитом, ${inheritedCapacity} без общего лимита`
       : `${withOwnCapacity} с лимитом, ${inheritedCapacity} наследуют ${eventCapacity}`;
-  const hasClosedRegistration = activeDrafts.some((draft) => {
-    if (!draft.registrationClosesAt) {
-      return false;
-    }
-
-    const timestamp = new Date(draft.registrationClosesAt).getTime();
-    return Number.isFinite(timestamp) && timestamp <= now;
-  });
+  const hasClosedRegistration = activeDrafts.some(
+    (draft) => draft.registrationState === "closed",
+  );
 
   return {
     archivedCount,
@@ -2399,7 +2428,20 @@ function formatDraftTimeRange(draft: DraftOccurrence): string {
     : `${startTime}-${endTime}, ${endDate}`;
 }
 
+function formatRegistrationStateLabel(draft: DraftOccurrence): string {
+  const label = REGISTRATION_STATE_LABELS[draft.registrationState];
+  if (draft.registrationState === "open" && draft.isRegistrationAlwaysOpen) {
+    return `${label} · открыта всегда`;
+  }
+
+  return label;
+}
+
 function formatRegistrationWindow(draft: DraftOccurrence): string {
+  if (draft.registrationState === "open" && draft.isRegistrationAlwaysOpen) {
+    return "Регистрация: открыта всегда";
+  }
+
   const opensAt = formatLocalDateTime(draft.registrationOpensAt);
   const closesAt = formatLocalDateTime(draft.registrationClosesAt);
 

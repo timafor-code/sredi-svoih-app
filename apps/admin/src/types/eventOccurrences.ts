@@ -8,6 +8,16 @@ export const ADMIN_EVENT_OCCURRENCE_STATUSES = [
 export type AdminEventOccurrenceStatus =
   (typeof ADMIN_EVENT_OCCURRENCE_STATUSES)[number];
 
+export const ADMIN_EVENT_OCCURRENCE_REGISTRATION_STATES = [
+  "open",
+  "not_yet_open",
+  "closed",
+  "unavailable",
+] as const;
+
+export type AdminEventOccurrenceRegistrationState =
+  (typeof ADMIN_EVENT_OCCURRENCE_REGISTRATION_STATES)[number];
+
 export type AdminEventOccurrenceRow = {
   id: string;
   event_id: string;
@@ -24,6 +34,10 @@ export type AdminEventOccurrenceRow = {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  server_now?: string | null;
+  is_registration_always_open?: boolean | null;
+  registration_state?: AdminEventOccurrenceRegistrationState | string | null;
+  registration_state_reason?: string | null;
 };
 
 export type AdminEventOccurrence = {
@@ -42,6 +56,10 @@ export type AdminEventOccurrence = {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+  serverNow: string | null;
+  isRegistrationAlwaysOpen: boolean;
+  registrationState: AdminEventOccurrenceRegistrationState;
+  registrationStateReason: string | null;
 };
 
 export type AdminEventOccurrenceInput = {
