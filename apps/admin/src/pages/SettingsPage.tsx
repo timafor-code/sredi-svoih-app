@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { AdminHealthCheck } from "../components/settings/AdminHealthCheck";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
@@ -198,6 +199,8 @@ export function SettingsPage() {
           </div>
         ))}
       </GlassCard>
+
+      <AdminHealthCheck />
 
       <GlassCard className="settings-locations" elevated>
         <div className="settings-locations__head">
