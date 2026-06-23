@@ -76,3 +76,41 @@ export type AdminWebsiteImportErrorResponse = {
 export type AdminWebsiteImportResponse =
   | AdminWebsiteImportSuccessResponse
   | AdminWebsiteImportErrorResponse;
+
+export const ADMIN_IMPORT_RUN_STATUSES = ["started", "success", "failed"] as const;
+
+export type AdminImportRunStatus = (typeof ADMIN_IMPORT_RUN_STATUSES)[number];
+
+export type AdminImportRunHistoryParams = {
+  limit?: number;
+};
+
+export type AdminImportRunRow = {
+  id: string;
+  source_id: string;
+  source_name: string | null;
+  status: string | null;
+  started_at: string;
+  finished_at: string | null;
+  found_count: number | string | null;
+  created_count: number | string | null;
+  updated_count: number | string | null;
+  error: string | null;
+  created_at: string;
+};
+
+export type AdminImportRun = {
+  id: string;
+  sourceId: string;
+  sourceName: string | null;
+  status: AdminImportRunStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  foundCount: number;
+  createdCount: number;
+  updatedCount: number;
+  error: string | null;
+  createdAt: string;
+};
+
+export type AdminImportRunHistoryResponse = AdminImportRun[];
