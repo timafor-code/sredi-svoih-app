@@ -188,11 +188,15 @@ Dedupe status boundary: detailed JSON contract будет отдельным PR 
 
 В web-admin открыть Settings → Health check и нажать `Проверить снова`, если нужно повторить проверку после изменения staging env или Supabase доступа.
 
+Beta Settings page разделена на блоки Community, Addresses, Beta connection и Future settings. В beta она показывает real community data, текущий beta/staging connection context и будущие настройки как disabled/planned blocks, без fake-working controls.
+
 Settings показывает read-only данные текущей active community из Supabase: `id`, `name`, `timezone`, `website_url` если он заполнен, и дату создания если она доступна в schema. Эти данные читаются browser-admin через обычный authenticated Supabase client и RLS, без service-role key, Supabase Admin API или server-only connection strings.
 
 Health-check является лёгким smoke-индикатором готовности окружения, а не security scanner, SQL console или deep diagnostics. Он проверяет только безопасные read-only признаки через обычный authenticated Supabase client: наличие browser Supabase config, session, active membership, текущую role, выбранную community и доступность существующих read/RPC/service layers для events, import review, registrations и members.
 
 Health-check не показывает secret values, JWT, raw session token, anon key value, service-role key, server-only env, SQL/debug internals или данные prayer tracker.
+
+Settings smoke выполняет project owner вручную. Codex не запускает browser smoke для Settings.
 
 Для `event_manager` members-only check должен быть skipped/not allowed как ожидаемое поведение. В текущей навигации Settings доступны admin-only; event_manager smoke ниже проверяет, что admin-only доступ не расширился.
 
@@ -217,6 +221,8 @@ Health-check не показывает secret values, JWT, raw session token, an
 - `NoAccess` не появляется для active `admin` и active `event_manager`.
 - Settings показывает real community data для active `admin`, а не mock community settings.
 - Settings → Адреса общины продолжают читать и сохранять адреса как раньше.
+- Settings → Beta connection показывает понятный staging/authenticated-client context без secret values.
+- Settings → Future settings показывает planned/disabled blocks, а не рабочие mock-controls.
 - Settings → Health check показывает базовые ok/skipped/warning/error статусы без secrets/JWT/anon key values.
 - Import button с сайта ещё отсутствует в этом PR.
 - Future Edge Function CORS должен разрешать `STAGING_ADMIN_URL` до включения import button.
@@ -235,8 +241,10 @@ Admin:
 
 - Войти как active `admin`.
 - Открыть Settings.
-- Проверить, что карточка общины показывает real community data: `id`, `name`, `timezone`, `website_url` если заполнен, и дату создания если она доступна.
+- Проверить, что Community block показывает real community data: `id`, `name`, `timezone`, `website_url` если заполнен, и дату создания если она доступна.
 - Проверить, что Settings → Адреса общины загружаются и существующий add/edit/archive flow не сломан.
+- Проверить, что Beta connection block понятен, показывает beta/staging context и не раскрывает secret values.
+- Проверить, что Future settings clearly disabled/planned и не выглядят как рабочие save-controls.
 - Открыть Settings → Health check.
 - Нажать `Проверить снова`.
 - Ожидать `ok` для Supabase configured, session exists, membership exists, current role, selected community, events, import review, registrations и members.
