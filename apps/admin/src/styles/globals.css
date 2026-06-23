@@ -5493,6 +5493,30 @@ a {
   gap: 8px;
 }
 
+.registration-context-note {
+  display: grid;
+  gap: 5px;
+  margin: 0 14px;
+  border: 1px solid rgba(242, 184, 75, 0.18);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: rgba(242, 184, 75, 0.055);
+}
+
+.registration-context-note strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.registration-context-note span {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
 .registration-search-field {
   display: grid;
   min-width: 0;
@@ -6095,6 +6119,14 @@ a {
   line-height: 1.45;
 }
 
+.registration-capacity-helper--notice {
+  border: 1px solid rgba(242, 184, 75, 0.16);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: rgba(242, 184, 75, 0.045);
+  color: var(--text-soft);
+}
+
 .registration-capacity-buckets {
   display: grid;
   gap: 10px;
@@ -6213,7 +6245,7 @@ a {
   border-radius: 14px;
   background: var(--surface-strong);
   box-shadow: var(--shadow);
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
 }
 
 .seat-modal__head {
@@ -6255,6 +6287,17 @@ a {
   overflow-wrap: anywhere;
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.seat-modal__context-note {
+  margin: 0;
+  border-bottom: 1px solid var(--glass-border);
+  padding: 9px 18px;
+  background: rgba(242, 184, 75, 0.05);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
 }
 
 .seat-modal__close {
@@ -7110,6 +7153,30 @@ a {
   color: var(--green);
 }
 
+.seat-pool__empty--block {
+  display: grid;
+  flex: 1 1 100%;
+  gap: 7px;
+  width: 100%;
+}
+
+.seat-pool__empty--block strong {
+  color: #ffe0a3;
+  font-size: 12px;
+}
+
+.seat-pool__empty--block span {
+  color: var(--text-soft);
+}
+
+.seat-pool__empty--block ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-muted);
+}
+
 .seat-guest-chip {
   display: inline-flex;
   align-items: center;
@@ -7444,6 +7511,7 @@ a {
   }
 
   .seat-modal__head,
+  .seat-modal__context-note,
   .seat-toolbar {
     padding-right: 12px;
     padding-left: 12px;
@@ -7855,10 +7923,13 @@ a {
 }
 
 .registrations-export-hint {
+  max-width: 320px;
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 600;
   line-height: 1.2;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .registration-occurrence-bar {
@@ -7928,6 +7999,15 @@ a {
   color: rgba(229, 100, 110, 0.92);
   font-size: 12px;
   font-weight: 600;
+}
+
+.registration-occurrence-hint {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
 }
 
 .registration-filter-chips {
@@ -9274,6 +9354,19 @@ a {
   .registrations-table-panel__head {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .registrations-table-panel__tools {
+    justify-content: flex-start;
+  }
+
+  .registrations-export-group {
+    align-items: flex-start;
+  }
+
+  .registrations-export-hint {
+    max-width: 100%;
+    text-align: left;
   }
 
   .cap-toggle {
