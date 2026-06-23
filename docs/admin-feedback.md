@@ -1,17 +1,17 @@
 # Admin Feedback
 
-This document describes the backend foundation and Phase 1 submit UI for beta
-feedback in web-admin. PR #218 added the database schema and one write RPC. The
-current UI PR adds a submit-only button/dialog that calls that RPC. It does not
-add routes, feedback inboxes, screenshots, uploads, or GitHub issue creation.
+This document describes beta feedback in web-admin: the existing submit UI and
+the admin-only review list added for Phase 3 / PR 25.
 
 ## Purpose
 
 Beta feedback lets admins and event managers report notes, issues, blockers, or
-ideas from the web-admin experience while the server derives the community and
-user from the authenticated session. The browser uses the regular authenticated
-Supabase client. No service-role key, Supabase Admin API, or direct
-`auth.users` access is required.
+ideas from the web-admin experience. Admins can also review the feedback inbox,
+filter items, and move items through a small status workflow.
+
+The browser uses the regular authenticated Supabase client. Admin actions stay
+behind RPC/RLS boundaries. No service-role key, Supabase Admin API, direct
+`auth.users` reads, or browser-side table access is used.
 
 ## Table
 
@@ -23,22 +23,23 @@ Key fields:
 - `user_id`: the authenticated profile that submitted the item.
 - `section`: the admin area or workflow where feedback was created.
 - `entity_type` and `entity_id`: optional context for a related event,
-  registration, seating layout, or other future admin entity.
+  registration, seating layout, or future admin entity.
 - `severity`: one of `note`, `issue`, `blocker`, or `idea`; defaults to `note`.
 - `message`: the human feedback body.
 - `status`: one of `open`, `reviewed`, `resolved`, or `closed`; defaults to
   `open`.
 - `user_agent` and `url`: optional browser context.
-- `resolved_at` and `resolved_by`: reserved for the future review workflow.
+- `resolved_at` and `resolved_by`: set when an item is marked `resolved` or
+  `closed`.
 
 The table enforces non-empty `section` and `message` values, enum-like checks
 for `severity` and `status`, and bounded text lengths. `updated_at` is maintained
-with the existing project trigger helper `public.set_updated_at()`.
+by the project trigger helper and is also explicitly touched by the status RPC.
 
-RLS is enabled on the table. This foundation does not grant direct browser
-write access to the table; writes go through the RPC below.
+RLS is enabled on the table. Browser clients do not receive direct table grants;
+all reads and writes go through RPCs.
 
-## RPC
+## Submit RPC
 
 `public.admin_create_feedback(payload jsonb)` inserts one feedback item and
 returns a minimal JSON result:
@@ -65,65 +66,130 @@ Accepted payload fields:
 derives `community_id` from the caller's active admin/event-manager membership
 and derives `user_id` from `auth.uid()`.
 
+## Review List RPC
+
+`public.admin_list_feedback(payload jsonb default '{}'::jsonb)` returns feedback
+rows for the caller's active admin community only. Each returned row includes
+`total_count` for the full filtered result set.
+
+Returned fields:
+
+- `id`
+- `community_id`
+- `user_id`
+- `section`
+- `entity_type`
+- `entity_id`
+- `severity`
+- `message`
+- `status`
+- `url`
+- `user_agent`
+- `created_at`
+- `updated_at`
+- `resolved_at`
+- `resolved_by`
+- `total_count`
+
+Supported filters:
+
+- `status`: `open`, `reviewed`, `resolved`, `closed`, `all`, or null.
+- `severity`: `note`, `issue`, `blocker`, `idea`, `all`, or null.
+- `section`: optional exact section string.
+- `limit`: defaults to 50 and is capped at 100.
+- `offset`: defaults to 0.
+
+Rows are ordered by `created_at desc`. The RPC derives `community_id` only from
+the caller's active `admin` membership and rejects client-supplied community or
+user ids.
+
+## Status Update RPC
+
+`public.admin_update_feedback_status(payload jsonb)` updates one feedback item
+in the caller's active admin community.
+
+Accepted payload fields:
+
+- `id` (required feedback UUID)
+- `status` (required: `open`, `reviewed`, `resolved`, or `closed`)
+
+When status is set to `resolved` or `closed`, the RPC sets `resolved_at = now()`
+and `resolved_by = auth.uid()`. When status is set back to `open` or
+`reviewed`, the RPC clears `resolved_at` and `resolved_by` so resolution metadata
+always describes the current terminal state.
+
+The RPC returns the updated row without `total_count`. If the feedback row does
+not exist in the caller's admin community, the RPC raises an exception.
+
 ## Access Model
 
-Only authenticated users with an active `admin` or `event_manager` membership
-can create feedback. The RPC looks up the caller in `community_memberships`,
-requires exactly one active managed community for this beta v1 write path, and
-never reads or writes `auth.users` directly.
-
-In web-admin, the feedback button is available in the beta admin layout for
-`admin` and `event_manager` users. The UI uses the regular authenticated
-Supabase client and submits through `public.admin_create_feedback(payload jsonb)`.
+- Submit: authenticated users with an active `admin` or `event_manager`
+  membership can submit feedback.
+- Review list and status update: only authenticated users with an active
+  `admin` membership can read or update feedback.
+- `event_manager` cannot read the full feedback inbox and cannot update status.
+- `member` and no-access users cannot submit review actions or open the review
+  route.
+- The RPCs do not read `auth.users`.
+- Web-admin uses the regular authenticated Supabase client.
+- Admin reads and writes stay behind RPC/RLS boundaries.
 
 ## UI Flow
 
-The admin layout renders an `Оставить замечание` button on every page that uses
-`AdminLayout`. The button opens a modal dialog with:
+The admin layout renders the existing `Оставить замечание` submit button for
+admin and event-manager users.
 
-- a severity selector with the backend-supported values `note`, `issue`,
-  `blocker`, and `idea`;
-- a message textarea capped to the backend message limit;
-- cancel/close controls that are disabled during submit;
-- success and error states after the RPC response.
+The admin-only Feedback navigation item opens `Beta feedback / Обратная связь
+beta`. The page includes:
 
-On submit, the browser sends only the RPC payload. The UI includes:
+- status, severity, and section filters;
+- refresh, loading, error, and empty states;
+- feedback cards with severity/status badges, section, message, timestamps, URL,
+  user agent, entity context, and `user_id`;
+- status actions: Mark reviewed, Mark resolved, Close, and Reopen.
 
-- `section`: the current admin section from `AdminLayout`;
-- `severity`: one of the four supported values;
-- `message`: the trimmed textarea value;
-- `url`: the current browser URL when available;
-- `user_agent`: the browser user agent when available;
-- optional `entity_type` and `entity_id` only when a caller can provide that
-  context without expanding page scope.
+The review page does not create GitHub issues, upload screenshots, send email,
+or delete feedback.
 
-The submit UI does not insert directly into `public.admin_feedback`, does not
-list feedback, and does not use service-role credentials or the Supabase Admin
-API.
+## Statuses
 
-## Manual Smoke
-
-Manual browser smoke is expected to be run by the project owner against the
-server/staging beta admin.
-
-Suggested checklist:
-
-- Sign in as a beta `admin` user and confirm the `Оставить замечание` button is
-  visible across admin layout pages.
-- Open the dialog from at least the overview page and one workflow page.
-- Submit each severity value (`note`, `issue`, `blocker`, `idea`) with a short
-  message and confirm the success state appears.
-- Try an empty message and confirm submit is blocked.
-- Temporarily force an RPC/auth failure if practical and confirm the error state
-  is visible.
-- Confirm the stored payload contains the expected `section`, `url`,
-  `user_agent`, `severity`, and `message` values.
-- Sign in as a beta `event_manager` and confirm the same submit flow is
-  available.
+- `open`: newly submitted or reopened feedback.
+- `reviewed`: an admin has triaged the item but it is not resolved.
+- `resolved`: the item has been handled.
+- `closed`: the item is intentionally closed without further action.
 
 ## Out Of Scope
 
-Feedback list/inbox views, screenshot or attachment uploads, file storage,
-GitHub issue creation, and GitHub integration are intentionally not part of this
-PR. This PR also does not add import buttons or change registrations, seating,
-mobile, invite access, backend schema, migrations, or RPC definitions.
+- GitHub issue creation.
+- Screenshots, uploads, attachments, or file storage.
+- Email notifications.
+- Delete feedback.
+- Service-role key or Supabase Admin API in the browser.
+- Direct browser access to `public.admin_feedback`.
+- Reading `auth.users`.
+
+## Manual Smoke
+
+Manual browser smoke is expected to be run by the project owner. Codex does not
+run browser smoke for this PR.
+
+Checklist:
+
+- Open web-admin as admin.
+- Confirm Feedback navigation item is visible for admin.
+- Open Feedback page.
+- Confirm list loads.
+- Filter by status.
+- Filter by severity.
+- Filter by section.
+- Mark an open feedback item as reviewed.
+- Mark an item as resolved.
+- Close an item.
+- Reopen an item.
+- Confirm updated status persists after refresh.
+- Login as event_manager and confirm Feedback review page is not accessible.
+- Confirm event_manager can still submit feedback from existing feedback dialog.
+- Confirm member/no-access cannot access feedback review.
+- Confirm no GitHub issue, screenshot upload, email notification, or delete
+  action exists.
+- Confirm no browser smoke was run by Codex.

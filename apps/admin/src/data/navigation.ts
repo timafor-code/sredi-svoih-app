@@ -48,6 +48,12 @@ export const navigationGroups: NavigationGroup[] = [
         icon: "⚙",
         roles: ["admin"],
       },
+      {
+        section: "feedback",
+        label: "Отзывы beta",
+        icon: "◎",
+        roles: ["admin"],
+      },
     ],
   },
   {

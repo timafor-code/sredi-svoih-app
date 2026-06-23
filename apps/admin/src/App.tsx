@@ -12,6 +12,7 @@ import { ConfigMissingPage } from "./pages/ConfigMissingPage";
 import { CreateEventPage } from "./pages/CreateEventPage";
 import { EditEventPage } from "./pages/EditEventPage";
 import { EventsPage } from "./pages/EventsPage";
+import { FeedbackPage } from "./pages/FeedbackPage";
 import { FuturePage } from "./pages/FuturePage";
 import { ImportReviewPage } from "./pages/ImportReviewPage";
 import { InvitesPage } from "./pages/InvitesPage";
@@ -213,6 +214,8 @@ function renderPage(
       return <RegistrationsPage />;
     case "members":
       return <MembersPage />;
+    case "feedback":
+      return <FeedbackPage />;
     case "invites":
       return <InvitesPage />;
     case "settings":
