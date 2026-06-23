@@ -2,7 +2,7 @@
 
 `apps/admin` содержит web-админку проекта «Среди Своих» на Vite, React и TypeScript.
 
-В текущем состоянии админка использует Supabase Auth в браузере, загружает профиль пользователя и активное membership, а затем открывает visual shell только для ролей `admin` и `event_manager`. Раздел событий подключён как read-only список из `public.events`; импорт, регистрации и backend-операции управления пока не подключены.
+В текущем состоянии админка использует Supabase Auth в браузере, загружает профиль пользователя и активное membership, а затем открывает visual shell только для ролей `admin` и `event_manager`. Beta v2 admin surfaces используют обычный authenticated Supabase client и RPC/RLS boundaries; import v2 доступен через Edge Function/RPC при deployed/configured staging backend и остаётся review-only без auto-publish.
 
 Список событий читается через обычный browser-safe Supabase client с текущей пользовательской сессией и действующими RLS. Если backend-политики вернут только `published`/`public`, UI честно покажет только эти записи; расширение видимости черновиков, скрытых, отменённых или архивных событий требует отдельного backend PR.
 
@@ -43,6 +43,7 @@ Staging/beta docs:
 
 - [Admin staging deploy](../../docs/admin-deploy-staging.md)
 - [Admin beta v1 release checklist](../../docs/admin-beta-v1-release-checklist.md)
+- [Admin beta v2 release checklist](../../docs/admin-beta-v2-release-checklist.md)
 
 Короткая версия:
 
@@ -54,7 +55,7 @@ Staging/beta docs:
 - В hosted Supabase Dashboard для staging project нужно поставить Auth `site_url` в staging admin URL и добавить тот же URL в allowed/additional redirect URLs.
 - Production admin URL добавляется позже отдельным шагом, когда он будет готов.
 
-В Phase 1 кнопка импорта с сайта не добавляется. Импорт временно выполняет владелец проекта через CLI/dev flow вне browser-admin, с server-side connection string вне браузера.
+Phase 1 beta v1 checklist covers the first server beta baseline. Beta v2 adds admin import behind the `admin-website-import` Edge Function and RPC/RLS write boundary; CLI import remains fallback/debug only outside browser-admin when project owner intentionally uses it. Manual beta v2 smoke lives in [Admin beta v2 release checklist](../../docs/admin-beta-v2-release-checklist.md).
 
 ## Локальный запуск
 
