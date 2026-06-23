@@ -2,8 +2,10 @@
 
 Current status: web-admin can trigger the `apply_review_only` Edge integration
 implemented in `supabase/functions/admin-website-import` and shows recent
-import run history from `event_import_runs`. Older phased-plan language remains
-only where it describes future dedupe review work.
+import run history from `event_import_runs`. Import Review now also surfaces
+dedupe state from `raw_payload.importReview.dedupe` in the queue and detail
+drawer. Older phased-plan language remains only where it describes future
+backend/apply work.
 
 Этот документ фиксирует final architecture для Phase 2 admin-triggered import v2.
 Текущий UI PR добавляет read layer и web-admin журнал запусков импорта. Он не
@@ -78,8 +80,9 @@ The button uses the normal authenticated Supabase browser client and invokes
 ```
 
 The UI does not expose advanced modes, `sourceUrl` override, dry-run controls,
-scheduling, retry automation, or dedupe review UI. The Edge Function performs
-role checks and writes through the RPC boundary.
+scheduling, or retry automation. Dedupe UI is read-only and uses existing
+`raw_payload.importReview.dedupe` data. The Edge Function performs role checks
+and writes through the RPC boundary.
 
 After a successful run, the UI shows the safe Edge summary, including `runId`,
 found/parsed/error counts, and import item counts when those fields are present
@@ -126,6 +129,32 @@ button through the UI until the history no longer shows an active recent run.
 This is only a browser safety layer; the backend `admin_begin_import_run`
 already remains the authoritative already-running guard. Starting an import
 still never publishes events automatically.
+
+## Web-admin dedupe review UI
+
+Import Review reads dedupe state only from:
+
+```text
+event_import_items.raw_payload.importReview.dedupe
+```
+
+The queue shows a compact dedupe badge for each item. The detail drawer includes
+`Контроль дублей` with the v1 contract fields: status, reason, matchedBy,
+matchedEventId, matchedImportItemId, manualOverride, sourceExternalId,
+canonicalSourceUrl, contentHash, and checkedAt. If the dedupe object is missing,
+the UI shows an unchecked/empty state and keeps the page usable.
+
+This UI does not publish imported events automatically. It does not create,
+update, delete, or auto-merge events. Existing actions remain explicit admin
+actions through the authenticated Supabase client and RPC/RLS boundary.
+
+Review rules shown by the UI:
+
+- `possible_duplicate` requires manual review before creating an event.
+- `duplicate` means a new event should not be created or published automatically.
+- `manual_override_skipped` means the existing event was protected from being
+  overwritten because of manual edits.
+- `error` displays the dedupe reason/error text in the detail drawer.
 
 ## Write-RPC boundary
 
@@ -235,7 +264,7 @@ Table status columns должны оставаться техническими 
 - `apply_review_only` Edge-to-write-RPC integration - **implemented**;
 - import button UI - **implemented**;
 - run history read RPC/UI - **implemented**;
-- dedupe review UI;
+- dedupe review UI - **implemented in web-admin as read-only JSON state**;
 - detailed dedupe JSON contract — зафиксирован в [admin-import-dedupe-contract.md](admin-import-dedupe-contract.md).
 
 Не делать в этом PR:
@@ -248,7 +277,9 @@ Table status columns должны оставаться техническими 
 
 ## Manual review expectation
 
-Будущий admin flow должен дать пользователю увидеть run history и import items до любого publish/apply action. Минимальная ручная проверка для каждого item:
+Admin flow должен дать пользователю увидеть run history, import items и dedupe
+state до любого publish/apply action. Минимальная ручная проверка для каждого
+item:
 
 - source URL and parsed title;
 - parsed date/time and confidence;
@@ -258,7 +289,8 @@ Table status columns должны оставаться техническими 
 - manual override warnings;
 - final explicit action by an authorized admin/event manager.
 
-Until that review action exists, imported items remain review data and must not become public events automatically.
+Imported items remain review data and must not become public events
+automatically.
 
 ## Manual smoke
 
@@ -268,9 +300,13 @@ Codex does not run browser smoke.
 Checklist:
 
 - Open Import Review page.
-- Confirm run history loads.
-- Run import manually.
-- Confirm new run appears in history.
-- Confirm failed run displays readable error.
-- Confirm started run disables import button.
-- Confirm no events were created, updated, or published automatically.
+- Run first import manually if needed.
+- Confirm new items show “Новое”.
+- Run second import manually if needed.
+- Confirm duplicate items show “Дубль”.
+- Confirm possible duplicate shows warning.
+- Open import item detail.
+- Confirm “Контроль дублей” shows reason, matchedBy, sourceExternalId,
+  canonical URL and contentHash.
+- Confirm manual_override_skipped is visible if such item exists.
+- Confirm no event is created, updated, or published automatically.

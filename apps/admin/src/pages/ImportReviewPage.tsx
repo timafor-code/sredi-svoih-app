@@ -3,6 +3,10 @@ import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from
 import { EventForm } from "../components/events/EventForm";
 import { AdminImportRunHistory } from "../components/import/AdminImportRunHistory";
 import { AdminWebsiteImportRunner } from "../components/import/AdminWebsiteImportRunner";
+import {
+  getImportDedupeStatusLabel,
+  ImportDedupeBadge,
+} from "../components/import/ImportDedupeBadge";
 import { listAdminEventCategories } from "../services/eventCategoriesService";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -18,6 +22,11 @@ import type { AdminBadgeTone } from "../types/admin";
 import { getEventStatusLabel, getEventVisibilityLabel } from "../types/events";
 import type { AdminEvent, AdminEventMutationInput } from "../types/events";
 import type { AdminEventCategory } from "../types/eventCategories";
+import {
+  ADMIN_IMPORT_DEDUPE_MATCHED_BY,
+  ADMIN_IMPORT_DEDUPE_STATUSES,
+} from "../types/importDedupe";
+import type { AdminImportDedupe } from "../types/importDedupe";
 import {
   ADMIN_IMPORT_DATE_QUALITIES,
   ADMIN_IMPORT_ITEM_STATUSES,
@@ -301,12 +310,17 @@ export function ImportReviewPage({
         return true;
       }
 
+      const dedupe = getImportDedupe(item);
       const searchableText = [
         item.parsedTitle,
         item.sourceUrl,
         item.parsedLocation,
         item.importReview?.reason,
         item.importReview?.rawDateText,
+        dedupe?.status,
+        dedupe?.reason,
+        dedupe?.sourceExternalId,
+        dedupe?.canonicalSourceUrl,
       ]
         .filter(Boolean)
         .join(" ")
@@ -571,6 +585,7 @@ function ImportReviewList({
                 <Badge tone={getDateQualityTone(getDateQuality(item))}>
                   {formatDateQualityLabel(getDateQuality(item))}
                 </Badge>
+                <ImportDedupeBadge dedupe={getImportDedupe(item)} />
                 {item.linkedEventId ? <Badge tone="green">Связано</Badge> : null}
               </div>
               <h3>{item.parsedTitle || "Без названия"}</h3>
@@ -815,6 +830,7 @@ function ImportItemDetailDrawer({
             <div className="badge-row">
               <Badge tone="gold">Детали проверки</Badge>
               <Badge tone="glass">admin_get_import_item</Badge>
+              <ImportDedupeBadge dedupe={displayItem ? getImportDedupe(displayItem) : null} />
               {isAdminIgnored ? <Badge tone="muted">Игнорируется админом</Badge> : null}
               {isSafeIgnoredByImporter ? (
                 <Badge tone="gold">Игнорируется импортёром</Badge>
@@ -924,6 +940,7 @@ function ImportItemDetailActions({
   const isSafeIgnoredByImporter = item.status === "ignored" && !isAdminIgnored;
   const linkedEventId = item.linkedEventId ?? item.importReview?.draftEventId ?? null;
   const title = getImportItemTitle(item);
+  const dedupe = getImportDedupe(item);
 
   if (isAdminIgnored) {
     return (
@@ -984,6 +1001,7 @@ function ImportItemDetailActions({
 
   return (
     <section className="import-detail-actions">
+      <ImportDedupeActionNotice dedupe={dedupe} />
       <div className="import-detail-actions__head">
         <div>
           <h3>Действия</h3>
@@ -1069,6 +1087,53 @@ function ImportItemDetailActions({
       ) : null}
     </section>
   );
+}
+
+function ImportDedupeActionNotice({ dedupe }: { dedupe: AdminImportDedupe | null }) {
+  if (!dedupe) {
+    return null;
+  }
+
+  if (dedupe.status === "possible_duplicate") {
+    return (
+      <div className="import-dedupe-warning import-dedupe-warning--possible" role="alert">
+        <strong>Возможный дубль — проверьте перед созданием события.</strong>
+        <p>{formatDedupeReason(dedupe)}</p>
+      </div>
+    );
+  }
+
+  if (dedupe.status === "duplicate") {
+    return (
+      <div className="import-dedupe-warning import-dedupe-warning--duplicate" role="alert">
+        <strong>Дубль — новое событие не нужно публиковать автоматически.</strong>
+        <p>{formatDedupeReason(dedupe)}</p>
+      </div>
+    );
+  }
+
+  if (dedupe.status === "manual_override_skipped") {
+    return (
+      <div className="import-dedupe-warning import-dedupe-warning--manual" role="status">
+        <strong>Существующее событие защищено ручной правкой.</strong>
+        <p>
+          Import item пропущен, чтобы не перетереть manual override.{" "}
+          {formatDedupeReason(dedupe)}
+        </p>
+      </div>
+    );
+  }
+
+  if (dedupe.status === "error") {
+    return (
+      <div className="import-dedupe-warning import-dedupe-warning--error" role="alert">
+        <strong>Ошибка контроля дублей.</strong>
+        <p>{formatDedupeReason(dedupe)}</p>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 type ImportDraftPrefill = {
@@ -1245,11 +1310,14 @@ function ImportDraftFormNotice({ prefill }: { prefill: ImportDraftPrefill }) {
 
 function ImportItemDetailContent({ item }: { item: AdminImportReviewItem }) {
   const review = item.importReview;
+  const dedupe = getImportDedupe(item);
   const rawDetails = getRawPayloadDetails(item.rawPayload);
   const needsReview = review?.needsReview ?? review?.reviewNeeded ?? null;
 
   return (
     <>
+      <ImportDedupePanel dedupe={dedupe} />
+
       <section className="import-detail-section">
         <h3>Основное</h3>
         <div className="import-detail-grid">
@@ -1366,6 +1434,85 @@ function ImportItemDetailContent({ item }: { item: AdminImportReviewItem }) {
         </div>
       </section>
     </>
+  );
+}
+
+function ImportDedupePanel({ dedupe }: { dedupe: AdminImportDedupe | null }) {
+  return (
+    <section className="import-dedupe-panel">
+      <div className="import-dedupe-panel__head">
+        <h3>Контроль дублей</h3>
+        <ImportDedupeBadge dedupe={dedupe} />
+      </div>
+
+      {!dedupe ? (
+        <div className="import-dedupe-warning import-dedupe-warning--unchecked" role="status">
+          <strong>Не проверено.</strong>
+          <p>
+            В `raw_payload.importReview.dedupe` нет объекта dedupe. Старые import items
+            могут оставаться в таком состоянии до следующей проверки.
+          </p>
+        </div>
+      ) : (
+        <>
+          <ImportDedupeActionNotice dedupe={dedupe} />
+          <div className="import-dedupe-panel__grid">
+            <ImportDedupeRow label="Статус" value={getImportDedupeStatusLabel(dedupe.status)} />
+            <ImportDedupeRow label="matchedBy" value={formatDedupeMatchedBy(dedupe)} />
+            <ImportDedupeRow label="manualOverride" value={formatBooleanValue(dedupe.manualOverride)} />
+            <ImportDedupeRow label="checkedAt" value={formatDateTimeDetail(dedupe.checkedAt)} />
+            <ImportDedupeRow label="reason" value={formatDedupeReason(dedupe)} wide />
+            <ImportDedupeRow
+              label="matchedEventId"
+              value={dedupe.matchedEventId ?? "Не указано"}
+            />
+            <ImportDedupeRow
+              label="matchedImportItemId"
+              value={dedupe.matchedImportItemId ?? "Не указано"}
+            />
+            <ImportDedupeRow
+              label="sourceExternalId"
+              value={dedupe.sourceExternalId ?? "Не указано"}
+            />
+            <ImportDedupeRow label="canonicalSourceUrl" wide>
+              {dedupe.canonicalSourceUrl ? (
+                <a
+                  className="import-review-link"
+                  href={dedupe.canonicalSourceUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  {dedupe.canonicalSourceUrl}
+                </a>
+              ) : (
+                "Не указано"
+              )}
+            </ImportDedupeRow>
+            <ImportDedupeRow label="contentHash" value={dedupe.contentHash ?? "Не указано"} wide />
+            <ImportDedupeRow label="version" value={String(dedupe.version)} />
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function ImportDedupeRow({
+  children,
+  label,
+  value,
+  wide = false,
+}: {
+  children?: ReactNode;
+  label: string;
+  value?: string;
+  wide?: boolean;
+}) {
+  return (
+    <div className={wide ? "import-dedupe-row import-dedupe-row--wide" : "import-dedupe-row"}>
+      <span>{label}</span>
+      <strong>{children ?? value ?? "Не указано"}</strong>
+    </div>
   );
 }
 
@@ -1558,6 +1705,109 @@ function getReviewNotes(item: AdminImportReviewItem): string {
     .join(" ");
 
   return notes || "Не указано";
+}
+
+function getImportDedupe(item: AdminImportReviewItem): AdminImportDedupe | null {
+  return normalizeImportDedupeValue(readJsonPath(item.rawPayload, ["importReview", "dedupe"]));
+}
+
+function normalizeImportDedupeValue(value: JsonValue | undefined): AdminImportDedupe | null {
+  if (!isJsonObject(value) || !isImportDedupeStatus(value.status)) {
+    return null;
+  }
+
+  const version = normalizeDedupeVersion(value.version);
+
+  if (version !== 1) {
+    return null;
+  }
+
+  return {
+    version: 1,
+    status: value.status,
+    reason: normalizeDedupeString(value.reason),
+    matchedBy: normalizeDedupeMatchedBy(value.matchedBy),
+    matchedEventId: normalizeDedupeString(value.matchedEventId),
+    matchedImportItemId: normalizeDedupeString(value.matchedImportItemId),
+    manualOverride: normalizeDedupeBoolean(value.manualOverride) ?? false,
+    contentHash: normalizeDedupeString(value.contentHash),
+    canonicalSourceUrl: normalizeDedupeString(value.canonicalSourceUrl),
+    sourceExternalId: normalizeDedupeString(value.sourceExternalId),
+    checkedAt: normalizeDedupeString(value.checkedAt),
+  };
+}
+
+function isImportDedupeStatus(value: JsonValue | undefined): value is AdminImportDedupe["status"] {
+  return (
+    typeof value === "string" &&
+    (ADMIN_IMPORT_DEDUPE_STATUSES as readonly string[]).includes(value)
+  );
+}
+
+function normalizeDedupeMatchedBy(value: JsonValue | undefined): AdminImportDedupe["matchedBy"] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(
+    (item): item is AdminImportDedupe["matchedBy"][number] =>
+      typeof item === "string" &&
+      (ADMIN_IMPORT_DEDUPE_MATCHED_BY as readonly string[]).includes(item),
+  );
+}
+
+function normalizeDedupeString(value: JsonValue | undefined): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return null;
+}
+
+function normalizeDedupeBoolean(value: JsonValue | undefined): boolean | null {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+
+    if (["true", "1", "yes"].includes(normalized)) {
+      return true;
+    }
+
+    if (["false", "0", "no"].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return null;
+}
+
+function normalizeDedupeVersion(value: JsonValue | undefined): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function formatDedupeReason(dedupe: AdminImportDedupe): string {
+  return dedupe.reason?.trim() || "Причина не указана.";
+}
+
+function formatDedupeMatchedBy(dedupe: AdminImportDedupe): string {
+  return dedupe.matchedBy.length > 0 ? dedupe.matchedBy.join(", ") : "Нет совпадений";
 }
 
 function isJsonObject(value: JsonValue | null | undefined): value is JsonObject {

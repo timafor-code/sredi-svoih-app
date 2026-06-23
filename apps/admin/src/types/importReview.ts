@@ -1,4 +1,5 @@
 import type { AdminEvent, AdminEventMutationInput } from "./events";
+import type { AdminImportDedupe } from "./importDedupe";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -49,6 +50,7 @@ export type AdminImportReview = {
   draftEventCreated?: boolean | null;
   draftEventId?: string | null;
   draftSkipReason?: string | null;
+  dedupe?: AdminImportDedupe | null;
 };
 
 export type AdminImportAdminReview = {
