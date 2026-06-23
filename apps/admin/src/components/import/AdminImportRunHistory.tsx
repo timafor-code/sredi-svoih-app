@@ -34,8 +34,8 @@ export function AdminImportRunHistory({
           <div className="badge-row">
             <Badge tone="glass">admin_list_import_runs</Badge>
             {latestRun ? (
-              <Badge tone={getRunStatusTone(latestRun.status)}>
-                Последний: {formatRunStatusLabel(latestRun.status)}
+              <Badge tone={getAdminImportRunStatusTone(latestRun.status)}>
+                Последний: {formatAdminImportRunStatusLabel(latestRun.status)}
               </Badge>
             ) : null}
           </div>
@@ -52,7 +52,7 @@ export function AdminImportRunHistory({
           className={`admin-import-history__latest admin-import-history__latest--${latestRun.status}`}
         >
           <span>Latest run status</span>
-          <strong>{formatRunStatusLabel(latestRun.status)}</strong>
+          <strong>{formatAdminImportRunStatusLabel(latestRun.status)}</strong>
           <small>
             {latestRun.sourceName ? `${latestRun.sourceName} · ` : ""}
             {formatDateTime(latestRun.startedAt)}
@@ -85,8 +85,8 @@ export function AdminImportRunHistory({
             >
               <div className="admin-import-history__row-head">
                 <div className="admin-import-history__source">
-                  <Badge tone={getRunStatusTone(run.status)}>
-                    {formatRunStatusLabel(run.status)}
+                  <Badge tone={getAdminImportRunStatusTone(run.status)}>
+                    {formatAdminImportRunStatusLabel(run.status)}
                   </Badge>
                   <strong>{run.sourceName || "Источник без названия"}</strong>
                 </div>
@@ -154,7 +154,7 @@ function ImportHistoryState({
   );
 }
 
-function getRunStatusTone(status: AdminImportRunStatus): AdminBadgeTone {
+export function getAdminImportRunStatusTone(status: AdminImportRunStatus): AdminBadgeTone {
   if (status === "success") {
     return "green";
   }
@@ -166,7 +166,7 @@ function getRunStatusTone(status: AdminImportRunStatus): AdminBadgeTone {
   return "gold";
 }
 
-function formatRunStatusLabel(status: AdminImportRunStatus): string {
+export function formatAdminImportRunStatusLabel(status: AdminImportRunStatus): string {
   return RUN_STATUS_LABELS[status] ?? status;
 }
 
