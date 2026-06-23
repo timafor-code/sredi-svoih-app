@@ -80,6 +80,13 @@ const BUCKET_BREAKDOWN_COLORS = [
 ];
 const BUCKET_BREAKDOWN_FREE_COLOR = "rgba(255, 255, 255, 0.32)";
 const BUCKET_BREAKDOWN_NON_SEAT_COLOR = "rgba(107, 127, 212, 0.58)";
+const CAPACITY_LIMIT_VS_SEATING_HINT =
+  "Лимит в этой карточке — регистрационный лимит capacity unit/bucket, " +
+  "а не автоматическое число физических стульев в seating layout. " +
+  "Схема рассадки помогает вручную рассадить гостей и не меняет capacity truth или алгоритм сама.";
+const DONATION_NO_SEAT_HINT =
+  "Донаты не занимают места, не создают гостя для рассадки сами по себе " +
+  "и не попадают в guest pool как место.";
 
 export function RegistrationCapacityBucketsOverview({
   analytics,
@@ -183,8 +190,13 @@ export function RegistrationCapacityBucketsOverview({
           <span>Детализация</span>
           <strong>{selectedModeLabel}</strong>
         </div>
+        <p className="registration-capacity-helper registration-capacity-helper--notice">
+          {CAPACITY_LIMIT_VS_SEATING_HINT}
+        </p>
         {isOccurrenceMissing ? (
-          renderSoftState("Выберите дату/сеанс, чтобы увидеть занятость мест.")
+          renderSoftState(
+            "У выбранного события есть даты/сеансы. Выберите одну дату: capacity относится только к выбранной occurrence и не показывает всю серию.",
+          )
         ) : mode === "buckets" ? (
           renderBuckets({
             analyticsError,
@@ -233,7 +245,9 @@ function renderQuickPills({
   if (isOccurrenceMissing) {
     return (
       <div className="cap-quick">
-        {renderSoftState("Выберите дату/сеанс, чтобы увидеть занятость мест.")}
+        {renderSoftState(
+          "Выберите дату/сеанс, чтобы увидеть capacity именно этой occurrence.",
+        )}
       </div>
     );
   }
@@ -250,7 +264,7 @@ function renderQuickPills({
     return (
       <div className="cap-quick">
         {renderSoftState(
-          "Не удалось загрузить данные занятости мест.",
+          "Capacity analytics не загрузилась. Таблица заявок остаётся доступной, но сводка мест временно недоступна.",
           analyticsError,
           true,
         )}
@@ -261,7 +275,9 @@ function renderQuickPills({
   if (quickPills.length === 0) {
     return (
       <div className="cap-quick">
-        {renderSoftState("Данные по местам пока не найдены.")}
+        {renderSoftState(
+          "Данные по местам пока не найдены для текущего event/occurrence context.",
+        )}
       </div>
     );
   }
@@ -319,14 +335,14 @@ function renderTotal({
 
   if (analyticsError && !analytics) {
     return renderSoftState(
-      "Не удалось загрузить общую занятость мест.",
+      "Не удалось загрузить общую занятость мест для выбранного context.",
       analyticsError,
       true,
     );
   }
 
   if (!analytics) {
-    return renderSoftState("Данные по местам пока не найдены.");
+    return renderSoftState("Данные по местам пока не найдены для выбранного context.");
   }
 
   const summary = hasBuckets
@@ -337,7 +353,7 @@ function renderTotal({
     <>
       <div className="registration-capacity-total">
         <div className="registration-capacity-total__main">
-          <span>Занято по выбранной дате</span>
+          <span>Занято в текущем context</span>
           <strong>{summary.occupiedLabel}</strong>
           <small>{summary.scopeHint}</small>
         </div>
@@ -376,7 +392,11 @@ function renderBuckets({
   }
 
   if (analyticsError && bucketViews.length === 0) {
-    return renderSoftState("Не удалось загрузить слоты мест.", analyticsError, true);
+    return renderSoftState(
+      "Не удалось загрузить слоты мест для выбранного context.",
+      analyticsError,
+      true,
+    );
   }
 
   if (bucketViews.length === 0) {
@@ -386,72 +406,74 @@ function renderBuckets({
   }
 
   return (
-    <div className="registration-capacity-buckets">
-      {bucketViews.map((bucket) => {
-        const title = bucket.title || "Слот мест";
-        const bucketKey = bucket.code || bucket.key || bucket.capacityUnitId;
-        const capacityLabel = formatCapacityLimit(bucket.effectiveCapacity);
-        const occupiedLabel =
-          bucket.effectiveCapacity !== null
-            ? `${bucket.occupiedSeats} из ${bucket.effectiveCapacity} мест`
-            : `${bucket.occupiedSeats} мест`;
-        const remainingLabel =
-          bucket.effectiveRemainingSeats !== null
-            ? `Свободно ${bucket.effectiveRemainingSeats}`
-            : "Без лимита";
+    <>
+      <div className="registration-capacity-buckets">
+        {bucketViews.map((bucket) => {
+          const title = bucket.title || "Слот мест";
+          const bucketKey = bucket.code || bucket.key || bucket.capacityUnitId;
+          const capacityLabel = formatCapacityLimit(bucket.effectiveCapacity);
+          const occupiedLabel =
+            bucket.effectiveCapacity !== null
+              ? `${bucket.occupiedSeats} из ${bucket.effectiveCapacity} мест`
+              : `${bucket.occupiedSeats} мест`;
+          const remainingLabel =
+            bucket.effectiveRemainingSeats !== null
+              ? `Свободно ${bucket.effectiveRemainingSeats}`
+              : "Без лимита";
 
-        return (
-          <div className="registration-capacity-bucket-row" key={bucket.capacityUnitId}>
-            <div className="registration-capacity-bucket-row__head">
-              <div className="registration-capacity-bucket-row__summary">
-                <div className="registration-capacity-bucket-row__title">
-                  <strong>{title}</strong>
-                  {bucketKey ? <span>{bucketKey}</span> : null}
+          return (
+            <div className="registration-capacity-bucket-row" key={bucket.capacityUnitId}>
+              <div className="registration-capacity-bucket-row__head">
+                <div className="registration-capacity-bucket-row__summary">
+                  <div className="registration-capacity-bucket-row__title">
+                    <strong>{title}</strong>
+                    {bucketKey ? <span>{bucketKey}</span> : null}
+                  </div>
+                  <div className="registration-capacity-bucket-row__count">
+                    <strong>{occupiedLabel}</strong>
+                    <span>{remainingLabel}</span>
+                  </div>
                 </div>
-                <div className="registration-capacity-bucket-row__count">
-                  <strong>{occupiedLabel}</strong>
-                  <span>{remainingLabel}</span>
+                <div className="registration-capacity-bucket-row__actions">
+                  <button
+                    className="registration-capacity-bucket-row__seat-button"
+                    onClick={() => onOpenSeating(bucket)}
+                    title="Открыть ручной редактор схемы рассадки для выбранного слота"
+                    type="button"
+                  >
+                    Схема рассадки
+                  </button>
                 </div>
               </div>
-              <div className="registration-capacity-bucket-row__actions">
-                <button
-                  className="registration-capacity-bucket-row__seat-button"
-                  onClick={() => onOpenSeating(bucket)}
-                  title="Открыть редактор схемы рассадки"
-                  type="button"
-                >
-                  Схема рассадки
-                </button>
+
+              <RegistrationCapacityMeter
+                fillPercent={bucket.effectiveFillPercent}
+                label={
+                  bucket.effectiveFillPercent !== null
+                    ? `${bucket.effectiveFillPercent}% заполнено`
+                    : "Без лимита"
+                }
+                secondaryLabel={
+                  bucket.effectiveFreePercent !== null && bucket.effectiveRemainingSeats !== null
+                    ? `${bucket.effectiveRemainingSeats} (${bucket.effectiveFreePercent}%) свободно`
+                    : null
+                }
+              />
+
+              <div className="registration-capacity-bucket-row__meta">
+                <span>Лимит регистрации: {capacityLabel}</span>
+                <span>{bucket.reservationsCount} резерв.</span>
+                {bucket.usesFallbackCapacity ? (
+                  <span>лимит взят из выбранной даты/события</span>
+                ) : null}
               </div>
+
+              <BucketBreakdown bucket={bucket} />
             </div>
-
-            <RegistrationCapacityMeter
-              fillPercent={bucket.effectiveFillPercent}
-              label={
-                bucket.effectiveFillPercent !== null
-                  ? `${bucket.effectiveFillPercent}% заполнено`
-                  : "Без лимита"
-              }
-              secondaryLabel={
-                bucket.effectiveFreePercent !== null && bucket.effectiveRemainingSeats !== null
-                  ? `${bucket.effectiveRemainingSeats} (${bucket.effectiveFreePercent}%) свободно`
-                  : null
-              }
-            />
-
-            <div className="registration-capacity-bucket-row__meta">
-              <span>Лимит: {capacityLabel}</span>
-              <span>{bucket.reservationsCount} резерв.</span>
-              {bucket.usesFallbackCapacity ? (
-                <span>лимит взят из выбранной даты/события</span>
-              ) : null}
-            </div>
-
-            <BucketBreakdown bucket={bucket} />
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -635,8 +657,8 @@ function renderOptions({
       </div>
       <p className="registration-capacity-helper">
         {hasBucketSource
-          ? "Варианты, занимающие места, собраны из bucket option breakdown и capacity reservations, поэтому согласованы с режимом “По слотам мест”. Донаты и варианты без capacity показываются отдельно."
-          : "Занятость мест берётся из analytics RPC; донаты и варианты без capacity не смешиваются с местами без маркировки."}
+          ? `Варианты, занимающие места, собраны из bucket option breakdown и capacity reservations, поэтому согласованы с режимом “По слотам мест”. ${DONATION_NO_SEAT_HINT}`
+          : `Занятость мест берётся из analytics RPC; донаты и варианты без capacity не смешиваются с местами без маркировки. ${DONATION_NO_SEAT_HINT}`}
       </p>
     </>
   );
@@ -725,6 +747,7 @@ function renderGuests({
           Донаты или спонсорские варианты в выбранной дате не найдены.
         </p>
       )}
+      <p className="registration-capacity-helper">{DONATION_NO_SEAT_HINT}</p>
     </>
   );
 }

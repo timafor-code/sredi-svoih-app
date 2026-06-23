@@ -418,7 +418,8 @@ export function SeatingLayoutEditor({
   const guestPoolWarning =
     invalidSeatKeyWarning ??
     (hasGuestPoolMismatch
-      ? "Есть занятые места, но список гостей для рассадки не загружен."
+      ? "В слоте есть занятость, но guest pool пуст. Проверьте confirmed/active registrations, " +
+        "выбранный event/occurrence и bucket; donation-only registrations не занимают места."
       : null);
 
   const capacityLimit =
@@ -1476,6 +1477,12 @@ export function SeatingLayoutEditor({
             ×
           </button>
         </header>
+
+        <p className="seat-modal__context-note">
+          Редактор рассадки — ручной инструмент для выбранного слота. Лимит регистрации
+          не равен автоматически физическим стульям, а донаты не создают гостя для
+          рассадки сами по себе.
+        </p>
 
         <div className="seat-toolbar">
           <SeatingTemplateSelector

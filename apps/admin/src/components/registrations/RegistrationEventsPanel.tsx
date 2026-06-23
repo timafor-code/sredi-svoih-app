@@ -56,11 +56,14 @@ export function RegistrationEventsPanel({
           <div className="registration-event-list">
             {eventsLoading ? (
               <RegistrationsState
-                description="Читаем admin_list_registration_events."
+                description="Загружаем события, где админ может смотреть заявки. После выбора события справа появится рабочий контекст."
                 title="Загрузка событий"
               />
             ) : eventsError ? (
-              <RegistrationsState description={eventsError} title="События не загрузились">
+              <RegistrationsState
+                description={`Не удалось получить список событий. Ошибка: ${eventsError}`}
+                title="События не загрузились"
+              >
                 <Button onClick={onRetry} size="sm">
                   Повторить
                 </Button>
@@ -69,8 +72,8 @@ export function RegistrationEventsPanel({
               <RegistrationsState
                 description={
                   events.length === 0
-                    ? "Для текущей сессии нет событий с доступными регистрациями."
-                    : "Измените поиск по событиям."
+                    ? "Для текущего admin context нет событий с доступными регистрациями. Mock-данные здесь не показываются."
+                    : "Поиск не нашёл событие. Очистите запрос или попробуйте название, дату либо тип события."
                 }
                 title={events.length === 0 ? "Нет событий" : "Нет совпадений"}
               />

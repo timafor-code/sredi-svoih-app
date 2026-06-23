@@ -122,7 +122,22 @@ export function SeatingAssignmentsPanel({
             Все рассажены.
           </p>
         ) : guests.length === 0 && reserves.length === 0 ? (
-          <p className="seat-pool__empty">Нет гостей для выбранного слота.</p>
+          <div
+            className="seat-pool__empty seat-pool__empty--warning seat-pool__empty--block"
+            role="status"
+          >
+            <strong>Нет гостей для рассадки в выбранном слоте.</strong>
+            <span>
+              Проверьте, что выбран правильный event/occurrence и что в этом
+              capacity slot есть seat-taking registrations.
+            </span>
+            <ul>
+              <li>нет confirmed/active registrations для этого слота;</li>
+              <li>выбрана другая дата или другой capacity bucket;</li>
+              <li>donation-only registrations не занимают места;</li>
+              <li>capacity slot сейчас не содержит гостей для seating pool.</li>
+            </ul>
+          </div>
         ) : (
           <>
             {guests.map((guest) => (

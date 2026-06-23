@@ -463,11 +463,29 @@ export function RegistrationsPage() {
       occurrences.find((occurrence) => occurrence.id === selectedOccurrenceId) ?? null,
     [occurrences, selectedOccurrenceId],
   );
+  const isOccurrenceContextMissing = eventHasOccurrences && !selectedOccurrence;
   const exportOccurrence =
     eventHasOccurrences && selectedOccurrence ? selectedOccurrence : null;
   const excelExportDisabled =
-    !selectedEvent || registrationsLoading || eventsLoading || excelExportLoading;
+    !selectedEvent ||
+    isOccurrenceContextMissing ||
+    registrationsLoading ||
+    eventsLoading ||
+    excelExportLoading;
   const excelExportLabel = excelExportLoading ? "Готовим Excel..." : "Экспорт Excel";
+  const registrationContextDescription = selectedEvent
+    ? formatRegistrationContextDescription({
+        eventHasOccurrences,
+        selectedOccurrence,
+        showPastOccurrences,
+      })
+    : null;
+  const excelExportScopeNote = selectedEvent
+    ? formatExcelExportScopeNote({
+        eventHasOccurrences,
+        selectedOccurrence,
+      })
+    : null;
 
   const filteredEvents = useMemo(() => {
     const normalizedQuery = eventQuery.trim().toLocaleLowerCase("ru");
@@ -668,7 +686,7 @@ export function RegistrationsPage() {
   ]);
 
   const handleExportExcel = useCallback(() => {
-    if (!selectedEvent || excelExportLoading) {
+    if (!selectedEvent || excelExportLoading || isOccurrenceContextMissing) {
       return;
     }
 
@@ -688,7 +706,13 @@ export function RegistrationsPage() {
       .finally(() => {
         setExcelExportLoading(false);
       });
-  }, [excelExportLoading, exportOccurrence, pushToast, selectedEvent]);
+  }, [
+    excelExportLoading,
+    exportOccurrence,
+    isOccurrenceContextMissing,
+    pushToast,
+    selectedEvent,
+  ]);
 
   return (
     <div className="page-stack page-stack--registrations">
@@ -736,6 +760,13 @@ export function RegistrationsPage() {
                   registrationsLoading={registrationsLoading}
                 />
               </div>
+
+              {registrationContextDescription ? (
+                <div className="registration-context-note">
+                  <strong>Контекст: {selectedEvent.title}</strong>
+                  <span>{registrationContextDescription}</span>
+                </div>
+              ) : null}
 
               {eventHasOccurrences ? (
                 <RegistrationOccurrenceBar
@@ -801,6 +832,11 @@ export function RegistrationsPage() {
                       >
                         {excelExportLabel}
                       </Button>
+                      {excelExportScopeNote ? (
+                        <span className="registrations-export-hint">
+                          {excelExportScopeNote}
+                        </span>
+                      ) : null}
                     </div>
                     <span
                       aria-hidden="true"
@@ -833,7 +869,7 @@ export function RegistrationsPage() {
 
                 {eventHasOccurrences && occurrencesLoading ? (
                   <RegistrationsState
-                    description="Читаем admin_list_event_occurrences для серии."
+                    description="Загружаем даты/сеансы выбранного события. Таблица и capacity появятся после выбора конкретной даты."
                     title="Загрузка дат"
                   />
                 ) : eventHasOccurrences &&
@@ -841,7 +877,7 @@ export function RegistrationsPage() {
                   hasOnlyPastOccurrences &&
                   !showPastOccurrences ? (
                   <RegistrationsState
-                    description="Активных дат нет. Откройте архив дат, чтобы посмотреть прошедшие списки."
+                    description="У события есть только прошедшие даты. Откройте архив, чтобы выбрать прошедший сеанс; без выбранной даты таблица не показывает всю серию."
                     title="Нет активных дат"
                   >
                     <Button onClick={() => handleToggleArchive(true)} size="sm">
@@ -850,17 +886,23 @@ export function RegistrationsPage() {
                   </RegistrationsState>
                 ) : eventHasOccurrences && !selectedOccurrenceId ? (
                   <RegistrationsState
-                    description="Выберите дату/сеанс в селекторе выше, чтобы открыть список."
+                    description="У события есть несколько дат/сеансов. Выберите один сеанс выше: таблица, capacity и Excel будут относиться только к нему."
                     title="Дата не выбрана"
                   />
                 ) : registrationsLoading ? (
                   <RegistrationsState
-                    description="Читаем admin_list_event_registrations для выбранного события."
+                    description={
+                      eventHasOccurrences && selectedOccurrence
+                        ? `Загружаем заявки для выбранной даты: ${formatOccurrenceLabel(
+                            selectedOccurrence,
+                          )}.`
+                        : "Загружаем заявки для выбранного события."
+                    }
                     title="Загрузка регистраций"
                   />
                 ) : registrationsError ? (
                   <RegistrationsState
-                    description={registrationsError}
+                    description={`Не удалось получить заявки для текущего event/occurrence context. Ошибка: ${registrationsError}`}
                     title="Регистрации не загрузились"
                   >
                     <Button onClick={() => void loadRegistrations()} size="sm">
@@ -869,13 +911,12 @@ export function RegistrationsPage() {
                   </RegistrationsState>
                 ) : registrations.length === 0 ? (
                   <RegistrationsState
-                    description={
-                      statusFilter === "all" && !registrationSearch.trim()
-                        ? eventHasOccurrences && selectedOccurrenceId
-                          ? "На эту дату пока нет регистраций."
-                          : "По этому событию пока нет регистраций."
-                        : "Для выбранного фильтра или поиска нет совпадений."
-                    }
+                    description={formatRegistrationsEmptyDescription({
+                      eventHasOccurrences,
+                      registrationSearch,
+                      selectedOccurrence,
+                      statusFilter,
+                    })}
                     title="Нет заявок"
                   />
                 ) : (
@@ -893,8 +934,16 @@ export function RegistrationsPage() {
             </>
           ) : (
             <RegistrationsState
-              description="Выберите событие слева, чтобы открыть заявки."
-              title="Событие не выбрано"
+              description={formatNoSelectedEventDescription({
+                eventsCount: events.length,
+                eventsError,
+                eventsLoading,
+              })}
+              title={formatNoSelectedEventTitle({
+                eventsCount: events.length,
+                eventsError,
+                eventsLoading,
+              })}
             />
           )}
         </GlassCard>
@@ -1040,6 +1089,13 @@ function RegistrationOccurrenceBar({
   const isSelectedPast = selectedOccurrence
     ? isPastOccurrence(selectedOccurrence)
     : false;
+  const occurrenceHint = formatOccurrenceSelectorHint({
+    occurrences,
+    occurrencesError,
+    occurrencesLoading,
+    selectedOccurrence,
+    showPastOccurrences,
+  });
 
   return (
     <div className="registration-occurrence-bar" aria-label="Дата сеанса">
@@ -1058,12 +1114,10 @@ function RegistrationOccurrenceBar({
           ) : (
             occurrences.map((occurrence) => {
               const isPast = isPastOccurrence(occurrence);
-              const titleSuffix = occurrence.title ? ` · ${occurrence.title}` : "";
               const pastSuffix = isPast ? " · Прошло" : "";
               return (
                 <option key={occurrence.id} value={occurrence.id}>
-                  {formatDateTime(occurrence.startsAt)}
-                  {titleSuffix}
+                  {formatOccurrenceLabel(occurrence)}
                   {pastSuffix}
                 </option>
               );
@@ -1088,8 +1142,173 @@ function RegistrationOccurrenceBar({
           {occurrencesError}
         </span>
       ) : null}
+
+      {occurrenceHint ? (
+        <p className="registration-occurrence-hint">{occurrenceHint}</p>
+      ) : null}
     </div>
   );
+}
+
+function formatRegistrationContextDescription({
+  eventHasOccurrences,
+  selectedOccurrence,
+  showPastOccurrences,
+}: {
+  eventHasOccurrences: boolean;
+  selectedOccurrence: AdminEventOccurrence | null;
+  showPastOccurrences: boolean;
+}): string {
+  if (!eventHasOccurrences) {
+    return "У события нет отдельных дат/сеансов: таблица, capacity и Excel относятся к выбранному событию целиком.";
+  }
+
+  if (!selectedOccurrence) {
+    return "У события есть даты/сеансы. Выберите конкретную дату: таблица, capacity и Excel не показывают всю серию без выбранного сеанса.";
+  }
+
+  const archiveHint = showPastOccurrences
+    ? " В селекторе включён архив, поэтому доступны и прошедшие даты."
+    : "";
+  const pastHint = isPastOccurrence(selectedOccurrence) ? " Выбран прошедший сеанс." : "";
+
+  return `Таблица, capacity и Excel относятся только к выбранной дате: ${formatOccurrenceLabel(
+    selectedOccurrence,
+  )}.${archiveHint}${pastHint}`;
+}
+
+function formatExcelExportScopeNote({
+  eventHasOccurrences,
+  selectedOccurrence,
+}: {
+  eventHasOccurrences: boolean;
+  selectedOccurrence: AdminEventOccurrence | null;
+}): string {
+  if (!eventHasOccurrences) {
+    return "Выгружает текущий выбранный event. Схема Excel не меняется.";
+  }
+
+  if (!selectedOccurrence) {
+    return "Для события с датами export доступен после выбора конкретного сеанса.";
+  }
+
+  return `Выгружает выбранный event и сеанс: ${formatOccurrenceLabel(
+    selectedOccurrence,
+  )}. Схема Excel не меняется.`;
+}
+
+function formatRegistrationsEmptyDescription({
+  eventHasOccurrences,
+  registrationSearch,
+  selectedOccurrence,
+  statusFilter,
+}: {
+  eventHasOccurrences: boolean;
+  registrationSearch: string;
+  selectedOccurrence: AdminEventOccurrence | null;
+  statusFilter: RegistrationStatusFilter;
+}): string {
+  const hasTableFilters = statusFilter !== "all" || registrationSearch.trim().length > 0;
+
+  if (hasTableFilters) {
+    return eventHasOccurrences
+      ? "В текущем выбранном сеансе нет заявок под этот статус или поиск. Сбросьте фильтр/поиск или проверьте другую дату."
+      : "В выбранном событии нет заявок под этот статус или поиск. Сбросьте фильтр/поиск, если ожидаете участников.";
+  }
+
+  if (eventHasOccurrences && selectedOccurrence) {
+    return `На выбранную дату (${formatOccurrenceLabel(
+      selectedOccurrence,
+    )}) пока нет заявок. Это не список всей серии; для другой даты выберите другой сеанс.`;
+  }
+
+  return "По выбранному событию пока нет заявок. Здесь не показываются mock-данные.";
+}
+
+function formatNoSelectedEventTitle({
+  eventsCount,
+  eventsError,
+  eventsLoading,
+}: {
+  eventsCount: number;
+  eventsError: string | null;
+  eventsLoading: boolean;
+}): string {
+  if (eventsLoading) {
+    return "Загрузка событий";
+  }
+
+  if (eventsError) {
+    return "События не загрузились";
+  }
+
+  return eventsCount === 0 ? "Нет событий с регистрациями" : "Событие не выбрано";
+}
+
+function formatNoSelectedEventDescription({
+  eventsCount,
+  eventsError,
+  eventsLoading,
+}: {
+  eventsCount: number;
+  eventsError: string | null;
+  eventsLoading: boolean;
+}): string {
+  if (eventsLoading) {
+    return "Загружаем список событий. После выбора события здесь появятся заявки, capacity и Excel export.";
+  }
+
+  if (eventsError) {
+    return `Не удалось загрузить список событий. Ошибка: ${eventsError}`;
+  }
+
+  if (eventsCount === 0) {
+    return "Для текущего admin context нет событий с доступными регистрациями. Когда такие события появятся, они будут в списке слева.";
+  }
+
+  return "Выберите событие слева. Для событий с датами/сеансами затем нужно выбрать конкретную дату, чтобы открыть таблицу заявок.";
+}
+
+function formatOccurrenceSelectorHint({
+  occurrences,
+  occurrencesError,
+  occurrencesLoading,
+  selectedOccurrence,
+  showPastOccurrences,
+}: {
+  occurrences: AdminEventOccurrence[];
+  occurrencesError: string | null;
+  occurrencesLoading: boolean;
+  selectedOccurrence: AdminEventOccurrence | null;
+  showPastOccurrences: boolean;
+}): string | null {
+  if (occurrencesError) {
+    return null;
+  }
+
+  if (occurrencesLoading) {
+    return "Загружаем даты события; таблица пока не показывает заявки.";
+  }
+
+  if (occurrences.length === 0) {
+    return showPastOccurrences
+      ? "В архиве тоже нет доступных дат для этого события."
+      : "Активных дат в списке нет; если событие уже прошло, включите архив дат.";
+  }
+
+  if (!selectedOccurrence) {
+    return "Выберите дату/сеанс: таблица и capacity будут относиться только к выбранной дате.";
+  }
+
+  return showPastOccurrences
+    ? "Архив дат включён: в списке есть активные и прошедшие сеансы, но таблица показывает только выбранный."
+    : "Показаны активные даты. Прошедшие сеансы доступны через архив дат.";
+}
+
+function formatOccurrenceLabel(occurrence: AdminEventOccurrence): string {
+  const titleSuffix = occurrence.title ? ` · ${occurrence.title}` : "";
+
+  return `${formatDateTime(occurrence.startsAt)}${titleSuffix}`;
 }
 
 function isPastOccurrence(occurrence: AdminEventOccurrence): boolean {
