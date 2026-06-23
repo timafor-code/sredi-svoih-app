@@ -8421,6 +8421,170 @@ a {
   font-size: 12px;
 }
 
+.page-stack--settings {
+  width: min(100%, 1040px);
+}
+
+.settings-section {
+  display: grid;
+  max-width: 940px;
+  gap: 16px;
+}
+
+.settings-section__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.settings-section__title {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.settings-section__title > span {
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.settings-section__title h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.settings-section__title p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.settings-section__actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-facts {
+  display: grid;
+  margin: 0;
+}
+
+.settings-facts__row {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.34fr) minmax(0, 1fr);
+  gap: 14px;
+  min-height: 42px;
+  align-items: center;
+  border-top: 1px solid var(--glass-border);
+  padding: 10px 0;
+}
+
+.settings-facts__row:first-child {
+  border-top: 0;
+}
+
+.settings-facts dt,
+.settings-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.settings-facts dt {
+  color: var(--text-muted);
+  font-weight: 750;
+}
+
+.settings-facts dd {
+  color: var(--text);
+  font-weight: 750;
+}
+
+.settings-facts a {
+  color: #9badff;
+}
+
+.settings-state {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(242, 184, 75, 0.22);
+  border-radius: var(--radius);
+  padding: 11px 13px;
+  background: rgba(242, 184, 75, 0.08);
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.settings-state strong {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.settings-state span {
+  overflow-wrap: anywhere;
+}
+
+.settings-state--error {
+  border-color: rgba(229, 44, 54, 0.3);
+  background: var(--red-soft);
+  color: #ff9ca2;
+}
+
+.settings-safe-note {
+  border-left: 3px solid rgba(107, 127, 212, 0.72);
+  padding: 10px 12px;
+  background: var(--blue-soft);
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-future-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-future-card {
+  display: grid;
+  min-height: 132px;
+  align-content: start;
+  gap: 8px;
+  border: 1px dashed var(--glass-border);
+  border-radius: var(--radius);
+  padding: 13px;
+  background: rgba(255, 255, 255, 0.035);
+  opacity: 0.76;
+}
+
+.settings-future-card h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.settings-future-card p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .settings-list {
   display: grid;
   max-width: 720px;
@@ -8580,12 +8744,6 @@ a {
   border-color: var(--glass-border);
   background: var(--glass);
   color: var(--text-muted);
-}
-
-.settings-locations {
-  display: grid;
-  max-width: 940px;
-  gap: 16px;
 }
 
 .settings-locations__head {
@@ -9318,11 +9476,22 @@ a {
 
   .option-list__item,
   .settings-list__row,
+  .settings-section__head,
   .settings-locations__head,
   .invite-card div,
   .registration-card__head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .settings-section__actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .settings-facts__row,
+  .settings-future-grid {
+    grid-template-columns: 1fr;
   }
 
   .settings-location-row__badges,

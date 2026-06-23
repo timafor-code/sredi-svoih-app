@@ -11,6 +11,7 @@ import {
   listAdminCommunityLocations,
   updateAdminCommunityLocation,
 } from "../services/communityLocationsService";
+import { isSupabaseConfigured } from "../services/supabaseClient";
 import { useAdminAuth } from "../store/useAdminAuth";
 import type { AdminCommunity } from "../types/community";
 import type { AdminCommunityLocation } from "../types/communityLocations";
@@ -21,6 +22,12 @@ type LocationFormState = {
   sortOrder: string;
   isDefault: boolean;
   isActive: boolean;
+};
+
+type SettingsFactRow = {
+  label: string;
+  value: string;
+  href?: string;
 };
 
 const defaultLocationForm: LocationFormState = {
@@ -35,6 +42,8 @@ export function SettingsPage() {
   const auth = useAdminAuth();
   const communityId = auth.membership?.community_id ?? null;
   const canManageLocations = auth.isAdmin && Boolean(communityId);
+  const adminEnvLabel = getAdminEnvLabel();
+  const supabaseHost = getSupabaseHost();
   const [community, setCommunity] = useState<AdminCommunity | null>(null);
   const [communityLoading, setCommunityLoading] = useState(false);
   const [communityError, setCommunityError] = useState<string | null>(null);
@@ -219,96 +228,129 @@ export function SettingsPage() {
   };
 
   const communitySettingRows = buildCommunitySettingRows(community);
+  const betaConnectionRows = buildBetaConnectionRows({
+    adminEnvLabel,
+    canAccessAdmin: auth.canAccessAdmin,
+    communityId,
+    isAuthenticated: auth.isAuthenticated,
+    role: auth.role,
+    supabaseHost,
+  });
 
   return (
-    <div className="page-stack">
+    <div className="page-stack page-stack--settings">
       <section className="page-header">
-        <Badge tone="glass">settings</Badge>
-        <h1>Настройки</h1>
-        <p>Базовые настройки общины и справочники для web-admin.</p>
+        <Badge tone="gold">settings beta</Badge>
+        <h1>Settings</h1>
+        <p>
+          Beta-панель для текущей общины: реальные данные, существующие адреса и
+          честный staging-контекст без mock-настроек.
+        </p>
       </section>
 
-      <GlassCard className="settings-list" elevated>
+      <GlassCard className="settings-section" elevated>
+        <div className="settings-section__head">
+          <div className="settings-section__title">
+            <span>Community</span>
+            <h2>Данные общины</h2>
+            <p>
+              Read-only snapshot активной community из Supabase. Редактирование
+              общины появится отдельным потоком.
+            </p>
+          </div>
+          <Badge tone={communityError ? "red" : community ? "green" : "muted"}>
+            {communityError ? "error" : community ? "real data" : "waiting"}
+          </Badge>
+        </div>
+
         {communityLoading ? (
-          <div className="event-form-notice">Загружаем данные общины...</div>
+          <div className="settings-state" role="status">
+            Загружаем активную общину из Supabase...
+          </div>
         ) : null}
 
         {communityError ? (
-          <div className="form-error" role="alert">
-            {communityError}
+          <div className="settings-state settings-state--error" role="alert">
+            <strong>Не удалось загрузить данные общины.</strong>
+            <span>{communityError}</span>
           </div>
         ) : null}
 
         {!communityLoading && !communityError && communitySettingRows.length === 0 ? (
-          <div className="event-form-notice">Данные общины пока недоступны.</div>
+          <div className="settings-state">
+            Active community пока не определена для текущей membership. Проверьте
+            beta-доступ и refresh сессии.
+          </div>
         ) : null}
 
-        {communitySettingRows.map((setting) => (
-          <div className="settings-list__row" key={setting.label}>
-            <span>{setting.label}</span>
-            <strong>
-              {setting.href ? (
-                <a href={setting.href} rel="noreferrer" target="_blank">
-                  {setting.value}
-                </a>
-              ) : (
-                setting.value
-              )}
-            </strong>
-          </div>
-        ))}
+        {communitySettingRows.length > 0 ? (
+          <SettingsFacts rows={communitySettingRows} />
+        ) : null}
       </GlassCard>
 
-      <AdminHealthCheck />
-
-      <GlassCard className="settings-locations" elevated>
-        <div className="settings-locations__head">
-          <div>
-            <span>Справочник</span>
+      <GlassCard className="settings-section settings-locations" elevated>
+        <div className="settings-section__head">
+          <div className="settings-section__title">
+            <span>Addresses</span>
             <h2>Адреса общины</h2>
+            <p>
+              Существующий справочник локаций для форм событий. Поведение
+              add/edit/archive не меняется.
+            </p>
           </div>
-          <Button disabled={savingLocation} onClick={resetLocationForm} size="sm">
-            Новый адрес
-          </Button>
+          <div className="settings-section__actions">
+            <Badge tone={canManageLocations ? "green" : "muted"}>
+              {canManageLocations ? "admin editable" : "read-only"}
+            </Badge>
+            <Button
+              disabled={!canManageLocations || savingLocation}
+              onClick={resetLocationForm}
+              size="sm"
+            >
+              Новый адрес
+            </Button>
+          </div>
         </div>
 
         {!communityId ? (
-          <div className="form-error" role="alert">
+          <div className="settings-state settings-state--error" role="alert">
             Не удалось определить communityId текущей активной membership.
           </div>
         ) : null}
 
         {locationsError ? (
-          <div className="form-error" role="alert">
+          <div className="settings-state settings-state--error" role="alert">
             {locationsError}
           </div>
         ) : null}
 
         <div className="settings-location-form">
           <label className="event-form-field">
-            <span>Название</span>
+            <span>Название локации</span>
             <input
               disabled={!canManageLocations || savingLocation}
               onChange={(event) =>
                 setForm((current) => ({ ...current, title: event.target.value }))
               }
+              placeholder="Например: Главный зал"
               value={form.title}
             />
           </label>
 
           <label className="event-form-field event-form-field--wide">
-            <span>Адрес</span>
+            <span>Адрес для участников</span>
             <input
               disabled={!canManageLocations || savingLocation}
               onChange={(event) =>
                 setForm((current) => ({ ...current, address: event.target.value }))
               }
+              placeholder="Город, улица, дом"
               value={form.address}
             />
           </label>
 
           <label className="event-form-field">
-            <span>Порядок</span>
+            <span>Сортировка</span>
             <input
               disabled={!canManageLocations || savingLocation}
               onChange={(event) =>
@@ -355,7 +397,7 @@ export function SettingsPage() {
         </div>
 
         {formError ? (
-          <div className="form-error" role="alert">
+          <div className="settings-state settings-state--error" role="alert">
             {formError}
           </div>
         ) : null}
@@ -377,10 +419,13 @@ export function SettingsPage() {
 
         <div className="settings-location-list">
           {locationsLoading ? (
-            <div className="event-form-notice">Загружаем адреса...</div>
+            <div className="settings-state" role="status">
+              Загружаем адреса общины...
+            </div>
           ) : locations.length === 0 ? (
-            <div className="event-form-notice">
-              Адреса общины ещё не добавлены. Создайте первый адрес для формы событий.
+            <div className="settings-state">
+              Адреса общины ещё не добавлены. Когда появится первая локация, она
+              будет доступна в существующих формах событий.
             </div>
           ) : (
             locations.map((location) => (
@@ -418,7 +463,77 @@ export function SettingsPage() {
           )}
         </div>
       </GlassCard>
+
+      <GlassCard className="settings-section" elevated>
+        <div className="settings-section__head">
+          <div className="settings-section__title">
+            <span>Beta connection</span>
+            <h2>Контекст подключения</h2>
+            <p>
+              Web-admin работает через обычный authenticated Supabase client.
+              Админские действия остаются на границе RPC/RLS.
+            </p>
+          </div>
+          <Badge tone={isSupabaseConfigured ? "green" : "red"}>
+            {isSupabaseConfigured ? "configured" : "config missing"}
+          </Badge>
+        </div>
+
+        <SettingsFacts rows={betaConnectionRows} />
+
+        <div className="settings-safe-note">
+          На этой странице не раскрываются raw tokens, key values, server-only
+          env или SQL/debug credentials.
+        </div>
+      </GlassCard>
+
+      <AdminHealthCheck />
+
+      <GlassCard className="settings-section" elevated>
+        <div className="settings-section__head">
+          <div className="settings-section__title">
+            <span>Future settings</span>
+            <h2>Запланированные настройки</h2>
+            <p>
+              Эти возможности намеренно выключены в beta: здесь нет fake-save
+              форм и production-looking controls.
+            </p>
+          </div>
+          <Badge tone="muted">planned</Badge>
+        </div>
+
+        <div className="settings-future-grid">
+          {futureSettings.map((setting) => (
+            <article aria-disabled="true" className="settings-future-card" key={setting.title}>
+              <Badge tone="muted">future</Badge>
+              <h3>{setting.title}</h3>
+              <p>{setting.description}</p>
+            </article>
+          ))}
+        </div>
+      </GlassCard>
     </div>
+  );
+}
+
+function SettingsFacts({ rows }: { rows: SettingsFactRow[] }) {
+  return (
+    <dl className="settings-facts">
+      {rows.map((setting) => (
+        <div className="settings-facts__row" key={setting.label}>
+          <dt>{setting.label}</dt>
+          <dd>
+            {setting.href ? (
+              <a href={setting.href} rel="noreferrer" target="_blank">
+                {setting.value}
+              </a>
+            ) : (
+              setting.value
+            )}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -438,14 +553,14 @@ function parseSortOrder(value: string): number | null {
 
 function buildCommunitySettingRows(
   community: AdminCommunity | null,
-): Array<{ label: string; value: string; href?: string }> {
+): SettingsFactRow[] {
   if (!community) {
     return [];
   }
 
-  const rows: Array<{ label: string; value: string; href?: string }> = [
+  const rows: SettingsFactRow[] = [
     { label: "Название", value: community.name },
-    { label: "ID", value: community.id },
+    { label: "Community ID", value: community.id },
     { label: "Timezone", value: community.timezone ?? "Не указан" },
   ];
 
@@ -468,6 +583,56 @@ function buildCommunitySettingRows(
   return rows;
 }
 
+function buildBetaConnectionRows(input: {
+  adminEnvLabel: string | null;
+  canAccessAdmin: boolean;
+  communityId: string | null;
+  isAuthenticated: boolean;
+  role: string | null;
+  supabaseHost: string | null;
+}): SettingsFactRow[] {
+  return [
+    { label: "Environment label", value: input.adminEnvLabel ?? "Не задан" },
+    { label: "Supabase project", value: input.supabaseHost ?? "Не настроен" },
+    {
+      label: "Browser client",
+      value: "Authenticated Supabase client + user session",
+    },
+    { label: "Access boundary", value: "Admin actions через RPC/RLS" },
+    { label: "Current role", value: input.role ?? "Нет активной роли" },
+    {
+      label: "Admin access",
+      value: input.canAccessAdmin ? "Разрешён текущей membership" : "Не подтверждён",
+    },
+    {
+      label: "Session",
+      value: input.isAuthenticated ? "Active user session" : "Нет активной session",
+    },
+    { label: "Active community", value: input.communityId ?? "Не определена" },
+  ];
+}
+
+function getAdminEnvLabel(): string | null {
+  const value = import.meta.env.VITE_ADMIN_ENV_LABEL as string | undefined;
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
+function getSupabaseHost(): string | null {
+  const value = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const normalized = value?.trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    return new URL(normalized).host;
+  } catch {
+    return "Supabase URL configured";
+  }
+}
+
 function getSafeWebsiteHref(value: string): string | undefined {
   return /^https?:\/\//i.test(value) ? value : undefined;
 }
@@ -483,3 +648,22 @@ function formatCommunityTimestamp(value: string): string {
     timeStyle: "short",
   }).format(date);
 }
+
+const futureSettings = [
+  {
+    title: "Logo upload",
+    description: "Загрузка и хранение логотипа общины будут подключены отдельным PR.",
+  },
+  {
+    title: "Billing",
+    description: "Платёжные и тарифные настройки не входят в текущую beta-панель.",
+  },
+  {
+    title: "Notification settings",
+    description: "Email/push preferences появятся после отдельного product flow.",
+  },
+  {
+    title: "Advanced community settings",
+    description: "Полное редактирование community будет спроектировано без mock-save форм.",
+  },
+];
