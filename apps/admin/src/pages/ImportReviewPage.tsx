@@ -543,19 +543,6 @@ export function ImportReviewPage({
         </p>
       </section>
 
-      <GlassCard className="import-notice">
-        <Badge tone="gold">Ручная проверка</Badge>
-        <div>
-          <h2>Очередь ручной проверки</h2>
-          <p>
-            Список читается через RPC `admin_list_import_items_needing_review` с текущей
-            Supabase-сессией. В деталях можно скрыть элемент из очереди через
-            `admin_ignore_import_item` или создать скрытый черновик через
-            `admin_publish_import_item`. Созданное событие не публикуется автоматически.
-          </p>
-        </div>
-      </GlassCard>
-
       <ImportRunHistorySummary
         error={importRunsError}
         latestRun={latestImportRun}
