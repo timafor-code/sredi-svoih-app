@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 
 import { EventForm } from "../components/events/EventForm";
+import { AdminImportRunHistory } from "../components/import/AdminImportRunHistory";
 import { AdminWebsiteImportRunner } from "../components/import/AdminWebsiteImportRunner";
 import { listAdminEventCategories } from "../services/eventCategoriesService";
 import { Badge } from "../components/ui/Badge";
@@ -12,6 +13,7 @@ import {
   listImportItemsNeedingReview,
   publishImportItemAsDraft,
 } from "../services/adminImportReviewService";
+import { listAdminImportRuns } from "../services/adminWebsiteImportService";
 import type { AdminBadgeTone } from "../types/admin";
 import { getEventStatusLabel, getEventVisibilityLabel } from "../types/events";
 import type { AdminEvent, AdminEventMutationInput } from "../types/events";
@@ -28,10 +30,13 @@ import type {
   JsonObject,
   JsonValue,
 } from "../types/importReview";
+import type { AdminImportRun } from "../types/websiteImport";
 
 type DateQualityFilter = "all" | AdminImportDateQuality;
 type StatusFilter = "all" | AdminImportItemStatus;
 type ReviewLimit = 50 | 100;
+
+const RECENT_STARTED_IMPORT_RUN_MS = 30 * 60 * 1000;
 
 const DATE_QUALITY_LABELS: Record<AdminImportDateQuality, string> = {
   confident: "Уверенная",
@@ -91,6 +96,9 @@ export function ImportReviewPage({
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailReloadSignal, setDetailReloadSignal] = useState(0);
+  const [importRuns, setImportRuns] = useState<AdminImportRun[]>([]);
+  const [importRunsLoading, setImportRunsLoading] = useState(true);
+  const [importRunsError, setImportRunsError] = useState<string | null>(null);
 
   const loadItems = useCallback(async (): Promise<boolean> => {
     setLoading(true);
@@ -116,6 +124,36 @@ export function ImportReviewPage({
   useEffect(() => {
     void loadItems();
   }, [loadItems, refreshSignal]);
+
+  const loadImportRuns = useCallback(async (): Promise<boolean> => {
+    setImportRunsLoading(true);
+    setImportRunsError(null);
+
+    try {
+      const nextRuns = await listAdminImportRuns({ limit: 10 });
+      setImportRuns(nextRuns);
+      return true;
+    } catch (nextError) {
+      setImportRunsError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Не удалось загрузить журнал запусков импорта из Supabase.",
+      );
+      return false;
+    } finally {
+      setImportRunsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadImportRuns();
+  }, [loadImportRuns, refreshSignal]);
+
+  const handleImportFinished = useCallback(async (): Promise<boolean> => {
+    const [itemsReloaded] = await Promise.all([loadItems(), loadImportRuns()]);
+
+    return itemsReloaded;
+  }, [loadImportRuns, loadItems]);
 
   useEffect(() => {
     if (!detailItemId) {
@@ -289,6 +327,11 @@ export function ImportReviewPage({
     return items.find((item) => item.id === detailItemId) ?? null;
   }, [detailItemId, items]);
 
+  const recentStartedRun = useMemo(
+    () => importRuns.find(isRecentStartedImportRun) ?? null,
+    [importRuns],
+  );
+
   return (
     <div className="page-stack page-stack--import">
       <section className="page-header">
@@ -314,7 +357,20 @@ export function ImportReviewPage({
         </div>
       </GlassCard>
 
-      <AdminWebsiteImportRunner onImportFinished={loadItems} />
+      <AdminImportRunHistory
+        error={importRunsError}
+        loading={importRunsLoading}
+        onRefresh={() => void loadImportRuns()}
+        runs={importRuns}
+      />
+
+      {importRunsLoading ? (
+        <ImportRunnerBlocked loading run={null} />
+      ) : recentStartedRun ? (
+        <ImportRunnerBlocked loading={false} run={recentStartedRun} />
+      ) : (
+        <AdminWebsiteImportRunner onImportFinished={handleImportFinished} />
+      )}
 
       {successMessage ? (
         <div className="import-review-status import-review-status--success" role="status">
@@ -456,6 +512,45 @@ export function ImportReviewPage({
   );
 }
 
+function ImportRunnerBlocked({
+  loading,
+  run,
+}: {
+  loading: boolean;
+  run: AdminImportRun | null;
+}) {
+  const statusText = loading
+    ? "Проверяем журнал запусков перед новым импортом."
+    : `Есть незавершённый import run${run?.sourceName ? `: ${run.sourceName}` : ""}.`;
+
+  return (
+    <GlassCard className="admin-import-runner admin-import-runner--blocked">
+      <div className="admin-import-runner__head">
+        <div className="admin-import-runner__title">
+          <div className="badge-row">
+            <Badge tone="gold">{loading ? "Проверяем history" : "Import run started"}</Badge>
+            <Badge tone="glass">Edge Function</Badge>
+          </div>
+          <h2>Запуск импорта сайта</h2>
+          <p>
+            {statusText} Новый запуск станет доступен после обновления статуса в журнале.
+          </p>
+        </div>
+        <Button disabled variant="gold">
+          {loading ? "Проверяем журнал..." : "Импорт уже запущен"}
+        </Button>
+      </div>
+
+      {!loading && run ? (
+        <div className="admin-import-runner__status admin-import-runner__status--pending">
+          <strong>Текущий запуск начался {formatDateTime(run.startedAt)}</strong>
+          <span>Run ID: {run.id}</span>
+        </div>
+      ) : null}
+    </GlassCard>
+  );
+}
+
 function ImportReviewList({
   items,
   onOpenDetail,
@@ -544,6 +639,20 @@ function ImportReviewList({
       ))}
     </div>
   );
+}
+
+function isRecentStartedImportRun(run: AdminImportRun): boolean {
+  if (run.status !== "started") {
+    return false;
+  }
+
+  const startedAt = new Date(run.startedAt).getTime();
+
+  if (Number.isNaN(startedAt)) {
+    return true;
+  }
+
+  return Date.now() - startedAt <= RECENT_STARTED_IMPORT_RUN_MS;
 }
 
 function ImportItemDetailDrawer({

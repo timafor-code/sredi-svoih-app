@@ -1,14 +1,13 @@
 # Admin import review
 
 Current status: web-admin can trigger the `apply_review_only` Edge integration
-implemented in `supabase/functions/admin-website-import`. Older phased-plan
-language remains only where it describes future run history and dedupe review
-work.
+implemented in `supabase/functions/admin-website-import` and shows recent
+import run history from `event_import_runs`. Older phased-plan language remains
+only where it describes future dedupe review work.
 
 Этот документ фиксирует final architecture для Phase 2 admin-triggered import v2.
-Текущий UI PR добавляет только кнопку запуска импорта в очередь проверки,
-browser service и документацию; schema, migrations, Edge Function, RPC,
-importer script и mobile flow не меняются.
+Текущий UI PR добавляет read layer и web-admin журнал запусков импорта. Он не
+меняет Edge Function, parser, importer script или mobile flow.
 
 Phase 1 server/staging beta v1 завершена без import button. Текущий importer из `scripts/importWebsiteEvents.mjs` остаётся временным owner/dev-only CLI flow до отдельных Phase 2 PRs. Он не является beta-admin UI и не переносится в Edge Function "как есть".
 
@@ -79,13 +78,13 @@ The button uses the normal authenticated Supabase browser client and invokes
 ```
 
 The UI does not expose advanced modes, `sourceUrl` override, dry-run controls,
-scheduling, run history, or dedupe review UI. The Edge Function performs role
-checks and writes through the RPC boundary.
+scheduling, retry automation, or dedupe review UI. The Edge Function performs
+role checks and writes through the RPC boundary.
 
 After a successful run, the UI shows the safe Edge summary, including `runId`,
 found/parsed/error counts, and import item counts when those fields are present
-in the response. It then reloads the current import review queue using the same
-`admin_list_import_items_needing_review` page mechanism.
+in the response. It then reloads the current import review queue and run history
+using `admin_list_import_items_needing_review` and `admin_list_import_runs`.
 
 This import creates or updates only `event_import_runs` and
 `event_import_items`. It does not create events, does not update events, does
@@ -95,6 +94,38 @@ If another active run is already open for the same source, the button may show a
 friendly `import_already_running` error. Timeout/network, access-denied,
 invalid-source-url, and parser-error responses are surfaced as safe admin
 messages without crashing the UI.
+
+## Web-admin run history
+
+`apps/admin/src/pages/ImportReviewPage.tsx` also shows
+`Журнал запусков импорта`. The block reads recent `event_import_runs` through
+the read-only RPC `admin_list_import_runs(payload jsonb)`. The browser calls it
+with the normal authenticated Supabase client; it does not use a service-role
+key, Supabase Admin API, server-only database connection strings, or direct
+browser writes.
+
+The RPC derives the community server-side from the caller's active
+`community_memberships` row with role `admin` or `event_manager`. `community_id`
+from the browser is not accepted as source of truth. The RPC reads
+`event_import_runs` and joins `event_import_sources` only for a safe source
+name. It does not read or write `auth.users`, does not create/update/publish
+events, and does not mutate `event_import_runs` or `event_import_items`.
+
+The history UI shows the latest run status and recent rows with:
+
+- status label;
+- `started_at`;
+- `finished_at`;
+- `found_count`;
+- `created_count`;
+- `updated_count`;
+- readable `error` text for failed runs.
+
+A recent `status = 'started'` run is highlighted and blocks the web-admin launch
+button through the UI until the history no longer shows an active recent run.
+This is only a browser safety layer; the backend `admin_begin_import_run`
+already remains the authoritative already-running guard. Starting an import
+still never publishes events automatically.
 
 ## Write-RPC boundary
 
@@ -203,17 +234,16 @@ Table status columns должны оставаться техническими 
 - parser dry-run - **implemented**;
 - `apply_review_only` Edge-to-write-RPC integration - **implemented**;
 - import button UI - **implemented**;
-- run history UI;
+- run history read RPC/UI - **implemented**;
 - dedupe review UI;
 - detailed dedupe JSON contract — зафиксирован в [admin-import-dedupe-contract.md](admin-import-dedupe-contract.md).
 
 Не делать в этом PR:
 
-- schema changes;
-- migrations;
+- schema changes beyond the read-only `admin_list_import_runs` RPC migration;
 - importer execution;
 - changes to `scripts/importWebsiteEvents.mjs`;
-- backend/RPC changes beyond the existing write-RPC contract;
+- backend/RPC changes beyond the read-only run history RPC;
 - mobile, registrations, seating или prayer tracker changes.
 
 ## Manual review expectation
@@ -232,8 +262,15 @@ Until that review action exists, imported items remain review data and must not 
 
 ## Manual smoke
 
-Manual smoke for this admin import button is performed by the project owner. The
-expected manual check is: sign in as an authorized admin/event manager, open the
-import review page, confirm `Запустить импорт в очередь проверки`, verify that
-the summary and run id are shown, verify the review queue reloads, and confirm
-that no events were created, updated, or published automatically.
+Manual smoke for this admin import page is performed by the project owner.
+Codex does not run browser smoke.
+
+Checklist:
+
+- Open Import Review page.
+- Confirm run history loads.
+- Run import manually.
+- Confirm new run appears in history.
+- Confirm failed run displays readable error.
+- Confirm started run disables import button.
+- Confirm no events were created, updated, or published automatically.
