@@ -11,6 +11,7 @@ export type AdminSection =
   | "import"
   | "registrations"
   | "members"
+  | "feedback"
   | "invites"
   | "settings"
   | "contacts"
