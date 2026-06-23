@@ -142,7 +142,7 @@ const EVENT_OVERFLOW_STATUS_ACTION_IDS: EventStatusActionId[] = [
 ];
 
 const EVENT_OVERFLOW_MENU_WIDTH = 220;
-const EVENT_OVERFLOW_MENU_HEIGHT = 326;
+const EVENT_OVERFLOW_MENU_HEIGHT = 292;
 
 export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: EventsPageProps) {
   const [events, setEvents] = useState<AdminEvent[]>([]);
@@ -268,13 +268,6 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
     setDeleteError(null);
     setActionError(null);
     setActionSuccess(null);
-  }, []);
-
-  const handleDuplicateEvent = useCallback((event: AdminEvent) => {
-    setActionError(null);
-    setActionSuccess(
-      `Дублирование «${event.title}» будет добавлено позже: действие не меняет данные.`,
-    );
   }, []);
 
   const cancelStatusAction = useCallback(() => {
@@ -509,7 +502,6 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
             actionInFlight={actionInFlight}
             deleteInFlightEvent={deleteInFlightEvent}
             events={filteredEvents}
-            onDuplicateEvent={handleDuplicateEvent}
             onEditEvent={onEditEvent}
             onRequestDeleteEvent={requestDeleteEvent}
             onRequestStatusAction={requestStatusAction}
@@ -544,7 +536,6 @@ function EventsTable({
   actionInFlight,
   deleteInFlightEvent,
   events,
-  onDuplicateEvent,
   onEditEvent,
   onRequestDeleteEvent,
   onRequestStatusAction,
@@ -552,7 +543,6 @@ function EventsTable({
   actionInFlight: PendingEventAction | null;
   deleteInFlightEvent: AdminEvent | null;
   events: AdminEvent[];
-  onDuplicateEvent: (event: AdminEvent) => void;
   onEditEvent: (event: AdminEvent) => void;
   onRequestDeleteEvent: (event: AdminEvent) => void;
   onRequestStatusAction: (event: AdminEvent, action: EventStatusAction) => void;
@@ -712,7 +702,6 @@ function EventsTable({
             event={openActionMenuEvent}
             left={openActionMenu.left}
             onClose={() => setOpenActionMenu(null)}
-            onDuplicateEvent={onDuplicateEvent}
             onEditEvent={onEditEvent}
             onRequestDeleteEvent={onRequestDeleteEvent}
             onRequestStatusAction={onRequestStatusAction}
@@ -730,7 +719,6 @@ function EventOverflowMenu({
   event,
   left,
   onClose,
-  onDuplicateEvent,
   onEditEvent,
   onRequestDeleteEvent,
   onRequestStatusAction,
@@ -741,7 +729,6 @@ function EventOverflowMenu({
   event: AdminEvent;
   left: number;
   onClose: () => void;
-  onDuplicateEvent: (event: AdminEvent) => void;
   onEditEvent: (event: AdminEvent) => void;
   onRequestDeleteEvent: (event: AdminEvent) => void;
   onRequestStatusAction: (event: AdminEvent, action: EventStatusAction) => void;
@@ -800,19 +787,6 @@ function EventOverflowMenu({
               : publishAction.label}
           </button>
         ) : null}
-        <button
-          className="event-overflow-menu__item"
-          disabled={isActionDisabled}
-          onClick={() => {
-            onClose();
-            onDuplicateEvent(event);
-          }}
-          role="menuitem"
-          type="button"
-        >
-          Дублировать
-        </button>
-
         {statusActions.map((action) => {
           const isAvailable = availableActionIds.has(action.id);
 

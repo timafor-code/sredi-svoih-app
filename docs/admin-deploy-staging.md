@@ -242,6 +242,13 @@ Settings smoke выполняет project owner вручную. Codex не за�
 
 Not run by Codex. Manual smoke is performed by the project owner.
 
+Beta polish:
+
+- Events overflow duplicate action is intentionally removed for beta.
+- Event duplication is not available until a safe draft duplication flow is designed.
+- Future duplication must not copy registrations, seating, payments, or publish the copy automatically.
+- Project owner should verify in browser smoke that the Events overflow menu no longer shows `Дублировать`.
+
 Admin:
 
 - Войти как active `admin`.
