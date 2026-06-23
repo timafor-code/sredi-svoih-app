@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 
 import { EventForm } from "../components/events/EventForm";
-import { AdminImportRunHistory } from "../components/import/AdminImportRunHistory";
+import {
+  AdminImportRunHistory,
+  formatAdminImportRunStatusLabel,
+  getAdminImportRunStatusTone,
+} from "../components/import/AdminImportRunHistory";
 import { AdminWebsiteImportRunner } from "../components/import/AdminWebsiteImportRunner";
 import {
   getImportDedupeStatusLabel,
@@ -44,8 +48,10 @@ import type { AdminImportRun } from "../types/websiteImport";
 type DateQualityFilter = "all" | AdminImportDateQuality;
 type StatusFilter = "all" | AdminImportItemStatus;
 type ReviewLimit = 50 | 100;
+type ImportDetailInitialMode = "details" | "draft";
 
 const RECENT_STARTED_IMPORT_RUN_MS = 30 * 60 * 1000;
+const COMPACT_LIST_DELETE_REASON = "Удалено из очереди проверки из compact list";
 
 const DATE_QUALITY_LABELS: Record<AdminImportDateQuality, string> = {
   confident: "Уверенная",
@@ -57,7 +63,7 @@ const DATE_QUALITY_LABELS: Record<AdminImportDateQuality, string> = {
 const IMPORT_STATUS_LABELS: Record<AdminImportItemStatus, string> = {
   new: "Новое",
   linked: "Связано",
-  ignored: "Игнорируется",
+  ignored: "Удалён из очереди",
   error: "Ошибка",
 };
 
@@ -100,11 +106,18 @@ export function ImportReviewPage({
   const [dateQualityFilter, setDateQualityFilter] = useState<DateQualityFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [limit, setLimit] = useState<ReviewLimit>(50);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [deletingItemIds, setDeletingItemIds] = useState<string[]>([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [detailItemId, setDetailItemId] = useState<string | null>(null);
+  const [detailInitialMode, setDetailInitialMode] =
+    useState<ImportDetailInitialMode>("details");
   const [detailItem, setDetailItem] = useState<AdminImportReviewItem | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailReloadSignal, setDetailReloadSignal] = useState(0);
+  const [isImportHistoryOpen, setIsImportHistoryOpen] = useState(false);
   const [importRuns, setImportRuns] = useState<AdminImportRun[]>([]);
   const [importRunsLoading, setImportRunsLoading] = useState(true);
   const [importRunsError, setImportRunsError] = useState<string | null>(null);
@@ -113,6 +126,7 @@ export function ImportReviewPage({
     setLoading(true);
     setError(null);
     setSuccessMessage(null);
+    setActionError(null);
 
     try {
       const nextItems = await listImportItemsNeedingReview(limit);
@@ -201,14 +215,28 @@ export function ImportReviewPage({
     };
   }, [detailItemId, detailReloadSignal]);
 
-  const handleOpenDetail = useCallback((itemId: string) => {
-    setSuccessMessage(null);
-    setDetailItemId(itemId);
-    setDetailReloadSignal((current) => current + 1);
-  }, []);
+  const handleOpenDetail = useCallback(
+    (itemId: string, mode: ImportDetailInitialMode = "details") => {
+      setSuccessMessage(null);
+      setActionError(null);
+      setDetailInitialMode(mode);
+      setDetailItemId(itemId);
+      setDetailReloadSignal((current) => current + 1);
+    },
+    [],
+  );
+
+  const handleOpenDraft = useCallback((itemId: string) => {
+    handleOpenDetail(itemId, "draft");
+  }, [handleOpenDetail]);
+
+  const handleOpenDetailView = useCallback((itemId: string) => {
+    handleOpenDetail(itemId, "details");
+  }, [handleOpenDetail]);
 
   const handleCloseDetail = useCallback(() => {
     setDetailItemId(null);
+    setDetailInitialMode("details");
     setDetailItem(null);
     setDetailError(null);
   }, []);
@@ -216,6 +244,132 @@ export function ImportReviewPage({
   const handleRetryDetail = useCallback(() => {
     setDetailReloadSignal((current) => current + 1);
   }, []);
+
+  const handleToggleItemSelection = useCallback((itemId: string, checked: boolean) => {
+    setSelectedItemIds((current) => {
+      if (checked) {
+        return current.includes(itemId) ? current : [...current, itemId];
+      }
+
+      return current.filter((currentItemId) => currentItemId !== itemId);
+    });
+  }, []);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedItemIds([]);
+  }, []);
+
+  const handleDeleteImportItemFromList = useCallback(
+    async (item: AdminImportReviewItem) => {
+      const title = getImportItemTitle(item);
+      const confirmed = window.confirm(
+        `Удалить «${title}» из очереди проверки? Строка event_import_items не будет физически удалена.`,
+      );
+
+      if (!confirmed) {
+        return;
+      }
+
+      setSuccessMessage(null);
+      setActionError(null);
+      setDeletingItemIds((current) =>
+        current.includes(item.id) ? current : [...current, item.id],
+      );
+
+      try {
+        await ignoreImportItem(item.id, COMPACT_LIST_DELETE_REASON);
+        setSelectedItemIds((current) =>
+          current.filter((currentItemId) => currentItemId !== item.id),
+        );
+
+        const reloaded = await loadItems();
+
+        setSuccessMessage(
+          reloaded
+            ? `Элемент импорта «${title}» удалён из очереди проверки.`
+            : `Элемент импорта «${title}» удалён из очереди проверки. Очередь не обновилась, попробуйте «Обновить очередь».`,
+        );
+      } catch (nextError) {
+        setActionError(
+          nextError instanceof Error
+            ? nextError.message
+            : "Не удалось удалить элемент импорта из очереди проверки через admin_ignore_import_item.",
+        );
+      } finally {
+        setDeletingItemIds((current) =>
+          current.filter((currentItemId) => currentItemId !== item.id),
+        );
+      }
+    },
+    [loadItems],
+  );
+
+  const handleDeleteSelectedImportItems = useCallback(async () => {
+    if (bulkDeleting || selectedItemIds.length === 0) {
+      return;
+    }
+
+    const selectedItems = items.filter((item) => selectedItemIds.includes(item.id));
+    const selectedCount = selectedItems.length;
+
+    if (selectedCount === 0) {
+      setSelectedItemIds([]);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Удалить выбранные элементы из очереди проверки (${selectedCount})? Строки event_import_items не будут физически удалены.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBulkDeleting(true);
+    setSuccessMessage(null);
+    setActionError(null);
+
+    const removedIds: string[] = [];
+    const failedMessages: string[] = [];
+
+    for (const item of selectedItems) {
+      try {
+        await ignoreImportItem(item.id, COMPACT_LIST_DELETE_REASON);
+        removedIds.push(item.id);
+      } catch (nextError) {
+        const message =
+          nextError instanceof Error
+            ? nextError.message
+            : "неизвестная ошибка admin_ignore_import_item";
+
+        failedMessages.push(`${getImportItemTitle(item)}: ${message}`);
+      }
+    }
+
+    setSelectedItemIds((current) =>
+      current.filter((itemId) => !removedIds.includes(itemId)),
+    );
+
+    const reloaded = removedIds.length > 0 ? await loadItems() : true;
+
+    if (removedIds.length > 0) {
+      setSuccessMessage(
+        reloaded
+          ? `Удалено из очереди проверки: ${removedIds.length}.`
+          : `Удалено из очереди проверки: ${removedIds.length}. Очередь не обновилась, попробуйте «Обновить очередь».`,
+      );
+    }
+
+    if (failedMessages.length > 0) {
+      setActionError(
+        `Не удалось удалить из очереди: ${failedMessages.length}. Успешно: ${removedIds.length}. ${failedMessages
+          .slice(0, 2)
+          .join(" ")}`,
+      );
+    }
+
+    setBulkDeleting(false);
+  }, [bulkDeleting, items, loadItems, selectedItemIds]);
 
   const handleImportItemIgnored = useCallback(
     async (ignoredItem: AdminImportReviewItem) => {
@@ -226,8 +380,8 @@ export function ImportReviewPage({
 
       setSuccessMessage(
         reloaded
-          ? `Элемент импорта «${ignoredTitle}» проигнорирован и скрыт из очереди проверки.`
-          : `Элемент импорта «${ignoredTitle}» проигнорирован. Очередь не обновилась, попробуйте «Обновить очередь».`,
+          ? `Элемент импорта «${ignoredTitle}» удалён из очереди проверки.`
+          : `Элемент импорта «${ignoredTitle}» удалён из очереди проверки. Очередь не обновилась, попробуйте «Обновить очередь».`,
       );
     },
     [handleCloseDetail, loadItems],
@@ -286,6 +440,24 @@ export function ImportReviewPage({
     };
   }, [detailItemId, handleCloseDetail]);
 
+  useEffect(() => {
+    if (!isImportHistoryOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsImportHistoryOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isImportHistoryOpen]);
+
   const filteredItems = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("ru");
 
@@ -333,6 +505,16 @@ export function ImportReviewPage({
   const hasActiveFilters =
     query.trim().length > 0 || dateQualityFilter !== "all" || statusFilter !== "all";
 
+  useEffect(() => {
+    const itemIds = new Set(items.map((item) => item.id));
+
+    setSelectedItemIds((current) => {
+      const next = current.filter((itemId) => itemIds.has(itemId));
+
+      return next.length === current.length ? current : next;
+    });
+  }, [items]);
+
   const selectedListItem = useMemo(() => {
     if (!detailItemId) {
       return null;
@@ -346,13 +528,16 @@ export function ImportReviewPage({
     [importRuns],
   );
 
+  const latestImportRun = importRuns[0] ?? null;
+  const selectedItemIdSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
+
   return (
     <div className="page-stack page-stack--import">
       <section className="page-header">
         <Badge tone="gold">Очередь проверки</Badge>
         <h1>Импорт с сайта</h1>
         <p>
-          Проверка импорта. Из деталей можно проигнорировать элемент или создать
+          Проверка импорта. Из деталей можно удалить элемент из очереди или создать
           событие-черновик через отдельные RPC; публикация остаётся отдельным ручным
           действием.
         </p>
@@ -371,11 +556,11 @@ export function ImportReviewPage({
         </div>
       </GlassCard>
 
-      <AdminImportRunHistory
+      <ImportRunHistorySummary
         error={importRunsError}
+        latestRun={latestImportRun}
         loading={importRunsLoading}
-        onRefresh={() => void loadImportRuns()}
-        runs={importRuns}
+        onOpen={() => setIsImportHistoryOpen(true)}
       />
 
       {importRunsLoading ? (
@@ -389,6 +574,12 @@ export function ImportReviewPage({
       {successMessage ? (
         <div className="import-review-status import-review-status--success" role="status">
           {successMessage}
+        </div>
+      ) : null}
+
+      {actionError ? (
+        <div className="import-review-status import-review-status--error" role="alert">
+          {actionError}
         </div>
       ) : null}
 
@@ -471,6 +662,13 @@ export function ImportReviewPage({
           </div>
         </div>
 
+        <ImportReviewBulkActions
+          deleting={bulkDeleting}
+          onClear={handleClearSelection}
+          onDelete={() => void handleDeleteSelectedImportItems()}
+          selectedCount={selectedItemIds.length}
+        />
+
         {loading ? (
           <ImportReviewState
             description="Вызываем admin_list_import_items_needing_review и ждём ответ Supabase."
@@ -504,7 +702,16 @@ export function ImportReviewPage({
             ) : null}
           </ImportReviewState>
         ) : (
-          <ImportReviewList items={filteredItems} onOpenDetail={handleOpenDetail} />
+          <ImportReviewList
+            deletingItemIds={deletingItemIds}
+            disabled={bulkDeleting}
+            items={filteredItems}
+            onDeleteItem={(item) => void handleDeleteImportItemFromList(item)}
+            onOpenDetail={handleOpenDetailView}
+            onOpenDraft={handleOpenDraft}
+            onToggleSelection={handleToggleItemSelection}
+            selectedItemIds={selectedItemIdSet}
+          />
         )}
       </GlassCard>
 
@@ -512,6 +719,7 @@ export function ImportReviewPage({
         <ImportItemDetailDrawer
           error={detailError}
           fallbackItem={selectedListItem}
+          initialMode={detailInitialMode}
           item={detailItem}
           loading={detailLoading}
           onClose={handleCloseDetail}
@@ -520,6 +728,16 @@ export function ImportReviewPage({
           onOpenEvent={onOpenEvent}
           onOpenEventsList={onOpenEventsList}
           onRetry={handleRetryDetail}
+        />
+      ) : null}
+
+      {isImportHistoryOpen ? (
+        <ImportRunHistoryModal
+          error={importRunsError}
+          loading={importRunsLoading}
+          onClose={() => setIsImportHistoryOpen(false)}
+          onRefresh={() => void loadImportRuns()}
+          runs={importRuns}
         />
       ) : null}
     </div>
@@ -565,19 +783,182 @@ function ImportRunnerBlocked({
   );
 }
 
-function ImportReviewList({
-  items,
-  onOpenDetail,
+function ImportRunHistorySummary({
+  error,
+  latestRun,
+  loading,
+  onOpen,
 }: {
+  error: string | null;
+  latestRun: AdminImportRun | null;
+  loading: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <GlassCard className="import-history-compact">
+      <div className="import-history-compact__main">
+        <div className="badge-row">
+          <Badge tone="glass">Журнал импорта</Badge>
+          {loading ? (
+            <Badge tone="gold">Последний: проверяем</Badge>
+          ) : error ? (
+            <Badge tone="red">Журнал недоступен</Badge>
+          ) : latestRun ? (
+            <Badge tone={getAdminImportRunStatusTone(latestRun.status)}>
+              Последний: {formatAdminImportRunStatusLabel(latestRun.status)}
+            </Badge>
+          ) : (
+            <Badge tone="muted">Последний: нет запусков</Badge>
+          )}
+        </div>
+        <span>
+          {latestRun
+            ? `${latestRun.sourceName ? `${latestRun.sourceName} · ` : ""}${formatDateTime(latestRun.startedAt)}`
+            : "Последние запуски доступны в модальном окне."}
+        </span>
+      </div>
+      <Button onClick={onOpen} size="sm" variant="secondary">
+        Журнал импорта
+      </Button>
+    </GlassCard>
+  );
+}
+
+function ImportRunHistoryModal({
+  error,
+  loading,
+  onClose,
+  onRefresh,
+  runs,
+}: {
+  error: string | null;
+  loading: boolean;
+  onClose: () => void;
+  onRefresh: () => void;
+  runs: AdminImportRun[];
+}) {
+  const titleId = useId();
+
+  return (
+    <div
+      className="import-history-modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        aria-labelledby={titleId}
+        aria-modal="true"
+        className="import-history-modal"
+        role="dialog"
+      >
+        <div className="import-history-modal__head">
+          <div>
+            <span>Журнал импорта</span>
+            <h2 id={titleId}>Последние запуски</h2>
+          </div>
+          <button
+            aria-label="Закрыть журнал импорта"
+            className="import-history-modal__close"
+            onClick={onClose}
+            type="button"
+          >
+            X
+          </button>
+        </div>
+        <div className="import-history-modal__body">
+          <AdminImportRunHistory
+            error={error}
+            loading={loading}
+            onRefresh={onRefresh}
+            runs={runs}
+          />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ImportReviewBulkActions({
+  deleting,
+  onClear,
+  onDelete,
+  selectedCount,
+}: {
+  deleting: boolean;
+  onClear: () => void;
+  onDelete: () => void;
+  selectedCount: number;
+}) {
+  if (selectedCount === 0) {
+    return null;
+  }
+
+  return (
+    <div className="import-review-bulk-actions" role="status">
+      <strong>Выбрано {selectedCount}</strong>
+      <div>
+        <Button disabled={deleting} onClick={onDelete} size="sm" variant="secondary">
+          {deleting ? "Удаляем..." : "Удалить выбранные из очереди"}
+        </Button>
+        <Button disabled={deleting} onClick={onClear} size="sm" variant="ghost">
+          Снять выбор
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ImportReviewList({
+  deletingItemIds,
+  disabled,
+  items,
+  onDeleteItem,
+  onOpenDetail,
+  onOpenDraft,
+  onToggleSelection,
+  selectedItemIds,
+}: {
+  deletingItemIds: string[];
+  disabled: boolean;
   items: AdminImportReviewItem[];
+  onDeleteItem: (item: AdminImportReviewItem) => void;
   onOpenDetail: (itemId: string) => void;
+  onOpenDraft: (itemId: string) => void;
+  onToggleSelection: (itemId: string, checked: boolean) => void;
+  selectedItemIds: Set<string>;
 }) {
   return (
     <div className="import-review-list" aria-label="Элементы импорта на проверку">
-      {items.map((item) => (
-        <article className="import-review-item" key={item.id}>
-          <div className="import-review-item__head">
-            <div className="import-review-item__title">
+      {items.map((item) => {
+        const isSelected = selectedItemIds.has(item.id);
+        const isDeleting = deletingItemIds.includes(item.id);
+        const sourceDomain = getImportItemSourceDomain(item);
+
+        return (
+          <article
+            className={
+              isSelected
+                ? "import-review-item import-review-item--selected"
+                : "import-review-item"
+            }
+            key={item.id}
+          >
+            <label className="import-review-item__check">
+              <input
+                aria-label={`Выбрать ${getImportItemTitle(item)}`}
+                checked={isSelected}
+                disabled={disabled || isDeleting}
+                onChange={(event) => onToggleSelection(item.id, event.target.checked)}
+                type="checkbox"
+              />
+            </label>
+
+            <ImportReviewItemThumbnail item={item} />
+
+            <div className="import-review-item__main">
               <div className="badge-row">
                 <Badge tone={getStatusTone(item.status)}>
                   {formatImportStatusLabel(item.status)}
@@ -588,71 +969,64 @@ function ImportReviewList({
                 <ImportDedupeBadge dedupe={getImportDedupe(item)} />
                 {item.linkedEventId ? <Badge tone="green">Связано</Badge> : null}
               </div>
-              <h3>{item.parsedTitle || "Без названия"}</h3>
+              <h3>{getImportItemTitle(item)}</h3>
+              {sourceDomain ? <span>{sourceDomain}</span> : null}
             </div>
+
             <div className="import-review-item__actions">
-              <div className="import-review-item__created">
-                <span>Создано</span>
-                <strong>{formatDateTime(item.createdAt)}</strong>
-              </div>
-              <Button onClick={() => onOpenDetail(item.id)} size="sm" variant="secondary">
+              <Button
+                disabled={disabled || isDeleting}
+                onClick={() => onOpenDraft(item.id)}
+                size="sm"
+                variant="primary"
+              >
+                Редактировать
+              </Button>
+              <Button
+                disabled={disabled || isDeleting}
+                onClick={() => onOpenDetail(item.id)}
+                size="sm"
+                variant="secondary"
+              >
                 Подробнее
               </Button>
+              <Button
+                disabled={disabled || isDeleting}
+                onClick={() => onDeleteItem(item)}
+                size="sm"
+                variant="ghost"
+              >
+                {isDeleting ? "Удаляем..." : "Удалить"}
+              </Button>
             </div>
-          </div>
-
-          <div className="import-review-grid">
-            <ImportReviewField label="Дата" value={formatDateTime(item.parsedStartsAt)} />
-            <ImportReviewField label="Место" value={item.parsedLocation || "Не указано"} />
-            <ImportReviewField label="Причина / заметки" value={getReviewNotes(item)} wide />
-            <ImportReviewField label="Источник" wide>
-              {item.sourceUrl ? (
-                <a
-                  className="import-review-link"
-                  href={item.sourceUrl}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  {item.sourceUrl}
-                </a>
-              ) : (
-                "Не указано"
-              )}
-            </ImportReviewField>
-          </div>
-
-          <details className="import-review-meta">
-            <summary>Метаданные raw/import</summary>
-            <div className="import-review-meta__grid">
-              <MetadataPair label="id" value={item.id} />
-              <MetadataPair label="source_id" value={item.sourceId} />
-              <MetadataPair label="run_id" value={item.runId} />
-              <MetadataPair label="external_id" value={item.externalId} />
-              <MetadataPair label="source_name" value={item.sourceName} />
-              <MetadataPair label="community_id" value={item.communityId} />
-              <MetadataPair label="linked_event_id" value={item.linkedEventId} />
-              <MetadataPair label="parserVersion" value={item.importReview?.parserVersion ?? null} />
-              <MetadataPair label="rawDateText" value={item.importReview?.rawDateText ?? null} />
-              <MetadataPair label="rawTimeText" value={item.importReview?.rawTimeText ?? null} />
-              <MetadataPair
-                label="suggestedStartsAt"
-                value={item.importReview?.suggestedStartsAt ?? null}
-              />
-              <MetadataPair
-                label="assumedYear"
-                value={
-                  item.importReview?.assumedYear === null ||
-                  item.importReview?.assumedYear === undefined
-                    ? null
-                    : String(item.importReview.assumedYear)
-                }
-              />
-            </div>
-            <pre>{formatRawPayloadPreview(item.rawPayload)}</pre>
-          </details>
-        </article>
-      ))}
+          </article>
+        );
+      })}
     </div>
+  );
+}
+
+function ImportReviewItemThumbnail({ item }: { item: AdminImportReviewItem }) {
+  const rawDetails = getRawPayloadDetails(item.rawPayload);
+  const title = getImportItemTitle(item);
+
+  if (!rawDetails.imageUrl) {
+    return (
+      <div className="import-review-thumb import-review-thumb--empty" aria-label="Изображения нет">
+        <span>Нет фото</span>
+      </div>
+    );
+  }
+
+  return (
+    <a
+      className="import-review-thumb"
+      href={rawDetails.imageUrl}
+      rel="noreferrer"
+      target="_blank"
+    >
+      <img alt={title} loading="lazy" src={rawDetails.imageUrl} />
+    </a>
   );
 }
 
@@ -673,6 +1047,7 @@ function isRecentStartedImportRun(run: AdminImportRun): boolean {
 function ImportItemDetailDrawer({
   error,
   fallbackItem,
+  initialMode,
   item,
   loading,
   onClose,
@@ -684,6 +1059,7 @@ function ImportItemDetailDrawer({
 }: {
   error: string | null;
   fallbackItem: AdminImportReviewItem | null;
+  initialMode: ImportDetailInitialMode;
   item: AdminImportReviewItem | null;
   loading: boolean;
   onClose: () => void;
@@ -717,11 +1093,11 @@ function ImportItemDetailDrawer({
     setIgnoreReason("");
     setIgnoreError(null);
     setIgnoreLoading(false);
-    setIsCreatingDraft(false);
+    setIsCreatingDraft(initialMode === "draft");
     setDraftSubmitting(false);
     setDraftError(null);
     setDraftResult(null);
-  }, [item?.id]);
+  }, [initialMode, item?.id]);
 
   const handleStartIgnore = useCallback(() => {
     setIsConfirmingIgnore(true);
@@ -804,7 +1180,7 @@ function ImportItemDetailDrawer({
       setIgnoreError(
         nextError instanceof Error
           ? nextError.message
-          : "Не удалось игнорировать элемент импорта через admin_ignore_import_item.",
+          : "Не удалось удалить элемент импорта из очереди через admin_ignore_import_item.",
       );
       setIgnoreLoading(false);
     }
@@ -831,9 +1207,9 @@ function ImportItemDetailDrawer({
               <Badge tone="gold">Детали проверки</Badge>
               <Badge tone="glass">admin_get_import_item</Badge>
               <ImportDedupeBadge dedupe={displayItem ? getImportDedupe(displayItem) : null} />
-              {isAdminIgnored ? <Badge tone="muted">Игнорируется админом</Badge> : null}
+              {isAdminIgnored ? <Badge tone="muted">Удалён из очереди админом</Badge> : null}
               {isSafeIgnoredByImporter ? (
-                <Badge tone="gold">Игнорируется импортёром</Badge>
+                <Badge tone="gold">Скрыт импортёром</Badge>
               ) : null}
             </div>
             <h2 id={titleId}>{title}</h2>
@@ -947,18 +1323,18 @@ function ImportItemDetailActions({
       <section className="import-detail-actions import-detail-actions--ignored">
         <div className="import-detail-actions__head">
           <div>
-            <h3>Элемент уже проигнорирован</h3>
+            <h3>Элемент уже удалён из очереди</h3>
             <p>Эти данные пришли из `raw_payload.adminReview`.</p>
           </div>
-          <Badge tone="muted">Игнорируется</Badge>
+          <Badge tone="muted">Удалён из очереди</Badge>
         </div>
         <div className="import-detail-grid">
           <ImportReviewField
-            label="Когда проигнорировано"
+            label="Когда удалён"
             value={formatDateTimeDetail(adminReview.ignoredAt)}
           />
           <ImportReviewField
-            label="Кем проигнорировано"
+            label="Кем удалён"
             value={adminReview.ignoredBy ?? "Не указано"}
           />
           <ImportReviewField
@@ -1011,7 +1387,7 @@ function ImportItemDetailActions({
           </p>
           {isSafeIgnoredByImporter ? (
             <div className="badge-row">
-              <Badge tone="gold">Игнорируется импортёром</Badge>
+              <Badge tone="gold">Скрыт импортёром</Badge>
               <Badge tone="glass">требует проверки</Badge>
             </div>
           ) : null}
@@ -1029,7 +1405,7 @@ function ImportItemDetailActions({
             onClick={onStartIgnore}
             variant={isConfirmingIgnore ? "ghost" : "secondary"}
           >
-            Игнорировать
+            Удалить из очереди
           </Button>
         </div>
       </div>
@@ -1080,7 +1456,7 @@ function ImportItemDetailActions({
               Отмена
             </Button>
             <Button disabled={ignoreLoading} onClick={onConfirmIgnore} variant="primary">
-              {ignoreLoading ? "Игнорируем..." : "Игнорировать"}
+              {ignoreLoading ? "Удаляем..." : "Удалить из очереди"}
             </Button>
           </div>
         </div>
@@ -1432,6 +1808,10 @@ function ImportItemDetailContent({ item }: { item: AdminImportReviewItem }) {
             wide
           />
         </div>
+        <details className="import-review-meta import-review-meta--detail">
+          <summary>Raw payload</summary>
+          <pre>{formatRawPayloadFull(item.rawPayload)}</pre>
+        </details>
       </section>
     </>
   );
@@ -1535,15 +1915,6 @@ function ImportReviewField({
   );
 }
 
-function MetadataPair({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div>
-      <span>{label}</span>
-      <code>{value || "null"}</code>
-    </div>
-  );
-}
-
 function ImportReviewState({
   children,
   description,
@@ -1566,6 +1937,20 @@ function getImportItemTitle(item: AdminImportReviewItem): string {
   const rawDetails = getRawPayloadDetails(item.rawPayload);
 
   return rawDetails.title || item.parsedTitle || "Без названия";
+}
+
+function getImportItemSourceDomain(item: AdminImportReviewItem): string | null {
+  if (!item.sourceUrl) {
+    return item.sourceName ?? null;
+  }
+
+  try {
+    const host = new URL(item.sourceUrl).hostname.replace(/^www\./, "");
+
+    return host || item.sourceName || item.sourceUrl;
+  } catch {
+    return item.sourceName || item.sourceUrl;
+  }
 }
 
 function buildImportDraftPrefill(item: AdminImportReviewItem): ImportDraftPrefill {
@@ -1696,15 +2081,6 @@ function isAdminIgnoredImportItem(item: AdminImportReviewItem): boolean {
 
 function getDateQuality(item: AdminImportReviewItem): string | null {
   return item.importReview?.dateConfidence ?? null;
-}
-
-function getReviewNotes(item: AdminImportReviewItem): string {
-  const review = item.importReview;
-  const notes = [review?.reason, review?.notes, review?.draftSkipReason]
-    .filter((value): value is string => Boolean(value?.trim()))
-    .join(" ");
-
-  return notes || "Не указано";
 }
 
 function getImportDedupe(item: AdminImportReviewItem): AdminImportDedupe | null {
@@ -2002,11 +2378,6 @@ function formatDateTimeDetail(value: string | null | undefined): string {
   const formatted = formatDateTime(value);
 
   return formatted === value ? value : `${formatted} (${value})`;
-}
-
-function formatRawPayloadPreview(value: JsonValue): string {
-  const serialized = formatRawPayloadFull(value);
-  return serialized.length > 1400 ? `${serialized.slice(0, 1400)}\n...` : serialized;
 }
 
 function formatRawPayloadFull(value: JsonValue): string {

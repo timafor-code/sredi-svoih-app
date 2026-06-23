@@ -3,9 +3,9 @@
 Current status: web-admin can trigger the `apply_review_only` Edge integration
 implemented in `supabase/functions/admin-website-import` and shows recent
 import run history from `event_import_runs`. Import Review now also surfaces
-dedupe state from `raw_payload.importReview.dedupe` in the queue and detail
-drawer. Older phased-plan language remains only where it describes future
-backend/apply work.
+dedupe state from `raw_payload.importReview.dedupe` in the compact queue and
+detail drawer. Older phased-plan language remains only where it describes
+future backend/apply work.
 
 Этот документ фиксирует final architecture для Phase 2 admin-triggered import v2.
 Текущий UI PR добавляет read layer и web-admin журнал запусков импорта. Он не
@@ -100,12 +100,13 @@ messages without crashing the UI.
 
 ## Web-admin run history
 
-`apps/admin/src/pages/ImportReviewPage.tsx` also shows
-`Журнал запусков импорта`. The block reads recent `event_import_runs` through
-the read-only RPC `admin_list_import_runs(payload jsonb)`. The browser calls it
-with the normal authenticated Supabase client; it does not use a service-role
-key, Supabase Admin API, server-only database connection strings, or direct
-browser writes.
+`apps/admin/src/pages/ImportReviewPage.tsx` also shows a compact
+`Журнал импорта` row with latest-run status. The full run history opens in a
+modal. The data is still read from recent `event_import_runs` through the
+read-only RPC `admin_list_import_runs(payload jsonb)`. The browser calls it with
+the normal authenticated Supabase client; it does not use a service-role key,
+Supabase Admin API, server-only database connection strings, or direct browser
+writes.
 
 The RPC derives the community server-side from the caller's active
 `community_memberships` row with role `admin` or `event_manager`. `community_id`
@@ -129,6 +130,31 @@ button through the UI until the history no longer shows an active recent run.
 This is only a browser safety layer; the backend `admin_begin_import_run`
 already remains the authoritative already-running guard. Starting an import
 still never publishes events automatically.
+
+## Web-admin compact review list UX
+
+The review queue list is optimized for operational triage. The page-level list
+keeps only selection, thumbnail, title, compact badges, optional source domain,
+and first-level actions. Full date, place, reason/notes, source URL,
+registration URL, raw payload, and dedupe details stay available in the detail
+drawer.
+
+Current compact UX:
+
+- full import run history is opened from the compact `Журнал импорта` row in a
+  modal;
+- queue items show a small thumbnail when `raw_payload` exposes an `imageUrl`;
+  missing images use a local placeholder and do not load external fallback
+  assets;
+- each row can be selected with a checkbox; selecting items shows a contextual
+  bulk bar with selected count, delete, and clear-selection actions;
+- `Удалить` / `Удалить выбранные из очереди` uses the existing
+  `admin_ignore_import_item` flow. It hides items from the review queue but does
+  not physically delete rows from `event_import_items`;
+- `Редактировать` opens the existing detail drawer directly in the event draft
+  form backed by the existing `EventForm` and `admin_publish_import_item` draft
+  flow. It does not edit `raw_payload` inline and does not use a separate update
+  import-item RPC.
 
 ## Web-admin dedupe review UI
 
@@ -299,14 +325,17 @@ Codex does not run browser smoke.
 
 Checklist:
 
-- Open Import Review page.
-- Run first import manually if needed.
-- Confirm new items show “Новое”.
-- Run second import manually if needed.
-- Confirm duplicate items show “Дубль”.
-- Confirm possible duplicate shows warning.
-- Open import item detail.
-- Confirm “Контроль дублей” shows reason, matchedBy, sourceExternalId,
-  canonical URL and contentHash.
-- Confirm manual_override_skipped is visible if such item exists.
-- Confirm no event is created, updated, or published automatically.
+- Open “Импорт с сайта”.
+- Confirm the import history is a compact `Журнал импорта` row on the page.
+- Open the history modal and close it by X, backdrop, and Escape.
+- Confirm the import runner remains blocked while a recent `started` run exists.
+- Confirm import item cards are compact and show thumbnail or local placeholder.
+- Open a thumbnail and confirm it opens `imageUrl` in a new tab.
+- Open “Подробнее” and confirm date, place, reason/notes, source,
+  registration URL, raw payload, and dedupe panel are still available.
+- Click “Редактировать” from a row and confirm the existing draft event form opens
+  immediately.
+- Click row “Удалить”, confirm, and verify the item disappears from the queue.
+- Select several rows, click “Удалить выбранные из очереди”, confirm, and verify
+  selected items disappear from the queue.
+- Confirm events are not published automatically.
