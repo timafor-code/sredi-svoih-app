@@ -37,7 +37,7 @@ Default mode admin import: `apply_review_only`. Events не публикуютс
 
 Админские действия должны оставаться на границе RLS/RPC. Не использовать Supabase Admin API, service-role key или серверные connection strings в browser-admin.
 
-Для import button на Import Review page browser-admin также остаётся обычным authenticated client. Браузер может вызвать только backend boundary с user session token; он не получает service-role key, `DATABASE_URL`, server-only secrets, Supabase Admin API credentials или прямую возможность писать import tables.
+Для import button на Import Review page browser-admin также остаётся обычным authenticated client. Браузер может вызвать только backend boundary с user session token; он не получает service-role key, server-only database connection strings, server-only secrets, Supabase Admin API credentials или прямую возможность писать import tables.
 
 Privacy boundary: prayer tracker приватный. `prayer_activity_logs` нельзя читать или показывать в admin UI. В админке участников можно показывать профиль, членство и регистрации на события.
 
@@ -173,6 +173,12 @@ Event image mirror deploy note:
 - run the Storage migration before staging smoke so the public `event-images`
   bucket and object policies exist;
 - no extra browser env var is required for image mirroring;
+- for local Docker smoke, set
+  `SUPABASE_PUBLIC_URL=http://127.0.0.1:54321` in
+  `supabase/functions/.env.local` so mirrored image `publicUrl` values are
+  browser-facing instead of Docker-internal `http://kong:8000` URLs;
+- staging and production usually do not need `SUPABASE_PUBLIC_URL` when
+  `SUPABASE_URL` is already browser-facing;
 - the Edge Function uploads mirrored images with the caller's authenticated
   session and the normal anon/publishable Supabase key;
 - object paths are scoped as
@@ -191,7 +197,7 @@ For the active browser-triggered import path, keep these rules:
 - write path должен идти через authenticated RPC/RLS boundary;
 - service-role key не использовать для browser-triggered admin flow;
 - Supabase Admin API не использовать для import trigger;
-- `DATABASE_URL` не добавлять в `apps/admin`;
+- server-only database connection strings не добавлять в `apps/admin`;
 - raw `auth.users` не читать и не менять;
 - default mode для Import Review button: `apply_review_only`;
 - auto-publish запрещён, events не публикуются автоматически;

@@ -110,15 +110,13 @@ export async function mirrorEventImageToStorage(input = {}) {
       );
     }
 
-    const { data: publicUrlData } = supabase.storage
-      .from(EVENT_IMAGE_STORAGE_BUCKET)
-      .getPublicUrl(storagePath);
+    const publicUrl = getEventImagePublicUrl(supabase, storagePath);
 
     return createImageMirrorMetadata({
       status: "stored",
       originalUrl: imageUrl.href,
       storagePath,
-      publicUrl: publicUrlData?.publicUrl ?? null,
+      publicUrl,
       contentType,
       byteSize: bytes.byteLength,
       sha256: `sha256:${sha256Hex}`,
@@ -167,6 +165,28 @@ function createUserScopedSupabaseClient(authorization) {
       },
     },
   });
+}
+
+function getEventImagePublicUrl(supabase, storagePath) {
+  const configuredPublicUrl = normalizeSupabasePublicUrl(
+    Deno.env.get("SUPABASE_PUBLIC_URL"),
+  );
+
+  if (configuredPublicUrl) {
+    return `${configuredPublicUrl}/storage/v1/object/public/${EVENT_IMAGE_STORAGE_BUCKET}/${storagePath}`;
+  }
+
+  const { data } = supabase.storage
+    .from(EVENT_IMAGE_STORAGE_BUCKET)
+    .getPublicUrl(storagePath);
+
+  return data?.publicUrl ?? null;
+}
+
+function normalizeSupabasePublicUrl(value) {
+  const trimmed = value?.trim();
+
+  return trimmed ? trimmed.replace(/\/+$/g, "") : null;
 }
 
 async function fetchImage(url, options) {
