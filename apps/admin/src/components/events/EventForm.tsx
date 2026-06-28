@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -43,11 +44,9 @@ type RegistrationModeSlotContext = {
 type EventFormState = {
   title: string;
   eventKind: string;
-  subtitle: string;
   shortDescription: string;
   description: string;
   category: string;
-  audience: string;
   startDate: string;
   startTime: string;
   isPermanent: boolean;
@@ -100,11 +99,9 @@ type EventFormProps = {
 const defaultForm: EventFormState = {
   title: "",
   eventKind: "single",
-  subtitle: "",
   shortDescription: "",
   description: "",
   category: "",
-  audience: "",
   startDate: "",
   startTime: "",
   isPermanent: false,
@@ -127,18 +124,6 @@ const statusOptions = ADMIN_EVENT_STATUSES.map((value) => ({
 }));
 const visibilityOptions = ADMIN_EVENT_VISIBILITIES.map((value) => ({
   label: EVENT_VISIBILITY_LABELS[value],
-  value,
-}));
-const eventKindLabels: Record<AdminEventKind, string> = {
-  single: "Разовое событие",
-  course: "Курс / серия занятий",
-  sunday_school: "Воскресная школа",
-  shabbat: "Шабат",
-  holiday: "Праздник",
-  announcement: "Новость / объявление",
-};
-const eventKindOptions = ADMIN_EVENT_KINDS.map((value) => ({
-  label: eventKindLabels[value],
   value,
 }));
 const registrationModeOptions = ADMIN_EVENT_REGISTRATION_MODES.map((value) => ({
@@ -164,7 +149,6 @@ export function EventForm({
   onCancel,
   onRegistrationModeChange,
   registrationModeSlot = null,
-  showEventKind = true,
   onSubmit,
   submitLabel,
   submitError = null,
@@ -509,15 +493,6 @@ export function EventForm({
             onChange={(value) => updateField("title", value)}
             value={form.title}
           />
-          {showEventKind ? (
-            <SelectField
-              error={errors.eventKind}
-              label="Тип события"
-              onChange={(value) => updateField("eventKind", value)}
-              options={eventKindOptions}
-              value={form.eventKind}
-            />
-          ) : null}
           <SelectField
             disabled={categoriesLoading || categoryOptions.length === 0}
             error={errors.category}
@@ -547,17 +522,6 @@ export function EventForm({
               {"\u041a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f \u0430\u0440\u0445\u0438\u0432\u0438\u0440\u043e\u0432\u0430\u043d\u0430. \u0414\u043b\u044f \u043d\u043e\u0432\u044b\u0445 \u0441\u043e\u0431\u044b\u0442\u0438\u0439 \u0432\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0430\u043a\u0442\u0438\u0432\u043d\u0443\u044e \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044e."}
             </div>
           ) : null}
-          <TextField
-            label="Подзаголовок"
-            onChange={(value) => updateField("subtitle", value)}
-            value={form.subtitle}
-          />
-          <TextField
-            label="Аудитория"
-            onChange={(value) => updateField("audience", value)}
-            placeholder="Для кого это событие"
-            value={form.audience}
-          />
           <TextAreaField
             label="Краткое описание"
             onChange={(value) => updateField("shortDescription", value)}
@@ -592,9 +556,9 @@ export function EventForm({
           />
           <CheckboxField
             checked={form.isPermanent}
-            helperText="Не переносить событие в прошедшие по времени окончания. Используется для курсов, Шабата и серий."
             label="Постоянное событие"
             onChange={(value) => updateField("isPermanent", value)}
+            tooltipText="Не переносить событие в прошедшие по времени окончания. Используется для курсов, Шабата и серий."
             variant="permanent"
           />
           <TextField
@@ -837,17 +801,19 @@ function SelectField({
 
 function CheckboxField({
   checked,
-  helperText,
   label,
   onChange,
+  tooltipText,
   variant,
 }: {
   checked: boolean;
-  helperText?: string;
   label: string;
   onChange: (value: boolean) => void;
+  tooltipText?: string;
   variant?: "default" | "permanent";
 }) {
+  const tooltipId = useId();
+
   return (
     <label
       className={
@@ -857,13 +823,32 @@ function CheckboxField({
       }
     >
       <input
+        aria-describedby={tooltipText ? tooltipId : undefined}
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
         type="checkbox"
       />
       <span className="event-form-check__content">
-        <span>{label}</span>
-        {helperText ? <small>{helperText}</small> : null}
+        <span className="event-form-check__label">
+          {label}
+          {tooltipText ? (
+            <span
+              aria-label={tooltipText}
+              className="event-form-check__tooltip"
+              tabIndex={0}
+              title={tooltipText}
+            >
+              i
+              <span
+                className="event-form-check__tooltip-popover"
+                id={tooltipId}
+                role="tooltip"
+              >
+                {tooltipText}
+              </span>
+            </span>
+          ) : null}
+        </span>
       </span>
     </label>
   );
@@ -892,11 +877,9 @@ function buildFormFromEvent(event: AdminEvent): EventFormState {
   return {
     title: event.title,
     eventKind: isAdminEventKind(event.eventKind) ? event.eventKind : "single",
-    subtitle: event.subtitle ?? "",
     shortDescription: event.shortDescription ?? "",
     description: event.description ?? "",
     category: event.category ?? "",
-    audience: event.audience ?? "",
     startDate: start.date,
     startTime: start.time,
     isPermanent: event.isPermanent,
@@ -1025,7 +1008,7 @@ function validateForm(
     input: {
       title,
       eventKind,
-      subtitle: cleanString(form.subtitle),
+      subtitle: null,
       shortDescription: cleanString(form.shortDescription),
       description: cleanString(form.description),
       startsAt,
@@ -1036,7 +1019,7 @@ function validateForm(
       address: cleanString(form.address),
       imageUrl: cleanString(form.imageUrl),
       category,
-      audience: cleanString(form.audience),
+      audience: null,
       visibility,
       status,
       registrationMode,
