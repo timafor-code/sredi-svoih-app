@@ -86,6 +86,12 @@ top-level `raw_payload.imageUrl` / `raw_payload.image_url`. The original
 external URL is preserved in `raw_payload.detail.original_image_url` and in
 `raw_payload.importReview.imageMirror.originalUrl`.
 
+Local Docker note: when the Edge Function runs inside Supabase Docker,
+`SUPABASE_URL` may resolve to the internal `http://kong:8000` gateway. Set
+`SUPABASE_PUBLIC_URL=http://127.0.0.1:54321` in
+`supabase/functions/.env.local` so `imageMirror.publicUrl` and imported image
+URLs are browser-facing.
+
 Mirror metadata is stored under:
 
 ```text
