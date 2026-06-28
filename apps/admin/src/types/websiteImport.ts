@@ -22,6 +22,13 @@ export type AdminWebsiteImportSummary = {
   itemsInsertedCount?: number | null;
   itemsUpdatedCount?: number | null;
   itemsNewCount?: number | null;
+  dedupeCheckedCount?: number | null;
+  itemsSkippedCount?: number | null;
+  itemsSkippedExistingImportItemCount?: number | null;
+  itemsSkippedExistingEventCount?: number | null;
+  itemsLinkedExistingEventCount?: number | null;
+  itemsPossibleDuplicateEventCount?: number | null;
+  itemsManualOverrideEventCount?: number | null;
   confidentCount?: number | null;
   partialCount?: number | null;
   recurringRuleCount?: number | null;
