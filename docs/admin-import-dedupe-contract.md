@@ -178,6 +178,76 @@ Write-RPC слой (`supabase/migrations/20260622140000_admin_import_write_rpc.s
 
 То есть write boundary физически не может переместить dedupe state из JSON в table status, что и закрепляет данный contract на уровне backend.
 
+## Server-side preflight (admin Edge Function)
+
+`admin_preflight_import_dedupe(p_source_id uuid, payload jsonb)` is the
+server-side batch check used by `admin-website-import` after parser dry-run and
+before `admin_upsert_import_item`. It is a read-only SECURITY DEFINER RPC with
+the same `admin_assert_import_runner_access` community/role boundary as the
+write RPCs.
+
+Input payload:
+
+```json
+{
+  "candidates": [
+    {
+      "index": 0,
+      "externalId": "event-slug",
+      "sourceExternalId": "event-slug",
+      "sourceUrl": "https://www.sredisvoih.com/events/event-slug",
+      "canonicalSourceUrl": "https://www.sredisvoih.com/events/event-slug",
+      "contentHash": "sha256:...",
+      "parsedTitle": "Event title",
+      "parsedStartsAt": "2026-07-01T19:00:00+03:00"
+    }
+  ]
+}
+```
+
+Output is ordered by candidate `index` and adds a transient `action` next to the
+dedupe object:
+
+```json
+{
+  "results": [
+    {
+      "index": 0,
+      "action": "write | skip_existing_import_item | skip_existing_event",
+      "dedupe": {
+        "version": 1,
+        "status": "new | duplicate | linked_existing | possible_duplicate",
+        "matchedBy": ["source_external_id"],
+        "matchedEventId": null,
+        "matchedImportItemId": null,
+        "manualOverride": false,
+        "contentHash": "sha256:...",
+        "canonicalSourceUrl": "https://www.sredisvoih.com/events/event-slug",
+        "sourceExternalId": "event-slug",
+        "checkedAt": "2026-06-28T00:00:00.000Z"
+      }
+    }
+  ]
+}
+```
+
+`action` is not a table status. It is only the Edge Function write decision:
+
+- `write` means the candidate is passed to `admin_upsert_import_item`.
+- `skip_existing_import_item` means an open `event_import_items` row already
+  exists for the same source/community, `linked_event_id is null`, and status is
+  `new` or `error`. The returned dedupe status is `duplicate` with
+  `matchedImportItemId`.
+- `skip_existing_event` means a matching `events` row already exists in the same
+  community with `source_type = 'website_scrape'`. Stable-key matches return
+  `linked_existing`; title + starts_at fallback returns `possible_duplicate`.
+  The returned dedupe object includes `matchedEventId` and `manualOverride`.
+
+The Edge Function writes only candidates whose action is `write`. Skipped
+candidates update the response summary and do not create new
+`event_import_items` rows. For written rows, the finalized dedupe object is
+stored only at `raw_payload.importReview.dedupe`.
+
 ## Optional shared TypeScript type
 
 TypeScript описание contract доступно в [`apps/admin/src/types/importDedupe.ts`](../apps/admin/src/types/importDedupe.ts). Этот файл:

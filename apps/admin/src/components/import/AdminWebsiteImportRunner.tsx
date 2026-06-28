@@ -26,6 +26,12 @@ type SummaryCount = {
   value: number | string;
 };
 
+type DedupeSummaryMessage = {
+  body: string;
+  existingEventsWarning: string | null;
+  title: string;
+};
+
 export function AdminWebsiteImportRunner({
   buttonLabel,
   onImportFinished,
@@ -201,6 +207,7 @@ function ImportRunSummary({
   result: AdminWebsiteImportSuccessResponse;
 }) {
   const counts = buildSummaryCounts(result);
+  const dedupeMessage = buildDedupeSummaryMessage(result.summary);
 
   return (
     <div className="admin-import-runner__summary" role="status">
@@ -210,6 +217,15 @@ function ImportRunSummary({
         {queueReloaded === false ? <Badge tone="gold">Очередь не обновилась</Badge> : null}
       </div>
 
+      {dedupeMessage ? (
+        <div className="admin-import-runner__summary-text">
+          <strong>{dedupeMessage.title}</strong>
+          <p>{dedupeMessage.body}</p>
+          {dedupeMessage.existingEventsWarning ? (
+            <p>{dedupeMessage.existingEventsWarning}</p>
+          ) : null}
+        </div>
+      ) : (
       <div className="admin-import-runner__summary-text">
         <strong>Готово к проверке</strong>
         <p>
@@ -217,6 +233,8 @@ function ImportRunSummary({
           очереди проверки.
         </p>
       </div>
+
+      )}
 
       {counts.length > 0 ? (
         <dl className="admin-import-runner__count-grid">
@@ -280,6 +298,52 @@ function ParserErrorList({
   );
 }
 
+function buildDedupeSummaryMessage(
+  summary: AdminWebsiteImportSummary | null | undefined,
+): DedupeSummaryMessage | null {
+  const writtenCount = readSummaryNumber(summary?.itemsWrittenCount);
+  const alreadyQueuedCount = readSummaryNumber(
+    summary?.itemsSkippedExistingImportItemCount,
+  );
+  const existingEventCount = readSummaryNumber(summary?.itemsSkippedExistingEventCount);
+  const checkedCount = readSummaryNumber(summary?.dedupeCheckedCount);
+  const existingEventsWarning =
+    existingEventCount > 0
+      ? "Есть похожие события, уже добавленные в основные события приложения"
+      : null;
+
+  if (
+    writtenCount === 0 &&
+    alreadyQueuedCount > 0 &&
+    existingEventCount === 0 &&
+    alreadyQueuedCount === checkedCount
+  ) {
+    return {
+      title: "Все события с сайта уже импортированы и находятся в очереди проверки",
+      body: "Новые строки не создавались: preflight нашёл открытые import items для каждого события.",
+      existingEventsWarning,
+    };
+  }
+
+  if (writtenCount > 0) {
+    return {
+      title: `Добавлено новых: ${writtenCount}; уже были в очереди: ${alreadyQueuedCount}`,
+      body: "Новые события добавлены в очередь ручной проверки без автоматической публикации.",
+      existingEventsWarning,
+    };
+  }
+
+  if (existingEventsWarning) {
+    return {
+      title: "Импорт завершён без новых строк в очереди",
+      body: "Preflight пропустил события, которые уже сопоставлены с основными events приложения.",
+      existingEventsWarning,
+    };
+  }
+
+  return null;
+}
+
 function buildSummaryCounts(result: AdminWebsiteImportSuccessResponse): SummaryCount[] {
   const summary = result.summary ?? {};
   const rows: SummaryCount[] = [];
@@ -293,7 +357,16 @@ function buildSummaryCounts(result: AdminWebsiteImportSuccessResponse): SummaryC
   pushNumberCount(rows, "Обновлено", summary.itemsUpdatedCount);
   pushNumberCount(rows, "Новые", summary.itemsNewCount);
 
+  pushNumberCount(rows, "Пропущено", summary.itemsSkippedCount);
+  pushNumberCount(rows, "Уже в очереди", summary.itemsSkippedExistingImportItemCount);
+  pushNumberCount(rows, "Уже в событиях", summary.itemsSkippedExistingEventCount);
+  pushNumberCount(rows, "Похожие events", summary.itemsPossibleDuplicateEventCount);
+
   return rows;
+}
+
+function readSummaryNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function pushNumberCount(

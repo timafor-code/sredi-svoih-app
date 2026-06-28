@@ -200,8 +200,26 @@ async function handleApplyReviewOnly(request: Request, body, access) {
   try {
     const result = await parseWebsiteEventsDryRun(parserOptions);
     summary = createApplySummary(result);
+    const preflight = await importClient.preflightImportDedupe(
+      source.sourceId,
+      result.items.map(buildDedupePreflightCandidate),
+    );
+    const preflightResults = normalizeDedupePreflightResults(preflight?.results);
 
     for (const itemResult of result.items) {
+      const preflightResult = preflightResults.get(itemResult.index) ?? null;
+      const action = normalizeDedupeAction(preflightResult?.action);
+
+      if (preflightResult?.dedupe) {
+        applyDedupeMetadata(itemResult.item, preflightResult.dedupe);
+      }
+
+      updateSummaryForDedupePreflight(summary, action, preflightResult?.dedupe);
+
+      if (action !== "write") {
+        continue;
+      }
+
       await mirrorImportItemImage(itemResult, {
         authorization: request.headers.get("authorization")?.trim() ?? null,
         communityId: access.communityId ?? source.communityId,
@@ -326,6 +344,13 @@ function createApplySummary(result) {
     itemsInsertedCount: 0,
     itemsUpdatedCount: 0,
     itemsNewCount: 0,
+    dedupeCheckedCount: 0,
+    itemsSkippedCount: 0,
+    itemsSkippedExistingImportItemCount: 0,
+    itemsSkippedExistingEventCount: 0,
+    itemsLinkedExistingEventCount: 0,
+    itemsPossibleDuplicateEventCount: 0,
+    itemsManualOverrideEventCount: 0,
     confidentCount: 0,
     partialCount: 0,
     recurringRuleCount: 0,
@@ -346,6 +371,106 @@ function createApplySummary(result) {
   }
 
   return summary;
+}
+
+function buildDedupePreflightCandidate(result) {
+  const item = result.item;
+  const dedupe = item.importReview?.dedupe ?? item.rawPayload?.importReview?.dedupe ?? {};
+
+  return {
+    index: result.index,
+    externalId: item.sourceExternalId ?? dedupe.sourceExternalId ?? null,
+    sourceExternalId: item.sourceExternalId ?? dedupe.sourceExternalId ?? null,
+    sourceUrl: item.sourceUrl ?? null,
+    canonicalSourceUrl: dedupe.canonicalSourceUrl ?? item.sourceUrl ?? null,
+    contentHash: dedupe.contentHash ?? null,
+    parsedTitle: item.title ?? null,
+    parsedStartsAt: item.startsAt ?? null,
+  };
+}
+
+function normalizeDedupePreflightResults(results) {
+  const byIndex = new Map();
+
+  if (!Array.isArray(results)) {
+    return byIndex;
+  }
+
+  for (const result of results) {
+    if (!result || typeof result !== "object") {
+      continue;
+    }
+
+    const index = Number(result.index);
+
+    if (!Number.isInteger(index)) {
+      continue;
+    }
+
+    byIndex.set(index, {
+      action: normalizeDedupeAction(result.action),
+      dedupe: ensureJsonObject(result.dedupe),
+    });
+  }
+
+  return byIndex;
+}
+
+function normalizeDedupeAction(value) {
+  if (
+    value === "skip_existing_import_item" ||
+    value === "skip_existing_event" ||
+    value === "write"
+  ) {
+    return value;
+  }
+
+  return "write";
+}
+
+function applyDedupeMetadata(item, dedupe) {
+  if (!dedupe || Object.keys(dedupe).length === 0) {
+    return;
+  }
+
+  const rawPayload = ensureJsonObject(item.rawPayload);
+  const importReview = ensureJsonObject(
+    item.importReview ?? rawPayload.importReview,
+  );
+  const existingDedupe = ensureJsonObject(importReview.dedupe);
+
+  importReview.dedupe = {
+    ...existingDedupe,
+    ...dedupe,
+  };
+  item.importReview = importReview;
+  rawPayload.importReview = importReview;
+  item.rawPayload = rawPayload;
+}
+
+function updateSummaryForDedupePreflight(summary, action, dedupe) {
+  summary.dedupeCheckedCount += 1;
+
+  if (action === "skip_existing_import_item") {
+    summary.itemsSkippedCount += 1;
+    summary.itemsSkippedExistingImportItemCount += 1;
+    return;
+  }
+
+  if (action === "skip_existing_event") {
+    summary.itemsSkippedCount += 1;
+    summary.itemsSkippedExistingEventCount += 1;
+
+    if (dedupe?.status === "possible_duplicate") {
+      summary.itemsPossibleDuplicateEventCount += 1;
+    } else {
+      summary.itemsLinkedExistingEventCount += 1;
+    }
+
+    if (dedupe?.manualOverride === true) {
+      summary.itemsManualOverrideEventCount += 1;
+    }
+  }
 }
 
 async function mirrorImportItemImage(result, options = {}) {

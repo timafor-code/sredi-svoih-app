@@ -38,8 +38,9 @@ behavior remains in place.
 `apply_review_only` validates the admin/event_manager session, validates
 `sourceUrl` against the `sredisvoih.com` / `www.sredisvoih.com` allowlist, opens
 an import run through `admin_begin_import_run`, parses the website with the
-shared parser, writes each parsed card through `admin_upsert_import_item`, and
-closes the run through `admin_finalize_import_run`.
+shared parser, runs server-side dedupe preflight, writes only candidates whose
+preflight action is `write` through `admin_upsert_import_item`, and closes the
+run through `admin_finalize_import_run`.
 
 This mode writes only `event_import_runs` and `event_import_items`. It does not
 create events, update events, publish events, or auto-publish any parsed card.
@@ -191,11 +192,14 @@ Apply-review-only lifecycle:
 2. resolve the active `sredi_svoih_events` import source visible to the caller;
 3. call `admin_begin_import_run` with mode `apply_review_only`;
 4. fetch and parse the website through the shared parser;
-5. mirror each parsed event image into the public `event-images` Storage bucket
-   with the caller's authenticated session;
-6. call `admin_upsert_import_item` for each parsed item;
-7. call `admin_finalize_import_run` with `success` and safe summary counts;
-8. return a safe summary with run id, parser version, counts, and parser errors.
+5. call `admin_preflight_import_dedupe` with the parsed candidate batch;
+6. skip candidates already represented by open `event_import_items` or existing
+   website-scraped `events` in the same community;
+7. mirror images only for candidates whose preflight action is `write`;
+8. call `admin_upsert_import_item` only for `write` candidates;
+9. call `admin_finalize_import_run` with `success` and safe summary counts;
+10. return a safe summary with run id, parser version, counts, skipped counts,
+    and parser errors.
 
 If `admin_begin_import_run` rejects the request with `import_already_running`,
 the Edge Function returns a clean conflict response:
@@ -225,6 +229,19 @@ leave the external URL as fallback and store `imageMirror.status = "missing"` or
 
 `apply_review_only` creates/updates review data only. It never creates events,
 never updates events, never publishes events, and never auto-publishes.
+
+Server-side dedupe preflight does not mutate tables. Its transient actions are:
+
+- `write` - create/update the review item through `admin_upsert_import_item`;
+- `skip_existing_import_item` - do not create a duplicate import item because an
+  open review item already matches by external id, canonical/source URL,
+  content hash, or title + starts_at;
+- `skip_existing_event` - do not create a review item because a website-scraped
+  event in the same community already matches by source_external_id, source_url,
+  or title + starts_at.
+
+Skipped candidates are represented only in the Edge Function summary. Dedupe
+state for persisted rows remains only in `raw_payload.importReview.dedupe`.
 
 ## Доступные флаги
 

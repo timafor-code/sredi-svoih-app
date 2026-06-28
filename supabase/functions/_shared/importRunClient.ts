@@ -22,6 +22,7 @@ const KNOWN_IMPORT_ERROR_CODES = new Set([
   "import_item_linked_event_forbidden",
   "import_final_status_invalid",
   "import_summary_invalid",
+  "import_preflight_candidates_invalid",
   "import_source_lookup_failed",
   "supabase_env_not_configured",
   "missing_authorization",
@@ -89,6 +90,14 @@ export function createImportRunClient(request: Request) {
       return await callRpc(supabase, "admin_upsert_import_item", {
         p_run_id: runId,
         payload,
+      });
+    },
+    async preflightImportDedupe(sourceId, candidates) {
+      return await callRpc(supabase, "admin_preflight_import_dedupe", {
+        p_source_id: sourceId,
+        payload: {
+          candidates,
+        },
       });
     },
     async finalizeImportRun(runId, payload) {
@@ -241,7 +250,8 @@ function statusForImportError(code) {
     code === "import_item_parsed_starts_at_invalid" ||
     code === "import_item_linked_event_invalid" ||
     code === "import_final_status_invalid" ||
-    code === "import_summary_invalid"
+    code === "import_summary_invalid" ||
+    code === "import_preflight_candidates_invalid"
   ) {
     return 400;
   }
@@ -284,6 +294,10 @@ function messageForImportError(code) {
 
   if (code.startsWith("import_final_") || code === "import_summary_invalid") {
     return "Could not finalize the import run.";
+  }
+
+  if (code.startsWith("import_preflight_")) {
+    return "Could not run import dedupe preflight.";
   }
 
   if (code === "supabase_env_not_configured") {
