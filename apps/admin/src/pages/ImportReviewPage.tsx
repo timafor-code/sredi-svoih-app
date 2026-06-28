@@ -37,6 +37,7 @@ import {
 } from "../types/importReview";
 import type {
   AdminImportDateQuality,
+  AdminImportImageMirrorMetadata,
   AdminImportItemStatus,
   AdminPublishImportItemResult,
   AdminImportReviewItem,
@@ -1750,6 +1751,26 @@ function ImportItemDetailContent({ item }: { item: AdminImportReviewItem }) {
 
       <section className="import-detail-section">
         <h3>Поля raw payload</h3>
+        {rawDetails.imageMirror ? (
+          <div
+            className={
+              rawDetails.imageMirror.status === "failed"
+                ? "import-draft-notice import-draft-notice--warning"
+                : "import-draft-notice import-draft-notice--info"
+            }
+          >
+            <strong>
+              {rawDetails.imageMirror.status === "stored"
+                ? "Изображение сохранено в Storage"
+                : rawDetails.imageMirror.status === "failed"
+                  ? "Не удалось сохранить изображение в Storage"
+                  : "Изображение не сохранено в Storage"}
+            </strong>
+            {rawDetails.imageMirror.status === "failed" ? (
+              <p>Используется исходная внешняя ссылка, импорт не прерывается.</p>
+            ) : null}
+          </div>
+        ) : null}
         {rawDetails.imageUrl ? (
           <figure className="import-detail-image">
             <img
@@ -1768,6 +1789,36 @@ function ImportItemDetailContent({ item }: { item: AdminImportReviewItem }) {
               </a>
             </figcaption>
           </figure>
+        ) : null}
+        {rawDetails.imageMirror ? (
+          <div className="import-detail-grid">
+            <ImportReviewField
+              label="Storage path"
+              value={rawDetails.imageMirror.storagePath ?? "Не указано"}
+              wide
+            />
+            <ImportReviewField label="Original URL" wide>
+              {rawDetails.imageMirror.originalUrl ? (
+                <a
+                  className="import-review-link"
+                  href={rawDetails.imageMirror.originalUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  {rawDetails.imageMirror.originalUrl}
+                </a>
+              ) : (
+                "Не указано"
+              )}
+            </ImportReviewField>
+            {rawDetails.imageMirror.status === "failed" ? (
+              <ImportReviewField
+                label="Mirror warning"
+                value={rawDetails.imageMirror.error ?? "Используется исходная внешняя ссылка."}
+                wide
+              />
+            ) : null}
+          </div>
         ) : null}
         <div className="import-detail-grid">
           <ImportReviewField label="Ссылка регистрации" wide>
@@ -2177,10 +2228,39 @@ function isJsonObject(value: JsonValue | null | undefined): value is JsonObject 
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
+function getRawPayloadImageMirror(rawPayload: JsonValue): AdminImportImageMirrorMetadata | null {
+  const value = readJsonPath(rawPayload, ["importReview", "imageMirror"]);
+
+  if (!isJsonObject(value)) {
+    return null;
+  }
+
+  const status = readJsonValueString(value.status);
+
+  if (!status || !["stored", "missing", "failed", "skipped"].includes(status)) {
+    return null;
+  }
+
+  return {
+    ...value,
+    status,
+    originalUrl: readJsonValueString(value.originalUrl),
+    storageBucket: readJsonValueString(value.storageBucket),
+    storagePath: readJsonValueString(value.storagePath),
+    publicUrl: readJsonValueString(value.publicUrl),
+    contentType: readJsonValueString(value.contentType),
+    byteSize: readJsonValueNumber(value.byteSize),
+    sha256: readJsonValueString(value.sha256),
+    checkedAt: readJsonValueString(value.checkedAt),
+    error: readJsonValueString(value.error),
+  };
+}
+
 function getRawPayloadDetails(rawPayload: JsonValue): {
   address: string | null;
   description: string | null;
   endsAt: string | null;
+  imageMirror: AdminImportImageMirrorMetadata | null;
   imageUrl: string | null;
   location: string | null;
   registrationUrl: string | null;
@@ -2199,6 +2279,7 @@ function getRawPayloadDetails(rawPayload: JsonValue): {
     ["card", "subtitle"],
     ["card", "subTitle"],
   ]);
+  const imageMirror = getRawPayloadImageMirror(rawPayload);
 
   return {
     address: readRawPayloadString(rawPayload, [
@@ -2227,20 +2308,34 @@ function getRawPayloadDetails(rawPayload: JsonValue): {
       ["parsed", "endsAt"],
       ["parsed", "ends_at"],
     ]),
-    imageUrl: readRawPayloadString(rawPayload, [
-      ["imageUrl"],
-      ["image_url"],
-      ["image"],
-      ["detail", "imageUrl"],
-      ["detail", "image_url"],
-      ["detail", "image"],
-      ["parsed", "imageUrl"],
-      ["parsed", "image_url"],
-      ["parsed", "image"],
-      ["card", "imageUrl"],
-      ["card", "image_url"],
-      ["card", "image"],
-    ]),
+    imageMirror,
+    imageUrl:
+      imageMirror?.publicUrl ??
+      readRawPayloadString(rawPayload, [
+        ["detail", "imageUrl"],
+        ["detail", "image_url"],
+        ["detail", "image"],
+        ["parsed", "imageUrl"],
+        ["parsed", "image_url"],
+        ["parsed", "image"],
+        ["card", "imageUrl"],
+        ["card", "image_url"],
+        ["card", "image"],
+        ["imageUrl"],
+        ["image_url"],
+        ["image"],
+      ]) ??
+      readRawPayloadString(rawPayload, [
+        ["detail", "originalImageUrl"],
+        ["detail", "original_image_url"],
+        ["parsed", "originalImageUrl"],
+        ["parsed", "original_image_url"],
+        ["card", "originalImageUrl"],
+        ["card", "original_image_url"],
+        ["originalImageUrl"],
+        ["original_image_url"],
+        ["importReview", "imageMirror", "originalUrl"],
+      ]),
     location: readRawPayloadString(rawPayload, [
       ["location"],
       ["locationName"],
@@ -2306,13 +2401,37 @@ function readRawPayloadString(rawPayload: JsonValue, paths: string[][]): string 
   for (const path of paths) {
     const value = readJsonPath(rawPayload, path);
 
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value.trim();
-    }
+    const text = readJsonValueString(value);
 
-    if (typeof value === "number" || typeof value === "boolean") {
-      return String(value);
+    if (text) {
+      return text;
     }
+  }
+
+  return null;
+}
+
+function readJsonValueString(value: JsonValue | undefined): string | null {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return null;
+}
+
+function readJsonValueNumber(value: JsonValue | undefined): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) ? parsed : null;
   }
 
   return null;

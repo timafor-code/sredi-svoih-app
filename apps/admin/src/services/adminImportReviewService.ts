@@ -3,6 +3,7 @@ import { normalizeAdminEventRow } from "./adminEventsService";
 import type { AdminEventRow } from "../types/events";
 import type {
   AdminImportAdminReview,
+  AdminImportImageMirrorMetadata,
   AdminPublishImportItemPayload,
   AdminPublishImportItemResult,
   AdminImportReview,
@@ -72,6 +73,32 @@ function nullableBoolean(value: unknown): boolean | null {
   return null;
 }
 
+function normalizeImageMirror(value: JsonValue | undefined): AdminImportImageMirrorMetadata | null {
+  if (!isJsonObject(value)) {
+    return null;
+  }
+
+  const status = nullableString(value.status);
+
+  if (!status || !["stored", "missing", "failed", "skipped"].includes(status)) {
+    return null;
+  }
+
+  return {
+    ...value,
+    status,
+    originalUrl: nullableString(value.originalUrl),
+    storageBucket: nullableString(value.storageBucket),
+    storagePath: nullableString(value.storagePath),
+    publicUrl: nullableString(value.publicUrl),
+    contentType: nullableString(value.contentType),
+    byteSize: nullableNumber(value.byteSize),
+    sha256: nullableString(value.sha256),
+    checkedAt: nullableString(value.checkedAt),
+    error: nullableString(value.error),
+  };
+}
+
 function normalizeLimit(limit?: number): number {
   if (typeof limit !== "number" || !Number.isFinite(limit)) {
     return DEFAULT_REVIEW_LIMIT;
@@ -108,6 +135,7 @@ function normalizeImportReview(rawPayload: JsonValue): AdminImportReview | null 
     draftEventCreated: nullableBoolean(review.draftEventCreated),
     draftEventId: nullableString(review.draftEventId),
     draftSkipReason: nullableString(review.draftSkipReason),
+    imageMirror: normalizeImageMirror(review.imageMirror),
   };
 }
 

@@ -168,6 +168,18 @@ Edge Function deployed и настроен. Deploy/config requirements:
 - run history and dedupe review UI must be checked manually by the project
   owner.
 
+Event image mirror deploy note:
+
+- run the Storage migration before staging smoke so the public `event-images`
+  bucket and object policies exist;
+- no extra browser env var is required for image mirroring;
+- the Edge Function uploads mirrored images with the caller's authenticated
+  session and the normal anon/publishable Supabase key;
+- object paths are scoped as
+  `community/<community_id>/website-import/<source_external_id_or_hash>/<sha256>.<ext>`;
+- Review UI should show `raw_payload.importReview.imageMirror.status`,
+  `storagePath`, and `originalUrl` in the import item detail drawer.
+
 For the active browser-triggered import path, keep these rules:
 
 - `ADMIN_WEB_ORIGIN` должен совпадать со staging admin SPA origin;

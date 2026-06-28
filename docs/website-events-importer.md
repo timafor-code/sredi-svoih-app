@@ -191,9 +191,11 @@ Apply-review-only lifecycle:
 2. resolve the active `sredi_svoih_events` import source visible to the caller;
 3. call `admin_begin_import_run` with mode `apply_review_only`;
 4. fetch and parse the website through the shared parser;
-5. call `admin_upsert_import_item` for each parsed item;
-6. call `admin_finalize_import_run` with `success` and safe summary counts;
-7. return a safe summary with run id, parser version, counts, and parser errors.
+5. mirror each parsed event image into the public `event-images` Storage bucket
+   with the caller's authenticated session;
+6. call `admin_upsert_import_item` for each parsed item;
+7. call `admin_finalize_import_run` with `success` and safe summary counts;
+8. return a safe summary with run id, parser version, counts, and parser errors.
 
 If `admin_begin_import_run` rejects the request with `import_already_running`,
 the Edge Function returns a clean conflict response:
@@ -211,6 +213,15 @@ finalizes that run as `failed`, stores only a safe error message, and returns a
 safe error payload. Detail-page item failures do not fail the whole run: the
 item is still written with `event_import_items.status = "error"` and
 `raw_payload.importReview.dedupe.status = "error"`.
+
+Image mirror failures also do not fail the whole run. Successful mirrors replace
+the working image URL in `raw_payload.detail.image_url`,
+`raw_payload.parsed.image_url`, and top-level `raw_payload.imageUrl` /
+`raw_payload.image_url` with the Storage public URL. The original external URL
+is kept in `raw_payload.detail.original_image_url` and
+`raw_payload.importReview.imageMirror.originalUrl`. Missing or failed images
+leave the external URL as fallback and store `imageMirror.status = "missing"` or
+`"failed"` with a short safe error.
 
 `apply_review_only` creates/updates review data only. It never creates events,
 never updates events, never publishes events, and never auto-publishes.
