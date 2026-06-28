@@ -2358,7 +2358,7 @@ a {
 
 .event-action-dialog-backdrop {
   position: fixed;
-  z-index: 45;
+  z-index: 1110;
   inset: 0;
   display: grid;
   place-items: center;
@@ -4538,9 +4538,184 @@ a {
   }
 }
 
+.import-review-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+  padding: 16px;
+}
+
+.import-review-shell__main {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.import-review-shell__title-row {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+}
+
+.import-review-shell__title-row h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: 28px;
+  line-height: 1.08;
+}
+
+.import-review-shell__status-line {
+  display: inline-flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.import-review-shell__status-line > span:first-child {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.import-review-shell__main p,
+.import-review-shell__meta {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.import-review-shell__meta {
+  color: var(--text-muted);
+  font-weight: 650;
+}
+
+.import-review-shell__actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.import-review-help {
+  position: relative;
+  display: inline-flex;
+}
+
+.import-review-help__button {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-soft);
+  cursor: help;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.import-review-help__button:hover,
+.import-review-help__button:focus-visible {
+  background: var(--glass-strong);
+  color: var(--text);
+  outline: 0;
+}
+
+.import-review-help__tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 9;
+  width: min(320px, calc(100vw - 48px));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease,
+    visibility 0.14s ease;
+  visibility: hidden;
+}
+
+.import-review-help:hover .import-review-help__tooltip,
+.import-review-help:focus-within .import-review-help__tooltip {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+
+.import-review-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(150px, 0.45fr) minmax(140px, 0.38fr) minmax(104px, 0.25fr);
+  align-items: end;
+  gap: 10px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+}
+
+.import-review-toolbar .filter-field {
+  gap: 5px;
+}
+
+.import-review-toolbar .filter-field input,
+.import-review-toolbar .filter-field select {
+  min-height: 34px;
+}
+
+.import-review-state--empty {
+  min-height: 260px;
+}
+
+.import-review-state__icon {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(242, 184, 75, 0.34);
+  border-radius: 999px;
+  background: rgba(242, 184, 75, 0.1);
+  color: var(--gold);
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .admin-import-runner {
   display: grid;
   gap: 14px;
+}
+
+.admin-import-runner--compact {
+  gap: 8px;
+  justify-items: end;
+}
+
+.admin-import-runner--compact .admin-import-runner__summary,
+.admin-import-runner--compact .admin-import-runner__status {
+  width: min(420px, 100%);
 }
 
 .admin-import-runner__head {
@@ -4883,30 +5058,6 @@ a {
 .admin-import-history__error {
   border-color: rgba(229, 44, 54, 0.28);
   background: rgba(229, 44, 54, 0.08);
-}
-
-.import-history-compact {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-}
-
-.import-history-compact__main {
-  display: grid;
-  min-width: 0;
-  gap: 6px;
-}
-
-.import-history-compact__main > span {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 650;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .import-history-modal-backdrop {
@@ -9544,6 +9695,27 @@ a {
     grid-template-rows: auto minmax(0, 1fr);
   }
 
+  .import-review-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .import-review-shell__actions {
+    justify-content: flex-start;
+  }
+
+  .import-review-shell__actions .admin-import-runner--compact {
+    width: 100%;
+    justify-items: start;
+  }
+
+  .import-review-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .import-review-toolbar__search {
+    grid-column: 1 / -1;
+  }
+
   .sidebar {
     height: auto;
     max-height: 40vh;
@@ -9598,6 +9770,30 @@ a {
 @media (max-width: 720px) {
   .admin-layout__content {
     padding: 18px;
+  }
+
+  .import-review-shell__actions,
+  .import-review-shell__actions .admin-import-runner--compact,
+  .import-review-toolbar {
+    align-items: stretch;
+  }
+
+  .import-review-shell__actions,
+  .import-review-shell__actions .admin-import-runner--compact {
+    width: 100%;
+  }
+
+  .import-review-shell__actions .button,
+  .import-review-shell__actions .admin-import-runner--compact .button {
+    width: 100%;
+  }
+
+  .import-review-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .import-review-toolbar__search {
+    grid-column: auto;
   }
 
   .topbar {
@@ -9745,7 +9941,6 @@ a {
   .member-membership-action-panel,
   .member-membership-actions,
   .member-membership-quick-actions,
-  .import-history-compact,
   .import-history-modal__head,
   .import-review-bulk-actions,
   .import-review-item__head,
@@ -9947,7 +10142,6 @@ a {
   .admin-feedback-actions .button,
   .admin-import-runner__head .button,
   .admin-import-history__head .button,
-  .import-history-compact .button,
   .event-form-sticky-actions .button,
   .event-action-dialog__actions .button,
   .event-create-success .button,
@@ -9966,10 +10160,6 @@ a {
   .import-review-item__created {
     flex-basis: auto;
     text-align: left;
-  }
-
-  .import-history-compact__main > span {
-    white-space: normal;
   }
 
   .import-review-bulk-actions > div {
