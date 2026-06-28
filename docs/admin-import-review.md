@@ -49,8 +49,10 @@ Runtime flow:
 3. resolve the active `sredi_svoih_events` import source visible to the caller;
 4. call `admin_begin_import_run` with mode `apply_review_only`;
 5. fetch and parse the website through the shared parser;
-6. call `admin_upsert_import_item` for each parsed item;
-7. call `admin_finalize_import_run` with `success` and safe summary counts.
+6. mirror each parsed event image into Supabase Storage when an image URL is
+   available;
+7. call `admin_upsert_import_item` for each parsed item;
+8. call `admin_finalize_import_run` with `success` and safe summary counts.
 
 This writes only `event_import_runs` and `event_import_items`. It never creates
 events, never updates events, never publishes events, and never auto-publishes.
@@ -63,6 +65,55 @@ returns a clean conflict-style payload with `ok: false`,
 fetch fails after a run was opened, the run is finalized as `failed` with a safe
 error message. Detail fetch/parse failures are saved as item errors and the run
 continues.
+
+## Event image mirror
+
+`apply_review_only` mirrors parsed event images before writing import items. The
+parser still extracts the best available image URL from the detail page,
+`og:image`, or card image. The Edge Function then downloads that image with a
+short timeout and stores it in the public `event-images` Storage bucket using
+the caller's normal authenticated session.
+
+Successful mirror paths are deterministic:
+
+```text
+community/<community_id>/website-import/<source_external_id_or_source_hash>/<sha256>.<ext>
+```
+
+When the mirror succeeds, the import item uses the Storage public URL in
+`raw_payload.detail.image_url`, `raw_payload.parsed.image_url`, and the
+top-level `raw_payload.imageUrl` / `raw_payload.image_url`. The original
+external URL is preserved in `raw_payload.detail.original_image_url` and in
+`raw_payload.importReview.imageMirror.originalUrl`.
+
+Mirror metadata is stored under:
+
+```text
+event_import_items.raw_payload.importReview.imageMirror
+```
+
+Shape:
+
+```json
+{
+  "status": "stored",
+  "originalUrl": "https://www.sredisvoih.com/upload/example.jpg",
+  "storageBucket": "event-images",
+  "storagePath": "community/<community_id>/website-import/<source>/<sha>.jpg",
+  "publicUrl": "https://<project>.supabase.co/storage/v1/object/public/event-images/...",
+  "contentType": "image/jpeg",
+  "byteSize": 12345,
+  "sha256": "sha256:<hex>",
+  "checkedAt": "2026-06-28T00:00:00.000Z",
+  "error": null
+}
+```
+
+If an image is missing or mirror download/upload fails, the import run
+continues. The item keeps the original external image URL as fallback and
+`imageMirror.status` is `missing` or `failed` with a short safe error message.
+This does not change `event_import_items.status` constraints and does not
+create, update, publish, or auto-publish events.
 
 ## Web-admin run button
 

@@ -9,6 +9,7 @@ import {
   ImportRunClientError,
   toSafeImportRunError,
 } from "../_shared/importRunClient.ts";
+import { mirrorEventImageToStorage } from "../_shared/eventImageMirror.ts";
 import {
   normalizeDryRunOptions,
   parseWebsiteEventsDryRun,
@@ -201,6 +202,12 @@ async function handleApplyReviewOnly(request: Request, body, access) {
     summary = createApplySummary(result);
 
     for (const itemResult of result.items) {
+      await mirrorImportItemImage(itemResult, {
+        authorization: request.headers.get("authorization")?.trim() ?? null,
+        communityId: access.communityId ?? source.communityId,
+        requestTimeoutMs: result.options.requestTimeoutMs,
+      });
+
       const payload = buildImportItemPayload(itemResult);
       const upserted = await importClient.upsertImportItem(run.runId, payload);
 
@@ -341,6 +348,56 @@ function createApplySummary(result) {
   return summary;
 }
 
+async function mirrorImportItemImage(result, options = {}) {
+  const item = result.item;
+  const mirror = await mirrorEventImageToStorage({
+    imageUrl: item.imageUrl,
+    communityId: options.communityId,
+    sourceExternalId: item.sourceExternalId,
+    sourceUrl: item.sourceUrl,
+    requestTimeoutMs: options.requestTimeoutMs,
+    authorization: options.authorization,
+  });
+
+  applyImageMirrorMetadata(item, mirror);
+}
+
+function applyImageMirrorMetadata(item, mirror) {
+  const rawPayload = ensureJsonObject(item.rawPayload);
+  const importReview = ensureJsonObject(
+    item.importReview ?? rawPayload.importReview,
+  );
+
+  importReview.imageMirror = mirror;
+  item.importReview = importReview;
+  rawPayload.importReview = importReview;
+  item.rawPayload = rawPayload;
+
+  if (mirror.status !== "stored" || !mirror.publicUrl) {
+    return;
+  }
+
+  const originalUrl = mirror.originalUrl ?? item.imageUrl ?? null;
+  item.imageUrl = mirror.publicUrl;
+  rawPayload.imageUrl = mirror.publicUrl;
+  rawPayload.image_url = mirror.publicUrl;
+
+  const detail = ensureJsonObject(rawPayload.detail);
+  detail.imageUrl = mirror.publicUrl;
+  detail.image_url = mirror.publicUrl;
+
+  if (originalUrl) {
+    detail.original_image_url = originalUrl;
+  }
+
+  rawPayload.detail = detail;
+
+  const parsed = ensureJsonObject(rawPayload.parsed);
+  parsed.imageUrl = mirror.publicUrl;
+  parsed.image_url = mirror.publicUrl;
+  rawPayload.parsed = parsed;
+}
+
 function buildImportItemPayload(result) {
   const item = result.item;
   const rawPayload = cloneJsonObject(item.rawPayload);
@@ -370,6 +427,14 @@ function buildImportItemPayload(result) {
     parsedLocation: item.parsedLocation ?? null,
     status: result.error || dedupeStatus === "error" ? "error" : "new",
   };
+}
+
+function ensureJsonObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return value;
 }
 
 function cloneJsonObject(value) {

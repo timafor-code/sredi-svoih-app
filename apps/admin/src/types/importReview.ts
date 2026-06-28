@@ -15,6 +15,21 @@ export const ADMIN_IMPORT_DATE_QUALITIES = [
 
 export type AdminImportItemStatus = (typeof ADMIN_IMPORT_ITEM_STATUSES)[number];
 export type AdminImportDateQuality = (typeof ADMIN_IMPORT_DATE_QUALITIES)[number];
+export type AdminImportImageMirrorStatus = "stored" | "missing" | "failed" | "skipped";
+
+export type AdminImportImageMirrorMetadata = {
+  [key: string]: unknown;
+  status: AdminImportImageMirrorStatus | string;
+  originalUrl?: string | null;
+  storageBucket?: string | null;
+  storagePath?: string | null;
+  publicUrl?: string | null;
+  contentType?: string | null;
+  byteSize?: number | null;
+  sha256?: string | null;
+  checkedAt?: string | null;
+  error?: string | null;
+};
 
 export type AdminImportReviewRow = {
   id: string;
@@ -50,6 +65,7 @@ export type AdminImportReview = {
   draftEventCreated?: boolean | null;
   draftEventId?: string | null;
   draftSkipReason?: string | null;
+  imageMirror?: AdminImportImageMirrorMetadata | null;
   dedupe?: AdminImportDedupe | null;
 };
 
