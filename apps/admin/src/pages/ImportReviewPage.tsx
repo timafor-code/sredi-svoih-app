@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 
 import { EventForm } from "../components/events/EventForm";
-import {
-  AdminImportRunHistory,
-  formatAdminImportRunStatusLabel,
-  getAdminImportRunStatusTone,
-} from "../components/import/AdminImportRunHistory";
+import { AdminImportRunHistory } from "../components/import/AdminImportRunHistory";
 import { AdminWebsiteImportRunner } from "../components/import/AdminWebsiteImportRunner";
 import {
   getImportDedupeStatusLabel,
@@ -122,6 +118,7 @@ export function ImportReviewPage({
   const [importRuns, setImportRuns] = useState<AdminImportRun[]>([]);
   const [importRunsLoading, setImportRunsLoading] = useState(true);
   const [importRunsError, setImportRunsError] = useState<string | null>(null);
+  const importTriggerId = useId();
 
   const loadItems = useCallback(async (): Promise<boolean> => {
     setLoading(true);
@@ -178,6 +175,14 @@ export function ImportReviewPage({
 
     return itemsReloaded;
   }, [loadImportRuns, loadItems]);
+
+  const handleRefreshReviewPage = useCallback(async () => {
+    await Promise.all([loadItems(), loadImportRuns()]);
+  }, [loadImportRuns, loadItems]);
+
+  const handleStartImportFromEmptyState = useCallback(() => {
+    document.getElementById(importTriggerId)?.click();
+  }, [importTriggerId]);
 
   useEffect(() => {
     if (!detailItemId) {
@@ -530,34 +535,59 @@ export function ImportReviewPage({
   );
 
   const latestImportRun = importRuns[0] ?? null;
+  const latestImportRunState = getLatestImportRunState(
+    latestImportRun,
+    importRunsLoading,
+    importRunsError,
+  );
+  const importStartBlocked = importRunsLoading || Boolean(recentStartedRun);
   const selectedItemIdSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
 
   return (
     <div className="page-stack page-stack--import">
-      <section className="page-header">
-        <Badge tone="gold">Очередь проверки</Badge>
-        <h1>Импорт с сайта</h1>
-        <p>
-          Проверка импорта. Из деталей можно удалить элемент из очереди или создать
-          событие-черновик через отдельные RPC; публикация остаётся отдельным ручным
-          действием.
-        </p>
-      </section>
+      <GlassCard className="import-review-shell">
+        <div className="import-review-shell__main">
+          <div className="import-review-shell__title-row">
+            <h1>Импорт с сайта</h1>
+            <div className="import-review-shell__status-line">
+              <span>Последний запуск</span>
+              <Badge tone={latestImportRunState.tone}>{latestImportRunState.label}</Badge>
+              <ImportReviewStatusHelp />
+            </div>
+          </div>
+          <p>
+            Новые события сначала попадают в очередь ручной проверки; публикация
+            остаётся отдельным действием.
+          </p>
+          <span className="import-review-shell__meta">{latestImportRunState.detail}</span>
+        </div>
 
-      <ImportRunHistorySummary
-        error={importRunsError}
-        latestRun={latestImportRun}
-        loading={importRunsLoading}
-        onOpen={() => setIsImportHistoryOpen(true)}
-      />
-
-      {importRunsLoading ? (
-        <ImportRunnerBlocked loading run={null} />
-      ) : recentStartedRun ? (
-        <ImportRunnerBlocked loading={false} run={recentStartedRun} />
-      ) : (
-        <AdminWebsiteImportRunner onImportFinished={handleImportFinished} />
-      )}
+        <div className="import-review-shell__actions">
+          <Button onClick={() => setIsImportHistoryOpen(true)} size="sm" variant="secondary">
+            Журнал
+          </Button>
+          <Button
+            disabled={loading || importRunsLoading}
+            onClick={() => void handleRefreshReviewPage()}
+            size="sm"
+            variant="secondary"
+          >
+            {loading || importRunsLoading ? "Обновляем..." : "Обновить"}
+          </Button>
+          {importRunsLoading ? (
+            <ImportRunnerBlocked loading run={null} />
+          ) : recentStartedRun ? (
+            <ImportRunnerBlocked loading={false} run={recentStartedRun} />
+          ) : (
+            <AdminWebsiteImportRunner
+              buttonLabel="Запустить импорт"
+              onImportFinished={handleImportFinished}
+              triggerId={importTriggerId}
+              variant="compact"
+            />
+          )}
+        </div>
+      </GlassCard>
 
       {successMessage ? (
         <div className="import-review-status import-review-status--success" role="status">
@@ -571,73 +601,61 @@ export function ImportReviewPage({
         </div>
       ) : null}
 
-      <GlassCard className="events-toolbar import-review-toolbar">
-        <div className="events-toolbar__top">
-          <div>
-            <h2>Фильтры</h2>
-            <p>Поиск работает по названию, ссылке источника, месту и заметкам парсера.</p>
-          </div>
-          <Button disabled={loading} onClick={() => void loadItems()}>
-            {loading ? "Обновляем..." : "Обновить очередь"}
-          </Button>
-        </div>
+      <div className="import-review-toolbar" aria-label="Фильтры импорта">
+        <label className="filter-field import-review-toolbar__search">
+          <span>Поиск</span>
+          <input
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Название, ссылка, место"
+            type="search"
+            value={query}
+          />
+        </label>
 
-        <div className="events-filters import-review-filters" aria-label="Фильтры импорта">
-          <label className="filter-field">
-            <span>Поиск</span>
-            <input
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Название, ссылка, место"
-              type="search"
-              value={query}
-            />
-          </label>
+        <label className="filter-field">
+          <span>Качество даты</span>
+          <select
+            onChange={(event) =>
+              setDateQualityFilter(event.target.value as DateQualityFilter)
+            }
+            value={dateQualityFilter}
+          >
+            {DATE_QUALITY_FILTERS.map((filter) => (
+              <option key={filter.value} value={filter.value}>
+                {filter.label}
+              </option>
+            ))}
+          </select>
+        </label>
 
-          <label className="filter-field">
-            <span>Качество даты</span>
-            <select
-              onChange={(event) =>
-                setDateQualityFilter(event.target.value as DateQualityFilter)
-              }
-              value={dateQualityFilter}
-            >
-              {DATE_QUALITY_FILTERS.map((filter) => (
-                <option key={filter.value} value={filter.value}>
-                  {filter.label}
-                </option>
-              ))}
-            </select>
-          </label>
+        <label className="filter-field">
+          <span>Статус</span>
+          <select
+            onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+            value={statusFilter}
+          >
+            {STATUS_FILTERS.map((filter) => (
+              <option key={filter.value} value={filter.value}>
+                {filter.label}
+              </option>
+            ))}
+          </select>
+        </label>
 
-          <label className="filter-field">
-            <span>Статус</span>
-            <select
-              onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-              value={statusFilter}
-            >
-              {STATUS_FILTERS.map((filter) => (
-                <option key={filter.value} value={filter.value}>
-                  {filter.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="filter-field">
-            <span>Лимит</span>
-            <select
-              onChange={(event) => setLimit(Number(event.target.value) as ReviewLimit)}
-              value={limit}
-            >
-              {REVIEW_LIMITS.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </GlassCard>
+        <label className="filter-field">
+          <span>Лимит</span>
+          <select
+            onChange={(event) => setLimit(Number(event.target.value) as ReviewLimit)}
+            value={limit}
+          >
+            {REVIEW_LIMITS.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
 
       <GlassCard className="table-panel import-review-panel" elevated>
         <div className="table-panel__header">
@@ -646,7 +664,6 @@ export function ImportReviewPage({
             <span>
               Показано {filteredItems.length} из {items.length}
             </span>
-            <Badge tone="glass">Supabase RPC</Badge>
           </div>
         </div>
 
@@ -659,7 +676,7 @@ export function ImportReviewPage({
 
         {loading ? (
           <ImportReviewState
-            description="Вызываем admin_list_import_items_needing_review и ждём ответ Supabase."
+            description="Загружаем элементы, которые ждут ручной проверки."
             title="Загрузка элементов импорта"
           />
         ) : error ? (
@@ -672,12 +689,26 @@ export function ImportReviewPage({
           <ImportReviewState
             description={
               items.length === 0
-                ? "RPC вернул пустой список. Это может означать, что сейчас нет items на ручную проверку или backend не возвращает доступные записи для текущей роли."
+                ? "Запустите импорт, чтобы собрать новые события с сайта на ручную проверку"
                 : "Измените поисковый запрос или фильтры."
             }
+            icon={items.length === 0 ? "↗" : undefined}
             title={items.length === 0 ? "Очередь проверки пуста" : "Нет совпадений"}
+            variant={items.length === 0 ? "empty" : "default"}
           >
-            {hasActiveFilters ? (
+            {items.length === 0 ? (
+              <Button
+                disabled={importStartBlocked}
+                onClick={handleStartImportFromEmptyState}
+                variant="gold"
+              >
+                {recentStartedRun
+                  ? "Импорт выполняется"
+                  : importRunsLoading
+                    ? "Проверяем..."
+                    : "Запустить импорт"}
+              </Button>
+            ) : hasActiveFilters ? (
               <Button
                 onClick={() => {
                   setQuery("");
@@ -741,75 +772,93 @@ function ImportRunnerBlocked({
 }) {
   const statusText = loading
     ? "Проверяем журнал запусков перед новым импортом."
-    : `Есть незавершённый import run${run?.sourceName ? `: ${run.sourceName}` : ""}.`;
+    : `Текущий запуск начался ${formatDateTime(run?.startedAt ?? null)}${
+        run?.sourceName ? `: ${run.sourceName}` : ""
+      }.`;
 
   return (
-    <GlassCard className="admin-import-runner admin-import-runner--blocked">
-      <div className="admin-import-runner__head">
-        <div className="admin-import-runner__title">
-          <div className="badge-row">
-            <Badge tone="gold">{loading ? "Проверяем history" : "Import run started"}</Badge>
-            <Badge tone="glass">Edge Function</Badge>
-          </div>
-          <h2>Запуск импорта сайта</h2>
-          <p>
-            {statusText} Новый запуск станет доступен после обновления статуса в журнале.
-          </p>
-        </div>
-        <Button disabled variant="gold">
-          {loading ? "Проверяем журнал..." : "Импорт уже запущен"}
-        </Button>
-      </div>
-
-      {!loading && run ? (
-        <div className="admin-import-runner__status admin-import-runner__status--pending">
-          <strong>Текущий запуск начался {formatDateTime(run.startedAt)}</strong>
-          <span>Run ID: {run.id}</span>
-        </div>
-      ) : null}
-    </GlassCard>
+    <Button disabled size="sm" title={statusText} variant="gold">
+      {loading ? "Проверяем..." : "Импорт выполняется"}
+    </Button>
   );
 }
 
-function ImportRunHistorySummary({
-  error,
-  latestRun,
-  loading,
-  onOpen,
-}: {
-  error: string | null;
-  latestRun: AdminImportRun | null;
-  loading: boolean;
-  onOpen: () => void;
-}) {
+function ImportReviewStatusHelp() {
+  const tooltipId = useId();
+
   return (
-    <GlassCard className="import-history-compact">
-      <div className="import-history-compact__main">
-        <div className="badge-row">
-          <Badge tone="glass">Журнал импорта</Badge>
-          {loading ? (
-            <Badge tone="gold">Последний: проверяем</Badge>
-          ) : error ? (
-            <Badge tone="red">Журнал недоступен</Badge>
-          ) : latestRun ? (
-            <Badge tone={getAdminImportRunStatusTone(latestRun.status)}>
-              Последний: {formatAdminImportRunStatusLabel(latestRun.status)}
-            </Badge>
-          ) : (
-            <Badge tone="muted">Последний: нет запусков</Badge>
-          )}
-        </div>
-        <span>
-          {latestRun
-            ? `${latestRun.sourceName ? `${latestRun.sourceName} · ` : ""}${formatDateTime(latestRun.startedAt)}`
-            : "Последние запуски доступны в модальном окне."}
-        </span>
-      </div>
-      <Button onClick={onOpen} size="sm" variant="secondary">
-        Журнал импорта
-      </Button>
-    </GlassCard>
+    <span className="import-review-help">
+      <button
+        aria-describedby={tooltipId}
+        aria-label="Технические детали импорта"
+        className="import-review-help__button"
+        type="button"
+      >
+        i
+      </button>
+      <span className="import-review-help__tooltip" id={tooltipId} role="tooltip">
+        Запуск использует текущую Supabase-сессию, Edge Function
+        admin-website-import и режим apply_review_only. Записи остаются в очереди
+        проверки через RPC/RLS.
+      </span>
+    </span>
   );
+}
+
+function getLatestImportRunState(
+  latestRun: AdminImportRun | null,
+  loading: boolean,
+  error: string | null,
+): { detail: string; label: string; tone: AdminBadgeTone } {
+  if (loading) {
+    return {
+      detail: "Проверяем журнал запусков.",
+      label: "Проверяем",
+      tone: "gold",
+    };
+  }
+
+  if (error && !latestRun) {
+    return {
+      detail: "Журнал запусков сейчас недоступен.",
+      label: "Ошибка",
+      tone: "red",
+    };
+  }
+
+  if (!latestRun) {
+    return {
+      detail: "Журнал пока пуст.",
+      label: "Нет запусков",
+      tone: "muted",
+    };
+  }
+
+  const detail = `${latestRun.sourceName ? `${latestRun.sourceName} · ` : ""}${formatDateTime(
+    latestRun.startedAt,
+  )}`;
+
+  if (latestRun.status === "started") {
+    return {
+      detail,
+      label: "Выполняется",
+      tone: "gold",
+    };
+  }
+
+  if (latestRun.status === "failed") {
+    return {
+      detail,
+      label: "Ошибка",
+      tone: "red",
+    };
+  }
+
+  return {
+    detail,
+    label: "Успешно",
+    tone: "green",
+  };
 }
 
 function ImportRunHistoryModal({
@@ -1956,14 +2005,31 @@ function ImportReviewField({
 function ImportReviewState({
   children,
   description,
+  icon,
   title,
+  variant = "default",
 }: {
   children?: ReactNode;
   description: string;
+  icon?: ReactNode;
   title: string;
+  variant?: "default" | "empty";
 }) {
+  const classes = [
+    "events-state",
+    "import-review-state",
+    variant === "empty" ? "import-review-state--empty" : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className="events-state" role="status">
+    <div className={classes} role="status">
+      {icon ? (
+        <span className="import-review-state__icon" aria-hidden="true">
+          {icon}
+        </span>
+      ) : null}
       <h3>{title}</h3>
       <p>{description}</p>
       {children ? <div className="events-state__actions">{children}</div> : null}

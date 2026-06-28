@@ -7,6 +7,15 @@ dedupe state from `raw_payload.importReview.dedupe` in the compact queue and
 detail drawer. Older phased-plan language remains only where it describes
 future backend/apply work.
 
+Current UI status: the web-admin page is a human-facing review workspace. The
+main view shows a lightweight header with the latest run status, journal,
+refresh, and import actions; filters are a compact toolbar; and the empty queue
+state points the admin back to starting an import. Technical importer details
+such as mode names, Edge Function names, and RPC boundaries are kept out of the
+main page chrome and exposed only in contextual help or implementation docs.
+Publication remains manual: imported items become review data or hidden drafts
+only after an explicit admin action, never public events automatically.
+
 Этот документ фиксирует final architecture для Phase 2 admin-triggered import v2.
 Текущий UI PR добавляет read layer и web-admin журнал запусков импорта. Он не
 меняет Edge Function, parser, importer script или mobile flow.
@@ -383,9 +392,17 @@ Codex does not run browser smoke.
 Checklist:
 
 - Open “Импорт с сайта”.
-- Confirm the import history is a compact `Журнал импорта` row on the page.
+- Confirm the top area is one compact header with `Импорт с сайта`, latest-run
+  status, `Журнал`, `Обновить`, and `Запустить импорт`.
+- Confirm technical importer details are not visible in the main page text and
+  appear only in the small status help tooltip.
 - Open the history modal and close it by X, backdrop, and Escape.
 - Confirm the import runner remains blocked while a recent `started` run exists.
+- Confirm filters render as one compact toolbar row: search, date quality,
+  status, and limit.
+- With an empty queue, confirm the empty state shows `Очередь проверки пуста`,
+  the text `Запустите импорт, чтобы собрать новые события с сайта на ручную
+  проверку`, and a `Запустить импорт` action.
 - Confirm import item cards are compact and show thumbnail or local placeholder.
 - Open a thumbnail and confirm it opens `imageUrl` in a new tab.
 - Open “Подробнее” and confirm date, place, reason/notes, source,

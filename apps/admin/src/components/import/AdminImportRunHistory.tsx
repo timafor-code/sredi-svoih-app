@@ -32,7 +32,6 @@ export function AdminImportRunHistory({
       <div className="admin-import-history__head">
         <div className="admin-import-history__title">
           <div className="badge-row">
-            <Badge tone="glass">admin_list_import_runs</Badge>
             {latestRun ? (
               <Badge tone={getAdminImportRunStatusTone(latestRun.status)}>
                 Последний: {formatAdminImportRunStatusLabel(latestRun.status)}
@@ -40,7 +39,7 @@ export function AdminImportRunHistory({
             ) : null}
           </div>
           <h2>Журнал запусков импорта</h2>
-          <p>Последние import runs по текущей активной community.</p>
+          <p>Последние запуски по текущей активной общине.</p>
         </div>
         <Button disabled={loading} onClick={onRefresh}>
           {loading ? "Обновляем..." : "Обновить журнал"}
@@ -51,7 +50,7 @@ export function AdminImportRunHistory({
         <div
           className={`admin-import-history__latest admin-import-history__latest--${latestRun.status}`}
         >
-          <span>Latest run status</span>
+          <span>Последний запуск</span>
           <strong>{formatAdminImportRunStatusLabel(latestRun.status)}</strong>
           <small>
             {latestRun.sourceName ? `${latestRun.sourceName} · ` : ""}
@@ -62,7 +61,7 @@ export function AdminImportRunHistory({
 
       {loading ? (
         <ImportHistoryState
-          description="Вызываем admin_list_import_runs и ждём ответ Supabase."
+          description="Загружаем последние запуски импорта."
           title="Загрузка журнала запусков"
         />
       ) : error ? (
@@ -94,19 +93,19 @@ export function AdminImportRunHistory({
               </div>
 
               <div className="admin-import-history__meta">
-                <ImportRunField label="started_at" value={formatDateTime(run.startedAt)} />
-                <ImportRunField label="finished_at" value={formatDateTime(run.finishedAt)} />
+                <ImportRunField label="Начат" value={formatDateTime(run.startedAt)} />
+                <ImportRunField label="Завершён" value={formatDateTime(run.finishedAt)} />
               </div>
 
               <dl className="admin-import-history__counts">
-                <ImportRunCount label="found_count" value={run.foundCount} />
-                <ImportRunCount label="created_count" value={run.createdCount} />
-                <ImportRunCount label="updated_count" value={run.updatedCount} />
+                <ImportRunCount label="Найдено" value={run.foundCount} />
+                <ImportRunCount label="Создано" value={run.createdCount} />
+                <ImportRunCount label="Обновлено" value={run.updatedCount} />
               </dl>
 
               {run.error ? (
                 <div className="admin-import-history__error" role="note">
-                  <span>error</span>
+                  <span>Ошибка</span>
                   <strong>{formatRunError(run.error)}</strong>
                 </div>
               ) : null}

@@ -1,4 +1,5 @@
 import { useId, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 import {
   AdminWebsiteImportError,
@@ -14,7 +15,10 @@ import { Button } from "../ui/Button";
 import { GlassCard } from "../ui/GlassCard";
 
 type AdminWebsiteImportRunnerProps = {
+  buttonLabel?: string;
   onImportFinished?: () => boolean | Promise<boolean> | void | Promise<void>;
+  triggerId?: string;
+  variant?: "card" | "compact";
 };
 
 type SummaryCount = {
@@ -23,7 +27,10 @@ type SummaryCount = {
 };
 
 export function AdminWebsiteImportRunner({
+  buttonLabel,
   onImportFinished,
+  triggerId,
+  variant = "card",
 }: AdminWebsiteImportRunnerProps) {
   const dialogTitleId = useId();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -82,83 +89,104 @@ export function AdminWebsiteImportRunner({
     }
   };
 
+  const trigger = (
+    <Button
+      disabled={running}
+      id={triggerId}
+      onClick={() => setConfirmOpen(true)}
+      size={variant === "compact" ? "sm" : "md"}
+      variant="gold"
+    >
+      {running ? "Запускаем..." : buttonLabel ?? "Запустить импорт в очередь проверки"}
+    </Button>
+  );
+  const feedback = (
+    <>
+      {result ? (
+        <ImportRunSummary
+          parserErrors={parserErrors}
+          queueReloaded={queueReloaded}
+          result={result}
+        />
+      ) : null}
+
+      {error ? <ImportRunError error={error} parserErrors={parserErrors} /> : null}
+    </>
+  );
+  const confirmDialog =
+    confirmOpen && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            className="event-action-dialog-backdrop"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget && !running) {
+                setConfirmOpen(false);
+              }
+            }}
+          >
+            <section
+              aria-labelledby={dialogTitleId}
+              aria-modal="true"
+              className="event-action-dialog admin-import-confirm"
+              role="dialog"
+            >
+              <div className="event-action-dialog__head">
+                <div>
+                  <Badge tone="gold">Подтверждение</Badge>
+                  <h2 id={dialogTitleId}>Запустить импорт?</h2>
+                </div>
+                <Button disabled={running} onClick={() => setConfirmOpen(false)} variant="ghost">
+                  Закрыть
+                </Button>
+              </div>
+
+              <div className="event-action-dialog__notice admin-import-confirm__notice">
+                <p>
+                  Будет загружена страница событий сайта и создана новая запись в журнале.
+                  События не будут опубликованы автоматически. Спорные элементы попадут
+                  в очередь проверки.
+                </p>
+              </div>
+
+              <div className="event-action-dialog__actions">
+                <Button disabled={running} onClick={() => setConfirmOpen(false)}>
+                  Отмена
+                </Button>
+                <Button disabled={running} onClick={() => void handleStart()} variant="gold">
+                  {running ? "Запускаем..." : "Начать импорт"}
+                </Button>
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
     <>
-      <GlassCard className="admin-import-runner">
-        <div className="admin-import-runner__head">
-          <div className="admin-import-runner__title">
-            <div className="badge-row">
-              <Badge tone="gold">apply_review_only</Badge>
-              <Badge tone="glass">Edge Function</Badge>
-            </div>
-            <h2>Запуск импорта сайта</h2>
-            <p>
-              Кнопка вызывает admin-website-import с текущей Supabase-сессией и
-              создаёт только данные очереди проверки.
-            </p>
-          </div>
-          <Button disabled={running} onClick={() => setConfirmOpen(true)} variant="gold">
-            {running ? "Запускаем..." : "Запустить импорт в очередь проверки"}
-          </Button>
+      {variant === "compact" ? (
+        <div className="admin-import-runner admin-import-runner--compact">
+          {trigger}
+          {feedback}
         </div>
-
-        {result ? (
-          <ImportRunSummary
-            parserErrors={parserErrors}
-            queueReloaded={queueReloaded}
-            result={result}
-          />
-        ) : null}
-
-        {error ? (
-          <ImportRunError error={error} parserErrors={parserErrors} />
-        ) : null}
-      </GlassCard>
-
-      {confirmOpen ? (
-        <div
-          className="event-action-dialog-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !running) {
-              setConfirmOpen(false);
-            }
-          }}
-        >
-          <section
-            aria-labelledby={dialogTitleId}
-            aria-modal="true"
-            className="event-action-dialog admin-import-confirm"
-            role="dialog"
-          >
-            <div className="event-action-dialog__head">
-              <div>
-                <Badge tone="gold">Подтверждение</Badge>
-                <h2 id={dialogTitleId}>Запустить импорт?</h2>
-              </div>
-              <Button disabled={running} onClick={() => setConfirmOpen(false)} variant="ghost">
-                Закрыть
-              </Button>
-            </div>
-
-            <div className="event-action-dialog__notice admin-import-confirm__notice">
+      ) : (
+        <GlassCard className="admin-import-runner">
+          <div className="admin-import-runner__head">
+            <div className="admin-import-runner__title">
+              <h2>Запуск импорта сайта</h2>
               <p>
-                Будет загружена страница событий сайта и создан новый import run.
-                События не будут опубликованы автоматически. Спорные элементы попадут
-                в очередь проверки.
+                Новые события будут добавлены в очередь ручной проверки без
+                автоматической публикации.
               </p>
             </div>
+            {trigger}
+          </div>
 
-            <div className="event-action-dialog__actions">
-              <Button disabled={running} onClick={() => setConfirmOpen(false)}>
-                Отмена
-              </Button>
-              <Button disabled={running} onClick={() => void handleStart()} variant="gold">
-                {running ? "Запускаем..." : "Начать импорт"}
-              </Button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+          {feedback}
+        </GlassCard>
+      )}
+
+      {confirmDialog}
     </>
   );
 }
@@ -173,7 +201,6 @@ function ImportRunSummary({
   result: AdminWebsiteImportSuccessResponse;
 }) {
   const counts = buildSummaryCounts(result);
-  const parserLabel = [result.parser?.name, result.parser?.version].filter(Boolean).join(" ");
 
   return (
     <div className="admin-import-runner__summary" role="status">
@@ -184,11 +211,10 @@ function ImportRunSummary({
       </div>
 
       <div className="admin-import-runner__summary-text">
-        <strong>Summary Edge Function</strong>
+        <strong>Готово к проверке</strong>
         <p>
-          {result.run?.status ? `Run status: ${result.run.status}. ` : ""}
-          {parserLabel ? `Parser: ${parserLabel}. ` : ""}
-          {result.sourceUrl ? `Source: ${result.sourceUrl}.` : ""}
+          Импорт завершён. Новые или обновлённые элементы можно разобрать в
+          очереди проверки.
         </p>
       </div>
 
@@ -221,7 +247,7 @@ function ImportRunError({
     <div className="admin-import-runner__status admin-import-runner__status--error" role="alert">
       <strong>{error.message}</strong>
       {error instanceof AdminWebsiteImportError && error.runId ? (
-        <span>Run ID: {error.runId}</span>
+        <span>Подробности доступны в журнале запусков.</span>
       ) : null}
       {parserErrors.length > 0 ? (
         <ParserErrorList parserErrors={parserErrors} tone="error" />
@@ -241,7 +267,7 @@ function ParserErrorList({
     <div
       className={`admin-import-runner__parser-errors admin-import-runner__parser-errors--${tone}`}
     >
-      <strong>Parser errors</strong>
+      <strong>Ошибки разбора</strong>
       <ul>
         {parserErrors.slice(0, 6).map((parserError, index) => (
           <li key={`${parserError.code ?? "parser-error"}-${index}`}>
@@ -258,15 +284,14 @@ function buildSummaryCounts(result: AdminWebsiteImportSuccessResponse): SummaryC
   const summary = result.summary ?? {};
   const rows: SummaryCount[] = [];
 
-  pushStringCount(rows, "Run ID", result.run?.runId);
-  pushNumberCount(rows, "Found", summary.foundCount);
-  pushNumberCount(rows, "Parsed", summary.parsedCount);
-  pushNumberCount(rows, "Parser errors", summary.parserErrorCount);
-  pushNumberCount(rows, "Item errors", summary.itemErrorCount);
-  pushNumberCount(rows, "Import items", summary.itemsWrittenCount);
-  pushNumberCount(rows, "Inserted", summary.itemsInsertedCount);
-  pushNumberCount(rows, "Updated", summary.itemsUpdatedCount);
-  pushNumberCount(rows, "New items", summary.itemsNewCount);
+  pushNumberCount(rows, "Найдено", summary.foundCount);
+  pushNumberCount(rows, "Распознано", summary.parsedCount);
+  pushNumberCount(rows, "Ошибки разбора", summary.parserErrorCount);
+  pushNumberCount(rows, "Ошибки элементов", summary.itemErrorCount);
+  pushNumberCount(rows, "В очередь", summary.itemsWrittenCount);
+  pushNumberCount(rows, "Добавлено", summary.itemsInsertedCount);
+  pushNumberCount(rows, "Обновлено", summary.itemsUpdatedCount);
+  pushNumberCount(rows, "Новые", summary.itemsNewCount);
 
   return rows;
 }
@@ -278,18 +303,6 @@ function pushNumberCount(
 ) {
   if (typeof value === "number" && Number.isFinite(value)) {
     rows.push({ label, value });
-  }
-}
-
-function pushStringCount(
-  rows: SummaryCount[],
-  label: string,
-  value: string | null | undefined,
-) {
-  const normalized = value?.trim();
-
-  if (normalized) {
-    rows.push({ label, value: normalized });
   }
 }
 
