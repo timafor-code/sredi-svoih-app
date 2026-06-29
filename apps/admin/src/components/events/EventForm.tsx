@@ -532,6 +532,13 @@ export function EventForm({
             onChange={(value) => updateField("description", value)}
             value={form.description}
           />
+          <TextField
+            label="Ссылка на изображение"
+            onChange={(value) => updateField("imageUrl", value)}
+            placeholder="https://..."
+            value={form.imageUrl}
+            wide
+          />
         </div>
       </section>
 
@@ -588,7 +595,7 @@ export function EventForm({
 
       <section className="event-form-section">
         <div className="event-form-section__head">
-          <h2>Место и афиша</h2>
+          <h2>Место</h2>
         </div>
         <div className="event-form-grid event-form-grid--two">
           <SelectField
@@ -601,12 +608,6 @@ export function EventForm({
             onChange={handleLocationSelect}
             options={locationOptions}
             value={currentLocationValue}
-          />
-          <TextField
-            label="Ссылка на изображение"
-            onChange={(value) => updateField("imageUrl", value)}
-            placeholder="https://..."
-            value={form.imageUrl}
           />
           {communityLocationsError ? (
             <div className="event-form-notice event-form-field--wide" role="alert">
@@ -722,19 +723,25 @@ function TextField({
   label,
   onChange,
   value,
+  wide = false,
   ...props
 }: {
   error?: string;
   label: string;
   onChange: (value: string) => void;
   value: string;
+  wide?: boolean;
 } & Pick<InputHTMLAttributes<HTMLInputElement>, "disabled" | "min" | "placeholder" | "type">) {
+  const className = [
+    "event-form-field",
+    props.disabled ? "event-form-field--disabled" : "",
+    wide ? "event-form-field--wide" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <label
-      className={
-        props.disabled ? "event-form-field event-form-field--disabled" : "event-form-field"
-      }
-    >
+    <label className={className}>
       <span>{label}</span>
       <input
         aria-invalid={Boolean(error)}
