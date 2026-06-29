@@ -208,6 +208,34 @@ such as `left` or `suspended`; the person remains an app user.
 Invite creation, message sending, notifications, exports, audit logs, and
 member insights/statistics are intentionally left for separate PRs.
 
+## Add Existing Profile
+
+The members page now has a top-right `Добавить участника` button. It opens a
+dialog for adding an existing app profile to the current community.
+
+The dialog searches through `adminMembersService.listAdminUsers` with
+`membershipStatus: "no_membership"`, so admins can select only profiles that are
+inside the existing admin members scope and do not already have a membership in
+the selected community. After selection, the dialog loads the extended profile
+card through `admin_get_user_profile`, reuses the same profile edit form as the
+member detail drawer, and lets the admin assign:
+
+- role: `member`, `event_manager`, `admin`, or `rabbi`;
+- status: `active` or `pending`.
+
+Saving uses the existing RPC boundary:
+
+- changed profile fields are saved through `admin_update_user_profile`;
+- the community membership is created or updated through
+  `admin_set_user_membership`;
+- the members list refreshes after a successful save and the dialog closes.
+
+This workflow adds only an existing `public.profiles` app user to the community.
+It does not create Supabase Auth users, create profiles for missing Auth users,
+set or request passwords, change Auth email/password, touch `auth.users`, use
+the Supabase Admin API, use service-role credentials, send invites, or read
+prayer tracker data.
+
 ## Future UI Actions
 
 Future web-admin work can build on these RPCs for:
