@@ -23,6 +23,20 @@ export type AdminMemberMembershipRole =
 export type AdminMemberMembershipStatus =
   (typeof ADMIN_MEMBER_MEMBERSHIP_STATUSES)[number];
 
+export type AdminMemberBirthTimeContext =
+  | "before_sunset"
+  | "after_sunset"
+  | "unknown";
+
+export type AdminMemberTribeStatus = "kohen" | "levi" | "israel";
+
+export type AdminMemberMaritalStatus =
+  | "single"
+  | "married"
+  | "divorced"
+  | "widowed"
+  | "other";
+
 export type AdminMemberMembershipStatusFilter =
   | AdminMemberMembershipStatus
   | "all"
@@ -103,4 +117,51 @@ export type AdminSetUserMembershipInput = {
   communityId: string;
   role: AdminMemberMembershipRole;
   status: AdminMemberMembershipStatus;
+};
+
+export type AdminUpdateUserProfileFields = {
+  fullName?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  displayName?: string | null;
+  hebrewName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  city?: string | null;
+  birthDate?: string | null;
+  hebrewBirthDate?: Record<string, unknown> | null;
+  birthTimeContext?: AdminMemberBirthTimeContext;
+  nusach?: string | null;
+  tribeStatus?: AdminMemberTribeStatus | null;
+  maritalStatus?: AdminMemberMaritalStatus | null;
+  about?: string | null;
+  onboardingCompleted?: boolean;
+};
+
+export type AdminUpdateUserProfileInput = {
+  targetUserId: string;
+  communityId: string;
+  fields: AdminUpdateUserProfileFields;
+};
+
+export type AdminUpdatedUserProfile = {
+  userId: string;
+  profileCommunityId: string | null;
+  fullName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  displayName: string | null;
+  hebrewName: string | null;
+  email: string | null;
+  phone: string | null;
+  city: string | null;
+  birthDate: string | null;
+  hebrewBirthDate: Record<string, unknown> | null;
+  birthTimeContext: AdminMemberBirthTimeContext | string | null;
+  nusach: string | null;
+  tribeStatus: AdminMemberTribeStatus | string | null;
+  maritalStatus: AdminMemberMaritalStatus | string | null;
+  about: string | null;
+  onboardingCompleted: boolean;
+  profileUpdatedAt: string | null;
 };

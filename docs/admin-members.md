@@ -47,6 +47,8 @@ registration aggregates or history for the selected community.
   membership fields, and event registration counters.
 - `admin_get_user_profile(target_user_id uuid, community_id uuid)` returns one
   extended profile card with membership and registration aggregates.
+- `admin_update_user_profile(payload jsonb)` updates explicitly allowed fields
+  on an existing `public.profiles` row in the selected admin community scope.
 - `admin_list_user_registrations(target_user_id uuid, community_id uuid)`
   returns the selected user's event registrations in the community, including
   occurrence timing and selected participation options when present.
@@ -67,6 +69,43 @@ registration aggregates or history for the selected community.
 `admin_set_user_membership` does not remove users. Future "exclude from
 community" actions should set `status` to `left` or `suspended`.
 
+`admin_update_user_profile` uses a strict payload contract:
+
+- `targetUserId` or `target_user_id`
+- `communityId` or `community_id`
+- `fields`, an object keyed by supported `public.profiles` column names
+
+Supported editable profile fields are:
+
+- `full_name`
+- `first_name`
+- `last_name`
+- `display_name`
+- `hebrew_name`
+- `email`
+- `phone`
+- `city`
+- `birth_date`
+- `hebrew_birth_date`
+- `birth_time_context`
+- `nusach`
+- `tribe_status`
+- `marital_status`
+- `about`
+- `onboarding_completed`
+
+Unsupported top-level payload keys and unsupported `fields` keys are rejected
+with `22023`. The RPC derives the acting admin from `auth.uid()` only; it does
+not accept a caller-supplied admin user id. It requires an active `admin`
+membership in the selected community and applies the same profile scope as the
+member detail RPC: the target profile must either have a membership row in the
+selected community or have no active membership in any community.
+
+The RPC writes only `public.profiles`. Updating `email` updates the profile
+field only; it does not touch Supabase Auth login email, Auth password,
+`auth.users`, `community_memberships`, event registrations, or prayer tracker
+data.
+
 ## Admin Web Service Layer
 
 The web-admin service layer for this backend foundation lives in:
@@ -78,6 +117,7 @@ The service layer provides typed wrappers around the admin members RPCs:
 
 - `listAdminUsers(filters)` calls `admin_list_users`.
 - `getAdminUserProfile(userId, communityId)` calls `admin_get_user_profile`.
+- `updateAdminUserProfile(input)` calls `admin_update_user_profile`.
 - `listAdminUserRegistrations(userId, communityId)` calls
   `admin_list_user_registrations`.
 - `setAdminUserMembership(input)` calls `admin_set_user_membership`.
