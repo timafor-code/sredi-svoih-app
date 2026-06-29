@@ -2277,6 +2277,129 @@ a {
   line-height: 1.3;
 }
 
+.member-add-modes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 4px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.member-add-mode {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 7px 12px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.member-add-mode:hover:not(:disabled),
+.member-add-mode:focus-visible {
+  color: var(--text);
+  border-color: rgba(242, 184, 75, 0.42);
+  outline: 0;
+}
+
+.member-add-mode--active {
+  background: rgba(242, 184, 75, 0.14);
+  border-color: rgba(242, 184, 75, 0.5);
+  color: var(--text);
+}
+
+.member-add-mode:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.member-add-dialog__body--invite {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.member-membership-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  outline: 0;
+  padding: 0 11px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.member-membership-field input:focus {
+  border-color: rgba(242, 184, 75, 0.62);
+}
+
+.member-membership-field input:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.member-invite-result {
+  display: grid;
+  gap: 12px;
+}
+
+.member-invite-code {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(242, 184, 75, 0.42);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: rgba(242, 184, 75, 0.08);
+}
+
+.member-invite-code code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+}
+
+.member-invite-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+  margin: 0;
+}
+
+.member-invite-meta div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.member-invite-meta dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.member-invite-meta dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 720px) {
   .members-page-header,
   .member-add-dialog__head,

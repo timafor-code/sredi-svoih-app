@@ -29,10 +29,11 @@ import {
   type AdminMemberProfileDraft,
 } from "./AdminMemberProfileForm";
 
-type AddExistingMemberDialogProps = {
+type AddExistingMemberPanelProps = {
   communityId: string | null;
   onClose: () => void;
   onSaved: () => Promise<void> | void;
+  onBusyChange?: (busy: boolean) => void;
 };
 
 const ADD_MEMBER_SEARCH_LIMIT = 30;
@@ -54,11 +55,12 @@ const ADD_MEMBER_STATUS_LABELS: Record<AddMemberStatus, string> = {
   pending: "Ожидает",
 };
 
-export function AddExistingMemberDialog({
+export function AddExistingMemberPanel({
   communityId,
   onClose,
   onSaved,
-}: AddExistingMemberDialogProps) {
+  onBusyChange,
+}: AddExistingMemberPanelProps) {
   const searchRequestSeq = useRef(0);
   const profileRequestSeq = useRef(0);
 
@@ -111,6 +113,10 @@ export function AddExistingMemberDialog({
     setSaving(false);
     setSaveError(null);
   }, [communityId]);
+
+  useEffect(() => {
+    onBusyChange?.(saving);
+  }, [onBusyChange, saving]);
 
   const runSearch = useCallback(async () => {
     const requestId = searchRequestSeq.current + 1;
@@ -269,35 +275,7 @@ export function AddExistingMemberDialog({
   };
 
   return (
-    <div className="member-add-backdrop" onClick={onClose}>
-      <section
-        aria-labelledby="member-add-title"
-        aria-modal="true"
-        className="member-add-dialog"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-      >
-        <header className="member-add-dialog__head">
-          <div>
-            <span>Профиль приложения</span>
-            <h2 id="member-add-title">Добавить участника</h2>
-            <p>
-              Найдите существующий профиль без членства в этой общине, проверьте
-              данные и назначьте роль.
-            </p>
-          </div>
-          <button
-            aria-label="Закрыть добавление участника"
-            className="member-detail-drawer__close"
-            disabled={saving}
-            onClick={onClose}
-            type="button"
-          >
-            ×
-          </button>
-        </header>
-
-        <div className="member-add-dialog__body">
+    <div className="member-add-dialog__body">
           <section className="member-add-dialog__section">
             <form className="member-add-search" onSubmit={handleSearchSubmit}>
               <label className="filter-field">
@@ -419,8 +397,6 @@ export function AddExistingMemberDialog({
               </form>
             ) : null}
           </section>
-        </div>
-      </section>
     </div>
   );
 }

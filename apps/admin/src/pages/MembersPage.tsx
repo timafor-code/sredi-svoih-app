@@ -12,7 +12,7 @@ import {
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
-import { AddExistingMemberDialog } from "../components/members/AddExistingMemberDialog";
+import { AddMemberDialog } from "../components/members/AddMemberDialog";
 import {
   ADMIN_MEMBER_BIRTH_TIME_CONTEXT_OPTIONS,
   ADMIN_MEMBER_MARITAL_STATUS_OPTIONS,
@@ -479,7 +479,7 @@ export function MembersPage() {
       ) : null}
 
       {addDialogOpen ? (
-        <AddExistingMemberDialog
+        <AddMemberDialog
           communityId={communityId}
           onClose={() => setAddDialogOpen(false)}
           onSaved={handleMemberAdded}
