@@ -166,6 +166,25 @@ The drawer shows:
 Invite creation, messaging, exports, and participation insights remain separate
 PRs.
 
+## Profile Edit Mode
+
+The member detail drawer now lets admins edit the selected user's existing
+profile fields in place. The drawer keeps read-only profile rows by default and
+switches only the profile section into an edit form after the admin clicks
+`Редактировать`.
+
+Profile saves use `adminMembersService.updateAdminUserProfile`, which calls
+`admin_update_user_profile` through the regular authenticated Supabase client.
+The UI sends only changed camelCase fields to the service wrapper; cleared
+nullable fields are sent as `null`, and unchanged fields are omitted. After a
+successful save, the drawer refreshes the selected profile and the members list
+so the table row stays in sync.
+
+This edit mode updates only `public.profiles`. It does not create Auth users,
+create profiles for missing Auth users, change Auth email/password, touch
+`auth.users`, use the Supabase Admin API, or use a service-role key in browser
+code.
+
 ## Membership Actions
 
 The member detail drawer now includes focused membership actions for the current
