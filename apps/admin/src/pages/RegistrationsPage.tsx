@@ -565,6 +565,10 @@ export function RegistrationsPage() {
   }, [pendingAction, runRegistrationAction]);
 
   const handleSelectEvent = useCallback((eventId: string) => {
+    if (eventId === selectedEventId) {
+      return;
+    }
+
     setSelectedEventId(eventId);
     setSelectedRegistrationId(null);
     setRegistrationSearch("");
@@ -573,7 +577,7 @@ export function RegistrationsPage() {
     setOccurrences([]);
     setOccurrencesError(null);
     setShowPastOccurrences(false);
-  }, []);
+  }, [selectedEventId]);
 
   const handleSelectOccurrence = useCallback((occurrenceId: string | null) => {
     setSelectedOccurrenceId(occurrenceId);
