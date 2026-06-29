@@ -1624,16 +1624,6 @@ export function SeatingLayoutEditor({
             </Button>
           ) : null}
 
-          <Button
-            disabled={!canPrintSeating}
-            onClick={handlePrintSeating}
-            size="sm"
-            title={printDisabledReason ?? "Напечатать текущую рассадку"}
-            variant="secondary"
-          >
-            Печать рассадки
-          </Button>
-
           {feedback?.message ? (
             <span
               className={`seat-save-status seat-save-status--${feedback.tone}`}
@@ -1785,6 +1775,16 @@ export function SeatingLayoutEditor({
                   <i className="seat-legend__head" /> Головное место
                 </span>
               </div>
+              <Button
+                className="seat-print-sidebar-action"
+                disabled={!canPrintSeating}
+                onClick={handlePrintSeating}
+                size="md"
+                title={printDisabledReason ?? "Напечатать текущую рассадку"}
+                variant="secondary"
+              >
+                Печать рассадки
+              </Button>
             </section>
           </aside>
         </div>
