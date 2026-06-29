@@ -122,6 +122,7 @@ function AdminApp() {
     handleBackToEventsList,
     handleImportEventCreated,
     handleOpenEventsList,
+    handleSectionChange,
   );
 
   return (
@@ -163,6 +164,7 @@ function renderPage(
   onBackToEventsList: () => void,
   onImportEventCreated: (event: AdminEvent) => void,
   onOpenEventsList: () => void,
+  onSectionChange: (section: AdminSection) => void,
 ) {
   if (role === "member" || !canRoleOpenSection(role, activeSection)) {
     return <NoAccessPage />;
@@ -174,7 +176,7 @@ function renderPage(
 
   switch (activeSection) {
     case "overview":
-      return <OverviewPage />;
+      return <OverviewPage onSectionChange={onSectionChange} />;
     case "events":
       if (isCreatingEvent) {
         return (
