@@ -21,14 +21,11 @@ type AdminLayoutProps = {
   sessionEmail: string | null;
 };
 
-const adminEnvLabel = getOptionalEnvLabel(import.meta.env.VITE_ADMIN_ENV_LABEL);
-
 export function AdminLayout({
   activeSection,
   children,
   membership,
   onCreateEvent,
-  onImportReviewRefresh,
   profile,
   role,
   onSectionChange,
@@ -38,18 +35,6 @@ export function AdminLayout({
   const sectionTitle = getSectionTitle(activeSection);
   const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
   const canSubmitFeedback = role === "admin" || role === "event_manager";
-  const displayName = getProfileDisplayName(profile);
-  const email = getFirstNonEmptyLabel(profile?.email, sessionEmail) ?? "email не найден";
-  const communityLabel = getCommunityLabel(membership);
-  const contextTitle = [
-    displayName ? `Name: ${displayName}` : null,
-    `Email: ${email}`,
-    `Role: ${role}`,
-    `Community: ${communityLabel}`,
-    adminEnvLabel ? `Env: ${adminEnvLabel}` : null,
-  ]
-    .filter(Boolean)
-    .join(" | ");
   const openFeedbackDialog = useCallback(() => {
     setIsFeedbackDialogOpen(true);
   }, []);
@@ -68,42 +53,13 @@ export function AdminLayout({
       />
       <div className="admin-layout__main">
         <Topbar
-          isImportSection={activeSection === "import"}
           onCreateEvent={onCreateEvent}
-          onOpenImportReview={() => onSectionChange("import")}
-          onRefreshImportReview={onImportReviewRefresh}
           onSignOut={onSignOut}
           profile={profile}
           role={role}
           sectionTitle={sectionTitle}
           sessionEmail={sessionEmail}
         />
-        <section
-          aria-label="Контекст текущего пользователя"
-          className="admin-current-context"
-          title={contextTitle}
-        >
-          <div className="admin-current-context__identity">
-            {displayName ? <strong>{displayName}</strong> : null}
-            <span>{email}</span>
-          </div>
-          <dl className="admin-current-context__meta">
-            <div>
-              <dt>Role</dt>
-              <dd>{role}</dd>
-            </div>
-            <div>
-              <dt>Community</dt>
-              <dd title={communityLabel}>{communityLabel}</dd>
-            </div>
-            {adminEnvLabel ? (
-              <div>
-                <dt>Env</dt>
-                <dd>{adminEnvLabel}</dd>
-              </div>
-            ) : null}
-          </dl>
-        </section>
         <main className="admin-layout__content">{children}</main>
         {canSubmitFeedback ? <AdminFeedbackButton onClick={openFeedbackDialog} /> : null}
         {canSubmitFeedback && isFeedbackDialogOpen ? (
@@ -116,37 +72,4 @@ export function AdminLayout({
       </div>
     </div>
   );
-}
-
-function getOptionalEnvLabel(value: unknown): string | null {
-  return typeof value === "string" ? getFirstNonEmptyLabel(value) : null;
-}
-
-function getProfileDisplayName(profile: AdminProfile | null): string | null {
-  const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ");
-
-  return getFirstNonEmptyLabel(profile?.display_name, profile?.full_name, fullName);
-}
-
-function getCommunityLabel(membership: AdminMembership | null): string {
-  return (
-    getFirstNonEmptyLabel(
-      membership?.community?.name,
-      membership?.community_name,
-      membership?.community_id,
-      membership?.community?.id,
-    ) ?? "community не выбрана"
-  );
-}
-
-function getFirstNonEmptyLabel(...values: Array<string | null | undefined>): string | null {
-  for (const value of values) {
-    const trimmed = value?.trim();
-
-    if (trimmed) {
-      return trimmed;
-    }
-  }
-
-  return null;
 }
