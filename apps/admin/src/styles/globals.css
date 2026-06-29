@@ -4790,7 +4790,7 @@ a {
 
 .event-occurrence-row {
   display: grid;
-  grid-template-columns: minmax(116px, 0.34fr) minmax(0, 1fr) auto auto minmax(122px, auto) auto;
+  grid-template-columns: minmax(116px, 0.28fr) minmax(0, 1fr) minmax(122px, auto) auto;
   align-items: center;
   gap: 10px;
   border: 1px solid var(--glass-border);
@@ -4799,7 +4799,6 @@ a {
   background: rgba(255, 255, 255, 0.035);
   transition: border-color 0.15s ease;
 }
-
 .event-occurrence-row:hover {
   border-color: rgba(255, 255, 255, 0.22);
 }
@@ -4826,6 +4825,15 @@ a {
   display: grid;
   min-width: 0;
   gap: 3px;
+}
+
+.event-occurrence-row__badges {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-top: 4px;
 }
 
 .event-occurrence-row__date strong,
@@ -4923,7 +4931,7 @@ a {
   font-weight: 850;
   line-height: 1.2;
   text-align: center;
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .event-occurrence-row__registration-state--open {
