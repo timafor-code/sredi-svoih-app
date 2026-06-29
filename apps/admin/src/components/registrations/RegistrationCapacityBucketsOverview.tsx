@@ -80,10 +80,6 @@ const BUCKET_BREAKDOWN_COLORS = [
 ];
 const BUCKET_BREAKDOWN_FREE_COLOR = "rgba(255, 255, 255, 0.32)";
 const BUCKET_BREAKDOWN_NON_SEAT_COLOR = "rgba(107, 127, 212, 0.58)";
-const CAPACITY_LIMIT_VS_SEATING_HINT =
-  "Лимит в этой карточке — регистрационный лимит capacity unit/bucket, " +
-  "а не автоматическое число физических стульев в seating layout. " +
-  "Схема рассадки помогает вручную рассадить гостей и не меняет capacity truth или алгоритм сама.";
 const DONATION_NO_SEAT_HINT =
   "Донаты не занимают места, не создают гостя для рассадки сами по себе " +
   "и не попадают в guest pool как место.";
@@ -190,9 +186,6 @@ export function RegistrationCapacityBucketsOverview({
           <span>Детализация</span>
           <strong>{selectedModeLabel}</strong>
         </div>
-        <p className="registration-capacity-helper registration-capacity-helper--notice">
-          {CAPACITY_LIMIT_VS_SEATING_HINT}
-        </p>
         {isOccurrenceMissing ? (
           renderSoftState(
             "У выбранного события есть даты/сеансы. Выберите одну дату: capacity относится только к выбранной occurrence и не показывает всю серию.",

@@ -33,7 +33,6 @@ import type { AdminEventOccurrence } from "../types/eventOccurrences";
 import type {
   AdminEventRegistrationRow,
   AdminRegistrationEventSummary,
-  AdminRegistrationStatus,
 } from "../types/registrations";
 import type {
   AdminRegistrationCapacityAnalytics,
@@ -53,7 +52,6 @@ import type {
   RegistrationAction,
 } from "../components/registrations/types";
 
-type RegistrationStatusFilter = AdminRegistrationStatus | "all";
 type ToastKind = "success" | "error";
 
 type ToastMessage = {
@@ -63,17 +61,6 @@ type ToastMessage = {
 };
 
 const REGISTRATION_PAGE_SIZE = 50;
-const STATUS_FILTERS: Array<{ value: RegistrationStatusFilter; label: string }> = [
-  { value: "all", label: "Все" },
-  { value: "pending", label: "Pending" },
-  { value: "confirmed", label: "Confirmed" },
-  { value: "waitlisted", label: "Waitlist" },
-  { value: "cancelled", label: "Cancelled" },
-  { value: "rejected", label: "Rejected" },
-  { value: "attended", label: "Attended" },
-  { value: "no_show", label: "No-show" },
-];
-
 const REGISTRATION_ACTIONS: RegistrationAction[] = [
   {
     kind: "status",
@@ -143,7 +130,6 @@ export function RegistrationsPage() {
     useState<AdminRegistrationCapacityAnalytics | null>(null);
   const [capacityAnalyticsLoading, setCapacityAnalyticsLoading] = useState(false);
   const [capacityAnalyticsError, setCapacityAnalyticsError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<RegistrationStatusFilter>("all");
   const [registrationSearch, setRegistrationSearch] = useState("");
   const [offset, setOffset] = useState(0);
   const [selectedRegistrationId, setSelectedRegistrationId] = useState<string | null>(null);
@@ -269,7 +255,7 @@ export function RegistrationsPage() {
         const nextRegistrations = await listEventRegistrations({
           eventId: selectedEventId,
           occurrenceId: eventHasOccurrences ? selectedOccurrenceId : null,
-          status: statusFilter,
+          status: "all",
           search: registrationSearch.trim() || null,
           limit: REGISTRATION_PAGE_SIZE,
           offset,
@@ -307,7 +293,6 @@ export function RegistrationsPage() {
       registrationSearch,
       selectedEventId,
       selectedOccurrenceId,
-      statusFilter,
     ],
   );
 
@@ -473,19 +458,6 @@ export function RegistrationsPage() {
     eventsLoading ||
     excelExportLoading;
   const excelExportLabel = excelExportLoading ? "Готовим Excel..." : "Экспорт Excel";
-  const registrationContextDescription = selectedEvent
-    ? formatRegistrationContextDescription({
-        eventHasOccurrences,
-        selectedOccurrence,
-        showPastOccurrences,
-      })
-    : null;
-  const excelExportScopeNote = selectedEvent
-    ? formatExcelExportScopeNote({
-        eventHasOccurrences,
-        selectedOccurrence,
-      })
-    : null;
 
   const filteredEvents = useMemo(() => {
     const normalizedQuery = eventQuery.trim().toLocaleLowerCase("ru");
@@ -595,7 +567,6 @@ export function RegistrationsPage() {
   const handleSelectEvent = useCallback((eventId: string) => {
     setSelectedEventId(eventId);
     setSelectedRegistrationId(null);
-    setStatusFilter("all");
     setRegistrationSearch("");
     setOffset(0);
     setSelectedOccurrenceId(null);
@@ -612,12 +583,6 @@ export function RegistrationsPage() {
 
   const handleToggleArchive = useCallback((nextValue: boolean) => {
     setShowPastOccurrences(nextValue);
-    setOffset(0);
-  }, []);
-
-  const handleStatusFilterChange = useCallback((nextStatus: RegistrationStatusFilter) => {
-    setStatusFilter(nextStatus);
-    setSelectedRegistrationId(null);
     setOffset(0);
   }, []);
 
@@ -761,13 +726,6 @@ export function RegistrationsPage() {
                 />
               </div>
 
-              {registrationContextDescription ? (
-                <div className="registration-context-note">
-                  <strong>Контекст: {selectedEvent.title}</strong>
-                  <span>{registrationContextDescription}</span>
-                </div>
-              ) : null}
-
               {eventHasOccurrences ? (
                 <RegistrationOccurrenceBar
                   occurrences={visibleOccurrences}
@@ -791,21 +749,6 @@ export function RegistrationsPage() {
               />
 
               <div className="registration-controls">
-                <div className="registration-filter-chips" aria-label="Фильтр статуса">
-                  {STATUS_FILTERS.map((filter) => (
-                    <button
-                      className={`registration-filter-chip${
-                        statusFilter === filter.value ? " registration-filter-chip--active" : ""
-                      }`}
-                      key={filter.value}
-                      onClick={() => handleStatusFilterChange(filter.value)}
-                      type="button"
-                    >
-                      {filter.label}
-                    </button>
-                  ))}
-                </div>
-
                 <label className="registration-search-field registration-search-field--wide">
                   <span>Поиск по заявкам</span>
                   <input
@@ -828,15 +771,10 @@ export function RegistrationsPage() {
                         disabled={excelExportDisabled}
                         onClick={handleExportExcel}
                         size="sm"
-                        variant="gold"
+                        variant="success"
                       >
                         {excelExportLabel}
                       </Button>
-                      {excelExportScopeNote ? (
-                        <span className="registrations-export-hint">
-                          {excelExportScopeNote}
-                        </span>
-                      ) : null}
                     </div>
                     <span
                       aria-hidden="true"
@@ -915,7 +853,6 @@ export function RegistrationsPage() {
                       eventHasOccurrences,
                       registrationSearch,
                       selectedOccurrence,
-                      statusFilter,
                     })}
                     title="Нет заявок"
                   />
@@ -1150,70 +1087,21 @@ function RegistrationOccurrenceBar({
   );
 }
 
-function formatRegistrationContextDescription({
-  eventHasOccurrences,
-  selectedOccurrence,
-  showPastOccurrences,
-}: {
-  eventHasOccurrences: boolean;
-  selectedOccurrence: AdminEventOccurrence | null;
-  showPastOccurrences: boolean;
-}): string {
-  if (!eventHasOccurrences) {
-    return "У события нет отдельных дат/сеансов: таблица, capacity и Excel относятся к выбранному событию целиком.";
-  }
-
-  if (!selectedOccurrence) {
-    return "У события есть даты/сеансы. Выберите конкретную дату: таблица, capacity и Excel не показывают всю серию без выбранного сеанса.";
-  }
-
-  const archiveHint = showPastOccurrences
-    ? " В селекторе включён архив, поэтому доступны и прошедшие даты."
-    : "";
-  const pastHint = isPastOccurrence(selectedOccurrence) ? " Выбран прошедший сеанс." : "";
-
-  return `Таблица, capacity и Excel относятся только к выбранной дате: ${formatOccurrenceLabel(
-    selectedOccurrence,
-  )}.${archiveHint}${pastHint}`;
-}
-
-function formatExcelExportScopeNote({
-  eventHasOccurrences,
-  selectedOccurrence,
-}: {
-  eventHasOccurrences: boolean;
-  selectedOccurrence: AdminEventOccurrence | null;
-}): string {
-  if (!eventHasOccurrences) {
-    return "Выгружает текущий выбранный event. Схема Excel не меняется.";
-  }
-
-  if (!selectedOccurrence) {
-    return "Для события с датами export доступен после выбора конкретного сеанса.";
-  }
-
-  return `Выгружает выбранный event и сеанс: ${formatOccurrenceLabel(
-    selectedOccurrence,
-  )}. Схема Excel не меняется.`;
-}
-
 function formatRegistrationsEmptyDescription({
   eventHasOccurrences,
   registrationSearch,
   selectedOccurrence,
-  statusFilter,
 }: {
   eventHasOccurrences: boolean;
   registrationSearch: string;
   selectedOccurrence: AdminEventOccurrence | null;
-  statusFilter: RegistrationStatusFilter;
 }): string {
-  const hasTableFilters = statusFilter !== "all" || registrationSearch.trim().length > 0;
+  const hasSearch = registrationSearch.trim().length > 0;
 
-  if (hasTableFilters) {
+  if (hasSearch) {
     return eventHasOccurrences
-      ? "В текущем выбранном сеансе нет заявок под этот статус или поиск. Сбросьте фильтр/поиск или проверьте другую дату."
-      : "В выбранном событии нет заявок под этот статус или поиск. Сбросьте фильтр/поиск, если ожидаете участников.";
+      ? "В текущем выбранном сеансе нет заявок под этот поиск. Очистите поиск или проверьте другую дату."
+      : "В выбранном событии нет заявок под этот поиск. Очистите поиск, если ожидаете участников.";
   }
 
   if (eventHasOccurrences && selectedOccurrence) {

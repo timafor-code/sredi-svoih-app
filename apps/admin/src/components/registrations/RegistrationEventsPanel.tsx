@@ -113,9 +113,7 @@ function RegistrationEventCard({
         <span>{formatDateTime(event.startsAt)}</span>
       </div>
       <div className="registration-event-card__counters">
-        <CounterPill label="ok" tone="green" value={event.confirmedCount} />
         <CounterPill label="new" tone="gold" value={event.pendingCount} />
-        <CounterPill label="wait" tone="purple" value={event.waitlistedCount} />
       </div>
     </button>
   );
