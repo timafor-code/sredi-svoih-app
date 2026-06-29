@@ -92,6 +92,10 @@ export function RegistrationEventsPanel({
   );
 }
 
+function getEventCardNewCount(event: AdminRegistrationEventSummary): number {
+  return event.pendingCount + event.confirmedCount + event.waitlistedCount;
+}
+
 function RegistrationEventCard({
   event,
   isSelected,
@@ -113,7 +117,7 @@ function RegistrationEventCard({
         <span>{formatDateTime(event.startsAt)}</span>
       </div>
       <div className="registration-event-card__counters">
-        <CounterPill label="new" tone="gold" value={event.pendingCount} />
+        <CounterPill label="new" tone="gold" value={getEventCardNewCount(event)} />
       </div>
     </button>
   );
