@@ -239,9 +239,9 @@ prayer tracker data.
 ## Invite Creation Foundation
 
 The backend and admin service foundation for creating member invites now exists.
-This is a backend/service-only step: it adds an RPC and a typed service wrapper,
-but no invite UI. The `Добавить участника` dialog still adds existing profiles
-only and does not create invites.
+This was originally a backend/service-only step: it added an RPC and a typed
+service wrapper. The invite UI that consumes it is described in
+[Add Member Invite UI](#add-member-invite-ui).
 
 `admin_create_invite(payload jsonb)` creates an invite for the selected
 community. It:
@@ -285,8 +285,48 @@ once; callers must capture it from the result because only its hash is stored.
 The service converts missing-RPC and access-denied errors into friendly messages
 for future UI.
 
-Invite UI, an invite inbox/list, and automatic email sending remain separate
-PRs.
+An invite inbox/list and automatic email sending remain separate PRs.
+
+## Add Member Invite UI
+
+The `Добавить участника` dialog now has two modes, selected with a toggle in the
+dialog header:
+
+- **Профиль приложения** — the existing flow that adds an existing
+  `public.profiles` app user to the community (unchanged from
+  [Add Existing Profile](#add-existing-profile)).
+- **Новый по приглашению** — a new mode that creates a community invite for a
+  person who does not yet have an app account.
+
+The invite mode collects:
+
+- `email` (optional);
+- `phone` (optional);
+- `role`: `member` (Участник), `event_manager` (Организатор), `admin`
+  (Администратор), or `rabbi` (Раввин);
+- `Действует до` expiration (optional, sent as an ISO timestamp);
+- `Макс. использований` max uses (defaults to `1`).
+
+Creating the invite calls `adminInvitesService.createAdminInvite`, which wraps
+`admin_create_invite` through the regular authenticated Supabase client. The
+plaintext invite code returned by the RPC is shown once after a successful
+creation, with a copy button. The dialog stays open afterward so the admin can
+copy the code or create another invite. Loading and error states are shown
+during creation.
+
+The UI states clearly that the user sets their own password during registration
+by activating the code. This flow creates an invite only:
+
+- it does not create a Supabase Auth user;
+- it does not create a profile before the invite is accepted;
+- it does not set or request a password;
+- it does not send email automatically;
+- it does not change Auth email/password or touch `auth.users`;
+- it does not use the Supabase Admin API or a service-role key;
+- it does not read prayer tracker data.
+
+The UI does not add an invite inbox/list or invite management table, and it does
+not change the mobile auth flow or the invite acceptance flow.
 
 ## Future UI Actions
 
