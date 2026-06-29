@@ -5,6 +5,7 @@ import type {
 
 export const ADMIN_MEMBER_MEMBERSHIP_ROLES = [
   "member",
+  "rabbi",
   "event_manager",
   "admin",
 ] as const;
