@@ -7,6 +7,8 @@ import type {
   AdminMemberProfile,
   AdminMemberRegistrationRow,
   AdminSetUserMembershipInput,
+  AdminUpdatedUserProfile,
+  AdminUpdateUserProfileInput,
 } from "../types/members";
 import type { AdminRegistrationOptionSelectionSummary } from "../types/registrations";
 
@@ -65,6 +67,28 @@ type AdminMemberProfileRpcRow = AdminMemberListRpcRow & {
   notification_preferences?: unknown;
   membership_community_id?: unknown;
   membership_created_at?: unknown;
+};
+
+type AdminUpdatedUserProfileRpcRow = {
+  user_id?: unknown;
+  profile_community_id?: unknown;
+  full_name?: unknown;
+  first_name?: unknown;
+  last_name?: unknown;
+  display_name?: unknown;
+  hebrew_name?: unknown;
+  email?: unknown;
+  phone?: unknown;
+  city?: unknown;
+  birth_date?: unknown;
+  hebrew_birth_date?: unknown;
+  birth_time_context?: unknown;
+  nusach?: unknown;
+  tribe_status?: unknown;
+  marital_status?: unknown;
+  about?: unknown;
+  onboarding_completed?: unknown;
+  profile_updated_at?: unknown;
 };
 
 type AdminMemberRegistrationRpcRow = {
@@ -217,6 +241,32 @@ function normalizeAdminMemberProfileRow(
   };
 }
 
+function normalizeAdminUpdatedUserProfileRow(
+  row: AdminUpdatedUserProfileRpcRow,
+): AdminUpdatedUserProfile {
+  return {
+    userId: requiredString(row.user_id, ""),
+    profileCommunityId: nullableString(row.profile_community_id),
+    fullName: nullableString(row.full_name),
+    firstName: nullableString(row.first_name),
+    lastName: nullableString(row.last_name),
+    displayName: nullableString(row.display_name),
+    hebrewName: nullableString(row.hebrew_name),
+    email: nullableString(row.email),
+    phone: nullableString(row.phone),
+    city: nullableString(row.city),
+    birthDate: nullableString(row.birth_date),
+    hebrewBirthDate: nullableRecord(row.hebrew_birth_date),
+    birthTimeContext: nullableString(row.birth_time_context),
+    nusach: nullableString(row.nusach),
+    tribeStatus: nullableString(row.tribe_status),
+    maritalStatus: nullableString(row.marital_status),
+    about: nullableString(row.about),
+    onboardingCompleted: row.onboarding_completed === true,
+    profileUpdatedAt: nullableString(row.profile_updated_at),
+  };
+}
+
 function normalizeAdminMemberRegistrationRow(
   row: AdminMemberRegistrationRpcRow,
 ): AdminMemberRegistrationRow {
@@ -248,6 +298,18 @@ function normalizeSingleAdminMemberProfile(
   }
 
   return normalizeAdminMemberProfileRow(row);
+}
+
+function normalizeSingleAdminUpdatedUserProfile(
+  data: AdminUpdatedUserProfileRpcRow | AdminUpdatedUserProfileRpcRow[] | null,
+): AdminUpdatedUserProfile {
+  const row = Array.isArray(data) ? data[0] : data;
+
+  if (!row) {
+    throw new Error("Admin update user profile RPC returned an empty result.");
+  }
+
+  return normalizeAdminUpdatedUserProfileRow(row);
 }
 
 function errorText(error: SupabaseRpcError): string {
@@ -325,6 +387,52 @@ function buildSetUserMembershipPayload(
   };
 }
 
+type AdminUpdateUserProfilePayload = {
+  targetUserId: string;
+  communityId: string;
+  fields: Record<string, unknown>;
+};
+
+function includeProfileField(
+  fields: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  if (value !== undefined) {
+    fields[key] = value;
+  }
+}
+
+function buildUpdateUserProfilePayload(
+  input: AdminUpdateUserProfileInput,
+): AdminUpdateUserProfilePayload {
+  const source = input.fields;
+  const fields: Record<string, unknown> = {};
+
+  includeProfileField(fields, "full_name", source.fullName);
+  includeProfileField(fields, "first_name", source.firstName);
+  includeProfileField(fields, "last_name", source.lastName);
+  includeProfileField(fields, "display_name", source.displayName);
+  includeProfileField(fields, "hebrew_name", source.hebrewName);
+  includeProfileField(fields, "email", source.email);
+  includeProfileField(fields, "phone", source.phone);
+  includeProfileField(fields, "city", source.city);
+  includeProfileField(fields, "birth_date", source.birthDate);
+  includeProfileField(fields, "hebrew_birth_date", source.hebrewBirthDate);
+  includeProfileField(fields, "birth_time_context", source.birthTimeContext);
+  includeProfileField(fields, "nusach", source.nusach);
+  includeProfileField(fields, "tribe_status", source.tribeStatus);
+  includeProfileField(fields, "marital_status", source.maritalStatus);
+  includeProfileField(fields, "about", source.about);
+  includeProfileField(fields, "onboarding_completed", source.onboardingCompleted);
+
+  return {
+    targetUserId: input.targetUserId,
+    communityId: input.communityId,
+    fields,
+  };
+}
+
 export async function listAdminUsers(
   filters: AdminMemberListFilters,
 ): Promise<AdminMemberListRow[]> {
@@ -355,6 +463,22 @@ export async function getAdminUserProfile(
 
   return normalizeSingleAdminMemberProfile(
     data as AdminMemberProfileRpcRow | AdminMemberProfileRpcRow[] | null,
+  );
+}
+
+export async function updateAdminUserProfile(
+  input: AdminUpdateUserProfileInput,
+): Promise<AdminUpdatedUserProfile> {
+  const supabase = requireSupabaseClient();
+  const payload = buildUpdateUserProfilePayload(input);
+  const { data, error } = await supabase.rpc("admin_update_user_profile", { payload });
+
+  if (error) {
+    throw new Error(formatSupabaseError("Update admin user profile", error));
+  }
+
+  return normalizeSingleAdminUpdatedUserProfile(
+    data as AdminUpdatedUserProfileRpcRow | AdminUpdatedUserProfileRpcRow[] | null,
   );
 }
 
