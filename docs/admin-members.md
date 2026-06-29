@@ -236,6 +236,58 @@ set or request passwords, change Auth email/password, touch `auth.users`, use
 the Supabase Admin API, use service-role credentials, send invites, or read
 prayer tracker data.
 
+## Invite Creation Foundation
+
+The backend and admin service foundation for creating member invites now exists.
+This is a backend/service-only step: it adds an RPC and a typed service wrapper,
+but no invite UI. The `Добавить участника` dialog still adds existing profiles
+only and does not create invites.
+
+`admin_create_invite(payload jsonb)` creates an invite for the selected
+community. It:
+
+- requires `auth.uid()` and an active `admin` membership in the community;
+- derives the acting admin only from `auth.uid()`, never from the payload, so a
+  spoofed admin identity is rejected;
+- validates the community id, role, max uses, and optional expiration;
+- generates a safe random invite code and stores only its sha256 hash, using the
+  same hash formula as `public.accept_invite`, so created codes stay compatible
+  with the existing invite acceptance flow;
+- returns the plaintext invite code exactly once in the RPC response; the
+  plaintext code is never stored.
+
+The RPC accepts a strict payload contract and rejects unsupported top-level keys
+with `22023`. Supported payload fields are:
+
+- `communityId` or `community_id` (required)
+- `role` (defaults to `member`): `member`, `event_manager`, `admin`, or `rabbi`
+- `email`
+- `phone`
+- `maxUses` or `max_uses` (defaults to `1`, allowed range `1`–`1000`)
+- `expiresAt` or `expires_at` (optional ISO timestamp, must be in the future)
+
+The RPC writes only `public.invites`. It does not create Auth users, create
+profiles for missing Auth users, set or request passwords, change Auth
+email/password, touch `auth.users`, use the Supabase Admin API, use a
+service-role key, or send email. It does not read prayer tracker data.
+
+### Admin Invite Service Layer
+
+The web-admin service layer for invite creation lives in:
+
+- `apps/admin/src/types/invites.ts`
+- `apps/admin/src/services/adminInvitesService.ts`
+
+`createAdminInvite(input)` calls `admin_create_invite` through the regular
+authenticated Supabase client and normalizes the `snake_case` RPC row to
+`camelCase`. The returned `code` is the plaintext invite code, surfaced exactly
+once; callers must capture it from the result because only its hash is stored.
+The service converts missing-RPC and access-denied errors into friendly messages
+for future UI.
+
+Invite UI, an invite inbox/list, and automatic email sending remain separate
+PRs.
+
 ## Future UI Actions
 
 Future web-admin work can build on these RPCs for:

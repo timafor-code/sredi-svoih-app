@@ -8,14 +8,34 @@
 
 Не входит в scope Phase 1:
 
-- invite backend и invite UI;
+- invite UI;
 - fake invite codes;
-- email invitations;
+- автоматическая отправка email invitations;
 - массовая выдача доступа;
 - управление `auth.users` из app/admin code;
 - Supabase Admin API, service-role key или server-only database connection strings в browser-admin.
 
 `apps/admin` продолжает работать через обычный authenticated Supabase client, пользовательскую session, RLS и RPC. Админские действия должны оставаться на этой границе.
+
+## Invite creation backend
+
+Появился backend/service foundation для создания приглашений из web-admin
+(`admin_create_invite`, см. `docs/admin-members.md`). Это пока только backend и
+service-слой, без invite UI.
+
+RPC остаётся на той же границе доступа, что и остальной web-admin:
+
+- требует `auth.uid()` и active `admin` membership в выбранной community;
+- acting admin берётся только из `auth.uid()`, а не из payload;
+- генерирует случайный invite code и хранит только его sha256 hash, совместимый
+  с существующим `public.accept_invite`;
+- возвращает plaintext invite code ровно один раз в ответе RPC;
+- не создаёт Auth users, не задаёт пароли, не трогает `auth.users`, не использует
+  Supabase Admin API или service-role key и не отправляет email автоматически.
+
+Plaintext invite code нужно скопировать из ответа RPC и передать приглашённому
+вручную, выбранным владельцем способом. Автоматическая отправка email и invite
+UI остаются за пределами этого шага.
 
 ## Roles
 
