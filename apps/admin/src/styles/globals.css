@@ -8476,6 +8476,13 @@ a {
 }
 
 @media print {
+  html,
+  body {
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
   body.seat-print-mode {
     min-height: 0 !important;
     overflow: visible !important;
@@ -8499,27 +8506,56 @@ a {
   .seat-print-root {
     width: 100%;
     min-height: auto;
+    margin: 0;
     color: #111827;
     font-family:
       Arial,
       "Segoe UI",
       sans-serif;
-    font-size: 10pt;
-    line-height: 1.35;
+    font-size: 8.4pt;
+    line-height: 1.22;
+    break-before: avoid;
+    page-break-before: avoid;
+  }
+
+  .seat-print-page {
+    display: grid;
+    width: 100%;
+    min-height: 0;
+    gap: 2.4mm;
+    break-before: avoid;
+    page-break-before: avoid;
+  }
+
+  .seat-print-page--first {
+    break-after: avoid-page;
+    break-before: avoid-page;
+    page-break-after: avoid;
+    page-break-before: avoid;
+  }
+
+  .seat-print-page--legend {
+    padding-top: 0;
+    break-before: page;
+    page-break-before: always;
   }
 
   .seat-print-header {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(220px, 0.34fr);
-    gap: 8mm;
+    grid-template-columns: minmax(0, 1fr) minmax(190px, 0.3fr);
+    gap: 5mm;
     align-items: start;
     border-bottom: 1px solid #cbd5e1;
-    padding-bottom: 4mm;
+    padding-bottom: 2.2mm;
+    break-after: avoid;
+    break-inside: avoid;
+    page-break-after: avoid;
+    page-break-inside: avoid;
   }
 
   .seat-print-title {
     display: grid;
-    gap: 1.5mm;
+    gap: 0.8mm;
     min-width: 0;
   }
 
@@ -8527,7 +8563,7 @@ a {
   .seat-print-meta dt,
   .seat-print-section h2 {
     color: #475569;
-    font-size: 8pt;
+    font-size: 7pt;
     font-weight: 800;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -8545,49 +8581,57 @@ a {
   .seat-print-title h1 {
     overflow-wrap: anywhere;
     color: #0f172a;
-    font-size: 20pt;
+    font-size: 15pt;
     line-height: 1.08;
   }
 
   .seat-print-title p {
     overflow-wrap: anywhere;
     color: #334155;
-    font-size: 10pt;
+    font-size: 8pt;
     font-weight: 700;
   }
 
   .seat-print-meta {
     display: grid;
-    gap: 2mm;
+    gap: 1.2mm;
   }
 
   .seat-print-meta div {
     display: grid;
-    gap: 0.5mm;
+    gap: 0.3mm;
     border: 1px solid #cbd5e1;
-    border-radius: 3mm;
-    padding: 2mm 2.5mm;
+    border-radius: 2mm;
+    padding: 1mm 1.5mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .seat-print-meta dd {
     overflow-wrap: anywhere;
     color: #0f172a;
-    font-size: 9pt;
+    font-size: 7.5pt;
     font-weight: 750;
   }
 
   .seat-print-section {
     display: grid;
-    gap: 3mm;
-    padding-top: 5mm;
+    gap: 1.5mm;
+    padding-top: 0;
+    break-before: avoid;
+    page-break-before: avoid;
   }
 
   .seat-print-section--scheme {
     break-inside: avoid;
+    page-break-after: avoid;
+    page-break-before: avoid;
+    page-break-inside: avoid;
   }
 
   .seat-print-section h2 {
     break-after: avoid;
+    page-break-after: avoid;
   }
 
   .seat-print-canvas-frame {
@@ -8595,8 +8639,10 @@ a {
     overflow: hidden;
     margin: 0 auto;
     border: 1px solid #94a3b8;
-    border-radius: 3mm;
+    border-radius: 2mm;
     background: #fff;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .seat-print-canvas {
@@ -8612,13 +8658,21 @@ a {
     display: grid;
     place-items: center;
     border: 1px solid #94a3b8;
-    border-radius: 2mm;
+    border-radius: 4px;
     background: #f8fafc;
     color: #475569;
-    font-size: 8pt;
+    font-size: 8px;
     font-weight: 800;
+    line-height: 1.1;
+    padding: 2px;
     text-align: center;
     transform-origin: center center;
+  }
+
+  .seat-print-table span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .seat-print-table--rabbi {
@@ -8648,7 +8702,7 @@ a {
     border-radius: 999px;
     padding: 2px;
     color: #0f172a;
-    font-size: 7.5pt;
+    font-size: 8px;
     font-weight: 800;
     line-height: 1.05;
     text-align: center;
@@ -8684,19 +8738,20 @@ a {
     display: block;
   }
 
-  .seat-print-seat--reserve > span {
-    color: #334155;
-    font-size: 5.8pt;
-    font-weight: 900;
-    letter-spacing: 0;
-    text-transform: uppercase;
+  .seat-print-root--compact .seat-print-table {
+    font-size: 7px;
+    padding: 1px;
+  }
+
+  .seat-print-root--compact .seat-print-seat {
+    font-size: 7px;
   }
 
   .seat-print-legend,
   .seat-print-unseated {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.6mm 6mm;
+    grid-template-columns: repeat(var(--seat-print-legend-columns), minmax(0, 1fr));
+    gap: 0.8mm 3.2mm;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -8705,18 +8760,25 @@ a {
   .seat-print-legend li,
   .seat-print-unseated li {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 2mm;
+    grid-template-columns: 7mm 2mm minmax(0, 1fr);
+    gap: 1mm;
     align-items: baseline;
     min-width: 0;
     break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .seat-print-legend__number,
   .seat-print-unseated__initials {
-    min-width: 9mm;
     color: #0f172a;
     font-weight: 900;
+    text-align: right;
+  }
+
+  .seat-print-legend__separator {
+    color: #64748b;
+    font-weight: 700;
+    text-align: center;
   }
 
   .seat-print-legend__name,
@@ -8726,9 +8788,14 @@ a {
     color: #1f2937;
   }
 
+  .seat-print-section--unseated {
+    margin-top: 1.5mm;
+    padding-top: 0;
+  }
+
   .seat-print-empty {
     color: #64748b;
-    font-size: 9pt;
+    font-size: 8pt;
     font-weight: 700;
   }
 }

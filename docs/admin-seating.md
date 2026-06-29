@@ -206,14 +206,25 @@ Print behavior:
   `seat-print-mode` class, and removes the print document/class after
   `afterprint`;
 - CSS uses A4 landscape `@page` rules and print-only `.seat-print-*` classes;
+- browser `Save as PDF` may still show browser-controlled headers/footers such
+  as date, page number, URL, or title depending on the user's print dialog
+  settings;
 - the header includes event title, occurrence/slot subtitle, capacity bucket
   title, and the print timestamp;
-- the scheme shows physical seats by computed index, where printed
-  `seatNumber = seatIndex + 1`;
+- the first print page is an A4-safe page with compact header, selected slot
+  info, and a scaled scheme viewport; large layouts are scaled down instead of
+  pushing the scheme to page 2;
+- print seat numbers are visual/table-based, not internal geometry
+  `seatIndex` values: tables are ordered by visual rows top-to-bottom and
+  left-to-right, then each table is numbered clockwise from its visual top-left
+  seat;
 - occupied seats show only initials plus the physical seat number, for example
   `ТГ 12`;
-- the legend below the scheme is sorted by physical seat number and shows full
-  guest/reserve labels, for example `12 — Тимур Губайдуллин`;
+- empty seats show only the print number;
+- the compact legend is sorted by print number and uses dense 3/4-column rows
+  with full guest/reserve labels, for example `12 — Тимур Губайдуллин`;
+- if the full legend does not fit below the scheme, it moves to page 2 under
+  `Полная легенда`;
 - reserves are clearly marked with `Резерв`;
 - remaining unseated guests and pooled reserves are shown in a separate
   `Не рассажены` section;
@@ -238,17 +249,24 @@ Not run by Codex. Manual smoke is performed by the project owner.
 13. Confirm auto seating still uses the existing behavior when guests exist.
 14. Complete a seating and confirm the `Печать рассадки` button is enabled.
 15. Click `Печать рассадки` and confirm the browser print dialog opens.
-16. In print preview, confirm A4 landscape layout.
-17. Confirm the print header shows event title, occurrence/slot subtitle,
+16. Confirm the print preview starts with the seating document on page 1, not an
+    empty first page.
+17. In print preview, confirm the scheme fits A4 landscape.
+18. Confirm the print header shows event title, occurrence/slot subtitle,
     capacity bucket title, and print timestamp.
-18. Confirm the scheme shows initials plus physical seat numbers only.
-19. Confirm the legend is sorted by physical seat number and shows full names.
-20. Confirm placed reserves and unseated reserves are labelled `Резерв`.
-21. Confirm unseated guests/reserves appear in `Не рассажены`.
-22. Confirm email and phone do not appear in print preview.
-23. Confirm the editor is restored after closing the print dialog.
-24. Confirm no RPC/schema/seating algorithm/Excel schema changes were made.
-25. Confirm no browser smoke was run by Codex.
+19. Confirm the scheme shows compact labels like `ТГ 12`.
+20. Confirm empty seats show readable print numbers.
+21. Confirm occupied seat numbers are logical by table/visual order, not raw
+    geometry order.
+22. Confirm the legend is compact and sorted by print number.
+23. Confirm no third page is created just for one or two legend rows.
+24. Confirm placed reserves and unseated reserves are labelled `Резерв`.
+25. Confirm unseated guests/reserves appear in `Не рассажены`.
+26. Confirm email and phone do not appear in print preview.
+27. Save as PDF via browser print.
+28. Confirm the editor is restored after closing the print dialog.
+29. Confirm no RPC/schema/seating algorithm/Excel schema changes were made.
+30. Confirm no browser smoke was run by Codex.
 
 ## Out Of Scope
 

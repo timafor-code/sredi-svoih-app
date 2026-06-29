@@ -1,4 +1,7 @@
-import { buildSeatingPrintModel } from "../seatingPrint";
+import {
+  buildPrintSeatNumberBySeatIndex,
+  buildSeatingPrintModel,
+} from "../seatingPrint";
 import { computeTableSeats, TABLE_H, TABLE_W } from "../seatingGeometry";
 import type {
   SeatingGuestPoolItem,
@@ -93,31 +96,38 @@ function makeOccupant(
   };
 }
 
-test("uses computed physical seat number in scheme and legend", () => {
-  const tables = [
-    makeTable({ id: "rabbi", cx: 100, cy: 100, isRabbiTable: true }),
-    makeTable({ id: "regular", cx: 100, cy: 340 }),
-  ];
+test("uses visual table-based print seat numbers in scheme and legend", () => {
+  const topTable = makeTable({ id: "rabbi", cx: 100, cy: 100, isRabbiTable: true });
+  const bottomTable = makeTable({ id: "regular", cx: 100, cy: 340 });
+  const tables = [bottomTable, topTable];
   const geometry = computeTableSeats({ tables });
-  const regularSeatIndexes = geometry.seats
+  const topSeatIndexes = geometry.seats
     .map((seat, index) => ({ index, seat }))
-    .filter(({ seat }) => !seat.isRabbiTable)
+    .filter(({ seat }) => seat.tableId === topTable.id)
     .map(({ index }) => index);
-  const laterSeatIndex = regularSeatIndexes[3];
-  const earlierSeatIndex = regularSeatIndexes[0];
+  const bottomSeatIndexes = geometry.seats
+    .map((seat, index) => ({ index, seat }))
+    .filter(({ seat }) => seat.tableId === bottomTable.id)
+    .map(({ index }) => index);
+  const printSeatNumberBySeatIndex = buildPrintSeatNumberBySeatIndex({
+    geometry,
+    tables,
+  });
+  const topSeatIndex = topSeatIndexes[0];
+  const bottomSeatIndex = bottomSeatIndexes[0];
   const occupants: SeatingSeatOccupant[] = [
     makeOccupant({
       displayName: "Андрей Александров",
-      id: "guest-later",
+      id: "guest-bottom",
       initials: "АА",
-      seatIndex: laterSeatIndex,
+      seatIndex: bottomSeatIndex,
     }),
     makeOccupant({
       displayName: "Гость раввина",
-      id: "reserve-earlier",
+      id: "reserve-top",
       initials: "Рз",
       registrationId: null,
-      seatIndex: earlierSeatIndex,
+      seatIndex: topSeatIndex,
       type: "reserve",
     }),
   ];
@@ -132,17 +142,24 @@ test("uses computed physical seat number in scheme and legend", () => {
     tables,
   });
 
-  const earlierSeatNumber = earlierSeatIndex + 1;
-  const laterSeatNumber = laterSeatIndex + 1;
+  const topPrintNumber = printSeatNumberBySeatIndex[topSeatIndex];
+  const bottomPrintNumber = printSeatNumberBySeatIndex[bottomSeatIndex];
 
+  assertEqual(topPrintNumber, 1, "top table starts print numbering");
+  assert(bottomPrintNumber > topSeatIndexes.length, "bottom table prints after top table");
+  assertEqual(
+    bottomPrintNumber,
+    model.canvas.seats[bottomSeatIndex].seatNumber,
+    "model uses print number map",
+  );
   assertArrayEqual(
     model.legend.map((item) => item.seatNumber),
-    [earlierSeatNumber, laterSeatNumber],
+    [topPrintNumber, bottomPrintNumber],
     "legend sorted by seat number",
   );
   assertEqual(
-    model.canvas.seats[laterSeatIndex].occupant?.schemeLabel,
-    `АА ${laterSeatNumber}`,
+    model.canvas.seats[bottomSeatIndex].occupant?.schemeLabel,
+    `АА ${bottomPrintNumber}`,
     "scheme label",
   );
   assert(

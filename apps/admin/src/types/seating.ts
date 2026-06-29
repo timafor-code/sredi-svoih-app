@@ -320,6 +320,7 @@ export interface SeatingPrintTable {
   id: string;
   isRabbiTable: boolean;
   label: string;
+  printOrder: number;
   w: number;
 }
 
@@ -361,14 +362,25 @@ export interface SeatingPrintUnseatedItem {
 
 export interface SeatingPrintModel {
   canvas: {
+    isCompact: boolean;
+    offsetX: number;
+    offsetY: number;
     height: number;
+    printSeatNumberBySeatIndex: Record<number, number>;
     scale: number;
     seats: SeatingPrintSeat[];
     seams: SeatingSeam[];
     tables: SeatingPrintTable[];
+    viewportHeight: number;
+    viewportWidth: number;
     width: number;
   };
   header: SeatingPrintHeader;
+  layout: {
+    hasFullLegendPage: boolean;
+    inlineLegend: boolean;
+    legendColumns: 3 | 4;
+  };
   legend: SeatingPrintLegendItem[];
   unseated: SeatingPrintUnseatedItem[];
 }
