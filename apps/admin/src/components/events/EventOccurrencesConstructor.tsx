@@ -1872,16 +1872,20 @@ function OccurrenceRow({
         <span>{timeLabel}</span>
       </div>
 
-      <div className="event-occurrence-row__body">
-        <div className="event-occurrence-row__title">
-          {title ? title : "Без подписи"}
-        </div>
-        <div className="event-occurrence-row__meta">
-          <span>{formatRegistrationWindow(draft)}</span>
-          <span>{formatCapacity(draft)}</span>
-        </div>
-      </div>
+  <div className="event-occurrence-row__body">
+    <div className="event-occurrence-row__title">
+      {title ? title : "Без подписи"}
+    </div>
 
+    <div className="event-occurrence-row__meta">
+      <span>{formatRegistrationWindow(draft)}</span>
+      <span>{formatCapacity(draft)}</span>
+    </div>
+
+    <div
+      aria-label="Статус даты и состояние регистрации"
+      className="event-occurrence-row__badges"
+    >
       <span
         className={`event-occurrence-row__status event-occurrence-row__status--${draft.status}`}
       >
@@ -1893,6 +1897,8 @@ function OccurrenceRow({
       >
         {registrationStateLabel}
       </span>
+    </div>
+  </div>
 
       <select
         aria-label="Изменить статус даты"
