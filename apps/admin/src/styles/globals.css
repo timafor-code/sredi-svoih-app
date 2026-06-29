@@ -1841,8 +1841,8 @@ a {
 
 .data-table--members .data-table__row {
   grid-template-columns:
-    minmax(0, 1.25fr) minmax(0, 0.9fr) minmax(0, 0.85fr)
-    minmax(0, 0.64fr) minmax(0, 1.1fr) minmax(0, 0.86fr);
+    minmax(0, 1.25fr) minmax(0, 0.9fr) minmax(max-content, 0.85fr)
+    minmax(max-content, 0.64fr) minmax(0, 1.1fr) minmax(0, 0.86fr);
   gap: 10px;
 }
 
@@ -9590,9 +9590,9 @@ a {
 
 .data-table--registrations .data-table__row {
   grid-template-columns:
-    minmax(0, 1.3fr) minmax(0, 1.16fr) minmax(0, 0.78fr)
+    minmax(0, 1.3fr) minmax(0, 1.16fr) minmax(max-content, 0.78fr)
     minmax(0, 1fr) minmax(0, 0.38fr) minmax(0, 1.12fr)
-    minmax(0, 0.82fr) minmax(0, 0.82fr) 56px;
+    minmax(max-content, 0.82fr) minmax(0, 0.82fr) 56px;
   gap: 10px;
   min-height: 58px;
   padding: 10px 12px;
@@ -9618,12 +9618,26 @@ a {
   overflow: hidden;
 }
 
-.data-table--registrations .badge {
-  max-width: 100%;
-  overflow: hidden;
+.data-table--registrations .data-table__row > [role="cell"]:nth-child(3),
+.data-table--registrations .data-table__row > [role="cell"]:nth-child(7),
+.data-table--members .data-table__row > [role="cell"]:nth-child(3),
+.data-table--members .data-table__row > [role="cell"]:nth-child(4) {
+  overflow: visible;
+}
+
+.data-table--registrations .badge,
+.data-table--members .badge {
+  flex: 0 0 auto;
+  max-width: none;
+  min-width: max-content;
+  min-height: 20px;
+  overflow: visible;
   border-radius: 20px;
   padding: 2px 8px;
-  text-overflow: ellipsis;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: clip;
 }
 
 .registration-table-person {
