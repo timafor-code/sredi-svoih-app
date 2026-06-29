@@ -27,6 +27,7 @@ import {
   reconcileSeatingAssignments,
   type SeatingReconcileCounts,
 } from "../../lib/seatingAssignmentReconcile";
+import { buildSeatingPrintModel } from "../../lib/seatingPrint";
 import {
   applySeatingDragDrop,
   type SeatingDragDropRejection,
@@ -53,6 +54,7 @@ import type {
   SeatingConnection,
   SeatingGuestPoolItem,
   SeatingLayoutRow,
+  SeatingPrintModel,
   SeatingReservePoolItem,
   SeatingTable,
   SeatingTemplate,
@@ -61,6 +63,7 @@ import { SeatingAssignmentsPanel } from "./SeatingAssignmentsPanel";
 import { SeatingCanvas } from "./SeatingCanvas";
 import { SeatingCapacitySyncDialog } from "./SeatingCapacitySyncDialog";
 import { SeatingMetricsPanel } from "./SeatingMetricsPanel";
+import { SeatingPrintDocument } from "./SeatingPrintDocument";
 import { SeatingReserveDialog } from "./SeatingReserveDialog";
 import {
   DEFAULT_SEATING_TEMPLATE_VALUE,
@@ -134,6 +137,7 @@ export function SeatingLayoutEditor({
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [isTemplateListLoading, setIsTemplateListLoading] = useState(false);
+  const [printModel, setPrintModel] = useState<SeatingPrintModel | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [isSeatingDone, setIsSeatingDone] = useState(false);
   const [tables, setTables] = useState<SeatingTable[]>([]);
@@ -156,6 +160,7 @@ export function SeatingLayoutEditor({
       setReconcileNotice(null);
       setIsReserveDialogOpen(false);
       setIsSeatingDone(false);
+      setPrintModel(null);
       setSelectedTableId(null);
       setTables([]);
       return undefined;
@@ -368,6 +373,49 @@ export function SeatingLayoutEditor({
     };
   }, [slot]);
 
+  useEffect(() => {
+    if (!printModel || typeof window === "undefined" || typeof document === "undefined") {
+      return undefined;
+    }
+
+    const body = document.body;
+    let frameId: number | null = null;
+
+    const handleAfterPrint = () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+        frameId = null;
+      }
+      window.removeEventListener("afterprint", handleAfterPrint);
+      body.classList.remove("seat-print-mode");
+      setPrintModel(null);
+    };
+
+    body.classList.add("seat-print-mode");
+    window.addEventListener("afterprint", handleAfterPrint);
+    frameId = window.requestAnimationFrame(() => {
+      frameId = null;
+      if (typeof window.print === "function") {
+        window.print();
+        return;
+      }
+
+      setFeedback({
+        message: "Печать недоступна в этом браузере.",
+        tone: "error",
+      });
+      handleAfterPrint();
+    });
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      window.removeEventListener("afterprint", handleAfterPrint);
+      body.classList.remove("seat-print-mode");
+    };
+  }, [printModel]);
+
   const selectedTable = useMemo(
     () => tables.find((table) => table.id === selectedTableId) ?? null,
     [selectedTableId, tables],
@@ -521,11 +569,33 @@ export function SeatingLayoutEditor({
       geometry.physicalSeatCount > 0 &&
       capacityLimit !== geometry.physicalSeatCount,
   );
+  const canPrintSeating = Boolean(
+    slot &&
+      isSeatingDone &&
+      hasValidGeometry &&
+      !isLayoutActionBusy &&
+      !layoutLoadError &&
+      geometry.physicalSeatCount > 0,
+  );
+  const printDisabledReason = canPrintSeating
+    ? null
+    : getPrintDisabledReason({
+        hasValidGeometry,
+        isLayoutActionBusy,
+        isSeatingDone,
+        layoutBusyReason,
+        layoutLoadError,
+        physicalSeatCount: geometry.physicalSeatCount,
+      });
   // PR 16: unseated reserves live in the assignments array as pooled
   // (`seatKey === null`) `type: "reserve"` entries; placed reserves are occupants.
+  const allPooledReserves = useMemo(
+    () => (isSeatingDone ? derivePooledReserves(currentAssignments) : []),
+    [currentAssignments, isSeatingDone],
+  );
   const pooledReserves = useMemo(
-    () => (manualSeatingEnabled ? derivePooledReserves(currentAssignments) : []),
-    [currentAssignments, manualSeatingEnabled],
+    () => (manualSeatingEnabled ? allPooledReserves : []),
+    [allPooledReserves, manualSeatingEnabled],
   );
   const placedReserveCount = useMemo(
     () =>
@@ -547,6 +617,34 @@ export function SeatingLayoutEditor({
       reservationsCount: slot.bucket.reservationsCount,
     });
   }, [hasGuestPoolMismatch, slot]);
+
+  const handlePrintSeating = useCallback(() => {
+    if (!slot || !canPrintSeating) {
+      return;
+    }
+
+    setPrintModel(
+      buildSeatingPrintModel({
+        capacityBucketTitle: formatSlotTitle(slot),
+        eventTitle: slot.event.title,
+        geometry,
+        occupants: seatOccupants,
+        occurrenceSubtitle: formatPrintSlotSubtitle(slot),
+        printedAt: new Date(),
+        tables,
+        unseatedGuests: unassignedGuestPool,
+        unseatedReserves: allPooledReserves,
+      }),
+    );
+  }, [
+    allPooledReserves,
+    canPrintSeating,
+    geometry,
+    seatOccupants,
+    slot,
+    tables,
+    unassignedGuestPool,
+  ]);
 
   const handleOpenCapacitySyncDialog = useCallback(() => {
     setCapacitySyncError(null);
@@ -1448,14 +1546,15 @@ export function SeatingLayoutEditor({
   }
 
   return createPortal(
-    <div
-      className="seat-modal-overlay"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
+    <>
+      <div
+        className="seat-modal-overlay"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) {
+            onClose();
+          }
+        }}
+      >
       <section
         aria-labelledby="seat-modal-title"
         aria-modal="true"
@@ -1524,6 +1623,16 @@ export function SeatingLayoutEditor({
               Вернуться к рассадке
             </Button>
           ) : null}
+
+          <Button
+            disabled={!canPrintSeating}
+            onClick={handlePrintSeating}
+            size="sm"
+            title={printDisabledReason ?? "Напечатать текущую рассадку"}
+            variant="secondary"
+          >
+            Печать рассадки
+          </Button>
 
           {feedback?.message ? (
             <span
@@ -1688,18 +1797,21 @@ export function SeatingLayoutEditor({
         />
       ) : null}
 
-      {isCapacitySyncDialogOpen ? (
-        <SeatingCapacitySyncDialog
-          capacityLimit={capacityLimit}
-          error={capacitySyncError}
-          isSubmitting={isCapacitySyncing}
-          occupiedSeats={slot.bucket.occupiedSeats}
-          onCancel={handleCancelCapacitySyncDialog}
-          onConfirm={handleConfirmCapacitySync}
-          physicalSeatCount={geometry.physicalSeatCount}
-        />
-      ) : null}
-    </div>,
+        {isCapacitySyncDialogOpen ? (
+          <SeatingCapacitySyncDialog
+            capacityLimit={capacityLimit}
+            error={capacitySyncError}
+            isSubmitting={isCapacitySyncing}
+            occupiedSeats={slot.bucket.occupiedSeats}
+            onCancel={handleCancelCapacitySyncDialog}
+            onConfirm={handleConfirmCapacitySync}
+            physicalSeatCount={geometry.physicalSeatCount}
+          />
+        ) : null}
+      </div>
+
+      {printModel ? <SeatingPrintDocument model={printModel} /> : null}
+    </>,
     document.body,
   );
 }
@@ -1756,6 +1868,44 @@ function getLayoutBusyReason({
   }
 
   return null;
+}
+
+function getPrintDisabledReason({
+  hasValidGeometry,
+  isLayoutActionBusy,
+  isSeatingDone,
+  layoutBusyReason,
+  layoutLoadError,
+  physicalSeatCount,
+}: {
+  hasValidGeometry: boolean;
+  isLayoutActionBusy: boolean;
+  isSeatingDone: boolean;
+  layoutBusyReason: string | null;
+  layoutLoadError: string | null;
+  physicalSeatCount: number;
+}): string {
+  if (isLayoutActionBusy) {
+    return layoutBusyReason ?? "Идет операция.";
+  }
+
+  if (layoutLoadError) {
+    return "Сначала загрузите сохраненную схему без ошибок.";
+  }
+
+  if (!isSeatingDone) {
+    return "Сначала завершите рассадку.";
+  }
+
+  if (!hasValidGeometry) {
+    return "Нужна валидная схема с одним раввинским столом.";
+  }
+
+  if (physicalSeatCount <= 0) {
+    return "В схеме нет физических мест для печати.";
+  }
+
+  return "Печать рассадки недоступна.";
 }
 
 function getAutoAssignDisabledReason({
@@ -2312,4 +2462,15 @@ function formatSlotSubtitle(slot: SeatingLayoutEditorSlot): string {
   const bucketCode = slot.bucket.code || slot.bucket.key;
 
   return [slot.event.title, occurrenceLabel, bucketCode].filter(Boolean).join(" · ");
+}
+
+function formatPrintSlotSubtitle(slot: SeatingLayoutEditorSlot): string {
+  const occurrenceLabel = slot.occurrence
+    ? slot.occurrence.title || formatDateTime(slot.occurrence.startsAt)
+    : slot.event.startsAt
+      ? formatDateTime(slot.event.startsAt)
+      : "Без отдельного сеанса";
+  const bucketCode = slot.bucket.code || slot.bucket.key;
+
+  return [occurrenceLabel, bucketCode].filter(Boolean).join(" · ");
 }

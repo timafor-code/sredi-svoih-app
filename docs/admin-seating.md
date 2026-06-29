@@ -27,6 +27,7 @@ the registrations capacity bucket UI:
 - display capacity summary;
 - explicit capacity sync action with confirmation;
 - empty guest-pool warning for beta admins;
+- print-ready A4 landscape seating document from the current completed seating;
 - responsive modal polish for smaller admin viewports.
 
 ## Manual Tool Boundary
@@ -191,6 +192,33 @@ physical seats.
 
 Reconcile never changes `event_capacity_units.capacity`.
 
+## Print Document
+
+The seating editor has a `Печать рассадки` toolbar action for completed seating.
+It builds a client-only print model from the current computed geometry,
+occupants, and unseated guest/reserve pool. No print data is sent to the server,
+and there is no PDF generation library.
+
+Print behavior:
+
+- printing uses the browser print dialog (`window.print()`);
+- the editor renders a temporary `SeatingPrintDocument`, applies the body
+  `seat-print-mode` class, and removes the print document/class after
+  `afterprint`;
+- CSS uses A4 landscape `@page` rules and print-only `.seat-print-*` classes;
+- the header includes event title, occurrence/slot subtitle, capacity bucket
+  title, and the print timestamp;
+- the scheme shows physical seats by computed index, where printed
+  `seatNumber = seatIndex + 1`;
+- occupied seats show only initials plus the physical seat number, for example
+  `ТГ 12`;
+- the legend below the scheme is sorted by physical seat number and shows full
+  guest/reserve labels, for example `12 — Тимур Губайдуллин`;
+- reserves are clearly marked with `Резерв`;
+- remaining unseated guests and pooled reserves are shown in a separate
+  `Не рассажены` section;
+- email and phone are never included in the print model or document.
+
 ## Manual Smoke Checklist
 
 Not run by Codex. Manual smoke is performed by the project owner.
@@ -208,8 +236,19 @@ Not run by Codex. Manual smoke is performed by the project owner.
 11. Confirm existing layout editing still works.
 12. Confirm manual drag/drop still works when guests exist.
 13. Confirm auto seating still uses the existing behavior when guests exist.
-14. Confirm no RPC/schema/seating algorithm/Excel schema changes were made.
-15. Confirm no browser smoke was run by Codex.
+14. Complete a seating and confirm the `Печать рассадки` button is enabled.
+15. Click `Печать рассадки` and confirm the browser print dialog opens.
+16. In print preview, confirm A4 landscape layout.
+17. Confirm the print header shows event title, occurrence/slot subtitle,
+    capacity bucket title, and print timestamp.
+18. Confirm the scheme shows initials plus physical seat numbers only.
+19. Confirm the legend is sorted by physical seat number and shows full names.
+20. Confirm placed reserves and unseated reserves are labelled `Резерв`.
+21. Confirm unseated guests/reserves appear in `Не рассажены`.
+22. Confirm email and phone do not appear in print preview.
+23. Confirm the editor is restored after closing the print dialog.
+24. Confirm no RPC/schema/seating algorithm/Excel schema changes were made.
+25. Confirm no browser smoke was run by Codex.
 
 ## Out Of Scope
 
@@ -220,7 +259,7 @@ Not run by Codex. Manual smoke is performed by the project owner.
 - capacity reservation business logic changes;
 - donation business logic changes;
 - seat-by-seat seating assignment export;
-- print/PDF seating chart;
+- PDF seating chart generation;
 - family/group seating;
 - mobile seating;
 - payment gateway;

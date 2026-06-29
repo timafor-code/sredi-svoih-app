@@ -301,6 +301,78 @@ export interface SeatingReservePoolItem {
   initials: string;
 }
 
+// ---------------------------------------------------------------------------
+// Print model (admin-only A4 seating document)
+// ---------------------------------------------------------------------------
+
+export interface SeatingPrintHeader {
+  capacityBucketTitle: string;
+  eventTitle: string;
+  occurrenceSubtitle: string;
+  printedAtLabel: string;
+}
+
+export interface SeatingPrintTable {
+  angle: number;
+  cx: number;
+  cy: number;
+  h: number;
+  id: string;
+  isRabbiTable: boolean;
+  label: string;
+  w: number;
+}
+
+export interface SeatingPrintSeatOccupant {
+  displayName: string;
+  id: string;
+  initials: string;
+  isRabbiHead: boolean;
+  legendLabel: string;
+  schemeLabel: string;
+  seatNumber: number;
+  type: SeatingAssignmentType;
+}
+
+export interface SeatingPrintSeat {
+  isHead: boolean;
+  isRabbiTable: boolean;
+  occupant: SeatingPrintSeatOccupant | null;
+  seatNumber: number;
+  x: number;
+  y: number;
+}
+
+export interface SeatingPrintLegendItem {
+  displayName: string;
+  id: string;
+  initials: string;
+  legendLabel: string;
+  seatNumber: number;
+  type: SeatingAssignmentType;
+}
+
+export interface SeatingPrintUnseatedItem {
+  displayName: string;
+  id: string;
+  initials: string;
+  type: SeatingAssignmentType;
+}
+
+export interface SeatingPrintModel {
+  canvas: {
+    height: number;
+    scale: number;
+    seats: SeatingPrintSeat[];
+    seams: SeatingSeam[];
+    tables: SeatingPrintTable[];
+    width: number;
+  };
+  header: SeatingPrintHeader;
+  legend: SeatingPrintLegendItem[];
+  unseated: SeatingPrintUnseatedItem[];
+}
+
 export type SeatingGuestPoolSource = "participant" | "guest";
 export type SeatingGuestPoolObligationSource =
   | "reservation"
