@@ -60,6 +60,7 @@ const MEMBERSHIP_STATUS_FILTERS: Array<{
 const ROLE_FILTERS: Array<{ label: string; value: RoleFilter }> = [
   { value: "all", label: "Все" },
   { value: "member", label: "Участник" },
+  { value: "rabbi", label: "Раввин" },
   { value: "event_manager", label: "Менеджер событий" },
   { value: "admin", label: "Администратор" },
 ];
@@ -68,12 +69,14 @@ const ROLE_TONES: Record<string, AdminBadgeTone> = {
   admin: "red",
   event_manager: "gold",
   member: "blue",
+  rabbi: "purple",
 };
 
 const MEMBERSHIP_ROLE_LABELS: Record<AdminMemberMembershipRole, string> = {
   admin: "Администратор",
   event_manager: "Менеджер событий",
   member: "Участник",
+  rabbi: "Раввин",
 };
 
 const MEMBERSHIP_STATUS_LABELS: Record<AdminMemberMembershipStatus, string> = {

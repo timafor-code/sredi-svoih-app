@@ -59,7 +59,7 @@ registration aggregates or history for the selected community.
 - `search`
 - `membershipStatus`: `all`, `active`, `pending`, `suspended`, `left`,
   `no_membership`
-- `role`: `all`, `member`, `event_manager`, `admin`
+- `role`: `all`, `member`, `rabbi`, `event_manager`, `admin`
 - `onboarding`: `all`, `completed`, `incomplete`
 - `limit`
 - `offset`
@@ -98,7 +98,7 @@ The first UI pass includes:
 - summary counts calculated from the loaded rows;
 - search by name, email, phone, or city;
 - membership-status filters including `no_membership`;
-- role filters for `member`, `event_manager`, and `admin`;
+- role filters for `member`, `rabbi`, `event_manager`, and `admin`;
 - loading, error, retry, and empty states;
 - a table with profile, membership, registration counters, and last
   registration timestamp.
@@ -137,7 +137,7 @@ The web-admin can:
 
 - make an app user a community member with `role: "member"` and
   `status: "active"`;
-- update membership role to `member`, `event_manager`, or `admin`;
+- update membership role to `member`, `rabbi`, `event_manager`, or `admin`;
 - update membership status to `pending`, `active`, `suspended`, or `left`;
 - quickly suspend, restore, or exclude a user from the community.
 
