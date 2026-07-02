@@ -1,6 +1,8 @@
 # Admin staging deploy
 
-Этот документ фиксирует staging deploy flow для `apps/admin`: выложить web-admin на staging так, чтобы login, beta access, import v2 и ручной beta smoke проверялись по отдельным release checklist. PR документационный: UI, DB schema, CI/CD, Docker/Nginx, mobile и registrations/seating код не меняются.
+Этот документ фиксирует staging deploy flow для `apps/admin`: выложить текущую closed beta web-admin на `https://admin-stage.<domain>.ru` так, чтобы login, beta access, import v2 и ручной beta smoke проверялись по отдельным release checklist. PR документационный: UI, DB schema, auth logic, runtime-код, CI/CD, Docker/Nginx, mobile и registrations/seating код не меняются.
+
+`apps/admin` собирается как static Vite build и публикуется из `apps/admin/dist`. Текущая админка не является browser-routed SPA: разделы открываются через UI/sidebar после загрузки приложения, а прямые URL `/events`, `/registrations`, `/members` и `/settings` не являются поддержанным способом открыть соответствующие разделы.
 
 В Phase 1 кнопки импорта с сайта нет. Импорт временно выполняет владелец проекта через CLI/dev flow вне browser-admin.
 
@@ -49,20 +51,21 @@ Privacy boundary: prayer tracker приватный. `prayer_activity_logs` не
 
 ## SPA hosting
 
-`apps/admin` хостится как static SPA на выбранном staging web host. Хост должен уметь:
+`apps/admin` хостится как static Vite app на выбранном staging web host. Хост должен уметь:
 
 - принимать build output из `apps/admin/dist`;
 - отдавать assets из `dist/assets`;
-- возвращать `index.html` для SPA routes и auth callback paths;
+- отдавать `index.html` на root admin URL;
+- возвращать `index.html` для configured auth callback paths, если они используются;
 - обслуживать staging admin URL по HTTPS.
 
 Canonical public URL staging web-admin:
 
 ```text
-STAGING_ADMIN_URL=https://<admin-staging-host>
+STAGING_ADMIN_URL=https://admin-stage.<domain>.ru
 ```
 
-Перед выкладкой замените placeholder на реальный URL выбранного хостинга и используйте ровно это значение в hosting settings и Supabase Auth settings.
+Перед выкладкой замените `<domain>` на реальный домен выбранного хостинга и используйте ровно это значение в hosting settings и Supabase Auth settings.
 
 Build из корня репозитория:
 
@@ -76,7 +79,9 @@ npm run admin:build
 apps/admin/dist
 ```
 
-SPA fallback: любые запросы к несуществующим static files должны возвращать `apps/admin/dist/index.html`, а не 404. Это важно для будущих callback paths вроде `/auth/callback` и для прямого открытия URL после redirect. Asset-файлы из `/assets/*` должны продолжать отдаваться как файлы.
+Routing boundary: текущий `apps/admin` не использует browser routing для разделов. Project owner открывает `Events`, `Registrations`, `Members`, `Settings` и другие разделы через sidebar/UI внутри приложения. Прямые URL `/events`, `/registrations`, `/members` и `/settings` не являются deploy-контрактом и не должны использоваться как smoke criteria.
+
+Static fallback: если для Auth confirmation/recovery/provider flow или будущего callback настроен dedicated path вроде `/auth/callback`, хост должен возвращать `apps/admin/dist/index.html` на этот callback path, а не 404. Asset-файлы из `/assets/*` должны продолжать отдаваться как файлы. Не добавляйте `.htaccess`, Nginx config, Docker config или другой server config в этот documentation-only PR.
 
 ## Admin env
 
@@ -90,38 +95,51 @@ VITE_ADMIN_ENV_LABEL=staging
 
 `VITE_SUPABASE_URL` указывает на hosted Supabase project для staging. `VITE_SUPABASE_ANON_KEY` должен быть anon/publishable key этого project. `VITE_ADMIN_ENV_LABEL=staging` необязателен для текущего login flow, но полезен как явный marker окружения.
 
-Не коммитить `.env.local`. Не добавлять server-only secrets в `apps/admin`.
+Не коммитить `.env.local` и `.env.production.local`. Эти файлы остаются локальными или на стороне hosting provider secrets/settings.
+
+Не добавлять в `apps/admin` service-role key, Supabase Admin API credentials, `DATABASE_URL`, server-only database connection strings, raw JWT/session debug dumps или любые другие server-only secrets. Browser-admin должен работать только через anon/publishable key, пользовательскую session и RLS/RPC/backend boundaries.
 
 ## Supabase Auth redirects
 
 В hosted Supabase Dashboard для staging project обновите Auth URL configuration:
 
-- `site_url`: `STAGING_ADMIN_URL`;
-- allowed/additional redirect URLs: `STAGING_ADMIN_URL`;
-- если используется dedicated callback path: `STAGING_ADMIN_URL/auth/callback`;
+- `site_url`: `https://admin-stage.<domain>.ru`;
+- allowed/additional redirect URLs для web-admin: `https://admin-stage.<domain>.ru` и `https://admin-stage.<domain>.ru/`;
+- если используется dedicated admin callback path: `https://admin-stage.<domain>.ru/auth/callback`;
+- allowed/additional redirect URLs для staging user app/web entry: `https://app-stage.<domain>.ru` и `https://app-stage.<domain>.ru/`;
+- если app-stage использует dedicated callback path, добавить exact configured app-stage callback URL отдельной строкой;
 - local URLs можно оставить только если они нужны для local development;
 - production admin URL добавить позже отдельным PR/шагом, когда production web-admin будет готов.
 
 `supabase/config.toml` в репозитории относится к локальному Supabase runtime. Его `[auth].site_url` и `additional_redirect_urls` не настраивают hosted Supabase project автоматически. Для staging нужно менять именно hosted Supabase Dashboard settings.
 
-Текущий admin login использует email/password и не делает внешний OAuth redirect. Однако hosted Auth redirects всё равно должны быть подготовлены для confirmation/recovery/provider flows и будущих callback сценариев. Supabase redirect allowlist должна содержать exact URL без query/hash; query params и hash fragment приходят уже поверх разрешённого URL.
+Текущий admin login использует email/password и не делает внешний OAuth redirect. Однако hosted Auth redirects всё равно должны быть подготовлены для confirmation/recovery/provider flows и будущих callback сценариев. Supabase redirect allowlist должна содержать exact URL без query/hash; query params и hash fragment приходят уже поверх разрешённого URL. Настройка app-stage redirects здесь означает только Auth allowlist для staging project, а не изменение app-stage/mobile web code.
 
 ## Login callback
 
 Минимально разрешить:
 
 ```text
-STAGING_ADMIN_URL
-STAGING_ADMIN_URL/
+https://admin-stage.<domain>.ru
+https://admin-stage.<domain>.ru/
 ```
 
 Если redirect flow настроен на dedicated callback path, дополнительно разрешить:
 
 ```text
-STAGING_ADMIN_URL/auth/callback
+https://admin-stage.<domain>.ru/auth/callback
 ```
 
 Хостинг должен отдавать `index.html` на этот callback path, чтобы Vite SPA загрузилась и Supabase client смог обработать session в URL.
+
+Для app-stage в том же hosted Supabase staging project держите отдельные allowed redirect URLs:
+
+```text
+https://app-stage.<domain>.ru
+https://app-stage.<domain>.ru/
+```
+
+Если app-stage использует dedicated callback path, разрешите exact configured path. Не переносите app-stage redirect settings в код `apps/admin`.
 
 При redirect loop проверить:
 
@@ -228,6 +246,17 @@ Release checklist split:
 - [Admin beta v1 release checklist](admin-beta-v1-release-checklist.md) covers the first server beta baseline: staging SPA hosting, Supabase Auth redirects, beta access, Settings health, and initial manual smoke.
 - [Admin beta v2 release checklist](admin-beta-v2-release-checklist.md) covers import button v2, beta polish, registrations/seating context, and the feedback review list for final beta v2 manual smoke.
 
+Project owner manual deploy checklist:
+
+- Canonical admin URL is `https://admin-stage.<domain>.ru`.
+- `npm run admin:build` passes before publishing.
+- Published directory is exactly `apps/admin/dist`.
+- Staging hosting env contains `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_ADMIN_ENV_LABEL=staging`.
+- `.env.local` and `.env.production.local` are not committed.
+- `apps/admin` does not receive service-role keys, Supabase Admin API credentials, `DATABASE_URL`, or server-only connection strings.
+- Hosted Supabase Auth redirects include admin-stage and app-stage exact URLs.
+- Admin sections are opened through sidebar/UI; `/events`, `/registrations`, `/members`, and `/settings` are not direct section routes.
+
 - Edge Function `ADMIN_WEB_ORIGIN` is set to the exact admin SPA origin before manual smoke.
 - Edge Function CORS allows `POST`, `OPTIONS`, `Authorization`, `apikey`, `x-client-info`, and `content-type`.
 - Edge Function `admin-website-import` уже используется как admin-triggered import path, если deployed и настроен.
@@ -266,6 +295,16 @@ Release checklist split:
 ## Manual smoke
 
 Not run by Codex. Manual smoke is performed by the project owner.
+
+Deploy/navigation:
+
+- Open `https://admin-stage.<domain>.ru`.
+- Confirm the app loads from the published `apps/admin/dist` build.
+- Confirm the visible environment label is `staging` when `VITE_ADMIN_ENV_LABEL=staging` is configured.
+- Use sidebar/UI to open Events, Registrations, Members and Settings.
+- Do not treat `/events`, `/registrations`, `/members` or `/settings` as supported direct URLs for the current admin build.
+- Confirm hosted Supabase Auth URL settings include both `https://admin-stage.<domain>.ru` and `https://app-stage.<domain>.ru` exact redirects.
+- Confirm no UI or health/debug surface shows service-role keys, Supabase Admin API credentials, `DATABASE_URL`, raw JWT/session token or server-only secrets.
 
 Beta polish:
 

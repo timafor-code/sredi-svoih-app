@@ -4,6 +4,8 @@
 
 В текущем состоянии админка использует Supabase Auth в браузере, загружает профиль пользователя и активное membership, а затем открывает visual shell только для ролей `admin` и `event_manager`. Beta v2 admin surfaces используют обычный authenticated Supabase client и RPC/RLS boundaries; import v2 доступен через Edge Function/RPC при deployed/configured staging backend и остаётся review-only без auto-publish.
 
+Staging web-admin публикуется как статический Vite build на `https://admin-stage.<domain>.ru`. Текущий `apps/admin` не является browser-routed SPA: разделы `Events`, `Registrations`, `Members`, `Settings` и другие открываются через UI/sidebar внутри загруженного приложения, а не через прямые URL `/events`, `/registrations`, `/members` или `/settings`.
+
 Список событий читается через обычный browser-safe Supabase client с текущей пользовательской сессией и действующими RLS. Если backend-политики вернут только `published`/`public`, UI честно покажет только эти записи; расширение видимости черновиков, скрытых, отменённых или архивных событий требует отдельного backend PR.
 
 Source of truth для полного UX остаётся `docs/prototype/admin-events-center.html`.
@@ -33,9 +35,9 @@ VITE_SUPABASE_ANON_KEY=<hosted-anon-or-publishable-key>
 VITE_ADMIN_ENV_LABEL=staging
 ```
 
-`VITE_ADMIN_ENV_LABEL` необязателен и нужен только как визуальная пометка окружения в compact context текущего пользователя, например `staging`, `prod` или `local`. Он не влияет на auth, роли, RLS/RPC или доступы. Реальные значения env нельзя коммитить; `.env.local` остаётся локальным файлом.
+`VITE_ADMIN_ENV_LABEL` необязателен и нужен только как визуальная пометка окружения в compact context текущего пользователя, например `staging`, `prod` или `local`. Он не влияет на auth, роли, RLS/RPC или доступы. Реальные значения env нельзя коммитить; `.env.local` и `.env.production.local` остаются локальными файлами.
 
-Реальные права доступа всё равно должны проверяться на стороне Supabase через RLS/RPC и отдельные backend-контракты. Не добавляйте в browser-admin service-role ключи, Supabase Admin API credentials или server-only database connection env vars.
+Реальные права доступа всё равно должны проверяться на стороне Supabase через RLS/RPC и отдельные backend-контракты. Не добавляйте в `apps/admin` service-role ключи, Supabase Admin API credentials, `DATABASE_URL` или другие server-only database connection env vars.
 
 ## Staging deploy
 
@@ -50,9 +52,10 @@ Staging/beta docs:
 - `apps/admin` хостится как static Vite SPA.
 - Сборка запускается из корня репозитория командой `npm run admin:build`.
 - Build output для публикации: `apps/admin/dist`.
-- Public staging URL web-admin должен быть зафиксирован как один canonical URL, например `https://<admin-staging-host>`.
-- Static host должен отдавать `index.html` для всех SPA routes/callback paths, которые не являются реальными asset-файлами.
-- В hosted Supabase Dashboard для staging project нужно поставить Auth `site_url` в staging admin URL и добавить тот же URL в allowed/additional redirect URLs.
+- Public staging URL web-admin должен быть зафиксирован как один canonical URL: `https://admin-stage.<domain>.ru`.
+- Текущая навигация не browser-routed: прямые URL `/events`, `/registrations`, `/members` и `/settings` не являются контрактом открытия разделов; используйте sidebar внутри приложения.
+- Static host должен отдавать `index.html` для корня admin URL и configured auth callback paths, которые не являются реальными asset-файлами.
+- В hosted Supabase Dashboard для staging project нужно поставить Auth `site_url` в `https://admin-stage.<domain>.ru` и добавить admin-stage/app-stage URL в allowed/additional redirect URLs.
 - Production admin URL добавляется позже отдельным шагом, когда он будет готов.
 
 Phase 1 beta v1 checklist covers the first server beta baseline. Beta v2 adds admin import behind the `admin-website-import` Edge Function and RPC/RLS write boundary; CLI import remains fallback/debug only outside browser-admin when project owner intentionally uses it. Manual beta v2 smoke lives in [Admin beta v2 release checklist](../../docs/admin-beta-v2-release-checklist.md).
