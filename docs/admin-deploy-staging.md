@@ -1,6 +1,29 @@
 # Admin staging deploy
 
-Этот документ фиксирует staging deploy flow для `apps/admin`: выложить текущую closed beta web-admin на `https://admin-stage.<domain>.ru` так, чтобы login, beta access, import v2 и ручной beta smoke проверялись по отдельным release checklist. PR документационный: UI, DB schema, auth logic, runtime-код, CI/CD, Docker/Nginx, mobile и registrations/seating код не меняются.
+Этот документ фиксирует staging deploy flow для `apps/admin`: выложить текущую closed beta web-admin на `https://pgs24.ru/admin-stage/` так, чтобы login, beta access, import v2 и ручной beta smoke проверялись по отдельным release checklist. PR документационный: UI, DB schema, auth logic, runtime-код, CI/CD, Docker/Nginx, mobile и registrations/seating код не меняются.
+
+Практическое решение для Phase 1 beta: Majordomo staging размещается не на поддоменах, а в папках основного домена:
+
+```text
+https://pgs24.ru/admin-stage/
+https://pgs24.ru/app-stage/
+```
+
+Фактическая FTP-структура:
+
+```text
+/pgs24.ru/www/admin-stage/
+/pgs24.ru/www/app-stage/
+```
+
+Поддомены `admin-stage.pgs24.ru` и `app-stage.pgs24.ru` были проверены, но на текущей конфигурации дают 403/SSL-проблемы и не дают быстро указать отдельный document root. Чтобы не тратить время на hosting-настройки, Phase 1 beta временно использует path-based hosting.
+
+Follow-up перед реальной загрузкой сборок:
+
+- для `apps/admin` проверить/настроить Vite base path под `/admin-stage/`;
+- для Expo web demo проверить работу под `/app-stage/`;
+- для `app-stage` проверить SPA fallback через `.htaccess`;
+- обновить hosted Supabase Auth redirects под фактические path-based URLs.
 
 `apps/admin` собирается как static Vite build и публикуется из `apps/admin/dist`. Текущая админка не является browser-routed SPA: разделы открываются через UI/sidebar после загрузки приложения, а прямые URL `/events`, `/registrations`, `/members` и `/settings` не являются поддержанным способом открыть соответствующие разделы.
 
@@ -51,21 +74,21 @@ Privacy boundary: prayer tracker приватный. `prayer_activity_logs` не
 
 ## SPA hosting
 
-`apps/admin` хостится как static Vite app на выбранном staging web host. Хост должен уметь:
+`apps/admin` хостится как static Vite app на Majordomo в path-based папке `/pgs24.ru/www/admin-stage/`. Хост должен уметь:
 
 - принимать build output из `apps/admin/dist`;
 - отдавать assets из `dist/assets`;
 - отдавать `index.html` на root admin URL;
 - возвращать `index.html` для configured auth callback paths, если они используются;
-- обслуживать staging admin URL по HTTPS.
+- обслуживать staging admin URL по HTTPS: `https://pgs24.ru/admin-stage/`.
 
 Canonical public URL staging web-admin:
 
 ```text
-STAGING_ADMIN_URL=https://admin-stage.<domain>.ru
+STAGING_ADMIN_URL=https://pgs24.ru/admin-stage/
 ```
 
-Перед выкладкой замените `<domain>` на реальный домен выбранного хостинга и используйте ровно это значение в hosting settings и Supabase Auth settings.
+Для текущей Phase 1 beta canonical admin URL уже выбран: `https://pgs24.ru/admin-stage/`. Используйте ровно это значение в hosting settings, Supabase Auth settings и Edge Function CORS/origin settings.
 
 Build из корня репозитория:
 
@@ -73,10 +96,16 @@ Build из корня репозитория:
 npm run admin:build
 ```
 
-Публикуемый каталог:
+Публикуемый каталог после build:
 
 ```text
 apps/admin/dist
+```
+
+Фактическая папка назначения на FTP для admin beta:
+
+```text
+/pgs24.ru/www/admin-stage/
 ```
 
 Routing boundary: текущий `apps/admin` не использует browser routing для разделов. Project owner открывает `Events`, `Registrations`, `Members`, `Settings` и другие разделы через sidebar/UI внутри приложения. Прямые URL `/events`, `/registrations`, `/members` и `/settings` не являются deploy-контрактом и не должны использоваться как smoke criteria.
@@ -103,10 +132,10 @@ VITE_ADMIN_ENV_LABEL=staging
 
 В hosted Supabase Dashboard для staging project обновите Auth URL configuration:
 
-- `site_url`: `https://admin-stage.<domain>.ru`;
-- allowed/additional redirect URLs для web-admin: `https://admin-stage.<domain>.ru` и `https://admin-stage.<domain>.ru/`;
-- если используется dedicated admin callback path: `https://admin-stage.<domain>.ru/auth/callback`;
-- allowed/additional redirect URLs для staging user app/web entry: `https://app-stage.<domain>.ru` и `https://app-stage.<domain>.ru/`;
+- `site_url`: `https://pgs24.ru/admin-stage/`;
+- allowed/additional redirect URLs для web-admin: `https://pgs24.ru/admin-stage/` и `https://pgs24.ru/admin-stage/**`;
+- если используется dedicated admin callback path: `https://pgs24.ru/admin-stage/auth/callback`;
+- allowed/additional redirect URLs для staging user app/web entry: `https://pgs24.ru/app-stage/` и `https://pgs24.ru/app-stage/**`;
 - если app-stage использует dedicated callback path, добавить exact configured app-stage callback URL отдельной строкой;
 - local URLs можно оставить только если они нужны для local development;
 - production admin URL добавить позже отдельным PR/шагом, когда production web-admin будет готов.
@@ -120,14 +149,14 @@ VITE_ADMIN_ENV_LABEL=staging
 Минимально разрешить:
 
 ```text
-https://admin-stage.<domain>.ru
-https://admin-stage.<domain>.ru/
+https://pgs24.ru/admin-stage/
+https://pgs24.ru/admin-stage/**
 ```
 
 Если redirect flow настроен на dedicated callback path, дополнительно разрешить:
 
 ```text
-https://admin-stage.<domain>.ru/auth/callback
+https://pgs24.ru/admin-stage/auth/callback
 ```
 
 Хостинг должен отдавать `index.html` на этот callback path, чтобы Vite SPA загрузилась и Supabase client смог обработать session в URL.
@@ -135,8 +164,8 @@ https://admin-stage.<domain>.ru/auth/callback
 Для app-stage в том же hosted Supabase staging project держите отдельные allowed redirect URLs:
 
 ```text
-https://app-stage.<domain>.ru
-https://app-stage.<domain>.ru/
+https://pgs24.ru/app-stage/
+https://pgs24.ru/app-stage/**
 ```
 
 Если app-stage использует dedicated callback path, разрешите exact configured path. Не переносите app-stage redirect settings в код `apps/admin`.
@@ -248,7 +277,7 @@ Release checklist split:
 
 Project owner manual deploy checklist:
 
-- Canonical admin URL is `https://admin-stage.<domain>.ru`.
+- Canonical admin URL is `https://pgs24.ru/admin-stage/`.
 - `npm run admin:build` passes before publishing.
 - Published directory is exactly `apps/admin/dist`.
 - Staging hosting env contains `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_ADMIN_ENV_LABEL=staging`.
@@ -298,12 +327,12 @@ Not run by Codex. Manual smoke is performed by the project owner.
 
 Deploy/navigation:
 
-- Open `https://admin-stage.<domain>.ru`.
+- Open `https://pgs24.ru/admin-stage/`.
 - Confirm the app loads from the published `apps/admin/dist` build.
 - Confirm the visible environment label is `staging` when `VITE_ADMIN_ENV_LABEL=staging` is configured.
 - Use sidebar/UI to open Events, Registrations, Members and Settings.
 - Do not treat `/events`, `/registrations`, `/members` or `/settings` as supported direct URLs for the current admin build.
-- Confirm hosted Supabase Auth URL settings include both `https://admin-stage.<domain>.ru` and `https://app-stage.<domain>.ru` exact redirects.
+- Confirm hosted Supabase Auth URL settings include both `https://pgs24.ru/admin-stage/` and `https://pgs24.ru/app-stage/` exact redirects.
 - Confirm no UI or health/debug surface shows service-role keys, Supabase Admin API credentials, `DATABASE_URL`, raw JWT/session token or server-only secrets.
 
 Beta polish:
