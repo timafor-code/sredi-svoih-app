@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -20,6 +21,8 @@ import type {
   PrayerActivityMetadata,
   PrayerActivityType,
 } from '@/types/prayerTracker';
+
+const WEB_MOBILE_FRAME_MAX_WIDTH = 430;
 
 const AUTH_ALERT_TITLE = 'Нужен вход';
 const AUTH_ALERT_MESSAGE = 'Чтобы вести молитвенный трекер, войдите в приложение.';
@@ -208,7 +211,12 @@ export function PrayerActionModal({
           onPress={onClose}
           style={StyleSheet.absoluteFillObject}
         />
-        <GlassCard style={styles.card}>
+        <GlassCard
+          style={[
+            styles.card,
+            Platform.OS === 'web' ? styles.webCard : null,
+          ]}
+        >
           <View style={styles.header}>
             <View style={styles.titleBlock}>
               <Text style={styles.title}>{title}</Text>
@@ -291,6 +299,11 @@ const styles = StyleSheet.create({
   card: {
     borderColor: colors.borderStrong,
     backgroundColor: 'rgba(18,20,31,0.92)',
+  },
+  webCard: {
+    width: '100%',
+    maxWidth: WEB_MOBILE_FRAME_MAX_WIDTH,
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',
