@@ -27,9 +27,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 132,
-    gap: 12,
+    width: '100%',
+    maxWidth: Platform.OS === 'web' ? 430 : undefined,
+    alignSelf: Platform.OS === 'web' ? 'center' : undefined,
+    paddingHorizontal: Platform.OS === 'web' ? 18 : 16,
+    paddingTop: Platform.OS === 'web' ? 14 : 8,
+    paddingBottom: Platform.OS === 'ios' ? 24 : Platform.OS === 'web' ? 132 : 132,
+    gap: Platform.OS === 'web' ? 14 : 12,
   },
 });

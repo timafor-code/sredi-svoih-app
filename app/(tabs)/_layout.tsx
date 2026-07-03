@@ -344,6 +344,7 @@ function GlassTabBar({ state, navigation }: BottomTabBarProps) {
       pointerEvents="box-none"
       style={[
         styles.wrapper,
+        Platform.OS === 'web' ? styles.webWrapper : null,
         { bottom: Math.max(insets.bottom, 8) + 4 },
       ]}
     >
@@ -675,6 +676,14 @@ const styles = StyleSheet.create({
     left: PANEL_HORIZONTAL_INSET,
     right: PANEL_HORIZONTAL_INSET,
     height: PANEL_HEIGHT,
+  },
+  webWrapper: {
+    left: 0,
+    right: 0,
+    width: '100%',
+    maxWidth: 430,
+    alignSelf: 'center',
+    paddingHorizontal: PANEL_HORIZONTAL_INSET,
   },
   panel: {
     flex: 1,
