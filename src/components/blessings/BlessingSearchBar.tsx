@@ -1,7 +1,7 @@
 import { WebSafeBlurView } from '@/components/glass/WebSafeBlurView';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { colors } from '@/theme/colors';
 import { radius } from '@/theme/radius';
@@ -18,6 +18,7 @@ export function BlessingSearchBar({ onChangeText, value }: BlessingSearchBarProp
       <LinearGradient
         colors={['rgba(255,255,255,0.095)', 'rgba(255,255,255,0.035)']}
         end={{ x: 1, y: 1 }}
+        pointerEvents={Platform.OS === 'web' ? 'none' : undefined}
         start={{ x: 0, y: 0 }}
         style={StyleSheet.absoluteFillObject}
       />
