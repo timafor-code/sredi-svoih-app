@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import {
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,6 +16,8 @@ import { formatRuDate } from '@/lib/dates';
 import type { DailyZmanim } from '@/lib/zmanim';
 import { colors } from '@/theme/colors';
 import { radius } from '@/theme/radius';
+
+const WEB_MOBILE_FRAME_MAX_WIDTH = 430;
 
 type ZmanimModalProps = {
   city: string;
@@ -68,7 +71,13 @@ export function ZmanimModal({
           style={StyleSheet.absoluteFillObject}
         />
 
-        <View style={[styles.panel, { maxHeight: panelMaxHeight }]}>
+        <View
+          style={[
+            styles.panel,
+            Platform.OS === 'web' ? styles.webPanel : null,
+            { maxHeight: panelMaxHeight },
+          ]}
+        >
           <ScrollView
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator
@@ -167,6 +176,9 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 720,
     alignSelf: 'center',
+  },
+  webPanel: {
+    maxWidth: WEB_MOBILE_FRAME_MAX_WIDTH,
   },
   scrollArea: {
     borderRadius: radius.glassCard,

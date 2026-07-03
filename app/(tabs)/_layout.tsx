@@ -52,6 +52,7 @@ const NATIVE_TAB_CONFIG = {
 const PANEL_HEIGHT = 82;
 const PANEL_BORDER_RADIUS = 32;
 const PANEL_HORIZONTAL_INSET = 14;
+const WEB_MOBILE_FRAME_MAX_WIDTH = 430;
 const INDICATOR_HEIGHT = 54;
 const INDICATOR_RADIUS = 24;
 const INDICATOR_VERTICAL_INSET = (PANEL_HEIGHT - INDICATOR_HEIGHT) / 2;
@@ -348,7 +349,13 @@ function GlassTabBar({ state, navigation }: BottomTabBarProps) {
         { bottom: Math.max(insets.bottom, 8) + 4 },
       ]}
     >
-      <View style={styles.panel} onLayout={handleLayout}>
+      <View
+        style={[
+          styles.panel,
+          Platform.OS === 'web' ? styles.webPanel : null,
+        ]}
+        onLayout={handleLayout}
+      >
         <GlassTabBarBackground
           radius={PANEL_BORDER_RADIUS}
           reduceTransparency={reduceTransparency}
@@ -681,8 +688,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     width: '100%',
-    maxWidth: 430,
-    alignSelf: 'center',
+    alignItems: 'center',
     paddingHorizontal: PANEL_HORIZONTAL_INSET,
   },
   panel: {
@@ -694,6 +700,10 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 12 },
     elevation: 12,
+  },
+  webPanel: {
+    width: '100%',
+    maxWidth: WEB_MOBILE_FRAME_MAX_WIDTH,
   },
   surfaceWake: {
     position: 'absolute',
