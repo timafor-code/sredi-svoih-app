@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import type { ComponentProps } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Tabs } from 'expo-router';
 import { Icon, Label, NativeTabs } from 'expo-router/unstable-native-tabs';
@@ -21,6 +20,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassTabBarBackground } from '@/components/glass/GlassTabBarBackground';
+import { WebSafeBlurView } from '@/components/glass/WebSafeBlurView';
 
 type TabIconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -85,25 +85,33 @@ function GlassTabBar({ state, navigation }: BottomTabBarProps) {
         setReduceMotion(enabled);
       }
     }).catch(() => undefined);
-    AccessibilityInfo.isReduceTransparencyEnabled().then((enabled) => {
-      if (mounted) {
-        setReduceTransparency(enabled);
-      }
-    }).catch(() => undefined);
+    if (
+      Platform.OS !== 'web' &&
+      typeof AccessibilityInfo.isReduceTransparencyEnabled === 'function'
+    ) {
+      AccessibilityInfo.isReduceTransparencyEnabled().then((enabled) => {
+        if (mounted) {
+          setReduceTransparency(enabled);
+        }
+      }).catch(() => undefined);
+    }
 
     const reduceMotionSubscription = AccessibilityInfo.addEventListener(
       'reduceMotionChanged',
       setReduceMotion,
     );
-    const reduceTransparencySubscription = AccessibilityInfo.addEventListener(
-      'reduceTransparencyChanged',
-      setReduceTransparency,
-    );
+    const reduceTransparencySubscription =
+      Platform.OS !== 'web'
+        ? AccessibilityInfo.addEventListener(
+            'reduceTransparencyChanged',
+            setReduceTransparency,
+          )
+        : undefined;
 
     return () => {
       mounted = false;
       reduceMotionSubscription.remove();
-      reduceTransparencySubscription.remove();
+      reduceTransparencySubscription?.remove();
     };
   }, []);
 
@@ -363,7 +371,7 @@ function GlassTabBar({ state, navigation }: BottomTabBarProps) {
                     },
                   ]}
                 >
-                  <BlurView
+                  <WebSafeBlurView
                     tint="light"
                     intensity={34}
                     style={StyleSheet.absoluteFillObject}
@@ -455,7 +463,7 @@ function GlassTabBar({ state, navigation }: BottomTabBarProps) {
               ]}
             >
               <View style={styles.indicatorClip}>
-                <BlurView
+                <WebSafeBlurView
                   tint="light"
                   intensity={55}
                   style={StyleSheet.absoluteFillObject}

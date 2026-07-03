@@ -1,4 +1,4 @@
-import { BlurView } from 'expo-blur';
+import { WebSafeBlurView } from '@/components/glass/WebSafeBlurView';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Platform, StyleSheet, View } from 'react-native';
 
@@ -34,7 +34,7 @@ export function GlassTabBarBackground({
       ]}
     >
       {shouldUseBlur ? (
-        <BlurView tint="dark" intensity={85} style={StyleSheet.absoluteFillObject} />
+        <WebSafeBlurView tint="dark" intensity={85} style={StyleSheet.absoluteFillObject} />
       ) : null}
       <LinearGradient
         colors={gradientColors}

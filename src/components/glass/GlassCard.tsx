@@ -1,4 +1,4 @@
-import { BlurView } from 'expo-blur';
+import { WebSafeBlurView } from '@/components/glass/WebSafeBlurView';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   StyleSheet,
@@ -25,7 +25,7 @@ export function GlassCard({
 }: GlassCardProps) {
   return (
     <View style={[styles.shell, style]} {...props}>
-      <BlurView tint="dark" intensity={28} style={StyleSheet.absoluteFillObject} />
+      <WebSafeBlurView tint="dark" intensity={28} style={StyleSheet.absoluteFillObject} />
       <LinearGradient
         colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.025)']}
         style={StyleSheet.absoluteFillObject}
