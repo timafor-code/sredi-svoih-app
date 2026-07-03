@@ -90,6 +90,7 @@ const translitNusachPlaceholders: Record<BlessingTranslitNusach, string> = {
 const readerMinFontSize = 22;
 const readerMaxFontSize = 50;
 const readerFontStep = 2;
+const WEB_MOBILE_FRAME_MAX_WIDTH = 430;
 
 function getInitialPrefaceMode(textResult: BlessingTextResult | null): BirkatPrefaceMode {
   return textResult?.defaultTachanunOn ? 'tachanun' : 'no_tachanun';
@@ -501,7 +502,11 @@ export function BlessingTextOverlay({
 
         <GlassCard
           contentStyle={styles.panelContent}
-          style={[styles.panel, { maxHeight: panelMaxHeight }]}
+          style={[
+            styles.panel,
+            Platform.OS === 'web' ? styles.webPanel : null,
+            { maxHeight: panelMaxHeight },
+          ]}
         >
             <View style={styles.header}>
               <View style={styles.titleBlock}>
@@ -743,6 +748,9 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     borderColor: 'rgba(255,200,50,0.18)',
     backgroundColor: 'rgba(13,15,24,0.94)',
+  },
+  webPanel: {
+    maxWidth: WEB_MOBILE_FRAME_MAX_WIDTH,
   },
   panelContent: {
     gap: 12,

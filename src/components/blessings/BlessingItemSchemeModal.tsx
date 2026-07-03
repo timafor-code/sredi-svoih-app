@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,6 +13,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlessingItemSchemeCard } from '@/components/blessings/BlessingItemSchemeCard';
 import { radius } from '@/theme/radius';
 import type { BlessingItemDetails, BlessingResolvedStep } from '@/types/blessing';
+
+const WEB_MOBILE_FRAME_MAX_WIDTH = 430;
 
 type BlessingItemSchemeModalProps = {
   details: BlessingItemDetails | null;
@@ -60,7 +63,13 @@ export function BlessingItemSchemeModal({
           style={StyleSheet.absoluteFillObject}
         />
 
-        <View style={[styles.panel, { maxHeight: panelMaxHeight }]}>
+        <View
+          style={[
+            styles.panel,
+            Platform.OS === 'web' ? styles.webPanel : null,
+            { maxHeight: panelMaxHeight },
+          ]}
+        >
           {details ? (
             <ScrollView
               contentContainerStyle={styles.scrollContent}
@@ -92,6 +101,9 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 720,
     alignSelf: 'center',
+  },
+  webPanel: {
+    maxWidth: WEB_MOBILE_FRAME_MAX_WIDTH,
   },
   overlayLayer: {
     ...StyleSheet.absoluteFillObject,
