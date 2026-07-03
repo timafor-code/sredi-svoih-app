@@ -5,6 +5,11 @@
     "scheme": "sredi-svoih",
     "version": "1.0.0",
     "orientation": "portrait",
+    "web": {
+      "output": "single",
+      "bundler": "metro",
+      "favicon": "./assets/logo.png"
+    },
     "ios": {
       "usesAppleSignIn": true
     },
