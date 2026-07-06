@@ -1,0 +1,35 @@
+name: sredi-svoih-api-local
+
+services:
+  api_postgres:
+    image: postgres:16-alpine
+    container_name: sredi_svoih_api_postgres
+    environment:
+      POSTGRES_DB: sredi_api
+      POSTGRES_USER: sredi_api
+      POSTGRES_PASSWORD: sredi_api
+    ports:
+      - "127.0.0.1:55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sredi_api -d sredi_api"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - api_postgres_data:/var/lib/postgresql/data
+
+  api_backend:
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile.local
+    container_name: sredi_svoih_api_backend
+    env_file:
+      - ./env/api.env.example
+    ports:
+      - "8000:8000"
+    depends_on:
+      api_postgres:
+        condition: service_healthy
+
+volumes:
+  api_postgres_data:
