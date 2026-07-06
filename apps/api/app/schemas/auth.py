@@ -22,12 +22,20 @@ def normalize_email(value: str) -> str:
     return normalized
 
 
-def normalize_required_token(value: str) -> str:
+def normalize_required_secret(value: str, field_name: str) -> str:
     normalized = value.strip()
     if not normalized:
-        raise ValueError("refresh_token is required")
+        raise ValueError(f"{field_name} is required")
 
     return normalized
+
+
+def normalize_required_token(value: str) -> str:
+    return normalize_required_secret(value, "refresh_token")
+
+
+def normalize_auth_code(value: str) -> str:
+    return normalize_required_secret(value, "code")
 
 
 def normalize_device_name(value: str | None) -> str | None:
@@ -90,6 +98,74 @@ class LogoutRequest(BaseModel):
         return normalize_required_token(value)
 
 
+class RequestPasswordResetRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email_field(cls, value: str) -> str:
+        return normalize_email(value)
+
+
+class ConfirmPasswordResetRequest(BaseModel):
+    code: str = Field(min_length=16, max_length=512)
+    new_password: str = Field(min_length=8, max_length=1024)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("code")
+    @classmethod
+    def normalize_code_field(cls, value: str) -> str:
+        return normalize_auth_code(value)
+
+
+class RequestEmailVerificationRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email_field(cls, value: str) -> str:
+        return normalize_email(value)
+
+
+class ConfirmEmailVerificationRequest(BaseModel):
+    code: str = Field(min_length=16, max_length=512)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("code")
+    @classmethod
+    def normalize_code_field(cls, value: str) -> str:
+        return normalize_auth_code(value)
+
+
+class RequestSetPasswordRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email_field(cls, value: str) -> str:
+        return normalize_email(value)
+
+
+class ConfirmSetPasswordRequest(BaseModel):
+    code: str = Field(min_length=16, max_length=512)
+    new_password: str = Field(min_length=8, max_length=1024)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("code")
+    @classmethod
+    def normalize_code_field(cls, value: str) -> str:
+        return normalize_auth_code(value)
+
+
 class AppUserSummary(BaseModel):
     id: UUID
     email: str | None
@@ -140,6 +216,14 @@ class AuthTokenResponse(BaseModel):
 
 
 class LogoutResponse(BaseModel):
+    ok: bool = True
+
+
+class AuthCodeRequestResponse(BaseModel):
+    ok: bool = True
+
+
+class AuthCodeConfirmResponse(BaseModel):
     ok: bool = True
 
 

@@ -3,12 +3,13 @@
 Local Python/FastAPI backend contour for the staged Supabase-to-PostgreSQL
 migration.
 
-This service is intentionally isolated in PR 3:
+This service is intentionally isolated during the migration:
 
-- it does not switch mobile or web-admin traffic;
+- it does not switch mobile or web-admin traffic by default;
 - it does not connect to Supabase;
-- it does not implement auth, events, registrations, or business tables;
-- it only exposes local `/health`, `/version`, and the generated FastAPI docs.
+- it does not expose PostgreSQL directly to mobile or web-admin;
+- it exposes backend-only API auth foundation endpoints, local `/health`,
+  `/version`, and the generated FastAPI docs.
 
 ## Local startup
 
@@ -40,3 +41,28 @@ Docker container is the normal local runtime/check path.
 For Expo Go on an iPhone, use `http://<your-lan-ip>:8000` instead of
 `http://127.0.0.1:8000`. The container starts Uvicorn on `0.0.0.0:8000` so the
 phone can reach the computer over the LAN.
+
+## Auth email flows
+
+The API includes backend-only password reset, email verification, and
+set-password endpoints under `/auth/*`. These endpoints store only hashed
+one-time codes in the API database. Plaintext codes and links are used only
+while rendering the outbound auth email.
+
+Email sending is disabled by default:
+
+```powershell
+API_EMAIL_ENABLED=false
+```
+
+For local end-to-end testing, enable an owner-controlled SMTP or mail-catcher
+environment through the existing `API_EMAIL_*` variables. Do not place SMTP
+credentials in mobile, Expo, Vite, `apps/admin`, committed env files, or docs
+with real values.
+
+Auth one-time code expiry defaults to 30 minutes and can be adjusted only in
+the backend API environment:
+
+```powershell
+API_AUTH_CODE_TTL_MINUTES=30
+```

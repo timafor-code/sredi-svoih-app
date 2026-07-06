@@ -224,12 +224,17 @@ production API auth.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/auth/password/sign-in` | Public | Exchange email/password credentials for an access token and refresh session. |
+| POST | `/auth/register` | Public | Create an API password user and profile. |
+| POST | `/auth/login` | Public | Exchange email/password credentials for an access token and refresh session. |
 | POST | `/auth/refresh` | Public/session | Rotate a refresh session and return a new access token. |
-| POST | `/auth/logout` | Authenticated | Revoke the current refresh session or all sessions when requested. |
-| POST | `/auth/password/reset/request` | Public | Request password reset delivery when a working delivery path exists. |
-| POST | `/auth/password/reset/confirm` | Public | Confirm reset code and set a new password. |
-| POST | `/auth/email/verify` | Public | Confirm email verification code when delivery exists. |
+| POST | `/auth/logout` | Public/session | Revoke the submitted refresh session when present. |
+| GET | `/auth/me` | Authenticated | Return the current API user, profile summary, and active memberships. |
+| POST | `/auth/request-password-reset` | Public | Request password reset delivery. |
+| POST | `/auth/confirm-password-reset` | Public | Confirm password reset code and set a new password. |
+| POST | `/auth/request-email-verification` | Public | Request email verification delivery. |
+| POST | `/auth/confirm-email-verification` | Public | Confirm email verification code. |
+| POST | `/auth/request-set-password` | Public | Request set-password delivery for migrated OAuth-only users with no password hash. |
+| POST | `/auth/confirm-set-password` | Public | Confirm set-password code and create the first password hash. |
 | POST | `/auth/invites/accept` | Public or authenticated | Accept an invite code and bind it to an API user. |
 
 Auth response `data` may include:
@@ -249,9 +254,90 @@ Server storage must never store plaintext passwords or plaintext refresh
 tokens. Invite codes are returned or accepted as plaintext only at the API
 boundary required for the user flow; only safe derived values may be stored.
 
+Password reset, email verification, and set-password request bodies:
+
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+Request responses are intentionally generic to avoid account enumeration:
+
+```json
+{
+  "ok": true
+}
+```
+
+The same success response is returned when the email is absent, inactive,
+already verified, already password-capable, or otherwise unsuitable for the
+requested flow. If a code is created, the API stores only `code_hash`, expiry,
+and consumed metadata in the purpose-specific auth code table. The plaintext
+code and generated link exist only while rendering the outbound auth email.
+New requests invalidate older unconsumed codes for the same user and purpose.
+
+Confirm password reset request:
+
+```json
+{
+  "code": "one-time-reset-code",
+  "new_password": "new-password"
+}
+```
+
+Confirm email verification request:
+
+```json
+{
+  "code": "one-time-verification-code"
+}
+```
+
+Confirm set-password request:
+
+```json
+{
+  "code": "one-time-set-password-code",
+  "new_password": "new-password"
+}
+```
+
+Confirm responses:
+
+```json
+{
+  "ok": true
+}
+```
+
+Confirmation validates the code hash, purpose, expiry, user status, and
+one-time-use state. Code purpose is enforced by using separate storage tables
+for password reset, email verification, and set-password codes. Successful
+confirmation consumes all outstanding unconsumed codes for that user and
+purpose.
+
+Stable flow errors:
+
+| HTTP | Detail | Meaning |
+| --- | --- | --- |
+| 400 | `Invalid or expired password reset code` | Reset code is missing, unknown, consumed, expired, wrong-purpose, or no longer usable. |
+| 400 | `Invalid or expired email verification code` | Verification code is missing, unknown, consumed, expired, wrong-purpose, or no longer usable. |
+| 400 | `Invalid or expired set-password code` | Set-password code is missing, unknown, consumed, expired, wrong-purpose, or no longer usable. |
+| 409 | `Password is already set` | A valid set-password code was presented after the user already became password-capable. |
+| 429 | `Too many auth email requests` | Request rate limit was exceeded for the auth email flow. |
+
+Password reset requires an active user with an existing `password_hash`.
+Set-password is only for active migrated OAuth-only users where
+`password_hash` is `null`. Email verification sets `email_verified_at` when the
+active user confirms a valid verification code. Raw emails, codes, tokens,
+reset links, verification links, and set-password links must not be logged.
+
 Expected auth errors include `validation_error`, `unauthenticated`,
-`forbidden`, `rate_limited`, and `conflict`. Password reset and email
-verification endpoints must not report completion until delivery is working.
+`forbidden`, `rate_limited`, and `conflict`. Password reset, email
+verification, and set-password are complete only after a valid confirmation;
+request endpoints are generic acceptance responses and must not reveal whether
+an email exists.
 
 ## `/me/*`
 

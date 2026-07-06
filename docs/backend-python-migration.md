@@ -403,6 +403,56 @@ Set-password code: <set-password-code>
 If you did not request this, you can ignore this email.
 ```
 
+### PR 9C password reset, email verification, and set-password flows
+
+PR 9C implements the backend API flows for password reset, email verification,
+and set-password for migrated OAuth-only users. It does not switch mobile or
+web-admin auth defaults to the API and does not add Google OIDC, Apple Sign-In,
+SMS, invite registration, or frontend UI changes.
+
+Implemented endpoints:
+
+```text
+POST /auth/request-password-reset
+POST /auth/confirm-password-reset
+POST /auth/request-email-verification
+POST /auth/confirm-email-verification
+POST /auth/request-set-password
+POST /auth/confirm-set-password
+```
+
+The request endpoints normalize email, apply the auth-email rate limiter, and
+return the same `{ "ok": true }` response when an email is absent, inactive,
+already verified, already password-capable, or otherwise not eligible for that
+flow. This avoids account enumeration. If a user is eligible, the API generates
+a high-entropy one-time code, stores only the HMAC code hash in the relevant
+auth code table, invalidates older unconsumed codes for the same user and
+purpose, and renders the plaintext code/link only for outbound email delivery.
+
+The confirmation endpoints validate code hash, purpose, expiry, user status,
+and one-time-use state. Password reset requires an active user that already has
+a password hash. Set-password requires an active migrated OAuth-only user with
+`password_hash = null`; confirmation is rejected if the user already has a
+password. Email verification sets `email_verified_at` for the active user.
+Successful confirmation consumes outstanding unconsumed codes for that user and
+purpose.
+
+Code expiry is controlled by backend-only `API_AUTH_CODE_TTL_MINUTES`, default
+`30`. Email sending remains disabled by default through
+`API_EMAIL_ENABLED=false`. The API still must not log raw emails, codes, tokens,
+reset links, verification links, or set-password links.
+
+Manual owner fallback when SMTP is disabled in PR 9C:
+
+1. Prefer enabling a local owner-controlled SMTP or mail-catcher environment
+   when testing end-to-end confirmation, because plaintext codes are not
+   returned in API responses and are not stored in the database.
+2. If a manual support send is required, handle the plaintext code/link only in
+   the outbound email path, send it through an owner-controlled mailbox, and do
+   not paste it into PRs, logs, screenshots, issue comments, or committed files.
+3. After sending, discard the plaintext code/link. The database must contain
+   only the hash and metadata needed to validate expiry and one-time use.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before

@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     api_token_hash_secret: str = "local-dev-token-hash-secret-change-me-minimum-32-bytes"
     api_jwt_issuer: str = "sredi-svoih-api"
     api_jwt_audience: str | None = None
+    api_auth_code_ttl_minutes: int = Field(default=30, gt=0)
     api_email_enabled: bool = False
     api_email_from_address: str = "dev-null@example.invalid"
     api_email_from_name: str = "Sredi Svoih"
