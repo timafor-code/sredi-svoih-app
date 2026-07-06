@@ -253,7 +253,7 @@ export async function signUpWithEmail(email: string, password: string): Promise<
     throw new Error('Enter email and password to register.');
   }
 
-  const response = await apiClient.post<ApiRegisterResponse, ApiRegisterRequest>(
+  const registerResponse = await apiClient.post<ApiRegisterResponse, ApiRegisterRequest>(
     '/auth/register',
     {
       email: normalizedEmail,
@@ -262,13 +262,24 @@ export async function signUpWithEmail(email: string, password: string): Promise<
     { includeAuthToken: false },
   );
 
-  await requestEmailVerification(normalizedEmail);
+  const tokenResponse = await apiClient.post<ApiAuthTokenResponse, ApiLoginRequest>(
+    '/auth/login',
+    {
+      email: normalizedEmail,
+      password,
+    },
+    { includeAuthToken: false },
+  );
+  await setApiAuthTokens(tokenResponse);
+  const session = apiTokensToSession(tokenResponse, tokenResponse.user);
 
   return {
-    session: null,
-    user: apiUserToSupabaseUser(response.user),
-    profile: response.profile ? apiProfileToProfile(response.profile, response.user) : null,
-    needsEmailConfirmation: true,
+    session,
+    user: session.user,
+    profile: registerResponse.profile
+      ? apiProfileToProfile(registerResponse.profile, registerResponse.user)
+      : null,
+    needsEmailConfirmation: false,
   };
 }
 
