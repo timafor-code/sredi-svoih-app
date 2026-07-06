@@ -198,6 +198,117 @@ never be stored.
 Payment gateway implementation is out of scope during the backend migration.
 Apple Sign-In is out of scope for the first backend migration wave.
 
+### PR 9A auth migration inventory runbook
+
+PR 9A is inventory and runbook only. It does not enable API auth, switch
+`AUTH_PROVIDER`, implement set-password delivery, add OAuth/OIDC support, import
+real data, add schema migrations, or change mobile/admin runtime code.
+
+The local owner-run inventory script is:
+
+```text
+scripts/migration/auth_inventory.ps1
+```
+
+The script may read Supabase Auth metadata only under the repository
+`scripts/migration/**` carve-out for controlled owner-run migration utilities.
+It must report aggregate counts and mismatch summaries only. It must not print
+raw Auth rows, OAuth provider payloads, plaintext tokens, password data,
+plaintext invite codes, or raw credential material, and it must not write dumps
+to disk.
+
+Default use is local/dev only. Codex must not run this script, and nobody should
+run it against production unless the project owner gives a separate explicit
+command for that production run.
+
+Required local environment variables:
+
+```powershell
+$env:AUTH_INVENTORY_DATABASE_URL = "<owner-local PostgreSQL connection URL>"
+$env:AUTH_INVENTORY_RUN_ACK = "LOCAL_ONLY_COUNTS_ONLY"
+```
+
+Optional local environment variable:
+
+```powershell
+$env:AUTH_INVENTORY_PSQL_PATH = "<absolute path to psql.exe>"
+```
+
+Local/dev usage:
+
+```powershell
+cd F:\2026\SS-App\code\sredi-svoih-app
+.\scripts\migration\auth_inventory.ps1
+```
+
+If the owner gives a separate explicit command for a production inventory run,
+the script still reads the connection string only from the owner's local shell
+environment and requires the production override switch:
+
+```powershell
+.\scripts\migration\auth_inventory.ps1 -AllowProductionWithOwnerCommand
+```
+
+Expected output is a pipe-separated aggregate table:
+
+```text
+section | metric | value
+--------|--------|------
+auth_counts | total_supabase_auth_users | <count>
+auth_counts | password_capable_users | <count>
+auth_counts | encrypted_password_users | <count>
+auth_counts | email_or_phone_identity_users | <count>
+auth_counts | users_with_no_usable_email | <count>
+oauth_counts | google_oauth_only_users | <count>
+oauth_counts | apple_oauth_only_users | <count>
+oauth_counts | mixed_password_and_oauth_users | <count>
+mapping_signal | auth_users_missing_profile_uuid_match | <count>
+profile_membership_mismatch | membership_rows_without_profile | <count>
+limitations | future_api_app_users_not_checked | true
+```
+
+The exact metric list may include additional aggregate mismatch counters, but it
+must remain counts/summaries only.
+
+Safe first mapping signal:
+
+- Current Supabase `public.profiles.id` and
+  `public.community_memberships.user_id` are UUID links to Supabase Auth users.
+- The future API schema uses `app_users.id`, `profiles.user_id`, and
+  `community_memberships.user_id`.
+- PR 9A inventory may therefore summarize whether existing Auth user UUIDs have
+  matching profile and membership rows.
+- The script cannot verify a future API `app_users` import because no real API
+  import has run yet. It reports that limitation instead of guessing.
+- The script does not infer usable email from OAuth provider payloads because
+  those payloads must not be dumped or exposed in this runbook.
+
+First-cutover policy:
+
+- OAuth-only users receive a set-password migration path before production API
+  auth cutover.
+- While `AUTH_PROVIDER=api`, the Google sign-in button stays hidden or disabled
+  until API-native Google OIDC is implemented.
+- Apple Sign-In remains out of scope for the first backend migration wave.
+- Production API auth remains blocked until OAuth-only users have a working,
+  owner-approved migration path.
+
+Owner sign-off checklist before API auth cutover:
+
+- [ ] Owner reviewed the PR 9A runbook and inventory script.
+- [ ] No real credentials, database URLs, service-role keys, auth dumps, OAuth
+      provider payloads, plaintext tokens, or password data are committed.
+- [ ] The script reads connection information only from owner-local environment
+      variables.
+- [ ] The script output is aggregate counts and mismatch summaries only.
+- [ ] Any production inventory run was separately approved by the owner.
+- [ ] OAuth-only user counts are reviewed and assigned to the set-password
+      migration path.
+- [ ] Users with no usable email have an owner-approved manual handling plan.
+- [ ] Profile/membership mismatch counts are reviewed before import/cutover.
+- [ ] API auth is still not enabled in admin or mobile.
+- [ ] No schema or Alembic migration is added by PR 9A.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
