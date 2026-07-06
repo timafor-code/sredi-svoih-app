@@ -38,6 +38,18 @@ def normalize_auth_code(value: str) -> str:
     return normalize_required_secret(value, "code")
 
 
+def normalize_invite_code(value: str) -> str:
+    return normalize_required_secret(value, "invite_code")
+
+
+def normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    normalized = value.strip()
+    return normalized or None
+
+
 def normalize_device_name(value: str | None) -> str | None:
     if value is None:
         return None
@@ -166,6 +178,51 @@ class ConfirmSetPasswordRequest(BaseModel):
         return normalize_auth_code(value)
 
 
+class RegisterWithInviteProfileInput(BaseModel):
+    display_name: str | None = Field(default=None, max_length=120)
+    first_name: str | None = Field(default=None, max_length=120)
+    last_name: str | None = Field(default=None, max_length=120)
+    full_name: str | None = Field(default=None, max_length=240)
+    city: str | None = Field(default=None, max_length=120)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("display_name", "first_name", "last_name", "full_name", "city")
+    @classmethod
+    def normalize_optional_text_field(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value)
+
+
+class RegisterWithInviteRequest(BaseModel):
+    invite_code: str = Field(min_length=1, max_length=512)
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=8, max_length=1024)
+    profile: RegisterWithInviteProfileInput | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("invite_code")
+    @classmethod
+    def normalize_invite_code_field(cls, value: str) -> str:
+        return normalize_invite_code(value)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email_field(cls, value: str) -> str:
+        return normalize_email(value)
+
+
+class AcceptInviteRequest(BaseModel):
+    invite_code: str = Field(min_length=1, max_length=512)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("invite_code")
+    @classmethod
+    def normalize_invite_code_field(cls, value: str) -> str:
+        return normalize_invite_code(value)
+
+
 class AppUserSummary(BaseModel):
     id: UUID
     email: str | None
@@ -202,6 +259,13 @@ class CommunityMembershipSummary(BaseModel):
     created_at: datetime
 
 
+class CommunitySummary(BaseModel):
+    id: UUID
+    name: str
+    city: str
+    slug: str | None
+
+
 class RegisterResponse(BaseModel):
     user: AppUserSummary
     profile: ProfileSummary | None
@@ -213,6 +277,23 @@ class AuthTokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_at: datetime
     user: AppUserSummary
+
+
+class RegisterWithInviteResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_at: datetime
+    user: AppUserSummary
+    profile: ProfileSummary
+    membership: CommunityMembershipSummary
+    community: CommunitySummary
+
+
+class AcceptInviteResponse(BaseModel):
+    membership: CommunityMembershipSummary
+    community: CommunitySummary
+    already_member: bool = False
 
 
 class LogoutResponse(BaseModel):

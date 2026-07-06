@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -21,17 +23,21 @@ from app.db.models.auth import (
     AuthSetPasswordCode,
     PasswordResetCode,
 )
-from app.db.models.core import AppUser, CommunityMembership, Profile
+from app.db.models.core import AppUser, Community, CommunityMembership, Invite, Profile
 from app.schemas.auth import (
     AppUserSummary,
+    AcceptInviteResponse,
     AuthCodeConfirmResponse,
     AuthCodeRequestResponse,
     AuthTokenResponse,
+    CommunitySummary,
     CommunityMembershipSummary,
     LogoutResponse,
     MeResponse,
     ProfileSummary,
     RegisterResponse,
+    RegisterWithInviteProfileInput,
+    RegisterWithInviteResponse,
     normalize_device_name,
     normalize_email,
 )
@@ -50,6 +56,11 @@ _AUTH_CODE_BYTES = 32
 _PASSWORD_RESET_PURPOSE = "password_reset"
 _EMAIL_VERIFICATION_PURPOSE = "email_verification"
 _SET_PASSWORD_PURPOSE = "set_password"
+_INVITE_ACTIVE_STATUS = "active"
+_INVITE_USED_STATUS = "used"
+_MEMBERSHIP_PENDING_STATUS = "pending"
+_MEMBERSHIP_SUSPENDED_STATUS = "suspended"
+_MEMBERSHIP_LEFT_STATUS = "left"
 _auth_email_rate_limiter = InMemoryAuthEmailRateLimiter()
 
 AuthCodeModel = (
@@ -70,6 +81,21 @@ def _authentication_error(detail: str = "Invalid credentials") -> HTTPException:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+@asynccontextmanager
+async def _transaction_scope(session: AsyncSession) -> AsyncIterator[None]:
+    if session.in_transaction():
+        try:
+            yield
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        return
+
+    async with session.begin():
+        yield
 
 
 def _access_token_ttl() -> timedelta:
@@ -138,6 +164,15 @@ def _membership_summary(
         status=membership.status,
         joined_at=membership.joined_at,
         created_at=membership.created_at,
+    )
+
+
+def _community_summary(community: Community) -> CommunitySummary:
+    return CommunitySummary(
+        id=community.id,
+        name=community.name,
+        city=community.city,
+        slug=community.slug,
     )
 
 
@@ -338,6 +373,158 @@ def _new_refresh_session(
     )
 
 
+def _invalid_invite_error() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Invalid or expired invite code",
+    )
+
+
+def _profile_from_invite_registration_input(
+    *,
+    user_id: UUID,
+    community_id: UUID,
+    profile_input: RegisterWithInviteProfileInput | None,
+) -> Profile:
+    profile = Profile(user_id=user_id, community_id=community_id)
+    if profile_input is None:
+        return profile
+
+    full_name = profile_input.full_name
+    if full_name is None:
+        name_parts = [
+            part
+            for part in (profile_input.first_name, profile_input.last_name)
+            if part is not None
+        ]
+        full_name = " ".join(name_parts) or None
+
+    profile.display_name = profile_input.display_name or full_name
+    profile.first_name = profile_input.first_name
+    profile.last_name = profile_input.last_name
+    profile.full_name = full_name
+    profile.city = profile_input.city
+    return profile
+
+
+async def _find_invite_for_update_by_hash(
+    session: AsyncSession,
+    *,
+    invite_code_hash: str,
+) -> Invite | None:
+    return await session.scalar(
+        select(Invite)
+        .where(Invite.code_hash == invite_code_hash)
+        .with_for_update(),
+    )
+
+
+async def _find_membership_for_update(
+    session: AsyncSession,
+    *,
+    user_id: UUID,
+    community_id: UUID,
+) -> CommunityMembership | None:
+    return await session.scalar(
+        select(CommunityMembership)
+        .where(
+            CommunityMembership.user_id == user_id,
+            CommunityMembership.community_id == community_id,
+        )
+        .with_for_update(),
+    )
+
+
+def _validate_invite_for_use(
+    *,
+    invite: Invite,
+    community: Community | None,
+    now: datetime,
+) -> None:
+    if invite.status != _INVITE_ACTIVE_STATUS:
+        raise _invalid_invite_error()
+    if invite.expires_at is not None and invite.expires_at <= now:
+        raise _invalid_invite_error()
+    if invite.max_uses <= 0 or invite.used_count >= invite.max_uses:
+        raise _invalid_invite_error()
+    if invite.role not in authorization_service.SUPPORTED_ROLES:
+        raise _invalid_invite_error()
+    if community is None or not community.is_active:
+        raise _invalid_invite_error()
+
+
+async def _usable_invite_context_for_update(
+    session: AsyncSession,
+    *,
+    invite_code_hash: str,
+    now: datetime,
+) -> tuple[Invite, Community]:
+    invite = await _find_invite_for_update_by_hash(
+        session,
+        invite_code_hash=invite_code_hash,
+    )
+    if invite is None:
+        raise _invalid_invite_error()
+
+    community = await session.get(Community, invite.community_id)
+    _validate_invite_for_use(invite=invite, community=community, now=now)
+    if community is None:
+        raise _invalid_invite_error()
+
+    return invite, community
+
+
+def _consume_invite(invite: Invite, *, user_id: UUID, now: datetime) -> None:
+    invite.used_count += 1
+    if invite.accepted_by is None:
+        invite.accepted_by = user_id
+    if invite.accepted_at is None:
+        invite.accepted_at = now
+    if invite.used_count >= invite.max_uses:
+        invite.status = _INVITE_USED_STATUS
+
+
+async def _accept_invite_membership_for_user(
+    session: AsyncSession,
+    *,
+    invite: Invite,
+    user_id: UUID,
+    now: datetime,
+) -> tuple[CommunityMembership, bool, bool]:
+    membership = await _find_membership_for_update(
+        session,
+        user_id=user_id,
+        community_id=invite.community_id,
+    )
+    if membership is not None:
+        if membership.status == authorization_service.ACTIVE_STATUS:
+            return membership, True, False
+        if membership.status == _MEMBERSHIP_PENDING_STATUS:
+            membership.role = invite.role
+            membership.status = authorization_service.ACTIVE_STATUS
+            membership.invited_by = invite.created_by
+            membership.joined_at = membership.joined_at or now
+            return membership, False, True
+        if membership.status in {
+            _MEMBERSHIP_SUSPENDED_STATUS,
+            _MEMBERSHIP_LEFT_STATUS,
+        }:
+            raise AuthConflictError("Membership cannot be accepted in its current state")
+
+        raise AuthConflictError("Membership cannot be accepted in its current state")
+
+    membership = CommunityMembership(
+        community_id=invite.community_id,
+        user_id=user_id,
+        role=invite.role,
+        status=authorization_service.ACTIVE_STATUS,
+        invited_by=invite.created_by,
+        joined_at=now,
+    )
+    session.add(membership)
+    return membership, False, True
+
+
 async def create_password_reset_code(
     session: AsyncSession,
     *,
@@ -484,6 +671,135 @@ async def confirm_set_password(
     )
     await session.commit()
     return _confirm_response()
+
+
+async def register_password_user_with_invite(
+    session: AsyncSession,
+    *,
+    invite_code_hash: str,
+    email: str,
+    password: str,
+    profile: RegisterWithInviteProfileInput | None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+) -> RegisterWithInviteResponse:
+    normalized_email = normalize_email(email)
+    refresh_token = create_refresh_token()
+
+    try:
+        async with _transaction_scope(session):
+            now = _now()
+            invite, community = await _usable_invite_context_for_update(
+                session,
+                invite_code_hash=invite_code_hash,
+                now=now,
+            )
+            existing_user = await _find_user_by_normalized_email(
+                session,
+                normalized_email,
+            )
+            if existing_user is not None:
+                raise AuthConflictError("Email is already registered")
+
+            user = AppUser(
+                email=normalized_email,
+                password_hash=hash_password(password),
+                status=authorization_service.ACTIVE_STATUS,
+                last_login_at=now,
+                updated_at=now,
+            )
+            session.add(user)
+            await session.flush()
+
+            user_profile = _profile_from_invite_registration_input(
+                user_id=user.id,
+                community_id=invite.community_id,
+                profile_input=profile,
+            )
+            membership, _, should_consume_invite = (
+                await _accept_invite_membership_for_user(
+                    session,
+                    invite=invite,
+                    user_id=user.id,
+                    now=now,
+                )
+            )
+            session.add(user_profile)
+            session.add(
+                _new_refresh_session(
+                    user.id,
+                    refresh_token,
+                    now=now,
+                    device_name=None,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                ),
+            )
+            if should_consume_invite:
+                _consume_invite(invite, user_id=user.id, now=now)
+
+            await session.flush()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise AuthConflictError("Email is already registered") from exc
+
+    await session.refresh(user)
+    await session.refresh(user_profile)
+    await session.refresh(membership)
+
+    access_token, expires_at = _issue_access_token(user.id)
+    profile_summary = _profile_summary(user_profile)
+    if profile_summary is None:
+        raise RuntimeError("invite registration profile was not created")
+
+    return RegisterWithInviteResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_at=expires_at,
+        user=_user_summary(user),
+        profile=profile_summary,
+        membership=_membership_summary(membership),
+        community=_community_summary(community),
+    )
+
+
+async def accept_invite_for_current_user(
+    session: AsyncSession,
+    *,
+    invite_code_hash: str,
+    current_user: AppUser,
+) -> AcceptInviteResponse:
+    try:
+        async with _transaction_scope(session):
+            now = _now()
+            invite, community = await _usable_invite_context_for_update(
+                session,
+                invite_code_hash=invite_code_hash,
+                now=now,
+            )
+            membership, already_member, should_consume_invite = (
+                await _accept_invite_membership_for_user(
+                    session,
+                    invite=invite,
+                    user_id=current_user.id,
+                    now=now,
+                )
+            )
+            if should_consume_invite:
+                _consume_invite(invite, user_id=current_user.id, now=now)
+
+            await session.flush()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise AuthConflictError("Membership already exists") from exc
+
+    await session.refresh(membership)
+
+    return AcceptInviteResponse(
+        membership=_membership_summary(membership),
+        community=_community_summary(community),
+        already_member=already_member,
+    )
 
 
 async def register_password_user(
