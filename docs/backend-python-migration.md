@@ -65,6 +65,48 @@ Important boundary: do not reuse the Supabase Postgres container as the API
 database, and do not stop/remove local Supabase until the relevant module has
 been switched and verified.
 
+### PR 3 local API contour
+
+PR 3 creates only the local development contour for the future Python backend:
+
+- `apps/api` contains the FastAPI scaffold.
+- `infra/docker-compose.api.yml` runs `api_backend` and the separate
+  `api_postgres` database.
+- `GET /health` returns service status for local checks.
+- `GET /version` returns local API version metadata.
+- No mobile/admin service is switched from Supabase to the API.
+- No Supabase migrations, RPC, RLS, or local Supabase runtime are changed.
+
+Side-by-side local startup:
+
+```powershell
+cd F:\2026\SS-App\code\sredi-svoih-app; supabase start
+cd F:\2026\SS-App\code\sredi-svoih-app; docker compose -f infra/docker-compose.api.yml up -d
+cd F:\2026\SS-App\code\sredi-svoih-app; docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
+cd F:\2026\SS-App\code\sredi-svoih-app; curl http://127.0.0.1:8000/health
+```
+
+If the API container is not already running, Alembic can be run through a
+temporary `api_backend` container:
+
+```powershell
+cd F:\2026\SS-App\code\sredi-svoih-app; docker compose -f infra/docker-compose.api.yml run --rm api_backend alembic upgrade head
+```
+
+Host Windows Python is not required for the PR 3 backend runtime. The API
+target is Python 3.12+ inside the `api_backend` Docker container.
+
+Local API ports:
+
+```text
+New Python API:       http://127.0.0.1:8000
+New API Postgres:     localhost:55432
+```
+
+For Expo Go on an iPhone, use `http://<your-lan-ip>:8000` instead of
+`http://127.0.0.1:8000`. FastAPI must listen on `0.0.0.0:8000` for LAN testing;
+mobile/admin must still not connect directly to PostgreSQL.
+
 ## Data Residency
 
 Production personal data must live in Russia-hosted PostgreSQL or
