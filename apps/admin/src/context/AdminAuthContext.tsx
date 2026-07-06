@@ -10,11 +10,14 @@ import {
 import type { Session } from "@supabase/supabase-js";
 
 import {
+  getAdminAuthConfigurationError,
   getCurrentAdminContext,
+  isAdminApiAuthProviderEnabled,
+  isAdminAuthConfigured,
   signInWithPassword,
   signOut as signOutService,
 } from "../services/adminAuthService";
-import { isSupabaseConfigured, supabase } from "../services/supabaseClient";
+import { supabase } from "../services/supabaseClient";
 import type { AdminMembership, AdminProfile, AdminRole } from "../types/auth";
 
 type AdminAuthState = {
@@ -44,7 +47,7 @@ type AdminAuthProviderProps = {
 
 const initialAuthState: AdminAuthDataState = {
   loading: true,
-  configMissing: !isSupabaseConfigured,
+  configMissing: !isAdminAuthConfigured(),
   session: null,
   profile: null,
   membership: null,
@@ -53,7 +56,7 @@ const initialAuthState: AdminAuthDataState = {
   isAdmin: false,
   isEventManager: false,
   canAccessAdmin: false,
-  error: null,
+  error: getAdminAuthConfigurationError(),
 };
 
 function friendlyAuthError(error: unknown): string {
@@ -74,12 +77,14 @@ export function AdminAuthProvider({ children }: AdminAuthProviderProps) {
   const [state, setState] = useState<AdminAuthDataState>(initialAuthState);
 
   const refresh = useCallback(async () => {
-    if (!isSupabaseConfigured) {
+    const configError = getAdminAuthConfigurationError();
+
+    if (!isAdminAuthConfigured()) {
       setState((current) => ({
         ...current,
         loading: false,
         configMissing: true,
-        error: null,
+        error: configError,
       }));
       return;
     }
@@ -119,6 +124,10 @@ export function AdminAuthProvider({ children }: AdminAuthProviderProps) {
   useEffect(() => {
     void refresh();
 
+    if (isAdminApiAuthProviderEnabled()) {
+      return undefined;
+    }
+
     if (!supabase) {
       return undefined;
     }
@@ -134,6 +143,18 @@ export function AdminAuthProvider({ children }: AdminAuthProviderProps) {
 
   const signIn = useCallback(
     async (email: string, password: string) => {
+      const configError = getAdminAuthConfigurationError();
+
+      if (!isAdminAuthConfigured()) {
+        setState((current) => ({
+          ...current,
+          loading: false,
+          configMissing: true,
+          error: configError,
+        }));
+        throw new Error(configError ?? "Authentication is not configured.");
+      }
+
       setState((current) => ({
         ...current,
         loading: true,
@@ -169,7 +190,8 @@ export function AdminAuthProvider({ children }: AdminAuthProviderProps) {
       setState({
         ...initialAuthState,
         loading: false,
-        configMissing: false,
+        configMissing: !isAdminAuthConfigured(),
+        error: getAdminAuthConfigurationError(),
       });
     } catch (error) {
       setState((current) => ({

@@ -85,7 +85,7 @@ export type AdminApiCommunitySummary = {
 export type AdminApiMembershipSummary = {
   id: string;
   community_id: string;
-  user_id: string;
+  user_id?: string | null;
   role: string;
   status: string;
   joined_at: string | null;
@@ -100,6 +100,23 @@ export type AdminApiAuthTokenResponse = {
   token_type: "bearer" | string;
   expires_at?: string | null;
   user: AdminApiUserSummary;
+};
+
+export type AdminApiLoginRequest = {
+  email: string;
+  password: string;
+};
+
+export type AdminApiRefreshRequest = {
+  refresh_token: string;
+};
+
+export type AdminApiLogoutRequest = {
+  refresh_token: string;
+};
+
+export type AdminApiOkResponse = {
+  ok: boolean;
 };
 
 export type AdminApiStoredAuthTokens = Pick<
