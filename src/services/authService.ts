@@ -5,6 +5,7 @@ import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 
+import type { ApiProviderName } from '@/types/api';
 import type {
   HebrewBirthDateProfile,
   ProfileBirthTimeContext,
@@ -16,6 +17,7 @@ import type {
 import {
   APPLE_SIGN_IN_GENERIC_MESSAGE,
   APPLE_SIGN_IN_MISSING_TOKEN_MESSAGE,
+  APPLE_SIGN_IN_NOT_CONFIGURED_MESSAGE,
   APPLE_SIGN_IN_UNAVAILABLE_MESSAGE,
   GOOGLE_OAUTH_GENERIC_MESSAGE,
   GOOGLE_OAUTH_NOT_CONFIGURED_MESSAGE,
@@ -23,6 +25,8 @@ import {
   getAppleSignInErrorMessage,
   getGoogleOAuthErrorMessage,
 } from './authErrorMessages';
+import * as authApiService from './authApiService';
+import { getMobileApiProvider } from './apiClient';
 import { supabase } from './supabaseClient';
 
 if (Platform.OS === 'web') {
@@ -108,6 +112,14 @@ const PROFILE_FIELDS = `
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+export function getAuthProvider(): ApiProviderName {
+  return getMobileApiProvider('auth');
+}
+
+export function isApiAuthProviderEnabled(): boolean {
+  return getAuthProvider() === 'api';
 }
 
 function cleanPayload<T extends Record<string, unknown>>(payload: T): T {
@@ -245,6 +257,10 @@ async function requireCurrentUser(): Promise<User> {
 }
 
 export async function getSession(): Promise<Session | null> {
+  if (isApiAuthProviderEnabled()) {
+    return authApiService.getSession();
+  }
+
   const { data, error } = await supabase.auth.getSession();
 
   if (error) {
@@ -255,6 +271,10 @@ export async function getSession(): Promise<Session | null> {
 }
 
 export async function signIn(email: string, password: string): Promise<Session> {
+  if (isApiAuthProviderEnabled()) {
+    return authApiService.signIn(email, password);
+  }
+
   const normalizedEmail = normalizeEmail(email);
 
   if (!normalizedEmail || !password) {
@@ -325,6 +345,10 @@ export async function handleOAuthCallback(url: string): Promise<Session | null> 
 }
 
 export async function signInWithGoogle(): Promise<Session | null> {
+  if (isApiAuthProviderEnabled()) {
+    throw new Error(GOOGLE_OAUTH_NOT_CONFIGURED_MESSAGE);
+  }
+
   const redirectTo = getOAuthRedirectTo();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
@@ -356,6 +380,10 @@ export async function signInWithGoogle(): Promise<Session | null> {
 }
 
 export async function signInWithApple(): Promise<AppleSignInResult | null> {
+  if (isApiAuthProviderEnabled()) {
+    throw new Error(APPLE_SIGN_IN_NOT_CONFIGURED_MESSAGE);
+  }
+
   let isAvailable = false;
 
   try {
@@ -412,6 +440,10 @@ export async function signInWithApple(): Promise<AppleSignInResult | null> {
 }
 
 export async function signUpWithEmail(email: string, password: string): Promise<EmailSignUpResult> {
+  if (isApiAuthProviderEnabled()) {
+    return authApiService.signUpWithEmail(email, password);
+  }
+
   const normalizedEmail = normalizeEmail(email);
 
   if (!normalizedEmail || !password.trim()) {
@@ -443,6 +475,10 @@ export async function signUpWithEmail(email: string, password: string): Promise<
 }
 
 export async function resendConfirmationEmail(email: string): Promise<void> {
+  if (isApiAuthProviderEnabled()) {
+    return authApiService.resendConfirmationEmail(email);
+  }
+
   const normalizedEmail = normalizeEmail(email);
 
   if (!normalizedEmail) {
@@ -460,6 +496,10 @@ export async function resendConfirmationEmail(email: string): Promise<void> {
 }
 
 export async function resetPasswordForEmail(email: string): Promise<void> {
+  if (isApiAuthProviderEnabled()) {
+    return authApiService.resetPasswordForEmail(email);
+  }
+
   const normalizedEmail = normalizeEmail(email);
 
   if (!normalizedEmail) {
@@ -474,6 +514,10 @@ export async function resetPasswordForEmail(email: string): Promise<void> {
 }
 
 export async function signOut(): Promise<void> {
+  if (isApiAuthProviderEnabled()) {
+    return authApiService.signOut();
+  }
+
   const { error } = await supabase.auth.signOut();
 
   if (error) {
@@ -482,6 +526,10 @@ export async function signOut(): Promise<void> {
 }
 
 export async function loadProfile(): Promise<Profile | null> {
+  if (isApiAuthProviderEnabled()) {
+    return authApiService.loadProfile();
+  }
+
   const user = await getCurrentUser();
 
   if (!user) {
@@ -502,6 +550,10 @@ export async function loadProfile(): Promise<Profile | null> {
 }
 
 export async function upsertProfile(profile: ProfileUpsert = {}): Promise<Profile> {
+  if (isApiAuthProviderEnabled()) {
+    return authApiService.upsertProfile(profile);
+  }
+
   const user = await requireCurrentUser();
   const email = hasOwnField(profile, 'email') ? profile.email ?? null : user.email ?? null;
   const displayName = hasOwnField(profile, 'display_name')

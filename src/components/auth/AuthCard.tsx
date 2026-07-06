@@ -4,6 +4,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { SegmentControl } from '@/components/ui/SegmentControl';
+import { isApiAuthProviderEnabled } from '@/services/authService';
 import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
 
@@ -20,6 +21,8 @@ type AuthMode = AuthTab | 'forgotPassword';
 type AuthCardProps = {
   onSignedIn: () => Promise<void> | void;
 };
+
+const shouldShowOAuthButtons = !isApiAuthProviderEnabled();
 
 export function AuthCard({ onSignedIn }: AuthCardProps) {
   const [mode, setMode] = useState<AuthMode>('Войти');
@@ -100,7 +103,7 @@ export function AuthCard({ onSignedIn }: AuthCardProps) {
         </View>
       ) : null}
 
-      {mode !== 'forgotPassword' ? (
+      {mode !== 'forgotPassword' && shouldShowOAuthButtons ? (
         <View style={styles.oauthBlock}>
           <Pressable
             accessibilityRole="button"
