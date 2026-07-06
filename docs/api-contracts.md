@@ -504,6 +504,17 @@ visibility, and pagination when implemented. Date filters use ISO 8601 with
 timezone. Event ids, category ids, occurrence ids, option ids, and capacity unit
 ids are UUID strings.
 
+Implemented read behavior (PR 15): `GET /events` supports `limit`, `cursor`,
+`category` (category slug), and `starts_after`/`starts_before` datetime filters
+on `starts_at`; date filters without a timezone offset are rejected with
+`validation_error`. Results are ordered by `starts_at` plus `id`. Draft,
+hidden, cancelled, and archived events return `not_found` through these
+endpoints. Sub-resource endpoints apply the parent event visibility gate first,
+then return only `active` occurrences and `is_active = true` participation
+options and capacity units. `GET /event-categories` returns `is_active = true`
+categories ordered by `sort_order` and is bounded and unpaginated, as are the
+per-event sub-resource lists.
+
 Event responses must not leak unpublished admin notes, hidden capacity internals
 that are not needed by the client, or private registration data.
 
