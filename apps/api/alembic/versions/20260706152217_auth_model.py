@@ -44,12 +44,13 @@ def timestamptz_now(name: str) -> sa.Column:
     )
 
 
-def code_storage_columns() -> tuple[sa.Column, sa.Column, sa.Column, sa.Column]:
+def code_storage_columns() -> tuple[sa.Column, sa.Column, sa.Column, sa.Column, sa.Column]:
     return (
         sa.Column("code_hash", sa.Text(), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("consumed_at", sa.DateTime(timezone=True), nullable=True),
         timestamptz_now("created_at"),
+        timestamptz_now("updated_at"),
     )
 
 

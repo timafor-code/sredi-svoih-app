@@ -89,6 +89,7 @@ class AuthEmailVerificationCode(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()
 
 
 class PasswordResetCode(Base):
@@ -122,6 +123,7 @@ class PasswordResetCode(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()
 
 
 class AuthSetPasswordCode(Base):
@@ -155,3 +157,4 @@ class AuthSetPasswordCode(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()
