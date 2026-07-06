@@ -1,6 +1,6 @@
 # Backend Python Migration Roadmap
 
-Source of truth: repository-root `plan.md`, version `2026-07-06 v2.6`.
+Source of truth: repository-root `plan.md`, version `2026-07-06 v2.7`.
 
 This document is the canonical public roadmap for moving production runtime from
 Supabase Cloud to a custom Python API and PostgreSQL backend. It is a roadmap
@@ -97,9 +97,17 @@ never be stored.
 Payment gateway implementation is out of scope during the backend migration.
 Apple Sign-In is out of scope for the first backend migration wave.
 
+## API Contract Foundation
+
+`docs/api-contracts.md` defines the stable REST/JSON contract foundation before
+implementation. The first documented endpoint groups are `/auth/*`, `/me/*`,
+`/events/*`, `/registrations/*`, `/admin/*`, and `/privacy/*`, with shared
+response envelope, error, auth header, pagination, ISO date/time, and UUID
+identifier conventions.
+
 ## Phased PR Roadmap
 
-The roadmap below mirrors `plan.md` v2.6. Later prompts and PRs should use the
+The roadmap below mirrors `plan.md` v2.7. Later prompts and PRs should use the
 root plan as the final source of truth.
 
 ### Phase 0: Documentation and contracts
@@ -216,8 +224,11 @@ Rules:
 - Manual browser smoke and Expo/iPhone smoke are owner-only on the pushed PR
   branch before merge.
 
-Default PR handoff is push-only plus the GitHub new-PR URL. `gh pr create` is
-optional only when `gh` is installed and authenticated.
+Default PR handoff mode B is push-only. After push, the agent outputs the
+complete PR body using the root `plan.md` section 9 template as one
+ready-to-paste markdown block, then outputs the GitHub new-PR URL. Creating
+the PR with `gh pr create` is optional only when `gh` is installed and
+authenticated.
 
 ## Main Branch Protection Recommendation
 

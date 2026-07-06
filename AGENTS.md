@@ -3,7 +3,7 @@
 Canonical standing rules for Codex-compatible agents in this repository.
 
 Source of truth for the backend migration roadmap: repository-root `plan.md`,
-version `2026-07-06 v2.6`. The local plan file is ignored by Git and must not be
+version `2026-07-06 v2.7`. The local plan file is ignored by Git and must not be
 staged unless a future PR explicitly lists it in expected scope.
 
 ## Agent Execution Policy
@@ -165,7 +165,9 @@ why it is not a client/runtime secret leak.
 
 ## PR Link Policy
 
-- Default mode is push-only plus outputting the GitHub new-PR URL.
+- Default mode B is push-only. After push, the agent outputs the complete PR
+  body using the root `plan.md` section 9 template as one ready-to-paste
+  markdown block, then outputs the GitHub new-PR URL.
 - `gh pr create` is optional only when `gh` is installed and authenticated.
 - Merge remains owner-only after manual smoke.
 
