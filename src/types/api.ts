@@ -97,10 +97,57 @@ export type ApiAuthTokenResponse = {
   user: ApiUserSummary;
 };
 
+export type ApiLoginRequest = {
+  email: string;
+  password: string;
+  device_name?: string | null;
+};
+
+export type ApiRegisterRequest = {
+  email: string;
+  password: string;
+};
+
+export type ApiRegisterWithInviteProfileInput = {
+  display_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  full_name?: string | null;
+  city?: string | null;
+};
+
+export type ApiRegisterWithInviteRequest = {
+  invite_code: string;
+  email: string;
+  password: string;
+  profile?: ApiRegisterWithInviteProfileInput | null;
+};
+
+export type ApiRefreshRequest = {
+  refresh_token: string;
+};
+
+export type ApiLogoutRequest = {
+  refresh_token: string;
+};
+
+export type ApiAuthEmailRequest = {
+  email: string;
+};
+
+export type ApiOkResponse = {
+  ok: boolean;
+};
+
 export type ApiStoredAuthTokens = Pick<
   ApiAuthTokenResponse,
   'access_token' | 'refresh_token' | 'token_type' | 'expires_at'
 >;
+
+export type ApiRegisterResponse = {
+  user: ApiUserSummary;
+  profile: ApiProfileSummary | null;
+};
 
 export type ApiCurrentUserResponse = {
   user: ApiUserSummary;
