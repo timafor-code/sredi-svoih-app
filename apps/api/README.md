@@ -66,3 +66,27 @@ the backend API environment:
 ```powershell
 API_AUTH_CODE_TTL_MINUTES=30
 ```
+
+## Temporary Supabase JWT bridge
+
+For Level 3 mixed-provider testing only, the API can accept verified Supabase
+access JWTs after normal API JWT validation fails:
+
+```powershell
+MIGRATION_ACCEPT_SUPABASE_JWT=false
+SUPABASE_JWT_SECRET=
+SUPABASE_JWT_ISSUER=
+SUPABASE_JWT_AUDIENCE=
+```
+
+Keep the bridge disabled by default. `SUPABASE_JWT_SECRET` is a placeholder in
+committed examples and docs only; the real secret stays in the owner's local or
+deployment environment and must never be placed in mobile, Expo public env,
+Vite env, `apps/admin`, committed env files, logs, or PR text.
+
+When enabled, the token `sub` must already match an active `app_users.id` UUID
+in the API database. The API does not create users from Supabase JWT claims.
+Use the PR 5 dev-only UUID-aligned seed expectation for local protected smoke,
+and verify that unmapped Supabase users receive a clean 401/403 response rather
+than a server error. This bridge must be disabled before the final PR 37
+provider cutover.

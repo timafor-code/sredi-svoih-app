@@ -1,4 +1,5 @@
 import { getAdminApiAccessToken } from "./adminApiAuthTokenStore";
+import { getCurrentAdminSupabaseAccessToken } from "./supabaseClient";
 import type {
   AdminApiProviderConfig,
   AdminApiProviderKey,
@@ -196,6 +197,14 @@ async function parseJsonResponse(response: Response): Promise<unknown> {
   }
 }
 
+async function getRequestAccessToken(): Promise<string | null> {
+  if (adminApiProviderConfig.auth === "api") {
+    return getAdminApiAccessToken();
+  }
+
+  return getCurrentAdminSupabaseAccessToken();
+}
+
 function defaultErrorCode(status: number): string {
   if (status === 401) return "unauthenticated";
   if (status === 403) return "forbidden";
@@ -331,7 +340,7 @@ async function request<TData, TBody = unknown>(
 
   try {
     if (includeAuthToken) {
-      const accessToken = getAdminApiAccessToken();
+      const accessToken = await getRequestAccessToken();
 
       if (accessToken) {
         headers.Authorization = `Bearer ${accessToken}`;
