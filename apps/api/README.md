@@ -18,13 +18,24 @@ the new API contour:
 ```powershell
 cd F:\2026\SS-App\code\sredi-svoih-app; supabase start
 cd F:\2026\SS-App\code\sredi-svoih-app; docker compose -f infra/docker-compose.api.yml up -d
-cd F:\2026\SS-App\code\sredi-svoih-app\apps\api; alembic upgrade head
+cd F:\2026\SS-App\code\sredi-svoih-app; docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
 cd F:\2026\SS-App\code\sredi-svoih-app; curl http://127.0.0.1:8000/health
+```
+
+If the API container is not already running, run Alembic through a temporary
+`api_backend` container:
+
+```powershell
+cd F:\2026\SS-App\code\sredi-svoih-app; docker compose -f infra/docker-compose.api.yml run --rm api_backend alembic upgrade head
 ```
 
 The API is available locally at `http://127.0.0.1:8000`. The API database is a
 separate PostgreSQL service on `localhost:55432`, not the Supabase local
 database.
+
+Host Windows Python is not the required backend runtime for this PR. The API
+target is Python 3.12+ inside the `api_backend` Docker container, and the
+Docker container is the normal local runtime/check path.
 
 For Expo Go on an iPhone, use `http://<your-lan-ip>:8000` instead of
 `http://127.0.0.1:8000`. The container starts Uvicorn on `0.0.0.0:8000` so the

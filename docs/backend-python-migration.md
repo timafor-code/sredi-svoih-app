@@ -82,9 +82,19 @@ Side-by-side local startup:
 ```powershell
 cd F:\2026\SS-App\code\sredi-svoih-app; supabase start
 cd F:\2026\SS-App\code\sredi-svoih-app; docker compose -f infra/docker-compose.api.yml up -d
-cd F:\2026\SS-App\code\sredi-svoih-app\apps\api; alembic upgrade head
+cd F:\2026\SS-App\code\sredi-svoih-app; docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
 cd F:\2026\SS-App\code\sredi-svoih-app; curl http://127.0.0.1:8000/health
 ```
+
+If the API container is not already running, Alembic can be run through a
+temporary `api_backend` container:
+
+```powershell
+cd F:\2026\SS-App\code\sredi-svoih-app; docker compose -f infra/docker-compose.api.yml run --rm api_backend alembic upgrade head
+```
+
+Host Windows Python is not required for the PR 3 backend runtime. The API
+target is Python 3.12+ inside the `api_backend` Docker container.
 
 Local API ports:
 

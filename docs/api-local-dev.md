@@ -45,10 +45,17 @@ Start the new API contour:
 cd F:\2026\SS-App\code\sredi-svoih-app; docker compose -f infra/docker-compose.api.yml up -d
 ```
 
-Run Alembic against the separate API database:
+Run Alembic against the separate API database from the running API container:
 
 ```powershell
-cd F:\2026\SS-App\code\sredi-svoih-app\apps\api; alembic upgrade head
+cd F:\2026\SS-App\code\sredi-svoih-app; docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
+```
+
+If the API container is not already running, run Alembic through a temporary
+`api_backend` container:
+
+```powershell
+cd F:\2026\SS-App\code\sredi-svoih-app; docker compose -f infra/docker-compose.api.yml run --rm api_backend alembic upgrade head
 ```
 
 Check the API:
@@ -63,6 +70,10 @@ FastAPI docs are available locally at:
 ```text
 http://127.0.0.1:8000/docs
 ```
+
+Host Windows Python is not the required backend runtime for this PR. The API
+target is Python 3.12+ inside the `api_backend` Docker container, and the
+Docker container is the normal local runtime/check path.
 
 ## iPhone and Expo Go
 
