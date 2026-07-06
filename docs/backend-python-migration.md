@@ -131,6 +131,17 @@ API. It does not enable API auth endpoints, login, registration, refresh,
 logout, password reset, email verification, client switches, or production API
 auth.
 
+### PR 8 authorization guards
+
+PR 8 adds Python authorization guard utilities for the future API endpoint
+layer. The guards verify access tokens, load active `app_users`, check active
+community memberships, and enforce community roles for admin, event-manager,
+event, registration, and member-profile access decisions.
+
+This PR does not expose auth, member, event, registration, admin, or other
+business endpoints yet. It also does not add schema changes, provider switches,
+real data imports, or access to private prayer-tracker tables.
+
 Local API ports:
 
 ```text
