@@ -309,6 +309,100 @@ Owner sign-off checklist before API auth cutover:
 - [ ] API auth is still not enabled in admin or mobile.
 - [ ] No schema or Alembic migration is added by PR 9A.
 
+### PR 9B auth email delivery foundation
+
+PR 9B adds only the backend email delivery foundation for future email
+verification, password reset, and migrated OAuth-only set-password flows.
+
+Backend-only settings live under `apps/api` and are read from environment
+variables:
+
+```text
+API_EMAIL_ENABLED=false
+API_EMAIL_FROM_ADDRESS=dev-null@example.invalid
+API_EMAIL_FROM_NAME=Sredi Svoih
+API_EMAIL_SMTP_HOST=
+API_EMAIL_SMTP_PORT=587
+API_EMAIL_SMTP_USERNAME=
+API_EMAIL_SMTP_PASSWORD=
+API_EMAIL_SMTP_STARTTLS=true
+API_AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS=900
+API_AUTH_EMAIL_RATE_LIMIT_MAX_ATTEMPTS=5
+API_PUBLIC_APP_BASE_URL=http://localhost:8081
+```
+
+The default mode is disabled/local. When email sending is disabled, the backend
+must not attempt an SMTP connection or require SMTP credentials. Real SMTP
+credentials must stay in the owner's local or deployment environment only and
+must not be committed.
+
+PR 9B adds plain-text template renderers for:
+
+- email verification;
+- password reset;
+- set-password for migrated OAuth-only users.
+
+The renderers accept plaintext links or codes only as runtime inputs for
+outbound email construction. Plaintext codes, tokens, reset links, verification
+links, and set-password links must not be persisted, printed, or logged. Database
+storage remains hash-only for auth codes.
+
+Auth email rate limiting starts as an in-process API helper with configurable
+window and attempt count. It is a local foundation for future endpoint use and
+may be replaced by persistent or distributed rate limiting before production
+scale requires it.
+
+PR 9B does not add password reset, email verification, set-password, invite,
+OAuth, Apple Sign-In, SMS, mobile, admin, schema, or Alembic changes. It does
+not send real email during agent checks.
+
+Manual owner fallback when SMTP is disabled:
+
+1. Generate the plaintext code or token only inside the future auth flow that is
+   about to send or display it to the owner.
+2. Store only the hash in the API database.
+3. Render the relevant email content with placeholders such as
+   `<recipient-email>`, `<verification-link>`, `<verification-code>`,
+   `<password-reset-link>`, `<password-reset-code>`,
+   `<set-password-link>`, or `<set-password-code>`.
+4. Send the message manually through an owner-controlled mailbox or support
+   process.
+5. Do not commit, paste into issue/PR text, log, screenshot, or otherwise retain
+   the plaintext code, token, or link after the send step.
+
+Fallback verification email body:
+
+```text
+Use the link or code below to verify your email address.
+
+Verification link: <verification-link>
+Verification code: <verification-code>
+
+If you did not request this, you can ignore this email.
+```
+
+Fallback password reset email body:
+
+```text
+Use the link or code below to reset your password.
+
+Password reset link: <password-reset-link>
+Password reset code: <password-reset-code>
+
+If you did not request this, you can ignore this email.
+```
+
+Fallback set-password email body:
+
+```text
+Use the link or code below to set a password for your migrated account.
+
+Set-password link: <set-password-link>
+Set-password code: <set-password-code>
+
+If you did not request this, you can ignore this email.
+```
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
