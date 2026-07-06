@@ -536,9 +536,11 @@ GET /events/{event_id}/capacity-units
 GET /event-categories
 ```
 
-These endpoints use the shared `{ "data": ..., "error": null, "meta": ... }`
+Success responses use the shared `{ "data": ..., "error": null, "meta": ... }`
 response envelope from `docs/api-contracts.md`, with `meta.request_id` on every
-response and cursor pagination metadata on `GET /events`.
+success response and cursor pagination metadata on `GET /events`. Error
+responses (`404`, `422`) currently return the FastAPI default
+`{"detail": ...}` body, not the shared error envelope.
 
 Authentication is optional. A new `get_optional_current_user` dependency in
 `app/core/authorization.py` resolves the bearer token through the existing
@@ -569,6 +571,14 @@ Public payloads do not include admin-only internals such as
 `created_by`/`updated_by`, `manual_override`, `source_type`, or
 `source_external_id`. PR 15 adds no registration logic, no admin CRUD, no new
 migrations, and no mobile or web-admin changes.
+
+Known gaps / tech debt:
+
+- Error responses are not yet wrapped in the shared error envelope; a global
+  exception handler PR is required before PR 16.
+- `meta.request_id` is generated per response in the Pydantic schema (`uuid4`
+  default) and is not yet correlated with server logs or a request-scoped
+  middleware id; correlation middleware is future work.
 
 ## API Contract Foundation
 
