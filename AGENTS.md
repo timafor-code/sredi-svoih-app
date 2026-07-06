@@ -84,12 +84,49 @@ committed env files remain a hard failure.
 - Never push to `main`.
 - Never force-push.
 - Never rebase a pushed branch without separate owner instruction.
-- If unexpected modified or untracked files are present before branching, stop
-  and report them. Do not hide, delete, stage, or work around unrelated local
+- If modified tracked files, deleted tracked files, staged files, merge
+  conflicts, or unexpected untracked files outside the tolerated list and
+  outside the current PR expected scope are present before branching, stop and
+  report them. Do not hide, delete, stage, or work around unrelated local
   files.
+- Tolerated pre-existing untracked files listed in
+  "Known Local Untracked Files" do not block branch creation if they are the
+  only dirty entries in `git status --short`.
 - Known local files that must never be staged unless explicitly in expected
   scope include `500`, `supabase/functions/`, `supabase/snippets/`,
   `.env.local`, `AGENTS.override.md`, and local plan files.
+
+## Known Local Untracked Files
+
+The following pre-existing local untracked files and directories are tolerated:
+
+- `500`
+- `supabase/functions/.gitkeep`
+- `supabase/functions/`
+- `supabase/snippets/Untitled query 971.sql`
+- `supabase/snippets/`
+- `PLAN-seating-registrations-v15.md`
+- `pr-body.md`
+
+If these paths are the only dirty entries in `git status --short`, they do not
+block branch creation.
+
+The agent must leave these paths untouched:
+
+- do not stage them;
+- do not edit them;
+- do not delete them;
+- do not move them;
+- do not commit them.
+
+The agent must stop only for:
+
+- modified tracked files;
+- deleted tracked files;
+- staged files;
+- merge conflicts;
+- unexpected untracked files outside the tolerated list and outside the current
+  PR expected scope.
 
 ## Smoke Policy
 

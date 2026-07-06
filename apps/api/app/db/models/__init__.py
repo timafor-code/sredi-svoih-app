@@ -15,9 +15,18 @@ from app.db.models.core import (
     Invite,
     Profile,
 )
+from app.db.models.auth import (
+    AuthEmailVerificationCode,
+    AuthSession,
+    AuthSetPasswordCode,
+    PasswordResetCode,
+)
 
 __all__ = [
     "AppUser",
+    "AuthEmailVerificationCode",
+    "AuthSession",
+    "AuthSetPasswordCode",
     "Base",
     "Community",
     "CommunityMembership",
@@ -31,5 +40,6 @@ __all__ = [
     "EventRegistrationCapacityReservation",
     "EventRegistrationOptionSelection",
     "Invite",
+    "PasswordResetCode",
     "Profile",
 ]

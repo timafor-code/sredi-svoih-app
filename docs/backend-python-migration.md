@@ -115,6 +115,14 @@ mobile/admin providers, create Supabase migrations, or add Supabase RLS/grants.
 Invite codes remain hash-only in the schema, and `app_users.email` uses plain
 text plus a partial unique index on `lower(email)` for non-null emails.
 
+### PR 6 auth DB model
+
+PR 6 adds database storage only for API auth sessions, email verification codes,
+password reset codes, and set-password codes. Refresh tokens and all auth code
+values are stored as hashes only. This PR does not add auth endpoints, email
+delivery, invite registration, password hashing utilities, provider switches, or
+real data imports.
+
 Local API ports:
 
 ```text
