@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     api_jwt_secret: str = "local-dev-jwt-secret-change-me-minimum-32-bytes"
     api_access_token_ttl_minutes: int = Field(default=15, gt=0)
+    api_refresh_token_ttl_days: int = Field(default=30, gt=0)
     api_token_hash_secret: str = "local-dev-token-hash-secret-change-me-minimum-32-bytes"
     api_jwt_issuer: str = "sredi-svoih-api"
     api_jwt_audience: str | None = None

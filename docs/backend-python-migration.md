@@ -142,6 +142,19 @@ This PR does not expose auth, member, event, registration, admin, or other
 business endpoints yet. It also does not add schema changes, provider switches,
 real data imports, or access to private prayer-tracker tables.
 
+### PR 9 password auth endpoints
+
+PR 9 adds the first Python API password auth endpoints: registration, login,
+refresh, logout, and current-user summary. Password login returns an access
+token and opaque refresh token, refresh rotates the stored refresh-token hash,
+logout revokes the submitted session when present, and `/auth/me` returns
+`app_users`, profile, and active membership summaries without password,
+refresh-token, token/code hash, registration comment, or prayer tracker data.
+
+Admin and mobile production auth are not switched to the API in this PR. Invite
+acceptance, OAuth, Apple Sign-In, SMS, email delivery, password reset,
+set-password, and email verification flows remain out of scope for later PRs.
+
 Local API ports:
 
 ```text
