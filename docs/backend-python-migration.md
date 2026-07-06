@@ -96,6 +96,25 @@ cd F:\2026\SS-App\code\sredi-svoih-app; docker compose -f infra/docker-compose.a
 Host Windows Python is not required for the PR 3 backend runtime. The API
 target is Python 3.12+ inside the `api_backend` Docker container.
 
+### PR 4 API core schema foundation
+
+PR 4 adds the first Alembic-owned API schema and SQLAlchemy model foundation for
+the product core tables:
+
+- `app_users` is the technical login identity table for the new API database.
+- `profiles` stores profile data and references `app_users(id)`.
+- `community_memberships` stores community access and role state and references
+  `app_users(id)`.
+- Communities, invites, events, event occurrences, event categories,
+  participation options, capacity units, registration rows, option snapshots,
+  and capacity reservation rows are created in the separate API PostgreSQL
+  database.
+
+This PR does not migrate real data, add seed data, add API endpoints, switch
+mobile/admin providers, create Supabase migrations, or add Supabase RLS/grants.
+Invite codes remain hash-only in the schema, and `app_users.email` uses plain
+text plus a partial unique index on `lower(email)` for non-null emails.
+
 Local API ports:
 
 ```text
