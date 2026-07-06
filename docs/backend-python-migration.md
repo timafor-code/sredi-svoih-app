@@ -523,6 +523,63 @@ tokens from their API token stores.
 
 The bridge must be removed or disabled before PR 37 final provider cutover.
 
+### PR 15 event read endpoints
+
+PR 15 implements the public/member event read endpoints in the Python API:
+
+```text
+GET /events
+GET /events/{event_id}
+GET /events/{event_id}/occurrences
+GET /events/{event_id}/participation-options
+GET /events/{event_id}/capacity-units
+GET /event-categories
+```
+
+Success responses use the shared `{ "data": ..., "error": null, "meta": ... }`
+response envelope from `docs/api-contracts.md`, with `meta.request_id` on every
+success response and cursor pagination metadata on `GET /events`. Error
+responses (`404`, `422`) currently return the FastAPI default
+`{"detail": ...}` body, not the shared error envelope.
+
+Authentication is optional. A new `get_optional_current_user` dependency in
+`app/core/authorization.py` resolves the bearer token through the existing
+`get_current_user` logic (API JWT first, then the PR 14A Supabase JWT bridge
+when `MIGRATION_ACCEPT_SUPABASE_JWT=true`) and returns `null` instead of
+raising when no or invalid credentials are provided.
+
+Visibility rules:
+
+- Anonymous callers see only events with `status = 'published'` and
+  `visibility = 'public'`.
+- Callers with an active community membership additionally see
+  `status = 'published'` and `visibility = 'members_only'` events of their
+  communities.
+- Draft, hidden, cancelled, and archived events return `404` through these
+  endpoints so their existence is not revealed.
+- Occurrence, participation-option, and capacity-unit sub-resources apply the
+  same visibility gate on the parent event first, then return only `active`
+  occurrences and `is_active = true` options and capacity units.
+
+`GET /events` orders by `starts_at` plus `id`, supports `limit` (default 50,
+max 100), an opaque `cursor`, and optional `category`, `starts_after`, and
+`starts_before` filters. Date filters must be ISO 8601 datetimes with timezone.
+`GET /event-categories` returns `is_active = true` categories ordered by
+`sort_order`.
+
+Public payloads do not include admin-only internals such as
+`created_by`/`updated_by`, `manual_override`, `source_type`, or
+`source_external_id`. PR 15 adds no registration logic, no admin CRUD, no new
+migrations, and no mobile or web-admin changes.
+
+Known gaps / tech debt:
+
+- Error responses are not yet wrapped in the shared error envelope; a global
+  exception handler PR is required before PR 16.
+- `meta.request_id` is generated per response in the Pydantic schema (`uuid4`
+  default) and is not yet correlated with server logs or a request-scoped
+  middleware id; correlation middleware is future work.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before

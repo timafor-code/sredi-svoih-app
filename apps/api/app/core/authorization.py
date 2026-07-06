@@ -4,7 +4,7 @@ from collections.abc import Collection
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, Security
+from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,6 +57,24 @@ async def get_current_user(
         ) from exc
 
     return await authorization_service.require_active_user(session, user_id)
+
+
+async def get_optional_current_user(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(_bearer_scheme),
+    ],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AppUser | None:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        return None
+
+    try:
+        return await get_current_user(credentials, session)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            return None
+        raise
 
 
 async def require_auth(

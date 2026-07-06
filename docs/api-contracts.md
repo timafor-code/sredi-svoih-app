@@ -504,6 +504,24 @@ visibility, and pagination when implemented. Date filters use ISO 8601 with
 timezone. Event ids, category ids, occurrence ids, option ids, and capacity unit
 ids are UUID strings.
 
+Implemented read behavior (PR 15): `GET /events` supports `limit`, `cursor`,
+`category` (category slug), and `starts_after`/`starts_before` datetime filters
+on `starts_at`. Both date filters are inclusive: `starts_after` matches
+`starts_at >= starts_after` and `starts_before` matches
+`starts_at <= starts_before`. Date filters without a timezone offset are
+rejected with HTTP `422`; the error body currently uses the FastAPI default
+`{"detail": ...}` shape, not yet the shared error envelope. Results are
+ordered by `starts_at` plus `id`. Draft, hidden, cancelled, and archived
+events return HTTP `404` through these endpoints, also currently with the
+FastAPI default `{"detail": ...}` error body rather than the shared error
+envelope. Sub-resource endpoints apply the parent event visibility gate first,
+then return only `active` occurrences and `is_active = true` participation
+options and capacity units. `GET /event-categories` returns `is_active = true`
+categories ordered by `sort_order` and is bounded and unpaginated, as are the
+per-event sub-resource lists. Migrating all API error responses onto the
+shared error envelope with stable `code` values is tracked as a prerequisite
+before PR 16, since `eventsApiService` will parse these errors.
+
 Event responses must not leak unpublished admin notes, hidden capacity internals
 that are not needed by the client, or private registration data.
 
