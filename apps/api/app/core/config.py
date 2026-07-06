@@ -18,6 +18,17 @@ class Settings(BaseSettings):
     api_token_hash_secret: str = "local-dev-token-hash-secret-change-me-minimum-32-bytes"
     api_jwt_issuer: str = "sredi-svoih-api"
     api_jwt_audience: str | None = None
+    api_email_enabled: bool = False
+    api_email_from_address: str = "dev-null@example.invalid"
+    api_email_from_name: str = "Sredi Svoih"
+    api_email_smtp_host: str = ""
+    api_email_smtp_port: int = Field(default=587, gt=0, le=65535)
+    api_email_smtp_username: str = ""
+    api_email_smtp_password: str = ""
+    api_email_smtp_starttls: bool = True
+    api_auth_email_rate_limit_window_seconds: int = Field(default=900, gt=0)
+    api_auth_email_rate_limit_max_attempts: int = Field(default=5, gt=0)
+    api_public_app_base_url: str = "http://localhost:8081"
     db_dsn: str = Field(
         default="postgresql+asyncpg://sredi_api:sredi_api@localhost:55432/sredi_api",
         validation_alias=AliasChoices(_DB_DSN_ENV, "API_DB_DSN"),
