@@ -57,12 +57,16 @@ class InMemoryAuthEmailRateLimiter:
     def consume(self, key: str) -> RateLimitDecision:
         now = self._now_fn()
         attempts = self._active_attempts(key, now)
-        decision = self._decision(attempts, now)
-        if decision.allowed:
-            attempts.append(now)
-            decision = self._decision(attempts, now)
+        if len(attempts) >= self._config.max_attempts:
+            return self._decision(attempts, now)
 
-        return decision
+        attempts.append(now)
+        return RateLimitDecision(
+            allowed=True,
+            remaining=max(self._config.max_attempts - len(attempts), 0),
+            retry_after_seconds=0,
+            reset_at=attempts[0] + timedelta(seconds=self._config.window_seconds),
+        )
 
     def clear(self, key: str) -> None:
         self._attempts.pop(key, None)
