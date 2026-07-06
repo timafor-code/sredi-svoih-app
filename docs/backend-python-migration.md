@@ -123,6 +123,14 @@ values are stored as hashes only. This PR does not add auth endpoints, email
 delivery, invite registration, password hashing utilities, provider switches, or
 real data imports.
 
+### PR 7 auth security utilities
+
+PR 7 adds backend-only password hashing, access-token, refresh-token, and
+non-reversible token/code/IP/user-agent hashing helpers for the future Python
+API. It does not enable API auth endpoints, login, registration, refresh,
+logout, password reset, email verification, client switches, or production API
+auth.
+
 Local API ports:
 
 ```text
