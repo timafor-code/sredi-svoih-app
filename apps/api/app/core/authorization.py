@@ -8,6 +8,11 @@ from fastapi import Depends, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
+from app.core.supabase_jwt import (
+    SupabaseJwtDecodeError,
+    decode_supabase_access_token_subject,
+)
 from app.core.tokens import AccessTokenDecodeError, decode_access_token_subject
 from app.db.models.core import (
     AppUser,
@@ -33,9 +38,20 @@ async def get_current_user(
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise authorization_service.AuthenticationRequiredError()
 
+    token = credentials.credentials
     try:
-        user_id = decode_access_token_subject(credentials.credentials)
-    except AccessTokenDecodeError as exc:
+        user_id = decode_access_token_subject(token)
+        return await authorization_service.require_active_user(session, user_id)
+    except AccessTokenDecodeError:
+        pass
+
+    settings = get_settings()
+    if not settings.migration_accept_supabase_jwt:
+        raise authorization_service.AuthenticationRequiredError("Invalid access token")
+
+    try:
+        user_id = decode_supabase_access_token_subject(token)
+    except SupabaseJwtDecodeError as exc:
         raise authorization_service.AuthenticationRequiredError(
             "Invalid access token",
         ) from exc

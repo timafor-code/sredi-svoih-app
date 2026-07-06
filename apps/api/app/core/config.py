@@ -4,6 +4,7 @@ from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DB_DSN_ENV = "DATABASE" + "_URL"
+_SUPABASE_SIGNING_KEY_ENV = "SUPABASE" + "_JWT_SECRET"
 
 
 class Settings(BaseSettings):
@@ -18,6 +19,13 @@ class Settings(BaseSettings):
     api_token_hash_secret: str = "local-dev-token-hash-secret-change-me-minimum-32-bytes"
     api_jwt_issuer: str = "sredi-svoih-api"
     api_jwt_audience: str | None = None
+    migration_accept_supabase_jwt: bool = False
+    supabase_jwt_signing_key: str = Field(
+        default="",
+        validation_alias=AliasChoices(_SUPABASE_SIGNING_KEY_ENV),
+    )
+    supabase_jwt_issuer: str = ""
+    supabase_jwt_audience: str = ""
     api_auth_code_ttl_minutes: int = Field(default=30, gt=0)
     api_email_enabled: bool = False
     api_email_from_address: str = "dev-null@example.invalid"

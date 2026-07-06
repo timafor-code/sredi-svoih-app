@@ -152,6 +152,17 @@ tokens, refresh tokens, password reset codes, invite codes, or comparable
 secrets. Expired, missing, malformed, or revoked tokens return HTTP 401 with
 `unauthenticated`.
 
+Temporary Level 3 migration testing may enable a backend-only Supabase JWT
+bridge with `MIGRATION_ACCEPT_SUPABASE_JWT=true`. When enabled, protected API
+dependencies first validate the normal API JWT. If that fails, the API may
+validate a Supabase access JWT signature and expiry with backend-only
+`SUPABASE_JWT_SECRET`, optionally enforcing configured issuer or audience, then
+resolve `sub` to an existing `app_users.id` UUID in the API database. Unknown
+or inactive users must receive a clean 401/403 response and must not be
+auto-provisioned from JWT claims. The bridge is default-off, for local/staged
+mixed-provider testing only, and must be disabled before final provider cutover
+in PR 37.
+
 Production API auth must not be enabled until OAuth-only users have an explicit
 migration path. Apple Sign-In is not part of the first backend migration wave.
 

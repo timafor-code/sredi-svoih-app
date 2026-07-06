@@ -486,6 +486,43 @@ mobile or admin auth defaults, or enable production API auth. Plaintext invite
 codes, passwords, refresh tokens, and access tokens must not be stored or
 logged.
 
+### PR 14A temporary Supabase JWT bridge
+
+PR 14A adds a temporary backend-only bridge for Level 3 mixed-provider testing.
+It lets protected Python API dependencies accept a verified Supabase access JWT
+only when `MIGRATION_ACCEPT_SUPABASE_JWT=true`; the default remains `false`.
+Normal API JWT validation is still attempted first and remains unchanged when
+the bridge is disabled.
+
+Backend-only local settings:
+
+```text
+MIGRATION_ACCEPT_SUPABASE_JWT=false
+SUPABASE_JWT_SECRET=
+SUPABASE_JWT_ISSUER=
+SUPABASE_JWT_AUDIENCE=
+```
+
+`SUPABASE_JWT_SECRET` is a placeholder only in committed examples and docs. The
+real value must stay in the owner's local or deployment environment, never in
+mobile, Expo public env, Vite env, `apps/admin`, committed env files, logs, or
+PR text. Issuer and audience are optional checks: configure them only when the
+local/staged Supabase token values are known and stable.
+
+The bridge resolves the verified Supabase JWT `sub` as an API `app_users.id`
+UUID. The API database must already contain UUID-aligned `app_users` rows, such
+as the PR 5 dev-only seed mapping used for local protected smoke. Unknown
+Supabase users are rejected with a clean 401/403 response and are never
+auto-provisioned from claims.
+
+Mobile and web-admin may keep auth provider set to Supabase while a selected
+domain provider is set to API locally. In that mixed-provider mode, API client
+wrappers send the current Supabase session access token as the bearer token for
+API calls. When auth provider is API, wrappers continue to send API access
+tokens from their API token stores.
+
+The bridge must be removed or disabled before PR 37 final provider cutover.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
