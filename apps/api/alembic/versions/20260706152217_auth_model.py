@@ -59,9 +59,13 @@ def upgrade() -> None:
         id_pk(),
         user_fk(),
         sa.Column("refresh_token_hash", sa.Text(), nullable=False),
+        sa.Column("device_name", sa.Text(), nullable=True),
+        sa.Column("user_agent_hash", sa.Text(), nullable=True),
+        sa.Column("ip_hash", sa.Text(), nullable=True),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
         timestamptz_now("created_at"),
+        timestamptz_now("updated_at"),
         sa.CheckConstraint(
             "btrim(refresh_token_hash) <> ''",
             name="auth_sessions_refresh_token_hash_not_empty",

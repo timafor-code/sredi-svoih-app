@@ -46,9 +46,13 @@ class AuthSession(Base):
         nullable=False,
     )
     refresh_token_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    device_name: Mapped[str | None] = mapped_column(Text)
+    user_agent_hash: Mapped[str | None] = mapped_column(Text)
+    ip_hash: Mapped[str | None] = mapped_column(Text)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()
 
 
 class AuthEmailVerificationCode(Base):
