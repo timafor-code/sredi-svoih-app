@@ -1,6 +1,8 @@
 import type { Session } from "@supabase/supabase-js";
 
-import { requireSupabaseClient } from "./supabaseClient";
+import * as adminAuthApiService from "./adminAuthApiService";
+import { apiBaseUrl, getAdminApiProvider } from "./apiClient";
+import { isSupabaseConfigured, requireSupabaseClient } from "./supabaseClient";
 import type {
   AdminAuthContext,
   AdminMembership,
@@ -8,6 +10,7 @@ import type {
   AdminProfile,
   AdminRole,
 } from "../types/auth";
+import type { ApiProviderName } from "../types/api";
 
 const PROFILE_FIELDS = `
   id,
@@ -61,7 +64,64 @@ function toAdminMembership(value: Record<string, unknown>): AdminMembership | nu
   };
 }
 
+export function getAdminAuthProvider(): ApiProviderName {
+  return getAdminApiProvider("auth");
+}
+
+// VITE_AUTH_PROVIDER=api is local/synthetic only until PR 37; Supabase stays default.
+export function isAdminApiAuthProviderEnabled(): boolean {
+  return getAdminAuthProvider() === "api";
+}
+
+export function isAdminAuthConfigured(): boolean {
+  return isAdminApiAuthProviderEnabled() ? Boolean(apiBaseUrl) : isSupabaseConfigured;
+}
+
+export function getAdminAuthConfigurationError(): string | null {
+  if (isAdminApiAuthProviderEnabled() && !apiBaseUrl) {
+    return "VITE_API_URL is required before using VITE_AUTH_PROVIDER=api.";
+  }
+
+  return null;
+}
+
 export async function getCurrentSession(): Promise<Session | null> {
+  if (isAdminApiAuthProviderEnabled()) {
+    return adminAuthApiService.getCurrentSession();
+  }
+
+  return getCurrentSupabaseSession();
+}
+
+export async function signInWithPassword(
+  email: string,
+  password: string,
+): Promise<Session | null> {
+  if (isAdminApiAuthProviderEnabled()) {
+    await adminAuthApiService.signInWithPassword(email, password);
+    return null;
+  }
+
+  return signInWithSupabasePassword(email, password);
+}
+
+export async function signOut(): Promise<void> {
+  if (isAdminApiAuthProviderEnabled()) {
+    return adminAuthApiService.signOut();
+  }
+
+  return signOutSupabase();
+}
+
+export async function getCurrentAdminContext(): Promise<AdminAuthContext> {
+  if (isAdminApiAuthProviderEnabled()) {
+    return adminAuthApiService.getCurrentAdminContext();
+  }
+
+  return getCurrentSupabaseAdminContext();
+}
+
+async function getCurrentSupabaseSession(): Promise<Session | null> {
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase.auth.getSession();
 
@@ -72,7 +132,7 @@ export async function getCurrentSession(): Promise<Session | null> {
   return data.session;
 }
 
-export async function signInWithPassword(email: string, password: string): Promise<Session> {
+async function signInWithSupabasePassword(email: string, password: string): Promise<Session> {
   const supabase = requireSupabaseClient();
   const normalizedEmail = normalizeEmail(email);
 
@@ -92,7 +152,7 @@ export async function signInWithPassword(email: string, password: string): Promi
   return data.session;
 }
 
-export async function signOut(): Promise<void> {
+async function signOutSupabase(): Promise<void> {
   const supabase = requireSupabaseClient();
   const { error } = await supabase.auth.signOut();
 
@@ -101,9 +161,9 @@ export async function signOut(): Promise<void> {
   }
 }
 
-export async function getCurrentAdminContext(): Promise<AdminAuthContext> {
+async function getCurrentSupabaseAdminContext(): Promise<AdminAuthContext> {
   const supabase = requireSupabaseClient();
-  const session = await getCurrentSession();
+  const session = await getCurrentSupabaseSession();
 
   if (!session) {
     return emptyAdminContext(null);
