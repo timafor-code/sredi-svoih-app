@@ -235,7 +235,8 @@ production API auth.
 | POST | `/auth/confirm-email-verification` | Public | Confirm email verification code. |
 | POST | `/auth/request-set-password` | Public | Request set-password delivery for migrated OAuth-only users with no password hash. |
 | POST | `/auth/confirm-set-password` | Public | Confirm set-password code and create the first password hash. |
-| POST | `/auth/invites/accept` | Public or authenticated | Accept an invite code and bind it to an API user. |
+| POST | `/auth/register-with-invite` | Public | Create an API password user from an invite and return auth tokens plus user/profile/membership summaries. |
+| POST | `/auth/accept-invite` | Authenticated | Accept an invite for the current API user without creating a new user or rotating tokens. |
 
 Auth response `data` may include:
 
@@ -253,6 +254,110 @@ Auth response `data` may include:
 Server storage must never store plaintext passwords or plaintext refresh
 tokens. Invite codes are returned or accepted as plaintext only at the API
 boundary required for the user flow; only safe derived values may be stored.
+
+Register with invite request:
+
+```json
+{
+  "invite_code": "<invite-code>",
+  "email": "user@example.com",
+  "password": "<new-password>",
+  "profile": {
+    "display_name": "Example User",
+    "first_name": "Example",
+    "last_name": "User",
+    "full_name": "Example User",
+    "city": "Moscow"
+  }
+}
+```
+
+Register with invite response:
+
+```json
+{
+  "access_token": "jwt-access-token",
+  "refresh_token": "refresh-token-returned-once",
+  "token_type": "bearer",
+  "expires_at": "2026-07-06T17:00:00Z",
+  "user": {
+    "id": "4c0f2e79-7e42-49e7-a8a3-72d83a8d02ac",
+    "email": "user@example.com"
+  },
+  "profile": {
+    "id": "8c4d1c91-9dc7-40fa-a2fd-678e72ddba99",
+    "user_id": "4c0f2e79-7e42-49e7-a8a3-72d83a8d02ac",
+    "community_id": "a8d77b34-f2a0-4cb8-8c7d-53b8f06a33aa"
+  },
+  "membership": {
+    "id": "25a49640-9372-4567-89c2-2d7466ce681f",
+    "community_id": "a8d77b34-f2a0-4cb8-8c7d-53b8f06a33aa",
+    "role": "member",
+    "status": "active"
+  },
+  "community": {
+    "id": "a8d77b34-f2a0-4cb8-8c7d-53b8f06a33aa",
+    "name": "Community name",
+    "city": "Moscow",
+    "slug": "community-slug"
+  }
+}
+```
+
+Accept invite request:
+
+```json
+{
+  "invite_code": "<invite-code>"
+}
+```
+
+Accept invite response:
+
+```json
+{
+  "membership": {
+    "id": "25a49640-9372-4567-89c2-2d7466ce681f",
+    "community_id": "a8d77b34-f2a0-4cb8-8c7d-53b8f06a33aa",
+    "role": "member",
+    "status": "active"
+  },
+  "community": {
+    "id": "a8d77b34-f2a0-4cb8-8c7d-53b8f06a33aa",
+    "name": "Community name",
+    "city": "Moscow",
+    "slug": "community-slug"
+  },
+  "already_member": false
+}
+```
+
+Invite acceptance validates that the invite status is `active`, the invite is
+not expired, `used_count` is still below `max_uses`, the invite role is one of
+the supported community membership roles, and the target community exists and
+is active. The API hashes the plaintext invite code at the route boundary and
+the service layer queries only `code_hash`. The invite row is locked before
+validation and consumption so concurrent requests cannot overuse the same
+invite. Successful consuming accepts increment `used_count`, set
+`accepted_by`/`accepted_at` for the first successful consuming user when those
+fields are empty, and mark the invite `used` when `used_count` reaches
+`max_uses`.
+
+Existing active membership acceptance is idempotent: the response returns the
+current active membership with `already_member: true` and does not consume the
+invite again. Existing pending membership is activated and consumes the invite.
+Existing suspended or left membership is not reactivated in this MVP flow and
+returns a conflict.
+
+Stable invite flow errors:
+
+| HTTP | Detail | Meaning |
+| --- | --- | --- |
+| 400 | `Invalid or expired invite code` | Invite code is unknown, expired, revoked, already used/exhausted, points to an inactive/missing community, or has an unsupported role. |
+| 401 | `Authentication required` | `/auth/accept-invite` was called without a valid bearer access token. |
+| 409 | `Email is already registered` | `/auth/register-with-invite` was called with an email already present in API auth. |
+| 409 | `Membership cannot be accepted in its current state` | Existing membership is suspended, left, or otherwise not safely reactivatable by this MVP flow. |
+| 409 | `Membership already exists` | A concurrent membership uniqueness race prevented creating the membership. |
 
 Password reset, email verification, and set-password request bodies:
 

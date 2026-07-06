@@ -6,9 +6,12 @@ from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import require_auth
+from app.core.hashids import hash_invite_code
 from app.db.models.core import AppUser
 from app.db.session import get_db_session
 from app.schemas.auth import (
+    AcceptInviteRequest,
+    AcceptInviteResponse,
     AuthCodeConfirmResponse,
     AuthCodeRequestResponse,
     AuthTokenResponse,
@@ -22,11 +25,14 @@ from app.schemas.auth import (
     RefreshRequest,
     RegisterRequest,
     RegisterResponse,
+    RegisterWithInviteRequest,
+    RegisterWithInviteResponse,
     RequestEmailVerificationRequest,
     RequestPasswordResetRequest,
     RequestSetPasswordRequest,
 )
 from app.services.auth import (
+    accept_invite_for_current_user,
     confirm_email_verification,
     confirm_password_reset,
     confirm_set_password,
@@ -38,6 +44,7 @@ from app.services.auth import (
     logout_session,
     refresh_session,
     register_password_user,
+    register_password_user_with_invite,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -67,6 +74,40 @@ async def register(
         session,
         email=payload.email,
         password=payload.password,
+    )
+
+
+@router.post(
+    "/register-with-invite",
+    response_model=RegisterWithInviteResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def register_with_invite(
+    payload: RegisterWithInviteRequest,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> RegisterWithInviteResponse:
+    return await register_password_user_with_invite(
+        session,
+        invite_code_hash=hash_invite_code(payload.invite_code),
+        email=payload.email,
+        password=payload.password,
+        profile=payload.profile,
+        ip_address=_request_ip(request),
+        user_agent=_request_user_agent(request),
+    )
+
+
+@router.post("/accept-invite", response_model=AcceptInviteResponse)
+async def accept_invite(
+    payload: AcceptInviteRequest,
+    current_user: Annotated[AppUser, Depends(require_auth)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AcceptInviteResponse:
+    return await accept_invite_for_current_user(
+        session,
+        invite_code_hash=hash_invite_code(payload.invite_code),
+        current_user=current_user,
     )
 
 

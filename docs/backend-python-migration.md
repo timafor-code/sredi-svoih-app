@@ -453,6 +453,39 @@ Manual owner fallback when SMTP is disabled in PR 9C:
 3. After sending, discard the plaintext code/link. The database must contain
    only the hash and metadata needed to validate expiry and one-time use.
 
+### PR 10 invite registration flow
+
+PR 10 implements the backend API invite registration and acceptance flows:
+
+```text
+POST /auth/register-with-invite
+POST /auth/accept-invite
+```
+
+`/auth/register-with-invite` is the public new-user path. It accepts a plaintext
+invite code only at the API boundary, hashes it immediately, and the service
+layer uses only `code_hash` for lookup. In one transaction it locks the invite,
+validates status, expiry, remaining usage, supported membership role, and active
+community, then creates the API `app_users` row, profile, active
+`community_memberships` row, and refresh session. It increments `used_count`,
+sets first-accept metadata when empty, marks the invite `used` when exhausted,
+and returns access/refresh tokens with user, profile, membership, and community
+summaries.
+
+`/auth/accept-invite` is the authenticated existing-user path. It requires
+`Authorization: Bearer <access_token>`, does not create a new `app_users` row,
+and does not rotate tokens. It locks and validates the invite, creates an active
+membership for the current user, or activates an existing pending membership.
+An existing active membership is idempotent and does not consume the invite
+again. Suspended or left memberships are intentionally not reactivated in this
+MVP flow and return a conflict.
+
+The invite flow does not create Supabase users, call Supabase Admin APIs, send
+email or SMS, add admin invite creation UI, add mobile/web-admin UI, switch
+mobile or admin auth defaults, or enable production API auth. Plaintext invite
+codes, passwords, refresh tokens, and access tokens must not be stored or
+logged.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
