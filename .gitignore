@@ -28,3 +28,9 @@ Thumbs.db
 .idea/
 
 .claude/
+
+# Local roadmap and agent scratch files
+plan*.md
+PLAN*.md
+AGENTS.override.md
+pr-body*.md
