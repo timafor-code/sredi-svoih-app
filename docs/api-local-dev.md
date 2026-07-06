@@ -58,6 +58,20 @@ If the API container is not already running, run Alembic through a temporary
 cd F:\2026\SS-App\code\sredi-svoih-app; docker compose -f infra/docker-compose.api.yml run --rm api_backend alembic upgrade head
 ```
 
+## Synthetic seed data
+
+After Alembic has upgraded the local API database, you can seed dev-only
+synthetic data for backend development:
+
+```powershell
+cd F:\2026\SS-App\code\sredi-svoih-app; docker compose -f infra/docker-compose.api.yml exec api_backend python scripts/seed_synthetic.py
+```
+
+The seed script creates only synthetic users, profiles, memberships, events, and
+registrations. It does not import Supabase data and does not query Supabase
+Auth. Optional CLI-only UUID alignment for future bridge smoke testing is
+documented in [Synthetic API Seed Data](../apps/api/docs/synthetic-data.md).
+
 Check the API:
 
 ```powershell
