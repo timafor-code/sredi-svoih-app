@@ -538,18 +538,105 @@ of scope during the backend migration.
 | POST | `/registrations/{registration_id}/cancel` | Cancel a registration owned by the actor when cancellation is allowed. |
 | GET | `/me/registrations` | List the actor's registrations; documented in `/me/*` because it is current-user scoped. |
 
-Registration create and cancel requests should send `Idempotency-Key` so mobile
-retries do not create duplicate registrations or duplicate state transitions.
+Implemented behavior (PR 17): these endpoints use `require_auth`, so normal
+API JWTs and the temporary Supabase JWT bridge both resolve through the same
+current-user dependency when the bridge is enabled. Success responses use the
+shared envelope. Registration-specific service errors currently use FastAPI's
+default error wrapper with a stable detail object:
 
-The API must enforce capacity, occurrence capacity, option-to-capacity-unit
-rules, and "donation options do not consume seats" server-side. Concurrent
-requests that would exceed capacity return `capacity_unavailable`. Invalid
-state transitions, such as cancelling an already rejected registration, return
-`state_conflict` or a more specific documented code.
+```json
+{
+  "detail": {
+    "code": "capacity_unavailable",
+    "message": "No seats available for this event"
+  }
+}
+```
 
-Registration responses may include current status, selected options,
-occurrence, capacity result, and timestamps. They must not expose other users'
-private registration data.
+`POST /events/{event_id}/register` accepts an optional JSON body:
+
+```json
+{
+  "occurrence_id": "00000000-0000-0000-0000-000000000000",
+  "seats_count": 1,
+  "guest_names": [],
+  "comment": "optional note",
+  "option_selections": [
+    {
+      "option_id": "00000000-0000-0000-0000-000000000000",
+      "quantity": 1
+    }
+  ]
+}
+```
+
+For compatibility with the current mobile model, the request parser also
+accepts camelCase aliases such as `occurrenceId`, `seatsCount`, `guestNames`,
+`optionSelections`, and `optionId`. Responses remain snake_case.
+
+The register endpoint only accepts visible `published` events: public events
+or member-only events in a community where the actor has active membership.
+Draft, hidden, cancelled, archived, missing, or unauthorized events return
+`404 not_found` without revealing private event existence. `registration_mode`
+must be `internal_free` or `internal_paid`; `none` and `external_link` return
+`422 validation_error`.
+
+Occurrence-aware events require `occurrence_id` for paid registrations,
+option-based registrations, and recurring/non-single events. Legacy single
+free event registration may omit `occurrence_id`; in that case capacity is
+checked at the parent event level. Occurrences must belong to the event, have
+`status = 'active'`, and be within their registration window when window
+columns are set.
+
+Duplicate active registrations are idempotent by user, event, and occurrence:
+if the actor already has a `pending`, `confirmed`, or `waitlisted`
+registration for the same target, the existing registration is returned.
+Otherwise the API creates a new row in one transaction.
+
+Capacity is enforced in the Python API transaction. The service locks the event
+row, locks the selected occurrence row when present, locks selected
+participation options, and locks mapped capacity-unit rows before checking and
+creating reservations. Capacity-unit reservations use
+`event_registration_capacity_reservations`; options without capacity-unit
+mappings fall back to event/occurrence `seats_count` accounting. Donation
+options and options with `counts_toward_capacity = false` do not add seats.
+Capacity conflicts return `409 capacity_unavailable`.
+
+For `internal_free`, confirmed registrations are created unless the effective
+event/occurrence settings require approval, in which case status is `pending`.
+For `internal_paid`, the API records selected option snapshots and returns a
+`pending` registration with `payment_status = 'pending'`; no payment gateway or
+production payment action is performed in PR 17.
+
+`POST /registrations/{registration_id}/cancel` is scoped to the current user.
+Missing registrations and registrations owned by another user return
+`404 not_found`. `pending`, `confirmed`, and `waitlisted` registrations are
+changed to `cancelled` transactionally; already-cancelled own registrations are
+returned as-is. Rejected, attended, and no-show rows return
+`409 state_conflict`. Capacity is released by excluding cancelled rows from
+future capacity and reservation counts.
+
+`GET /me/registrations` returns the actor's registrations for events visible
+through the same public/member event visibility rule. The response is ordered
+by `registered_at`, `created_at`, and `id` descending.
+
+Registration response `data` includes:
+
+- registration fields: `id`, `event_id`, `occurrence_id`, `user_id`, `status`,
+  `seats_count`, `guest_names`, `comment`, registration/cancellation/payment
+  timestamps and status fields;
+- embedded `event` in the public `EventResponse` shape;
+- embedded `occurrence` when present;
+- `selected_options` snapshots with option title, type, quantity, price,
+  currency, donation, and seat-count fields;
+- `capacity_reservations` snapshots for mapped capacity units;
+- `total_amount` and `total_currency` derived from selected options.
+
+Registration endpoints must not expose another user's private registration
+data and must not log raw JWTs, registration comments, guest names, names,
+emails, or phone numbers. Idempotency-Key storage is still future work; PR 17
+uses duplicate active registration detection instead of a persistent
+idempotency table.
 
 ## `/admin/*`
 
