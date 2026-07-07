@@ -1,4 +1,3 @@
-import { supabase } from './supabaseClient';
 import {
   isRecurringEventKind,
   selectNextFutureOccurrence,
@@ -11,6 +10,10 @@ import type {
   EventStatus,
   EventVisibility,
 } from '@/types/event';
+
+import { isMobileApiProviderEnabled } from './apiClient';
+import * as eventsApiService from './eventsApiService';
+import { supabase } from './supabaseClient';
 
 export type CommunityEventRow = {
   id: string;
@@ -146,6 +149,10 @@ function logOccurrenceLoadError(event: Event, error: unknown): void {
   });
 }
 
+function isApiEventsProviderEnabled(): boolean {
+  return isMobileApiProviderEnabled('events');
+}
+
 async function applyEffectiveOccurrence(
   event: Event,
   now: number,
@@ -192,7 +199,7 @@ async function applyEffectiveOccurrence(
   }
 }
 
-export async function listPublishedEvents(): Promise<Event[]> {
+async function listSupabasePublishedEvents(): Promise<Event[]> {
   const { data, error } = await supabase
     .from('events')
     .select(EVENT_FIELDS)
@@ -203,8 +210,14 @@ export async function listPublishedEvents(): Promise<Event[]> {
     throw new Error(error.message);
   }
 
+  return ((data ?? []) as CommunityEventRow[]).map(normalizeEventRow);
+}
+
+export async function listPublishedEvents(): Promise<Event[]> {
   const now = Date.now();
-  const events = ((data ?? []) as CommunityEventRow[]).map(normalizeEventRow);
+  const events = isApiEventsProviderEnabled()
+    ? await eventsApiService.listPublishedEvents()
+    : await listSupabasePublishedEvents();
   const resolvedEvents = await Promise.all(
     events.map((event) => applyEffectiveOccurrence(event, now, true)),
   );
@@ -212,7 +225,7 @@ export async function listPublishedEvents(): Promise<Event[]> {
   return resolvedEvents.filter((event): event is Event => event !== null);
 }
 
-export async function getEventById(id: string): Promise<Event | null> {
+async function getSupabaseEventById(id: string): Promise<Event | null> {
   const { data, error } = await supabase
     .from('events')
     .select(EVENT_FIELDS)
@@ -227,5 +240,13 @@ export async function getEventById(id: string): Promise<Event | null> {
     return null;
   }
 
-  return applyEffectiveOccurrence(normalizeEventRow(data as CommunityEventRow), Date.now(), false);
+  return normalizeEventRow(data as CommunityEventRow);
+}
+
+export async function getEventById(id: string): Promise<Event | null> {
+  const event = isApiEventsProviderEnabled()
+    ? await eventsApiService.getEventById(id)
+    : await getSupabaseEventById(id);
+
+  return event ? applyEffectiveOccurrence(event, Date.now(), false) : null;
 }

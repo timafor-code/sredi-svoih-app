@@ -1,12 +1,10 @@
+import type { ApiEventOccurrenceResponse } from '@/types/api';
 import type {
   EventOccurrence,
-  EventOccurrenceRow,
   EventOccurrenceRegistrationState,
 } from '@/types/eventOccurrence';
 
-import { isMobileApiProviderEnabled } from './apiClient';
-import * as eventOccurrencesApiService from './eventOccurrencesApiService';
-import { supabase } from './supabaseClient';
+import { apiClient } from './apiClient';
 
 const REGISTRATION_STATES: EventOccurrenceRegistrationState[] = [
   'open',
@@ -72,8 +70,24 @@ function normalizeRegistrationState(
   return REGISTRATION_STATES.find((state) => state === normalized);
 }
 
-export function normalizeEventOccurrenceRow(
-  row: Partial<EventOccurrenceRow>,
+function sortOccurrences(occurrences: EventOccurrence[]): EventOccurrence[] {
+  return [...occurrences].sort((first, second) => {
+    const byStart = new Date(first.startsAt).getTime() - new Date(second.startsAt).getTime();
+
+    if (byStart !== 0) {
+      return byStart;
+    }
+
+    return first.sortOrder - second.sortOrder;
+  });
+}
+
+function occurrencePath(eventId: string): string {
+  return `/events/${encodeURIComponent(eventId)}/occurrences`;
+}
+
+export function normalizeApiEventOccurrence(
+  row: ApiEventOccurrenceResponse,
 ): EventOccurrence {
   return {
     id: requiredString(row.id, ''),
@@ -98,32 +112,10 @@ export function normalizeEventOccurrenceRow(
   };
 }
 
-function sortOccurrences(occurrences: EventOccurrence[]): EventOccurrence[] {
-  return [...occurrences].sort((first, second) => {
-    const byStart = new Date(first.startsAt).getTime() - new Date(second.startsAt).getTime();
-
-    if (byStart !== 0) {
-      return byStart;
-    }
-
-    return first.sortOrder - second.sortOrder;
-  });
-}
-
 export async function listEventOccurrences(eventId: string): Promise<EventOccurrence[]> {
-  if (isMobileApiProviderEnabled('events')) {
-    return eventOccurrencesApiService.listEventOccurrences(eventId);
-  }
-
-  const { data, error } = await supabase.rpc('list_event_occurrences', {
-    p_event_id: eventId,
-  });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return sortOccurrences(
-    ((data ?? []) as EventOccurrenceRow[]).map(normalizeEventOccurrenceRow),
+  const response = await apiClient.get<ApiEventOccurrenceResponse[] | null>(
+    occurrencePath(eventId),
   );
+
+  return sortOccurrences((response ?? []).map(normalizeApiEventOccurrence));
 }

@@ -519,8 +519,9 @@ then return only `active` occurrences and `is_active = true` participation
 options and capacity units. `GET /event-categories` returns `is_active = true`
 categories ordered by `sort_order` and is bounded and unpaginated, as are the
 per-event sub-resource lists. Migrating all API error responses onto the
-shared error envelope with stable `code` values is tracked as a prerequisite
-before PR 16, since `eventsApiService` will parse these errors.
+shared error envelope with stable `code` values remains tracked as a later API
+hardening item; the mobile API client also tolerates the current FastAPI
+`detail` error shape during the mixed-provider event-read switch.
 
 Event responses must not leak unpublished admin notes, hidden capacity internals
 that are not needed by the client, or private registration data.
