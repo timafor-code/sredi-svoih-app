@@ -676,6 +676,35 @@ to the resource visibility rule.
 | GET | `/admin/events/{event_id}/capacity-units` | List capacity units. |
 | PUT | `/admin/events/{event_id}/capacity-units` | Replace capacity units. |
 
+Implemented behavior (PR 19): the Python API exposes the top-level admin event
+endpoints listed above through `/admin/events`. They require authentication and
+an active `admin` or `event_manager` membership. `GET /admin/events` returns
+only events in communities the actor can manage and uses the same cursor
+pagination envelope as public event lists (`limit`, `cursor`, `next_cursor`,
+`has_more`). `GET /admin/events/{event_id}`, `PATCH`, and status actions scope
+the lookup by manageable community and return `404 not_found` for missing or
+cross-community events without revealing private existence.
+
+`POST /admin/events` creates a manual event with `source_type = 'manual'`,
+`manual_override = true`, and `created_by`/`updated_by` set to the actor. If the
+actor manages exactly one community, `community_id` may be omitted and is
+inferred; otherwise `community_id` is required and must be manageable by the
+actor. `PATCH /admin/events/{event_id}` updates only event fields represented
+by the event request schema and sets `updated_by`/`updated_at`. The publish,
+archive, and cancel actions set `status` to `published`, `archived`, or
+`cancelled`; publish also sets `published_at` when it was previously `null`.
+
+Admin event request validation mirrors the current API schema constraints:
+datetimes must be ISO 8601 values with timezone, `ends_at` must be `null` or
+later than `starts_at`, enum values must match the event table checks,
+`capacity` must be positive when present, and `price_amount` must be
+non-negative. Event category slugs must already exist in the target community.
+Admin event responses reuse public event fields and additionally include
+`source_type`, `source_external_id`, `manual_override`, `created_by`, and
+`updated_by`. Admin event category, occurrence, participation-option,
+capacity-unit, registration-management, seating, and import endpoints remain
+future PR scope.
+
 ### Admin Registrations
 
 | Method | Path | Purpose |
