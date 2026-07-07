@@ -613,6 +613,53 @@ This PR does not switch registration actions, does not add register/cancel API
 calls, does not change `registrationService`, and does not change auth provider
 defaults. Supabase remains the default/fallback event provider.
 
+### PR 17 user registration API endpoints
+
+PR 17 adds backend-only Python API registration endpoints:
+
+```text
+POST /events/{event_id}/register
+POST /registrations/{registration_id}/cancel
+GET /me/registrations
+```
+
+The endpoints require `Authorization: Bearer <token>` and use the existing
+`require_auth` dependency, so normal API JWTs and the temporary PR 14A
+Supabase JWT bridge both work for local mixed-provider smoke when the bridge
+is explicitly enabled. All operations are scoped to the current authenticated
+`app_users.id`.
+
+Registration creation applies the same public/member event visibility rule as
+the event read endpoints. Draft, hidden, cancelled, archived, missing, or
+unauthorized events return `404` and are not exposed through registration
+actions. Only `internal_free` and `internal_paid` events are accepted.
+
+The service opens explicit transactions for mutating operations. It locks the
+event row, selected occurrence row, selected participation options, and mapped
+capacity-unit rows before checking duplicate-blocking registrations and
+capacity. Capacity-unit reservations are written to
+`event_registration_capacity_reservations`; unmapped options use legacy
+event/occurrence seat accounting. Donation and non-capacity options do not add
+capacity seats. Concurrent requests that would exceed capacity return
+`capacity_unavailable`.
+
+Registration responses keep snake_case API fields and include embedded event,
+occurrence, selected option snapshots, capacity reservation snapshots, and
+total amount/currency so the next mobile PR can map "my registrations" without
+a separate per-registration lookup.
+
+Cancellation is current-user scoped, only changes active
+`pending`/`confirmed`/`waitlisted` rows to `cancelled`, and leaves
+already-cancelled own rows idempotent. Capacity is released by excluding
+cancelled rows from future seat and reservation counts.
+
+PR 17 does not switch mobile `registrationService`, does not add
+`registrationApiService`, does not change `EXPO_PUBLIC_REGISTRATIONS_PROVIDER`,
+does not implement admin registration actions, seating, production payments,
+or a payment gateway, and does not change mobile, web-admin, Supabase RPC, or
+provider defaults. The next PR is
+`feature/mobile-registration-api-switch`.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
