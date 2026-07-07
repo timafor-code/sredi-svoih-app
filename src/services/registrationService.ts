@@ -14,6 +14,9 @@ import type {
   RegisterForEventOccurrenceWithOptionsInput,
 } from '@/types/event';
 
+import { isMobileApiProviderEnabled } from './apiClient';
+import * as registrationApiService from './registrationApiService';
+
 type EventRegistrationOptionSelectionRow = {
   id?: unknown;
   option_id?: unknown;
@@ -130,6 +133,10 @@ const REGISTRATION_FIELDS = `
     created_at
   )
 `;
+
+function isApiRegistrationsProviderEnabled(): boolean {
+  return isMobileApiProviderEnabled('registrations');
+}
 
 function nullableString(value: unknown): string | null {
   if (value === null || value === undefined) {
@@ -328,6 +335,10 @@ export async function registerForEvent(
   seatsCount = 1,
   comment?: string | null,
 ): Promise<EventRegistration> {
+  if (isApiRegistrationsProviderEnabled()) {
+    return registrationApiService.registerForEvent(eventId, seatsCount, comment);
+  }
+
   const { data, error } = await supabase.rpc('register_for_event', {
     p_event_id: eventId,
     p_seats_count: seatsCount,
@@ -364,6 +375,10 @@ export async function registerForEvent(
 export async function registerForPaidEventSimulated(
   input: RegisterForPaidEventSimulatedInput,
 ): Promise<EventRegistration> {
+  if (isApiRegistrationsProviderEnabled()) {
+    return registrationApiService.registerForPaidEventSimulated(input);
+  }
+
   const payload = {
     eventId: input.eventId,
     occurrenceId: input.occurrenceId ?? null,
@@ -413,6 +428,10 @@ export async function registerForPaidEventSimulated(
 export async function registerForEventOccurrenceWithOptions(
   input: RegisterForEventOccurrenceWithOptionsInput,
 ): Promise<EventRegistration> {
+  if (isApiRegistrationsProviderEnabled()) {
+    return registrationApiService.registerForEventOccurrenceWithOptions(input);
+  }
+
   const targetOccurrenceId = input.occurrenceId;
   const payload = (input.optionSelections ?? []).map((selection) => ({
     optionId: selection.optionId,
@@ -456,6 +475,10 @@ export async function registerForEventOccurrenceWithOptions(
 }
 
 export async function loadMyRegistrations(): Promise<EventRegistration[]> {
+  if (isApiRegistrationsProviderEnabled()) {
+    return registrationApiService.loadMyRegistrations();
+  }
+
   const { data: authData, error: authError } = await supabase.auth.getUser();
 
   if (authError) {
@@ -482,6 +505,10 @@ export async function loadMyRegistrations(): Promise<EventRegistration[]> {
 }
 
 export async function cancelRegistration(registrationId: string): Promise<EventRegistration> {
+  if (isApiRegistrationsProviderEnabled()) {
+    return registrationApiService.cancelRegistration(registrationId);
+  }
+
   const { data, error } = await supabase.rpc('cancel_event_registration', {
     registration_id: registrationId,
   });

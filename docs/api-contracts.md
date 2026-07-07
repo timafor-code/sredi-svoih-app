@@ -638,6 +638,15 @@ emails, or phone numbers. Idempotency-Key storage is still future work; PR 17
 uses duplicate active registration detection instead of a persistent
 idempotency table.
 
+Mobile API switch status (PR 18): when
+`EXPO_PUBLIC_REGISTRATIONS_PROVIDER=api`, the mobile `registrationService`
+calls these endpoints through the shared mobile `apiClient` and normalizes
+snake_case API responses into the existing `EventRegistration` TypeScript
+shape. Missing, invalid, or `supabase` provider values continue to use the
+existing Supabase RPC/select path. Duplicate active registrations returned by
+the API are normalized as successful responses rather than treated as client
+errors.
+
 ## `/admin/*`
 
 Admin endpoints require `Authorization: Bearer <access_token>` and an active

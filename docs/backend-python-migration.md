@@ -660,6 +660,39 @@ or a payment gateway, and does not change mobile, web-admin, Supabase RPC, or
 provider defaults. The next PR is
 `feature/mobile-registration-api-switch`.
 
+### PR 18 mobile registration API switch
+
+PR 18 connects mobile event registration reads and writes to the Python API
+behind `EXPO_PUBLIC_REGISTRATIONS_PROVIDER=api` while preserving Supabase as
+the default when the flag is missing, invalid, or set to `supabase`.
+
+Implemented mobile wrappers:
+
+```text
+POST /events/{event_id}/register
+POST /registrations/{registration_id}/cancel
+GET /me/registrations
+```
+
+The mobile facade keeps the existing exported registration functions:
+`registerForEvent()`, `registerForPaidEventSimulated()`,
+`registerForEventOccurrenceWithOptions()`, `loadMyRegistrations()`, and
+`cancelRegistration()`. API responses are mapped from the Python snake_case
+payloads into the existing mobile `EventRegistration` shape, including embedded
+event and occurrence data, selected option snapshots, seat counts, guest names,
+comments, total amount/currency, payment status, and cancellation timestamps.
+
+API mode reuses the existing mobile `apiClient`. When mobile auth remains on
+Supabase, the client sends the current Supabase access token as a bearer token
+for registration calls, relying on the temporary PR 14A Supabase JWT bridge
+when it is explicitly enabled on the backend. Duplicate active registrations
+returned by the API are treated as successful idempotent responses.
+
+This PR does not switch web-admin registration services, does not change admin
+registration UI, does not implement seating or a payment gateway, does not
+change Python endpoints, Supabase RPC/RLS/migrations, auth provider defaults,
+or production provider defaults.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before

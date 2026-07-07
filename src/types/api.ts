@@ -225,6 +225,72 @@ export type ApiEventOccurrenceResponse = {
   registration_state_reason?: string | null;
 };
 
+export type ApiRegistrationOptionSelectionRequest = {
+  option_id: string;
+  quantity: number;
+};
+
+export type ApiRegisterEventRequest = {
+  occurrence_id?: string | null;
+  seats_count?: number | null;
+  guest_names?: string[] | null;
+  comment?: string | null;
+  option_selections?: ApiRegistrationOptionSelectionRequest[] | null;
+};
+
+export type ApiRegistrationSelectedOptionResponse = {
+  id: string;
+  option_id: string | null;
+  title_snapshot: string;
+  description_snapshot: string | null;
+  option_type_snapshot: string;
+  quantity: number | string;
+  unit_price_amount: number | string;
+  total_amount: number | string;
+  currency: string;
+  counts_toward_capacity: boolean;
+  seats_count: number | string;
+  is_donation: boolean;
+  created_at: string;
+};
+
+export type ApiRegistrationCapacityReservationResponse = {
+  id: string;
+  capacity_unit_id: string;
+  option_id: string | null;
+  capacity_unit_key_snapshot: string;
+  capacity_unit_title_snapshot: string;
+  option_title_snapshot: string | null;
+  quantity: number | string;
+  seats_per_quantity: number | string;
+  seats_count: number | string;
+  created_at: string;
+};
+
+export type ApiEventRegistrationResponse = {
+  id: string;
+  event_id: string;
+  occurrence_id: string | null;
+  user_id: string;
+  status: string;
+  seats_count: number | string;
+  guest_names: unknown[];
+  comment: string | null;
+  registered_at: string;
+  confirmed_at: string | null;
+  cancelled_at: string | null;
+  payment_status: string;
+  payment_id: string | null;
+  created_at: string;
+  updated_at: string;
+  event: ApiEventResponse;
+  occurrence: ApiEventOccurrenceResponse | null;
+  selected_options: ApiRegistrationSelectedOptionResponse[];
+  capacity_reservations: ApiRegistrationCapacityReservationResponse[];
+  total_amount: number | string | null;
+  total_currency: string | null;
+};
+
 export type ApiEventCategoryResponse = {
   id: string;
   community_id?: string | null;
