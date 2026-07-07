@@ -575,10 +575,43 @@ migrations, and no mobile or web-admin changes.
 Known gaps / tech debt:
 
 - Error responses are not yet wrapped in the shared error envelope; a global
-  exception handler PR is required before PR 16.
+  exception handler PR is still needed for API consistency.
 - `meta.request_id` is generated per response in the Pydantic schema (`uuid4`
   default) and is not yet correlated with server logs or a request-scoped
   middleware id; correlation middleware is future work.
+
+### PR 16 mobile events API switch
+
+PR 16 connects mobile event reads to the Python API behind
+`EXPO_PUBLIC_EVENTS_PROVIDER=api` while preserving Supabase as the default when
+the flag is missing or set to `supabase`.
+
+Implemented mobile read wrappers:
+
+```text
+GET /events
+GET /events/{event_id}
+GET /events/{event_id}/occurrences
+GET /event-categories
+```
+
+The mobile facades keep the existing public function names:
+`listPublishedEvents()`, `getEventById(id)`, `listEventOccurrences(eventId)`,
+and `listEventCategories()`. API responses are mapped from the Python
+snake_case payloads into the existing mobile `Event`, `EventOccurrence`, and
+`EventCategory` shapes. Public payload fields that are absent because they are
+admin-only are handled with safe client defaults.
+
+API mode reuses the existing mobile `apiClient`. When mobile auth remains on
+Supabase, the client sends the current Supabase access token as a bearer token
+for member-aware event reads, relying on the temporary PR 14A Supabase JWT
+bridge when it is enabled on the backend. If `EXPO_PUBLIC_EVENTS_PROVIDER=api`
+is set without `EXPO_PUBLIC_API_URL`, the existing API client configuration
+error is surfaced through the current mobile loading/error state.
+
+This PR does not switch registration actions, does not add register/cancel API
+calls, does not change `registrationService`, and does not change auth provider
+defaults. Supabase remains the default/fallback event provider.
 
 ## API Contract Foundation
 

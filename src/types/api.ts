@@ -167,3 +167,74 @@ export type ApiAcceptInviteResponse = {
   community: ApiCommunitySummary;
   already_member: boolean;
 };
+
+export type ApiEventResponse = {
+  id: string;
+  community_id?: string | null;
+  event_kind?: string | null;
+  title?: string | null;
+  subtitle?: string | null;
+  short_description?: string | null;
+  description?: string | null;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  is_permanent?: boolean | null;
+  timezone?: string | null;
+  location_name?: string | null;
+  address?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  image_url?: string | null;
+  category?: string | null;
+  audience?: string | null;
+  visibility?: string | null;
+  status?: string | null;
+  source_type?: string | null;
+  source_url?: string | null;
+  registration_mode?: string | null;
+  registration_url?: string | null;
+  capacity?: number | string | null;
+  waitlist_enabled?: boolean | null;
+  requires_approval?: boolean | null;
+  price_amount?: number | string | null;
+  price_currency?: string | null;
+  published_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type ApiEventOccurrenceResponse = {
+  id: string;
+  event_id?: string | null;
+  title?: string | null;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  timezone?: string | null;
+  registration_opens_at?: string | null;
+  registration_closes_at?: string | null;
+  capacity?: number | string | null;
+  waitlist_enabled?: boolean | null;
+  requires_approval?: boolean | null;
+  status?: string | null;
+  sort_order?: number | string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  server_now?: string | null;
+  is_registration_always_open?: boolean | null;
+  registration_state?: string | null;
+  registration_state_reason?: string | null;
+};
+
+export type ApiEventCategoryResponse = {
+  id: string;
+  community_id?: string | null;
+  slug?: string | null;
+  title?: string | null;
+  description?: string | null;
+  color?: string | null;
+  icon?: string | null;
+  sort_order?: number | string | null;
+  is_active?: boolean | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};

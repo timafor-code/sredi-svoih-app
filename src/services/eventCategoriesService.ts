@@ -1,5 +1,8 @@
-import { supabase } from './supabaseClient';
 import type { EventCategory } from '@/types/eventCategory';
+
+import { isMobileApiProviderEnabled } from './apiClient';
+import * as eventCategoriesApiService from './eventCategoriesApiService';
+import { supabase } from './supabaseClient';
 
 type EventCategoryRow = {
   id: string;
@@ -40,6 +43,10 @@ function normalizeRow(row: EventCategoryRow): EventCategory {
 }
 
 export async function listEventCategories(): Promise<EventCategory[]> {
+  if (isMobileApiProviderEnabled('events')) {
+    return eventCategoriesApiService.listEventCategories();
+  }
+
   const { data, error } = await supabase
     .from('event_categories')
     .select(EVENT_CATEGORY_FIELDS)
