@@ -693,6 +693,41 @@ registration UI, does not implement seating or a payment gateway, does not
 change Python endpoints, Supabase RPC/RLS/migrations, auth provider defaults,
 or production provider defaults.
 
+### PR 19 admin event CRUD endpoints
+
+PR 19 starts Phase 4 by adding backend-only Python API endpoints for admin
+event CRUD and status transitions:
+
+```text
+GET /admin/events
+POST /admin/events
+GET /admin/events/{event_id}
+PATCH /admin/events/{event_id}
+POST /admin/events/{event_id}/publish
+POST /admin/events/{event_id}/archive
+POST /admin/events/{event_id}/cancel
+```
+
+The endpoints require `Authorization: Bearer <token>` and an active
+`admin` or `event_manager` community membership. Reads and mutations are scoped
+to the actor's manageable communities. Cross-community event lookups return a
+safe `404 not_found`, while authenticated users with no manageable community
+role receive `403 forbidden`.
+
+`POST /admin/events` creates a manual event in a manageable community. If the
+actor manages exactly one community, the API may infer `community_id`; actors
+with multiple manageable communities must provide one. The service validates
+timezone-aware event datetimes, `ends_at > starts_at`, event enum fields,
+capacity and price constraints, and category membership in the target
+community. Created and updated events set audit fields from the actor, and
+publish/archive/cancel update status fields transactionally.
+
+This PR does not implement import, seating, admin registration management,
+admin category/occurrence/participation-option/capacity-unit endpoints, mobile
+screens, web-admin screens, provider switches, production data migration, or
+payment gateway behavior. The web-admin continues to use the existing Supabase
+fallback services until a later switch PR.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
