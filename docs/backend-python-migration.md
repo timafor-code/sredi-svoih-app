@@ -636,8 +636,8 @@ actions. Only `internal_free` and `internal_paid` events are accepted.
 
 The service opens explicit transactions for mutating operations. It locks the
 event row, selected occurrence row, selected participation options, and mapped
-capacity-unit rows before checking duplicate active registrations and capacity.
-Capacity-unit reservations are written to
+capacity-unit rows before checking duplicate-blocking registrations and
+capacity. Capacity-unit reservations are written to
 `event_registration_capacity_reservations`; unmapped options use legacy
 event/occurrence seat accounting. Donation and non-capacity options do not add
 capacity seats. Concurrent requests that would exceed capacity return

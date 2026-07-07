@@ -37,7 +37,12 @@ from app.services.events import (
     PUBLIC_VISIBILITY,
 )
 
-ACTIVE_REGISTRATION_STATUSES = ("pending", "confirmed", "waitlisted")
+DUPLICATE_BLOCKING_REGISTRATION_STATUSES = (
+    "pending",
+    "confirmed",
+    "waitlisted",
+    "attended",
+)
 CAPACITY_REGISTRATION_STATUSES = ("confirmed", "pending", "attended", "no_show")
 LEGACY_CAPACITY_STATUSES = ("confirmed", "pending", "waitlisted")
 CANCELLABLE_REGISTRATION_STATUSES = ("pending", "confirmed", "waitlisted")
@@ -217,10 +222,9 @@ async def _lock_existing_active_registration(
     conditions = [
         EventRegistration.event_id == event_id,
         EventRegistration.user_id == user_id,
-        EventRegistration.status.in_(ACTIVE_REGISTRATION_STATUSES),
+        _occurrence_match(EventRegistration.occurrence_id, occurrence_id),
+        EventRegistration.status.in_(DUPLICATE_BLOCKING_REGISTRATION_STATUSES),
     ]
-    if occurrence_id is not None:
-        conditions.append(EventRegistration.occurrence_id == occurrence_id)
 
     return await session.scalar(
         select(EventRegistration)

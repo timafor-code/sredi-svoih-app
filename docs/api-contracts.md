@@ -588,9 +588,9 @@ checked at the parent event level. Occurrences must belong to the event, have
 `status = 'active'`, and be within their registration window when window
 columns are set.
 
-Duplicate active registrations are idempotent by user, event, and occurrence:
-if the actor already has a `pending`, `confirmed`, or `waitlisted`
-registration for the same target, the existing registration is returned.
+Duplicate-blocking registrations are idempotent by user, event, and occurrence:
+if the actor already has a `pending`, `confirmed`, `waitlisted`, or `attended`
+registration for the exact same target, the existing registration is returned.
 Otherwise the API creates a new row in one transaction.
 
 Capacity is enforced in the Python API transaction. The service locks the event
