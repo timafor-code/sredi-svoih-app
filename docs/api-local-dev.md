@@ -85,6 +85,33 @@ FastAPI docs are available locally at:
 http://127.0.0.1:8000/docs
 ```
 
+## Local browser CORS
+
+The local API enables CORS for browser-based provider-switch smoke tests from
+the web-admin Vite dev server and Expo local dev origins. The default allowed
+origins are:
+
+```text
+http://localhost:5173
+http://127.0.0.1:5173
+http://localhost:8081
+http://127.0.0.1:8081
+```
+
+Override them in the API backend environment with a comma-separated value:
+
+```text
+API_CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+```
+
+The API allows `Authorization` and `Content-Type` headers and the local
+browser methods `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, and `OPTIONS`.
+Check the admin preflight path with:
+
+```powershell
+cd F:\2026\SS-App\code\sredi-svoih-app; curl.exe -i -X OPTIONS "http://127.0.0.1:8000/admin/events" -H "Origin: http://localhost:5173" -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: authorization"
+```
+
 Host Windows Python is not the required backend runtime for this PR. The API
 target is Python 3.12+ inside the `api_backend` Docker container, and the
 Docker container is the normal local runtime/check path.
