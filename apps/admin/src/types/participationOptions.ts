@@ -55,6 +55,7 @@ export type ParticipationOption = {
 };
 
 export type ParticipationOptionInput = {
+  id?: string | null;
   title: string;
   description: string | null;
   priceAmount: number;

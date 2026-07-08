@@ -312,6 +312,7 @@ function validateDraft(draft: DraftOption, fallbackIndex: number): DraftValidati
   return {
     ok: true,
     input: {
+      id: draft.remoteId,
       title,
       description: draft.description.trim() ? draft.description.trim() : null,
       priceAmount: priceAmount as number,

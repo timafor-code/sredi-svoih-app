@@ -54,10 +54,9 @@ export function normalizeAdminApiParticipationOption(
 export function toParticipationOptionApiPayload(
   input: ParticipationOptionInput,
   capacityUnits: AdminParticipationOptionCapacityUnitPayloadSource[] = [],
-  id?: string | null,
 ): AdminParticipationOptionApiPayload {
   return {
-    id,
+    id: input.id ?? null,
     title: input.title,
     description: input.description,
     price_amount: input.priceAmount,
