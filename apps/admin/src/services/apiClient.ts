@@ -25,6 +25,7 @@ type ApiRequestOptions<TBody = unknown> = {
   query?: ApiQueryParams;
   signal?: AbortSignal;
   timeoutMs?: number;
+  unwrapEnvelope?: boolean;
 };
 
 type ApiClientErrorInit = {
@@ -250,6 +251,23 @@ function errorFromResponseBody(
     };
   }
 
+  if (isRecord(body) && isRecord(body.detail)) {
+    const detail = body.detail;
+    const code = typeof detail.code === "string" ? detail.code : defaultErrorCode(status);
+    const message = typeof detail.message === "string"
+      ? detail.message
+      : defaultErrorMessage(status);
+
+    return {
+      error: {
+        code,
+        details: detail,
+        message,
+      },
+      requestId: null,
+    };
+  }
+
   if (isRecord(body) && Array.isArray(body.detail)) {
     return {
       error: {
@@ -332,6 +350,7 @@ async function request<TData, TBody = unknown>(
     query,
     signal,
     timeoutMs = DEFAULT_API_TIMEOUT_MS,
+    unwrapEnvelope = true,
   } = options;
   const url = buildApiUrl(path, query);
   const hasBody = body !== undefined;
@@ -374,6 +393,10 @@ async function request<TData, TBody = unknown>(
         });
       }
 
+      if (!unwrapEnvelope) {
+        return responseBody as TData;
+      }
+
       return responseBody.data as TData;
     }
 
@@ -409,6 +432,11 @@ export const apiClient = {
     path,
     { ...options, method: "GET" },
   ),
+  getEnvelope: <TData>(path: string, options?: ApiRequestOptions<never>) =>
+    request<ApiResponseEnvelope<TData>>(
+      path,
+      { ...options, method: "GET", unwrapEnvelope: false },
+    ),
   patch: <TData, TBody = unknown>(
     path: string,
     body: TBody,

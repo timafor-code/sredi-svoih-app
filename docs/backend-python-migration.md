@@ -774,6 +774,55 @@ seating, import, payment gateway behavior, Supabase RPC/RLS/migration changes,
 or frontend service changes. The next PR is
 `feature/admin-events-api-switch`.
 
+### PR 21 admin Events API switch
+
+PR 21 connects the web-admin Events service layer to the Python API behind
+`VITE_ADMIN_EVENTS_PROVIDER=api` while preserving Supabase as the default when
+the flag is missing, invalid, or set to `supabase`.
+
+Implemented web-admin wrappers:
+
+```text
+GET /admin/events
+POST /admin/events
+PATCH /admin/events/{event_id}
+POST /admin/events/{event_id}/publish
+POST /admin/events/{event_id}/archive
+POST /admin/events/{event_id}/cancel
+GET /admin/event-categories
+POST /admin/event-categories
+PATCH /admin/event-categories/{category_id}
+GET /admin/events/{event_id}/occurrences
+PUT /admin/events/{event_id}/occurrences
+GET /admin/events/{event_id}/participation-options
+PUT /admin/events/{event_id}/participation-options
+GET /admin/events/{event_id}/capacity-units
+PUT /admin/events/{event_id}/capacity-units
+```
+
+The existing admin facade function names remain in place, so Events list,
+create/edit, category management, the occurrence constructor, participation
+options, and capacity units keep the same UI behavior. API responses are
+normalized from snake_case into the current camelCase TypeScript domain types,
+and admin mutation inputs are sent to the API in snake_case. `GET /admin/events`
+follows cursor pagination until the admin list has all pages.
+
+API mode reuses the existing admin API client. When `VITE_AUTH_PROVIDER=api`,
+requests use the stored API access token. When admin auth remains on Supabase
+and `VITE_ADMIN_EVENTS_PROVIDER=api`, the client sends the current Supabase
+access token for the temporary PR 14A Supabase JWT bridge.
+
+The Python API does not expose event hard-delete or category hard-delete
+endpoints in PR 21. In API provider mode those legacy delete actions surface a
+clear unavailable-operation error instead of inventing a client-side delete.
+Switching the provider back to Supabase keeps the existing Supabase RPC delete
+behavior.
+
+This PR does not switch Registrations, Members, Invites, Seating, Import,
+Feedback, Community/settings, mobile admin event surfaces, Supabase RPC/RLS, or
+Supabase migrations. Admin registration-management endpoints remain future PR
+scope. The next PR is `feature/mobile-admin-events-api-switch`.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before

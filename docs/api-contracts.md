@@ -817,6 +817,29 @@ physical seats. The existing JSON field names `seat_limit` and
 `seats_per_quantity` are legacy capacity counters used by the data model; they
 do not introduce seating behavior.
 
+Web-admin API switch status (PR 21): when
+`VITE_ADMIN_EVENTS_PROVIDER=api`, the web-admin Events services call the Python
+admin endpoints above through the shared admin API client and normalize
+snake_case API responses into the existing camelCase admin domain types.
+Missing, invalid, or `supabase` provider values continue to use the existing
+Supabase services. `GET /admin/events` is followed through cursor pagination
+until the current admin UI has the full event list it expects.
+
+API mode preserves the existing Events UI function names for list/create/edit
+flows, event categories, occurrences, participation options, and capacity
+units. Existing status-action UI calls are routed to
+`POST /admin/events/{event_id}/publish`, `/archive`, or `/cancel` when the
+payload is a narrow status action; regular edits continue to use
+`PATCH /admin/events/{event_id}`. The admin API does not currently expose event
+hard-delete or category hard-delete endpoints, so the web-admin API provider
+surfaces clear unavailable-operation errors instead of inventing client-only
+delete semantics. The Supabase provider keeps the legacy delete RPC behavior.
+
+Participation-option capacity mappings are bridged through the API's nested
+`capacity_units` array on `PUT /admin/events/{event_id}/participation-options`
+so the existing two-step admin UI behavior remains unchanged. Capacity units
+remain registration capacity buckets, not seating.
+
 ### Admin Registrations
 
 | Method | Path | Purpose |

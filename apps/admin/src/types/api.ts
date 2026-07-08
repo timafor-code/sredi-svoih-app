@@ -129,3 +129,125 @@ export type AdminApiCurrentUserResponse = {
   profile: AdminApiProfileSummary | null;
   memberships: AdminApiMembershipSummary[];
 };
+
+export type AdminApiEventResponse = {
+  id: string;
+  community_id: string;
+  event_kind: string;
+  title: string;
+  subtitle: string | null;
+  description: string | null;
+  short_description: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  is_permanent: boolean;
+  timezone: string | null;
+  location_name: string | null;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  image_url: string | null;
+  category: string;
+  audience: string | null;
+  visibility: string;
+  status: string;
+  source_type: string;
+  source_url: string | null;
+  source_external_id: string | null;
+  manual_override: boolean;
+  registration_mode: string;
+  registration_url: string | null;
+  capacity: number | null;
+  waitlist_enabled: boolean;
+  requires_approval: boolean;
+  price_amount: number | null;
+  price_currency: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminApiEventCategoryResponse = {
+  id: string;
+  community_id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  color: string;
+  icon: string;
+  sort_order: number;
+  is_active: boolean;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminApiEventOccurrenceResponse = {
+  id: string;
+  event_id: string;
+  title: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  timezone: string;
+  registration_opens_at: string | null;
+  registration_closes_at: string | null;
+  capacity: number | null;
+  waitlist_enabled: boolean | null;
+  requires_approval: boolean | null;
+  status: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  server_now: string | null;
+  is_registration_always_open: boolean;
+  registration_state: string;
+  registration_state_reason: string | null;
+};
+
+export type AdminApiOptionCapacityUnitMappingResponse = {
+  id: string;
+  event_id: string;
+  option_id: string;
+  capacity_unit_id: string;
+  seats_per_quantity: number;
+  created_at: string;
+};
+
+export type AdminApiParticipationOptionResponse = {
+  id: string;
+  event_id: string;
+  title: string;
+  description: string | null;
+  price_amount: number;
+  price_currency: string;
+  option_type: string;
+  seat_limit: number | null;
+  allow_quantity: boolean;
+  min_quantity: number;
+  max_quantity: number;
+  is_donation: boolean;
+  counts_toward_capacity: boolean;
+  group_key: string | null;
+  conflicts_with: string[];
+  sort_order: number;
+  is_active: boolean;
+  capacity_units: AdminApiOptionCapacityUnitMappingResponse[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminApiEventCapacityUnitResponse = {
+  id: string;
+  event_id: string;
+  key: string;
+  title: string;
+  description: string | null;
+  capacity: number | null;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
