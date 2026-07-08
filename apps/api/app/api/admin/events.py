@@ -10,7 +10,16 @@ from app.core.authorization import require_auth
 from app.db.models.core import AppUser
 from app.db.session import get_db_session
 from app.schemas.admin_events import (
+    AdminEventCapacityUnitResponse,
+    AdminEventCapacityUnitsReplaceRequest,
+    AdminEventCategoryCreateRequest,
+    AdminEventCategoryResponse,
+    AdminEventCategoryUpdateRequest,
     AdminEventCreateRequest,
+    AdminEventOccurrenceResponse,
+    AdminEventOccurrencesReplaceRequest,
+    AdminEventParticipationOptionResponse,
+    AdminEventParticipationOptionsReplaceRequest,
     AdminEventResponse,
     AdminEventUpdateRequest,
 )
@@ -51,6 +60,67 @@ async def list_admin_events(
                 has_more=has_more,
             ),
         ),
+    )
+
+
+@router.get(
+    "/event-categories",
+    response_model=ApiResponse[list[AdminEventCategoryResponse]],
+)
+async def list_admin_event_categories(
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[list[AdminEventCategoryResponse]]:
+    categories = await admin_events_service.list_admin_event_categories(
+        session,
+        current_user,
+    )
+    return ApiResponse[list[AdminEventCategoryResponse]](
+        data=[
+            AdminEventCategoryResponse.model_validate(category)
+            for category in categories
+        ],
+    )
+
+
+@router.post(
+    "/event-categories",
+    response_model=ApiResponse[AdminEventCategoryResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_admin_event_category(
+    payload: AdminEventCategoryCreateRequest,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[AdminEventCategoryResponse]:
+    category = await admin_events_service.create_admin_event_category(
+        session,
+        current_user,
+        payload,
+    )
+    return ApiResponse[AdminEventCategoryResponse](
+        data=AdminEventCategoryResponse.model_validate(category),
+    )
+
+
+@router.patch(
+    "/event-categories/{category_id}",
+    response_model=ApiResponse[AdminEventCategoryResponse],
+)
+async def update_admin_event_category(
+    category_id: UUID,
+    payload: AdminEventCategoryUpdateRequest,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[AdminEventCategoryResponse]:
+    category = await admin_events_service.update_admin_event_category(
+        session,
+        current_user,
+        category_id,
+        payload,
+    )
+    return ApiResponse[AdminEventCategoryResponse](
+        data=AdminEventCategoryResponse.model_validate(category),
     )
 
 
@@ -154,3 +224,115 @@ async def cancel_admin_event(
         "cancelled",
     )
     return ApiResponse[AdminEventResponse](data=AdminEventResponse.model_validate(event))
+
+
+@router.get(
+    "/events/{event_id}/occurrences",
+    response_model=ApiResponse[list[AdminEventOccurrenceResponse]],
+)
+async def list_admin_event_occurrences(
+    event_id: UUID,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[list[AdminEventOccurrenceResponse]]:
+    occurrences = await admin_events_service.list_admin_event_occurrences(
+        session,
+        current_user,
+        event_id,
+    )
+    return ApiResponse[list[AdminEventOccurrenceResponse]](data=occurrences)
+
+
+@router.put(
+    "/events/{event_id}/occurrences",
+    response_model=ApiResponse[list[AdminEventOccurrenceResponse]],
+)
+async def replace_admin_event_occurrences(
+    event_id: UUID,
+    payload: AdminEventOccurrencesReplaceRequest,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[list[AdminEventOccurrenceResponse]]:
+    occurrences = await admin_events_service.replace_admin_event_occurrences(
+        session,
+        current_user,
+        event_id,
+        payload,
+    )
+    return ApiResponse[list[AdminEventOccurrenceResponse]](data=occurrences)
+
+
+@router.get(
+    "/events/{event_id}/participation-options",
+    response_model=ApiResponse[list[AdminEventParticipationOptionResponse]],
+)
+async def list_admin_event_participation_options(
+    event_id: UUID,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[list[AdminEventParticipationOptionResponse]]:
+    options = await admin_events_service.list_admin_event_participation_options(
+        session,
+        current_user,
+        event_id,
+    )
+    return ApiResponse[list[AdminEventParticipationOptionResponse]](data=options)
+
+
+@router.put(
+    "/events/{event_id}/participation-options",
+    response_model=ApiResponse[list[AdminEventParticipationOptionResponse]],
+)
+async def replace_admin_event_participation_options(
+    event_id: UUID,
+    payload: AdminEventParticipationOptionsReplaceRequest,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[list[AdminEventParticipationOptionResponse]]:
+    options = await admin_events_service.replace_admin_event_participation_options(
+        session,
+        current_user,
+        event_id,
+        payload,
+    )
+    return ApiResponse[list[AdminEventParticipationOptionResponse]](data=options)
+
+
+@router.get(
+    "/events/{event_id}/capacity-units",
+    response_model=ApiResponse[list[AdminEventCapacityUnitResponse]],
+)
+async def list_admin_event_capacity_units(
+    event_id: UUID,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[list[AdminEventCapacityUnitResponse]]:
+    units = await admin_events_service.list_admin_event_capacity_units(
+        session,
+        current_user,
+        event_id,
+    )
+    return ApiResponse[list[AdminEventCapacityUnitResponse]](
+        data=[AdminEventCapacityUnitResponse.model_validate(unit) for unit in units],
+    )
+
+
+@router.put(
+    "/events/{event_id}/capacity-units",
+    response_model=ApiResponse[list[AdminEventCapacityUnitResponse]],
+)
+async def replace_admin_event_capacity_units(
+    event_id: UUID,
+    payload: AdminEventCapacityUnitsReplaceRequest,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[list[AdminEventCapacityUnitResponse]]:
+    units = await admin_events_service.replace_admin_event_capacity_units(
+        session,
+        current_user,
+        event_id,
+        payload,
+    )
+    return ApiResponse[list[AdminEventCapacityUnitResponse]](
+        data=[AdminEventCapacityUnitResponse.model_validate(unit) for unit in units],
+    )

@@ -701,9 +701,121 @@ later than `starts_at`, enum values must match the event table checks,
 non-negative. Event category slugs must already exist in the target community.
 Admin event responses reuse public event fields and additionally include
 `source_type`, `source_external_id`, `manual_override`, `created_by`, and
-`updated_by`. Admin event category, occurrence, participation-option,
-capacity-unit, registration-management, seating, and import endpoints remain
-future PR scope.
+`updated_by`. Admin registration-management, seating, and import endpoints
+remain future PR scope.
+
+Implemented behavior (PR 20): the Python API exposes the admin category,
+occurrence, participation-option, and capacity-unit endpoints listed above.
+They require authentication and an active `admin` or `event_manager` membership,
+reuse the PR 19 manageable-community scope, and verify event-scoped resources by
+first looking up the parent event in one of the actor's manageable communities.
+Missing or cross-community event resources return `404 not_found`; authenticated
+actors with no manageable admin/event-manager role receive `403 forbidden`.
+
+`GET /admin/event-categories` returns all categories in the actor's manageable
+communities, including inactive categories, ordered by community, sort order,
+creation time, and id. `POST /admin/event-categories` creates a category in a
+manageable community; when the actor manages exactly one community,
+`community_id` may be omitted and inferred. `PATCH /admin/event-categories/{category_id}`
+updates category fields only when the category belongs to a manageable
+community. Category slugs must match the database slug format and remain unique
+per community.
+
+Admin occurrence reads return all event occurrences, including inactive states,
+with server-derived registration-window fields: `server_now`,
+`is_registration_always_open`, `registration_state`, and
+`registration_state_reason`. `PUT /admin/events/{event_id}/occurrences`
+accepts:
+
+```json
+{
+  "occurrences": [
+    {
+      "id": null,
+      "title": "Session title",
+      "starts_at": "2026-07-06T19:30:00+03:00",
+      "ends_at": null,
+      "timezone": "Europe/Moscow",
+      "registration_opens_at": null,
+      "registration_closes_at": null,
+      "capacity": null,
+      "waitlist_enabled": null,
+      "requires_approval": null,
+      "status": "active",
+      "sort_order": 0
+    }
+  ]
+}
+```
+
+The occurrence replace endpoint runs in one transaction. Existing occurrences
+can be preserved by including their `id`; new rows use `id: null` or omit `id`;
+omitted rows are deleted only when they have no registrations.
+
+`GET /admin/events/{event_id}/participation-options` returns all event-level
+participation options, including inactive options, with nested
+`capacity_units` mappings. `PUT /admin/events/{event_id}/participation-options`
+accepts:
+
+```json
+{
+  "participation_options": [
+    {
+      "id": null,
+      "title": "Adult",
+      "description": null,
+      "price_amount": 0,
+      "price_currency": "RUB",
+      "option_type": "participation",
+      "seat_limit": null,
+      "allow_quantity": false,
+      "min_quantity": 1,
+      "max_quantity": 1,
+      "is_donation": false,
+      "counts_toward_capacity": true,
+      "group_key": null,
+      "conflicts_with": [],
+      "sort_order": 0,
+      "is_active": true,
+      "capacity_units": []
+    }
+  ]
+}
+```
+
+The participation-option replace endpoint runs in one transaction and replaces
+the full option set plus nested option-to-capacity-unit mappings. Existing
+options can be preserved by including their `id`; omitted options are deleted.
+Donation options and options with `counts_toward_capacity = false` cannot have
+capacity-unit mappings.
+
+`GET /admin/events/{event_id}/capacity-units` returns all event-level capacity
+units, including inactive units. `PUT /admin/events/{event_id}/capacity-units`
+accepts:
+
+```json
+{
+  "capacity_units": [
+    {
+      "id": null,
+      "key": "friday_dinner",
+      "title": "Friday dinner",
+      "description": null,
+      "capacity": 80,
+      "sort_order": 0,
+      "is_active": true
+    }
+  ]
+}
+```
+
+The capacity-unit replace endpoint runs in one transaction. Existing units can
+be preserved by including their `id`; omitted units are deleted only when they
+have no capacity reservations. Capacity units are event-level registration
+capacity buckets. They are not seating assignments and must not be treated as
+physical seats. The existing JSON field names `seat_limit` and
+`seats_per_quantity` are legacy capacity counters used by the data model; they
+do not introduce seating behavior.
 
 ### Admin Registrations
 

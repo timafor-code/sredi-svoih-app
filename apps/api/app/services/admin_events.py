@@ -6,11 +6,35 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status as http_status
-from sqlalchemy import select, tuple_
+from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.core import AppUser, CommunityMembership, Event, EventCategory
-from app.schemas.admin_events import AdminEventCreateRequest, AdminEventUpdateRequest
+from app.db.models.core import (
+    AppUser,
+    CommunityMembership,
+    Event,
+    EventCapacityUnit,
+    EventCategory,
+    EventOccurrence,
+    EventParticipationOption,
+    EventParticipationOptionCapacityUnit,
+    EventRegistration,
+    EventRegistrationCapacityReservation,
+)
+from app.schemas.admin_events import (
+    AdminEventCapacityUnitResponse,
+    AdminEventCapacityUnitsReplaceRequest,
+    AdminEventCategoryCreateRequest,
+    AdminEventCategoryUpdateRequest,
+    AdminEventCreateRequest,
+    AdminEventOccurrenceResponse,
+    AdminEventOccurrencesReplaceRequest,
+    AdminEventParticipationOptionUpsertRequest,
+    AdminEventParticipationOptionResponse,
+    AdminEventParticipationOptionsReplaceRequest,
+    AdminOptionCapacityUnitMappingResponse,
+    AdminEventUpdateRequest,
+)
 from app.services.authorization import ACTIVE_STATUS, EVENT_MANAGER_ROLES
 from app.services.events import decode_events_cursor, encode_events_cursor
 
@@ -33,6 +57,9 @@ _PATCH_REQUIRED_FIELDS = frozenset(
         "waitlist_enabled",
         "requires_approval",
     },
+)
+_CATEGORY_PATCH_REQUIRED_FIELDS = frozenset(
+    {"slug", "title", "color", "icon", "sort_order", "is_active"},
 )
 
 
@@ -72,6 +99,10 @@ def _not_found(message: str = "Event not found") -> HTTPException:
 
 def _validation_error(message: str) -> HTTPException:
     return _error(http_status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", message)
+
+
+def _conflict(message: str) -> HTTPException:
+    return _error(http_status.HTTP_409_CONFLICT, "conflict", message)
 
 
 async def resolve_manageable_community_ids(
@@ -427,3 +458,632 @@ async def transition_admin_event_status(
         await session.flush()
         await session.refresh(event)
         return event
+
+
+def _reject_null_fields(updates: dict[str, object], field_names: set[str]) -> None:
+    for field_name in field_names:
+        if field_name in updates and updates[field_name] is None:
+            raise _validation_error(f"{field_name} must not be null")
+
+
+async def list_admin_event_categories(
+    session: AsyncSession,
+    current_user: AppUser,
+) -> list[EventCategory]:
+    manageable_community_ids = await resolve_manageable_community_ids(
+        session,
+        current_user,
+    )
+    _require_manageable_communities(manageable_community_ids)
+
+    result = await session.scalars(
+        select(EventCategory)
+        .where(EventCategory.community_id.in_(manageable_community_ids))
+        .order_by(
+            EventCategory.community_id,
+            EventCategory.sort_order,
+            EventCategory.created_at,
+            EventCategory.id,
+        ),
+    )
+    return list(result)
+
+
+async def _category_slug_exists(
+    session: AsyncSession,
+    *,
+    community_id: UUID,
+    slug: str,
+    excluding_category_id: UUID | None = None,
+) -> bool:
+    query = select(EventCategory.id).where(
+        EventCategory.community_id == community_id,
+        EventCategory.slug == slug,
+    )
+    if excluding_category_id is not None:
+        query = query.where(EventCategory.id != excluding_category_id)
+
+    category_id = await session.scalar(query.limit(1))
+    return category_id is not None
+
+
+async def create_admin_event_category(
+    session: AsyncSession,
+    current_user: AppUser,
+    payload: AdminEventCategoryCreateRequest,
+) -> EventCategory:
+    manageable_community_ids = await resolve_manageable_community_ids(
+        session,
+        current_user,
+    )
+    community_id = _resolve_create_community_id(payload, manageable_community_ids)
+
+    async with _transaction_scope(session):
+        if await _category_slug_exists(
+            session,
+            community_id=community_id,
+            slug=payload.slug,
+        ):
+            raise _conflict("category slug already exists in this community")
+
+        now = _now()
+        category = EventCategory(
+            community_id=community_id,
+            slug=payload.slug,
+            title=payload.title,
+            description=payload.description,
+            color=payload.color,
+            icon=payload.icon,
+            sort_order=payload.sort_order,
+            is_active=payload.is_active,
+            created_by=current_user.id,
+            updated_by=current_user.id,
+            updated_at=now,
+        )
+        session.add(category)
+        await session.flush()
+        await session.refresh(category)
+        return category
+
+
+async def update_admin_event_category(
+    session: AsyncSession,
+    current_user: AppUser,
+    category_id: UUID,
+    payload: AdminEventCategoryUpdateRequest,
+) -> EventCategory:
+    manageable_community_ids = await resolve_manageable_community_ids(
+        session,
+        current_user,
+    )
+    _require_manageable_communities(manageable_community_ids)
+
+    updates = payload.model_dump(exclude_unset=True)
+    _reject_null_fields(updates, _CATEGORY_PATCH_REQUIRED_FIELDS)
+
+    async with _transaction_scope(session):
+        category = await session.scalar(
+            select(EventCategory)
+            .where(
+                EventCategory.id == category_id,
+                EventCategory.community_id.in_(manageable_community_ids),
+            )
+            .with_for_update(),
+        )
+        if category is None:
+            raise _not_found("Category not found")
+
+        if "slug" in updates and updates["slug"] != category.slug:
+            if await _category_slug_exists(
+                session,
+                community_id=category.community_id,
+                slug=updates["slug"],
+                excluding_category_id=category.id,
+            ):
+                raise _conflict("category slug already exists in this community")
+
+        now = _now()
+        for field_name, value in updates.items():
+            setattr(category, field_name, value)
+
+        if updates:
+            category.updated_by = current_user.id
+            category.updated_at = now
+
+        await session.flush()
+        await session.refresh(category)
+        return category
+
+
+def _occurrence_registration_state(
+    occurrence: EventOccurrence,
+    server_now: datetime,
+) -> tuple[bool, str, str | None]:
+    if occurrence.status != "active":
+        return False, "unavailable", "status_not_active"
+
+    if (
+        occurrence.registration_opens_at is None
+        and occurrence.registration_closes_at is None
+    ):
+        return True, "open", None
+
+    if (
+        occurrence.registration_opens_at is not None
+        and server_now < occurrence.registration_opens_at
+    ):
+        return False, "not_yet_open", "registration_opens_at_future"
+
+    if (
+        occurrence.registration_closes_at is not None
+        and server_now > occurrence.registration_closes_at
+    ):
+        return False, "closed", "registration_closes_at_past"
+
+    return False, "open", None
+
+
+def _to_occurrence_response(
+    occurrence: EventOccurrence,
+    server_now: datetime,
+) -> AdminEventOccurrenceResponse:
+    is_always_open, registration_state, reason = _occurrence_registration_state(
+        occurrence,
+        server_now,
+    )
+    return AdminEventOccurrenceResponse.model_validate(occurrence).model_copy(
+        update={
+            "server_now": server_now,
+            "is_registration_always_open": is_always_open,
+            "registration_state": registration_state,
+            "registration_state_reason": reason,
+        },
+    )
+
+
+async def _list_admin_event_occurrences_for_event(
+    session: AsyncSession,
+    event_id: UUID,
+) -> list[AdminEventOccurrenceResponse]:
+    server_now = _now()
+    occurrences = list(
+        await session.scalars(
+            select(EventOccurrence)
+            .where(EventOccurrence.event_id == event_id)
+            .order_by(
+                EventOccurrence.starts_at,
+                EventOccurrence.sort_order,
+                EventOccurrence.id,
+            ),
+        ),
+    )
+    return [
+        _to_occurrence_response(occurrence, server_now)
+        for occurrence in occurrences
+    ]
+
+
+async def list_admin_event_occurrences(
+    session: AsyncSession,
+    current_user: AppUser,
+    event_id: UUID,
+) -> list[AdminEventOccurrenceResponse]:
+    await get_admin_event(session, current_user, event_id)
+    return await _list_admin_event_occurrences_for_event(session, event_id)
+
+
+def _validate_unique_payload_ids(
+    ids: Sequence[UUID],
+    *,
+    message: str,
+) -> None:
+    if len(set(ids)) != len(ids):
+        raise _validation_error(message)
+
+
+async def replace_admin_event_occurrences(
+    session: AsyncSession,
+    current_user: AppUser,
+    event_id: UUID,
+    payload: AdminEventOccurrencesReplaceRequest,
+) -> list[AdminEventOccurrenceResponse]:
+    manageable_community_ids = await resolve_manageable_community_ids(
+        session,
+        current_user,
+    )
+    _require_manageable_communities(manageable_community_ids)
+
+    payload_ids = [
+        occurrence.id for occurrence in payload.occurrences if occurrence.id is not None
+    ]
+    _validate_unique_payload_ids(
+        payload_ids,
+        message="duplicate occurrence id in payload",
+    )
+
+    async with _transaction_scope(session):
+        event = await _lock_admin_event(
+            session,
+            event_id=event_id,
+            manageable_community_ids=manageable_community_ids,
+        )
+
+        existing_occurrences = list(
+            await session.scalars(
+                select(EventOccurrence)
+                .where(EventOccurrence.event_id == event.id)
+                .with_for_update(),
+            ),
+        )
+        existing_by_id = {
+            occurrence.id: occurrence for occurrence in existing_occurrences
+        }
+
+        now = _now()
+        seen_ids: set[UUID] = set()
+        for index, occurrence_payload in enumerate(payload.occurrences):
+            sort_order = (
+                occurrence_payload.sort_order
+                if occurrence_payload.sort_order is not None
+                else index
+            )
+            if occurrence_payload.id is None:
+                occurrence = EventOccurrence(
+                    event_id=event.id,
+                    title=occurrence_payload.title,
+                    starts_at=occurrence_payload.starts_at,
+                    ends_at=occurrence_payload.ends_at,
+                    timezone=occurrence_payload.timezone,
+                    registration_opens_at=occurrence_payload.registration_opens_at,
+                    registration_closes_at=occurrence_payload.registration_closes_at,
+                    capacity=occurrence_payload.capacity,
+                    waitlist_enabled=occurrence_payload.waitlist_enabled,
+                    requires_approval=occurrence_payload.requires_approval,
+                    status=occurrence_payload.status,
+                    sort_order=sort_order,
+                )
+                session.add(occurrence)
+                await session.flush()
+                seen_ids.add(occurrence.id)
+                continue
+
+            occurrence = existing_by_id.get(occurrence_payload.id)
+            if occurrence is None:
+                raise _validation_error("occurrence id does not belong to event")
+
+            occurrence.title = occurrence_payload.title
+            occurrence.starts_at = occurrence_payload.starts_at
+            occurrence.ends_at = occurrence_payload.ends_at
+            occurrence.timezone = occurrence_payload.timezone
+            occurrence.registration_opens_at = (
+                occurrence_payload.registration_opens_at
+            )
+            occurrence.registration_closes_at = (
+                occurrence_payload.registration_closes_at
+            )
+            occurrence.capacity = occurrence_payload.capacity
+            occurrence.waitlist_enabled = occurrence_payload.waitlist_enabled
+            occurrence.requires_approval = occurrence_payload.requires_approval
+            occurrence.status = occurrence_payload.status
+            occurrence.sort_order = sort_order
+            occurrence.updated_at = now
+            seen_ids.add(occurrence.id)
+
+        delete_ids = set(existing_by_id) - seen_ids
+        if delete_ids:
+            registration_count = await session.scalar(
+                select(func.count(EventRegistration.id)).where(
+                    EventRegistration.occurrence_id.in_(list(delete_ids)),
+                ),
+            )
+            if registration_count:
+                raise _conflict("cannot delete occurrence with registrations")
+
+            await session.execute(
+                delete(EventOccurrence).where(EventOccurrence.id.in_(list(delete_ids))),
+            )
+
+        await session.flush()
+        return await _list_admin_event_occurrences_for_event(session, event.id)
+
+
+async def _list_option_capacity_mappings(
+    session: AsyncSession,
+    event_id: UUID,
+) -> dict[UUID, list[EventParticipationOptionCapacityUnit]]:
+    mappings = list(
+        await session.scalars(
+            select(EventParticipationOptionCapacityUnit)
+            .where(EventParticipationOptionCapacityUnit.event_id == event_id)
+            .order_by(
+                EventParticipationOptionCapacityUnit.created_at,
+                EventParticipationOptionCapacityUnit.id,
+            ),
+        ),
+    )
+    mappings_by_option: dict[UUID, list[EventParticipationOptionCapacityUnit]] = {}
+    for mapping in mappings:
+        mappings_by_option.setdefault(mapping.option_id, []).append(mapping)
+    return mappings_by_option
+
+
+async def _list_admin_event_participation_options_for_event(
+    session: AsyncSession,
+    event_id: UUID,
+) -> list[AdminEventParticipationOptionResponse]:
+    options = list(
+        await session.scalars(
+            select(EventParticipationOption)
+            .where(EventParticipationOption.event_id == event_id)
+            .order_by(
+                EventParticipationOption.sort_order,
+                EventParticipationOption.created_at,
+                EventParticipationOption.id,
+            ),
+        ),
+    )
+    mappings_by_option = await _list_option_capacity_mappings(session, event_id)
+    responses: list[AdminEventParticipationOptionResponse] = []
+    for option in options:
+        responses.append(
+            AdminEventParticipationOptionResponse.model_validate(option).model_copy(
+                update={
+                    "capacity_units": [
+                        AdminOptionCapacityUnitMappingResponse.model_validate(mapping)
+                        for mapping in mappings_by_option.get(option.id, [])
+                    ],
+                },
+            ),
+        )
+    return responses
+
+
+async def list_admin_event_participation_options(
+    session: AsyncSession,
+    current_user: AppUser,
+    event_id: UUID,
+) -> list[AdminEventParticipationOptionResponse]:
+    await get_admin_event(session, current_user, event_id)
+    return await _list_admin_event_participation_options_for_event(session, event_id)
+
+
+async def replace_admin_event_participation_options(
+    session: AsyncSession,
+    current_user: AppUser,
+    event_id: UUID,
+    payload: AdminEventParticipationOptionsReplaceRequest,
+) -> list[AdminEventParticipationOptionResponse]:
+    manageable_community_ids = await resolve_manageable_community_ids(
+        session,
+        current_user,
+    )
+    _require_manageable_communities(manageable_community_ids)
+
+    payload_ids = [
+        option.id
+        for option in payload.participation_options
+        if option.id is not None
+    ]
+    _validate_unique_payload_ids(
+        payload_ids,
+        message="duplicate participation option id in payload",
+    )
+
+    async with _transaction_scope(session):
+        event = await _lock_admin_event(
+            session,
+            event_id=event_id,
+            manageable_community_ids=manageable_community_ids,
+        )
+        existing_options = list(
+            await session.scalars(
+                select(EventParticipationOption)
+                .where(EventParticipationOption.event_id == event.id)
+                .with_for_update(),
+            ),
+        )
+        existing_by_id = {option.id: option for option in existing_options}
+        capacity_unit_ids = set(
+            await session.scalars(
+                select(EventCapacityUnit.id).where(
+                    EventCapacityUnit.event_id == event.id,
+                ),
+            ),
+        )
+
+        list(
+            await session.scalars(
+                select(EventParticipationOptionCapacityUnit.id)
+                .where(EventParticipationOptionCapacityUnit.event_id == event.id)
+                .with_for_update(),
+            ),
+        )
+        await session.execute(
+            delete(EventParticipationOptionCapacityUnit).where(
+                EventParticipationOptionCapacityUnit.event_id == event.id,
+            ),
+        )
+
+        now = _now()
+        seen_ids: set[UUID] = set()
+        option_payload_pairs: list[
+            tuple[
+                EventParticipationOption,
+                AdminEventParticipationOptionUpsertRequest,
+            ]
+        ] = []
+
+        for index, option_payload in enumerate(payload.participation_options):
+            sort_order = (
+                option_payload.sort_order
+                if option_payload.sort_order is not None
+                else index
+            )
+            if option_payload.id is None:
+                option = EventParticipationOption(event_id=event.id)
+                session.add(option)
+            else:
+                option = existing_by_id.get(option_payload.id)
+                if option is None:
+                    raise _validation_error(
+                        "participation option id does not belong to event",
+                    )
+
+            option.title = option_payload.title
+            option.description = option_payload.description
+            option.price_amount = option_payload.price_amount
+            option.price_currency = option_payload.price_currency
+            option.option_type = option_payload.option_type
+            option.seat_limit = option_payload.seat_limit
+            option.allow_quantity = option_payload.allow_quantity
+            option.min_quantity = option_payload.min_quantity
+            option.max_quantity = option_payload.max_quantity
+            option.is_donation = option_payload.is_donation
+            option.counts_toward_capacity = option_payload.counts_toward_capacity
+            option.group_key = option_payload.group_key
+            option.conflicts_with = option_payload.conflicts_with
+            option.sort_order = sort_order
+            option.is_active = option_payload.is_active
+            if option_payload.id is not None:
+                option.updated_at = now
+
+            await session.flush()
+            seen_ids.add(option.id)
+            option_payload_pairs.append((option, option_payload))
+
+        delete_ids = set(existing_by_id) - seen_ids
+        if delete_ids:
+            await session.execute(
+                delete(EventParticipationOption).where(
+                    EventParticipationOption.id.in_(list(delete_ids)),
+                ),
+            )
+
+        for option, option_payload in option_payload_pairs:
+            seen_mapping_unit_ids: set[UUID] = set()
+            for mapping_payload in option_payload.capacity_units:
+                if mapping_payload.capacity_unit_id in seen_mapping_unit_ids:
+                    raise _validation_error(
+                        "duplicate capacity unit mapping in participation option",
+                    )
+                if mapping_payload.capacity_unit_id not in capacity_unit_ids:
+                    raise _validation_error("capacity unit does not belong to event")
+                session.add(
+                    EventParticipationOptionCapacityUnit(
+                        event_id=event.id,
+                        option_id=option.id,
+                        capacity_unit_id=mapping_payload.capacity_unit_id,
+                        seats_per_quantity=mapping_payload.seats_per_quantity,
+                    ),
+                )
+                seen_mapping_unit_ids.add(mapping_payload.capacity_unit_id)
+
+        await session.flush()
+        return await _list_admin_event_participation_options_for_event(
+            session,
+            event.id,
+        )
+
+
+async def list_admin_event_capacity_units(
+    session: AsyncSession,
+    current_user: AppUser,
+    event_id: UUID,
+) -> list[EventCapacityUnit]:
+    await get_admin_event(session, current_user, event_id)
+    result = await session.scalars(
+        select(EventCapacityUnit)
+        .where(EventCapacityUnit.event_id == event_id)
+        .order_by(
+            EventCapacityUnit.sort_order,
+            EventCapacityUnit.created_at,
+            EventCapacityUnit.id,
+        ),
+    )
+    return list(result)
+
+
+async def replace_admin_event_capacity_units(
+    session: AsyncSession,
+    current_user: AppUser,
+    event_id: UUID,
+    payload: AdminEventCapacityUnitsReplaceRequest,
+) -> list[EventCapacityUnit]:
+    manageable_community_ids = await resolve_manageable_community_ids(
+        session,
+        current_user,
+    )
+    _require_manageable_communities(manageable_community_ids)
+
+    payload_ids = [unit.id for unit in payload.capacity_units if unit.id is not None]
+    _validate_unique_payload_ids(
+        payload_ids,
+        message="duplicate capacity unit id in payload",
+    )
+    payload_keys = [unit.key for unit in payload.capacity_units]
+    if len(set(payload_keys)) != len(payload_keys):
+        raise _validation_error("duplicate capacity unit key in payload")
+
+    async with _transaction_scope(session):
+        event = await _lock_admin_event(
+            session,
+            event_id=event_id,
+            manageable_community_ids=manageable_community_ids,
+        )
+        existing_units = list(
+            await session.scalars(
+                select(EventCapacityUnit)
+                .where(EventCapacityUnit.event_id == event.id)
+                .with_for_update(),
+            ),
+        )
+        existing_by_id = {unit.id: unit for unit in existing_units}
+
+        now = _now()
+        seen_ids: set[UUID] = set()
+        for index, unit_payload in enumerate(payload.capacity_units):
+            sort_order = (
+                unit_payload.sort_order
+                if unit_payload.sort_order is not None
+                else index
+            )
+            if unit_payload.id is None:
+                unit = EventCapacityUnit(event_id=event.id)
+                session.add(unit)
+            else:
+                unit = existing_by_id.get(unit_payload.id)
+                if unit is None:
+                    raise _validation_error("capacity unit id does not belong to event")
+
+            unit.key = unit_payload.key
+            unit.title = unit_payload.title
+            unit.description = unit_payload.description
+            unit.capacity = unit_payload.capacity
+            unit.sort_order = sort_order
+            unit.is_active = unit_payload.is_active
+            if unit_payload.id is not None:
+                unit.updated_at = now
+
+            await session.flush()
+            seen_ids.add(unit.id)
+
+        delete_ids = set(existing_by_id) - seen_ids
+        if delete_ids:
+            reservation_count = await session.scalar(
+                select(func.count(EventRegistrationCapacityReservation.id)).where(
+                    EventRegistrationCapacityReservation.capacity_unit_id.in_(
+                        list(delete_ids),
+                    ),
+                ),
+            )
+            if reservation_count:
+                raise _conflict("cannot delete capacity unit with reservations")
+
+            await session.execute(
+                delete(EventCapacityUnit).where(
+                    EventCapacityUnit.id.in_(list(delete_ids)),
+                ),
+            )
+
+        await session.flush()
+        return await list_admin_event_capacity_units(session, current_user, event.id)

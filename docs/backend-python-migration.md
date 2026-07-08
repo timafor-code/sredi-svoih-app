@@ -728,6 +728,52 @@ screens, web-admin screens, provider switches, production data migration, or
 payment gateway behavior. The web-admin continues to use the existing Supabase
 fallback services until a later switch PR.
 
+### PR 20 admin category, occurrence, option, and capacity endpoints
+
+PR 20 adds the next backend-only Python API admin event-management endpoints:
+
+```text
+GET /admin/event-categories
+POST /admin/event-categories
+PATCH /admin/event-categories/{category_id}
+GET /admin/events/{event_id}/occurrences
+PUT /admin/events/{event_id}/occurrences
+GET /admin/events/{event_id}/participation-options
+PUT /admin/events/{event_id}/participation-options
+GET /admin/events/{event_id}/capacity-units
+PUT /admin/events/{event_id}/capacity-units
+```
+
+All endpoints require `Authorization: Bearer <token>` and an active `admin` or
+`event_manager` community membership. Category operations are limited to the
+actor's manageable communities. Event-scoped operations first verify that the
+parent event belongs to one of those manageable communities, then read or write
+only rows under that event.
+
+The replace-style `PUT` endpoints run in API transactions. Occurrence replace
+keeps rows whose `id` is included, inserts rows without an `id`, and blocks
+deleting an occurrence that already has registrations. Participation-option
+replace keeps rows whose `id` is included, inserts rows without an `id`, deletes
+omitted options, and replaces nested option-to-capacity-unit mappings in the
+same request. Capacity-unit replace keeps rows whose `id` is included, inserts
+rows without an `id`, and blocks deleting a capacity unit that already has
+capacity reservations.
+
+Admin occurrence responses include server-derived registration-window fields
+for the existing admin badges: `server_now`, `is_registration_always_open`,
+`registration_state`, and `registration_state_reason`.
+
+Capacity units remain event-level registration capacity buckets. They are not
+seating assignments and do not implement physical seating. Existing field names
+such as `seat_limit` and `seats_per_quantity` stay in the API shape because
+they mirror the current data model, but this PR does not implement seating.
+
+This PR does not switch the web-admin Events UI or mobile admin event surfaces
+to the API, does not add admin registration-management endpoints, does not add
+seating, import, payment gateway behavior, Supabase RPC/RLS/migration changes,
+or frontend service changes. The next PR is
+`feature/admin-events-api-switch`.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
