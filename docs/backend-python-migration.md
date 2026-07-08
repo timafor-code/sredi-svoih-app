@@ -96,6 +96,16 @@ cd F:\2026\SS-App\code\sredi-svoih-app; docker compose -f infra/docker-compose.a
 Host Windows Python is not required for the PR 3 backend runtime. The API
 target is Python 3.12+ inside the `api_backend` Docker container.
 
+Local admin CORS note (PR 296 follow-up): the FastAPI app allows local browser
+provider-switch smoke tests from the web-admin Vite dev server by default.
+Allowed local origins are `http://localhost:5173`,
+`http://127.0.0.1:5173`, `http://localhost:8081`, and
+`http://127.0.0.1:8081`. Deployments can override the comma-separated backend
+setting `API_CORS_ALLOWED_ORIGINS`; the local middleware allows
+`Authorization` and `Content-Type` headers plus `GET`, `POST`, `PUT`, `PATCH`,
+`DELETE`, and `OPTIONS`. This does not switch any frontend provider flags and
+does not expose PostgreSQL directly to mobile or web-admin.
+
 ### PR 4 API core schema foundation
 
 PR 4 adds the first Alembic-owned API schema and SQLAlchemy model foundation for
