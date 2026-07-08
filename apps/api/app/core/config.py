@@ -5,6 +5,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DB_DSN_ENV = "DATABASE" + "_URL"
 _SUPABASE_SIGNING_KEY_ENV = "SUPABASE" + "_JWT_SECRET"
+_LOCAL_CORS_ALLOWED_ORIGINS = (
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8081",
+    "http://127.0.0.1:8081",
+)
 
 
 class Settings(BaseSettings):
@@ -38,6 +44,7 @@ class Settings(BaseSettings):
     api_auth_email_rate_limit_window_seconds: int = Field(default=900, gt=0)
     api_auth_email_rate_limit_max_attempts: int = Field(default=5, gt=0)
     api_public_app_base_url: str = "http://localhost:8081"
+    api_cors_allowed_origins: str = ",".join(_LOCAL_CORS_ALLOWED_ORIGINS)
     db_dsn: str = Field(
         default="postgresql+asyncpg://sredi_api:sredi_api@localhost:55432/sredi_api",
         validation_alias=AliasChoices(_DB_DSN_ENV, "API_DB_DSN"),
@@ -48,6 +55,14 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @property
+    def cors_allowed_origins(self) -> list[str]:
+        return [
+            origin.strip().rstrip("/")
+            for origin in self.api_cors_allowed_origins.split(",")
+            if origin.strip()
+        ]
 
 
 @lru_cache
