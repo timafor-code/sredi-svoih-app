@@ -1,3 +1,11 @@
+import { isAdminApiProviderEnabled } from "./apiClient";
+import {
+  createAdminEventCategory as createAdminEventCategoryViaApi,
+  deleteAdminEventCategory as deleteAdminEventCategoryViaApi,
+  listAdminEventCategories as listAdminEventCategoriesViaApi,
+  listEventCategoryUsageCounts as listEventCategoryUsageCountsViaApi,
+  updateAdminEventCategory as updateAdminEventCategoryViaApi,
+} from "./eventCategoriesApiService";
 import { requireSupabaseClient } from "./supabaseClient";
 import type {
   AdminEventCategory,
@@ -71,6 +79,10 @@ function formatRpcError(action: string, error: SupabaseRpcError): string {
 export async function listAdminEventCategories(
   communityId: string,
 ): Promise<AdminEventCategory[]> {
+  if (isAdminApiProviderEnabled("events")) {
+    return listAdminEventCategoriesViaApi(communityId);
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase.rpc("admin_list_event_categories", {
     p_community_id: communityId,
@@ -99,6 +111,10 @@ function buildPayload(input: Partial<CreateAdminEventCategoryInput>): Record<str
 export async function createAdminEventCategory(
   input: CreateAdminEventCategoryInput,
 ): Promise<AdminEventCategory> {
+  if (isAdminApiProviderEnabled("events")) {
+    return createAdminEventCategoryViaApi(input);
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase.rpc("admin_create_event_category", {
     payload: buildPayload(input),
@@ -117,6 +133,10 @@ export async function updateAdminEventCategory(
   categoryId: string,
   input: UpdateAdminEventCategoryInput,
 ): Promise<AdminEventCategory> {
+  if (isAdminApiProviderEnabled("events")) {
+    return updateAdminEventCategoryViaApi(categoryId, input);
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase.rpc("admin_update_event_category", {
     category_id: categoryId,
@@ -141,6 +161,10 @@ export async function deleteAdminEventCategory(
   categoryId: string,
   previouslyActive: boolean,
 ): Promise<DeleteAdminEventCategoryResult> {
+  if (isAdminApiProviderEnabled("events")) {
+    return deleteAdminEventCategoryViaApi(categoryId, previouslyActive);
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase.rpc("admin_delete_event_category", {
     category_id: categoryId,
@@ -163,6 +187,10 @@ export async function deleteAdminEventCategory(
 export async function listEventCategoryUsageCounts(
   communityId: string,
 ): Promise<Record<string, number>> {
+  if (isAdminApiProviderEnabled("events")) {
+    return listEventCategoryUsageCountsViaApi(communityId);
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase
     .from("events")

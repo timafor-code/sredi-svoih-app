@@ -1,3 +1,8 @@
+import { isAdminApiProviderEnabled } from "./apiClient";
+import {
+  listAdminEventOccurrences as listAdminEventOccurrencesViaApi,
+  replaceAdminEventOccurrences as replaceAdminEventOccurrencesViaApi,
+} from "./adminEventOccurrencesApiService";
 import { requireSupabaseClient } from "./supabaseClient";
 import {
   ADMIN_EVENT_OCCURRENCE_REGISTRATION_STATES,
@@ -137,6 +142,10 @@ export function normalizeAdminEventOccurrenceRow(
 export async function listAdminEventOccurrences(
   eventId: string,
 ): Promise<AdminEventOccurrence[]> {
+  if (isAdminApiProviderEnabled("events")) {
+    return listAdminEventOccurrencesViaApi(eventId);
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase.rpc("admin_list_event_occurrences", {
     p_event_id: eventId,
@@ -174,6 +183,10 @@ export async function replaceAdminEventOccurrences(
   eventId: string,
   occurrences: AdminEventOccurrenceInput[],
 ): Promise<AdminEventOccurrence[]> {
+  if (isAdminApiProviderEnabled("events")) {
+    return replaceAdminEventOccurrencesViaApi(eventId, occurrences);
+  }
+
   const supabase = requireSupabaseClient();
   const payload = occurrences.map(toRpcPayload);
   const { error } = await supabase.rpc("admin_replace_event_occurrences", {

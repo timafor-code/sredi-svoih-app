@@ -1,3 +1,10 @@
+import { isAdminApiProviderEnabled } from "./apiClient";
+import {
+  createAdminEvent as createAdminEventViaApi,
+  deleteAdminEvent as deleteAdminEventViaApi,
+  listAdminEvents as listAdminEventsViaApi,
+  updateAdminEvent as updateAdminEventViaApi,
+} from "./adminEventsApiService";
 import { requireSupabaseClient } from "./supabaseClient";
 import type {
   AdminEvent,
@@ -263,6 +270,10 @@ function formatSupabaseError(action: string, error: SupabaseSelectError): string
 }
 
 export async function listAdminEvents(): Promise<AdminEvent[]> {
+  if (isAdminApiProviderEnabled("events")) {
+    return listAdminEventsViaApi();
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase
     .from("events")
@@ -373,6 +384,10 @@ export async function markRegistrationAttendance(
 }
 
 export async function createAdminEvent(input: CreateAdminEventInput): Promise<AdminEvent> {
+  if (isAdminApiProviderEnabled("events")) {
+    return createAdminEventViaApi(input);
+  }
+
   const supabase = requireSupabaseClient();
   const payload = {
     communityId: input.communityId,
@@ -392,6 +407,10 @@ export async function updateAdminEvent(
   eventId: string,
   input: UpdateAdminEventInput,
 ): Promise<AdminEvent> {
+  if (isAdminApiProviderEnabled("events")) {
+    return updateAdminEventViaApi(eventId, input);
+  }
+
   const supabase = requireSupabaseClient();
   const payload = buildAdminEventMutationPayload(input);
   const { data, error } = await supabase.rpc("admin_update_event", {
@@ -407,6 +426,10 @@ export async function updateAdminEvent(
 }
 
 export async function deleteAdminEvent(eventId: string): Promise<AdminEvent> {
+  if (isAdminApiProviderEnabled("events")) {
+    return deleteAdminEventViaApi(eventId);
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase.rpc("admin_delete_event", {
     event_id: eventId,

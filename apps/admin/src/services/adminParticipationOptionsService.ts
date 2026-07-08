@@ -1,3 +1,8 @@
+import { isAdminApiProviderEnabled } from "./apiClient";
+import {
+  listAdminEventParticipationOptions as listAdminEventParticipationOptionsViaApi,
+  replaceAdminEventParticipationOptions as replaceAdminEventParticipationOptionsViaApi,
+} from "./adminParticipationOptionsApiService";
 import { requireSupabaseClient } from "./supabaseClient";
 import type {
   ParticipationOption,
@@ -89,6 +94,10 @@ export function normalizeParticipationOptionRow(
 export async function listAdminEventParticipationOptions(
   eventId: string,
 ): Promise<ParticipationOption[]> {
+  if (isAdminApiProviderEnabled("events")) {
+    return listAdminEventParticipationOptionsViaApi(eventId);
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase.rpc("admin_list_event_participation_options", {
     p_event_id: eventId,
@@ -143,6 +152,10 @@ export async function replaceAdminEventParticipationOptions(
   eventId: string,
   options: ParticipationOptionInput[],
 ): Promise<ParticipationOption[]> {
+  if (isAdminApiProviderEnabled("events")) {
+    return replaceAdminEventParticipationOptionsViaApi(eventId, options);
+  }
+
   const supabase = requireSupabaseClient();
   const payload = options.map(toRpcPayload);
   const { data, error } = await supabase.rpc("admin_replace_event_participation_options", {
