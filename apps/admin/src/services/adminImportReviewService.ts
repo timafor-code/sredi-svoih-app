@@ -1,31 +1,48 @@
-import { requireSupabaseClient } from "./supabaseClient";
+import { ApiClientError, apiClient } from "./apiClient";
+import { formatImportApiError } from "./adminWebsiteImportService";
 import { normalizeAdminEventRow } from "./adminEventsService";
-import type { AdminEventRow } from "../types/events";
 import type {
+  AdminApiImportItemResponse,
+  AdminApiImportPublishResponse,
   AdminImportAdminReview,
   AdminImportImageMirrorMetadata,
   AdminPublishImportItemPayload,
   AdminPublishImportItemResult,
   AdminImportReview,
   AdminImportReviewItem,
-  AdminImportReviewRow,
   JsonObject,
   JsonValue,
 } from "../types/importReview";
 
-type SupabaseRpcError = {
-  message?: string;
-  details?: string | null;
-  hint?: string | null;
-  code?: string;
-};
-
+const ADMIN_IMPORT_ITEMS_PATH = "/admin/import-items";
 const DEFAULT_REVIEW_LIMIT = 50;
 const MAX_REVIEW_LIMIT = 100;
 
-type ImportReviewRpcErrorOptions = {
-  fallbackAction: string;
-  rpcName: string;
+type AdminImportItemApiPublishPayload = {
+  event_kind?: string;
+  title?: string;
+  subtitle?: string | null;
+  description?: string | null;
+  short_description?: string | null;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  is_permanent?: boolean;
+  timezone?: string;
+  location_name?: string | null;
+  address?: string | null;
+  image_url?: string | null;
+  category?: string;
+  audience?: string | null;
+  visibility?: string;
+  status?: string;
+  source_url?: string | null;
+  registration_mode?: string;
+  registration_url?: string | null;
+  capacity?: number | null;
+  waitlist_enabled?: boolean;
+  requires_approval?: boolean;
+  price_amount?: number | null;
+  price_currency?: string;
 };
 
 function isJsonObject(value: JsonValue | null | undefined): value is JsonObject {
@@ -158,7 +175,7 @@ function normalizeAdminReview(rawPayload: JsonValue): AdminImportAdminReview | n
   };
 }
 
-function normalizeImportItemRow(row: AdminImportReviewRow): AdminImportReviewItem {
+function normalizeImportItemRow(row: AdminApiImportItemResponse): AdminImportReviewItem {
   const rawPayload = row.raw_payload ?? {};
 
   return {
@@ -176,153 +193,89 @@ function normalizeImportItemRow(row: AdminImportReviewRow): AdminImportReviewIte
     linkedEventId: row.linked_event_id,
     importReview: normalizeImportReview(rawPayload),
     adminReview: normalizeAdminReview(rawPayload),
-    sourceName: row.source_name,
+    sourceName: nullableString(row.source_title),
     communityId: row.community_id,
   };
 }
 
 function normalizeSingleImportItem(
-  data: AdminImportReviewRow | AdminImportReviewRow[] | null,
+  data: AdminApiImportItemResponse | null,
 ): AdminImportReviewItem {
-  const row = Array.isArray(data) ? data[0] : data;
-
-  if (!row) {
-    throw new Error("Import item не найден или RPC вернул пустой результат.");
+  if (!data) {
+    throw new Error("Import item не найден или API вернул пустой результат.");
   }
 
-  return normalizeImportItemRow(row);
+  return normalizeImportItemRow(data);
 }
 
-function getSingleRpcResult(data: unknown): unknown {
-  return Array.isArray(data) ? data[0] : data;
+function buildPublishApiPayload(
+  payload: AdminPublishImportItemPayload,
+): AdminImportItemApiPublishPayload {
+  // manual_override is enforced server-side by the publish endpoint and is not
+  // part of the API request schema.
+  return compactUndefined({
+    event_kind: payload.eventKind,
+    title: payload.title,
+    subtitle: payload.subtitle,
+    description: payload.description,
+    short_description: payload.shortDescription,
+    starts_at: payload.startsAt,
+    ends_at: payload.endsAt,
+    is_permanent: payload.isPermanent,
+    timezone: payload.timezone,
+    location_name: payload.locationName,
+    address: payload.address,
+    image_url: payload.imageUrl,
+    category: payload.category,
+    audience: payload.audience,
+    visibility: payload.visibility,
+    status: payload.status,
+    source_url: payload.sourceUrl,
+    registration_mode: payload.registrationMode,
+    registration_url: payload.registrationUrl,
+    capacity: payload.capacity,
+    waitlist_enabled: payload.waitlistEnabled,
+    requires_approval: payload.requiresApproval,
+    price_amount: payload.priceAmount,
+    price_currency: payload.priceCurrency,
+  });
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+function compactUndefined<T extends Record<string, unknown>>(payload: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
 }
 
-function isAdminEventResult(value: unknown): value is Partial<AdminEventRow> {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  return "title" in value || "starts_at" in value || "manual_override" in value;
-}
-
-function isImportItemResult(value: unknown): value is AdminImportReviewRow {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  return "source_id" in value && "raw_payload" in value;
-}
-
-function normalizePublishImportItemResult(data: unknown): AdminPublishImportItemResult {
-  const row = getSingleRpcResult(data);
-
-  if (isAdminEventResult(row)) {
-    const event = normalizeAdminEventRow(row);
-
-    return {
-      event,
-      importItem: null,
-      linkedEventId: event.id || null,
-      raw: data,
-    };
-  }
-
-  if (isImportItemResult(row)) {
-    const importItem = normalizeImportItemRow(row);
-
-    return {
-      event: null,
-      importItem,
-      linkedEventId: importItem.linkedEventId,
-      raw: data,
-    };
-  }
-
-  if (isRecord(row)) {
-    const linkedEventId =
-      nullableString(row.linkedEventId) ??
-      nullableString(row.linked_event_id) ??
-      nullableString(row.eventId) ??
-      nullableString(row.event_id);
-
-    return {
-      event: null,
-      importItem: null,
-      linkedEventId,
-      raw: data,
-    };
-  }
-
-  throw new Error("admin_publish_import_item вернул пустой или неподдерживаемый результат.");
-}
-
-function formatImportReviewRpcError(
-  error: SupabaseRpcError,
-  { fallbackAction, rpcName }: ImportReviewRpcErrorOptions,
-): string {
-  const details = [error.message, error.details, error.hint].filter(Boolean).join(" ");
-  const searchable = `${error.code ?? ""} ${details}`.toLowerCase();
-
+function formatImportReviewApiError(error: unknown, fallbackAction: string): string {
   if (
-    searchable.includes("auth required") ||
-    searchable.includes("permission denied") ||
-    searchable.includes("not authorized") ||
-    searchable.includes("row-level security") ||
-    searchable.includes("42501") ||
-    searchable.includes("28000")
+    error instanceof ApiClientError &&
+    error.code === "validation_error" &&
+    error.message.toLowerCase().includes("starts_at")
   ) {
-    return `Нет доступа к ${rpcName} для текущей сессии. Проверьте роль admin/event_manager и backend role check. ${
-      details || "Supabase не вернул подробности."
-    }`;
+    return `${fallbackAction}: у элемента импорта нет корректной даты начала (starts_at). Укажите дату и время начала вручную в форме черновика. ${error.message}`;
   }
 
-  if (
-    searchable.includes("p0002") ||
-    searchable.includes("not found") ||
-    searchable.includes("не найден")
-  ) {
-    return `Import item не найден или недоступен для текущей роли. ${
-      details || "Supabase не вернул подробности."
-    }`;
-  }
-
-  if (
-    searchable.includes("could not find the function") ||
-    searchable.includes("schema cache")
-  ) {
-    return `RPC ${rpcName} недоступен или не найден: ${
-      details || "Supabase не вернул подробности."
-    }`;
-  }
-
-  return `${fallbackAction}: ${
-    details || "неизвестная ошибка Supabase."
-  }`;
+  return formatImportApiError(error, fallbackAction);
 }
 
 export async function listImportItemsNeedingReview(
   limit?: number,
 ): Promise<AdminImportReviewItem[]> {
-  const supabase = requireSupabaseClient();
   const limitCount = normalizeLimit(limit);
-  const { data, error } = await supabase.rpc("admin_list_import_items_needing_review", {
-    limit_count: limitCount,
-  });
+  let rows: AdminApiImportItemResponse[] | null;
 
-  if (error) {
+  try {
+    rows = await apiClient.get<AdminApiImportItemResponse[] | null>(ADMIN_IMPORT_ITEMS_PATH, {
+      query: { limit: limitCount },
+    });
+  } catch (error) {
     throw new Error(
-      formatImportReviewRpcError(error, {
-        fallbackAction: "Не удалось загрузить import items needing review",
-        rpcName: "admin_list_import_items_needing_review",
-      }),
+      formatImportReviewApiError(error, "Не удалось загрузить элементы импорта"),
     );
   }
 
-  return ((data ?? []) as AdminImportReviewRow[]).map(normalizeImportItemRow);
+  return (rows ?? []).map(normalizeImportItemRow);
 }
 
 export async function getImportItem(importItemId: string): Promise<AdminImportReviewItem> {
@@ -332,21 +285,17 @@ export async function getImportItem(importItemId: string): Promise<AdminImportRe
     throw new Error("Не удалось загрузить import item: пустой id.");
   }
 
-  const supabase = requireSupabaseClient();
-  const { data, error } = await supabase.rpc("admin_get_import_item", {
-    import_item_id: normalizedId,
-  });
+  let row: AdminApiImportItemResponse | null;
 
-  if (error) {
-    throw new Error(
-      formatImportReviewRpcError(error, {
-        fallbackAction: "Не удалось загрузить import item",
-        rpcName: "admin_get_import_item",
-      }),
+  try {
+    row = await apiClient.get<AdminApiImportItemResponse | null>(
+      `${ADMIN_IMPORT_ITEMS_PATH}/${encodeURIComponent(normalizedId)}`,
     );
+  } catch (error) {
+    throw new Error(formatImportReviewApiError(error, "Не удалось загрузить import item"));
   }
 
-  return normalizeSingleImportItem(data as AdminImportReviewRow | AdminImportReviewRow[] | null);
+  return normalizeSingleImportItem(row);
 }
 
 export async function ignoreImportItem(
@@ -360,22 +309,20 @@ export async function ignoreImportItem(
     throw new Error("Не удалось игнорировать import item: пустой id.");
   }
 
-  const supabase = requireSupabaseClient();
-  const { data, error } = await supabase.rpc("admin_ignore_import_item", {
-    import_item_id: normalizedId,
-    reason: normalizedReason && normalizedReason.length > 0 ? normalizedReason : null,
-  });
+  let row: AdminApiImportItemResponse | null;
 
-  if (error) {
-    throw new Error(
-      formatImportReviewRpcError(error, {
-        fallbackAction: "Не удалось игнорировать import item",
-        rpcName: "admin_ignore_import_item",
-      }),
+  try {
+    row = await apiClient.post<AdminApiImportItemResponse | null>(
+      `${ADMIN_IMPORT_ITEMS_PATH}/${encodeURIComponent(normalizedId)}/ignore`,
+      {
+        reason: normalizedReason && normalizedReason.length > 0 ? normalizedReason : null,
+      },
     );
+  } catch (error) {
+    throw new Error(formatImportReviewApiError(error, "Не удалось игнорировать import item"));
   }
 
-  return normalizeSingleImportItem(data as AdminImportReviewRow | AdminImportReviewRow[] | null);
+  return normalizeSingleImportItem(row);
 }
 
 export async function publishImportItemAsDraft(
@@ -388,27 +335,42 @@ export async function publishImportItemAsDraft(
     throw new Error("Не удалось создать событие из import item: пустой id.");
   }
 
-  const safePayload = {
+  const apiPayload = buildPublishApiPayload({
     ...payload,
     status: "draft",
     visibility: "hidden",
-    manualOverride: true,
-  } satisfies AdminPublishImportItemPayload;
-
-  const supabase = requireSupabaseClient();
-  const { data, error } = await supabase.rpc("admin_publish_import_item", {
-    import_item_id: normalizedId,
-    payload: safePayload,
   });
 
-  if (error) {
+  let response: AdminApiImportPublishResponse | null;
+
+  try {
+    response = await apiClient.post<
+      AdminApiImportPublishResponse | null,
+      AdminImportItemApiPublishPayload
+    >(`${ADMIN_IMPORT_ITEMS_PATH}/${encodeURIComponent(normalizedId)}/publish`, apiPayload);
+  } catch (error) {
     throw new Error(
-      formatImportReviewRpcError(error, {
-        fallbackAction: "Не удалось создать событие-черновик из import item",
-        rpcName: "admin_publish_import_item",
-      }),
+      formatImportReviewApiError(error, "Не удалось создать событие-черновик из import item"),
     );
   }
 
-  return normalizePublishImportItemResult(data);
+  if (!response) {
+    throw new Error("API вернул пустой результат публикации import item.");
+  }
+
+  const event = response.event ? normalizeAdminEventRow(response.event) : null;
+  const importItem = response.import_item
+    ? normalizeImportItemRow(response.import_item)
+    : null;
+
+  return {
+    event,
+    importItem,
+    linkedEventId:
+      nullableString(response.linked_event_id) ??
+      importItem?.linkedEventId ??
+      event?.id ??
+      null,
+    raw: response,
+  };
 }

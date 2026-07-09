@@ -134,7 +134,7 @@ export function ImportReviewPage({
       setError(
         nextError instanceof Error
           ? nextError.message
-          : "Не удалось загрузить элементы импорта из Supabase.",
+          : "Не удалось загрузить элементы импорта.",
       );
       return false;
     } finally {
@@ -158,7 +158,7 @@ export function ImportReviewPage({
       setImportRunsError(
         nextError instanceof Error
           ? nextError.message
-          : "Не удалось загрузить журнал запусков импорта из Supabase.",
+          : "Не удалось загрузить журнал запусков импорта.",
       );
       return false;
     } finally {
@@ -206,7 +206,7 @@ export function ImportReviewPage({
           setDetailError(
             nextError instanceof Error
               ? nextError.message
-              : "Не удалось загрузить элемент импорта через admin_get_import_item.",
+              : "Не удалось загрузить элемент импорта.",
           );
         }
       })
@@ -299,7 +299,7 @@ export function ImportReviewPage({
         setActionError(
           nextError instanceof Error
             ? nextError.message
-            : "Не удалось удалить элемент импорта из очереди проверки через admin_ignore_import_item.",
+            : "Не удалось удалить элемент импорта из очереди проверки.",
         );
       } finally {
         setDeletingItemIds((current) =>
@@ -346,7 +346,7 @@ export function ImportReviewPage({
         const message =
           nextError instanceof Error
             ? nextError.message
-            : "неизвестная ошибка admin_ignore_import_item";
+            : "неизвестная ошибка";
 
         failedMessages.push(`${getImportItemTitle(item)}: ${message}`);
       }
@@ -421,7 +421,7 @@ export function ImportReviewPage({
 
       setSuccessMessage(
         reloaded
-          ? `Событие «${eventTitle}» создано как черновик и скрыто через admin_publish_import_item. Элемент импорта обновлён в очереди.`
+          ? `Событие «${eventTitle}» создано как черновик и скрыто. Элемент импорта обновлён в очереди.`
           : `Событие «${eventTitle}» создано как черновик и скрыто. Очередь не обновилась, попробуйте «Обновить очередь».`,
       );
     },
@@ -797,9 +797,9 @@ function ImportReviewStatusHelp() {
         i
       </button>
       <span className="import-review-help__tooltip" id={tooltipId} role="tooltip">
-        Запуск использует текущую Supabase-сессию, Edge Function
-        admin-website-import и режим apply_review_only. Записи остаются в очереди
-        проверки через RPC/RLS.
+        Запуск использует текущую сессию и Python API POST /admin/import-runs
+        в режиме apply_review_only. Записи остаются в очереди проверки без
+        автоматической публикации.
       </span>
     </span>
   );
@@ -1189,7 +1189,7 @@ function ImportItemDetailDrawer({
         setDraftError(
           nextError instanceof Error
             ? nextError.message
-            : "Не удалось создать событие-черновик через admin_publish_import_item.",
+            : "Не удалось создать событие-черновик из элемента импорта.",
         );
         return false;
       } finally {
@@ -1217,7 +1217,7 @@ function ImportItemDetailDrawer({
       setIgnoreError(
         nextError instanceof Error
           ? nextError.message
-          : "Не удалось удалить элемент импорта из очереди через admin_ignore_import_item.",
+          : "Не удалось удалить элемент импорта из очереди.",
       );
       setIgnoreLoading(false);
     }
@@ -1242,7 +1242,7 @@ function ImportItemDetailDrawer({
           <div className="import-detail-drawer__title">
             <div className="badge-row">
               <Badge tone="gold">Детали проверки</Badge>
-              <Badge tone="glass">admin_get_import_item</Badge>
+              <Badge tone="glass">Python API</Badge>
               <ImportDedupeBadge dedupe={displayItem ? getImportDedupe(displayItem) : null} />
               {isAdminIgnored ? <Badge tone="muted">Удалён из очереди админом</Badge> : null}
               {isSafeIgnoredByImporter ? (
@@ -1250,7 +1250,7 @@ function ImportItemDetailDrawer({
               ) : null}
             </div>
             <h2 id={titleId}>{title}</h2>
-            <p>Полные данные загружаются через RPC `admin_get_import_item`.</p>
+            <p>Полные данные загружаются через Python API GET /admin/import-items/{"{item_id}"}.</p>
           </div>
           <Button disabled={ignoreLoading || draftSubmitting} onClick={onClose} variant="secondary">
             Закрыть
@@ -1260,7 +1260,7 @@ function ImportItemDetailDrawer({
         <div className="import-detail-drawer__body">
           {loading ? (
             <ImportReviewState
-              description="Вызываем admin_get_import_item и ждём полные данные элемента импорта."
+              description="Запрашиваем полные данные элемента импорта из Python API."
               title="Загрузка деталей"
             />
           ) : error ? (
@@ -1307,7 +1307,7 @@ function ImportItemDetailDrawer({
             </>
           ) : (
             <ImportReviewState
-              description="RPC не вернул данные для выбранного элемента импорта."
+              description="API не вернул данные для выбранного элемента импорта."
               title="Детали пусты"
             />
           )}
