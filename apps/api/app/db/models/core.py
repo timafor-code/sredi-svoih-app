@@ -1097,3 +1097,455 @@ class EventRegistrationCapacityReservation(Base):
     )
     seats_count: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = timestamptz_now()
+
+
+class AdminFeedback(Base):
+    __tablename__ = "admin_feedback"
+    __table_args__ = (
+        CheckConstraint(
+            "severity IN ('note', 'issue', 'blocker', 'idea')",
+            name="admin_feedback_severity_check",
+        ),
+        CheckConstraint(
+            "status IN ('open', 'reviewed', 'resolved', 'closed')",
+            name="admin_feedback_status_check",
+        ),
+        CheckConstraint(
+            "btrim(section) <> ''",
+            name="admin_feedback_section_not_blank_check",
+        ),
+        CheckConstraint(
+            "btrim(message) <> ''",
+            name="admin_feedback_message_not_blank_check",
+        ),
+        CheckConstraint(
+            "char_length(section) <= 80",
+            name="admin_feedback_section_length_check",
+        ),
+        CheckConstraint(
+            "entity_type IS NULL OR char_length(entity_type) <= 80",
+            name="admin_feedback_entity_type_length_check",
+        ),
+        CheckConstraint(
+            "char_length(message) <= 4000",
+            name="admin_feedback_message_length_check",
+        ),
+        CheckConstraint(
+            "user_agent IS NULL OR char_length(user_agent) <= 500",
+            name="admin_feedback_user_agent_length_check",
+        ),
+        CheckConstraint(
+            "url IS NULL OR char_length(url) <= 1000",
+            name="admin_feedback_url_length_check",
+        ),
+        Index(
+            "admin_feedback_community_created_idx",
+            "community_id",
+            text("created_at DESC"),
+        ),
+        Index("admin_feedback_status_created_idx", "status", text("created_at DESC")),
+        Index("admin_feedback_user_created_idx", "user_id", text("created_at DESC")),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    community_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("communities.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    section: Mapped[str] = mapped_column(Text, nullable=False)
+    entity_type: Mapped[str | None] = mapped_column(Text)
+    entity_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True))
+    severity: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'note'"),
+    )
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'open'"),
+    )
+    user_agent: Mapped[str | None] = mapped_column(Text)
+    url: Mapped[str | None] = mapped_column(Text)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="SET NULL"),
+    )
+    created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()
+
+
+class CommunityContact(Base):
+    __tablename__ = "community_contacts"
+    __table_args__ = (
+        CheckConstraint(
+            "btrim(full_name) <> ''",
+            name="community_contacts_full_name_not_empty_check",
+        ),
+        Index("community_contacts_community_id_idx", "community_id"),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    community_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("communities.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    full_name: Mapped[str] = mapped_column(Text, nullable=False)
+    hebrew_name: Mapped[str | None] = mapped_column(Text)
+    role: Mapped[str | None] = mapped_column(Text)
+    city: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = timestamptz_now()
+
+
+class DeviceToken(Base):
+    __tablename__ = "device_tokens"
+    __table_args__ = (
+        CheckConstraint(
+            "platform IN ('ios', 'android', 'web', 'unknown')",
+            name="device_tokens_platform_check",
+        ),
+        CheckConstraint(
+            "push_provider IN ('expo')",
+            name="device_tokens_push_provider_check",
+        ),
+        CheckConstraint(
+            "environment IN ('development', 'preview', 'production', 'unknown')",
+            name="device_tokens_environment_check",
+        ),
+        CheckConstraint(
+            "btrim(expo_push_token) <> ''",
+            name="device_tokens_expo_push_token_not_empty_check",
+        ),
+        UniqueConstraint(
+            "user_id",
+            "expo_push_token",
+            name="device_tokens_user_expo_push_token_key",
+        ),
+        Index("device_tokens_user_id_idx", "user_id"),
+        Index(
+            "device_tokens_active_user_idx",
+            "user_id",
+            postgresql_where=text("is_active = true"),
+        ),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    platform: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'unknown'"),
+    )
+    push_provider: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'expo'"),
+    )
+    expo_push_token: Mapped[str] = mapped_column(Text, nullable=False)
+    device_id: Mapped[str | None] = mapped_column(Text)
+    app_version: Mapped[str | None] = mapped_column(Text)
+    build_version: Mapped[str | None] = mapped_column(Text)
+    environment: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'development'"),
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("true"),
+    )
+    last_seen_at: Mapped[datetime] = timestamptz_now()
+    created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()
+
+
+class PrayerActivityLog(Base):
+    __tablename__ = "prayer_activity_logs"
+    __table_args__ = (
+        CheckConstraint(
+            (
+                "activity_type IN ('shacharit', 'mincha', 'maariv', "
+                "'shema_morning', 'shema_evening', 'omer_count')"
+            ),
+            name="prayer_activity_logs_activity_type_check",
+        ),
+        CheckConstraint(
+            "started_at IS NOT NULL OR completed_at IS NOT NULL",
+            name="prayer_activity_logs_has_activity_timestamp_check",
+        ),
+        UniqueConstraint(
+            "user_id",
+            "activity_date",
+            "activity_type",
+            name="prayer_activity_logs_user_date_type_key",
+        ),
+        Index(
+            "prayer_activity_logs_user_activity_date_idx",
+            "user_id",
+            text("activity_date DESC"),
+        ),
+        Index("prayer_activity_logs_activity_type_idx", "activity_type"),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    activity_type: Mapped[str] = mapped_column(Text, nullable=False)
+    activity_date: Mapped[date] = mapped_column(Date, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    timezone: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'Europe/Moscow'"),
+    )
+    city: Mapped[str | None] = mapped_column(Text)
+    hebrew_date: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        "metadata",
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()
+
+
+class ProfileContactVisibility(Base):
+    __tablename__ = "profile_contact_visibility"
+    __table_args__ = (
+        Index(
+            "profile_contact_visibility_directory_user_idx",
+            "user_id",
+            postgresql_where=text("show_in_community_directory = true"),
+        ),
+    )
+
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    show_in_community_directory: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    share_phone: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    share_email: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    share_birth_date: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    share_hebrew_birth_date: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    share_city: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    share_hebrew_name: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    birthday_reminders_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()
+
+
+class SyncedContact(Base):
+    __tablename__ = "synced_contacts"
+    __table_args__ = (Index("synced_contacts_user_id_idx", "user_id"),)
+
+    id: Mapped[UUID] = uuid_pk()
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str | None] = mapped_column(Text)
+    phone_hash: Mapped[str | None] = mapped_column(Text)
+    email_hash: Mapped[str | None] = mapped_column(Text)
+    birthday: Mapped[date | None] = mapped_column(Date)
+    consented_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = timestamptz_now()
+
+
+class PushNotificationJob(Base):
+    __tablename__ = "push_notification_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            (
+                "notification_kind IN ('event_created', 'event_updated', "
+                "'event_cancelled', 'registration_confirmed', "
+                "'registration_rejected', 'waitlist_available', 'news', 'manual')"
+            ),
+            name="push_notification_jobs_notification_kind_check",
+        ),
+        CheckConstraint(
+            (
+                "audience IN ('event_registrants', 'community_members', "
+                "'single_user', 'manual_tokens')"
+            ),
+            name="push_notification_jobs_audience_check",
+        ),
+        CheckConstraint(
+            (
+                "status IN ('queued', 'processing', 'sent', 'partially_sent', "
+                "'failed', 'cancelled')"
+            ),
+            name="push_notification_jobs_status_check",
+        ),
+        Index(
+            "push_notification_jobs_community_created_at_idx",
+            "community_id",
+            text("created_at DESC"),
+        ),
+        Index("push_notification_jobs_event_id_idx", "event_id"),
+        Index("push_notification_jobs_status_queued_at_idx", "status", "queued_at"),
+        Index("push_notification_jobs_created_by_idx", "created_by"),
+        Index(
+            "push_notification_jobs_target_user_id_idx",
+            "target_user_id",
+            postgresql_where=text("target_user_id IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    community_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("communities.id", ondelete="CASCADE"),
+    )
+    created_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="SET NULL"),
+    )
+    notification_kind: Mapped[str] = mapped_column(Text, nullable=False)
+    audience: Mapped[str] = mapped_column(Text, nullable=False)
+    event_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="CASCADE"),
+    )
+    occurrence_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("event_occurrences.id", ondelete="SET NULL"),
+    )
+    registration_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("event_registrations.id", ondelete="CASCADE"),
+    )
+    target_user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+    )
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    data: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'queued'"),
+    )
+    queued_at: Mapped[datetime] = timestamptz_now()
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()
+
+
+class PushNotificationDelivery(Base):
+    __tablename__ = "push_notification_deliveries"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'sent', 'failed', 'skipped', 'receipt_checked')",
+            name="push_notification_deliveries_status_check",
+        ),
+        Index("push_notification_deliveries_job_id_idx", "job_id"),
+        Index(
+            "push_notification_deliveries_status_created_at_idx",
+            "status",
+            "created_at",
+        ),
+        Index("push_notification_deliveries_user_id_idx", "user_id"),
+        Index(
+            "push_notification_deliveries_device_token_id_idx",
+            "device_token_id",
+            postgresql_where=text("device_token_id IS NOT NULL"),
+        ),
+        Index(
+            "push_notification_deliveries_job_device_token_key",
+            "job_id",
+            "device_token_id",
+            unique=True,
+            postgresql_where=text("device_token_id IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    job_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("push_notification_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    device_token_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("device_tokens.id", ondelete="SET NULL"),
+    )
+    expo_push_token: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'queued'"),
+    )
+    expo_ticket_id: Mapped[str | None] = mapped_column(Text)
+    expo_receipt_id: Mapped[str | None] = mapped_column(Text)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()

@@ -1,8 +1,12 @@
 from app.db.models.base import Base
 from app.db.models.core import (
+    AdminFeedback,
     AppUser,
     Community,
+    CommunityContact,
+    CommunityEventLocation,
     CommunityMembership,
+    DeviceToken,
     Event,
     EventCapacityUnit,
     EventCategory,
@@ -13,7 +17,12 @@ from app.db.models.core import (
     EventRegistrationCapacityReservation,
     EventRegistrationOptionSelection,
     Invite,
+    PrayerActivityLog,
     Profile,
+    ProfileContactVisibility,
+    PushNotificationDelivery,
+    PushNotificationJob,
+    SyncedContact,
 )
 from app.db.models.imports import (
     EventImportItem,
@@ -35,13 +44,17 @@ from app.db.models.auth import (
 )
 
 __all__ = [
+    "AdminFeedback",
     "AppUser",
     "AuthEmailVerificationCode",
     "AuthSession",
     "AuthSetPasswordCode",
     "Base",
     "Community",
+    "CommunityContact",
+    "CommunityEventLocation",
     "CommunityMembership",
+    "DeviceToken",
     "Event",
     "EventCapacityUnit",
     "EventCategory",
@@ -61,5 +74,10 @@ __all__ = [
     "EventSeatingTableConnection",
     "Invite",
     "PasswordResetCode",
+    "PrayerActivityLog",
     "Profile",
+    "ProfileContactVisibility",
+    "PushNotificationDelivery",
+    "PushNotificationJob",
+    "SyncedContact",
 ]
