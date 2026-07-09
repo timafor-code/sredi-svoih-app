@@ -1219,6 +1219,44 @@ migrations. Physical seats and registration capacity remain separate:
 not mutate registration capacity, and templates copy geometry only without
 assignments. The next PR is `feature/api-import-schema-alembic`.
 
+### PR 30A API import schema
+
+PR 30A adds the Python API Alembic/SQLAlchemy schema for website import before
+any import endpoints are implemented. It creates the API-owned
+`event_import_sources`, `event_import_runs`, and `event_import_items` tables.
+
+The schema preserves the existing import/review contract documented in
+`docs/admin-import-review.md`, `docs/website-events-importer.md`, and
+`docs/admin-import-dedupe-contract.md`. Import items keep the raw parser and
+review payload in `raw_payload` JSONB, including `importReview`,
+`importReview.dedupe`, and `importReview.imageMirror`. Dedupe remains
+JSON-based and is not promoted into `event_import_items.status` or
+`event_import_runs.status`.
+
+Import sources are scoped to API `communities(id)`, and user audit columns point
+to `app_users(id)`, not `auth.users`. Runs carry a denormalized `community_id`
+that is constrained to match the source community. The default and only schema
+mode is `apply_review_only`; no auto-publish, publish-now, scheduling, cron, or
+automation mode is added. Run status remains `started | success | failed`, and
+item status remains `new | linked | ignored | error`.
+
+JSONB storage is used for source settings, run summary, run parser/debug
+metadata, and item raw payloads. `linked_event_id` is only a nullable reference
+to an existing event and does not imply publishing. This PR does not create,
+update, publish, or auto-publish events.
+
+The schema includes narrow partial unique indexes for one active `started` run
+per source and one non-null `external_id` per run. It intentionally does not
+make `(source_id, external_id)` unique across runs, so legitimate cross-run
+review history remains possible.
+
+PR 30A does not implement parser code, import endpoints, an import runner,
+dedupe logic, publish/ignore actions, admin import UI switching,
+`adminImportApiService`, Supabase Edge Function changes, Supabase RPC changes,
+mobile changes, real data import, seed import data, or any connection from the
+Python API to Supabase. The next PR is
+`feature/api-website-import-endpoints`.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before

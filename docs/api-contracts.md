@@ -1249,6 +1249,43 @@ other admin provider. `capacity_limit_snapshot` remains display-only, layout
 saves still do not mutate registration capacity, templates remain
 geometry-only, and assignments are not copied from templates.
 
+### Admin Import
+
+PR 30A creates the Python API-owned website import schema only. It does not add
+admin import endpoints, parser code, an import runner, web-admin provider
+switching, mobile changes, Supabase Edge Function changes, Supabase RPC changes,
+real import data, or seed import data.
+
+The schema creates:
+
+- `event_import_sources` for community-scoped website import source
+  configuration. Sources reference `communities(id)` and optional audit users
+  through `app_users(id)`, never `auth.users`. Source settings are stored as a
+  JSONB object.
+- `event_import_runs` for one import attempt against a source. Runs carry the
+  denormalized `community_id` for fast scoping and enforce consistency with the
+  source community. The default and only supported schema mode is
+  `apply_review_only`; run status remains `started | success | failed`. Run
+  summary, parser metadata, and debug metadata are JSONB objects.
+- `event_import_items` for review-queue candidates written by a run. Items keep
+  the parser/review payload in `raw_payload` JSONB. `importReview`,
+  `importReview.dedupe`, and `importReview.imageMirror` remain inside
+  `raw_payload`. Item status remains `new | linked | ignored | error`.
+
+The schema keeps the existing import/review boundary from
+`docs/admin-import-review.md`, `docs/website-events-importer.md`, and
+`docs/admin-import-dedupe-contract.md`: dedupe state is JSON-only and is not
+promoted into table status columns. There are no dedupe status columns, no
+auto-publish fields, no publish-now mode, no scheduling/cron mode, and
+`linked_event_id` is only a nullable reference to an existing event. The schema
+does not create, update, publish, or auto-publish events.
+
+Two partial unique indexes are intentionally narrow. One allows at most one
+`started` run per source, matching the existing already-running guard. The
+other allows one non-null `external_id` per run, preserving idempotent writes
+inside a run without making `(source_id, external_id)` unique across runs.
+Cross-run import review history remains allowed.
+
 ### Admin Feedback, Privacy, And Push
 
 | Method | Path | Required role | Purpose |

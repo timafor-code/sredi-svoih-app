@@ -15,6 +15,11 @@ from app.db.models.core import (
     Invite,
     Profile,
 )
+from app.db.models.imports import (
+    EventImportItem,
+    EventImportRun,
+    EventImportSource,
+)
 from app.db.models.seating import (
     EventSeatingAssignment,
     EventSeatingLayout,
@@ -40,6 +45,9 @@ __all__ = [
     "Event",
     "EventCapacityUnit",
     "EventCategory",
+    "EventImportItem",
+    "EventImportRun",
+    "EventImportSource",
     "EventOccurrence",
     "EventParticipationOption",
     "EventParticipationOptionCapacityUnit",
