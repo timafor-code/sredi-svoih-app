@@ -902,8 +902,58 @@ the existing status/timestamp columns. The model does not add separate
 attended/no-show timestamps. PR 22 adds no database schema, does not touch
 Supabase Auth, does not implement seating/import/payment gateway behavior, and
 does not switch the web-admin Registrations page, Excel export, or any mobile
-surface to the API. The next PR is
-`feature/admin-registrations-api-switch`.
+surface to the API.
+
+### PR 23 admin Registrations API switch
+
+PR 23 connects the existing web-admin Registrations page to the Python API
+behind `VITE_ADMIN_REGISTRATIONS_PROVIDER=api` while preserving Supabase RPC as
+the default when the flag is missing, invalid, or set to `supabase`.
+
+Implemented web-admin wrappers:
+
+```text
+GET /admin/events/{event_id}/registrations
+GET /admin/events/{event_id}/registration-capacity
+POST /admin/registrations/{registration_id}/confirm
+POST /admin/registrations/{registration_id}/reject
+POST /admin/registrations/{registration_id}/waitlist
+POST /admin/registrations/{registration_id}/attended
+POST /admin/registrations/{registration_id}/no-show
+```
+
+The existing Registrations facade names remain in place:
+`listRegistrationEvents`, `listEventRegistrations`,
+`updateRegistrationStatus`, `markRegistrationAttendance`, and
+`getAdminRegistrationCapacityAnalytics`. API responses are normalized from the
+snake_case API contract into the existing camelCase admin registration and
+capacity types used by the page, table, detail modal, capacity buckets, and
+Excel export.
+
+API mode builds registration event cards from existing admin event,
+occurrence, and registration API data, so no new backend summary endpoint is
+added in this PR. `occurrence_id` is forwarded to registration and capacity
+requests when an occurrence is selected, and events with occurrences still
+require an occurrence selection before showing registrations or capacity.
+Excel export continues to use `listEventRegistrations` transitively instead of
+a dedicated export endpoint.
+
+The Registrations page occurrence dropdown uses the registration-provider-aware
+facade `listRegistrationEventOccurrences`. When
+`VITE_ADMIN_REGISTRATIONS_PROVIDER=api` it loads occurrences from
+`GET /admin/events/{event_id}/occurrences` regardless of
+`VITE_ADMIN_EVENTS_PROVIDER`, so the page never mixes API registration data
+with Supabase occurrence IDs. When the registrations provider is missing or
+`supabase`, it delegates to the existing events-provider occurrence service
+unchanged. The Events page occurrence constructor stays controlled by
+`VITE_ADMIN_EVENTS_PROVIDER` only.
+
+The Registrations header badge now reflects the real active provider. API mode
+shows only the actions supported by PR 22/PR 23 endpoints: confirm, reject,
+waitlist, attended, and no-show. Supabase mode keeps the existing legacy action
+set, including pending and cancelled. This PR does not switch Seating, Members,
+Invites, Import, Feedback, mobile, Supabase Auth, or production provider
+defaults. The next PR is `feature/api-admin-members-endpoints`.
 
 ## API Contract Foundation
 

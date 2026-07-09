@@ -19,17 +19,19 @@ import {
   SeatingLayoutEditor,
   type SeatingLayoutEditorSlot,
 } from "../components/seating/SeatingLayoutEditor";
-import { listAdminEventOccurrences } from "../services/adminEventOccurrencesService";
+import { getAdminApiProvider } from "../services/apiClient";
 import { getAdminRegistrationCapacityAnalytics } from "../services/adminRegistrationCapacityService";
 import {
   listAdminEventCapacities,
   listEventRegistrations,
   listRegistrationEvents,
+  listRegistrationEventOccurrences,
   markRegistrationAttendance,
   updateRegistrationStatus,
 } from "../services/adminEventsService";
 import { exportEventRegistrationsToExcel } from "../services/registrationExcelExport";
 import type { AdminEventOccurrence } from "../types/eventOccurrences";
+import type { AdminBadgeTone } from "../types/admin";
 import type {
   AdminEventRegistrationRow,
   AdminRegistrationEventSummary,
@@ -116,6 +118,24 @@ const REGISTRATION_ACTIONS: RegistrationAction[] = [
   },
 ];
 
+function findRegistrationAction(status: RegistrationAction["status"]): RegistrationAction {
+  const action = REGISTRATION_ACTIONS.find((candidate) => candidate.status === status);
+
+  if (!action) {
+    throw new Error(`Missing registration action for status "${status}".`);
+  }
+
+  return action;
+}
+
+const API_REGISTRATION_ACTIONS: RegistrationAction[] = [
+  findRegistrationAction("confirmed"),
+  findRegistrationAction("rejected"),
+  findRegistrationAction("waitlisted"),
+  findRegistrationAction("attended"),
+  findRegistrationAction("no_show"),
+];
+
 export function RegistrationsPage() {
   const [events, setEvents] = useState<AdminRegistrationEventSummary[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
@@ -147,6 +167,18 @@ export function RegistrationsPage() {
   const [seatingEditorSlot, setSeatingEditorSlot] =
     useState<SeatingLayoutEditorSlot | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const registrationsProvider = getAdminApiProvider("registrations");
+  const isRegistrationsApiProvider = registrationsProvider === "api";
+  const registrationsProviderLabel = isRegistrationsApiProvider ? "API" : "Supabase RPC";
+  const registrationsProviderTone: AdminBadgeTone = isRegistrationsApiProvider
+    ? "blue"
+    : "green";
+  const registrationsHeaderDescription = isRegistrationsApiProvider
+    ? "Рабочий центр заявок на события: список событий, таблица регистраций, детали участника, статусы, attendance и capacity управляются через Python API registration endpoints."
+    : "Рабочий центр заявок на события: список событий, таблица регистраций, детали участника, статусы, attendance и capacity используют Supabase admin registration RPC.";
+  const registrationActions = isRegistrationsApiProvider
+    ? API_REGISTRATION_ACTIONS
+    : REGISTRATION_ACTIONS;
 
   const pushToast = useCallback((kind: ToastKind, message: string) => {
     const id = Date.now() + Math.random();
@@ -369,7 +401,7 @@ export function RegistrationsPage() {
     setOccurrencesError(null);
     setOccurrences([]);
 
-    listAdminEventOccurrences(selectedEventId)
+    listRegistrationEventOccurrences(selectedEventId)
       .then((nextOccurrences) => {
         if (!cancelled) {
           setOccurrences(nextOccurrences);
@@ -686,12 +718,9 @@ export function RegistrationsPage() {
   return (
     <div className="page-stack page-stack--registrations">
       <section className="page-header registrations-page-header">
-        <Badge tone="green">Supabase RPC</Badge>
+        <Badge tone={registrationsProviderTone}>{registrationsProviderLabel}</Badge>
         <h1>Регистрации</h1>
-        <p>
-          Рабочий центр заявок на события: список событий, таблица регистраций,
-          детали участника и управление статусами через admin registration RPC.
-        </p>
+        <p>{registrationsHeaderDescription}</p>
       </section>
 
       <div className="registrations-workspace">
@@ -863,7 +892,7 @@ export function RegistrationsPage() {
                 ) : (
                   <RegistrationsTable
                     actionInFlight={actionInFlight}
-                    actions={REGISTRATION_ACTIONS}
+                    actions={registrationActions}
                     event={selectedEvent}
                     onAction={requestRegistrationAction}
                     onSelectRegistration={setSelectedRegistrationId}
@@ -892,7 +921,7 @@ export function RegistrationsPage() {
 
       <RegistrationDetailModal
         actionInFlight={actionInFlight}
-        actions={REGISTRATION_ACTIONS}
+        actions={registrationActions}
         event={selectedEvent}
         onAction={requestRegistrationAction}
         onClose={handleCloseRegistrationModal}

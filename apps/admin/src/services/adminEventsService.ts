@@ -5,6 +5,15 @@ import {
   listAdminEvents as listAdminEventsViaApi,
   updateAdminEvent as updateAdminEventViaApi,
 } from "./adminEventsApiService";
+import {
+  listAdminEventCapacities as listAdminEventCapacitiesViaRegistrationApi,
+  listEventRegistrations as listEventRegistrationsViaApi,
+  listRegistrationEvents as listRegistrationEventsViaApi,
+  markRegistrationAttendance as markRegistrationAttendanceViaApi,
+  updateRegistrationStatus as updateRegistrationStatusViaApi,
+} from "./adminRegistrationApiService";
+import { listAdminEventOccurrences as listAdminEventOccurrencesViaApi } from "./adminEventOccurrencesApiService";
+import { listAdminEventOccurrences } from "./adminEventOccurrencesService";
 import { requireSupabaseClient } from "./supabaseClient";
 import type {
   AdminEvent,
@@ -13,6 +22,7 @@ import type {
   CreateAdminEventInput,
   UpdateAdminEventInput,
 } from "../types/events";
+import type { AdminEventOccurrence } from "../types/eventOccurrences";
 import type {
   AdminEventRegistrationRow,
   AdminEventRegistrationRpcRow,
@@ -289,6 +299,10 @@ export async function listAdminEvents(): Promise<AdminEvent[]> {
 }
 
 export async function listRegistrationEvents(): Promise<AdminRegistrationEventSummary[]> {
+  if (isAdminApiProviderEnabled("registrations")) {
+    return listRegistrationEventsViaApi();
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase.rpc("admin_list_registration_events");
 
@@ -301,9 +315,23 @@ export async function listRegistrationEvents(): Promise<AdminRegistrationEventSu
   );
 }
 
+export async function listRegistrationEventOccurrences(
+  eventId: string,
+): Promise<AdminEventOccurrence[]> {
+  if (isAdminApiProviderEnabled("registrations")) {
+    return listAdminEventOccurrencesViaApi(eventId);
+  }
+
+  return listAdminEventOccurrences(eventId);
+}
+
 export async function listAdminEventCapacities(
   eventIds: string[],
 ): Promise<Map<string, number | null>> {
+  if (isAdminApiProviderEnabled("registrations")) {
+    return listAdminEventCapacitiesViaRegistrationApi(eventIds);
+  }
+
   const uniqueEventIds = Array.from(new Set(eventIds.filter(Boolean)));
 
   if (uniqueEventIds.length === 0) {
@@ -330,6 +358,16 @@ export async function listAdminEventCapacities(
 export async function listEventRegistrations(
   params: ListEventRegistrationsParams,
 ): Promise<AdminEventRegistrationRow[]> {
+  if (isAdminApiProviderEnabled("registrations")) {
+    return listEventRegistrationsViaApi(params);
+  }
+
+  return listEventRegistrationsViaSupabase(params);
+}
+
+export async function listEventRegistrationsViaSupabase(
+  params: ListEventRegistrationsParams,
+): Promise<AdminEventRegistrationRow[]> {
   const supabase = requireSupabaseClient();
   const payload = buildListEventRegistrationsPayload(params);
   const { data, error } = await supabase.rpc("admin_list_event_registrations", {
@@ -348,6 +386,10 @@ export async function updateRegistrationStatus(
   nextStatus: AdminRegistrationStatusUpdate,
   reason?: string | null,
 ): Promise<AdminEventRegistrationRow> {
+  if (isAdminApiProviderEnabled("registrations")) {
+    return updateRegistrationStatusViaApi(registrationId, nextStatus, reason);
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase.rpc("admin_update_registration_status", {
     registration_id: registrationId,
@@ -368,6 +410,10 @@ export async function markRegistrationAttendance(
   registrationId: string,
   attendanceStatus: AdminRegistrationAttendanceStatus,
 ): Promise<AdminEventRegistrationRow> {
+  if (isAdminApiProviderEnabled("registrations")) {
+    return markRegistrationAttendanceViaApi(registrationId, attendanceStatus);
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase.rpc("admin_mark_registration_attendance", {
     registration_id: registrationId,
