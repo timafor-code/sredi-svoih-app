@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
+import { getAdminApiProvider } from "../services/apiClient";
 import {
   deleteAdminEvent,
   listAdminEvents,
@@ -161,6 +162,25 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
   const [pendingDeleteEvent, setPendingDeleteEvent] = useState<AdminEvent | null>(null);
   const [deleteInFlightEvent, setDeleteInFlightEvent] = useState<AdminEvent | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const eventsProvider = getAdminApiProvider("events");
+  const isEventsApiProvider = eventsProvider === "api";
+  const eventsProviderLabel = isEventsApiProvider ? "API" : "Supabase";
+  const eventsProviderTone: AdminBadgeTone = isEventsApiProvider ? "blue" : "green";
+  const eventsHeaderDescription = isEventsApiProvider
+    ? "Просмотр событий, ручное создание и редактирование через Python API events endpoint."
+    : "Просмотр событий, ручное создание через admin_create_event и редактирование через admin_update_event.";
+  const eventsToolbarDescription = isEventsApiProvider
+    ? "Список читается через Python API и API events endpoint для текущей admin-сессии."
+    : "Список читается из Supabase public.events с текущей сессией и действующими RLS.";
+  const eventsLoadingDescription = isEventsApiProvider
+    ? "Читаем события через Python API events endpoint. Порядок: starts_at по возрастанию, события без даты ниже."
+    : "Читаем Supabase public.events через authenticated client. Порядок: starts_at по возрастанию, события без даты ниже.";
+  const eventsEmptyDescription = isEventsApiProvider
+    ? "API events endpoint вернул пустой список для текущей admin-сессии."
+    : "Supabase public.events вернул пустой список для текущей сессии. Если RLS разрешает только опубликованные публичные события, здесь появятся только они.";
+  const eventsLoadErrorMessage = isEventsApiProvider
+    ? "Не удалось загрузить события через API events endpoint."
+    : "Не удалось загрузить события из Supabase.";
 
   const loadEvents = useCallback(async () => {
     setLoading(true);
@@ -174,13 +194,13 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
       setError(
         nextError instanceof Error
           ? nextError.message
-          : "Не удалось загрузить события из Supabase.",
+          : eventsLoadErrorMessage,
       );
       return false;
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [eventsLoadErrorMessage]);
 
   useEffect(() => {
     void loadEvents();
@@ -348,19 +368,16 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
   return (
     <div className="page-stack page-stack--events">
       <section className="page-header">
-        <Badge tone="green">Supabase</Badge>
+        <Badge tone={eventsProviderTone}>{eventsProviderLabel}</Badge>
         <h1>События</h1>
-        <p>
-          Просмотр событий, ручное создание через admin_create_event и редактирование
-          через admin_update_event.
-        </p>
+        <p>{eventsHeaderDescription}</p>
       </section>
 
       <GlassCard className="events-toolbar">
         <div className="events-toolbar__top">
           <div>
             <h2>Фильтры</h2>
-            <p>Список читается из `public.events` с текущей сессией и действующими RLS.</p>
+            <p>{eventsToolbarDescription}</p>
           </div>
           <div className="events-toolbar__actions">
             <Button onClick={onCreateEvent} variant="primary">
@@ -459,13 +476,13 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
             <span>
               Показано {filteredEvents.length} из {events.length}
             </span>
-            <Badge tone="glass">Supabase</Badge>
+            <Badge tone="glass">{eventsProviderLabel}</Badge>
           </div>
         </div>
 
         {loading ? (
           <EventsState
-            description="Читаем public.events через Supabase client. Порядок: starts_at по возрастанию, события без даты ниже."
+            description={eventsLoadingDescription}
             title="Загрузка событий"
           />
         ) : error ? (
@@ -478,7 +495,7 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
           <EventsState
             description={
               events.length === 0
-                ? "Supabase вернул пустой список для текущей сессии. Если RLS разрешает только опубликованные публичные события, здесь появятся только они."
+                ? eventsEmptyDescription
                 : "Измените поисковый запрос или фильтры."
             }
             title={events.length === 0 ? "События не найдены" : "Нет совпадений"}
