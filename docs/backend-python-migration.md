@@ -860,6 +860,51 @@ not switch Registrations, Members, Invites, Seating, Import, Feedback, mobile
 surfaces, Supabase RPC/RLS, or community editing beyond the existing Settings
 read surface.
 
+### PR 22 admin registration management endpoints
+
+PR 22 adds backend-only Python API coverage for admin registration management:
+
+```text
+GET /admin/events/{event_id}/registrations
+GET /admin/events/{event_id}/registration-capacity
+POST /admin/registrations/{registration_id}/confirm
+POST /admin/registrations/{registration_id}/reject
+POST /admin/registrations/{registration_id}/waitlist
+POST /admin/registrations/{registration_id}/attended
+POST /admin/registrations/{registration_id}/no-show
+```
+
+The endpoints require `Authorization: Bearer <token>` and an active `admin` or
+`event_manager` community membership. Event and registration reads/actions are
+scoped to communities the actor can manage. Cross-community ids return safe
+`404 not_found` responses, and actors without a manageable admin/event-manager
+membership receive `403 forbidden`.
+
+`GET /admin/events/{event_id}/registrations` supports the current web-admin
+Registrations page data needs without switching the frontend provider:
+event-scoped listing, optional `occurrence_id` filtering, status/search
+filters, limit/offset paging, participant profile/contact summary fields,
+guest names, comments, payment fields, selected participation-option snapshots,
+occurrence labels/times, total amount, and the registration timestamp fields
+present in the current model.
+
+`GET /admin/events/{event_id}/registration-capacity` returns scoped capacity
+analytics for parent event registrations or a selected occurrence. Capacity
+units are registration capacity buckets, not seating. Occupied seats use
+`event_registration_capacity_reservations` first, then a read-only fallback for
+active seat-taking option selections that have capacity-unit mappings but no
+reservation rows. Donation and non-capacity options do not consume seats, and a
+single option may contribute to multiple capacity units through its mappings.
+Occurrence capacity remains separate from parent event capacity.
+
+Registration status and attendance actions run in API transactions and update
+the existing status/timestamp columns. The model does not add separate
+attended/no-show timestamps. PR 22 adds no database schema, does not touch
+Supabase Auth, does not implement seating/import/payment gateway behavior, and
+does not switch the web-admin Registrations page, Excel export, or any mobile
+surface to the API. The next PR is
+`feature/admin-registrations-api-switch`.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
