@@ -507,3 +507,33 @@ export type AdminApiMemberMembershipResponse = {
   invited_by: string | null;
   created_at: string;
 };
+
+export type AdminApiInviteRole = "member" | "event_manager" | "admin" | "rabbi";
+
+export type AdminApiInviteStatus = "active" | "used" | "expired" | "revoked";
+
+export type AdminApiInviteCreateRequest = {
+  community_id: string;
+  role: AdminApiInviteRole;
+  email: string | null;
+  phone: string | null;
+  max_uses: number;
+  expires_at: string | null;
+};
+
+export type AdminApiInviteCreateResponse = {
+  invite_id: string;
+  community_id: string;
+  code: string;
+  role: AdminApiInviteRole;
+  email: string | null;
+  phone: string | null;
+  max_uses: number;
+  used_count: number;
+  expires_at: string | null;
+  status: AdminApiInviteStatus;
+  created_by: string | null;
+  accepted_by: string | null;
+  accepted_at: string | null;
+  created_at: string;
+};

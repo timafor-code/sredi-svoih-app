@@ -1082,6 +1082,27 @@ Supabase services, and does not add a migration because the existing Python API
 schema already contains the `invites` model/table. The next PR is
 `feature/admin-invites-api-switch` (PR 27).
 
+### PR 27 web-admin invite creation API switch
+
+PR 27 switches only the existing web-admin Add Member invite creation path
+behind `VITE_ADMIN_INVITES_PROVIDER=api`. The Add Member dialog continues to
+call the provider-aware `createAdminInvite` facade; in API mode the facade uses
+the shared admin `apiClient` to call `POST /admin/invites`, sends the backend
+snake_case payload (`community_id`, `role`, `email`, `phone`, `max_uses`,
+`expires_at`), and maps the snake_case create response back to the existing
+camelCase `AdminCreatedInvite` shape used by the UI.
+
+The one-time plaintext invite code UI and copy-to-clipboard behavior are
+unchanged. Missing, invalid, or `supabase` provider values keep the existing
+Supabase `admin_create_invite` RPC fallback and its existing payload behavior.
+
+PR 27 does not create users, set passwords, send email, change
+`/auth/register-with-invite` or `/auth/accept-invite`, switch mobile invite
+acceptance, add invite list or revoke UI, change backend invite endpoints, add
+migrations, remove Supabase services, or switch Events, Registrations, Seating,
+Import, Feedback, Community, or mobile surfaces. The next PR is
+`feature/api-seating-schema-alembic`.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
