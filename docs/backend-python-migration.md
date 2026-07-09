@@ -1294,11 +1294,12 @@ event, defaults new events to draft/hidden, uses `source_type =
 website_scrape`, sets `manual_override = true`, and avoids duplicate events on
 repeat publish when a linked event or matching source external id already
 exists. Publishing with `status = published` requires a timezone-aware
-`starts_at` and a non-hidden visibility. Draft/hidden import publishes may be
-created from items without a reliable scraped start time; because the event table
-still requires `starts_at`, the API stores a draft-only placeholder from the
-import item creation timestamp while preserving the review JSON as the source of
-truth for date review.
+`starts_at` and a non-hidden visibility. Every publish, including draft/hidden,
+requires a `starts_at` resolved from the request payload, the scraped item, or
+the existing linked event; the API never invents a placeholder date. When no
+`starts_at` can be resolved, publish returns a validation error, no event is
+created or updated, and the item stays in the review queue with its review JSON
+intact.
 
 `POST /admin/import-items/{item_id}/ignore` marks the item ignored and preserves
 the review JSON while adding admin-review metadata. Item list/detail endpoints

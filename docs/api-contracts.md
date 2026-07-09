@@ -1345,11 +1345,11 @@ For new events, safe defaults are `status = draft`, `visibility = hidden`,
 available, and `manual_override = true`. A caller may explicitly request
 `published`, `public`, or `members_only` values when normal event validation
 allows them. `status = published` requires a timezone-aware `starts_at` and
-cannot be combined with `visibility = hidden`. Draft/hidden import publishes may
-be saved when the scraped item has no reliable start time; the API stores a
-draft-only placeholder timestamp from the import item creation time because the
-event table requires `starts_at`, while the review JSON remains the source of
-truth for the missing date. Successful publish sets
+cannot be combined with `visibility = hidden`. Every publish, draft included,
+requires a `starts_at` resolved from the request payload, the scraped item, or
+the existing linked event. If none is available, publish returns a validation
+error, no event is created or updated, and the item stays in the review queue
+with its review JSON preserved. Successful publish sets
 `event_import_items.linked_event_id` and `status = linked`.
 
 PR 30 does not switch the web-admin UI, add `adminImportApiService`, change

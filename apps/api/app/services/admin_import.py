@@ -615,9 +615,9 @@ def _validate_event_state(
     if status == "published" and visibility == "hidden":
         raise _validation_error("published import events cannot be hidden")
     if starts_at is None:
-        if status == "published":
-            raise _validation_error("starts_at is required for published import events")
-        raise _validation_error("starts_at could not be resolved for the draft event")
+        raise _validation_error(
+            "starts_at is required to create or update an event from this import item",
+        )
     if starts_at.tzinfo is None or starts_at.utcoffset() is None:
         raise _validation_error("starts_at must be an ISO 8601 datetime with timezone")
     if ends_at is not None:
@@ -698,21 +698,14 @@ def _raw_starts_at(item: EventImportItem, raw_payload: dict[str, Any], parsed: d
 
 def _resolved_starts_at(
     *,
-    item: EventImportItem,
     existing_event: Event | None,
     requested_starts_at: datetime | None,
-    status: str,
 ) -> datetime | None:
     if requested_starts_at is not None:
         return requested_starts_at
-    if status == "published":
-        return None
-    if existing_event is not None:
+    if existing_event is not None and existing_event.starts_at is not None:
         return existing_event.starts_at
-    starts_at = item.created_at
-    if starts_at.tzinfo is None or starts_at.utcoffset() is None:
-        return starts_at.replace(tzinfo=UTC)
-    return starts_at
+    return None
 
 
 async def _build_event_values(
@@ -764,10 +757,8 @@ async def _build_event_values(
         allow_none=False,
     )
     starts_at = _resolved_starts_at(
-        item=item,
         existing_event=existing_event,
         requested_starts_at=requested_starts_at,
-        status=status,
     )
     registration_mode = _payload_value(
         payload,
