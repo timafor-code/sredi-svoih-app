@@ -1,3 +1,5 @@
+import { isAdminApiProviderEnabled } from "./apiClient";
+import { createAdminInvite as createAdminInviteViaApi } from "./adminInvitesApiService";
 import { requireSupabaseClient } from "./supabaseClient";
 import {
   ADMIN_INVITE_ROLES,
@@ -192,6 +194,10 @@ function buildCreateInvitePayload(input: AdminCreateInviteInput): AdminCreateInv
 export async function createAdminInvite(
   input: AdminCreateInviteInput,
 ): Promise<AdminCreatedInvite> {
+  if (isAdminApiProviderEnabled("invites")) {
+    return createAdminInviteViaApi(input);
+  }
+
   const supabase = requireSupabaseClient();
   const payload = buildCreateInvitePayload(input);
   const { data, error } = await supabase.rpc("admin_create_invite", { payload });

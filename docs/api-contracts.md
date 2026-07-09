@@ -1067,8 +1067,19 @@ must store only a safe derived value and must not send invite emails unless a
 later PR explicitly implements delivery.
 
 Implemented behavior (PR 26): the Python API exposes backend-only admin invite
-management endpoints. Web-admin invite creation remains on the existing
-Supabase service until PR 27.
+management endpoints.
+
+Web-admin API switch status (PR 27): when
+`VITE_ADMIN_INVITES_PROVIDER=api`, the existing Add Member invite creation flow
+calls `POST /admin/invites` through the shared admin API client, sends the
+canonical snake_case request body (`community_id`, `role`, `email`, `phone`,
+`max_uses`, `expires_at`), and maps the snake_case create response into the
+existing camelCase `AdminCreatedInvite` UI type. The plaintext `code` is still
+surfaced only through the existing one-time invite-code result UI and existing
+copy-to-clipboard behavior. Missing, invalid, or `supabase` provider values
+continue to use the existing Supabase `admin_create_invite` RPC fallback with
+its unchanged payload behavior. PR 27 does not switch mobile invite acceptance
+and does not add invite listing or revoke UI.
 
 All admin invite endpoints require `Authorization: Bearer <token>` and an
 active `admin` membership in the relevant community. `event_manager`, `rabbi`,
