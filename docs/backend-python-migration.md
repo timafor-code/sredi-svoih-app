@@ -1341,6 +1341,40 @@ migrations/RPC/RLS, or Edge Function files, does not remove the legacy Supabase
 import function, and does not switch other admin pages, mobile, image
 mirroring, scheduling, or auto-publish.
 
+### PR 32A API personal surfaces schema
+
+PR 32A adds the Python API Alembic/SQLAlchemy schema for the remaining
+personal/privacy surfaces before any of their endpoints are implemented. It
+creates the API-owned `admin_feedback`, `community_contacts`, `device_tokens`,
+`prayer_activity_logs`, `profile_contact_visibility`, `synced_contacts`,
+`push_notification_jobs`, and `push_notification_deliveries` tables.
+`community_event_locations` was already created by the PR 21B schema migration
+and is not duplicated.
+
+All user references point to API `app_users(id)`; community, event, occurrence,
+and registration references point to the corresponding API-owned tables. No
+`auth.users` references exist. Enum-like columns (feedback severity/status,
+device platform/provider/environment, prayer activity type, push notification
+kind/audience/status, delivery status) keep the check-constraint value sets
+from the legacy Supabase schema so exported rows remain valid at migration
+time.
+
+Privacy posture follows the plan rules: `prayer_activity_logs` stay user-private
+personal data and are only touched by the model, migration, and this doc in
+this PR — no read paths, aggregates, exports, or admin surfaces exist.
+`admin_feedback` is community/admin scoped. `device_tokens` are user-scoped
+push-token PII with a `(user_id, expo_push_token)` uniqueness key and an
+active-token partial index. `synced_contacts` keep only hashed phone/email
+values. Push jobs store the notification title/body and a JSONB `data` payload
+needed to send; deliveries store only token/ticket/receipt/status metadata and
+no extra recipient PII. The legacy `user_settings` and `calendar_cache` tables
+are dead and intentionally not modeled unless reactivated before cutover.
+
+PR 32A is schema-only: no endpoints, services, routes, push sending, Expo Push
+API calls, schedulers/workers, mobile or web-admin changes, provider flag
+changes, or Supabase migrations/RPC/RLS/Edge Function changes. The next PR is
+`feature/api-feedback-privacy-device-endpoints`.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
