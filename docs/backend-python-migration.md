@@ -1103,6 +1103,33 @@ migrations, remove Supabase services, or switch Events, Registrations, Seating,
 Import, Feedback, Community, or mobile surfaces. The next PR is
 `feature/api-seating-schema-alembic`.
 
+### PR 28A API seating schema
+
+PR 28A adds the Python API Alembic/SQLAlchemy schema for seating before any
+seating endpoints are implemented. It creates the API-owned
+`event_seating_layout_templates`, `event_seating_layouts`,
+`event_seating_tables`, `event_seating_table_connections`, and
+`event_seating_assignments` tables.
+
+The schema preserves the current seating domain boundaries: templates are
+community-scoped geometry-only records, concrete layouts are scoped to an
+event/optional occurrence/capacity unit slot, and assignments are stored only
+on layout instances. Template geometry uses the existing `snapshot` JSONB
+contract, while concrete layout geometry is normalized into table and
+connection rows. Assignments are never copied from templates.
+
+All user references point to `app_users(id)`, not `auth.users`, and the schema
+does not introduce Supabase Admin API usage, service-role keys, direct
+PostgreSQL access for mobile/admin, real seating seed data, or Supabase data
+imports. `capacity_limit_snapshot` is stored only as a non-authoritative
+display snapshot; registration capacity remains owned by the existing event,
+occurrence, capacity-unit, registration, and capacity-reservation tables.
+
+PR 28A does not implement seating endpoints, endpoint authorization, provider
+switching, admin seating UI changes, mobile changes, registration service
+changes, or capacity bucket behavior changes. The next PR is
+`feature/api-seating-endpoints`.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before

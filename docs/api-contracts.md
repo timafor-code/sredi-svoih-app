@@ -1154,6 +1154,37 @@ Admin invite creation writes only an invite row. It does not create users,
 profiles, memberships, passwords, password reset codes, Supabase Auth users, or
 email delivery jobs, and it does not send email automatically.
 
+### Admin Seating
+
+PR 28A creates the Python API-owned seating schema only. It does not add admin
+seating endpoints, switch the web-admin seating provider, change mobile, change
+registration capacity behavior, import Supabase data, or create seed seating
+data.
+
+The schema mirrors the existing seating domain contract while moving ownership
+to the Python API database:
+
+- `event_seating_layout_templates` stores reusable, community-scoped geometry
+  templates. Template geometry is stored as the `snapshot` JSONB object used by
+  the current seating contract, plus title/description and active/built-in
+  metadata. Templates do not store guests, registration references, seats taken,
+  or assignments.
+- `event_seating_layouts` stores concrete layout instances scoped to
+  `community_id`, `event_id`, optional `occurrence_id`, and `capacity_unit_id`.
+  The schema enforces one layout per event/occurrence/capacity-unit slot,
+  including the null-occurrence event slot. `capacity_limit_snapshot` is a
+  display snapshot only and is not a source of truth for registration capacity.
+- `event_seating_tables` and `event_seating_table_connections` store normalized
+  layout geometry using stable `client_table_id` values compatible with the
+  current seating canvas contract. Concrete layout geometry is kept in these
+  rows rather than duplicated as a second layout-level JSONB blob.
+- `event_seating_assignments` stores layout-specific guest/reserve placements.
+  Assignments reference `event_registrations` and `app_users` only; they do not
+  reference `auth.users` and are never copied from templates.
+
+PR 28 will add the API endpoints and authorization checks. Until then, seating
+remains unavailable through the Python API runtime.
+
 ### Admin Feedback, Privacy, And Push
 
 | Method | Path | Required role | Purpose |
