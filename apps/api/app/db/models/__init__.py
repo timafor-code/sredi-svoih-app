@@ -15,6 +15,13 @@ from app.db.models.core import (
     Invite,
     Profile,
 )
+from app.db.models.seating import (
+    EventSeatingAssignment,
+    EventSeatingLayout,
+    EventSeatingLayoutTemplate,
+    EventSeatingTable,
+    EventSeatingTableConnection,
+)
 from app.db.models.auth import (
     AuthEmailVerificationCode,
     AuthSession,
@@ -39,6 +46,11 @@ __all__ = [
     "EventRegistration",
     "EventRegistrationCapacityReservation",
     "EventRegistrationOptionSelection",
+    "EventSeatingAssignment",
+    "EventSeatingLayout",
+    "EventSeatingLayoutTemplate",
+    "EventSeatingTable",
+    "EventSeatingTableConnection",
     "Invite",
     "PasswordResetCode",
     "Profile",
