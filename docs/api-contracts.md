@@ -856,6 +856,58 @@ Admin registration actions must be transactional and community-scoped. Excel
 export remains a client/admin service concern until a later PR proves that a
 separate export API is required.
 
+Implemented behavior (PR 22): the Python API exposes the admin registration
+endpoints listed above. All endpoints require authentication and an active
+`admin` or `event_manager` membership in the event's community. Event and
+registration lookups are scoped through the actor's manageable communities:
+missing and cross-community ids return `404 not_found`, while authenticated
+actors without any manageable admin/event-manager membership receive
+`403 forbidden`.
+
+`GET /admin/events/{event_id}/registrations` accepts `occurrence_id`,
+`status`, `search`, `limit`, and `offset` query parameters. `status=all` or an
+omitted status returns every status. The list response mirrors the current
+web-admin registration row needs: registration ids, event and occurrence ids,
+participant user id, display name, email, phone, status, seats, guest names,
+comment, payment status/id, registration/confirmation/cancellation timestamps,
+occurrence title/times, selected participation-option snapshots, total amount,
+and created/updated timestamps. When `occurrence_id` is provided, the
+occurrence must belong to the event and only that occurrence's registrations
+are returned. When it is omitted, the endpoint returns event-scoped
+registrations across the event.
+
+`GET /admin/events/{event_id}/registration-capacity` accepts optional
+`occurrence_id`. For capacity analytics, an omitted `occurrence_id` scopes to
+parent-event registrations where `occurrence_id IS NULL`; an explicit
+occurrence scopes to that occurrence only, so occurrence capacity remains
+separate from parent event capacity. The response includes totals, status
+counts, active people/seat counts, donation counts, per-capacity-unit buckets,
+bucket aggregate metrics, option stats, and donation/non-capacity option stats.
+
+Capacity buckets use `event_registration_capacity_reservations` as the primary
+source of occupied seats. The API also applies the same read-only fallback as
+the current Supabase admin analytics for legacy/test rows: active,
+seat-taking option selections without matching reservation rows are expanded
+through `event_participation_option_capacity_units`. Donation options and
+options with `counts_toward_capacity = false` never create fallback seat
+obligations. A single participation option may contribute seats to multiple
+capacity units through its mappings. Capacity-unit-specific capacity overrides
+the event/occurrence capacity; otherwise the bucket uses the scoped
+event/occurrence capacity as an effective fallback.
+
+The status action endpoints update one registration inside a transaction and
+return the updated admin registration row. `confirm` sets status to
+`confirmed` and sets `confirmed_at` if it was empty. `reject` sets status to
+`rejected` and uses the existing `cancelled_at` timestamp column as the stored
+rejection/cancellation timestamp. `waitlist` sets status to `waitlisted` and
+clears cancellation timestamp state. `attended` and `no-show` set the
+attendance status and clear `cancelled_at`. The existing model has no separate
+attended/no-show timestamp columns.
+
+PR 22 is backend-only. The web-admin Registrations page, Excel export,
+seating, import, and frontend provider switch remain unchanged until later
+PRs.
+
 ### Admin Community, Members, And Invites
 
 | Method | Path | Required role | Purpose |
