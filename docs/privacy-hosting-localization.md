@@ -49,6 +49,23 @@ transit/processor decision, not merely a storage decision.
 Production push enablement must review this caveat before rollout. A
 Russia-hosted push alternative may be chosen later if required by the owner.
 
+## Privacy Requests And Device Tokens (PR 32B)
+
+The Python API records data-subject style privacy requests in the API-owned
+`privacy_requests` table. `POST /privacy/requests` and `GET /privacy/requests`
+are scoped to the authenticated user; admin review through
+`/admin/privacy/requests` is admin-only and community-scoped. These endpoints
+record and track requests only: no export, deletion, or correction is executed
+by the API in this phase, and no emails are sent. Request `message` text is
+treated as personal data and must not be logged raw.
+
+Device tokens registered through `POST /me/device-tokens` are push-token PII
+stored in the API-owned `device_tokens` table, upserted per
+`(user_id, expo_push_token)`. API responses return token metadata only and
+never echo the raw Expo push token. Deactivation is a soft `is_active = false`
+update scoped to the owning user. No push sending exists yet; the Expo Push
+caveat above applies when the push pipeline is implemented.
+
 ## Logging And Sensitive Values
 
 Production logging must avoid raw personal and secret values, including:
@@ -58,6 +75,8 @@ Production logging must avoid raw personal and secret values, including:
 - names;
 - invite codes;
 - registration comments;
+- device push tokens;
+- privacy request messages;
 - JWTs;
 - refresh tokens;
 - password reset codes.
