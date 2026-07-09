@@ -1,4 +1,4 @@
-import type { AdminEvent, AdminEventMutationInput } from "./events";
+import type { AdminEvent, AdminEventMutationInput, AdminEventRow } from "./events";
 import type { AdminImportDedupe } from "./importDedupe";
 
 export type JsonPrimitive = string | number | boolean | null;
@@ -31,10 +31,13 @@ export type AdminImportImageMirrorMetadata = {
   error?: string | null;
 };
 
-export type AdminImportReviewRow = {
+export type AdminApiImportItemResponse = {
   id: string;
-  source_id: string;
   run_id: string | null;
+  source_id: string;
+  community_id: string;
+  source_key: string;
+  source_title: string | null;
   external_id: string | null;
   source_url: string | null;
   raw_payload: JsonValue | null;
@@ -43,9 +46,16 @@ export type AdminImportReviewRow = {
   parsed_location: string | null;
   linked_event_id: string | null;
   status: AdminImportItemStatus | string | null;
+  error: string | null;
   created_at: string;
-  source_name: string | null;
-  community_id: string | null;
+  updated_at: string;
+};
+
+export type AdminApiImportPublishResponse = {
+  event: AdminEventRow | null;
+  import_item: AdminApiImportItemResponse | null;
+  linked_event_id: string | null;
+  created: boolean;
 };
 
 export type AdminImportReview = {

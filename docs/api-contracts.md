@@ -1357,6 +1357,14 @@ mobile, change Supabase migrations/RPC/RLS, use Supabase Edge Functions, add
 scheduled imports, or mirror images. The next PR is
 `feature/admin-import-api-switch`.
 
+PR 31 (`feature/admin-import-api-switch`) switches the web-admin
+"Импорт с сайта" page to these endpoints through the shared web-admin API
+client. Web-admin run creation sends an empty JSON body: `mode =
+apply_review_only` is enforced server-side and is not an accepted request
+field. Web-admin publish requests send the snake_case event fields with draft
+defaults (`status = draft`, `visibility = hidden`) and do not send
+`manual_override`, which the endpoint always forces to `true`.
+
 ### Admin Feedback, Privacy, And Push
 
 | Method | Path | Required role | Purpose |

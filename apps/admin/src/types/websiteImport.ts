@@ -1,9 +1,5 @@
 export type AdminWebsiteImportMode = "apply_review_only";
 
-export type AdminWebsiteImportPayload = {
-  mode: AdminWebsiteImportMode;
-};
-
 export type AdminWebsiteImportParserError = {
   code?: string | null;
   message?: string | null;
@@ -67,23 +63,6 @@ export type AdminWebsiteImportSuccessResponse = {
   [key: string]: unknown;
 };
 
-export type AdminWebsiteImportErrorResponse = {
-  ok?: false;
-  mode?: AdminWebsiteImportMode | string;
-  error?: string | null;
-  code?: string | null;
-  message?: string | null;
-  parserErrors?: AdminWebsiteImportParserError[] | null;
-  summary?: AdminWebsiteImportSummary | null;
-  runId?: string | null;
-  runFinalized?: boolean | null;
-  [key: string]: unknown;
-};
-
-export type AdminWebsiteImportResponse =
-  | AdminWebsiteImportSuccessResponse
-  | AdminWebsiteImportErrorResponse;
-
 export const ADMIN_IMPORT_RUN_STATUSES = ["started", "success", "failed"] as const;
 
 export type AdminImportRunStatus = (typeof ADMIN_IMPORT_RUN_STATUSES)[number];
@@ -92,18 +71,28 @@ export type AdminImportRunHistoryParams = {
   limit?: number;
 };
 
-export type AdminImportRunRow = {
+export type AdminApiImportRunResponse = {
   id: string;
   source_id: string;
-  source_name: string | null;
+  community_id: string;
+  source_key: string;
+  source_title: string | null;
+  source_url: string | null;
+  mode: string;
   status: string | null;
   started_at: string;
   finished_at: string | null;
   found_count: number | string | null;
+  parsed_count: number | string | null;
   created_count: number | string | null;
   updated_count: number | string | null;
   error: string | null;
+  summary: Record<string, unknown> | null;
+  parser_metadata: Record<string, unknown> | null;
+  debug_metadata: Record<string, unknown> | null;
+  created_by: string | null;
   created_at: string;
+  updated_at: string;
 };
 
 export type AdminImportRun = {

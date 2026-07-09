@@ -1311,6 +1311,36 @@ mobile, use Supabase Edge Functions, change Supabase migrations/RPC/RLS, connect
 the Python API to Supabase, add scheduled/cron imports, or implement image
 mirroring. The next PR is `feature/admin-import-api-switch`.
 
+### PR 31 Admin import API switch
+
+PR 31 switches the web-admin "Импорт с сайта" page from the legacy Supabase
+Edge Function/RPC import flow to the PR 30 Python API endpoints.
+`adminWebsiteImportService` and `adminImportReviewService` now call
+`POST/GET /admin/import-runs`, `GET /admin/import-items`,
+`GET /admin/import-items/{item_id}`, `POST /admin/import-items/{item_id}/ignore`,
+and `POST /admin/import-items/{item_id}/publish` through the shared web-admin
+`apiClient` (`VITE_API_URL` base URL, `Authorization: Bearer` token from the
+current authenticated session, standard `{ data, error, meta }` envelope).
+The services no longer call `supabase.functions.invoke("admin-website-import")`
+or the `admin_list_import_runs`, `admin_list_import_items_needing_review`,
+`admin_get_import_item`, `admin_ignore_import_item`, and
+`admin_publish_import_item` RPCs.
+
+Two request-body details follow the PR 30 contract instead of the legacy Edge
+Function payloads: run creation sends an empty JSON body because `mode =
+apply_review_only` is enforced server-side and is not an accepted request
+field, and publish payloads do not send `manual_override` because the publish
+endpoint always forces `manual_override = true`. Publish requests keep the
+draft defaults (`status = draft`, `visibility = hidden`) and convert the UI
+camelCase payload to the snake_case API schema. A missing `starts_at` remains a
+Python API validation error surfaced in the UI; no placeholder date is created
+and the item stays in the review queue.
+
+PR 31 does not change the Python API, database schema, Supabase
+migrations/RPC/RLS, or Edge Function files, does not remove the legacy Supabase
+import function, and does not switch other admin pages, mobile, image
+mirroring, scheduling, or auto-publish.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
