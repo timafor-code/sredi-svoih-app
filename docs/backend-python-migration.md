@@ -1257,6 +1257,60 @@ mobile changes, real data import, seed import data, or any connection from the
 Python API to Supabase. The next PR is
 `feature/api-website-import-endpoints`.
 
+### PR 30 API website import endpoints
+
+PR 30 moves the website import runner into the Python API as backend-only
+endpoints and importer modules:
+
+```text
+POST /admin/import-runs
+GET /admin/import-runs
+GET /admin/import-items
+GET /admin/import-items/{item_id}
+POST /admin/import-items/{item_id}/ignore
+POST /admin/import-items/{item_id}/publish
+```
+
+All endpoints require an authenticated actor with an active `admin` or
+`event_manager` membership in the relevant community and scope reads/writes to
+that actor's manageable communities. `POST /admin/import-runs` starts a
+review-only run for an existing source or for a community-scoped source created
+from the request, writes import review items, finalizes JSON dedupe hints under
+`raw_payload.importReview.dedupe`, and finishes the run with safe summary/error
+metadata. The active-run partial unique index is enforced as a clean 409
+conflict when a source already has a `started` run.
+
+Import source fetches are server-gated to the project website event indexes only:
+`https://www.sredisvoih.com/events/` and `https://sredisvoih.com/events/`.
+Non-HTTPS URLs, localhost/internal hosts, IP literals, and redirects outside the
+same allowed website are rejected before storage or network fetch; detail page
+fetches stay on HTTPS `/events/...` pages for those hosts.
+
+Run creation never creates, updates, publishes, schedules, or auto-publishes
+events. `created_count` and `updated_count` stay event-write counters and remain
+zero for review-only runs. Event creation/update happens only through explicit
+`POST /admin/import-items/{item_id}/publish`, which links the import item to one
+event, defaults new events to draft/hidden, uses `source_type =
+website_scrape`, sets `manual_override = true`, and avoids duplicate events on
+repeat publish when a linked event or matching source external id already
+exists. Publishing with `status = published` requires a timezone-aware
+`starts_at` and a non-hidden visibility. Every publish, including draft/hidden,
+requires a `starts_at` resolved from the request payload, the scraped item, or
+the existing linked event; the API never invents a placeholder date. When no
+`starts_at` can be resolved, publish returns a validation error, no event is
+created or updated, and the item stays in the review queue with its review JSON
+intact.
+
+`POST /admin/import-items/{item_id}/ignore` marks the item ignored and preserves
+the review JSON while adding admin-review metadata. Item list/detail endpoints
+return `raw_payload.importReview` as stored so the review queue can continue to
+read JSON-based date and dedupe state.
+
+PR 30 does not switch the web-admin UI, add `adminImportApiService`, change
+mobile, use Supabase Edge Functions, change Supabase migrations/RPC/RLS, connect
+the Python API to Supabase, add scheduled/cron imports, or implement image
+mirroring. The next PR is `feature/admin-import-api-switch`.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
