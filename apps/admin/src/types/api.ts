@@ -82,6 +82,26 @@ export type AdminApiCommunitySummary = {
   slug: string | null;
 };
 
+export type AdminApiCommunityResponse = {
+  id: string;
+  name: string;
+  timezone: string | null;
+  website_url: string | null;
+  created_at: string | null;
+};
+
+export type AdminApiCommunityLocationResponse = {
+  id: string;
+  community_id: string;
+  title: string;
+  address: string;
+  is_default: boolean;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AdminApiMembershipSummary = {
   id: string;
   community_id: string;

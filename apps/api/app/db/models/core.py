@@ -73,6 +73,61 @@ class Community(Base):
     created_at: Mapped[datetime] = timestamptz_now()
 
 
+class CommunityEventLocation(Base):
+    __tablename__ = "community_event_locations"
+    __table_args__ = (
+        CheckConstraint(
+            "btrim(title) <> ''",
+            name="community_event_locations_title_not_empty_check",
+        ),
+        CheckConstraint(
+            "btrim(address) <> ''",
+            name="community_event_locations_address_not_empty_check",
+        ),
+        Index("community_event_locations_community_id_idx", "community_id"),
+        Index(
+            "community_event_locations_active_sort_idx",
+            "community_id",
+            "is_active",
+            text("is_default DESC"),
+            "sort_order",
+            "title",
+        ),
+        Index(
+            "community_event_locations_one_default_idx",
+            "community_id",
+            unique=True,
+            postgresql_where=text("is_default"),
+        ),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    community_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("communities.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    address: Mapped[str] = mapped_column(Text, nullable=False)
+    is_default: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("true"),
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("100"),
+    )
+    created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()
+
+
 class AppUser(Base):
     __tablename__ = "app_users"
     __table_args__ = (

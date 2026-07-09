@@ -833,6 +833,33 @@ Feedback, Community/settings, mobile admin event surfaces, Supabase RPC/RLS, or
 Supabase migrations. Admin registration-management endpoints remain future PR
 scope. The next PR is `feature/mobile-admin-events-api-switch`.
 
+### PR 21B admin Community and locations API switch
+
+PR 21B adds Python API coverage for the web-admin Settings community read
+surface and the event-location dictionary:
+
+```text
+GET /admin/community?community_id=...
+GET /admin/community-locations?community_id=...
+POST /admin/community-locations
+PATCH /admin/community-locations/{location_id}
+POST /admin/community-locations/{location_id}/archive
+```
+
+The API schema includes the real `community_event_locations` table. Reads
+require an active `admin` or `event_manager` membership; event managers receive
+only active locations. Location create, update, and archive require an active
+`admin` membership. The service preserves the existing invariant that at most
+one location per community is default, and archiving sets both
+`is_active = false` and `is_default = false`.
+
+Web-admin community and community-location facades switch to these endpoints
+only when `VITE_ADMIN_COMMUNITY_PROVIDER=api`. Missing, invalid, or `supabase`
+provider values keep the existing Supabase select/RPC behavior. This PR does
+not switch Registrations, Members, Invites, Seating, Import, Feedback, mobile
+surfaces, Supabase RPC/RLS, or community editing beyond the existing Settings
+read surface.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before

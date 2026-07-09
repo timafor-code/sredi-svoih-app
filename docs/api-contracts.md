@@ -862,9 +862,9 @@ separate export API is required.
 | --- | --- | --- | --- |
 | GET | `/admin/community` | admin/event_manager | Read current community settings needed by admin surfaces. |
 | GET | `/admin/community-locations` | admin/event_manager | List community locations. |
-| POST | `/admin/community-locations` | admin/event_manager | Create a community location. |
-| PATCH | `/admin/community-locations/{location_id}` | admin/event_manager | Update a community location. |
-| POST | `/admin/community-locations/{location_id}/archive` | admin/event_manager | Archive a community location. |
+| POST | `/admin/community-locations` | admin | Create a community location. |
+| PATCH | `/admin/community-locations/{location_id}` | admin | Update a community location. |
+| POST | `/admin/community-locations/{location_id}/archive` | admin | Archive a community location. |
 | GET | `/admin/members` | admin | List community members. |
 | GET | `/admin/members/{user_id}` | admin | Read a member profile and membership shape. |
 | GET | `/admin/members/{user_id}/registrations` | admin | Read the member's event registration history for the selected community. |
@@ -873,6 +873,28 @@ separate export API is required.
 | POST | `/admin/invites` | admin | Create an invite and return the plaintext code once. |
 | GET | `/admin/invites` | admin | List invite records without plaintext codes. |
 | POST | `/admin/invites/{invite_id}/revoke` | admin | Revoke an invite. |
+
+Implemented behavior (PR 21B): `GET /admin/community` returns the existing
+Settings read shape (`id`, `name`, `timezone`, `website_url`, `created_at`) for
+the requested `community_id` after verifying an active `admin` or
+`event_manager` membership. `GET /admin/community-locations` is filtered by the
+required `community_id` query parameter. Admins see all locations; event
+managers see only active locations.
+
+Community location payloads use the real `community_event_locations` domain
+shape: `id`, `community_id`, `title`, `address`, `is_default`, `is_active`,
+`sort_order`, `created_at`, and `updated_at`. List ordering is `is_default`
+descending, `sort_order` ascending, then `title` ascending. Location writes are
+admin-only. When a create or update sets `is_default = true`, the API clears
+`is_default` from other locations in the same community; archived locations are
+set inactive and non-default. The API schema preserves the partial uniqueness
+invariant for one default location per community.
+
+Web-admin API switch status (PR 21B): when
+`VITE_ADMIN_COMMUNITY_PROVIDER=api`, the existing community and
+community-location services call the Python admin endpoints above through the
+shared admin API client. Missing, invalid, or `supabase` provider values
+continue to use the existing Supabase select/RPC implementation.
 
 Admin member endpoints must not create auth users, set passwords, expose prayer
 tracker data, or read `prayer_activity_logs`.
