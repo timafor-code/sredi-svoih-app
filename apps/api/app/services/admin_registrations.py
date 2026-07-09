@@ -216,7 +216,7 @@ async def _validate_occurrence(
     return occurrence
 
 
-def _selected_option_response(
+def build_selected_option_response(
     selection: EventRegistrationOptionSelection,
 ) -> AdminRegistrationSelectedOptionResponse:
     return AdminRegistrationSelectedOptionResponse(
@@ -291,7 +291,7 @@ def _registration_response(
         occurrence_ends_at=occurrence.ends_at if occurrence is not None else None,
         occurrence_title=occurrence.title if occurrence is not None else None,
         selected_options=[
-            _selected_option_response(selection) for selection in selected_options
+            build_selected_option_response(selection) for selection in selected_options
         ],
         total_amount=total_amount,
         created_at=registration.created_at,

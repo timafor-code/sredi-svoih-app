@@ -973,6 +973,80 @@ community-location services call the Python admin endpoints above through the
 shared admin API client. Missing, invalid, or `supabase` provider values
 continue to use the existing Supabase select/RPC implementation.
 
+Implemented behavior (PR 24): the Python API exposes the admin members
+endpoints listed above. This surface is backend-only until PR 25 switches the
+web-admin Members page; no web-admin provider or UI changes ship with PR 24.
+
+Admin members access is strictly admin-only:
+
+- Every endpoint requires `Authorization: Bearer <token>` and an active
+  `admin` membership in the community named by the required `community_id`
+  query parameter (GET) or body field (PATCH).
+- `event_manager` and `rabbi` receive `403 forbidden` for every admin members
+  endpoint, including list/read/detail. `PROFILE_VIEWER_ROLES` and profile
+  viewer permissions are not valid authorization for this surface and must not
+  be reused here.
+- Plain members and actors without an active membership in the selected
+  community receive `403 forbidden`.
+- Member reads and writes are scoped to the selected admin community. A target
+  user is in scope when they have a membership row (any status) in that
+  community, or when they have no active membership in any community
+  (unaffiliated profiles, matching the existing Supabase admin members RPC
+  scope). Users active only in other communities return `404 not_found`
+  without leaking existence, so another-community admin cannot read or update
+  them.
+
+`GET /admin/members` accepts `community_id` (required), `search`, `role`
+(`member`/`rabbi`/`event_manager`/`admin`/`all`), `membership_status`
+(`pending`/`active`/`suspended`/`left`/`no_membership`/`all`), `limit`
+(default 100, max 200), and `offset`. Rows mirror the current web-admin
+Members list contract in snake_case: `user_id`, coalesced `display_name`,
+name/contact/profile summary fields, `hebrew_birth_date`, `nusach`,
+`onboarding_completed`, profile timestamps, membership fields
+(`membership_id`, `community_id`, `membership_role`, `membership_status`,
+`joined_at`, `invited_by`), and community-scoped registration counters
+(`registrations_total`, `registrations_upcoming`, `registrations_past`,
+`registrations_cancelled`, `last_registration_at`). Ordering matches the
+existing RPC: active memberships first, then other membership rows, then
+unaffiliated profiles, sorted by display name and profile creation time.
+
+`GET /admin/members/{user_id}` returns the list row fields plus profile detail
+(`profile_community_id`, `full_name`, `hebrew_name`, `birth_time_context`,
+`tribe_status`, `marital_status`, `about`, visibility fields,
+`notification_preferences`) and membership detail (`membership_community_id`,
+`membership_created_at`).
+
+`GET /admin/members/{user_id}/registrations` returns the member's registration
+history scoped to events of the selected community only: event id/title,
+occurrence id/title/times (falling back to event times when no occurrence),
+registration status, seats, payment status, registration timestamps, and
+selected participation-option snapshots. Registrations in other communities
+are never returned.
+
+`PATCH /admin/members/{user_id}/profile` updates only the safe profile fields
+already used by the Members admin UI: `full_name`, `first_name`, `last_name`,
+`display_name`, `hebrew_name`, `email`, `phone`, `city`, `birth_date`,
+`hebrew_birth_date`, `birth_time_context`, `nusach`, `tribe_status`,
+`marital_status`, `about`, and `onboarding_completed`. Unknown fields are
+rejected, at least one profile field is required, and enum/length constraints
+are validated strictly. The endpoint never touches `app_users` auth columns or
+Supabase Auth.
+
+`PATCH /admin/members/{user_id}/membership` takes `community_id`, `role`
+(`member`/`rabbi`/`event_manager`/`admin`), and `status`
+(`pending`/`active`/`suspended`/`left`), and upserts the membership row inside
+the selected community in a transaction, mirroring the existing
+`admin_set_user_membership` semantics: activation sets `joined_at` once and
+re-activation keeps the original `joined_at`. Invalid role/status values are
+rejected with `422 validation_error`. Unlike the Supabase RPC, the API also
+applies the members scope rule to this write, so a user active only in another
+community cannot be pulled in through this endpoint.
+
+Privacy: admin members responses expose only app-user identity summary,
+profile fields, membership fields for the selected community, and
+community-scoped event registration history. The endpoints do not read or
+expose `prayer_activity_logs` or any prayer tracker data.
+
 Admin member endpoints must not create auth users, set passwords, expose prayer
 tracker data, or read `prayer_activity_logs`.
 
