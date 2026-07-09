@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
+import { getAdminApiProvider } from "../services/apiClient";
 import {
   createAdminEventCategory,
   deleteAdminEventCategory,
@@ -15,6 +16,7 @@ import type {
   AdminEventCategory,
   AdminEventCategoryMutationInput,
 } from "../types/eventCategories";
+import type { AdminBadgeTone } from "../types/admin";
 
 type DialogMode = "create" | "edit";
 
@@ -48,6 +50,22 @@ const COMMUNITY_ID_ERROR =
 export function CategoriesPage() {
   const auth = useAdminAuth();
   const communityId = auth.membership?.community_id ?? null;
+  const categoriesProvider = getAdminApiProvider("events");
+  const isCategoriesApiProvider = categoriesProvider === "api";
+  const categoriesProviderLabel = isCategoriesApiProvider ? "API" : "Supabase";
+  const categoriesProviderTone: AdminBadgeTone = isCategoriesApiProvider ? "blue" : "green";
+  const categoriesToolbarDescription = isCategoriesApiProvider
+    ? "Список, создание и редактирование категорий идут через Python API event categories endpoints."
+    : "Управление через Supabase RPC admin_create_event_category / admin_update_event_category / admin_delete_event_category.";
+  const categoriesLoadingDescription = isCategoriesApiProvider
+    ? "Читаем категории через Python API event categories endpoint."
+    : "Читаем Supabase event_categories через admin_list_event_categories.";
+  const categoriesEmptyDescription = isCategoriesApiProvider
+    ? "API event categories endpoint вернул пустой список. Создайте первую категорию через кнопку «Добавить категорию»."
+    : "Supabase event_categories пока пуст. Создайте первую категорию через кнопку «Добавить категорию».";
+  const categoriesLoadErrorMessage = isCategoriesApiProvider
+    ? "Не удалось загрузить категории через API event categories endpoint."
+    : "Не удалось загрузить категории из Supabase.";
 
   const [categories, setCategories] = useState<AdminEventCategory[]>([]);
   const [usageCounts, setUsageCounts] = useState<Record<string, number>>({});
@@ -77,12 +95,12 @@ export function CategoriesPage() {
       setError(
         nextError instanceof Error
           ? nextError.message
-          : "Не удалось загрузить категории.",
+          : categoriesLoadErrorMessage,
       );
     } finally {
       setLoading(false);
     }
-  }, [communityId]);
+  }, [categoriesLoadErrorMessage, communityId]);
 
   useEffect(() => {
     void reload();
@@ -194,7 +212,7 @@ export function CategoriesPage() {
   return (
     <div className="page-stack page-stack--events">
       <section className="page-header">
-        <Badge tone="green">Supabase</Badge>
+        <Badge tone={categoriesProviderTone}>{categoriesProviderLabel}</Badge>
         <h1>Категории</h1>
         <p>
           Справочник рубрик событий вашей общины. Эти категории используются и в
@@ -207,10 +225,7 @@ export function CategoriesPage() {
         <div className="events-toolbar__top">
           <div>
             <h2>Список категорий</h2>
-            <p>
-              Управление через RPC admin_create_event_category /
-              admin_update_event_category / admin_delete_event_category.
-            </p>
+            <p>{categoriesToolbarDescription}</p>
           </div>
           <div className="events-toolbar__actions">
             <Button onClick={handleOpenCreate} variant="primary">
@@ -240,22 +255,19 @@ export function CategoriesPage() {
           <h2>Категории общины</h2>
           <div className="events-summary">
             <span>{categories.length} записей</span>
-            <Badge tone="glass">event_categories</Badge>
+            <Badge tone="glass">{categoriesProviderLabel}</Badge>
           </div>
         </div>
 
         {loading ? (
           <div className="events-state" role="status">
             <h3>Загрузка категорий</h3>
-            <p>Читаем event_categories через admin_list_event_categories.</p>
+            <p>{categoriesLoadingDescription}</p>
           </div>
         ) : categories.length === 0 ? (
           <div className="events-state" role="status">
             <h3>Категорий пока нет</h3>
-            <p>
-              Создайте первую категорию через кнопку «Добавить категорию». Она
-              появится в форме события и в mobile-приложении.
-            </p>
+            <p>{categoriesEmptyDescription}</p>
           </div>
         ) : (
           <div className="events-table-scroll">

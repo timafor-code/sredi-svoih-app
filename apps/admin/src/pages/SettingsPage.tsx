@@ -4,6 +4,7 @@ import { AdminHealthCheck } from "../components/settings/AdminHealthCheck";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
+import { getAdminApiProvider } from "../services/apiClient";
 import { getAdminCommunity } from "../services/adminCommunityService";
 import {
   archiveAdminCommunityLocation,
@@ -44,6 +45,28 @@ export function SettingsPage() {
   const canManageLocations = auth.isAdmin && Boolean(communityId);
   const adminEnvLabel = getAdminEnvLabel();
   const supabaseHost = getSupabaseHost();
+  const communityProvider = getAdminApiProvider("community");
+  const isCommunityApiProvider = communityProvider === "api";
+  const communityProviderLabel = isCommunityApiProvider ? "API" : "Supabase";
+  const communityProviderTone = isCommunityApiProvider ? "blue" : "green";
+  const communitySnapshotDescription = isCommunityApiProvider
+    ? "Read-only snapshot активной community через Python API community endpoints. Редактирование общины появится отдельным потоком."
+    : "Read-only snapshot активной community из Supabase. Редактирование общины появится отдельным потоком.";
+  const communityLoadingLabel = isCommunityApiProvider
+    ? "Загружаем активную общину через Python API community endpoints..."
+    : "Загружаем активную общину из Supabase...";
+  const communityLoadErrorMessage = isCommunityApiProvider
+    ? "Не удалось загрузить данные общины через Python API community endpoints."
+    : "Не удалось загрузить данные общины.";
+  const locationsDescription = isCommunityApiProvider
+    ? "Справочник локаций для форм событий читается и сохраняется через Python API community endpoints. Поведение add/edit/archive не меняется."
+    : "Справочник локаций для форм событий читается и сохраняется через Supabase. Поведение add/edit/archive не меняется.";
+  const locationsLoadingLabel = isCommunityApiProvider
+    ? "Загружаем адреса общины через Python API community endpoints..."
+    : "Загружаем адреса общины из Supabase...";
+  const locationsLoadErrorMessage = isCommunityApiProvider
+    ? "Не удалось загрузить адреса общины через Python API community endpoints."
+    : "Не удалось загрузить адреса общины.";
   const [community, setCommunity] = useState<AdminCommunity | null>(null);
   const [communityLoading, setCommunityLoading] = useState(false);
   const [communityError, setCommunityError] = useState<string | null>(null);
@@ -75,12 +98,12 @@ export function SettingsPage() {
     } catch (error) {
       setCommunity(null);
       setCommunityError(
-        error instanceof Error ? error.message : "Не удалось загрузить данные общины.",
+        error instanceof Error ? error.message : communityLoadErrorMessage,
       );
     } finally {
       setCommunityLoading(false);
     }
-  }, [communityId]);
+  }, [communityId, communityLoadErrorMessage]);
 
   const loadLocations = useCallback(async () => {
     if (!communityId) {
@@ -99,12 +122,12 @@ export function SettingsPage() {
     } catch (error) {
       setLocations([]);
       setLocationsError(
-        error instanceof Error ? error.message : "Не удалось загрузить адреса общины.",
+        error instanceof Error ? error.message : locationsLoadErrorMessage,
       );
     } finally {
       setLocationsLoading(false);
     }
-  }, [communityId]);
+  }, [communityId, locationsLoadErrorMessage]);
 
   useEffect(() => {
     void loadCommunity();
@@ -253,19 +276,19 @@ export function SettingsPage() {
           <div className="settings-section__title">
             <span>Community</span>
             <h2>Данные общины</h2>
-            <p>
-              Read-only snapshot активной community из Supabase. Редактирование
-              общины появится отдельным потоком.
-            </p>
+            <p>{communitySnapshotDescription}</p>
           </div>
-          <Badge tone={communityError ? "red" : community ? "green" : "muted"}>
-            {communityError ? "error" : community ? "real data" : "waiting"}
-          </Badge>
+          <div className="settings-section__actions">
+            <Badge tone={communityProviderTone}>{communityProviderLabel}</Badge>
+            <Badge tone={communityError ? "red" : community ? "green" : "muted"}>
+              {communityError ? "error" : community ? "real data" : "waiting"}
+            </Badge>
+          </div>
         </div>
 
         {communityLoading ? (
           <div className="settings-state" role="status">
-            Загружаем активную общину из Supabase...
+            {communityLoadingLabel}
           </div>
         ) : null}
 
@@ -293,12 +316,10 @@ export function SettingsPage() {
           <div className="settings-section__title">
             <span>Addresses</span>
             <h2>Адреса общины</h2>
-            <p>
-              Существующий справочник локаций для форм событий. Поведение
-              add/edit/archive не меняется.
-            </p>
+            <p>{locationsDescription}</p>
           </div>
           <div className="settings-section__actions">
+            <Badge tone={communityProviderTone}>{communityProviderLabel}</Badge>
             <Badge tone={canManageLocations ? "green" : "muted"}>
               {canManageLocations ? "admin editable" : "read-only"}
             </Badge>
@@ -420,7 +441,7 @@ export function SettingsPage() {
         <div className="settings-location-list">
           {locationsLoading ? (
             <div className="settings-state" role="status">
-              Загружаем адреса общины...
+              {locationsLoadingLabel}
             </div>
           ) : locations.length === 0 ? (
             <div className="settings-state">
