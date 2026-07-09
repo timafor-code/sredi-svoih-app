@@ -16,8 +16,19 @@
 //
 // The browser uses the normal authenticated Supabase session; every function maps
 // to a SECURITY DEFINER RPC that enforces role, single-community scope and the
-// seating validations. No service role, no Admin API, auth.users untouched.
+// seating validations. No service role, no Admin API, no Auth internals access.
 
+import { isAdminApiProviderEnabled } from "./apiClient";
+import {
+  createSeatingLayoutFromTemplate as createSeatingLayoutFromTemplateViaApi,
+  createSeatingTemplateFromLayout as createSeatingTemplateFromLayoutViaApi,
+  deleteSeatingTemplate as deleteSeatingTemplateViaApi,
+  getSeatingLayout as getSeatingLayoutViaApi,
+  getSeatingTemplate as getSeatingTemplateViaApi,
+  listSeatingTemplates as listSeatingTemplatesViaApi,
+  saveSeatingAssignments as saveSeatingAssignmentsViaApi,
+  saveSeatingLayout as saveSeatingLayoutViaApi,
+} from "./adminSeatingApiService";
 import { requireSupabaseClient } from "./supabaseClient";
 import type {
   CreateSeatingLayoutFromTemplateParams,
@@ -423,13 +434,13 @@ export function serializeSeatingAssignmentsPayload(
 
 // admin_list_seating_templates — active templates across the caller's
 // admin/event_manager communities.
-export async function listSeatingTemplates(): Promise<SeatingTemplate[]> {
+async function listSeatingTemplatesViaSupabase(): Promise<SeatingTemplate[]> {
   const data = await callRpc("List seating templates", "admin_list_seating_templates");
   return toRecordArray(data).map(normalizeTemplate);
 }
 
 // admin_get_seating_template — a single template by id.
-export async function getSeatingTemplate(templateId: string): Promise<SeatingTemplate> {
+async function getSeatingTemplateViaSupabase(templateId: string): Promise<SeatingTemplate> {
   const data = await callRpc("Get seating template", "admin_get_seating_template", {
     p_template_id: templateId,
   });
@@ -438,7 +449,7 @@ export async function getSeatingTemplate(templateId: string): Promise<SeatingTem
 
 // admin_get_seating_layout — the instance for one slot with its tables,
 // connections and assignments. Returns null when no instance exists yet.
-export async function getSeatingLayout(
+async function getSeatingLayoutViaSupabase(
   params: SeatingSlotParams,
 ): Promise<SeatingLayout | null> {
   const data = await callRpc("Get seating layout", "admin_get_seating_layout", {
@@ -455,7 +466,7 @@ export async function getSeatingLayout(
 
 // admin_create_seating_layout_from_template — forks a new layout instance for
 // the slot from a template snapshot (tables / connections only, no assignments).
-export async function createSeatingLayoutFromTemplate(
+async function createSeatingLayoutFromTemplateViaSupabase(
   params: CreateSeatingLayoutFromTemplateParams,
 ): Promise<SeatingLayoutRow> {
   const data = await callRpc(
@@ -474,7 +485,7 @@ export async function createSeatingLayoutFromTemplate(
 // admin_save_seating_layout — saves geometry only (layout row, tables,
 // connections, template_id, server-derived capacity_limit_snapshot). Never
 // touches assignments or the real capacity unit limit.
-export async function saveSeatingLayout(
+async function saveSeatingLayoutViaSupabase(
   payload: SeatingLayoutPayload,
 ): Promise<SeatingLayoutRow> {
   const data = await callRpc("Save seating layout", "admin_save_seating_layout", {
@@ -485,7 +496,7 @@ export async function saveSeatingLayout(
 
 // admin_save_seating_assignments — replaces the layout's guest / reserve
 // assignments from chairs[] (placed) and pool[] (unplaced).
-export async function saveSeatingAssignments(
+async function saveSeatingAssignmentsViaSupabase(
   payload: SeatingAssignmentsPayload,
 ): Promise<SeatingAssignmentsSaveResult> {
   const data = await callRpc(
@@ -498,7 +509,7 @@ export async function saveSeatingAssignments(
 
 // admin_create_seating_template_from_layout — copies geometry only into a new
 // community-scoped template snapshot.
-export async function createSeatingTemplateFromLayout(
+async function createSeatingTemplateFromLayoutViaSupabase(
   layoutId: string,
   title: string,
 ): Promise<SeatingTemplate> {
@@ -512,11 +523,88 @@ export async function createSeatingTemplateFromLayout(
 
 // admin_delete_seating_template — soft delete (is_active = false); built-in
 // templates are rejected by the RPC.
-export async function deleteSeatingTemplate(
+async function deleteSeatingTemplateViaSupabase(
   templateId: string,
 ): Promise<SeatingTemplate> {
   const data = await callRpc("Delete seating template", "admin_delete_seating_template", {
     p_template_id: templateId,
   });
   return normalizeTemplate(firstRecord(data));
+}
+
+export async function listSeatingTemplates(): Promise<SeatingTemplate[]> {
+  if (isAdminApiProviderEnabled("seating")) {
+    return listSeatingTemplatesViaApi();
+  }
+
+  return listSeatingTemplatesViaSupabase();
+}
+
+export async function getSeatingTemplate(templateId: string): Promise<SeatingTemplate> {
+  if (isAdminApiProviderEnabled("seating")) {
+    return getSeatingTemplateViaApi(templateId);
+  }
+
+  return getSeatingTemplateViaSupabase(templateId);
+}
+
+export async function getSeatingLayout(
+  params: SeatingSlotParams,
+): Promise<SeatingLayout | null> {
+  if (isAdminApiProviderEnabled("seating")) {
+    return getSeatingLayoutViaApi(params);
+  }
+
+  return getSeatingLayoutViaSupabase(params);
+}
+
+export async function createSeatingLayoutFromTemplate(
+  params: CreateSeatingLayoutFromTemplateParams,
+): Promise<SeatingLayoutRow> {
+  if (isAdminApiProviderEnabled("seating")) {
+    return createSeatingLayoutFromTemplateViaApi(params);
+  }
+
+  return createSeatingLayoutFromTemplateViaSupabase(params);
+}
+
+export async function saveSeatingLayout(
+  payload: SeatingLayoutPayload,
+): Promise<SeatingLayoutRow> {
+  if (isAdminApiProviderEnabled("seating")) {
+    return saveSeatingLayoutViaApi(payload);
+  }
+
+  return saveSeatingLayoutViaSupabase(payload);
+}
+
+export async function saveSeatingAssignments(
+  payload: SeatingAssignmentsPayload,
+): Promise<SeatingAssignmentsSaveResult> {
+  if (isAdminApiProviderEnabled("seating")) {
+    return saveSeatingAssignmentsViaApi(payload);
+  }
+
+  return saveSeatingAssignmentsViaSupabase(payload);
+}
+
+export async function createSeatingTemplateFromLayout(
+  layoutId: string,
+  title: string,
+): Promise<SeatingTemplate> {
+  if (isAdminApiProviderEnabled("seating")) {
+    return createSeatingTemplateFromLayoutViaApi(layoutId, title);
+  }
+
+  return createSeatingTemplateFromLayoutViaSupabase(layoutId, title);
+}
+
+export async function deleteSeatingTemplate(
+  templateId: string,
+): Promise<SeatingTemplate> {
+  if (isAdminApiProviderEnabled("seating")) {
+    return deleteSeatingTemplateViaApi(templateId);
+  }
+
+  return deleteSeatingTemplateViaSupabase(templateId);
 }

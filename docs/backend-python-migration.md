@@ -1177,6 +1177,48 @@ seating geometry, change registration capacity logic, import Supabase data,
 seed seating data, or connect the Python API to Supabase. The next PR is
 `feature/admin-seating-api-switch`.
 
+### PR 29 web-admin seating API switch
+
+PR 29 connects the existing web-admin seating service facade to the Python API
+behind `VITE_ADMIN_SEATING_PROVIDER=api`, while preserving Supabase RPC as the
+default when the flag is missing, invalid, or set to `supabase`.
+
+Implemented web-admin wrappers:
+
+```text
+GET /admin/seating/templates
+GET /admin/seating/templates/{template_id}
+POST /admin/seating/templates/from-layout
+DELETE /admin/seating/templates/{template_id}
+GET /admin/seating/layout
+POST /admin/seating/layout/from-template
+PATCH /admin/seating/layout
+PATCH /admin/seating/assignments
+```
+
+The existing seating facade names remain in place:
+`listSeatingTemplates`, `getSeatingTemplate`, `getSeatingLayout`,
+`createSeatingLayoutFromTemplate`, `saveSeatingLayout`,
+`saveSeatingAssignments`, `createSeatingTemplateFromLayout`, and
+`deleteSeatingTemplate`. API responses are normalized from the snake_case
+Python contract into the existing camelCase seating types used by the editor,
+canvas, template picker, save-as-template flow, assignments, and print model.
+
+API mode sends the current v15 seating payload keys unchanged:
+`eventId`, `occurrenceId`, `capacityUnitId`, `layout`, `customTables`,
+`tableConnections`, `selectedTableId`, `seatingDone`, `activeTemplateId`,
+`reserveIds`, `capacity`, `chairs`, and `pool`. The backend may preserve stale
+assignment rows after geometry changes, and the web-admin wrapper maps returned
+rows faithfully without adding a new reconciliation algorithm.
+
+This PR does not change seating UI components, canvas geometry, seating
+algorithms, auto seating, manual drag/drop, print behavior, registration
+services, capacity bucket logic, mobile, backend endpoints, or Alembic
+migrations. Physical seats and registration capacity remain separate:
+`capacity_limit_snapshot` is display-only, `PATCH /admin/seating/layout` does
+not mutate registration capacity, and templates copy geometry only without
+assignments. The next PR is `feature/api-import-schema-alembic`.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
