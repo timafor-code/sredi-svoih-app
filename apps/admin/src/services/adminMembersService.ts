@@ -1,3 +1,11 @@
+import { isAdminApiProviderEnabled } from "./apiClient";
+import {
+  getAdminUserProfile as getAdminUserProfileViaApi,
+  listAdminUserRegistrations as listAdminUserRegistrationsViaApi,
+  listAdminUsers as listAdminUsersViaApi,
+  setAdminUserMembership as setAdminUserMembershipViaApi,
+  updateAdminUserProfile as updateAdminUserProfileViaApi,
+} from "./adminMembersApiService";
 import { requireSupabaseClient } from "./supabaseClient";
 import type {
   AdminMemberListFilters,
@@ -436,6 +444,10 @@ function buildUpdateUserProfilePayload(
 export async function listAdminUsers(
   filters: AdminMemberListFilters,
 ): Promise<AdminMemberListRow[]> {
+  if (isAdminApiProviderEnabled("members")) {
+    return listAdminUsersViaApi(filters);
+  }
+
   const supabase = requireSupabaseClient();
   const payload = buildListAdminUsersPayload(filters);
   const { data, error } = await supabase.rpc("admin_list_users", { payload });
@@ -451,6 +463,10 @@ export async function getAdminUserProfile(
   userId: string,
   communityId: string,
 ): Promise<AdminMemberProfile> {
+  if (isAdminApiProviderEnabled("members")) {
+    return getAdminUserProfileViaApi(userId, communityId);
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase.rpc("admin_get_user_profile", {
     target_user_id: userId,
@@ -469,6 +485,10 @@ export async function getAdminUserProfile(
 export async function updateAdminUserProfile(
   input: AdminUpdateUserProfileInput,
 ): Promise<AdminUpdatedUserProfile> {
+  if (isAdminApiProviderEnabled("members")) {
+    return updateAdminUserProfileViaApi(input);
+  }
+
   const supabase = requireSupabaseClient();
   const payload = buildUpdateUserProfilePayload(input);
   const { data, error } = await supabase.rpc("admin_update_user_profile", { payload });
@@ -486,6 +506,10 @@ export async function listAdminUserRegistrations(
   userId: string,
   communityId: string,
 ): Promise<AdminMemberRegistrationRow[]> {
+  if (isAdminApiProviderEnabled("members")) {
+    return listAdminUserRegistrationsViaApi(userId, communityId);
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase.rpc("admin_list_user_registrations", {
     target_user_id: userId,
@@ -504,6 +528,10 @@ export async function listAdminUserRegistrations(
 export async function setAdminUserMembership(
   input: AdminSetUserMembershipInput,
 ): Promise<void> {
+  if (isAdminApiProviderEnabled("members")) {
+    return setAdminUserMembershipViaApi(input);
+  }
+
   const supabase = requireSupabaseClient();
   const payload = buildSetUserMembershipPayload(input);
   const { error } = await supabase.rpc("admin_set_user_membership", { payload });

@@ -29,6 +29,7 @@ import {
   setAdminUserMembership,
   updateAdminUserProfile,
 } from "../services/adminMembersService";
+import { getAdminApiProvider } from "../services/apiClient";
 import { useAdminAuth } from "../store/useAdminAuth";
 import type { AdminBadgeTone } from "../types/admin";
 import {
@@ -134,6 +135,22 @@ const MEMBERSHIP_LEFT_CONFIRM_MESSAGE =
 
 export function MembersPage() {
   const auth = useAdminAuth();
+  const membersProvider = getAdminApiProvider("members");
+  const isMembersApiProvider = membersProvider === "api";
+  const membersProviderLabel = isMembersApiProvider ? "API" : "Supabase";
+  const membersProviderTone: AdminBadgeTone = isMembersApiProvider ? "blue" : "green";
+  const membersHeaderDescription = isMembersApiProvider
+    ? "Пользователи приложения и члены общины через Python API members endpoints."
+    : "Пользователи приложения и члены общины из Supabase.";
+  const membersToolbarDescription = isMembersApiProvider
+    ? "Список читается через GET /admin/members для текущей общины."
+    : "Список читается через admin_list_users для текущей общины.";
+  const membersListSourceLabel = isMembersApiProvider
+    ? "GET /admin/members"
+    : "admin_list_users";
+  const membersEmptyStateDescription = isMembersApiProvider
+    ? "Измените фильтры или проверьте, что в Python API есть profiles."
+    : "Измените фильтры или проверьте, что в Supabase есть profiles.";
   const communityId = auth.membership?.community_id ?? null;
   const requestSeq = useRef(0);
   const detailRequestSeq = useRef(0);
@@ -349,8 +366,9 @@ export function MembersPage() {
       <div className="members-page-header">
         <section className="page-header">
           <Badge tone="red">admin</Badge>
+          <Badge tone={membersProviderTone}>{membersProviderLabel}</Badge>
           <h1>Участники</h1>
-          <p>Пользователи приложения и члены общины из Supabase.</p>
+          <p>{membersHeaderDescription}</p>
         </section>
         <Button
           disabled={!communityId}
@@ -384,7 +402,7 @@ export function MembersPage() {
         <div className="events-toolbar__top">
           <div>
             <h2>Фильтры</h2>
-            <p>Список читается через admin_list_users для текущей общины.</p>
+            <p>{membersToolbarDescription}</p>
           </div>
           <div className="events-toolbar__actions">
             <Button disabled={loading || !communityId} onClick={loadMembers}>
@@ -441,7 +459,7 @@ export function MembersPage() {
           <h2>Список участников</h2>
           <div className="events-summary">
             <span>Показано {members.length}</span>
-            <Badge tone="glass">admin_list_users</Badge>
+            <Badge tone="glass">{membersListSourceLabel}</Badge>
           </div>
         </div>
 
@@ -455,7 +473,7 @@ export function MembersPage() {
           </MembersState>
         ) : members.length === 0 ? (
           <MembersState
-            description="Измените фильтры или проверьте, что в Supabase есть profiles."
+            description={membersEmptyStateDescription}
             title="Участники не найдены"
           />
         ) : (

@@ -977,6 +977,18 @@ Implemented behavior (PR 24): the Python API exposes the admin members
 endpoints listed above. This surface is backend-only until PR 25 switches the
 web-admin Members page; no web-admin provider or UI changes ship with PR 24.
 
+Web-admin API switch status (PR 25): when `VITE_ADMIN_MEMBERS_PROVIDER=api`,
+the existing web-admin Members service facade (`listAdminUsers`,
+`getAdminUserProfile`, `listAdminUserRegistrations`, `updateAdminUserProfile`,
+`setAdminUserMembership`) calls the Python admin members endpoints above
+through the shared admin API client and maps the snake_case responses to the
+existing camelCase Members domain types. The profile update wrapper sends the
+flat backend schema shape (`community_id` plus only the edited profile fields)
+instead of the Supabase RPC nested `{ fields }` payload; unedited fields are
+omitted so the backend partial-update semantics apply. Missing, invalid, or
+`supabase` provider values keep the existing Supabase RPC implementation. Add
+Member / invite creation is not switched in PR 25.
+
 Admin members access is strictly admin-only:
 
 - Every endpoint requires `Authorization: Bearer <token>` and an active
