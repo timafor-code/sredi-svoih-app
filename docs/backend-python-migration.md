@@ -1000,6 +1000,47 @@ unchanged. The next PR is `feature/admin-members-api-switch` (PR 25), which
 will switch the web-admin Members page to these endpoints behind a provider
 flag.
 
+### PR 25 admin Members API switch
+
+PR 25 connects the existing web-admin Members page to the Python API behind
+`VITE_ADMIN_MEMBERS_PROVIDER=api` while preserving Supabase RPC as the default
+when the flag is missing, invalid, or set to `supabase`.
+
+Implemented web-admin wrappers:
+
+```text
+GET /admin/members
+GET /admin/members/{user_id}
+GET /admin/members/{user_id}/registrations
+PATCH /admin/members/{user_id}/profile
+PATCH /admin/members/{user_id}/membership
+```
+
+The existing Members facade names remain in place: `listAdminUsers`,
+`getAdminUserProfile`, `listAdminUserRegistrations`, `updateAdminUserProfile`,
+and `setAdminUserMembership`. API responses are normalized from the snake_case
+API contract into the existing camelCase admin members types used by the page,
+filters, drawer, profile edit flow, membership actions, and registration
+history view. The list wrapper forwards `community_id`, `search`, `role`,
+`membership_status` (including `no_membership`), `limit`, and `offset`; `all`
+filter values are omitted from the query.
+
+The profile update wrapper sends the backend schema shape — `community_id`
+plus only the edited profile fields in snake_case — instead of the Supabase
+RPC nested `{ fields }` payload. Fields that were not edited are omitted, so
+the backend `exclude_unset` partial-update semantics apply. The membership
+wrapper PATCHes `community_id`, `role`, and `status` and keeps the facade's
+void return contract.
+
+The Members page header shows the provider-aware badge following the existing
+Events/Registrations pattern, and the header/toolbar/list-source copy reflects
+the active provider. The Members page UI, filters, drawer, profile edit flow,
+membership actions, and registration history view are otherwise unchanged.
+Add Member / invite creation is not switched and continues to use the existing
+Supabase invite service. PR 25 does not switch Registrations, Events, Seating,
+Import, Feedback, Community, auth defaults, or mobile. The next PR is
+`feature/api-admin-invites-endpoints` (PR 26).
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before

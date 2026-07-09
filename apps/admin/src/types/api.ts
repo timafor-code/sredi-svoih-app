@@ -413,3 +413,97 @@ export type AdminApiRegistrationCapacityAnalyticsResponse = {
   option_stats: AdminApiRegistrationCapacityOptionStatResponse[];
   donation_options: AdminApiRegistrationCapacityOptionStatResponse[];
 };
+
+export type AdminApiMemberListItemResponse = {
+  user_id: string;
+  display_name: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  phone: string | null;
+  avatar_url: string | null;
+  city: string | null;
+  birth_date: string | null;
+  hebrew_birth_date: Record<string, unknown> | null;
+  nusach: string | null;
+  onboarding_completed: boolean;
+  profile_created_at: string;
+  profile_updated_at: string;
+  membership_id: string | null;
+  community_id: string | null;
+  membership_role: string | null;
+  membership_status: string | null;
+  joined_at: string | null;
+  invited_by: string | null;
+  registrations_total: number;
+  registrations_upcoming: number;
+  registrations_past: number;
+  registrations_cancelled: number;
+  last_registration_at: string | null;
+};
+
+export type AdminApiMemberDetailResponse = AdminApiMemberListItemResponse & {
+  profile_community_id: string | null;
+  full_name: string | null;
+  hebrew_name: string | null;
+  birth_time_context: string;
+  tribe_status: string | null;
+  marital_status: string | null;
+  about: string | null;
+  profile_visibility: string;
+  birthday_visibility: string;
+  phone_visibility: string;
+  notification_preferences: Record<string, unknown>;
+  membership_community_id: string | null;
+  membership_created_at: string | null;
+};
+
+export type AdminApiMemberRegistrationResponse = {
+  registration_id: string;
+  event_id: string;
+  event_title: string;
+  occurrence_id: string | null;
+  occurrence_title: string | null;
+  occurrence_starts_at: string | null;
+  occurrence_ends_at: string | null;
+  registration_status: string;
+  seats_count: number;
+  payment_status: string;
+  registered_at: string;
+  confirmed_at: string | null;
+  cancelled_at: string | null;
+  selected_options: AdminApiRegistrationSelectedOptionResponse[];
+};
+
+export type AdminApiMemberProfileUpdateResponse = {
+  user_id: string;
+  profile_community_id: string | null;
+  full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  display_name: string | null;
+  hebrew_name: string | null;
+  email: string | null;
+  phone: string | null;
+  city: string | null;
+  birth_date: string | null;
+  hebrew_birth_date: Record<string, unknown> | null;
+  birth_time_context: string;
+  nusach: string | null;
+  tribe_status: string | null;
+  marital_status: string | null;
+  about: string | null;
+  onboarding_completed: boolean;
+  profile_updated_at: string;
+};
+
+export type AdminApiMemberMembershipResponse = {
+  membership_id: string;
+  community_id: string;
+  user_id: string;
+  membership_role: string;
+  membership_status: string;
+  joined_at: string | null;
+  invited_by: string | null;
+  created_at: string;
+};
