@@ -271,3 +271,145 @@ export type AdminApiEventCapacityUnitResponse = {
   created_at: string;
   updated_at: string;
 };
+
+export type AdminApiRegistrationSelectedOptionResponse = {
+  id: string;
+  option_id: string | null;
+  title: string;
+  description: string | null;
+  option_type: string;
+  quantity: number;
+  unit_price_amount: number;
+  total_amount: number;
+  currency: string;
+  counts_toward_capacity: boolean;
+  seats_count: number;
+  is_donation: boolean;
+  created_at: string;
+};
+
+export type AdminApiEventRegistrationResponse = {
+  id: string;
+  event_id: string;
+  occurrence_id: string | null;
+  user_id: string;
+  participant_display_name: string;
+  email: string | null;
+  phone: string | null;
+  status: string;
+  seats_count: number;
+  guest_names: unknown[];
+  comment: string | null;
+  payment_status: string;
+  payment_id: string | null;
+  registered_at: string;
+  confirmed_at: string | null;
+  cancelled_at: string | null;
+  occurrence_starts_at: string | null;
+  occurrence_ends_at: string | null;
+  occurrence_title: string | null;
+  selected_options: AdminApiRegistrationSelectedOptionResponse[];
+  total_amount: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminApiRegistrationCapacityStatusCountsResponse = {
+  confirmed: number;
+  pending: number;
+  waitlisted: number;
+  cancelled: number;
+  rejected: number;
+  attended: number;
+  no_show: number;
+};
+
+export type AdminApiRegistrationCapacityOptionStatResponse = {
+  option_id: string | null;
+  title: string;
+  option_type: string;
+  registrations_count: number;
+  quantity: number;
+  seats_count: number;
+  is_donation: boolean;
+  counts_toward_capacity: boolean;
+};
+
+export type AdminApiRegistrationCapacityBucketOptionBreakdownResponse = {
+  option_id: string | null;
+  title: string;
+  registrations_count: number;
+  quantity: number;
+  seats_count: number;
+  is_donation: boolean;
+  counts_toward_capacity: boolean;
+};
+
+export type AdminApiRegistrationCapacityBucketResponse = {
+  capacity_unit_id: string;
+  key: string;
+  code: string;
+  title: string;
+  capacity: number | null;
+  effective_capacity: number | null;
+  occupied_seats: number;
+  remaining_seats: number | null;
+  free_seats: number | null;
+  effective_remaining_seats: number | null;
+  fill_percent: number | null;
+  effective_fill_percent: number | null;
+  effective_free_percent: number | null;
+  reservations_count: number;
+  option_titles: string[];
+  option_breakdown: AdminApiRegistrationCapacityBucketOptionBreakdownResponse[];
+  is_unlimited: boolean;
+  uses_fallback_capacity: boolean;
+};
+
+export type AdminApiRegistrationCapacityBucketAggregateResponse = {
+  occupied_seats: number;
+  known_capacity: number;
+  remaining_seats: number;
+  fill_percent: number | null;
+  free_percent: number | null;
+  limited_bucket_count: number;
+  has_unlimited_buckets: boolean;
+};
+
+export type AdminApiRegistrationCapacityTotalsResponse = {
+  total_registrations: number;
+  total_registrations_count: number;
+  status_counts: AdminApiRegistrationCapacityStatusCountsResponse;
+  confirmed_count: number;
+  pending_count: number;
+  waitlisted_count: number;
+  cancelled_count: number;
+  rejected_count: number;
+  attended_count: number;
+  no_show_count: number;
+  active_registrations_count: number;
+  active_seats_count: number;
+  unique_registered_users_count: number;
+  unique_guests_count: number;
+  unique_people_count: number;
+  multi_meal_guests_count: number;
+  sponsors_donations_count: number;
+  donations_count: number;
+  donation_quantity: number;
+  donation_registrations_count: number;
+  capacity: number | null;
+  remaining_seats: number | null;
+  free_seats: number | null;
+  fill_percent: number | null;
+  free_percent: number | null;
+};
+
+export type AdminApiRegistrationCapacityAnalyticsResponse = {
+  event_id: string;
+  occurrence_id: string | null;
+  totals: AdminApiRegistrationCapacityTotalsResponse;
+  bucket_aggregate: AdminApiRegistrationCapacityBucketAggregateResponse;
+  buckets: AdminApiRegistrationCapacityBucketResponse[];
+  option_stats: AdminApiRegistrationCapacityOptionStatResponse[];
+  donation_options: AdminApiRegistrationCapacityOptionStatResponse[];
+};

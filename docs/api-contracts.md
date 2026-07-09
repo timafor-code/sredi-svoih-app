@@ -908,6 +908,31 @@ PR 22 is backend-only. The web-admin Registrations page, Excel export,
 seating, import, and frontend provider switch remain unchanged until later
 PRs.
 
+Web-admin API switch status (PR 23): when
+`VITE_ADMIN_REGISTRATIONS_PROVIDER=api`, the web-admin Registrations page uses
+the Python API endpoints above through the shared admin API client. Missing,
+invalid, or `supabase` provider values keep the Supabase RPC provider as the
+default/fallback. The page provider badge now reflects the active registrations
+provider instead of a hardcoded Supabase RPC label.
+
+The Registrations service facade keeps the existing UI-facing functions for
+event summaries, paged registration rows, status actions, attendance actions,
+capacity analytics, and Excel export. API responses are normalized from
+snake_case into the existing camelCase admin registration and capacity domain
+types, so `RegistrationsPage`, detail/table components, capacity buckets, and
+Excel export keep their current data contracts. In API mode the visible action
+set is limited to the endpoints implemented here: confirm, reject, waitlist,
+attended, and no-show. Legacy pending/cancelled status actions remain available
+only through the Supabase provider.
+
+API-mode event cards are built from the existing admin event and registration
+API data without a separate backend summary endpoint. Occurrence selection
+continues to be required for events that have occurrences, and selected
+`occurrence_id` values are forwarded to both registration listing and capacity
+analytics calls. Excel export continues to use the same
+`listEventRegistrations` path as the page instead of adding a dedicated export
+endpoint.
+
 ### Admin Community, Members, And Invites
 
 | Method | Path | Required role | Purpose |

@@ -1,5 +1,9 @@
 import { requireSupabaseClient } from "./supabaseClient";
-import { listEventRegistrations } from "./adminEventsService";
+import { isAdminApiProviderEnabled } from "./apiClient";
+import { listEventRegistrationsViaSupabase } from "./adminEventsService";
+import {
+  getAdminRegistrationCapacityAnalytics as getAdminRegistrationCapacityAnalyticsViaApi,
+} from "./adminRegistrationCapacityApiService";
 import type {
   AdminRegistrationCapacityAnalytics,
   AdminRegistrationCapacityAnalyticsRpcRow,
@@ -378,6 +382,10 @@ function normalizeAnalyticsRow(
 export async function getAdminRegistrationCapacityAnalytics(
   params: ListAdminRegistrationCapacityBucketsParams,
 ): Promise<AdminRegistrationCapacityAnalytics> {
+  if (isAdminApiProviderEnabled("registrations")) {
+    return getAdminRegistrationCapacityAnalyticsViaApi(params);
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase.rpc("admin_get_registration_capacity_analytics", {
     p_event_id: params.eventId,
@@ -508,7 +516,7 @@ async function listRegistrationsForGuestPoolStatus(
   let offset = 0;
 
   while (true) {
-    const page = await listEventRegistrations({
+    const page = await listEventRegistrationsViaSupabase({
       eventId: params.eventId,
       limit: REGISTRATION_GUEST_POOL_PAGE_SIZE,
       occurrenceId: params.occurrenceId,
