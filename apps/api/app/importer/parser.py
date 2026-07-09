@@ -3,11 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
+import ipaddress
 import re
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin, urlparse
-from urllib.request import Request, urlopen
+from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from app.importer import dedupe
 
@@ -15,7 +16,7 @@ DEFAULT_SOURCE_URL = "https://www.sredisvoih.com/events/"
 DEFAULT_SOURCE_KEY = "sredi_svoih_events"
 DEFAULT_SOURCE_TITLE = "Sredi Svoih website events"
 PARSER_NAME = "sredi_svoih_events"
-PARSER_VERSION = "1.2.0-api"
+PARSER_VERSION = "1.2.1-api"
 TIMEZONE = "Europe/Moscow"
 MOSCOW_TZ = timezone(timedelta(hours=3))
 DEFAULT_LOCATION_NAME = "Sredi Svoih"
@@ -27,6 +28,8 @@ DEFAULT_HEADERS = {
 }
 FETCH_TIMEOUT_SECONDS = 20
 MAX_SAFE_ERROR_LENGTH = 500
+ALLOWED_SOURCE_HOSTS = frozenset({"www.sredisvoih.com", "sredisvoih.com"})
+EVENTS_PATH_PREFIX = "/events/"
 
 _MONTH_NUMBERS = {
     "января": 1,
@@ -296,6 +299,78 @@ def absolute_url(value: str | None, base_url: str) -> str | None:
         return None
 
 
+def _validated_common_url(value: str) -> tuple[Any, str]:
+    candidate = clean_text(value)
+    if not candidate:
+        raise ValueError("Import URL is not allowed")
+    try:
+        parsed = urlparse(candidate)
+    except ValueError as exc:
+        raise ValueError("Import URL is not allowed") from exc
+
+    if parsed.scheme.lower() != "https":
+        raise ValueError("Import URL must use https")
+    if parsed.username or parsed.password:
+        raise ValueError("Import URL credentials are not allowed")
+
+    host = (parsed.hostname or "").rstrip(".").lower()
+    if not host:
+        raise ValueError("Import URL host is not allowed")
+    if host == "localhost" or host.endswith((".localhost", ".local", ".internal")):
+        raise ValueError("Import URL host is not allowed")
+
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        raise ValueError("Import URL host is not allowed")
+
+    if host not in ALLOWED_SOURCE_HOSTS:
+        raise ValueError("Import URL host is not allowed")
+
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Import URL port is not allowed") from exc
+    if port not in (None, 443):
+        raise ValueError("Import URL port is not allowed")
+
+    return parsed, host
+
+
+def validate_import_source_url(value: str) -> str:
+    parsed, host = _validated_common_url(value)
+    if parsed.path.rstrip("/") != "/events" or parsed.query or parsed.fragment:
+        raise ValueError("Import source URL is not allowed")
+    return urlunparse(("https", host, EVENTS_PATH_PREFIX, "", "", ""))
+
+
+def validate_import_detail_url(value: str, source_url: str | None = None) -> str:
+    if source_url is not None:
+        validate_import_source_url(source_url)
+
+    parsed, host = _validated_common_url(value)
+    path = parsed.path or ""
+    if (
+        not path.startswith(EVENTS_PATH_PREFIX)
+        or path.rstrip("/") == "/events"
+        or parsed.query
+    ):
+        raise ValueError("Import detail URL is not allowed")
+    return urlunparse(("https", host, path, "", "", ""))
+
+
+def safe_detail_url(value: str | None, source_url: str) -> str | None:
+    absolute = absolute_url(value, source_url)
+    if absolute is None:
+        return None
+    try:
+        return validate_import_detail_url(absolute, source_url=source_url)
+    except ValueError:
+        return None
+
+
 def _same_host(url: str, source_url: str) -> bool:
     return urlparse(url).netloc == urlparse(source_url).netloc
 
@@ -329,16 +404,66 @@ def normalize_title(title: object | None) -> str:
     return text.strip()
 
 
-def fetch_html(url: str) -> str:
-    request = Request(url, headers=DEFAULT_HEADERS)
+def _validated_fetch_url(
+    url: str,
+    *,
+    source_url: str | None,
+    allow_index: bool,
+) -> str:
+    if allow_index:
+        return validate_import_source_url(url)
+    return validate_import_detail_url(url, source_url=source_url)
+
+
+class _SafeRedirectHandler(HTTPRedirectHandler):
+    def __init__(self, *, source_url: str | None, allow_index: bool) -> None:
+        self.source_url = source_url
+        self.allow_index = allow_index
+        super().__init__()
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        _validated_fetch_url(
+            newurl,
+            source_url=self.source_url,
+            allow_index=self.allow_index,
+        )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def fetch_html(
+    url: str,
+    *,
+    source_url: str | None = None,
+    allow_index: bool = False,
+) -> str:
     try:
-        with urlopen(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
+        canonical_url = _validated_fetch_url(
+            url,
+            source_url=source_url,
+            allow_index=allow_index,
+        )
+    except ValueError as exc:
+        raise RuntimeError("Import URL is not allowed") from exc
+
+    request = Request(canonical_url, headers=DEFAULT_HEADERS)
+    opener = build_opener(
+        _SafeRedirectHandler(source_url=source_url, allow_index=allow_index),
+    )
+    try:
+        with opener.open(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
+            _validated_fetch_url(
+                response.geturl(),
+                source_url=source_url,
+                allow_index=allow_index,
+            )
             charset = response.headers.get_content_charset() or "utf-8"
             return response.read().decode(charset, errors="replace")
     except HTTPError as exc:
         raise RuntimeError(f"HTTP {exc.code} while fetching source page") from exc
     except URLError as exc:
         raise RuntimeError(f"Could not fetch source page: {exc.reason}") from exc
+    except ValueError as exc:
+        raise RuntimeError("Import URL is not allowed") from exc
 
 
 def parse_list_page(html: str, source_url: str) -> list[EventCard]:
@@ -356,7 +481,7 @@ def parse_list_page(html: str, source_url: str) -> list[EventCard]:
             ),
         )
         detail_href = link.attrs.get("href") if link is not None else None
-        detail_url = absolute_url(detail_href, source_url)
+        detail_url = safe_detail_url(detail_href, source_url)
         if not detail_url or _is_events_index_url(detail_url):
             continue
 
@@ -404,7 +529,7 @@ def parse_list_page(html: str, source_url: str) -> list[EventCard]:
             root,
             lambda node: node.tag == "a" and "/events/" in node.attrs.get("href", ""),
         ):
-            detail_url = absolute_url(link.attrs.get("href"), source_url)
+            detail_url = safe_detail_url(link.attrs.get("href"), source_url)
             if not detail_url or _is_events_index_url(detail_url):
                 continue
 
@@ -920,15 +1045,15 @@ def _error_item(card: EventCard, error: BaseException | str) -> ParsedImportItem
 
 
 def parse_website_events(options: ParserOptions) -> ParsedWebsiteResult:
-    source_url = urljoin(options.source_url, "")
-    list_html = fetch_html(source_url)
+    source_url = validate_import_source_url(options.source_url)
+    list_html = fetch_html(source_url, source_url=source_url, allow_index=True)
     cards = parse_list_page(list_html, source_url)
     limited_cards = cards[: options.limit] if options.limit else cards
     parsed_items: list[ParsedImportItemResult] = []
 
     for card in limited_cards:
         try:
-            detail_html = fetch_html(card.detail_url)
+            detail_html = fetch_html(card.detail_url, source_url=source_url)
             parsed_items.append(
                 ParsedImportItemResult(
                     item=parse_detail_page(detail_html, card, source_url, options),

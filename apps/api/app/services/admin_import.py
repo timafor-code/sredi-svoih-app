@@ -21,6 +21,8 @@ from app.importer.parser import (
     PARSER_NAME,
     PARSER_VERSION,
     TIMEZONE,
+    validate_import_detail_url,
+    validate_import_source_url,
 )
 from app.importer.runner import WEBSITE_SOURCE_TYPE, execute_review_import
 from app.schemas.admin_events import AdminEventResponse
@@ -96,6 +98,23 @@ def _first_text(*values: object | None) -> str | None:
         if text:
             return text
     return None
+
+
+def _validated_source_url(value: str | None) -> str:
+    try:
+        return validate_import_source_url(value or DEFAULT_SOURCE_URL)
+    except ValueError as exc:
+        raise _validation_error("Import source URL is not allowed") from exc
+
+
+def _validated_event_source_url(value: object | None) -> str | None:
+    text = _first_text(value)
+    if text is None:
+        return None
+    try:
+        return validate_import_detail_url(text)
+    except ValueError as exc:
+        raise _validation_error("Event source_url must be an allowed website event URL") from exc
 
 
 def _require_manageable_communities(community_ids: Sequence[UUID]) -> None:
@@ -230,10 +249,14 @@ async def _resolve_or_create_source(
         )
         if source is None:
             raise _not_found("Import source not found")
+        source.source_url = _validated_source_url(source.source_url)
+        source.settings = _source_settings(source)
+        await session.flush()
+        await session.refresh(source)
         return source
 
     community_id = _resolve_payload_community_id(payload, manageable_community_ids)
-    source_url = payload.source_url or DEFAULT_SOURCE_URL
+    source_url = _validated_source_url(payload.source_url)
     source_title = payload.source_title or DEFAULT_SOURCE_TITLE
 
     source = await session.scalar(
@@ -582,13 +605,19 @@ def _validate_event_state(
     *,
     starts_at: datetime | None,
     ends_at: datetime | None,
+    status: str,
+    visibility: str,
     registration_mode: str,
     registration_url: str | None,
     price_amount: int | None,
     price_currency: str | None,
 ) -> str | None:
+    if status == "published" and visibility == "hidden":
+        raise _validation_error("published import events cannot be hidden")
     if starts_at is None:
-        raise _validation_error("starts_at is required to publish an import item")
+        if status == "published":
+            raise _validation_error("starts_at is required for published import events")
+        raise _validation_error("starts_at could not be resolved for the draft event")
     if starts_at.tzinfo is None or starts_at.utcoffset() is None:
         raise _validation_error("starts_at must be an ISO 8601 datetime with timezone")
     if ends_at is not None:
@@ -667,6 +696,25 @@ def _raw_starts_at(item: EventImportItem, raw_payload: dict[str, Any], parsed: d
     )
 
 
+def _resolved_starts_at(
+    *,
+    item: EventImportItem,
+    existing_event: Event | None,
+    requested_starts_at: datetime | None,
+    status: str,
+) -> datetime | None:
+    if requested_starts_at is not None:
+        return requested_starts_at
+    if status == "published":
+        return None
+    if existing_event is not None:
+        return existing_event.starts_at
+    starts_at = item.created_at
+    if starts_at.tzinfo is None or starts_at.utcoffset() is None:
+        return starts_at.replace(tzinfo=UTC)
+    return starts_at
+
+
 async def _build_event_values(
     session: AsyncSession,
     *,
@@ -683,7 +731,7 @@ async def _build_event_values(
         "title",
         _first_text(item.parsed_title, parsed.get("title"), detail.get("title")),
     )
-    starts_at = _payload_value(
+    requested_starts_at = _payload_value(
         payload,
         "starts_at",
         _raw_starts_at(item, raw_payload, parsed),
@@ -715,6 +763,12 @@ async def _build_event_values(
         "hidden" if creating else existing_event.visibility,
         allow_none=False,
     )
+    starts_at = _resolved_starts_at(
+        item=item,
+        existing_event=existing_event,
+        requested_starts_at=requested_starts_at,
+        status=status,
+    )
     registration_mode = _payload_value(
         payload,
         "registration_mode",
@@ -741,6 +795,8 @@ async def _build_event_values(
     price_currency = _validate_event_state(
         starts_at=starts_at,
         ends_at=ends_at,
+        status=status,
+        visibility=visibility,
         registration_mode=registration_mode,
         registration_url=registration_url,
         price_amount=price_amount,
@@ -754,7 +810,9 @@ async def _build_event_values(
     if not title:
         raise _validation_error("title is required to publish an import item")
 
-    source_url = item.source_url or _payload_value(payload, "source_url", None)
+    source_url = _validated_event_source_url(
+        item.source_url or _payload_value(payload, "source_url", None),
+    )
     return {
         "community_id": source.community_id,
         "event_kind": _payload_value(

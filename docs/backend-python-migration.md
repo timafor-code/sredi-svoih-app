@@ -1280,6 +1280,12 @@ from the request, writes import review items, finalizes JSON dedupe hints under
 metadata. The active-run partial unique index is enforced as a clean 409
 conflict when a source already has a `started` run.
 
+Import source fetches are server-gated to the project website event indexes only:
+`https://www.sredisvoih.com/events/` and `https://sredisvoih.com/events/`.
+Non-HTTPS URLs, localhost/internal hosts, IP literals, and redirects outside the
+same allowed website are rejected before storage or network fetch; detail page
+fetches stay on HTTPS `/events/...` pages for those hosts.
+
 Run creation never creates, updates, publishes, schedules, or auto-publishes
 events. `created_count` and `updated_count` stay event-write counters and remain
 zero for review-only runs. Event creation/update happens only through explicit
@@ -1287,7 +1293,12 @@ zero for review-only runs. Event creation/update happens only through explicit
 event, defaults new events to draft/hidden, uses `source_type =
 website_scrape`, sets `manual_override = true`, and avoids duplicate events on
 repeat publish when a linked event or matching source external id already
-exists.
+exists. Publishing with `status = published` requires a timezone-aware
+`starts_at` and a non-hidden visibility. Draft/hidden import publishes may be
+created from items without a reliable scraped start time; because the event table
+still requires `starts_at`, the API stores a draft-only placeholder from the
+import item creation timestamp while preserving the review JSON as the source of
+truth for date review.
 
 `POST /admin/import-items/{item_id}/ignore` marks the item ignored and preserves
 the review JSON while adding admin-review metadata. Item list/detail endpoints

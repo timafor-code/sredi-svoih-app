@@ -1319,6 +1319,13 @@ source row for the requested key before starting the run. Source settings store
 parser metadata only; no frontend database URL, service-role key, Supabase
 Admin API access, or Supabase Edge Function is used.
 
+Import source URLs are validated on the server before storage or fetch. The only
+accepted source URLs are `https://www.sredisvoih.com/events/` and
+`https://sredisvoih.com/events/`; non-HTTPS URLs, localhost/internal hosts, IP
+literals, and redirects outside the same allowed website are rejected. Detail
+page fetches and stored imported event URLs are limited to HTTPS
+`/events/...` pages on those same hosts.
+
 Import item responses return table status (`new | linked | ignored | error`)
 and the stored `raw_payload` object. Dedupe remains JSON-only under
 `raw_payload.importReview.dedupe`; dedupe states such as `duplicate`,
@@ -1337,8 +1344,13 @@ For new events, safe defaults are `status = draft`, `visibility = hidden`,
 `source_type = website_scrape`, source URL/external id from the item when
 available, and `manual_override = true`. A caller may explicitly request
 `published`, `public`, or `members_only` values when normal event validation
-allows them. Successful publish sets `event_import_items.linked_event_id` and
-`status = linked`.
+allows them. `status = published` requires a timezone-aware `starts_at` and
+cannot be combined with `visibility = hidden`. Draft/hidden import publishes may
+be saved when the scraped item has no reliable start time; the API stores a
+draft-only placeholder timestamp from the import item creation time because the
+event table requires `starts_at`, while the review JSON remains the source of
+truth for the missing date. Successful publish sets
+`event_import_items.linked_event_id` and `status = linked`.
 
 PR 30 does not switch the web-admin UI, add `adminImportApiService`, change
 mobile, change Supabase migrations/RPC/RLS, use Supabase Edge Functions, add
