@@ -20,12 +20,12 @@ import {
   type SeatingLayoutEditorSlot,
 } from "../components/seating/SeatingLayoutEditor";
 import { getAdminApiProvider } from "../services/apiClient";
-import { listAdminEventOccurrences } from "../services/adminEventOccurrencesService";
 import { getAdminRegistrationCapacityAnalytics } from "../services/adminRegistrationCapacityService";
 import {
   listAdminEventCapacities,
   listEventRegistrations,
   listRegistrationEvents,
+  listRegistrationEventOccurrences,
   markRegistrationAttendance,
   updateRegistrationStatus,
 } from "../services/adminEventsService";
@@ -401,7 +401,7 @@ export function RegistrationsPage() {
     setOccurrencesError(null);
     setOccurrences([]);
 
-    listAdminEventOccurrences(selectedEventId)
+    listRegistrationEventOccurrences(selectedEventId)
       .then((nextOccurrences) => {
         if (!cancelled) {
           setOccurrences(nextOccurrences);

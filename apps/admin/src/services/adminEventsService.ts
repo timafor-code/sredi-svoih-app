@@ -12,6 +12,8 @@ import {
   markRegistrationAttendance as markRegistrationAttendanceViaApi,
   updateRegistrationStatus as updateRegistrationStatusViaApi,
 } from "./adminRegistrationApiService";
+import { listAdminEventOccurrences as listAdminEventOccurrencesViaApi } from "./adminEventOccurrencesApiService";
+import { listAdminEventOccurrences } from "./adminEventOccurrencesService";
 import { requireSupabaseClient } from "./supabaseClient";
 import type {
   AdminEvent,
@@ -20,6 +22,7 @@ import type {
   CreateAdminEventInput,
   UpdateAdminEventInput,
 } from "../types/events";
+import type { AdminEventOccurrence } from "../types/eventOccurrences";
 import type {
   AdminEventRegistrationRow,
   AdminEventRegistrationRpcRow,
@@ -310,6 +313,16 @@ export async function listRegistrationEvents(): Promise<AdminRegistrationEventSu
   return ((data ?? []) as AdminRegistrationEventSummaryRpcRow[]).map(
     normalizeRegistrationEventSummaryRow,
   );
+}
+
+export async function listRegistrationEventOccurrences(
+  eventId: string,
+): Promise<AdminEventOccurrence[]> {
+  if (isAdminApiProviderEnabled("registrations")) {
+    return listAdminEventOccurrencesViaApi(eventId);
+  }
+
+  return listAdminEventOccurrences(eventId);
 }
 
 export async function listAdminEventCapacities(

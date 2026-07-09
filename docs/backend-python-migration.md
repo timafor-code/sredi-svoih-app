@@ -938,6 +938,16 @@ require an occurrence selection before showing registrations or capacity.
 Excel export continues to use `listEventRegistrations` transitively instead of
 a dedicated export endpoint.
 
+The Registrations page occurrence dropdown uses the registration-provider-aware
+facade `listRegistrationEventOccurrences`. When
+`VITE_ADMIN_REGISTRATIONS_PROVIDER=api` it loads occurrences from
+`GET /admin/events/{event_id}/occurrences` regardless of
+`VITE_ADMIN_EVENTS_PROVIDER`, so the page never mixes API registration data
+with Supabase occurrence IDs. When the registrations provider is missing or
+`supabase`, it delegates to the existing events-provider occurrence service
+unchanged. The Events page occurrence constructor stays controlled by
+`VITE_ADMIN_EVENTS_PROVIDER` only.
+
 The Registrations header badge now reflects the real active provider. API mode
 shows only the actions supported by PR 22/PR 23 endpoints: confirm, reject,
 waitlist, attended, and no-show. Supabase mode keeps the existing legacy action
