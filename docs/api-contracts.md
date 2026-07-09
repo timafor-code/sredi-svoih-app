@@ -483,6 +483,21 @@ device tokens, prayer logs, registration comments, or private contact data.
 Prayer tracker data remains personal; admin endpoints must not read or show
 `prayer_activity_logs`.
 
+Implemented behavior (PR 32B): `POST /me/device-tokens` registers or refreshes
+one Expo push token for the authenticated actor. The endpoint upserts on the
+`(user_id, expo_push_token)` unique key: a repeated registration with the same
+token updates `platform`, `device_id`, `app_version`, `build_version`,
+`environment`, sets `is_active = true`, and bumps `last_seen_at`/`updated_at`
+instead of creating a duplicate row. `push_provider` is always forced to
+`expo`. Device tokens are treated as PII: responses return token metadata
+(`id`, `platform`, `push_provider`, `device_id`, `app_version`,
+`build_version`, `environment`, `is_active`, timestamps) and never echo the
+raw `expo_push_token`; raw tokens are never logged.
+`DELETE /me/device-tokens/{token_id}` soft-deactivates (`is_active = false`)
+one token strictly scoped to the current user; a token id owned by another
+user returns `404` with the shared `{"code": "not_found"}` detail shape. No
+push sending exists yet; tokens are storage-only until the push pipeline PR.
+
 ## `/events/*`
 
 Event read endpoints may be public or member-aware. Anonymous callers see only
@@ -1379,6 +1394,31 @@ Feedback and push endpoints must avoid raw sensitive values in logs. Push
 delivery may involve Expo Push API as a delivery processor; production enablement
 requires the privacy review described in the roadmap.
 
+Implemented behavior (PR 32B): `POST /admin/feedback` requires an active
+`admin` or `event_manager` membership. The actor is always recorded as the
+feedback author; the request schema rejects a caller-supplied `user_id`
+(`extra = "forbid"`). `community_id` is optional: when omitted it is derived
+from the actor's single manageable community, and when the actor manages
+several communities an explicit `community_id` is required and must be one of
+them. Payload limits mirror the table checks (`section` ≤ 80, `entity_type`
+≤ 80, `message` ≤ 4000, `user_agent` ≤ 500, `url` ≤ 1000; `severity` in
+`note/issue/blocker/idea`). New feedback is always created with
+`status = open`. No feedback inbox/list endpoint exists yet.
+
+`GET /admin/privacy/requests` and `PATCH /admin/privacy/requests/{request_id}`
+require an active `admin` membership; `event_manager` is not allowed. The list
+is scoped to requests whose `community_id` is one of the actor's admin
+communities and supports optional `status` and `community_id` query filters
+(a `community_id` outside the actor's admin communities returns `403`).
+Requests without a `community_id` are not visible to community admins and are
+reserved for a future global-admin surface. `PATCH` updates only `status`
+(`open/reviewed/resolved/rejected/closed`) and `resolution_note` (≤ 4000).
+Moving to `resolved`, `rejected`, or `closed` stamps `resolved_at` and
+`resolved_by` with the acting admin; moving back to `open` or `reviewed`
+clears them. Request fulfillment (export/deletion execution) is out of scope;
+these endpoints only record and track requests. Push endpoints remain
+unimplemented.
+
 ### Later Admin Groups
 
 Seating, import review, and other admin surfaces will use the same envelope,
@@ -1391,13 +1431,25 @@ Privacy endpoints are the user-facing contract for data-subject style requests.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/privacy/requests` | Public or authenticated | Create a privacy request. Authenticated callers are linked to the current user; public callers provide minimal contact context. |
+| POST | `/privacy/requests` | Authenticated | Create a privacy request linked to the current user. |
 | GET | `/privacy/requests` | Authenticated | List privacy requests owned by the current user. |
 
-Privacy request creation should accept `Idempotency-Key` so retries do not
-create duplicates. Public privacy requests must validate required contact
-fields without logging raw personal data. Admin review uses
-`/admin/privacy/requests`.
+Implemented behavior (PR 32B): both endpoints require
+`Authorization: Bearer <access_token>`; a public/anonymous request form is not
+implemented and would be a separate future contract. `POST /privacy/requests`
+accepts `request_type` (`data_export`, `deletion`, `correction`, `other`), an
+optional `message` (≤ 4000 chars), and an optional `community_id`. A supplied
+`community_id` must be a community where the caller has an active membership;
+when omitted, the caller's single active membership community is used, and a
+caller with zero or multiple memberships gets a request without a community
+link. Requests are always created with `status = open` and `user_id` forced to
+the current user; a spoofed `user_id` field is rejected by the schema.
+`GET /privacy/requests` returns only the caller's own requests (newest first)
+including `status`, `resolution_note`, and `resolved_at`, but never
+`resolved_by`. `Idempotency-Key` support is not implemented yet. These
+endpoints record requests only: no export, deletion, or correction is
+executed, and no emails are sent. Admin review uses `/admin/privacy/requests`.
+Raw request messages are treated as personal data and are not logged.
 
 ## Implementation Notes For Later PRs
 

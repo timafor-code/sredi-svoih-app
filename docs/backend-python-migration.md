@@ -1375,6 +1375,42 @@ API calls, schedulers/workers, mobile or web-admin changes, provider flag
 changes, or Supabase migrations/RPC/RLS/Edge Function changes. The next PR is
 `feature/api-feedback-privacy-device-endpoints`.
 
+### PR 32B API feedback privacy device endpoints
+
+PR 32B implements the backend-only endpoints for admin feedback, current-user
+device token registration, and privacy requests on top of the PR 32A schema:
+`POST /admin/feedback`, `POST /me/device-tokens`,
+`DELETE /me/device-tokens/{token_id}`, `POST /privacy/requests`,
+`GET /privacy/requests`, `GET /admin/privacy/requests`, and
+`PATCH /admin/privacy/requests/{request_id}`. All endpoints use the shared
+`ApiResponse` envelope, Bearer auth through `require_auth`, and the
+`{"code", "message"}` HTTPException detail shape.
+
+Because `privacy_requests` was not part of the PR 32A schema, this PR adds the
+minimal `PrivacyRequest` model and the `20260709220000_privacy_requests_schema`
+Alembic migration: `user_id` references `app_users(id)` (never `auth.users`),
+`community_id` is a nullable `communities(id)` reference, `request_type` is
+check-constrained to `data_export/deletion/correction/other`, `status` to
+`open/reviewed/resolved/rejected/closed`, plus nullable `message`,
+`resolution_note`, `resolved_at`, `resolved_by`, and indexes on
+user/community/status with `created_at DESC`.
+
+Authorization follows the existing guards: `POST /admin/feedback` allows
+active `admin` or `event_manager` memberships and derives `community_id` from
+the actor's manageable communities; the admin privacy endpoints are
+admin-only and scoped to the actor's admin communities; `/me/device-tokens`
+and `/privacy/requests` are strictly scoped to the current user. Device
+tokens upsert on the `(user_id, expo_push_token)` unique key, always force
+`push_provider = expo`, deactivate softly via `is_active = false`, and API
+responses never return the raw `expo_push_token`. Raw device tokens and
+privacy request messages are treated as PII and are never logged.
+
+PR 32B does not switch mobile or web-admin services, adds no UI, no push
+sending or worker, no prayer tracker endpoints, no avatar/storage endpoints,
+no account deletion/export fulfillment, no emails, and no Supabase
+migrations/RPC/RLS/Edge Function changes. The next PR is
+`feature/api-prayer-tracker-endpoints`.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before

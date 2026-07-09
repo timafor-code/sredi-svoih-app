@@ -1332,6 +1332,61 @@ class PrayerActivityLog(Base):
     updated_at: Mapped[datetime] = timestamptz_now()
 
 
+class PrivacyRequest(Base):
+    __tablename__ = "privacy_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "request_type IN ('data_export', 'deletion', 'correction', 'other')",
+            name="privacy_requests_request_type_check",
+        ),
+        CheckConstraint(
+            "status IN ('open', 'reviewed', 'resolved', 'rejected', 'closed')",
+            name="privacy_requests_status_check",
+        ),
+        CheckConstraint(
+            "message IS NULL OR char_length(message) <= 4000",
+            name="privacy_requests_message_length_check",
+        ),
+        CheckConstraint(
+            "resolution_note IS NULL OR char_length(resolution_note) <= 4000",
+            name="privacy_requests_resolution_note_length_check",
+        ),
+        Index("privacy_requests_user_created_idx", "user_id", text("created_at DESC")),
+        Index(
+            "privacy_requests_community_created_idx",
+            "community_id",
+            text("created_at DESC"),
+        ),
+        Index("privacy_requests_status_created_idx", "status", text("created_at DESC")),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    community_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("communities.id", ondelete="SET NULL"),
+    )
+    request_type: Mapped[str] = mapped_column(Text, nullable=False)
+    message: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'open'"),
+    )
+    resolution_note: Mapped[str | None] = mapped_column(Text)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="SET NULL"),
+    )
+    created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()
+
+
 class ProfileContactVisibility(Base):
     __tablename__ = "profile_contact_visibility"
     __table_args__ = (
