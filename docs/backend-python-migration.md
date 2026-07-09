@@ -1041,6 +1041,47 @@ Supabase invite service. PR 25 does not switch Registrations, Events, Seating,
 Import, Feedback, Community, auth defaults, or mobile. The next PR is
 `feature/api-admin-invites-endpoints` (PR 26).
 
+### PR 26 admin invite management endpoints
+
+PR 26 implements backend-only Python API invite management:
+
+```text
+POST /admin/invites
+GET /admin/invites
+POST /admin/invites/{invite_id}/revoke
+```
+
+All endpoints require `Authorization: Bearer <token>` and active `admin`
+membership in the relevant community. Create and list use the required
+`community_id` request field/query parameter; revoke scopes the path
+`invite_id` to the actor's admin communities. `event_manager`, `rabbi`, plain
+members, and actors outside the community cannot manage invites.
+
+`POST /admin/invites` creates a row in the existing Python API `invites` table.
+The request supports the same invite management fields needed by the current
+Add Member invite flow: `community_id`, `role`
+(`member`/`event_manager`/`admin`/`rabbi`), optional `email`, optional `phone`,
+`max_uses` defaulting to `1`, and optional future `expires_at`. The API
+generates an `SS-XXXX-XXXX-XXXX` invite code, hashes it with the existing
+Python invite hashing helper used by `/auth/register-with-invite` and
+`/auth/accept-invite`, stores only `code_hash`, and returns the plaintext
+`code` exactly once in the create response.
+
+`GET /admin/invites` lists invite metadata for the selected admin community
+without plaintext invite codes and without exposing `code_hash`. PR 26 does not
+add pagination, status filtering, or status repair. `POST
+/admin/invites/{invite_id}/revoke` marks the scoped invite `revoked`; the
+existing invite auth flow already rejects non-`active` invites, so revoked
+invites cannot be accepted.
+
+PR 26 does not create users, profiles, memberships, passwords, password reset
+codes, Supabase Auth users, or email delivery jobs. It does not send email
+automatically, does not switch the web-admin invite UI, does not change the Add
+Member dialog, does not change mobile invite acceptance, does not remove
+Supabase services, and does not add a migration because the existing Python API
+schema already contains the `invites` model/table. The next PR is
+`feature/admin-invites-api-switch` (PR 27).
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before

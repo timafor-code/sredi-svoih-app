@@ -1066,6 +1066,83 @@ Invite endpoints may return a plaintext invite code once for display. The API
 must store only a safe derived value and must not send invite emails unless a
 later PR explicitly implements delivery.
 
+Implemented behavior (PR 26): the Python API exposes backend-only admin invite
+management endpoints. Web-admin invite creation remains on the existing
+Supabase service until PR 27.
+
+All admin invite endpoints require `Authorization: Bearer <token>` and an
+active `admin` membership in the relevant community. `event_manager`, `rabbi`,
+plain members, unauthenticated callers, and actors without an active admin
+membership cannot create, list, or revoke invites.
+
+Create invite request:
+
+```json
+{
+  "community_id": "00000000-0000-0000-0000-000000000000",
+  "role": "member",
+  "email": "person@example.com",
+  "phone": "+79990000000",
+  "max_uses": 1,
+  "expires_at": "2026-08-01T12:00:00Z"
+}
+```
+
+`community_id` is required. `role` defaults to `member` and must be one of
+`member`, `event_manager`, `admin`, or `rabbi`. `email`, `phone`, and
+`expires_at` are optional; empty email/phone values are stored as `null`.
+`max_uses` defaults to `1` and must be between `1` and `1000`.
+`expires_at`, when provided, must be a future ISO 8601 timestamp with timezone.
+CamelCase aliases (`communityId`, `maxUses`, `expiresAt`) are accepted for the
+future admin UI switch, but the canonical API contract is snake_case.
+
+Create invite response:
+
+```json
+{
+  "data": {
+    "invite_id": "00000000-0000-0000-0000-000000000000",
+    "community_id": "00000000-0000-0000-0000-000000000000",
+    "role": "member",
+    "email": "person@example.com",
+    "phone": "+79990000000",
+    "max_uses": 1,
+    "used_count": 0,
+    "expires_at": "2026-08-01T12:00:00Z",
+    "status": "active",
+    "created_by": "00000000-0000-0000-0000-000000000000",
+    "accepted_by": null,
+    "accepted_at": null,
+    "created_at": "2026-07-09T12:00:00Z",
+    "code": "SS-ABCD-EFGH-JKLM"
+  },
+  "error": null,
+  "meta": {
+    "request_id": "00000000-0000-0000-0000-000000000000"
+  }
+}
+```
+
+The plaintext `code` is returned only in the create response. The API stores
+only `code_hash`, generated with the same invite hashing helper used by
+`/auth/register-with-invite` and `/auth/accept-invite`. The response never
+includes `code_hash`.
+
+`GET /admin/invites?community_id=...` lists invite records scoped to the
+selected admin community, ordered newest first. It returns the same invite
+metadata as create except it omits `code`. It does not implement pagination or
+status filtering in PR 26.
+
+`POST /admin/invites/{invite_id}/revoke` locks an invite scoped to one of the
+actor's admin communities, sets `status` to `revoked`, and returns the invite
+metadata without `code`. Because the existing invite auth flow accepts only
+`active` invites, revoked invites cannot be used by
+`/auth/register-with-invite` or `/auth/accept-invite`.
+
+Admin invite creation writes only an invite row. It does not create users,
+profiles, memberships, passwords, password reset codes, Supabase Auth users, or
+email delivery jobs, and it does not send email automatically.
+
 ### Admin Feedback, Privacy, And Push
 
 | Method | Path | Required role | Purpose |
