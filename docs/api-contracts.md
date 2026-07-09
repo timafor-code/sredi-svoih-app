@@ -1182,8 +1182,54 @@ to the Python API database:
   Assignments reference `event_registrations` and `app_users` only; they do not
   reference `auth.users` and are never copied from templates.
 
-PR 28 will add the API endpoints and authorization checks. Until then, seating
-remains unavailable through the Python API runtime.
+PR 28 adds backend-only admin seating endpoints. They require an authenticated
+actor with `admin` or `event_manager` membership in the relevant community.
+Actors without those roles receive `403`; event/layout/template/capacity
+resources outside the actor's managed communities resolve as `404` without
+leaking cross-community data.
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| GET | `/admin/seating/templates` | Lists active geometry-only templates in the actor's managed communities. |
+| GET | `/admin/seating/templates/{template_id}` | Reads one active template scoped to the actor's community. |
+| POST | `/admin/seating/templates/from-layout` | Creates a template from `layout_id` and `title`, copying only tables, connections, and canvas snapshot metadata. |
+| DELETE | `/admin/seating/templates/{template_id}` | Soft-deletes a non-built-in template by setting `is_active=false`; layouts made from it are untouched. |
+| GET | `/admin/seating/layout` | Reads one `event_id`/optional `occurrence_id`/`capacity_unit_id` layout envelope. Missing layouts return `{ layout: null, tables: [], connections: [], assignments: [] }`. |
+| POST | `/admin/seating/layout/from-template` | Creates one concrete slot layout from a template, copying geometry only and no assignments. |
+| PATCH | `/admin/seating/layout` | Upserts layout geometry for a slot and transactionally replaces tables/connections. Assignments are preserved. |
+| PATCH | `/admin/seating/assignments` | Replaces only assignments for an existing scoped layout. |
+
+Requests accept snake_case API names and the existing v15 seating payload names
+where they overlap: `eventId`, `occurrenceId`, `capacityUnitId`, `customTables`,
+`tableConnections`, `selectedTableId`, `seatingDone`, `activeTemplateId`,
+`reserveIds`, `capacity`, `chairs`, and `pool`. The API response keeps
+snake_case row fields so PR 29 can map them into the existing web-admin seating
+types.
+
+Template snapshots are geometry-only. Creating a template from a layout and
+creating a layout from a template copy tables and table connections only; guests,
+registrations, assignments, pools, reserves, and capacity limits are never
+copied.
+
+`PATCH /admin/seating/layout` validates stable non-empty table ids, positive
+table width/height, supported table angles (`0`, `90`, `180`, `270`), supported
+long-side seats (`2` or `3`), exactly one rabbi table, and connections that
+reference tables in the same payload. It saves `template_id`, `seating_done`,
+and a server-derived `capacity_limit_snapshot` display value, but never writes
+back to `event_capacity_units.capacity`, `event_occurrences.capacity`,
+`events.capacity`, registrations, or capacity reservations. Any `capacity`,
+`chairs`, `pool`, or `reserveIds` fields in the layout payload are accepted for
+v15 compatibility but are not capacity or assignment sources of truth.
+
+`PATCH /admin/seating/assignments` validates reserve rows have no
+`registration_id`, placed rows have unique `seat_key` values, present
+`guest_index` values are non-negative and unique per registration in the
+payload, and guest registrations belong to the same event/occurrence/capacity
+unit through either a durable reservation row or an active option-to-capacity
+mapping. It does not create registrations, change registration statuses, change
+capacity reservations, change layout geometry, or copy assignments from
+templates. `reserveIds` is accepted for v15 compatibility; reserves are saved
+from `chairs[]`/`pool[]` entries with `type="reserve"`.
 
 ### Admin Feedback, Privacy, And Push
 

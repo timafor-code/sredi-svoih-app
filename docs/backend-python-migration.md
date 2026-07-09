@@ -1130,6 +1130,53 @@ switching, admin seating UI changes, mobile changes, registration service
 changes, or capacity bucket behavior changes. The next PR is
 `feature/api-seating-endpoints`.
 
+### PR 28 API seating endpoints
+
+PR 28 implements backend-only FastAPI admin seating endpoints on top of the
+PR 28A schema:
+
+- `GET /admin/seating/templates`
+- `GET /admin/seating/templates/{template_id}`
+- `POST /admin/seating/templates/from-layout`
+- `DELETE /admin/seating/templates/{template_id}`
+- `GET /admin/seating/layout`
+- `POST /admin/seating/layout/from-template`
+- `PATCH /admin/seating/layout`
+- `PATCH /admin/seating/assignments`
+
+All endpoints require the actor to be an `admin` or `event_manager` in the
+relevant community. Requests are scoped to the actor's manageable communities;
+actors without any admin/event-manager community receive `403`, while
+out-of-community events, templates, layouts, occurrences, and capacity units are
+reported as `404`.
+
+Templates remain geometry-only. Saving a template from a layout copies tables,
+table connections, and canvas snapshot metadata only. Creating a concrete
+layout from a template copies the same geometry only and never copies
+assignments, pools, reserves, registrations, guests, or registration capacity.
+
+`PATCH /admin/seating/layout` is the geometry save path. It accepts the current
+v15 seating payload keys and snake_case equivalents, validates table ids,
+dimensions, angles, long-side seat counts, the single rabbi table invariant, and
+connection references, then transactionally replaces only layout tables and
+connections. Existing assignments are preserved. The endpoint snapshots a
+server-derived `capacity_limit_snapshot` for display but does not mutate
+`event_capacity_units.capacity`, `event_occurrences.capacity`, `events.capacity`,
+registrations, or capacity reservation rows.
+
+`PATCH /admin/seating/assignments` replaces assignments only for an existing
+scoped layout. It validates reserve rows have no registration id, placed
+seat keys are unique and point at current layout tables, guest indexes are
+non-negative when present, and guest registrations belong to the same
+event/occurrence/capacity-unit context. It does not create registrations, change
+registration statuses, adjust capacity reservations, or alter layout geometry.
+
+This PR does not switch the web-admin seating UI, add
+`adminSeatingApiService`, add provider switching, change mobile, redesign
+seating geometry, change registration capacity logic, import Supabase data,
+seed seating data, or connect the Python API to Supabase. The next PR is
+`feature/admin-seating-api-switch`.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
