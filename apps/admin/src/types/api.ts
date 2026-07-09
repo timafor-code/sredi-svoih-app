@@ -537,3 +537,88 @@ export type AdminApiInviteCreateResponse = {
   accepted_at: string | null;
   created_at: string;
 };
+
+export type AdminApiSeatingTemplateResponse = {
+  id: string;
+  community_id: string;
+  title: string;
+  description: string | null;
+  snapshot: Record<string, unknown>;
+  is_builtin: boolean;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminApiSeatingLayoutRowResponse = {
+  id: string;
+  community_id: string;
+  event_id: string;
+  occurrence_id: string | null;
+  capacity_unit_id: string;
+  template_id: string | null;
+  title: string | null;
+  capacity_limit_snapshot: number | null;
+  seating_done: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminApiSeatingTableResponse = {
+  id: string;
+  layout_id: string;
+  client_table_id: string;
+  cx: number | string;
+  cy: number | string;
+  w: number | string;
+  h: number | string;
+  angle: number | string;
+  long_side_seats: number | string;
+  is_rabbi_table: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminApiSeatingConnectionResponse = {
+  id: string;
+  layout_id: string;
+  from_client_table_id: string;
+  from_end: string | null;
+  to_client_table_id: string;
+  to_end: string | null;
+  anchor_x: number | string | null;
+  anchor_y: number | string | null;
+  created_at: string;
+};
+
+export type AdminApiSeatingAssignmentResponse = {
+  id: string;
+  layout_id: string;
+  registration_id: string | null;
+  guest_index: number | null;
+  user_id: string | null;
+  seat_key: string | null;
+  guest_label: string | null;
+  guest_initials: string | null;
+  assignment_type: string;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminApiSeatingLayoutEnvelopeResponse = {
+  layout: AdminApiSeatingLayoutRowResponse | null;
+  tables: AdminApiSeatingTableResponse[];
+  connections: AdminApiSeatingConnectionResponse[];
+  assignments: AdminApiSeatingAssignmentResponse[];
+};
+
+export type AdminApiSeatingAssignmentsSaveResponse = {
+  layout_id: string;
+  placed_count: number;
+  pooled_count: number;
+  reserve_count: number;
+};

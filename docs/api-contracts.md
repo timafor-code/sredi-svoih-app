@@ -1231,6 +1231,24 @@ capacity reservations, change layout geometry, or copy assignments from
 templates. `reserveIds` is accepted for v15 compatibility; reserves are saved
 from `chairs[]`/`pool[]` entries with `type="reserve"`.
 
+Web-admin API switch status (PR 29): when
+`VITE_ADMIN_SEATING_PROVIDER=api`, the existing web-admin seating service
+facade calls the Python admin seating endpoints above through the shared
+browser-safe admin `apiClient`. Missing, invalid, or `supabase` provider values
+continue to use the existing Supabase RPC fallback.
+
+The API-mode wrapper maps snake_case template, layout, table, connection, and
+assignment rows into the existing camelCase seating types used by the current
+canvas and editor. Layout and assignment writes keep the existing v15 frontend
+payload keys (`eventId`, `occurrenceId`, `capacityUnitId`, `layout`,
+`customTables`, `tableConnections`, `selectedTableId`, `seatingDone`,
+`activeTemplateId`, `reserveIds`, `capacity`, `chairs`, and `pool`) so the UI
+contract does not change. The switch does not change seating geometry,
+auto-seating, drag/drop, print behavior, registration capacity rules, or any
+other admin provider. `capacity_limit_snapshot` remains display-only, layout
+saves still do not mutate registration capacity, templates remain
+geometry-only, and assignments are not copied from templates.
+
 ### Admin Feedback, Privacy, And Push
 
 | Method | Path | Required role | Purpose |

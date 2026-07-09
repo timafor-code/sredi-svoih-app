@@ -4,9 +4,16 @@ The seating editor is available from the web-admin registrations capacity bucket
 UI. This document describes the implemented seating flow and the Phase 3 / PR 24
 beta UX polish around guest-pool clarity.
 
-The feature uses the regular authenticated Supabase browser client, role-checked
-RPCs, and RLS. It does not require privileged server keys, Supabase Admin API
-access, or direct access to `auth.users`.
+The seating service is provider-aware. By default, and when
+`VITE_ADMIN_SEATING_PROVIDER` is missing, invalid, or set to `supabase`, it uses
+the regular authenticated Supabase browser client, role-checked RPCs, and RLS.
+When `VITE_ADMIN_SEATING_PROVIDER=api`, the same service facade uses the shared
+browser-safe admin `apiClient` and the Python `/admin/seating/*` endpoints. The
+canvas, geometry model, editor UX, template flow, assignments, and print model
+use the same frontend service contract in both modes.
+
+Neither mode requires privileged server keys, Supabase Admin API access, direct
+database access from `apps/admin`, or direct access to `auth.users`.
 
 ## Status
 
@@ -83,10 +90,17 @@ Write RPCs:
 
 ## Service And Geometry Layers
 
-`apps/admin/src/services/adminSeatingService.ts` is the typed client for the
-read/write seating RPCs. It normalizes RPC snake_case rows into camelCase
-frontend models, serializes the v15 payload contract on writes, and centralizes
-Supabase error handling.
+`apps/admin/src/services/adminSeatingService.ts` is the typed provider facade
+used by the seating UI. In Supabase mode it calls the read/write seating RPCs.
+In API mode it delegates to `adminSeatingApiService.ts`, which calls the Python
+admin seating endpoints through `apiClient`. Both paths normalize snake_case
+rows into camelCase frontend models and serialize the v15 payload contract on
+writes.
+
+API mode keeps these existing v15 payload keys unchanged: `eventId`,
+`occurrenceId`, `capacityUnitId`, `layout`, `customTables`, `tableConnections`,
+`selectedTableId`, `seatingDone`, `activeTemplateId`, `reserveIds`, `capacity`,
+`chairs`, and `pool`.
 
 `apps/admin/src/lib/seatingGeometry.ts` is pure and has no IO. Related pure
 helpers handle deterministic auto assignment, drag/drop moves, assignment
