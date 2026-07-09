@@ -955,6 +955,51 @@ set, including pending and cancelled. This PR does not switch Seating, Members,
 Invites, Import, Feedback, mobile, Supabase Auth, or production provider
 defaults. The next PR is `feature/api-admin-members-endpoints`.
 
+### PR 24 admin members management endpoints
+
+PR 24 adds backend-only Python API coverage for the web-admin Members surface:
+
+```text
+GET /admin/members
+GET /admin/members/{user_id}
+GET /admin/members/{user_id}/registrations
+PATCH /admin/members/{user_id}/profile
+PATCH /admin/members/{user_id}/membership
+```
+
+Access is strictly admin-only. Every endpoint requires
+`Authorization: Bearer <token>` plus an active `admin` membership in the
+community named by the required `community_id` query/body field.
+`event_manager` and `rabbi` receive `403 forbidden` for every admin members
+endpoint, including list/read/detail. `PROFILE_VIEWER_ROLES` and the profile
+viewer permission model are intentionally not used for this surface. Member
+reads and writes are scoped to the selected admin community: targets with a
+membership row in that community (any status) or with no active membership
+anywhere are in scope, while users active only in other communities return a
+non-leaking `404 not_found`.
+
+The list endpoint supports the current Members page filters (`search`, `role`,
+`membership_status` including `no_membership`, limit/offset paging) and returns
+the existing list-row contract in snake_case, including membership fields and
+community-scoped registration counters. The detail endpoint adds profile and
+membership detail; the registrations endpoint returns the member's
+registration history for the selected community only, reusing the admin
+registration selected-option snapshot shape.
+
+Profile updates accept only the safe profile fields already edited by the
+Members admin UI and validate them strictly. Membership updates upsert
+role/status inside the selected community in a transaction with the existing
+`joined_at` semantics. PR 24 does not create auth users, does not change
+passwords, does not touch `auth.users` or the Supabase Admin API, does not
+implement invite creation, and does not read or expose `prayer_activity_logs`
+or any prayer tracker data. No database schema changes are added.
+
+PR 24 is backend-only: the web-admin Members page, its Supabase RPC provider,
+mobile, invites, seating, and import/feedback/prayer/contacts surfaces remain
+unchanged. The next PR is `feature/admin-members-api-switch` (PR 25), which
+will switch the web-admin Members page to these endpoints behind a provider
+flag.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
