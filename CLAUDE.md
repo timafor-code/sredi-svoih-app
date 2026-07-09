@@ -6,3 +6,6 @@
 - One session or /clear per PR. Do not carry context between PRs.
 - Prefer targeted reads: git grep -n, sed -n 'N,Mp', wc -l before reading files.
 - Do not read whole large files or directory trees without a reason.
+- Run shell commands as separate tool calls. Do not chain commands with ;, &&, ||,
+  pipes, or PowerShell if/try blocks: compound commands never match the permission
+  allow list and always trigger a manual approval prompt.
