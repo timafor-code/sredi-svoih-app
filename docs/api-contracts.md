@@ -1286,6 +1286,65 @@ other allows one non-null `external_id` per run, preserving idempotent writes
 inside a run without making `(source_id, external_id)` unique across runs.
 Cross-run import review history remains allowed.
 
+PR 30 implements backend-only Python API import endpoints on top of that schema:
+
+| Method | Path | Required role | Purpose |
+| --- | --- | --- | --- |
+| POST | `/admin/import-runs` | admin/event_manager | Create one review-only website import run and write import items. |
+| GET | `/admin/import-runs` | admin/event_manager | List recent import runs visible to the actor. |
+| GET | `/admin/import-items` | admin/event_manager | List review queue items with `status`, `source_id`, `run_id`, `limit`, and `offset` filters. |
+| GET | `/admin/import-items/{item_id}` | admin/event_manager | Read one import item with `raw_payload.importReview` preserved. |
+| POST | `/admin/import-items/{item_id}/ignore` | admin/event_manager | Mark one scoped import item ignored and preserve review metadata. |
+| POST | `/admin/import-items/{item_id}/publish` | admin/event_manager | Explicitly create or update one linked event from an import item. |
+
+All admin import endpoints require `Authorization: Bearer <token>` and an active
+`admin` or `event_manager` membership in the relevant community. Reads and
+writes are scoped to the actor's manageable communities. Plain members,
+unauthenticated callers, and actors from other communities cannot see or mutate
+out-of-community import sources, runs, items, or linked events.
+
+`POST /admin/import-runs` is synchronous in PR 30 and review-only. It creates a
+`started` run, fetches the configured website source, writes
+`event_import_items`, and then marks the run `success` or `failed`. It never
+creates, updates, publishes, schedules, or auto-publishes events. If a source
+already has a `started` run, the endpoint returns HTTP 409 `conflict`. The run
+summary includes parser counts, item error counts, date-confidence counts, and
+dedupe status counts. The schema `created_count` and `updated_count` remain
+event-write counters and stay `0` during run creation.
+
+Run creation accepts either an existing `source_id`, or a `community_id` with
+optional source configuration (`source_url`, `source_key`, `source_title`).
+When `source_id` is omitted, the API creates or updates the community-scoped
+source row for the requested key before starting the run. Source settings store
+parser metadata only; no frontend database URL, service-role key, Supabase
+Admin API access, or Supabase Edge Function is used.
+
+Import item responses return table status (`new | linked | ignored | error`)
+and the stored `raw_payload` object. Dedupe remains JSON-only under
+`raw_payload.importReview.dedupe`; dedupe states such as `duplicate`,
+`possible_duplicate`, `linked_existing`, and `manual_override_skipped` are not
+promoted to table status columns.
+
+`POST /admin/import-items/{item_id}/ignore` sets `status = ignored`, preserves
+`raw_payload.importReview`, and adds `raw_payload.adminReview` metadata with a
+safe actor id, timestamp, and optional reason.
+
+`POST /admin/import-items/{item_id}/publish` is the only PR 30 endpoint that
+writes events. It is idempotent where practical: if the item is already linked,
+the linked event is updated instead of creating a duplicate; otherwise the API
+also checks for an existing `website_scrape` event with the same external id.
+For new events, safe defaults are `status = draft`, `visibility = hidden`,
+`source_type = website_scrape`, source URL/external id from the item when
+available, and `manual_override = true`. A caller may explicitly request
+`published`, `public`, or `members_only` values when normal event validation
+allows them. Successful publish sets `event_import_items.linked_event_id` and
+`status = linked`.
+
+PR 30 does not switch the web-admin UI, add `adminImportApiService`, change
+mobile, change Supabase migrations/RPC/RLS, use Supabase Edge Functions, add
+scheduled imports, or mirror images. The next PR is
+`feature/admin-import-api-switch`.
+
 ### Admin Feedback, Privacy, And Push
 
 | Method | Path | Required role | Purpose |
