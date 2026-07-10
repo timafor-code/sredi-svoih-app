@@ -117,12 +117,23 @@ async def upsert_current_user_prayer_log(
                 "started_at or completed_at is required for a new prayer log",
             )
 
+        insert_started_at = (
+            payload.started_at
+            if payload.started_at is not None
+            else existing_log.started_at if existing_log is not None else None
+        )
+        insert_completed_at = (
+            payload.completed_at
+            if payload.completed_at is not None
+            else existing_log.completed_at if existing_log is not None else None
+        )
+
         insert_statement = insert(PrayerActivityLog).values(
             user_id=current_user.id,
             activity_type=payload.activity_type,
             activity_date=activity_date,
-            started_at=payload.started_at,
-            completed_at=payload.completed_at,
+            started_at=insert_started_at,
+            completed_at=insert_completed_at,
             timezone=payload.timezone,
             city=payload.city,
             hebrew_date=payload.hebrew_date,
