@@ -1439,6 +1439,25 @@ logged. PR 32C does not change mobile or web-admin code, provider flags, the
 legacy Supabase service, migrations, RPC, RLS, or schema. The next PR is
 `feature/mobile-prayer-tracker-api-switch` (PR 32D).
 
+### PR 32D mobile Prayer Tracker API switch
+
+PR 32D adds `prayerTrackerApiService` and routes the existing mobile
+`recordPrayerActivity` and `loadMyPrayerActivity` service interfaces through
+the Python API when `EXPO_PUBLIC_PRAYER_PROVIDER=api`. It uses only
+`POST /me/prayer-logs` and `GET /me/prayer-logs`, mapping their snake_case
+responses to the unchanged mobile Prayer Tracker domain type. The API adapter
+preserves the existing input normalization, default `Europe/Moscow` timezone,
+activity-date handling, sort order, signed-out behavior, immediate store
+updates, and prayer, Shema, and Omer flows.
+
+Supabase remains the default and fallback provider until cutover: an unset,
+`supabase`, or unknown prayer provider value keeps the existing Supabase
+implementation. An API request error does not trigger a second write through
+Supabase. Prayer Tracker data remains private personal religious-practice data;
+this switch adds no admin, Members, or community-manager access and does not
+log prayer details. The next PR is PR 32E,
+`feature/api-community-contacts-endpoints`.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
