@@ -1,38 +1,33 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Generic, TypeVar
-from uuid import UUID, uuid4
+from typing import Any
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
-DataT = TypeVar("DataT")
+from app.schemas.common import (
+    ApiResponse,
+    DataT,
+    ListResponseMeta,
+    PaginatedApiResponse,
+    PaginationMeta,
+    ResponseMeta,
+)
 
-
-class PaginationMeta(BaseModel):
-    limit: int
-    next_cursor: str | None
-    has_more: bool
-
-
-class ResponseMeta(BaseModel):
-    request_id: UUID = Field(default_factory=uuid4)
-
-
-class ListResponseMeta(ResponseMeta):
-    pagination: PaginationMeta
-
-
-class ApiResponse(BaseModel, Generic[DataT]):
-    data: DataT
-    error: None = None
-    meta: ResponseMeta = Field(default_factory=ResponseMeta)
-
-
-class PaginatedApiResponse(BaseModel, Generic[DataT]):
-    data: list[DataT]
-    error: None = None
-    meta: ListResponseMeta
+__all__ = [
+    "ApiResponse",
+    "DataT",
+    "ListResponseMeta",
+    "PaginatedApiResponse",
+    "PaginationMeta",
+    "ResponseMeta",
+    "EventCategoryResponse",
+    "EventResponse",
+    "EventOccurrenceResponse",
+    "EventParticipationOptionResponse",
+    "EventCapacityUnitResponse",
+]
 
 
 class EventCategoryResponse(BaseModel):
