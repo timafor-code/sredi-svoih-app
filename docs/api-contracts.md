@@ -474,6 +474,10 @@ scoped to the authenticated actor.
 | PUT | `/me/contact-visibility` | Replace the actor's contact visibility settings. |
 | POST | `/me/device-tokens` | Register or update one device token for the actor. |
 | DELETE | `/me/device-tokens/{token_id}` | Deactivate one device token owned by the actor. |
+| GET | `/me/prayer-logs` | List the actor's private prayer logs. |
+| POST | `/me/prayer-logs` | Create or update one private prayer log. |
+| DELETE | `/me/prayer-logs/{log_id}` | Delete one private prayer log owned by the actor. |
+| GET | `/me/prayer-summary` | Return the actor's private prayer-log aggregate. |
 | POST | `/me/avatar/upload-url` | Request a short-lived avatar upload target. |
 | POST | `/me/avatar/confirm` | Confirm an uploaded avatar object for the actor. |
 | DELETE | `/me/avatar` | Remove the actor's avatar reference. |
@@ -497,6 +501,75 @@ raw `expo_push_token`; raw tokens are never logged.
 one token strictly scoped to the current user; a token id owned by another
 user returns `404` with the shared `{"code": "not_found"}` detail shape. No
 push sending exists yet; tokens are storage-only until the push pipeline PR.
+
+### Prayer Tracker (PR 32C)
+
+`GET /me/prayer-logs`, `POST /me/prayer-logs`,
+`DELETE /me/prayer-logs/{log_id}`, and `GET /me/prayer-summary` all require
+`Authorization: Bearer <access_token>` and use the standard `{ data, error,
+meta }` envelope. They are strictly current-user scoped through the
+authenticated actor; clients never submit `user_id`, and a log owned by another
+user is neither readable nor deletable. A missing or foreign log id returns the
+same non-leaking `404 {"code": "not_found"}` response.
+
+`GET /me/prayer-logs` accepts optional inclusive `from_date` and `to_date`
+filters in `YYYY-MM-DD` form and an optional `limit` (default `100`, minimum
+`1`, maximum `500`). `from_date` must not be after `to_date`. It returns only
+the actor's rows, ordered by `activity_date` descending and then `created_at`
+descending. Each row has the stable snake_case shape:
+
+```json
+{
+  "id": "<uuid>",
+  "user_id": "<current-user-uuid>",
+  "activity_type": "shacharit",
+  "activity_date": "YYYY-MM-DD",
+  "started_at": "<ISO-8601-with-timezone-or-null>",
+  "completed_at": "<ISO-8601-with-timezone-or-null>",
+  "timezone": "Europe/Moscow",
+  "city": null,
+  "hebrew_date": {},
+  "metadata": {},
+  "created_at": "<ISO-8601-with-timezone>",
+  "updated_at": "<ISO-8601-with-timezone>"
+}
+```
+
+`POST /me/prayer-logs` has a strict (`extra = "forbid"`) request body. It
+accepts only `activity_type`, `activity_date`, `started_at`, `completed_at`,
+`timezone`, `city`, `hebrew_date`, and `metadata`; server-owned fields such as
+`id`, `user_id`, `created_at`, and `updated_at` are rejected. `activity_type`
+is one of `shacharit`, `mincha`, `maariv`, `shema_morning`, `shema_evening`, or
+`omer_count`. `timezone` defaults to `Europe/Moscow`; `hebrew_date` and
+`metadata` default to empty JSON objects and must be objects. Timestamps must
+be timezone-aware ISO 8601 values. An explicitly supplied `activity_date` must
+be `YYYY-MM-DD`; otherwise the API derives it from `started_at` (or
+`completed_at`) in the supplied IANA timezone. Unknown timezones and a new row
+without either timestamp are validation errors.
+
+The POST is an upsert on `(user_id, activity_date, activity_type)`. A retry or
+concurrent write does not create a duplicate row. On an existing row, omitted
+`started_at`, `completed_at`, and `city` preserve their current values;
+`hebrew_date` and `metadata` merge object keys with incoming keys taking
+precedence; `timezone` updates from the supplied or default value; and
+`updated_at` changes explicitly. The response contains the final stable prayer
+log shape above. `DELETE /me/prayer-logs/{log_id}` returns
+`{ "id": "<uuid>", "deleted": true }` in `data`.
+
+`GET /me/prayer-summary` accepts the same optional inclusive date range and
+the same `from_date <= to_date` validation. Its `data` has
+`from_date`, `to_date`, `total_logs`, `active_days`,
+`counts_by_activity_type`, `first_activity_date`, and `last_activity_date`.
+`active_days` counts distinct matching `activity_date` values; first/last are
+the minimum/maximum matching dates or `null`. `counts_by_activity_type` always
+contains all six supported keys, with `0` where the actor has no matching logs.
+
+Prayer Tracker data is private religious-practice data. These routes require
+only authentication, not community membership; admin and event-manager roles
+receive no additional access. There is no admin, member, community, social,
+leaderboard, or shared-progress prayer endpoint, and prayer details must not be
+logged. This PR does not switch the mobile provider; PR 32D is
+`feature/mobile-prayer-tracker-api-switch`.
 
 ## `/events/*`
 

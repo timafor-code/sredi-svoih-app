@@ -1411,6 +1411,34 @@ no account deletion/export fulfillment, no emails, and no Supabase
 migrations/RPC/RLS/Edge Function changes. The next PR is
 `feature/api-prayer-tracker-endpoints`.
 
+### PR 32C API Prayer Tracker endpoints
+
+PR 32C implements the backend-only private Prayer Tracker API on the existing
+PR 32A `PrayerActivityLog` model and Alembic schema, without changing either.
+It adds authenticated current-user routes `GET /me/prayer-logs`,
+`POST /me/prayer-logs`, `DELETE /me/prayer-logs/{log_id}`, and
+`GET /me/prayer-summary`, all using the standard `ApiResponse` envelope and
+snake_case fields.
+
+The log list supports inclusive `from_date`/`to_date` filters and a bounded
+`limit` of `1..500` (default `100`) and is ordered by activity date then
+creation time descending. POST is a transaction-safe upsert on the existing
+`(user_id, activity_date, activity_type)` uniqueness invariant. It derives a
+missing activity date from a timezone-aware timestamp and supplied IANA
+timezone, preserves omitted timestamps and city on existing rows, merges the
+two JSON objects with incoming keys taking precedence, and explicitly updates
+`updated_at`. The summary is private to the current user and returns matching
+row count, distinct active days, six zero-filled activity-type counts, and
+first/last activity dates.
+
+Prayer data remains private personal religious-practice data: no community
+membership is required for an owner, no role receives additional access, and
+there is no admin, members, community, aggregate, leaderboard, social, or
+shared-progress prayer surface. Prayer details and request bodies are not
+logged. PR 32C does not change mobile or web-admin code, provider flags, the
+legacy Supabase service, migrations, RPC, RLS, or schema. The next PR is
+`feature/mobile-prayer-tracker-api-switch` (PR 32D).
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
