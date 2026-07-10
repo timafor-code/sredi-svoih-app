@@ -13,19 +13,26 @@ from app.core.request_context import REQUEST_ID_HEADER, get_request_id
 logger = logging.getLogger(__name__)
 
 _STATUS_CODE_MAP = {
+    status.HTTP_400_BAD_REQUEST: "bad_request",
     status.HTTP_401_UNAUTHORIZED: "unauthenticated",
     status.HTTP_403_FORBIDDEN: "forbidden",
     status.HTTP_404_NOT_FOUND: "not_found",
     status.HTTP_409_CONFLICT: "conflict",
+    status.HTTP_413_REQUEST_ENTITY_TOO_LARGE: "payload_too_large",
+    status.HTTP_415_UNSUPPORTED_MEDIA_TYPE: "unsupported_media_type",
     status.HTTP_422_UNPROCESSABLE_ENTITY: "validation_error",
     status.HTTP_429_TOO_MANY_REQUESTS: "rate_limited",
+    status.HTTP_503_SERVICE_UNAVAILABLE: "service_unavailable",
 }
 
 
 def _status_to_code(status_code: int) -> str:
+    mapped = _STATUS_CODE_MAP.get(status_code)
+    if mapped is not None:
+        return mapped
     if status_code >= 500:
         return "internal_error"
-    return _STATUS_CODE_MAP.get(status_code, "http_error")
+    return "http_error"
 
 
 def _error_response(
@@ -112,8 +119,9 @@ async def request_validation_exception_handler(
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     request_id = get_request_id()
     logger.exception(
-        "Unhandled API error",
-        extra={"path": request.url.path, "request_id": request_id},
+        "Unhandled API error request_id=%s path=%s",
+        request_id,
+        request.url.path,
     )
     return _error_response(
         status.HTTP_500_INTERNAL_SERVER_ERROR,

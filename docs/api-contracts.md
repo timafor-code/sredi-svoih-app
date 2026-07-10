@@ -123,8 +123,10 @@ compatibility, so the switch required no client changes.
 Every response carries an `X-Request-ID` header equal to `meta.request_id` in
 the body. Clients may send an `X-Request-ID` request header; it is honored only
 when it is a syntactically valid UUID, otherwise the server generates a fresh
-UUID for that request. Server logs attach the same request id, so a single id
-correlates the client report, the response body, and the server log entry.
+UUID for that request. `X-Request-ID` is CORS-allowed as a request header and
+exposed on responses, so browser clients can send and read it. Unhandled-error
+(500) log lines include the correlated request id and request path in the log
+text; ordinary server log lines do not automatically carry the request id.
 
 ## Pagination
 
@@ -242,9 +244,10 @@ The global handlers produce `error.code` in two ways:
   unchanged as `error.code`.
 - `HTTPException` raised with a plain string detail keeps the string as
   `error.message`, and `error.code` falls back to a status-based mapping:
-  `401 unauthenticated`, `403 forbidden`, `404 not_found`, `409 conflict`,
-  `422 validation_error`, `429 rate_limited`, any `5xx` `internal_error`, and
-  `http_error` for other statuses.
+  `400 bad_request`, `401 unauthenticated`, `403 forbidden`, `404 not_found`,
+  `409 conflict`, `413 payload_too_large`, `415 unsupported_media_type`,
+  `422 validation_error`, `429 rate_limited`, `503 service_unavailable`,
+  any other `5xx` `internal_error`, and `http_error` for other statuses.
 
 `HTTPException` headers pass through to the response unchanged, so
 `Retry-After` on 429 and `WWW-Authenticate` on 401 survive the envelope.

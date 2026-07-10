@@ -13,7 +13,8 @@ from app.core.errors import (
 from app.core.logging import configure_logging
 from app.core.request_context import RequestContextMiddleware
 
-_CORS_ALLOWED_HEADERS = ["Authorization", "Content-Type"]
+_CORS_ALLOWED_HEADERS = ["Authorization", "Content-Type", "X-Request-ID"]
+_CORS_EXPOSED_HEADERS = ["X-Request-ID"]
 _CORS_ALLOWED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
 
@@ -31,6 +32,7 @@ def create_app() -> FastAPI:
         allow_headers=_CORS_ALLOWED_HEADERS,
         allow_methods=_CORS_ALLOWED_METHODS,
         allow_origins=settings.cors_allowed_origins,
+        expose_headers=_CORS_EXPOSED_HEADERS,
     )
     # Added after CORSMiddleware so it wraps CORS and runs first on requests.
     application.add_middleware(RequestContextMiddleware)
