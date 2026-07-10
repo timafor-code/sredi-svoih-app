@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api import auth, events, health, me, privacy, registrations
+from app.api import auth, events, health, me, prayer_tracker, privacy, registrations
 from app.api.admin import community as admin_community
 from app.api.admin import events as admin_events
 from app.api.admin import feedback as admin_feedback
@@ -25,5 +25,6 @@ api_router.include_router(auth.router)
 api_router.include_router(events.router)
 api_router.include_router(health.router)
 api_router.include_router(me.router)
+api_router.include_router(prayer_tracker.router)
 api_router.include_router(privacy.router)
 api_router.include_router(registrations.router)

@@ -8,6 +8,32 @@ Prayer activity is private user data. The table has row level security enabled, 
 
 Admins and community managers do not receive any special access to `prayer_activity_logs`. There is no delete policy in this foundation.
 
+## Python API Migration (PR 32C)
+
+PR 32C adds the backend-only authenticated current-user API routes
+`GET /me/prayer-logs`, `POST /me/prayer-logs`,
+`DELETE /me/prayer-logs/{log_id}`, and `GET /me/prayer-summary`. Every route
+uses the standard API response envelope and is strictly scoped to the current
+user; no request accepts `user_id`, and a foreign log is not visible or
+deletable.
+
+The list accepts inclusive `from_date`/`to_date` filters in `YYYY-MM-DD` and a
+limit of `1..500` (default `100`). POST accepts only the stable snake_case log
+fields, timezone-aware ISO timestamps, and JSON objects for `hebrew_date` and
+`metadata`. It upserts by user, activity date, and activity type: it derives a
+missing activity date in the supplied IANA timezone, preserves omitted start,
+completion, and city values on an existing log, and merges incoming JSON object
+keys over the existing objects. The summary returns the matching total logs,
+distinct active days, all six activity counts (including zero values), and
+first/last matching activity dates.
+
+Prayer data is private personal religious-practice data. No administrator,
+event manager, community manager, members endpoint, or community aggregate has
+additional access; there is no admin prayer route, leaderboard, social sharing,
+shared progress, or streak sharing. Prayer details are not logged. This PR does
+not switch the mobile provider or modify the legacy Supabase service; PR 32D,
+`feature/mobile-prayer-tracker-api-switch`, performs that separate switch.
+
 ## Connected UI Actions
 
 The app now records Prayer Tracker activity from:
