@@ -8,6 +8,9 @@ import type {
   RecordPrayerActivityInput,
 } from '@/types/prayerTracker';
 
+import { isMobileApiProviderEnabled } from './apiClient';
+import * as prayerTrackerApiService from './prayerTrackerApiService';
+
 const DEFAULT_TIMEZONE = 'Europe/Moscow';
 const AUTH_REQUIRED_MESSAGE = 'Нужен вход. Чтобы вести молитвенный трекер, войдите в приложение.';
 
@@ -178,6 +181,10 @@ function mergePayloadObject<T extends HebrewDatePayload | PrayerActivityMetadata
 }
 
 export async function recordPrayerActivity(input: RecordPrayerActivityInput): Promise<PrayerActivityLog> {
+  if (isMobileApiProviderEnabled('prayer')) {
+    return prayerTrackerApiService.recordPrayerActivity(input);
+  }
+
   const userId = await getCurrentUserId();
 
   if (!userId) {
@@ -221,6 +228,10 @@ export async function recordPrayerActivity(input: RecordPrayerActivityInput): Pr
 export async function loadMyPrayerActivity(
   params: LoadPrayerActivityParams = {},
 ): Promise<PrayerActivityLog[]> {
+  if (isMobileApiProviderEnabled('prayer')) {
+    return prayerTrackerApiService.loadMyPrayerActivity(params);
+  }
+
   const userId = await getCurrentUserId();
 
   if (!userId) {

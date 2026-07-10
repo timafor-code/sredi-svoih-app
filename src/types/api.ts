@@ -1,3 +1,5 @@
+import type { PrayerActivityType } from './prayerTracker';
+
 export const API_PROVIDER_NAMES = ['supabase', 'api'] as const;
 
 export type ApiProviderName = (typeof API_PROVIDER_NAMES)[number];
@@ -303,4 +305,30 @@ export type ApiEventCategoryResponse = {
   is_active?: boolean | null;
   created_at?: string | null;
   updated_at?: string | null;
+};
+
+export type ApiPrayerActivityLogResponse = {
+  id: string;
+  user_id: string;
+  activity_type: PrayerActivityType;
+  activity_date: string;
+  started_at: string | null;
+  completed_at: string | null;
+  timezone: string;
+  city: string | null;
+  hebrew_date: unknown;
+  metadata: unknown;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ApiRecordPrayerActivityRequest = {
+  activity_type: PrayerActivityType;
+  activity_date: string;
+  started_at: string | null;
+  completed_at: string | null;
+  timezone: string;
+  city: string | null;
+  hebrew_date: Record<string, unknown>;
+  metadata: Record<string, unknown>;
 };

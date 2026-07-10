@@ -8,7 +8,7 @@ Prayer activity is private user data. The table has row level security enabled, 
 
 Admins and community managers do not receive any special access to `prayer_activity_logs`. There is no delete policy in this foundation.
 
-## Python API Migration (PR 32C)
+## Python API Migration (PRs 32C and 32D)
 
 PR 32C adds the backend-only authenticated current-user API routes
 `GET /me/prayer-logs`, `POST /me/prayer-logs`,
@@ -33,6 +33,20 @@ additional access; there is no admin prayer route, leaderboard, social sharing,
 shared progress, or streak sharing. Prayer details are not logged. This PR does
 not switch the mobile provider or modify the legacy Supabase service; PR 32D,
 `feature/mobile-prayer-tracker-api-switch`, performs that separate switch.
+
+PR 32D adds `prayerTrackerApiService` and switches the existing mobile
+`recordPrayerActivity` and `loadMyPrayerActivity` facade calls to the Python
+API only when `EXPO_PUBLIC_PRAYER_PROVIDER=api`. It uses `POST /me/prayer-logs`
+and `GET /me/prayer-logs`, while mapping snake_case responses back to the
+unchanged mobile domain type. Existing screens, cards, modals, Zustand store,
+activity types, timezone/date handling, sort order, signed-out behavior, store
+updates, and prayer, Shema, and Omer flows remain unchanged.
+
+Supabase remains the default/fallback provider until cutover: an unset,
+`supabase`, or unknown value keeps the existing Supabase path. API failures do
+not retry the write through Supabase. Prayer Tracker data remains private, and
+this mobile switch adds no admin or community-manager access. The next PR is
+PR 32E, `feature/api-community-contacts-endpoints`.
 
 ## Connected UI Actions
 
