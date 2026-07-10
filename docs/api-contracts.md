@@ -89,14 +89,16 @@ Error:
   "data": null,
   "error": {
     "code": "validation_error",
-    "message": "Request validation failed.",
-    "details": [
-      {
-        "field": "starts_at",
-        "code": "required",
-        "message": "Field is required."
-      }
-    ]
+    "message": "Request validation failed",
+    "details": {
+      "errors": [
+        {
+          "loc": ["query", "starts_after"],
+          "msg": "Input should have timezone info",
+          "type": "timezone_aware"
+        }
+      ]
+    }
   },
   "meta": {
     "request_id": "8e9c2a4d-5e30-47c9-b749-1f8da61b82f5"
@@ -105,8 +107,26 @@ Error:
 ```
 
 `data` contains the resource, collection, or action result. `error` is `null`
-for success and populated for failures. `meta.request_id` is present on every
-response so clients can report issues without exposing sensitive payloads.
+for success and populated for failures. `error.details` is an optional object
+with error-specific context. `meta.request_id` is present on every response so
+clients can report issues without exposing sensitive payloads.
+
+This envelope is implemented for all error responses by global exception
+handlers in `apps/api/app/core/errors.py`; no endpoint returns the FastAPI
+default `{"detail": ...}` body anymore. Both API clients (mobile
+`src/services/apiClient.ts` and admin `apps/admin/src/services/apiClient.ts`)
+parse the envelope first and retain a `{"detail"}` fallback for backward
+compatibility, so the switch required no client changes.
+
+### Request Correlation
+
+Every response carries an `X-Request-ID` header equal to `meta.request_id` in
+the body. Clients may send an `X-Request-ID` request header; it is honored only
+when it is a syntactically valid UUID, otherwise the server generates a fresh
+UUID for that request. `X-Request-ID` is CORS-allowed as a request header and
+exposed on responses, so browser clients can send and read it. Unhandled-error
+(500) log lines include the correlated request id and request path in the log
+text; ordinary server log lines do not automatically carry the request id.
 
 ## Pagination
 
@@ -214,15 +234,40 @@ database transactions and locks where needed.
 | 500 | `internal_error` | Unexpected server error. |
 | 503 | `service_unavailable` | Required dependency is temporarily unavailable. |
 
-Validation details use stable field paths:
+The global handlers produce `error.code` in two ways:
+
+- Services that raise `HTTPException` with a structured
+  `detail={"code": ..., "message": ...}` dict (registrations, seating, and
+  other domain flows) have `code` and `message` lifted directly into `error`;
+  any extra keys of the detail dict move into `error.details`. Domain codes
+  such as `capacity_unavailable` or `state_conflict` therefore surface
+  unchanged as `error.code`.
+- `HTTPException` raised with a plain string detail keeps the string as
+  `error.message`, and `error.code` falls back to a status-based mapping:
+  `400 bad_request`, `401 unauthenticated`, `403 forbidden`, `404 not_found`,
+  `409 conflict`, `413 payload_too_large`, `415 unsupported_media_type`,
+  `422 validation_error`, `429 rate_limited`, `503 service_unavailable`,
+  any other `5xx` `internal_error`, and `http_error` for other statuses.
+
+`HTTPException` headers pass through to the response unchanged, so
+`Retry-After` on 429 and `WWW-Authenticate` on 401 survive the envelope.
+Unhandled server errors return a 500 envelope with `error.code`
+`internal_error` and a generic message; exception text and tracebacks never
+appear in the response body.
+
+Request-body and query validation failures return HTTP 422 with `error.code`
+`validation_error` and `error.details.errors`, a list of entries each holding
+only `loc`, `msg`, and `type` from the validation error:
 
 ```json
 {
-  "field": "participation_options[0].capacity_units[0].quantity",
-  "code": "min_value",
-  "message": "Value must be at least 1."
+  "loc": ["body", "option_selections", 0, "quantity"],
+  "msg": "Input should be greater than or equal to 1",
+  "type": "greater_than_equal"
 }
 ```
+
+Submitted field values are never echoed back in validation errors or logged.
 
 Authorization failures must not reveal private resource existence. If the actor
 cannot know that a resource exists, return `not_found` instead of `forbidden`.
@@ -499,7 +544,7 @@ instead of creating a duplicate row. `push_provider` is always forced to
 raw `expo_push_token`; raw tokens are never logged.
 `DELETE /me/device-tokens/{token_id}` soft-deactivates (`is_active = false`)
 one token strictly scoped to the current user; a token id owned by another
-user returns `404` with the shared `{"code": "not_found"}` detail shape. No
+user returns `404` with the shared `{"code": "not_found"}` error shape. No
 push sending exists yet; tokens are storage-only until the push pipeline PR.
 
 ### Prayer Tracker (PR 32C)
@@ -597,19 +642,18 @@ Implemented read behavior (PR 15): `GET /events` supports `limit`, `cursor`,
 on `starts_at`. Both date filters are inclusive: `starts_after` matches
 `starts_at >= starts_after` and `starts_before` matches
 `starts_at <= starts_before`. Date filters without a timezone offset are
-rejected with HTTP `422`; the error body currently uses the FastAPI default
-`{"detail": ...}` shape, not yet the shared error envelope. Results are
-ordered by `starts_at` plus `id`. Draft, hidden, cancelled, and archived
-events return HTTP `404` through these endpoints, also currently with the
-FastAPI default `{"detail": ...}` error body rather than the shared error
-envelope. Sub-resource endpoints apply the parent event visibility gate first,
+rejected with HTTP `422` using the shared error envelope with `error.code`
+`validation_error`. Results are ordered by `starts_at` plus `id`. Draft,
+hidden, cancelled, and archived events return HTTP `404` through these
+endpoints as a shared-envelope error with `error.code` `not_found`.
+Sub-resource endpoints apply the parent event visibility gate first,
 then return only `active` occurrences and `is_active = true` participation
 options and capacity units. `GET /event-categories` returns `is_active = true`
 categories ordered by `sort_order` and is bounded and unpaginated, as are the
-per-event sub-resource lists. Migrating all API error responses onto the
-shared error envelope with stable `code` values remains tracked as a later API
-hardening item; the mobile API client also tolerates the current FastAPI
-`detail` error shape during the mixed-provider event-read switch.
+per-event sub-resource lists. All API error responses now use the shared
+error envelope with stable `code` values (see Response Envelope and Common
+Error Codes); the mobile API client still tolerates the legacy FastAPI
+`{"detail": ...}` shape as a backward-compatibility fallback.
 
 Event responses must not leak unpublished admin notes, hidden capacity internals
 that are not needed by the client, or private registration data.
@@ -629,14 +673,19 @@ of scope during the backend migration.
 Implemented behavior (PR 17): these endpoints use `require_auth`, so normal
 API JWTs and the temporary Supabase JWT bridge both resolve through the same
 current-user dependency when the bridge is enabled. Success responses use the
-shared envelope. Registration-specific service errors currently use FastAPI's
-default error wrapper with a stable detail object:
+shared envelope. Registration-specific service errors raise structured
+`{"code", "message"}` details internally; the global handler lifts them into
+the shared error envelope, so a capacity failure returns:
 
 ```json
 {
-  "detail": {
+  "data": null,
+  "error": {
     "code": "capacity_unavailable",
     "message": "No seats available for this event"
+  },
+  "meta": {
+    "request_id": "8e9c2a4d-5e30-47c9-b749-1f8da61b82f5"
   }
 }
 ```
