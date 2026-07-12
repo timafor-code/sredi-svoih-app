@@ -46,6 +46,44 @@ RPC возвращает active members по `profiles.profile_visibility`: об
 
 Field-level privacy живет на backend-слое. UI не должен получать скрытые значения и самостоятельно решать, показывать их или нет.
 
+## Python API contract (PR 32E)
+
+PR 32E adds backend-only authenticated endpoints for the existing directory:
+`GET /community/contacts`, `GET /me/contact-visibility`,
+`PUT /me/contact-visibility`, `POST /me/synced-contacts`, and
+`DELETE /me/synced-contacts/{contact_id}`. It does not change the mobile
+provider or existing contacts UI; PR 32F performs that switch under
+`EXPO_PUBLIC_CONTACTS_PROVIDER` while retaining the Supabase fallback.
+
+`GET /community/contacts` continues to use `profiles` joined to active
+`community_memberships`, never the separate `community_contacts` table. The
+selected community must be actively accessible to the viewer; an omitted
+`community_id` selects the first active membership by joined time, creation
+time, and UUID tie-breaker. The response keeps the stable RPC-compatible
+snake_case row fields, including compatibility booleans, with email always
+`null` and `share_email` always `false`.
+
+Directory privacy remains profile-driven. `profile_visibility` governs whether
+the row is returned, `phone_visibility` controls phone, and
+`birthday_visibility` controls both birthday fields. City and Hebrew name follow
+profile visibility. Members and `event_manager` actors receive only `members`
+and `public` values; only `admin` and `rabbi` can receive `rabbi_only` profile,
+phone, or birthday data. Hidden phone and birthday values are returned as
+`null` with false compatibility flags. The legacy
+`profile_contact_visibility` table is limited to the current user's settings
+GET/PUT endpoints, has all-false defaults, and does not decide directory data.
+
+Synced-contact creation is an explicit, single-contact consent contract. It
+requires a timezone-aware `consented_at` timestamp and at least one of a
+precomputed `phone_hash`, a precomputed `email_hash`, or a birthday. Raw phone
+and raw email are not accepted, payloads are PII and are not logged, and the
+API uses an unprefixed SHA-256 digest contract for either hash: exactly 64 ASCII
+hexadecimal characters, canonicalized to lowercase before storage. The API
+rejects raw values, `sha256:` prefixes, malformed hash strings, and incorrect
+lengths without introducing client-specific hashing behavior. It does not
+invent deduplication or upsert behavior. A synced contact can only be deleted by
+its owner; missing and foreign UUIDs use the same safe not-found response.
+
 ## iPhone contacts
 
 iPhone contacts остаются local only. Приложение читает их через Expo Contacts только после явного действия пользователя, использует только записи с birthday и не загружает эти контакты на сервер.
