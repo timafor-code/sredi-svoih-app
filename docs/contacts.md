@@ -77,9 +77,12 @@ Synced-contact creation is an explicit, single-contact consent contract. It
 requires a timezone-aware `consented_at` timestamp and at least one of a
 precomputed `phone_hash`, a precomputed `email_hash`, or a birthday. Raw phone
 and raw email are not accepted, payloads are PII and are not logged, and the
-API does not invent deduplication or upsert behavior. A synced contact can only
-be deleted by its owner; missing and foreign UUIDs use the same safe not-found
-response.
+API uses an unprefixed SHA-256 digest contract for either hash: exactly 64 ASCII
+hexadecimal characters, canonicalized to lowercase before storage. The API
+rejects raw values, `sha256:` prefixes, malformed hash strings, and incorrect
+lengths without introducing client-specific hashing behavior. It does not
+invent deduplication or upsert behavior. A synced contact can only be deleted by
+its owner; missing and foreign UUIDs use the same safe not-found response.
 
 ## iPhone contacts
 

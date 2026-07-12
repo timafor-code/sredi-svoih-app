@@ -738,19 +738,24 @@ precomputed hashes, never raw phone or email:
 ```json
 {
   "name": "Optional contact label",
-  "phone_hash": "precomputed hash",
-  "email_hash": "precomputed hash",
+  "phone_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "email_hash": null,
   "birthday": "2026-01-31",
   "consented_at": "2026-07-12T10:00:00Z"
 }
 ```
 
-`name` is trimmed and limited to 200 characters. `phone_hash` and `email_hash`
-are trimmed and limited to 512 characters. At least one of `phone_hash`,
-`email_hash`, or `birthday` is required. `birthday` uses `YYYY-MM-DD`, and
-`consented_at` is required and must be an ISO 8601 timestamp with timezone.
-`id`, `user_id`, and `created_at` are server-owned and rejected in the request.
-The API deliberately has no deduplication or upsert semantics for this endpoint.
+`name` is trimmed and limited to 200 characters. When present, `phone_hash` and
+`email_hash` must each be an unprefixed SHA-256 digest: exactly 64 ASCII
+hexadecimal characters. Lowercase hexadecimal is the stable canonical format;
+the API trims valid input and normalizes accepted uppercase hexadecimal to
+lowercase before storage. Raw phone numbers, email addresses, `sha256:`
+prefixes, malformed values, and any other lengths are rejected. At least one of
+`phone_hash`, `email_hash`, or `birthday` is required. `birthday` uses
+`YYYY-MM-DD`, and `consented_at` is required and must be an ISO 8601 timestamp
+with timezone. `id`, `user_id`, and `created_at` are server-owned and rejected
+in the request. The API deliberately has no deduplication or upsert semantics
+for this endpoint.
 
 Success is HTTP 201 and returns only the created current-user row:
 
@@ -759,8 +764,8 @@ Success is HTTP 201 and returns only the created current-user row:
   "id": "synced contact UUID",
   "user_id": "current user UUID",
   "name": "Optional contact label",
-  "phone_hash": "precomputed hash",
-  "email_hash": "precomputed hash",
+  "phone_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "email_hash": null,
   "birthday": "2026-01-31",
   "consented_at": "2026-07-12T10:00:00Z",
   "created_at": "2026-07-12T10:00:00Z"

@@ -22,8 +22,11 @@
   `null` and their compatibility flags are `false`.
 - `POST /me/synced-contacts` accepts one explicitly consented contact with a
   required timezone-aware `consented_at` timestamp and only precomputed
-  phone/email hashes. It never accepts raw phone or raw email, and no request
-  body, name, hash, or birthday is logged.
+  phone/email hashes. Each present hash is an unprefixed SHA-256 digest of
+  exactly 64 ASCII hexadecimal characters; the API normalizes accepted uppercase
+  hexadecimal to lowercase. It never accepts raw phone or raw email, `sha256:`
+  prefixes, malformed hashes, or incorrect lengths, and no request body, name,
+  hash, or birthday is logged.
 - The backend does not read an iPhone address book and does not automatically
   upload device contacts. This PR makes no mobile provider switch; PR 32F will
   add the API facades while preserving Supabase fallback until cutover.

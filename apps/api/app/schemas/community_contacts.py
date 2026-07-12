@@ -15,8 +15,9 @@ from pydantic import (
 )
 
 _DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_SHA256_HEX_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _SYNCED_CONTACT_NAME_MAX_LENGTH = 200
-_SYNCED_CONTACT_HASH_MAX_LENGTH = 512
+_SYNCED_CONTACT_HASH_LENGTH = 64
 
 
 def _normalize_optional_text(value: str | None) -> str | None:
@@ -88,21 +89,36 @@ class SyncedContactCreateRequest(BaseModel):
     name: str | None = Field(default=None, max_length=_SYNCED_CONTACT_NAME_MAX_LENGTH)
     phone_hash: str | None = Field(
         default=None,
-        max_length=_SYNCED_CONTACT_HASH_MAX_LENGTH,
+        min_length=_SYNCED_CONTACT_HASH_LENGTH,
+        max_length=_SYNCED_CONTACT_HASH_LENGTH,
     )
     email_hash: str | None = Field(
         default=None,
-        max_length=_SYNCED_CONTACT_HASH_MAX_LENGTH,
+        min_length=_SYNCED_CONTACT_HASH_LENGTH,
+        max_length=_SYNCED_CONTACT_HASH_LENGTH,
     )
     birthday: date | None = None
     consented_at: datetime
 
     model_config = ConfigDict(extra="forbid")
 
-    @field_validator("name", "phone_hash", "email_hash")
+    @field_validator("name")
     @classmethod
-    def normalize_optional_text_field(cls, value: str | None) -> str | None:
+    def normalize_name(cls, value: str | None) -> str | None:
         return _normalize_optional_text(value)
+
+    @field_validator("phone_hash", "email_hash", mode="before")
+    @classmethod
+    def normalize_sha256_hash(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("must be a SHA-256 hex digest")
+
+        normalized = value.strip().lower()
+        if not _SHA256_HEX_PATTERN.fullmatch(normalized):
+            raise ValueError("must be exactly 64 hexadecimal characters")
+        return normalized
 
     @field_validator("birthday", mode="before")
     @classmethod
