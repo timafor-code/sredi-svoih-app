@@ -222,6 +222,7 @@ database transactions and locks where needed.
 | 400 | `validation_error` | Request parsed, but fields failed validation. |
 | 401 | `unauthenticated` | Missing, expired, invalid, or revoked access token. |
 | 403 | `forbidden` | Actor is authenticated but not allowed to perform the action. |
+| 403 | `membership_required` | Actor has no active membership in the requested community. |
 | 404 | `not_found` | Resource does not exist or is not visible to the actor. |
 | 409 | `conflict` | Request conflicts with current resource state. |
 | 409 | `idempotency_conflict` | Idempotency key was reused with a different request body. |
@@ -615,6 +616,174 @@ receive no additional access. There is no admin, member, community, social,
 leaderboard, or shared-progress prayer endpoint, and prayer details must not be
 logged. This PR does not switch the mobile provider; PR 32D is
 `feature/mobile-prayer-tracker-api-switch`.
+
+## Community contacts (PR 32E)
+
+All community-contact endpoints require Bearer authentication and use the shared
+`{ data, error, meta }` envelope. Directory rows are built from `profiles`
+joined to active `community_memberships`; the API does not read the unrelated
+`community_contacts` table for this surface.
+
+#### `GET /community/contacts`
+
+Optional query parameter:
+
+```text
+community_id=<UUID>
+```
+
+When omitted, the API selects the caller's first active community by
+`joined_at ASC NULLS LAST`, `created_at ASC`, then UUID as a stable tie-breaker.
+The caller must have an active membership in the selected community. A caller
+without one, or requesting a community they cannot access, receives HTTP 403
+with `error.code = "membership_required"` and no directory data.
+
+The successful `data` array is unpaginated and each row has this stable
+snake_case shape:
+
+```json
+{
+  "id": "membership UUID",
+  "user_id": "user UUID",
+  "community_id": "community UUID",
+  "display_name": "Community member",
+  "first_name": null,
+  "last_name": null,
+  "avatar_url": null,
+  "phone": null,
+  "email": null,
+  "city": null,
+  "hebrew_name": null,
+  "birth_date": null,
+  "hebrew_birth_date": null,
+  "role": "member",
+  "membership_status": "active",
+  "joined_at": "2026-07-12T10:00:00Z",
+  "show_in_community_directory": true,
+  "share_phone": false,
+  "share_email": false,
+  "share_birth_date": false,
+  "share_hebrew_birth_date": false,
+  "share_city": true,
+  "share_hebrew_name": true
+}
+```
+
+The display-name fallback is `display_name`, `full_name`, trimmed
+`first_name + last_name`, then `"Community member"`. Rows are ordered by role
+(`admin`, then `event_manager`, then all other roles), normalized display name,
+`joined_at ASC NULLS LAST`, `created_at ASC`, then UUID.
+
+Directory privacy is based only on `profiles.profile_visibility`,
+`profiles.phone_visibility`, and `profiles.birthday_visibility`, not on the
+legacy `profile_contact_visibility` row. Members and `event_manager` actors see
+only `members` and `public` profiles, phones, and birthdays. `admin` and
+`rabbi` actors may also see `rabbi_only` profile, phone, and birthday data.
+`city` and `hebrew_name` follow profile visibility. Hidden phone and birthday
+values are returned as `null` and their compatibility flags are `false`.
+Email is always `null` and `share_email` is always `false`.
+
+#### `GET /me/contact-visibility`
+
+Returns the current user's legacy `profile_contact_visibility` row only:
+
+```json
+{
+  "user_id": "current user UUID",
+  "show_in_community_directory": false,
+  "share_phone": false,
+  "share_email": false,
+  "share_birth_date": false,
+  "share_hebrew_birth_date": false,
+  "share_city": false,
+  "share_hebrew_name": false,
+  "birthday_reminders_enabled": false,
+  "created_at": "2026-07-12T10:00:00Z",
+  "updated_at": "2026-07-12T10:00:00Z"
+}
+```
+
+If the row is absent, the API creates and returns it with every boolean set to
+`false`. This endpoint does not control the current directory privacy model.
+
+#### `PUT /me/contact-visibility`
+
+The request body accepts exactly these required JSON booleans; `user_id` and
+timestamps are not accepted:
+
+```json
+{
+  "show_in_community_directory": false,
+  "share_phone": false,
+  "share_email": false,
+  "share_birth_date": false,
+  "share_hebrew_birth_date": false,
+  "share_city": false,
+  "share_hebrew_name": false,
+  "birthday_reminders_enabled": false
+}
+```
+
+The response is the same shape as `GET /me/contact-visibility`. The upsert is
+scoped to the authenticated user and does not change profiles-based directory
+privacy.
+
+#### `POST /me/synced-contacts`
+
+This is an explicit-consent contract for a single current-user contact. It does
+not read an iPhone address book and it does not upload a device address book
+automatically. The strict body rejects unknown fields and accepts only
+precomputed hashes, never raw phone or email:
+
+```json
+{
+  "name": "Optional contact label",
+  "phone_hash": "precomputed hash",
+  "email_hash": "precomputed hash",
+  "birthday": "2026-01-31",
+  "consented_at": "2026-07-12T10:00:00Z"
+}
+```
+
+`name` is trimmed and limited to 200 characters. `phone_hash` and `email_hash`
+are trimmed and limited to 512 characters. At least one of `phone_hash`,
+`email_hash`, or `birthday` is required. `birthday` uses `YYYY-MM-DD`, and
+`consented_at` is required and must be an ISO 8601 timestamp with timezone.
+`id`, `user_id`, and `created_at` are server-owned and rejected in the request.
+The API deliberately has no deduplication or upsert semantics for this endpoint.
+
+Success is HTTP 201 and returns only the created current-user row:
+
+```json
+{
+  "id": "synced contact UUID",
+  "user_id": "current user UUID",
+  "name": "Optional contact label",
+  "phone_hash": "precomputed hash",
+  "email_hash": "precomputed hash",
+  "birthday": "2026-01-31",
+  "consented_at": "2026-07-12T10:00:00Z",
+  "created_at": "2026-07-12T10:00:00Z"
+}
+```
+
+#### `DELETE /me/synced-contacts/{contact_id}`
+
+Deletes only a row where both the UUID path parameter and `user_id` match the
+authenticated user. Missing and foreign UUIDs both receive the same safe HTTP
+404 `not_found` response. On success, `data` is:
+
+```json
+{
+  "id": "synced contact UUID",
+  "deleted": true
+}
+```
+
+Synced-contact payloads, names, hashes, and birthdays are PII and must not be
+logged. PR 32E adds backend contracts only; it neither switches a mobile
+provider nor adds client-side contact-upload behavior. PR 32F is the planned
+mobile facade switch.
 
 ## `/events/*`
 

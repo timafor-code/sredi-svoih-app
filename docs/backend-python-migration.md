@@ -1458,6 +1458,33 @@ this switch adds no admin, Members, or community-manager access and does not
 log prayer details. The next PR is PR 32E,
 `feature/api-community-contacts-endpoints`.
 
+### PR 32E API community contacts endpoints
+
+PR 32E adds authenticated Python API endpoints for the existing community
+directory, the current user's legacy contact-visibility settings, and one
+explicitly consented synced contact at a time: `GET /community/contacts`,
+`GET /me/contact-visibility`, `PUT /me/contact-visibility`,
+`POST /me/synced-contacts`, and `DELETE /me/synced-contacts/{contact_id}`.
+All use the shared API response/error envelope and request correlation behavior.
+
+The directory remains a `profiles` plus active `community_memberships` query;
+the API does not substitute the separate `community_contacts` table. An active
+membership is required in the requested community, or in the deterministically
+selected first active community when `community_id` is omitted. Profile row
+visibility comes from `profiles.profile_visibility`; phone and birthday values
+come from their corresponding `profiles.*_visibility` fields. Members and
+`event_manager` actors never receive `rabbi_only` data, while `admin` and
+`rabbi` actors may receive it within their own community. Email remains hidden.
+
+`profile_contact_visibility` stays legacy/deprecated for the current user's
+get/upsert settings endpoint. Its eight booleans default to false and it does
+not drive directory visibility. Synced contacts require a timezone-aware
+`consented_at` timestamp and precomputed phone/email hashes; raw phone or email
+is not accepted, input is not logged, and no deduplication invariant is
+invented. This PR neither reads an iPhone address book nor changes mobile or
+web-admin runtime code. The next PR is PR 32F,
+`feature/mobile-community-contacts-api-switch`.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before
