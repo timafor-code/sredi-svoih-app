@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     api_cors_allowed_origins: str = ",".join(_LOCAL_CORS_ALLOWED_ORIGINS)
     api_object_storage_enabled: bool = False
     api_object_storage_endpoint_url: str = ""
+    api_object_storage_public_endpoint_url: str = ""
     api_object_storage_region: str = "us-east-1"
     api_object_storage_bucket: str = ""
     api_object_storage_access_key_id: str = ""

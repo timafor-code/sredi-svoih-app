@@ -22,6 +22,13 @@ The API stores durable metadata in PostgreSQL:
 Signed upload and read URLs are short-lived bearer URLs. They are returned only
 in API responses and are never stored in PostgreSQL.
 
+The backend uses two object-storage endpoints. `API_OBJECT_STORAGE_ENDPOINT_URL`
+is the internal server-to-storage endpoint used for `HEAD`, delete, and other
+backend requests. `API_OBJECT_STORAGE_PUBLIC_ENDPOINT_URL` is used only by the
+presigning client so returned upload/read URLs point at an address reachable by
+the testing client. Presigning does not require the API container to connect to
+that public address.
+
 ## Local And Production Storage
 
 Local development may use the private MinIO service in
@@ -30,7 +37,16 @@ Local development may use the private MinIO service in
 - `api_object_storage` runs S3-compatible object storage.
 - `api_object_storage_init` creates the local `avatars` bucket and disables
   anonymous access.
-- host ports are bound to `127.0.0.1` for local owner inspection only.
+- the internal API endpoint is `http://api-object-storage:9000`.
+- the default local public presigned-URL endpoint is
+  `http://127.0.0.1:59000`.
+- for Expo/iPhone smoke, set `API_OBJECT_STORAGE_PUBLIC_ENDPOINT_URL` to
+  `http://<computer-lan-ip>:59000` before starting `api_backend`. Also expose
+  the MinIO API port for that local run by setting
+  `API_OBJECT_STORAGE_HOST_BIND=0.0.0.0` or a specific LAN interface address;
+  keep the internal endpoint as `http://api-object-storage:9000`.
+- host ports are bound to `127.0.0.1` by default for local owner inspection
+  only.
 - credentials in `infra/env/api.env.example` are synthetic local values.
 
 Production storage must be a Russia-hosted S3-compatible endpoint with a
@@ -46,9 +62,11 @@ owner/legal review.
 2. The client uploads directly to object storage with the required
    `Content-Type`.
 3. `POST /me/avatar/confirm` verifies the uploaded object with server-side
-   `HEAD`, activates the avatar in a database transaction, updates
-   `profiles.avatar_id`, clears legacy `profiles.avatar_url`, and returns a
-   short-lived signed read URL.
+   `HEAD`, creates the new signed read URL before activation, removes the
+   previous active object before committing replacement metadata, updates
+   `profiles.avatar_id`, clears legacy `profiles.avatar_url`, and returns the
+   short-lived signed read URL. If previous-object removal fails, the new
+   avatar remains pending so confirmation can be retried.
 4. `GET /avatars/{avatar_id}` authorizes the caller and returns a fresh
    short-lived signed read URL for an active confirmed avatar.
 5. `DELETE /me/avatar` deletes the active storage object, clears
@@ -57,7 +75,9 @@ owner/legal review.
 
 Only one active avatar is allowed per user through a partial unique index.
 Replacement confirmation does not delete the previous active object before the
-new object has been uploaded and verified.
+new object has been uploaded and verified. Retrying confirmation for an avatar
+that is already the caller's current active avatar is idempotent and returns
+the active metadata with a fresh signed read URL.
 
 ## Accepted Files
 

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status as http_status
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -168,8 +168,7 @@ async def create_current_user_avatar_upload_url(
                 raise _not_found()
 
             upload = await storage.presign_avatar_upload(
-                user_id=current_user.id,
-                avatar_id=avatar_id,
+                object_key=object_key,
                 content_type=payload.content_type,
             )
             session.add(
@@ -203,15 +202,40 @@ async def confirm_current_user_avatar(
         select(ProfileAvatar).where(
             ProfileAvatar.id == payload.avatar_id,
             ProfileAvatar.user_id == current_user.id,
-            ProfileAvatar.status == _PENDING_STATUS,
         ),
     )
     if avatar is None:
         raise _not_found()
 
     storage = get_avatar_storage()
+    if (
+        avatar.status == _ACTIVE_AVATAR_STATUS
+        and avatar.deleted_at is None
+        and avatar.confirmed_at is not None
+    ):
+        profile = await session.scalar(
+            select(Profile).where(
+                Profile.user_id == current_user.id,
+                Profile.avatar_id == avatar.id,
+            ),
+        )
+        if profile is None:
+            raise _not_found()
+        try:
+            read_url = await storage.presign_avatar_read(object_key=avatar.object_key)
+        except AvatarStorageError as exc:
+            raise _storage_unavailable() from exc
+        return _avatar_response(
+            avatar,
+            read_url=read_url.url,
+            read_url_expires_at=read_url.expires_at,
+        )
+
+    if avatar.status != _PENDING_STATUS:
+        raise _not_found()
+
     try:
-        metadata = await storage.head_avatar(user_id=avatar.user_id, avatar_id=avatar.id)
+        metadata = await storage.head_avatar(object_key=avatar.object_key)
     except AvatarObjectNotFoundError as exc:
         raise _not_found() from exc
     except (AvatarStorageUnavailableError, AvatarStorageError) as exc:
@@ -223,78 +247,88 @@ async def confirm_current_user_avatar(
         await _delete_rejected_upload(session, storage, avatar)
         raise
 
-    previous_avatars: list[ProfileAvatar] = []
-    async with _transaction_scope(session):
-        avatar = await session.scalar(
-            select(ProfileAvatar)
-            .where(
-                ProfileAvatar.id == payload.avatar_id,
-                ProfileAvatar.user_id == current_user.id,
-                ProfileAvatar.status == _PENDING_STATUS,
-            )
-            .with_for_update(),
-        )
-        if avatar is None:
-            raise _not_found()
-
-        profile = await session.scalar(
-            select(Profile)
-            .where(Profile.user_id == current_user.id)
-            .with_for_update(),
-        )
-        if profile is None:
-            raise _not_found()
-
-        previous_avatars = list(
-            await session.scalars(
-                select(ProfileAvatar)
-                .where(
-                    ProfileAvatar.user_id == current_user.id,
-                    ProfileAvatar.status == _ACTIVE_AVATAR_STATUS,
-                    ProfileAvatar.deleted_at.is_(None),
-                    ProfileAvatar.id != avatar.id,
-                )
-                .with_for_update(),
-            ),
-        )
-        now = _now()
-        await session.execute(
-            update(ProfileAvatar)
-            .where(
-                ProfileAvatar.user_id == current_user.id,
-                ProfileAvatar.status == _ACTIVE_AVATAR_STATUS,
-                ProfileAvatar.id != avatar.id,
-            )
-            .values(status=_DELETED_STATUS, deleted_at=now, updated_at=now)
-            .execution_options(synchronize_session=False),
-        )
-        avatar.content_type = actual_content_type
-        avatar.size_bytes = metadata.content_length
-        avatar.etag = metadata.etag
-        avatar.status = _ACTIVE_AVATAR_STATUS
-        avatar.confirmed_at = now
-        avatar.deleted_at = None
-        avatar.updated_at = now
-        profile.avatar_id = avatar.id
-        profile.avatar_url = None
-        profile.updated_at = now
-        await session.flush()
-
     try:
-        for previous_avatar in previous_avatars:
-            await storage.delete_avatar(
-                user_id=previous_avatar.user_id,
-                avatar_id=previous_avatar.id,
-            )
-        read_url = await storage.presign_avatar_read(
-            user_id=avatar.user_id,
-            avatar_id=avatar.id,
-        )
+        read_url = await storage.presign_avatar_read(object_key=avatar.object_key)
     except AvatarStorageError as exc:
         raise _storage_unavailable() from exc
 
+    activated_avatar: ProfileAvatar | None = None
+    try:
+        async with _transaction_scope(session):
+            avatar = await session.scalar(
+                select(ProfileAvatar)
+                .where(
+                    ProfileAvatar.id == payload.avatar_id,
+                    ProfileAvatar.user_id == current_user.id,
+                )
+                .with_for_update(),
+            )
+            if avatar is None:
+                raise _not_found()
+
+            profile = await session.scalar(
+                select(Profile)
+                .where(Profile.user_id == current_user.id)
+                .with_for_update(),
+            )
+            if profile is None:
+                raise _not_found()
+
+            if (
+                avatar.status == _ACTIVE_AVATAR_STATUS
+                and avatar.deleted_at is None
+                and profile.avatar_id == avatar.id
+            ):
+                activated_avatar = avatar
+                return _avatar_response(
+                    activated_avatar,
+                    read_url=read_url.url,
+                    read_url_expires_at=read_url.expires_at,
+                )
+
+            if avatar.status != _PENDING_STATUS:
+                raise _not_found()
+
+            previous_avatars = list(
+                await session.scalars(
+                    select(ProfileAvatar)
+                    .where(
+                        ProfileAvatar.user_id == current_user.id,
+                        ProfileAvatar.status == _ACTIVE_AVATAR_STATUS,
+                        ProfileAvatar.deleted_at.is_(None),
+                        ProfileAvatar.id != avatar.id,
+                    )
+                    .with_for_update(),
+                ),
+            )
+            for previous_avatar in previous_avatars:
+                await storage.delete_avatar(object_key=previous_avatar.object_key)
+
+            now = _now()
+            for previous_avatar in previous_avatars:
+                previous_avatar.status = _DELETED_STATUS
+                previous_avatar.deleted_at = now
+                previous_avatar.updated_at = now
+
+            avatar.content_type = actual_content_type
+            avatar.size_bytes = metadata.content_length
+            avatar.etag = metadata.etag
+            avatar.status = _ACTIVE_AVATAR_STATUS
+            avatar.confirmed_at = now
+            avatar.deleted_at = None
+            avatar.updated_at = now
+            profile.avatar_id = avatar.id
+            profile.avatar_url = None
+            profile.updated_at = now
+            await session.flush()
+            activated_avatar = avatar
+    except AvatarStorageError as exc:
+        raise _storage_unavailable() from exc
+
+    if activated_avatar is None:
+        raise _not_found()
     return _avatar_response(
-        avatar,
+        activated_avatar,
         read_url=read_url.url,
         read_url_expires_at=read_url.expires_at,
     )
@@ -337,7 +371,7 @@ async def delete_current_user_avatar(
             return AvatarDeleteResponse(avatar_id=None, deleted=False)
 
         try:
-            await storage.delete_avatar(user_id=avatar.user_id, avatar_id=avatar.id)
+            await storage.delete_avatar(object_key=avatar.object_key)
         except AvatarStorageError as exc:
             raise _storage_unavailable() from exc
 
@@ -367,10 +401,7 @@ async def get_authorized_avatar_read_url(
 
     storage = get_avatar_storage()
     try:
-        read_url = await storage.presign_avatar_read(
-            user_id=avatar.user_id,
-            avatar_id=avatar.id,
-        )
+        read_url = await storage.presign_avatar_read(object_key=avatar.object_key)
     except AvatarStorageError as exc:
         raise _storage_unavailable() from exc
 
@@ -387,7 +418,7 @@ async def _delete_rejected_upload(
     avatar: ProfileAvatar,
 ) -> None:
     try:
-        await storage.delete_avatar(user_id=avatar.user_id, avatar_id=avatar.id)
+        await storage.delete_avatar(object_key=avatar.object_key)
     except AvatarStorageError as exc:
         raise _storage_unavailable() from exc
 

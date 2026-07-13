@@ -803,6 +803,19 @@ metadata in `profile_avatars` and exposes only the durable `avatar_id` reference
 through profile/community response models. Existing `avatar_url` fields remain
 for backward compatibility and are not removed in this PR.
 
+The backend has separate internal and public object-storage endpoints.
+`API_OBJECT_STORAGE_ENDPOINT_URL` is the internal endpoint used by the API for
+`HEAD`, delete, and other server-to-storage requests.
+`API_OBJECT_STORAGE_PUBLIC_ENDPOINT_URL` is used only to generate presigned
+upload/read URLs; presigning does not require the backend container to connect
+to that public address. The local defaults are
+`http://api-object-storage:9000` for internal requests and
+`http://127.0.0.1:59000` for host manual smoke. For Expo/iPhone smoke, restart
+`api_backend` with `API_OBJECT_STORAGE_PUBLIC_ENDPOINT_URL` set to
+`http://<computer-lan-ip>:59000` and expose the local MinIO API port for that
+run with `API_OBJECT_STORAGE_HOST_BIND=0.0.0.0` or a specific LAN interface
+address.
+
 Accepted upload MIME types are `image/jpeg`, `image/png`, `image/webp`,
 `image/heic`, and `image/heif`. `image/jpg` is normalized to `image/jpeg`.
 The default maximum avatar size is 5 MiB. Unsupported types such as SVG, HTML,
@@ -858,15 +871,20 @@ Request body is strict and accepts only:
 }
 ```
 
-The avatar must be pending and owned by the current user. Missing and foreign
-ids return the same safe HTTP 404 `not_found`. The API verifies the uploaded
-object with server-side `HEAD`; it does not trust client-submitted content type
-or size. Zero-byte objects, oversized objects, and objects with unsupported
-actual content types are rejected and cleaned up when possible.
+The avatar must be pending and owned by the current user, except that retrying
+confirmation for an avatar that is already the caller's current active avatar is
+idempotent and returns active metadata with a fresh signed read URL. Missing and
+foreign ids return the same safe HTTP 404 `not_found`. The API verifies the
+uploaded object with server-side `HEAD`; it does not trust client-submitted
+content type or size. Zero-byte objects, oversized objects, and objects with
+unsupported actual content types are rejected and cleaned up when possible.
 
 On success, the API marks the avatar active, updates `profiles.avatar_id`,
 clears legacy `profiles.avatar_url`, ensures only one active avatar remains for
-the user, and returns durable metadata plus a fresh signed read URL:
+the user, and returns durable metadata plus a fresh signed read URL. Replacement
+confirmation verifies the new object and generates the new signed read URL
+before committing activation. If previous-object removal fails, the new avatar
+remains pending so confirmation can be retried:
 
 ```json
 {
