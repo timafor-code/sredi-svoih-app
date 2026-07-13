@@ -24,10 +24,16 @@ import {
   type ProfileUpsert,
 } from '@/services/authService';
 import {
+  clearAvatarReadUrlMemoryCache,
+  isApiAvatarProviderEnabled,
+  resolveCurrentUserAvatarReadUrl,
+} from '@/services/avatarService';
+import {
   acceptInvite as acceptInviteService,
   loadMyMembership,
   type CommunityMembership,
 } from '@/services/inviteService';
+import { authOperationGuards } from './authOperationGuards';
 
 type AuthState = {
   session: Session | null;
@@ -39,6 +45,8 @@ type AuthState = {
   loadSession: () => Promise<void>;
   loadProfile: () => Promise<void>;
   updateProfile: (input: ProfileUpsert) => Promise<Profile>;
+  refreshProfileAvatar: () => Promise<void>;
+  setProfileAvatarUrl: (avatarUrl: string | null) => void;
   loadMembership: () => Promise<void>;
   acceptInvite: (code: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
@@ -50,18 +58,42 @@ type AuthState = {
   signOut: () => Promise<void>;
 };
 
+type OperationIsCurrent = () => boolean;
+
 function friendlyAuthError(error: unknown): string {
   return getAuthErrorMessage(error, AUTH_ERROR_MESSAGES.actionFailed);
 }
 
-async function resetEventPrivateState(): Promise<void> {
+async function resetEventPrivateState(isCurrent: OperationIsCurrent): Promise<boolean> {
+  if (!isCurrent()) {
+    return false;
+  }
+
   try {
     const { useEventsStore } = await import('@/store/useEventsStore');
+
+    if (!isCurrent()) {
+      return false;
+    }
 
     useEventsStore.getState().resetPrivateState();
   } catch {
     // Auth state must still settle if the events store is unavailable during startup.
   }
+
+  return isCurrent();
+}
+
+async function clearAvatarReadUrlMemoryCacheIfCurrent(
+  isCurrent: OperationIsCurrent,
+): Promise<boolean> {
+  if (!isCurrent()) {
+    return false;
+  }
+
+  await clearAvatarReadUrlMemoryCache();
+
+  return isCurrent();
 }
 
 async function loadProfileOrCreate(): Promise<Profile | null> {
@@ -72,6 +104,60 @@ async function loadProfileOrCreate(): Promise<Profile | null> {
   }
 
   return upsertProfile();
+}
+
+async function resolveOptionalCurrentAvatarUrl(): Promise<string | null> {
+  try {
+    return await resolveCurrentUserAvatarReadUrl();
+  } catch {
+    return null;
+  }
+}
+
+function invalidateAvatarRefreshes(): void {
+  authOperationGuards.invalidateAvatarRefreshes();
+}
+
+function beginAvatarRefresh(): number {
+  return authOperationGuards.beginAvatarRefresh();
+}
+
+function beginAuthOperation(): number {
+  return authOperationGuards.beginAuthOperation();
+}
+
+function isCurrentAvatarRefresh(revision: number): boolean {
+  return authOperationGuards.isCurrentAvatarRefresh(revision);
+}
+
+function isCurrentAuthOperation(revision: number): boolean {
+  return authOperationGuards.isCurrentAuthOperation(revision);
+}
+
+function authOperationIsCurrent(revision: number): OperationIsCurrent {
+  return () => isCurrentAuthOperation(revision);
+}
+
+function applyTransientAvatarUrl(
+  profile: Profile,
+  avatarUrl: string | null | undefined,
+): Profile {
+  if (!isApiAvatarProviderEnabled()) {
+    return profile;
+  }
+
+  return {
+    ...profile,
+    avatar_url: avatarUrl ?? null,
+  };
+}
+
+function profileAvatarUrlForSameUser(
+  currentUser: User | null,
+  targetUserId: string,
+  currentProfile: Profile | null,
+): string | null {
+  return currentUser?.id === targetUserId ? currentProfile?.avatar_url ?? null : null;
 }
 
 function cleanProfileText(value: string | null | undefined): string | null {
@@ -208,13 +294,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   error: null,
 
   loadSession: async () => {
+    const requestRevision = beginAuthOperation();
+    const isCurrent = authOperationIsCurrent(requestRevision);
+
     set({ loading: true, error: null });
 
     try {
       const session = await getSession();
 
+      if (!isCurrent()) {
+        return;
+      }
+
       if (!session) {
-        await resetEventPrivateState();
+        if (!await resetEventPrivateState(isCurrent)) {
+          return;
+        }
+
+        if (!await clearAvatarReadUrlMemoryCacheIfCurrent(isCurrent)) {
+          return;
+        }
+
+        if (!isCurrent()) {
+          return;
+        }
 
         set({
           session: null,
@@ -228,59 +331,192 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       if (get().user?.id && get().user?.id !== session.user.id) {
-        await resetEventPrivateState();
+        invalidateAvatarRefreshes();
+        if (!await resetEventPrivateState(isCurrent)) {
+          return;
+        }
+
+        if (!await clearAvatarReadUrlMemoryCacheIfCurrent(isCurrent)) {
+          return;
+        }
       }
 
-      const [profile, membership] = await Promise.all([
+      const [loadedProfile, membership] = await Promise.all([
         loadProfileOrCreate(),
         loadMyMembership(),
       ]);
 
-      set({
-        session,
-        user: session.user,
-        profile,
-        membership,
-        loading: false,
-        error: null,
+      if (!isCurrent()) {
+        return;
+      }
+
+      set((state) => {
+        if (!isCurrent()) {
+          return {};
+        }
+
+        const currentAvatarUrl = profileAvatarUrlForSameUser(
+          state.user,
+          session.user.id,
+          state.profile,
+        );
+
+        return {
+          session,
+          user: session.user,
+          profile: loadedProfile
+            ? applyTransientAvatarUrl(loadedProfile, currentAvatarUrl)
+            : null,
+          membership,
+          loading: false,
+          error: null,
+        };
       });
+
+      if (isCurrent()) {
+        void get().refreshProfileAvatar();
+      }
     } catch (error) {
       const message = friendlyAuthError(error);
 
-      set({ loading: false, error: message });
+      if (isCurrent()) {
+        set({ loading: false, error: message });
+      }
+
       throw new Error(message);
     }
   },
 
   loadProfile: async () => {
+    const requestRevision = beginAuthOperation();
+    const isCurrent = authOperationIsCurrent(requestRevision);
+
     set({ loading: true, error: null });
 
     try {
-      const profile = await loadProfileService();
+      const loadedProfile = await loadProfileService();
 
-      set({ profile, loading: false, error: null });
+      if (!isCurrent()) {
+        return;
+      }
+
+      set((state) => {
+        if (!isCurrent()) {
+          return {};
+        }
+
+        return {
+          profile: loadedProfile
+            ? applyTransientAvatarUrl(
+              loadedProfile,
+              profileAvatarUrlForSameUser(state.user, loadedProfile.id, state.profile),
+            )
+            : null,
+          loading: false,
+          error: null,
+        };
+      });
+
+      if (isCurrent()) {
+        void get().refreshProfileAvatar();
+      }
     } catch (error) {
       const message = friendlyAuthError(error);
 
-      set({ loading: false, error: message });
+      if (isCurrent()) {
+        set({ loading: false, error: message });
+      }
+
       throw new Error(message);
     }
   },
 
   updateProfile: async (input: ProfileUpsert) => {
+    const requestRevision = beginAuthOperation();
+    const isCurrent = authOperationIsCurrent(requestRevision);
+
     set({ loading: true, error: null });
 
     try {
-      const profile = await upsertProfile(input);
+      const updatedProfile = await upsertProfile(input);
+      let profile = applyTransientAvatarUrl(updatedProfile, null);
 
-      set({ profile, loading: false, error: null });
+      if (!isCurrent()) {
+        return profile;
+      }
+
+      set((state) => {
+        if (!isCurrent()) {
+          return {};
+        }
+
+        profile = applyTransientAvatarUrl(
+          updatedProfile,
+          profileAvatarUrlForSameUser(state.user, updatedProfile.id, state.profile),
+        );
+
+        return { profile, loading: false, error: null };
+      });
+
+      if (isCurrent()) {
+        void get().refreshProfileAvatar();
+      }
+
       return profile;
     } catch (error) {
       const message = friendlyAuthError(error);
 
-      set({ loading: false, error: message });
+      if (isCurrent()) {
+        set({ loading: false, error: message });
+      }
+
       throw new Error(message);
     }
+  },
+
+  refreshProfileAvatar: async () => {
+    if (!isApiAvatarProviderEnabled()) {
+      return;
+    }
+
+    const userId = get().user?.id;
+
+    if (!userId || !get().profile) {
+      return;
+    }
+
+    const requestRevision = beginAvatarRefresh();
+    const avatarUrl = await resolveOptionalCurrentAvatarUrl();
+
+    set((state) => {
+      if (
+        !isCurrentAvatarRefresh(requestRevision)
+        || state.user?.id !== userId
+        || !state.profile
+      ) {
+        return {};
+      }
+
+      return {
+        profile: {
+          ...state.profile,
+          avatar_url: avatarUrl,
+        },
+      };
+    });
+  },
+
+  setProfileAvatarUrl: (avatarUrl: string | null) => {
+    invalidateAvatarRefreshes();
+
+    set((state) => ({
+      profile: state.profile
+        ? {
+          ...state.profile,
+          avatar_url: avatarUrl,
+        }
+        : null,
+    }));
   },
 
   loadMembership: async () => {
@@ -315,38 +551,74 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signIn: async (email: string, password: string) => {
+    const requestRevision = beginAuthOperation();
+    const isCurrent = authOperationIsCurrent(requestRevision);
+
     set({ loading: true, error: null });
 
     try {
       const session = await signInService(email, password);
-      const [profile, membership] = await Promise.all([
+      if (!isCurrent()) {
+        return;
+      }
+
+      const [loadedProfile, membership] = await Promise.all([
         loadProfileOrCreate(),
         loadMyMembership(),
       ]);
+      if (!isCurrent()) {
+        return;
+      }
 
-      await resetEventPrivateState();
+      if (!await resetEventPrivateState(isCurrent)) {
+        return;
+      }
 
-      set({
-        session,
-        user: session.user,
-        profile,
-        membership,
-        loading: false,
-        error: null,
+      set((state) => {
+        if (!isCurrent()) {
+          return {};
+        }
+
+        return {
+          session,
+          user: session.user,
+          profile: loadedProfile
+            ? applyTransientAvatarUrl(
+              loadedProfile,
+              profileAvatarUrlForSameUser(state.user, session.user.id, state.profile),
+            )
+            : null,
+          membership,
+          loading: false,
+          error: null,
+        };
       });
+
+      if (isCurrent()) {
+        void get().refreshProfileAvatar();
+      }
     } catch (error) {
       const message = friendlyAuthError(error);
 
-      set({ loading: false, error: message });
+      if (isCurrent()) {
+        set({ loading: false, error: message });
+      }
+
       throw new Error(message);
     }
   },
 
   signInWithApple: async () => {
+    const requestRevision = beginAuthOperation();
+    const isCurrent = authOperationIsCurrent(requestRevision);
+
     set({ loading: true, error: null });
 
     try {
       const result = await signInWithAppleService();
+      if (!isCurrent()) {
+        return;
+      }
 
       if (!result) {
         set({ loading: false, error: APPLE_SIGN_IN_CANCELLED_MESSAGE });
@@ -359,68 +631,140 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         result.appleProfile,
         result.session.user.email,
       );
+      if (!isCurrent()) {
+        return;
+      }
+
       const membership = await loadMyMembership();
+      if (!isCurrent()) {
+        return;
+      }
 
-      await resetEventPrivateState();
+      if (!await resetEventPrivateState(isCurrent)) {
+        return;
+      }
 
-      set({
-        session: result.session,
-        user: result.session.user,
-        profile: profileWithAppleData,
-        membership,
-        loading: false,
-        error: null,
+      set((state) => {
+        if (!isCurrent()) {
+          return {};
+        }
+
+        return {
+          session: result.session,
+          user: result.session.user,
+          profile: profileWithAppleData
+            ? applyTransientAvatarUrl(
+              profileWithAppleData,
+              profileAvatarUrlForSameUser(state.user, result.session.user.id, state.profile),
+            )
+            : null,
+          membership,
+          loading: false,
+          error: null,
+        };
       });
+
+      if (isCurrent()) {
+        void get().refreshProfileAvatar();
+      }
     } catch (error) {
       const message = friendlyAuthError(error);
 
-      set({ loading: false, error: message });
+      if (isCurrent()) {
+        set({ loading: false, error: message });
+      }
+
       throw new Error(message);
     }
   },
 
   signInWithGoogle: async () => {
+    const requestRevision = beginAuthOperation();
+    const isCurrent = authOperationIsCurrent(requestRevision);
+
     set({ loading: true, error: null });
 
     try {
       const session = await signInWithGoogleService();
+      if (!isCurrent()) {
+        return;
+      }
 
       if (!session) {
         set({ loading: false, error: GOOGLE_OAUTH_CANCELLED_MESSAGE });
         throw new Error(GOOGLE_OAUTH_CANCELLED_MESSAGE);
       }
 
-      const [profile, membership] = await Promise.all([
+      const [loadedProfile, membership] = await Promise.all([
         loadProfileOrCreate(),
         loadMyMembership(),
       ]);
+      if (!isCurrent()) {
+        return;
+      }
 
-      await resetEventPrivateState();
+      if (!await resetEventPrivateState(isCurrent)) {
+        return;
+      }
 
-      set({
-        session,
-        user: session.user,
-        profile,
-        membership,
-        loading: false,
-        error: null,
+      set((state) => {
+        if (!isCurrent()) {
+          return {};
+        }
+
+        return {
+          session,
+          user: session.user,
+          profile: loadedProfile
+            ? applyTransientAvatarUrl(
+              loadedProfile,
+              profileAvatarUrlForSameUser(state.user, session.user.id, state.profile),
+            )
+            : null,
+          membership,
+          loading: false,
+          error: null,
+        };
       });
+
+      if (isCurrent()) {
+        void get().refreshProfileAvatar();
+      }
     } catch (error) {
       const message = friendlyAuthError(error);
 
-      set({ loading: false, error: message });
+      if (isCurrent()) {
+        set({ loading: false, error: message });
+      }
+
       throw new Error(message);
     }
   },
 
   signUpWithEmail: async (email: string, password: string) => {
+    const requestRevision = beginAuthOperation();
+    const isCurrent = authOperationIsCurrent(requestRevision);
+
     set({ loading: true, error: null });
 
     try {
       const result = await signUpWithEmailService(email, password);
+      if (!isCurrent()) {
+        return result;
+      }
 
       if (!result.session) {
-        await resetEventPrivateState();
+        if (!await resetEventPrivateState(isCurrent)) {
+          return result;
+        }
+
+        if (!await clearAvatarReadUrlMemoryCacheIfCurrent(isCurrent)) {
+          return result;
+        }
+
+        if (!isCurrent()) {
+          return result;
+        }
 
         set({
           session: null,
@@ -433,24 +777,60 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return result;
       }
 
+      const session = result.session;
       const membership = await loadMyMembership();
+      let profile = result.profile ? applyTransientAvatarUrl(result.profile, null) : null;
+      if (!isCurrent()) {
+        return {
+          ...result,
+          profile,
+        };
+      }
 
-      await resetEventPrivateState();
+      if (!await resetEventPrivateState(isCurrent)) {
+        return {
+          ...result,
+          profile,
+        };
+      }
 
-      set({
-        session: result.session,
-        user: result.session.user,
-        profile: result.profile,
-        membership,
-        loading: false,
-        error: null,
+      set((state) => {
+        if (!isCurrent()) {
+          return {};
+        }
+
+        profile = result.profile
+          ? applyTransientAvatarUrl(
+            result.profile,
+            profileAvatarUrlForSameUser(state.user, session.user.id, state.profile),
+          )
+          : null;
+
+        return {
+          session,
+          user: session.user,
+          profile,
+          membership,
+          loading: false,
+          error: null,
+        };
       });
 
-      return result;
+      if (isCurrent()) {
+        void get().refreshProfileAvatar();
+      }
+
+      return {
+        ...result,
+        profile,
+      };
     } catch (error) {
       const message = friendlyAuthError(error);
 
-      set({ loading: false, error: message });
+      if (isCurrent()) {
+        set({ loading: false, error: message });
+      }
+
       throw new Error(message);
     }
   },
@@ -486,12 +866,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signOut: async () => {
+    const requestRevision = beginAuthOperation();
+    const isCurrent = authOperationIsCurrent(requestRevision);
+
     set({ loading: true, error: null });
 
     try {
       await signOutService();
+      if (!isCurrent()) {
+        return;
+      }
 
-      await resetEventPrivateState();
+      if (!await resetEventPrivateState(isCurrent)) {
+        return;
+      }
+
+      if (!await clearAvatarReadUrlMemoryCacheIfCurrent(isCurrent)) {
+        return;
+      }
+
+      if (!isCurrent()) {
+        return;
+      }
 
       set({
         session: null,
@@ -504,7 +900,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (error) {
       const message = friendlyAuthError(error);
 
-      set({ loading: false, error: message });
+      if (isCurrent()) {
+        set({ loading: false, error: message });
+      }
+
       throw new Error(message);
     }
   },

@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Link, useRouter } from 'expo-router';
+import { Link, useFocusEffect, useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -170,6 +170,7 @@ export default function ProfileScreen() {
   const profile = useAuthStore((state) => state.profile);
   const membership = useAuthStore((state) => state.membership);
   const loadSession = useAuthStore((state) => state.loadSession);
+  const refreshProfileAvatar = useAuthStore((state) => state.refreshProfileAvatar);
   const signOut = useAuthStore((state) => state.signOut);
   const acceptInvite = useAuthStore((state) => state.acceptInvite);
   const loadEvents = useEventsStore((state) => state.loadEvents);
@@ -180,6 +181,18 @@ export default function ProfileScreen() {
   useEffect(() => {
     void loadSession().catch(() => undefined);
   }, [loadSession]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!authUser) {
+        return undefined;
+      }
+
+      void refreshProfileAvatar();
+
+      return undefined;
+    }, [authUser, refreshProfileAvatar]),
+  );
 
   useEffect(() => {
     if (!authUser) {

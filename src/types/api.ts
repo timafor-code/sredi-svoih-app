@@ -69,6 +69,7 @@ export type ApiProfileSummary = {
   first_name: string | null;
   last_name: string | null;
   full_name: string | null;
+  avatar_id: string | null;
   avatar_url: string | null;
   city: string | null;
   onboarding_completed: boolean;
@@ -334,7 +335,48 @@ export type ApiRecordPrayerActivityRequest = {
   metadata: Record<string, unknown>;
 };
 
+export type ApiAvatarUploadUrlRequest = {
+  content_type: string;
+  size_bytes: number;
+};
+
+export type ApiAvatarUploadUrlResponse = {
+  avatar_id: string;
+  upload_url: string;
+  method: 'PUT';
+  headers: Record<string, string>;
+  expires_at: string;
+  max_size_bytes: number;
+};
+
+export type ApiAvatarConfirmRequest = {
+  avatar_id: string;
+};
+
+export type ApiAvatarConfirmResponse = {
+  avatar_id: string;
+  content_type: string;
+  size_bytes: number;
+  created_at: string;
+  updated_at: string;
+  confirmed_at: string;
+  read_url: string;
+  read_url_expires_at: string;
+};
+
+export type ApiAvatarReadUrlResponse = {
+  avatar_id: string;
+  read_url: string;
+  expires_at: string;
+};
+
+export type ApiAvatarDeleteResponse = {
+  avatar_id: string | null;
+  deleted: boolean;
+};
+
 export type ApiCommunityContactResponse = {
+  avatar_id: string | null;
   avatar_url: string | null;
   birth_date: string | null;
   city: string | null;

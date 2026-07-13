@@ -1543,8 +1543,43 @@ claim legal compliance without owner/legal review.
 PR 32G does not switch the mobile avatar service, add a mobile avatar API
 adapter, migrate existing Supabase Storage objects, expose credentials to
 mobile/admin, add general file storage, image processing, CDN integration, or
-background cleanup. The next PR is PR 32H,
-`feature/mobile-avatar-api-switch`.
+background cleanup. PR 32H performs the mobile provider switch.
+
+### PR 32H mobile avatar API switch
+
+PR 32H adds the mobile avatar API adapter and routes the existing
+`uploadProfileAvatar(input)` and `uploadAvatar(uri)` service contracts through
+the Python API when `EXPO_PUBLIC_AVATAR_PROVIDER=api`. Unset, `supabase`, and
+unknown avatar provider values keep the legacy Supabase Storage path as the
+default fallback. API-provider failures are surfaced to the current UI and do
+not trigger a retry through Supabase.
+
+The API upload flow reads the selected local image into bytes, sends
+`content_type` and the actual `size_bytes` to `POST /me/avatar/upload-url`,
+uploads the raw bytes directly to the returned signed object-storage URL with
+the exact returned method and headers, and confirms through
+`POST /me/avatar/confirm`. The object-storage request does not include the app
+bearer token and never JSON-encodes or base64-wraps the image.
+
+Current-user avatar reads are transient: when the avatar provider is API,
+mobile reads `profile.avatar_id` from `GET /auth/me`, resolves a signed read URL
+with `GET /avatars/{avatar_id}`, overlays that URL only onto in-memory
+`profile.avatar_url`, refreshes it on signed-in profile surfaces, and clears it
+after delete. Signed URLs are never persisted or modified with cache-busters.
+Legacy `avatar_url` is ignored in API avatar mode so missing, deleted,
+unauthorized, or unavailable API avatars degrade to initials.
+
+API community contacts now resolve authorized `avatar_id` values through
+`GET /avatars/{avatar_id}` when both contacts and avatar providers use the API.
+The client deduplicates avatar ids, bounds concurrent read requests, and falls
+back to initials for individual avatar read failures without failing the full
+directory. Supabase avatar URL behavior remains unchanged when the avatar
+provider is Supabase.
+
+PR 32H does not change the Python API, Alembic migrations, database schema,
+storage configuration, object keys, bucket names, credentials, image
+processing, or existing Supabase avatar object migration. The next PR is PR
+32I, `feature/api-push-pipeline`.
 
 ## API Contract Foundation
 

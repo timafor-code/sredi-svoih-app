@@ -53,6 +53,7 @@ export type ContactVisibilityUpdateInput = Pick<
 >;
 
 export interface CommunityContactRpcRow {
+  avatar_id?: string | null;
   avatar_url: string | null;
   birth_date: string | null;
   city: string | null;
