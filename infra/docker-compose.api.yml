@@ -18,6 +18,44 @@ services:
     volumes:
       - api_postgres_data:/var/lib/postgresql/data
 
+  api_object_storage:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: sredi_svoih_api_object_storage
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: sredi_local_avatar_access
+      MINIO_ROOT_PASSWORD: sredi_local_avatar_secret_minio_only
+    ports:
+      - "${API_OBJECT_STORAGE_HOST_BIND:-127.0.0.1}:59000:9000"
+      - "127.0.0.1:59001:9001"
+    networks:
+      default:
+        aliases:
+          - api-object-storage
+    volumes:
+      - api_object_storage_data:/data
+
+  api_object_storage_init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    container_name: sredi_svoih_api_object_storage_init
+    depends_on:
+      api_object_storage:
+        condition: service_started
+    environment:
+      MINIO_ROOT_USER: sredi_local_avatar_access
+      MINIO_ROOT_PASSWORD: sredi_local_avatar_secret_minio_only
+      API_OBJECT_STORAGE_BUCKET: avatars
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        until mc alias set local http://api-object-storage:9000 sredi_local_avatar_access sredi_local_avatar_secret_minio_only; do
+          sleep 2
+        done
+        mc mb --ignore-existing local/avatars
+        mc anonymous set none local/avatars
+
   api_backend:
     build:
       context: ../apps/api
@@ -25,11 +63,16 @@ services:
     container_name: sredi_svoih_api_backend
     env_file:
       - ./env/api.env.example
+    environment:
+      API_OBJECT_STORAGE_PUBLIC_ENDPOINT_URL: "${API_OBJECT_STORAGE_PUBLIC_ENDPOINT_URL:-http://127.0.0.1:59000}"
     ports:
       - "8000:8000"
     depends_on:
       api_postgres:
         condition: service_healthy
+      api_object_storage_init:
+        condition: service_completed_successfully
 
 volumes:
   api_postgres_data:
+  api_object_storage_data:

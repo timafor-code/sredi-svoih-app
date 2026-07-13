@@ -36,6 +36,7 @@ class CommunityContactResponse(BaseModel):
     first_name: str | None
     last_name: str | None
     avatar_url: str | None
+    avatar_id: UUID | None
     phone: str | None
     email: str | None
     city: str | None

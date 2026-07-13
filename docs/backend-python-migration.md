@@ -1519,7 +1519,32 @@ values remain null/undefined on the client and are not reconstructed or
 inferred. Local iPhone contacts remain local-only; PR 32F does not implement
 `POST /me/synced-contacts`, `DELETE /me/synced-contacts/{contact_id}`, address
 book hashing, upload, persistence, or automatic Contacts permission requests.
-The next PR is PR 32G, `feature/api-avatar-storage-foundation`.
+### PR 32G API avatar storage foundation
+
+PR 32G adds the backend-only foundation for private avatar storage in
+S3-compatible object storage. It creates the API-owned `profile_avatars`
+metadata table, adds nullable `profiles.avatar_id`, keeps legacy
+`profiles.avatar_url` for migration compatibility, and exposes durable
+`avatar_id` references through backend profile and community-contact responses.
+
+The API adds exactly four authenticated avatar endpoints:
+`POST /me/avatar/upload-url`, `POST /me/avatar/confirm`, `DELETE /me/avatar`,
+and `GET /avatars/{avatar_id}`. Upload and read access use short-lived signed
+URLs; the bucket remains private, object keys are generated server-side, and
+signed URLs are not stored in PostgreSQL. Confirmation verifies the uploaded
+object with storage `HEAD`, activates the avatar transactionally, clears legacy
+`avatar_url`, and prevents more than one active avatar per user.
+
+Local development may use the private MinIO contour in
+`infra/docker-compose.api.yml` for owner smoke. Production storage must be a
+Russia-hosted S3-compatible endpoint and private bucket; this roadmap does not
+claim legal compliance without owner/legal review.
+
+PR 32G does not switch the mobile avatar service, add a mobile avatar API
+adapter, migrate existing Supabase Storage objects, expose credentials to
+mobile/admin, add general file storage, image processing, CDN integration, or
+background cleanup. The next PR is PR 32H,
+`feature/mobile-avatar-api-switch`.
 
 ## API Contract Foundation
 

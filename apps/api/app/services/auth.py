@@ -147,6 +147,7 @@ def _profile_summary(profile: Profile | None) -> ProfileSummary | None:
         last_name=profile.last_name,
         full_name=profile.full_name,
         avatar_url=profile.avatar_url,
+        avatar_id=profile.avatar_id,
         city=profile.city,
         onboarding_completed=profile.onboarding_completed,
         created_at=profile.created_at,

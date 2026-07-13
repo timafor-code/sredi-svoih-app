@@ -25,6 +25,7 @@ The first stable endpoint groups are:
 - `/registrations/*`
 - `/admin/*`
 - `/privacy/*`
+- `/avatars/*`
 
 This document also records shared conventions for response envelopes, errors,
 authorization, pagination, identifiers, date/time values, validation failures,
@@ -650,6 +651,7 @@ snake_case shape:
   "first_name": null,
   "last_name": null,
   "avatar_url": null,
+  "avatar_id": null,
   "phone": null,
   "email": null,
   "city": null,
@@ -789,6 +791,181 @@ Synced-contact payloads, names, hashes, and birthdays are PII and must not be
 logged. PR 32E adds backend contracts only; it neither switches a mobile
 provider nor adds client-side contact-upload behavior. PR 32F is the planned
 mobile facade switch.
+
+## Avatar Storage (PR 32G)
+
+Avatar endpoints require Bearer authentication and use the shared
+`{ data, error, meta }` envelope. They return signed URLs only as short-lived
+runtime credentials; signed URLs are never stored in PostgreSQL.
+
+The object-storage bucket remains private. The API stores durable avatar
+metadata in `profile_avatars` and exposes only the durable `avatar_id` reference
+through profile/community response models. Existing `avatar_url` fields remain
+for backward compatibility and are not removed in this PR.
+
+The backend has separate internal and public object-storage endpoints.
+`API_OBJECT_STORAGE_ENDPOINT_URL` is the internal endpoint used by the API for
+`HEAD`, delete, and other server-to-storage requests.
+`API_OBJECT_STORAGE_PUBLIC_ENDPOINT_URL` is used only to generate presigned
+upload/read URLs; presigning does not require the backend container to connect
+to that public address. The local defaults are
+`http://api-object-storage:9000` for internal requests and
+`http://127.0.0.1:59000` for host manual smoke. For Expo/iPhone smoke, restart
+`api_backend` with `API_OBJECT_STORAGE_PUBLIC_ENDPOINT_URL` set to
+`http://<computer-lan-ip>:59000` and expose the local MinIO API port for that
+run with `API_OBJECT_STORAGE_HOST_BIND=0.0.0.0` or a specific LAN interface
+address.
+
+Accepted upload MIME types are `image/jpeg`, `image/png`, `image/webp`,
+`image/heic`, and `image/heif`. `image/jpg` is normalized to `image/jpeg`.
+The default maximum avatar size is 5 MiB. Unsupported types such as SVG, HTML,
+executables, arbitrary binary files, base64 image bodies, filenames, caller
+object keys, bucket names, endpoint URLs, ACLs, and user ids are rejected.
+
+### `POST /me/avatar/upload-url`
+
+Request body is strict and accepts only:
+
+```json
+{
+  "content_type": "image/jpeg",
+  "size_bytes": 123456
+}
+```
+
+The caller must already have a profile. The API validates the declared content
+type and size, creates a pending avatar row owned by the current user, generates
+the object key server-side, and returns:
+
+```json
+{
+  "data": {
+    "avatar_id": "00000000-0000-0000-0000-000000000000",
+    "upload_url": "https://object-storage.example/presigned-put-url",
+    "method": "PUT",
+    "headers": {
+      "Content-Type": "image/jpeg"
+    },
+    "expires_at": "2026-07-13T09:05:00Z",
+    "max_size_bytes": 5242880
+  },
+  "error": null,
+  "meta": {
+    "request_id": "00000000-0000-0000-0000-000000000000"
+  }
+}
+```
+
+The response does not include storage credentials, bucket names, secret keys,
+or caller-controlled object keys. The signed URL necessarily contains the
+storage host and authorization query parameters and must not be logged or
+persisted.
+
+### `POST /me/avatar/confirm`
+
+Request body is strict and accepts only:
+
+```json
+{
+  "avatar_id": "00000000-0000-0000-0000-000000000000"
+}
+```
+
+The avatar must be pending and owned by the current user, except that retrying
+confirmation for an avatar that is already the caller's current active avatar is
+idempotent and returns active metadata with a fresh signed read URL. Missing and
+foreign ids return the same safe HTTP 404 `not_found`. The API verifies the
+uploaded object with server-side `HEAD`; it does not trust client-submitted
+content type or size. Zero-byte objects, oversized objects, and objects with
+unsupported actual content types are rejected and cleaned up when possible.
+
+On success, the API marks the avatar active, updates `profiles.avatar_id`,
+clears legacy `profiles.avatar_url`, ensures only one active avatar remains for
+the user, and returns durable metadata plus a fresh signed read URL. Replacement
+confirmation verifies the new object and generates the new signed read URL
+before committing activation. If previous-object removal fails, the new avatar
+remains pending so confirmation can be retried:
+
+```json
+{
+  "data": {
+    "avatar_id": "00000000-0000-0000-0000-000000000000",
+    "content_type": "image/jpeg",
+    "size_bytes": 123456,
+    "created_at": "2026-07-13T09:00:00Z",
+    "updated_at": "2026-07-13T09:01:00Z",
+    "confirmed_at": "2026-07-13T09:01:00Z",
+    "read_url": "https://object-storage.example/presigned-get-url",
+    "read_url_expires_at": "2026-07-13T09:06:00Z"
+  },
+  "error": null,
+  "meta": {
+    "request_id": "00000000-0000-0000-0000-000000000000"
+  }
+}
+```
+
+The response never includes object keys, bucket names, ETags, credentials, or
+internal storage configuration.
+
+### `DELETE /me/avatar`
+
+Deletes only the current user's active avatar. The API deletes the storage
+object, clears `profiles.avatar_id`, clears legacy `profiles.avatar_url`, and
+marks the metadata row deleted:
+
+```json
+{
+  "data": {
+    "avatar_id": "00000000-0000-0000-0000-000000000000",
+    "deleted": true
+  },
+  "error": null,
+  "meta": {
+    "request_id": "00000000-0000-0000-0000-000000000000"
+  }
+}
+```
+
+When no current avatar exists, repeated delete is safe and returns
+`{"avatar_id": null, "deleted": false}` while also clearing any legacy
+`avatar_url` on the caller's profile. If deletion of a known active object
+cannot be completed, the API returns `service_unavailable` rather than silently
+reporting success.
+
+### `GET /avatars/{avatar_id}`
+
+Returns a fresh signed read URL for an active confirmed avatar. It does not
+stream image bytes through FastAPI:
+
+```json
+{
+  "data": {
+    "avatar_id": "00000000-0000-0000-0000-000000000000",
+    "read_url": "https://object-storage.example/presigned-get-url",
+    "expires_at": "2026-07-13T09:05:00Z"
+  },
+  "error": null,
+  "meta": {
+    "request_id": "00000000-0000-0000-0000-000000000000"
+  }
+}
+```
+
+The owner may always read their own active avatar. A non-owner may read only
+when both users have active membership in the same community and the target
+profile is visible under the same `profile_visibility` rules used by the
+community directory. Members and `event_manager` actors do not receive
+`rabbi_only` avatars. `admin` and `rabbi` actors may receive `rabbi_only`
+avatars only within their own community. Missing, inactive, deleted,
+out-of-community, and unauthorized ids all return the same safe HTTP 404
+`not_found`.
+
+Expected avatar flow errors include `validation_error`, `unauthenticated`,
+`not_found`, `payload_too_large`, `unsupported_media_type`, and
+`service_unavailable`. Storage-disabled, misconfigured, or unavailable states
+return a safe `service_unavailable` response without credentials or raw storage
+provider details.
 
 ## `/events/*`
 
