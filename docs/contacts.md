@@ -118,6 +118,23 @@ Local iPhone contacts remain local-only; this PR does not call
 `POST /me/synced-contacts` or `DELETE /me/synced-contacts/{contact_id}` and does
 not hash, upload, persist, or transmit the iPhone address book.
 
+## API contact avatars (PR 32H)
+
+When both `EXPO_PUBLIC_CONTACTS_PROVIDER=api` and
+`EXPO_PUBLIC_AVATAR_PROVIDER=api`, mobile treats `avatar_id` as the only
+directory avatar reference. It ignores legacy `avatar_url`, deduplicates
+returned `avatar_id` values, and resolves each authorized avatar through
+`GET /avatars/{avatar_id}` with bounded concurrent requests. A failed
+individual avatar read falls back to initials and does not fail the complete
+contacts directory.
+
+This does not weaken backend authorization. The Python API still decides which
+contacts are visible through profile visibility and same-community membership,
+and the avatar read endpoint separately authorizes each signed URL request.
+Signed read URLs stay in memory only and are not modified with cache-busters or
+persisted to profile/contact data. When the avatar provider is Supabase, the
+legacy `avatar_url` behavior is preserved.
+
 ## iPhone contacts
 
 iPhone contacts остаются local only. Приложение читает их через Expo Contacts только после явного действия пользователя, использует только записи с birthday и не загружает эти контакты на сервер.

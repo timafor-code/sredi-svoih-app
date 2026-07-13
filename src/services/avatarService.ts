@@ -1,3 +1,4 @@
+import { isMobileApiProviderEnabled } from './apiClient';
 import { supabase } from './supabaseClient';
 
 const AVATARS_BUCKET = 'avatars';
@@ -11,7 +12,7 @@ const IMAGE_CONTENT_TYPES: Record<string, string> = {
   webp: 'image/webp',
 };
 
-type UploadProfileAvatarInput = {
+export type UploadProfileAvatarInput = {
   base64?: string | null;
   fileName?: string | null;
   mimeType?: string | null;
@@ -31,7 +32,11 @@ function getSafeImageExtension(value: string | null | undefined): string {
   return IMAGE_CONTENT_TYPES[extension] ? extension : 'jpg';
 }
 
-function getContentType(input: UploadProfileAvatarInput): string {
+export function isApiAvatarProviderEnabled(): boolean {
+  return isMobileApiProviderEnabled('avatar');
+}
+
+export function getAvatarContentType(input: UploadProfileAvatarInput): string {
   const normalizedMimeType = input.mimeType?.toLowerCase();
 
   if (normalizedMimeType === 'image/jpg') {
@@ -74,7 +79,7 @@ function decodeBase64ToArrayBuffer(value: string): ArrayBuffer {
   return Uint8Array.from(bytes).buffer;
 }
 
-async function readLocalImage(input: UploadProfileAvatarInput): Promise<ArrayBuffer> {
+export async function readLocalAvatarImage(input: UploadProfileAvatarInput): Promise<ArrayBuffer> {
   if (input.base64) {
     return decodeBase64ToArrayBuffer(input.base64);
   }
@@ -88,7 +93,7 @@ async function readLocalImage(input: UploadProfileAvatarInput): Promise<ArrayBuf
   }
 }
 
-export async function uploadProfileAvatar(input: UploadProfileAvatarInput): Promise<string> {
+async function uploadProfileAvatarToSupabase(input: UploadProfileAvatarInput): Promise<string> {
   const { data, error } = await supabase.auth.getSession();
 
   if (error) {
@@ -102,12 +107,12 @@ export async function uploadProfileAvatar(input: UploadProfileAvatarInput): Prom
   }
 
   const filePath = `${user.id}/${AVATAR_FILE_NAME}`;
-  const imageBody = await readLocalImage(input);
+  const imageBody = await readLocalAvatarImage(input);
   const { error: uploadError } = await supabase.storage
     .from(AVATARS_BUCKET)
     .upload(filePath, imageBody, {
       cacheControl: '3600',
-      contentType: getContentType(input),
+      contentType: getAvatarContentType(input),
       upsert: true,
     });
 
@@ -122,6 +127,94 @@ export async function uploadProfileAvatar(input: UploadProfileAvatarInput): Prom
   return publicUrlData.publicUrl;
 }
 
+async function getCurrentSupabaseUserId(): Promise<string> {
+  const { data, error } = await supabase.auth.getSession();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const userId = data.session?.user.id;
+
+  if (!userId) {
+    throw new Error('Auth required');
+  }
+
+  return userId;
+}
+
+function isMissingStorageObject(error: { message?: string; statusCode?: string | number }): boolean {
+  const statusCode = String(error.statusCode ?? '');
+  const message = error.message?.toLowerCase() ?? '';
+
+  return statusCode === '404' || message.includes('not found') || message.includes('not exist');
+}
+
+async function deleteCurrentUserSupabaseAvatar(): Promise<void> {
+  const userId = await getCurrentSupabaseUserId();
+  const filePath = `${userId}/${AVATAR_FILE_NAME}`;
+  const { error } = await supabase.storage
+    .from(AVATARS_BUCKET)
+    .remove([filePath]);
+
+  if (error && !isMissingStorageObject(error)) {
+    throw new Error(error.message);
+  }
+}
+
+export async function uploadProfileAvatar(input: UploadProfileAvatarInput): Promise<string> {
+  if (isApiAvatarProviderEnabled()) {
+    const avatarApiService = await import('./avatarApiService');
+
+    return avatarApiService.uploadProfileAvatarToApi(input);
+  }
+
+  return uploadProfileAvatarToSupabase(input);
+}
+
 export async function uploadAvatar(uri: string): Promise<string> {
   return uploadProfileAvatar({ uri });
+}
+
+export async function resolveCurrentUserAvatarReadUrl(): Promise<string | null> {
+  if (!isApiAvatarProviderEnabled()) {
+    return null;
+  }
+
+  const avatarApiService = await import('./avatarApiService');
+
+  return avatarApiService.resolveCurrentUserAvatarReadUrl();
+}
+
+export async function resolveAuthorizedAvatarReadUrl(
+  avatarId: string | null | undefined,
+): Promise<string | null> {
+  if (!isApiAvatarProviderEnabled()) {
+    return null;
+  }
+
+  const avatarApiService = await import('./avatarApiService');
+
+  return avatarApiService.resolveAuthorizedAvatarReadUrl(avatarId);
+}
+
+export async function deleteCurrentUserAvatar(): Promise<void> {
+  if (isApiAvatarProviderEnabled()) {
+    const avatarApiService = await import('./avatarApiService');
+
+    await avatarApiService.deleteCurrentUserAvatar();
+    return;
+  }
+
+  await deleteCurrentUserSupabaseAvatar();
+}
+
+export async function clearAvatarReadUrlMemoryCache(): Promise<void> {
+  if (!isApiAvatarProviderEnabled()) {
+    return;
+  }
+
+  const avatarApiService = await import('./avatarApiService');
+
+  avatarApiService.clearAvatarReadUrlCache();
 }

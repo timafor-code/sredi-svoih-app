@@ -1,8 +1,9 @@
 # Avatar Storage
 
-PR 32G adds the backend-only foundation for API-owned avatar storage. It does
-not switch the mobile avatar service; `src/services/avatarService.ts` remains
-the Supabase implementation until PR 32H.
+PR 32G adds the backend-only foundation for API-owned avatar storage. PR 32H
+switches the mobile avatar service behind `EXPO_PUBLIC_AVATAR_PROVIDER=api`
+while keeping Supabase Storage as the default and fallback provider until
+cutover.
 
 ## Architecture
 
@@ -28,6 +29,44 @@ backend requests. `API_OBJECT_STORAGE_PUBLIC_ENDPOINT_URL` is used only by the
 presigning client so returned upload/read URLs point at an address reachable by
 the testing client. Presigning does not require the API container to connect to
 that public address.
+
+## Mobile Provider Switch
+
+Mobile keeps Supabase behavior when `EXPO_PUBLIC_AVATAR_PROVIDER` is unset,
+`supabase`, or any unknown value. When `EXPO_PUBLIC_AVATAR_PROVIDER=api`, the
+mobile avatar facade uses the Python API at `EXPO_PUBLIC_API_URL` for upload,
+read, and delete operations. API avatar errors are surfaced to the current UI;
+the client never retries a failed API-provider upload, read, or delete through
+Supabase.
+
+During the mixed-auth bridge period, the shared mobile `apiClient` supplies the
+same bearer token source used by other API provider switches: API auth tokens
+when `EXPO_PUBLIC_AUTH_PROVIDER=api`, otherwise the current Supabase access
+token for bridge-authenticated API calls. The object-storage `PUT` is separate
+from API calls and sends only the exact headers returned by
+`POST /me/avatar/upload-url`; it must not include the application bearer token
+and must not JSON-encode or base64-wrap the image bytes.
+
+For Expo/iPhone smoke with API avatars, both `EXPO_PUBLIC_API_URL` and the
+presigned object-storage URLs must be reachable from the phone. Set
+`EXPO_PUBLIC_API_URL` to the computer LAN API address, set
+`API_OBJECT_STORAGE_PUBLIC_ENDPOINT_URL` to the computer LAN IP plus the MinIO
+API port, and expose that object-storage port for the run. A localhost or
+container-internal presigned URL will work for desktop tools but not for an
+iPhone on the LAN.
+
+Signed read URLs are transient bearer URLs. The mobile client may hold them only
+in memory, may refresh them before `expires_at` with a safety margin, and must
+never persist them to Supabase, PostgreSQL, AsyncStorage, SecureStore, logs, or
+another durable client store. The client must not append cache-busters or any
+other query parameters to signed URLs. The legacy cache-buster remains valid
+only for Supabase public avatar URLs.
+
+In API mode, the current user's avatar is resolved by reading `profile.avatar_id`
+from `GET /auth/me` and then requesting `GET /avatars/{avatar_id}`. Legacy
+`avatar_url` is ignored in API avatar mode so old Supabase public URLs do not
+silently mask missing, deleted, unauthorized, unavailable, or expired API
+avatars; those cases degrade to initials.
 
 ## Local And Production Storage
 

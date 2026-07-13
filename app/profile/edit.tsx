@@ -1,4 +1,4 @@
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -17,7 +17,11 @@ import {
   formatIsoDateForUi,
   parseBirthDateInput,
 } from '@/lib/profileDates';
-import { uploadProfileAvatar } from '@/services/avatarService';
+import {
+  deleteCurrentUserAvatar,
+  isApiAvatarProviderEnabled,
+  uploadProfileAvatar,
+} from '@/services/avatarService';
 import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
 import {
@@ -98,6 +102,16 @@ function getAvatarUploadErrorMessage(error: unknown): string {
   return message;
 }
 
+function getAvatarDeleteErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : 'Не удалось удалить фото.';
+
+  if (message === 'Auth required') {
+    return 'Чтобы удалить фото, войдите в приложение.';
+  }
+
+  return message;
+}
+
 function addAvatarCacheBuster(url: string): string {
   const separator = url.includes('?') ? '&' : '?';
 
@@ -161,6 +175,8 @@ export default function EditProfileScreen() {
   const profile = useAuthStore((state) => state.profile);
   const loading = useAuthStore((state) => state.loading);
   const loadSession = useAuthStore((state) => state.loadSession);
+  const refreshProfileAvatar = useAuthStore((state) => state.refreshProfileAvatar);
+  const setProfileAvatarUrl = useAuthStore((state) => state.setProfileAvatarUrl);
   const updateProfile = useAuthStore((state) => state.updateProfile);
 
   const [firstName, setFirstName] = useState('');
@@ -180,8 +196,11 @@ export default function EditProfileScreen() {
   const [localError, setLocalError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isDeletingAvatar, setIsDeletingAvatar] = useState(false);
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string | null>(null);
 
+  const isApiAvatarProvider = isApiAvatarProviderEnabled();
+  const isAvatarActionRunning = isUploadingAvatar || isDeletingAvatar;
   const fullName = useMemo(() => buildFullName(firstName, lastName), [firstName, lastName]);
   const avatarName = fullName ?? email.trim() ?? user?.email ?? 'СС';
   const birthDateResult = useMemo(() => parseBirthDateInput(dob), [dob]);
@@ -264,6 +283,18 @@ export default function EditProfileScreen() {
     setLocalAvatarUrl(null);
   }, [profile?.avatar_url]);
 
+  useFocusEffect(
+    useCallback(() => {
+      if (!user || !isApiAvatarProvider) {
+        return undefined;
+      }
+
+      void refreshProfileAvatar();
+
+      return undefined;
+    }, [isApiAvatarProvider, refreshProfileAvatar, user]),
+  );
+
   const handleReloadProfile = useCallback(() => {
     setLocalError(null);
     void loadSession().catch((error) => {
@@ -316,15 +347,23 @@ export default function EditProfileScreen() {
 
       setIsUploadingAvatar(true);
 
-      const publicUrl = await uploadProfileAvatar({
+      const uploadedAvatarUrl = await uploadProfileAvatar({
         base64: asset.base64,
         fileName: asset.fileName,
         mimeType: asset.mimeType,
         uri: asset.uri,
       });
-      const avatarUrl = addAvatarCacheBuster(publicUrl);
 
-      await updateProfile({ avatar_url: avatarUrl });
+      const avatarUrl = isApiAvatarProvider
+        ? uploadedAvatarUrl
+        : addAvatarCacheBuster(uploadedAvatarUrl);
+
+      if (isApiAvatarProvider) {
+        setProfileAvatarUrl(avatarUrl);
+      } else {
+        await updateProfile({ avatar_url: avatarUrl });
+      }
+
       setLocalAvatarUrl(avatarUrl);
     } catch (error) {
       const message = getAvatarUploadErrorMessage(error);
@@ -334,7 +373,48 @@ export default function EditProfileScreen() {
     } finally {
       setIsUploadingAvatar(false);
     }
-  }, [updateProfile]);
+  }, [isApiAvatarProvider, setProfileAvatarUrl, updateProfile]);
+
+  const performDeleteAvatar = useCallback(async () => {
+    setLocalError(null);
+    setIsDeletingAvatar(true);
+
+    try {
+      await deleteCurrentUserAvatar();
+
+      if (isApiAvatarProvider) {
+        setProfileAvatarUrl(null);
+      } else {
+        await updateProfile({ avatar_url: null });
+      }
+
+      setLocalAvatarUrl(null);
+    } catch (error) {
+      const message = getAvatarDeleteErrorMessage(error);
+
+      setLocalError(message);
+      Alert.alert('Не удалось удалить фото', message);
+    } finally {
+      setIsDeletingAvatar(false);
+    }
+  }, [isApiAvatarProvider, setProfileAvatarUrl, updateProfile]);
+
+  const handleDeleteAvatar = useCallback(() => {
+    Alert.alert(
+      'Удалить фото?',
+      'Фото профиля будет удалено, вместо него будут показаны инициалы.',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить',
+          onPress: () => {
+            void performDeleteAvatar();
+          },
+          style: 'destructive',
+        },
+      ],
+    );
+  }, [performDeleteAvatar]);
 
   const handleDeletePlaceholder = useCallback(() => {
     Alert.alert('Удаление аккаунта', 'Удаление аккаунта будет добавлено следующим этапом.');
@@ -461,11 +541,11 @@ export default function EditProfileScreen() {
           <View style={styles.avatarWrap}>
             <Avatar initials={getInitials(avatarName)} size={80} uri={displayAvatarUrl} />
             <Pressable
-              disabled={isSaving || isUploadingAvatar}
+              disabled={isSaving || isAvatarActionRunning}
               onPress={handlePickAvatar}
               style={[
                 styles.cameraBadge,
-                (isSaving || isUploadingAvatar) && styles.cameraBadgeDisabled,
+                (isSaving || isAvatarActionRunning) && styles.cameraBadgeDisabled,
               ]}
             >
               {isUploadingAvatar ? (
@@ -478,8 +558,22 @@ export default function EditProfileScreen() {
           <View style={styles.flex}>
             <Text style={styles.photoTitle}>Фото профиля</Text>
             <Text style={styles.photoText}>
-              {isUploadingAvatar ? 'Загружаем фото...' : 'Видно участникам общины\nРекомендуем 400×400 px'}
+              {isUploadingAvatar
+                ? 'Загружаем фото...'
+                : isDeletingAvatar
+                  ? 'Удаляем фото...'
+                  : 'Видно участникам общины\nРекомендуем 400×400 px'}
             </Text>
+            <Pressable
+              disabled={isSaving || isAvatarActionRunning}
+              onPress={handleDeleteAvatar}
+              style={[
+                styles.photoDeleteButton,
+                (isSaving || isAvatarActionRunning) && styles.photoDeleteButtonDisabled,
+              ]}
+            >
+              <Text style={styles.photoDeleteText}>Удалить фото</Text>
+            </Pressable>
           </View>
         </View>
 
@@ -587,8 +681,14 @@ export default function EditProfileScreen() {
         {localError ? <Text style={styles.errorText}>{localError}</Text> : null}
 
         <PrimaryButton
-          disabled={isSaving || isUploadingAvatar}
-          title={isUploadingAvatar ? 'Загружаем фото...' : isSaving ? 'Сохраняем...' : 'Сохранить изменения'}
+          disabled={isSaving || isAvatarActionRunning}
+          title={
+            isUploadingAvatar
+              ? 'Загружаем фото...'
+              : isDeletingAvatar
+                ? 'Удаляем фото...'
+                : isSaving ? 'Сохраняем...' : 'Сохранить изменения'
+          }
           buttonStyle={styles.saveButton}
           onPress={handleSave}
         />
@@ -645,6 +745,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     marginTop: 4,
+  },
+  photoDeleteButton: {
+    alignSelf: 'flex-start',
+    justifyContent: 'center',
+    minHeight: 30,
+    marginTop: 6,
+  },
+  photoDeleteButtonDisabled: {
+    opacity: 0.5,
+  },
+  photoDeleteText: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: '700',
   },
   stateCard: {
     gap: 12,

@@ -24,6 +24,11 @@ import {
   type ProfileUpsert,
 } from '@/services/authService';
 import {
+  clearAvatarReadUrlMemoryCache,
+  isApiAvatarProviderEnabled,
+  resolveCurrentUserAvatarReadUrl,
+} from '@/services/avatarService';
+import {
   acceptInvite as acceptInviteService,
   loadMyMembership,
   type CommunityMembership,
@@ -39,6 +44,8 @@ type AuthState = {
   loadSession: () => Promise<void>;
   loadProfile: () => Promise<void>;
   updateProfile: (input: ProfileUpsert) => Promise<Profile>;
+  refreshProfileAvatar: () => Promise<void>;
+  setProfileAvatarUrl: (avatarUrl: string | null) => void;
   loadMembership: () => Promise<void>;
   acceptInvite: (code: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
@@ -72,6 +79,33 @@ async function loadProfileOrCreate(): Promise<Profile | null> {
   }
 
   return upsertProfile();
+}
+
+async function resolveOptionalCurrentAvatarUrl(): Promise<string | null> {
+  try {
+    return await resolveCurrentUserAvatarReadUrl();
+  } catch {
+    return null;
+  }
+}
+
+async function withResolvedAvatar(profile: Profile): Promise<Profile> {
+  if (!isApiAvatarProviderEnabled()) {
+    return profile;
+  }
+
+  return {
+    ...profile,
+    avatar_url: await resolveOptionalCurrentAvatarUrl(),
+  };
+}
+
+async function withResolvedNullableAvatar(profile: Profile | null): Promise<Profile | null> {
+  if (!profile) {
+    return null;
+  }
+
+  return withResolvedAvatar(profile);
 }
 
 function cleanProfileText(value: string | null | undefined): string | null {
@@ -215,6 +249,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (!session) {
         await resetEventPrivateState();
+        await clearAvatarReadUrlMemoryCache();
 
         set({
           session: null,
@@ -229,12 +264,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (get().user?.id && get().user?.id !== session.user.id) {
         await resetEventPrivateState();
+        await clearAvatarReadUrlMemoryCache();
       }
 
-      const [profile, membership] = await Promise.all([
+      const [loadedProfile, membership] = await Promise.all([
         loadProfileOrCreate(),
         loadMyMembership(),
       ]);
+      const profile = await withResolvedNullableAvatar(loadedProfile);
 
       set({
         session,
@@ -256,7 +293,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ loading: true, error: null });
 
     try {
-      const profile = await loadProfileService();
+      const profile = await withResolvedNullableAvatar(await loadProfileService());
 
       set({ profile, loading: false, error: null });
     } catch (error) {
@@ -271,7 +308,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ loading: true, error: null });
 
     try {
-      const profile = await upsertProfile(input);
+      const profile = await withResolvedAvatar(await upsertProfile(input));
 
       set({ profile, loading: false, error: null });
       return profile;
@@ -281,6 +318,40 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ loading: false, error: message });
       throw new Error(message);
     }
+  },
+
+  refreshProfileAvatar: async () => {
+    if (!isApiAvatarProviderEnabled()) {
+      return;
+    }
+
+    const { profile } = get();
+
+    if (!profile) {
+      return;
+    }
+
+    set({
+      profile: {
+        ...profile,
+        avatar_url: await resolveOptionalCurrentAvatarUrl(),
+      },
+    });
+  },
+
+  setProfileAvatarUrl: (avatarUrl: string | null) => {
+    const { profile } = get();
+
+    if (!profile) {
+      return;
+    }
+
+    set({
+      profile: {
+        ...profile,
+        avatar_url: avatarUrl,
+      },
+    });
   },
 
   loadMembership: async () => {
@@ -319,10 +390,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     try {
       const session = await signInService(email, password);
-      const [profile, membership] = await Promise.all([
+      const [loadedProfile, membership] = await Promise.all([
         loadProfileOrCreate(),
         loadMyMembership(),
       ]);
+      const profile = await withResolvedNullableAvatar(loadedProfile);
 
       await resetEventPrivateState();
 
@@ -359,6 +431,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         result.appleProfile,
         result.session.user.email,
       );
+      const resolvedProfile = await withResolvedNullableAvatar(profileWithAppleData);
       const membership = await loadMyMembership();
 
       await resetEventPrivateState();
@@ -366,7 +439,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({
         session: result.session,
         user: result.session.user,
-        profile: profileWithAppleData,
+        profile: resolvedProfile,
         membership,
         loading: false,
         error: null,
@@ -390,10 +463,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         throw new Error(GOOGLE_OAUTH_CANCELLED_MESSAGE);
       }
 
-      const [profile, membership] = await Promise.all([
+      const [loadedProfile, membership] = await Promise.all([
         loadProfileOrCreate(),
         loadMyMembership(),
       ]);
+      const profile = await withResolvedNullableAvatar(loadedProfile);
 
       await resetEventPrivateState();
 
@@ -421,6 +495,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (!result.session) {
         await resetEventPrivateState();
+        await clearAvatarReadUrlMemoryCache();
 
         set({
           session: null,
@@ -434,19 +509,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       const membership = await loadMyMembership();
+      const profile = await withResolvedNullableAvatar(result.profile);
 
       await resetEventPrivateState();
 
       set({
         session: result.session,
         user: result.session.user,
-        profile: result.profile,
+        profile,
         membership,
         loading: false,
         error: null,
       });
 
-      return result;
+      return {
+        ...result,
+        profile,
+      };
     } catch (error) {
       const message = friendlyAuthError(error);
 
@@ -492,6 +571,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await signOutService();
 
       await resetEventPrivateState();
+      await clearAvatarReadUrlMemoryCache();
 
       set({
         session: null,
