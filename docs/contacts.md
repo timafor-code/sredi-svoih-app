@@ -51,9 +51,9 @@ Field-level privacy живет на backend-слое. UI не должен по�
 PR 32E adds backend-only authenticated endpoints for the existing directory:
 `GET /community/contacts`, `GET /me/contact-visibility`,
 `PUT /me/contact-visibility`, `POST /me/synced-contacts`, and
-`DELETE /me/synced-contacts/{contact_id}`. It does not change the mobile
-provider or existing contacts UI; PR 32F performs that switch under
-`EXPO_PUBLIC_CONTACTS_PROVIDER` while retaining the Supabase fallback.
+`DELETE /me/synced-contacts/{contact_id}`. PR 32F completes the mobile
+provider switch for the directory read and legacy contact-visibility settings
+under `EXPO_PUBLIC_CONTACTS_PROVIDER` while retaining the Supabase fallback.
 
 `GET /community/contacts` continues to use `profiles` joined to active
 `community_memberships`, never the separate `community_contacts` table. The
@@ -83,6 +83,40 @@ rejects raw values, `sha256:` prefixes, malformed hash strings, and incorrect
 lengths without introducing client-specific hashing behavior. It does not
 invent deduplication or upsert behavior. A synced contact can only be deleted by
 its owner; missing and foreign UUIDs use the same safe not-found response.
+
+## Mobile API provider switch (PR 32F)
+
+When `EXPO_PUBLIC_CONTACTS_PROVIDER=api`, the mobile community directory calls
+`GET /community/contacts` through the shared `apiClient`. The adapter supports
+the optional `community_id` query parameter for non-UI callers, while the
+existing `listCommunityContacts()` UI-facing contract stays unchanged. It maps
+the API snake_case rows through the existing RPC-compatible contact mapper so
+display names, initials, avatars, roles, subtitles, phone numbers, Gregorian
+and Hebrew birthdays, hidden/null fields, and empty directory results keep the
+same mobile behavior.
+
+When the contacts provider is unset, `supabase`, or any unknown value, mobile
+continues to use the legacy Supabase RPC implementation. Provider selection is
+configuration fallback only: an API error is surfaced to the current contacts
+UI and does not trigger a second request through Supabase. API 401 responses
+keep the existing `auth_required` state, and `membership_required`/403
+directory responses keep the existing membership-required state.
+
+The legacy contacts settings screen also switches under
+`EXPO_PUBLIC_CONTACTS_PROVIDER=api`: `getMyContactVisibility()` calls
+`GET /me/contact-visibility`, and `upsertMyContactVisibility(input)` calls
+`PUT /me/contact-visibility` with the eight existing booleans in the API
+snake_case body. The client never sends `user_id`; the backend derives the user
+from the bearer token and preserves all-false defaults for an absent legacy
+visibility row. This switch does not change the profile-driven community
+directory privacy model.
+
+Email remains hidden according to the API contract. Backend field-level masking
+remains authoritative: hidden phone, birthday, city, and Hebrew-name values
+stay `null`/`undefined` on the client and are not reconstructed or inferred.
+Local iPhone contacts remain local-only; this PR does not call
+`POST /me/synced-contacts` or `DELETE /me/synced-contacts/{contact_id}` and does
+not hash, upload, persist, or transmit the iPhone address book.
 
 ## iPhone contacts
 

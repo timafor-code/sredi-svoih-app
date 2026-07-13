@@ -1482,8 +1482,44 @@ not drive directory visibility. Synced contacts require a timezone-aware
 `consented_at` timestamp and precomputed phone/email hashes; raw phone or email
 is not accepted, input is not logged, and no deduplication invariant is
 invented. This PR neither reads an iPhone address book nor changes mobile or
-web-admin runtime code. The next PR is PR 32F,
-`feature/mobile-community-contacts-api-switch`.
+web-admin runtime code.
+
+### PR 32F mobile community contacts API switch
+
+PR 32F adds mobile API adapters for the community directory and the legacy
+current-user contact-visibility settings. With
+`EXPO_PUBLIC_CONTACTS_PROVIDER=api`, `listCommunityContacts()` calls
+`GET /community/contacts` through the shared mobile `apiClient`, maps the
+snake_case API response through the existing RPC-compatible community-contact
+mapper, and preserves the current Contacts tabs, list, empty state, birthday
+preview, detail behavior, display names, initials, avatars, roles, subtitles,
+phone numbers, Gregorian and Hebrew birthdays, and null hidden fields.
+
+Unset, `supabase`, and unknown contacts provider values continue to use the
+legacy Supabase RPC path. The API path is not runtime failover: if the Python
+API request fails, the current UI error behavior is used and the client does
+not retry through Supabase. API 401/unauthenticated directory and visibility
+requests map to the existing `auth_required` behavior, and
+`membership_required`/403 directory responses map to the existing
+membership-required community contacts state. Other API errors surface as
+normal sanitized errors.
+
+The legacy visibility facade now calls `GET /me/contact-visibility` and
+`PUT /me/contact-visibility` under the contacts API provider. The update body
+contains only the eight existing booleans in snake_case:
+`show_in_community_directory`, `share_phone`, `share_email`,
+`share_birth_date`, `share_hebrew_birth_date`, `share_city`,
+`share_hebrew_name`, and `birthday_reminders_enabled`; it never sends
+`user_id`. The backend derives the current user from the bearer token and keeps
+all-false defaults for absent legacy `profile_contact_visibility` rows.
+
+Directory privacy remains backend-enforced and profile-driven. Email stays
+hidden by the PR 32E contract. Hidden phone, birthday, city, and Hebrew-name
+values remain null/undefined on the client and are not reconstructed or
+inferred. Local iPhone contacts remain local-only; PR 32F does not implement
+`POST /me/synced-contacts`, `DELETE /me/synced-contacts/{contact_id}`, address
+book hashing, upload, persistence, or automatic Contacts permission requests.
+The next PR is PR 32G, `feature/api-avatar-storage-foundation`.
 
 ## API Contract Foundation
 

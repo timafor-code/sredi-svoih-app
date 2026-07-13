@@ -8,6 +8,8 @@ import type {
   HebrewDateJson,
 } from '@/types/contact';
 
+import { isMobileApiProviderEnabled } from './apiClient';
+
 export const COMMUNITY_CONTACTS_AUTH_REQUIRED = 'auth_required';
 export const COMMUNITY_CONTACTS_MEMBERSHIP_REQUIRED = 'membership_required';
 
@@ -201,5 +203,11 @@ export async function listMockCommunityContacts(): Promise<CommunityContact[]> {
 }
 
 export async function listCommunityContacts(): Promise<CommunityContact[]> {
+  if (isMobileApiProviderEnabled('contacts')) {
+    const communityContactsApiService = await import('./communityContactsApiService');
+
+    return communityContactsApiService.listCommunityContactsFromApi();
+  }
+
   return listCommunityContactsFromBackend();
 }

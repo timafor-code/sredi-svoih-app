@@ -1,4 +1,5 @@
 import type { PrayerActivityType } from './prayerTracker';
+import type { HebrewDateJson } from './contact';
 
 export const API_PROVIDER_NAMES = ['supabase', 'api'] as const;
 
@@ -331,4 +332,55 @@ export type ApiRecordPrayerActivityRequest = {
   city: string | null;
   hebrew_date: Record<string, unknown>;
   metadata: Record<string, unknown>;
+};
+
+export type ApiCommunityContactResponse = {
+  avatar_url: string | null;
+  birth_date: string | null;
+  city: string | null;
+  community_id: string;
+  display_name: string | null;
+  email: string | null;
+  first_name: string | null;
+  hebrew_birth_date: HebrewDateJson | null;
+  hebrew_name: string | null;
+  id: string;
+  joined_at: string | null;
+  last_name: string | null;
+  membership_status: string | null;
+  phone: string | null;
+  role: string | null;
+  share_birth_date: boolean;
+  share_city: boolean;
+  share_email: boolean;
+  share_hebrew_birth_date: boolean;
+  share_hebrew_name: boolean;
+  share_phone: boolean;
+  show_in_community_directory: boolean;
+  user_id: string;
+};
+
+export type ApiProfileContactVisibilityResponse = {
+  birthday_reminders_enabled: boolean;
+  created_at: string;
+  share_birth_date: boolean;
+  share_city: boolean;
+  share_email: boolean;
+  share_hebrew_birth_date: boolean;
+  share_hebrew_name: boolean;
+  share_phone: boolean;
+  show_in_community_directory: boolean;
+  updated_at: string;
+  user_id: string;
+};
+
+export type ApiProfileContactVisibilityUpdateRequest = {
+  birthday_reminders_enabled: boolean;
+  share_birth_date: boolean;
+  share_city: boolean;
+  share_email: boolean;
+  share_hebrew_birth_date: boolean;
+  share_hebrew_name: boolean;
+  share_phone: boolean;
+  show_in_community_directory: boolean;
 };

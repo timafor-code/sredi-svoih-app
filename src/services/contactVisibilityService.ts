@@ -3,6 +3,8 @@ import type {
   ProfileContactVisibility,
   ProfileContactVisibilityRow,
 } from '@/types/contact';
+import { isMobileApiProviderEnabled } from './apiClient';
+import * as contactVisibilityApiService from './contactVisibilityApiService';
 import { supabase } from './supabaseClient';
 
 const AUTH_REQUIRED_ERROR = 'auth_required';
@@ -74,6 +76,10 @@ function toRpcArgs(input: ContactVisibilityUpdateInput) {
 }
 
 export async function getMyContactVisibility(): Promise<ProfileContactVisibility> {
+  if (isMobileApiProviderEnabled('contacts')) {
+    return contactVisibilityApiService.getMyContactVisibility();
+  }
+
   await assertAuthenticated();
 
   const { data, error } = await supabase.rpc('get_my_contact_visibility');
@@ -88,6 +94,10 @@ export async function getMyContactVisibility(): Promise<ProfileContactVisibility
 export async function upsertMyContactVisibility(
   input: ContactVisibilityUpdateInput,
 ): Promise<ProfileContactVisibility> {
+  if (isMobileApiProviderEnabled('contacts')) {
+    return contactVisibilityApiService.upsertMyContactVisibility(input);
+  }
+
   await assertAuthenticated();
 
   const { data, error } = await supabase.rpc('upsert_my_contact_visibility', toRpcArgs(input));
