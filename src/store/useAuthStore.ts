@@ -34,6 +34,9 @@ import {
   type CommunityMembership,
 } from '@/services/inviteService';
 
+let avatarRefreshRevision = 0;
+let profileWriteRevision = 0;
+
 type AuthState = {
   session: Session | null;
   user: User | null;
@@ -89,23 +92,57 @@ async function resolveOptionalCurrentAvatarUrl(): Promise<string | null> {
   }
 }
 
-async function withResolvedAvatar(profile: Profile): Promise<Profile> {
+function invalidateAvatarRefreshes(): void {
+  avatarRefreshRevision += 1;
+}
+
+function invalidateProfileWrites(): void {
+  profileWriteRevision += 1;
+}
+
+function invalidateProfileAndAvatarWrites(): void {
+  invalidateProfileWrites();
+  invalidateAvatarRefreshes();
+}
+
+function beginAvatarRefresh(): number {
+  avatarRefreshRevision += 1;
+  return avatarRefreshRevision;
+}
+
+function beginProfileWrite(): number {
+  profileWriteRevision += 1;
+  return profileWriteRevision;
+}
+
+function isCurrentAvatarRefresh(revision: number): boolean {
+  return revision === avatarRefreshRevision;
+}
+
+function isCurrentProfileWrite(revision: number): boolean {
+  return revision === profileWriteRevision;
+}
+
+function applyTransientAvatarUrl(
+  profile: Profile,
+  avatarUrl: string | null | undefined,
+): Profile {
   if (!isApiAvatarProviderEnabled()) {
     return profile;
   }
 
   return {
     ...profile,
-    avatar_url: await resolveOptionalCurrentAvatarUrl(),
+    avatar_url: avatarUrl ?? null,
   };
 }
 
-async function withResolvedNullableAvatar(profile: Profile | null): Promise<Profile | null> {
-  if (!profile) {
-    return null;
-  }
-
-  return withResolvedAvatar(profile);
+function profileAvatarUrlForSameUser(
+  currentUser: User | null,
+  targetUserId: string,
+  currentProfile: Profile | null,
+): string | null {
+  return currentUser?.id === targetUserId ? currentProfile?.avatar_url ?? null : null;
 }
 
 function cleanProfileText(value: string | null | undefined): string | null {
@@ -242,12 +279,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   error: null,
 
   loadSession: async () => {
+    let requestRevision = beginProfileWrite();
+
     set({ loading: true, error: null });
 
     try {
       const session = await getSession();
 
       if (!session) {
+        invalidateProfileAndAvatarWrites();
         await resetEventPrivateState();
         await clearAvatarReadUrlMemoryCache();
 
@@ -263,6 +303,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       if (get().user?.id && get().user?.id !== session.user.id) {
+        invalidateProfileAndAvatarWrites();
+        requestRevision = beginProfileWrite();
         await resetEventPrivateState();
         await clearAvatarReadUrlMemoryCache();
       }
@@ -271,16 +313,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         loadProfileOrCreate(),
         loadMyMembership(),
       ]);
-      const profile = await withResolvedNullableAvatar(loadedProfile);
 
-      set({
-        session,
-        user: session.user,
-        profile,
-        membership,
-        loading: false,
-        error: null,
+      set((state) => {
+        const shouldWriteProfile = isCurrentProfileWrite(requestRevision);
+        const currentAvatarUrl = profileAvatarUrlForSameUser(
+          state.user,
+          session.user.id,
+          state.profile,
+        );
+
+        return {
+          session,
+          user: session.user,
+          profile: shouldWriteProfile
+            ? loadedProfile
+              ? applyTransientAvatarUrl(loadedProfile, currentAvatarUrl)
+              : null
+            : state.profile,
+          membership,
+          loading: false,
+          error: null,
+        };
       });
+
+      void get().refreshProfileAvatar();
     } catch (error) {
       const message = friendlyAuthError(error);
 
@@ -290,12 +346,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   loadProfile: async () => {
+    const requestRevision = beginProfileWrite();
+
     set({ loading: true, error: null });
 
     try {
-      const profile = await withResolvedNullableAvatar(await loadProfileService());
+      const loadedProfile = await loadProfileService();
 
-      set({ profile, loading: false, error: null });
+      set((state) => ({
+        profile: isCurrentProfileWrite(requestRevision)
+          ? loadedProfile
+            ? applyTransientAvatarUrl(
+              loadedProfile,
+              profileAvatarUrlForSameUser(state.user, loadedProfile.id, state.profile),
+            )
+            : null
+          : state.profile,
+        loading: false,
+        error: null,
+      }));
+
+      void get().refreshProfileAvatar();
     } catch (error) {
       const message = friendlyAuthError(error);
 
@@ -305,12 +376,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   updateProfile: async (input: ProfileUpsert) => {
+    const requestRevision = beginProfileWrite();
+
     set({ loading: true, error: null });
 
     try {
-      const profile = await withResolvedAvatar(await upsertProfile(input));
+      const updatedProfile = await upsertProfile(input);
+      let profile = applyTransientAvatarUrl(updatedProfile, null);
 
-      set({ profile, loading: false, error: null });
+      set((state) => {
+        if (!isCurrentProfileWrite(requestRevision)) {
+          return {
+            loading: false,
+            error: null,
+          };
+        }
+
+        profile = applyTransientAvatarUrl(
+          updatedProfile,
+          profileAvatarUrlForSameUser(state.user, updatedProfile.id, state.profile),
+        );
+
+        return { profile, loading: false, error: null };
+      });
+
+      void get().refreshProfileAvatar();
+
       return profile;
     } catch (error) {
       const message = friendlyAuthError(error);
@@ -325,33 +416,44 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return;
     }
 
-    const { profile } = get();
+    const userId = get().user?.id;
 
-    if (!profile) {
+    if (!userId || !get().profile) {
       return;
     }
 
-    set({
-      profile: {
-        ...profile,
-        avatar_url: await resolveOptionalCurrentAvatarUrl(),
-      },
+    const requestRevision = beginAvatarRefresh();
+    const avatarUrl = await resolveOptionalCurrentAvatarUrl();
+
+    set((state) => {
+      if (
+        !isCurrentAvatarRefresh(requestRevision)
+        || state.user?.id !== userId
+        || !state.profile
+      ) {
+        return {};
+      }
+
+      return {
+        profile: {
+          ...state.profile,
+          avatar_url: avatarUrl,
+        },
+      };
     });
   },
 
   setProfileAvatarUrl: (avatarUrl: string | null) => {
-    const { profile } = get();
+    invalidateAvatarRefreshes();
 
-    if (!profile) {
-      return;
-    }
-
-    set({
-      profile: {
-        ...profile,
-        avatar_url: avatarUrl,
-      },
-    });
+    set((state) => ({
+      profile: state.profile
+        ? {
+          ...state.profile,
+          avatar_url: avatarUrl,
+        }
+        : null,
+    }));
   },
 
   loadMembership: async () => {
@@ -386,6 +488,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signIn: async (email: string, password: string) => {
+    const requestRevision = beginProfileWrite();
+    invalidateAvatarRefreshes();
     set({ loading: true, error: null });
 
     try {
@@ -394,18 +498,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         loadProfileOrCreate(),
         loadMyMembership(),
       ]);
-      const profile = await withResolvedNullableAvatar(loadedProfile);
 
       await resetEventPrivateState();
 
-      set({
+      set((state) => ({
         session,
         user: session.user,
-        profile,
+        profile: isCurrentProfileWrite(requestRevision)
+          ? loadedProfile
+            ? applyTransientAvatarUrl(
+              loadedProfile,
+              profileAvatarUrlForSameUser(state.user, session.user.id, state.profile),
+            )
+            : null
+          : state.profile,
         membership,
         loading: false,
         error: null,
-      });
+      }));
+
+      void get().refreshProfileAvatar();
     } catch (error) {
       const message = friendlyAuthError(error);
 
@@ -415,6 +527,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signInWithApple: async () => {
+    const requestRevision = beginProfileWrite();
+    invalidateAvatarRefreshes();
     set({ loading: true, error: null });
 
     try {
@@ -431,19 +545,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         result.appleProfile,
         result.session.user.email,
       );
-      const resolvedProfile = await withResolvedNullableAvatar(profileWithAppleData);
       const membership = await loadMyMembership();
 
       await resetEventPrivateState();
 
-      set({
+      set((state) => ({
         session: result.session,
         user: result.session.user,
-        profile: resolvedProfile,
+        profile: isCurrentProfileWrite(requestRevision)
+          ? profileWithAppleData
+            ? applyTransientAvatarUrl(
+              profileWithAppleData,
+              profileAvatarUrlForSameUser(state.user, result.session.user.id, state.profile),
+            )
+            : null
+          : state.profile,
         membership,
         loading: false,
         error: null,
-      });
+      }));
+
+      void get().refreshProfileAvatar();
     } catch (error) {
       const message = friendlyAuthError(error);
 
@@ -453,6 +575,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signInWithGoogle: async () => {
+    const requestRevision = beginProfileWrite();
+    invalidateAvatarRefreshes();
     set({ loading: true, error: null });
 
     try {
@@ -467,18 +591,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         loadProfileOrCreate(),
         loadMyMembership(),
       ]);
-      const profile = await withResolvedNullableAvatar(loadedProfile);
 
       await resetEventPrivateState();
 
-      set({
+      set((state) => ({
         session,
         user: session.user,
-        profile,
+        profile: isCurrentProfileWrite(requestRevision)
+          ? loadedProfile
+            ? applyTransientAvatarUrl(
+              loadedProfile,
+              profileAvatarUrlForSameUser(state.user, session.user.id, state.profile),
+            )
+            : null
+          : state.profile,
         membership,
         loading: false,
         error: null,
-      });
+      }));
+
+      void get().refreshProfileAvatar();
     } catch (error) {
       const message = friendlyAuthError(error);
 
@@ -488,12 +620,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signUpWithEmail: async (email: string, password: string) => {
+    const requestRevision = beginProfileWrite();
+    invalidateAvatarRefreshes();
     set({ loading: true, error: null });
 
     try {
       const result = await signUpWithEmailService(email, password);
 
       if (!result.session) {
+        invalidateProfileAndAvatarWrites();
         await resetEventPrivateState();
         await clearAvatarReadUrlMemoryCache();
 
@@ -508,19 +643,33 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return result;
       }
 
+      const session = result.session;
       const membership = await loadMyMembership();
-      const profile = await withResolvedNullableAvatar(result.profile);
+      let profile = result.profile ? applyTransientAvatarUrl(result.profile, null) : null;
 
       await resetEventPrivateState();
 
-      set({
-        session: result.session,
-        user: result.session.user,
-        profile,
-        membership,
-        loading: false,
-        error: null,
+      set((state) => {
+        profile = isCurrentProfileWrite(requestRevision)
+          ? result.profile
+            ? applyTransientAvatarUrl(
+              result.profile,
+              profileAvatarUrlForSameUser(state.user, session.user.id, state.profile),
+            )
+            : null
+          : state.profile;
+
+        return {
+          session,
+          user: session.user,
+          profile,
+          membership,
+          loading: false,
+          error: null,
+        };
       });
+
+      void get().refreshProfileAvatar();
 
       return {
         ...result,
@@ -565,6 +714,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signOut: async () => {
+    invalidateProfileAndAvatarWrites();
     set({ loading: true, error: null });
 
     try {

@@ -128,6 +128,10 @@ returned `avatar_id` values, and resolves each authorized avatar through
 individual avatar read falls back to initials and does not fail the complete
 contacts directory.
 
+The Contacts tab reloads community contacts when the "Община" segment gains
+focus, so retained signed avatar URLs are refreshed through the same bounded
+resolver instead of being reused past their TTL.
+
 This does not weaken backend authorization. The Python API still decides which
 contacts are visible through profile visibility and same-community membership,
 and the avatar read endpoint separately authorizes each signed URL request.

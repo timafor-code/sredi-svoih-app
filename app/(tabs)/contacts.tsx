@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
@@ -245,13 +245,17 @@ export default function ContactsScreen() {
   const normalizedSearch = search.trim().toLowerCase();
   const isCommunity = tab === 'Община';
 
-  useEffect(() => {
-    if (!isCommunity) {
-      return;
-    }
+  useFocusEffect(
+    useCallback(() => {
+      if (!isCommunity) {
+        return undefined;
+      }
 
-    void loadCommunityContacts();
-  }, [isCommunity, loadCommunityContacts]);
+      void loadCommunityContacts();
+
+      return undefined;
+    }, [isCommunity, loadCommunityContacts]),
+  );
 
   const community = useMemo(
     () =>
