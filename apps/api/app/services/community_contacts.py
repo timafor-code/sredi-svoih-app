@@ -157,6 +157,7 @@ async def list_community_contacts(
             Profile.first_name.label("first_name"),
             Profile.last_name.label("last_name"),
             Profile.avatar_url.label("avatar_url"),
+            Profile.avatar_id.label("avatar_id"),
             case((phone_visible, Profile.phone), else_=None).label("phone"),
             literal(None).label("email"),
             Profile.city.label("city"),

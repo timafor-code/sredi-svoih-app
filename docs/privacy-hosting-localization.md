@@ -1,6 +1,6 @@
 # Privacy, Hosting, And Localization
 
-Source of truth: repository-root `plan.md`, version `2026-07-06 v2.6`.
+Source of truth: repository-root `plan.md`, version `2026-07-06 v2.7`.
 
 This document records production data-residency and hosting constraints for the
 backend migration. It supplements the existing privacy notes and does not change
@@ -37,6 +37,17 @@ cutover unless the owner explicitly signs off on an exclusion.
 Avatar/photo storage must not be treated as a separate privacy exception. If it
 contains or can identify a person, it follows the same production residency
 standard as profile and registration data.
+
+Avatar objects and API-owned avatar metadata must be stored in Russia in
+production. The PR 32G local MinIO service is for local smoke only and is not
+the production storage provider. Production must use a Russia-hosted
+S3-compatible endpoint and a private bucket.
+
+Avatar upload/read URLs are short-lived bearer URLs. They contain authorization
+query parameters and must not be logged, persisted, copied into support notes,
+or stored in PostgreSQL. API responses expose durable `avatar_id` references;
+they must not expose object keys, bucket names, ETags, storage credentials, or
+internal storage endpoint configuration.
 
 ## Expo Push Caveat
 
@@ -77,6 +88,9 @@ Production logging must avoid raw personal and secret values, including:
 - registration comments;
 - device push tokens;
 - privacy request messages;
+- signed avatar URLs;
+- object-storage credentials;
+- raw avatar image bytes;
 - JWTs;
 - refresh tokens;
 - password reset codes.

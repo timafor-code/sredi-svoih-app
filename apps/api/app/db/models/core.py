@@ -194,6 +194,7 @@ class Profile(Base):
         ),
         Index("profiles_user_id_idx", "user_id"),
         Index("profiles_community_id_idx", "community_id"),
+        Index("profiles_avatar_id_idx", "avatar_id"),
     )
 
     id: Mapped[UUID] = uuid_pk()
@@ -214,6 +215,10 @@ class Profile(Base):
     phone: Mapped[str | None] = mapped_column(Text)
     email: Mapped[str | None] = mapped_column(Text)
     avatar_url: Mapped[str | None] = mapped_column(Text)
+    avatar_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("profile_avatars.id", ondelete="SET NULL"),
+    )
     birth_date: Mapped[date | None] = mapped_column(Date)
     hebrew_birth_date: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     birth_time_context: Mapped[str] = mapped_column(

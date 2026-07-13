@@ -244,6 +244,7 @@ class ProfileSummary(BaseModel):
     last_name: str | None
     full_name: str | None
     avatar_url: str | None
+    avatar_id: UUID | None
     city: str | None
     onboarding_completed: bool
     created_at: datetime

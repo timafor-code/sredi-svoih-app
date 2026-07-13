@@ -45,6 +45,16 @@ class Settings(BaseSettings):
     api_auth_email_rate_limit_max_attempts: int = Field(default=5, gt=0)
     api_public_app_base_url: str = "http://localhost:8081"
     api_cors_allowed_origins: str = ",".join(_LOCAL_CORS_ALLOWED_ORIGINS)
+    api_object_storage_enabled: bool = False
+    api_object_storage_endpoint_url: str = ""
+    api_object_storage_region: str = "us-east-1"
+    api_object_storage_bucket: str = ""
+    api_object_storage_access_key_id: str = ""
+    api_object_storage_secret_access_key: str = ""
+    api_object_storage_path_style: bool = False
+    api_avatar_upload_url_ttl_seconds: int = Field(default=300, gt=0, le=3600)
+    api_avatar_read_url_ttl_seconds: int = Field(default=300, gt=0, le=3600)
+    api_avatar_max_size_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
     db_dsn: str = Field(
         default="postgresql+asyncpg://sredi_api:sredi_api@localhost:55432/sredi_api",
         validation_alias=AliasChoices(_DB_DSN_ENV, "API_DB_DSN"),

@@ -1,0 +1,1 @@
+"""Avatar object-storage helpers."""

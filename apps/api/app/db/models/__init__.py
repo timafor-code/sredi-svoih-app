@@ -1,4 +1,5 @@
 from app.db.models.base import Base
+from app.db.models.avatar import ProfileAvatar
 from app.db.models.core import (
     AdminFeedback,
     AppUser,
@@ -78,6 +79,7 @@ __all__ = [
     "PrayerActivityLog",
     "PrivacyRequest",
     "Profile",
+    "ProfileAvatar",
     "ProfileContactVisibility",
     "PushNotificationDelivery",
     "PushNotificationJob",
