@@ -1248,9 +1248,7 @@ async def insert_rows(connection: Any, table_name: str, primary_column: str, row
     if not rows:
         return
     existing = await existing_rows(connection, table_name, primary_column, rows)
-    columns = sorted({column for row in rows for column in row})
-    placeholders = ", ".join(f"${index}" for index in range(1, len(columns) + 1))
-    sql = f"insert into {safe_identifier(table_name)} ({', '.join(safe_identifier(column) for column in columns)}) values ({placeholders}) on conflict ({safe_identifier(primary_column)}) do nothing returning {safe_identifier(primary_column)}"
+    statements: dict[tuple[str, ...], str] = {}
     for row in rows:
         current = existing.get(row[primary_column])
         if current is not None:
@@ -1260,7 +1258,13 @@ async def insert_rows(connection: Any, table_name: str, primary_column: str, row
             plan.collector.add(report_name, "existing_target_conflict")
             plan.report["domains"][report_name]["conflict_count"] += 1
             plan.collector.require_clean("Apply preflight")
-        inserted = await connection.fetchval(sql, *[row.get(column) for column in columns])
+        columns = tuple(sorted(row))
+        sql = statements.get(columns)
+        if sql is None:
+            placeholders = ", ".join(f"${index}" for index in range(1, len(columns) + 1))
+            sql = f"insert into {safe_identifier(table_name)} ({', '.join(safe_identifier(column) for column in columns)}) values ({placeholders}) on conflict ({safe_identifier(primary_column)}) do nothing returning {safe_identifier(primary_column)}"
+            statements[columns] = sql
+        inserted = await connection.fetchval(sql, *[row[column] for column in columns])
         if inserted is None:
             plan.collector.add(report_name, "concurrent_target_conflict")
             plan.report["domains"][report_name]["conflict_count"] += 1
