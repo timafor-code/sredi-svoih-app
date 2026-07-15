@@ -352,6 +352,20 @@ def completed_domain(source: dict[str, int], target: dict[str, int], comparisons
     }
 
 
+def completed_capacity_bucket_domain(source: dict[str, int], target: dict[str, int], comparison: dict[str, int]) -> dict[str, Any]:
+    mismatch_counts = (
+        comparison["mismatchedBucketCount"],
+        comparison["missingSourceBucketCount"],
+        comparison["missingTargetBucketCount"],
+    )
+    return {
+        "status": "matched" if not any(mismatch_counts) else "mismatched",
+        "source": source,
+        "target": target,
+        "comparison": comparison,
+    }
+
+
 def incomplete_domain(reason: str) -> dict[str, Any]:
     return {"status": "incomplete", "reason": reason}
 
@@ -484,7 +498,7 @@ async def compare_capacity_buckets(source: Any, target: Any, source_schema: dict
     })
     source_buckets, target_buckets = await asyncio.gather(read_capacity_buckets(source), read_capacity_buckets(target))
     comparison = compare_capacity_bucket_sets(source_buckets, target_buckets)
-    return completed_domain(capacity_totals(source_buckets), capacity_totals(target_buckets), comparison)
+    return completed_capacity_bucket_domain(capacity_totals(source_buckets), capacity_totals(target_buckets), comparison)
 
 
 async def read_seating_snapshot(connection: Any) -> tuple[tuple[int, ...], tuple[dict[tuple[Any, ...], int], ...]]:
