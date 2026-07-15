@@ -1,4 +1,4 @@
-import type { User } from '@supabase/supabase-js';
+import type { AppAuthUser } from '@/types/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
@@ -69,22 +69,12 @@ function normalizeAuthProvider(provider: unknown): AuthProvider {
   return 'unknown';
 }
 
-function getAuthProvider(user: User | null): AuthProvider {
-  const appMetadataProvider = normalizeAuthProvider(user?.app_metadata?.provider);
-
-  if (appMetadataProvider !== 'unknown') {
-    return appMetadataProvider;
-  }
-
-  const identityProvider = user?.identities
-    ?.map((identity) => normalizeAuthProvider(identity.provider))
-    .find((provider) => provider !== 'unknown');
-
-  return identityProvider ?? 'unknown';
+function getAuthProvider(user: AppAuthUser | null): AuthProvider {
+  return normalizeAuthProvider(user?.authMethod);
 }
 
 function getEmailConfirmationLabel(
-  user: User | null,
+  user: AppAuthUser | null,
   provider: AuthProvider,
   accountEmail: string,
 ): string | null {
@@ -92,15 +82,8 @@ function getEmailConfirmationLabel(
     return null;
   }
 
-  const userWithConfirmation = user as (User & {
-    confirmed_at?: string | null;
-    email_confirmed_at?: string | null;
-  }) | null;
-  const confirmedAt = userWithConfirmation?.email_confirmed_at ?? userWithConfirmation?.confirmed_at ?? null;
-  const canDetermineConfirmation = Boolean(
-    userWithConfirmation &&
-    ('email_confirmed_at' in userWithConfirmation || 'confirmed_at' in userWithConfirmation),
-  );
+  const confirmedAt = user?.emailVerifiedAt ?? null;
+  const canDetermineConfirmation = user !== null;
 
   if (confirmedAt) {
     return 'Email подтверждён';

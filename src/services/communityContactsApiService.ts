@@ -6,7 +6,7 @@ import {
   COMMUNITY_CONTACTS_MEMBERSHIP_REQUIRED,
   mapCommunityContactRpcRow,
 } from './communityContactsService';
-import { apiClient, ApiClientError, isMobileApiProviderEnabled } from './apiClient';
+import { apiClient, ApiClientError } from './apiClient';
 import { resolveAuthorizedAvatarReadUrl } from './avatarService';
 
 const AVATAR_READ_CONCURRENCY = 4;
@@ -116,9 +116,7 @@ export async function listCommunityContactsFromApi(
 
     const visibleRows = (rows ?? [])
       .filter((row) => row.show_in_community_directory);
-    const avatarUrls = isMobileApiProviderEnabled('avatar')
-      ? await resolveContactAvatarUrls(visibleRows)
-      : null;
+  const avatarUrls = await resolveContactAvatarUrls(visibleRows);
 
     return visibleRows
       .map((row) => toCommunityContactRpcRow(row, avatarUrls))

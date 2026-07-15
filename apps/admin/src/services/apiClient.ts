@@ -1,11 +1,6 @@
 import { getAdminApiAccessToken } from "./adminApiAuthTokenStore";
-import { getCurrentAdminSupabaseAccessToken } from "./supabaseClient";
-import { normalizeAdminApiProvider } from "../types/api";
 import type {
-  AdminApiProviderConfig,
-  AdminApiProviderKey,
   ApiErrorResponse,
-  ApiProviderName,
   ApiResponseEnvelope,
   ApiResponseMeta,
 } from "../types/api";
@@ -32,18 +27,6 @@ type ApiClientErrorInit = {
   error: ApiErrorResponse;
   requestId?: string | null;
   status: number;
-};
-
-export const providerEnvNames: Record<AdminApiProviderKey, string> = {
-  auth: "VITE_AUTH_PROVIDER",
-  events: "VITE_ADMIN_EVENTS_PROVIDER",
-  registrations: "VITE_ADMIN_REGISTRATIONS_PROVIDER",
-  members: "VITE_ADMIN_MEMBERS_PROVIDER",
-  invites: "VITE_ADMIN_INVITES_PROVIDER",
-  seating: "VITE_ADMIN_SEATING_PROVIDER",
-  import: "VITE_ADMIN_IMPORT_PROVIDER",
-  feedback: "VITE_ADMIN_FEEDBACK_PROVIDER",
-  community: "VITE_ADMIN_COMMUNITY_PROVIDER",
 };
 
 export class ApiClientError extends Error {
@@ -86,32 +69,6 @@ export function normalizeApiBaseUrl(value: string | null | undefined): string | 
 export const apiBaseUrl = normalizeApiBaseUrl(
   import.meta.env.VITE_API_URL as string | undefined,
 );
-
-export const adminApiProviderConfig: AdminApiProviderConfig = {
-  auth: normalizeAdminApiProvider(import.meta.env.VITE_AUTH_PROVIDER as string | undefined),
-  events: normalizeAdminApiProvider(import.meta.env.VITE_ADMIN_EVENTS_PROVIDER as string | undefined),
-  registrations: normalizeAdminApiProvider(
-    import.meta.env.VITE_ADMIN_REGISTRATIONS_PROVIDER as string | undefined,
-  ),
-  members: normalizeAdminApiProvider(import.meta.env.VITE_ADMIN_MEMBERS_PROVIDER as string | undefined),
-  invites: normalizeAdminApiProvider(import.meta.env.VITE_ADMIN_INVITES_PROVIDER as string | undefined),
-  seating: normalizeAdminApiProvider(import.meta.env.VITE_ADMIN_SEATING_PROVIDER as string | undefined),
-  import: normalizeAdminApiProvider(import.meta.env.VITE_ADMIN_IMPORT_PROVIDER as string | undefined),
-  feedback: normalizeAdminApiProvider(import.meta.env.VITE_ADMIN_FEEDBACK_PROVIDER as string | undefined),
-  community: normalizeAdminApiProvider(import.meta.env.VITE_ADMIN_COMMUNITY_PROVIDER as string | undefined),
-};
-
-export function getAdminApiProviderConfig(): AdminApiProviderConfig {
-  return { ...adminApiProviderConfig };
-}
-
-export function getAdminApiProvider(provider: AdminApiProviderKey): ApiProviderName {
-  return adminApiProviderConfig[provider];
-}
-
-export function isAdminApiProviderEnabled(provider: AdminApiProviderKey): boolean {
-  return getAdminApiProvider(provider) === "api";
-}
 
 function appendQueryParam(url: URL, key: string, value: ApiQueryValue): void {
   if (value === null || value === undefined) {
@@ -195,11 +152,7 @@ async function parseJsonResponse(response: Response): Promise<unknown> {
 }
 
 async function getRequestAccessToken(): Promise<string | null> {
-  if (adminApiProviderConfig.auth === "api") {
-    return getAdminApiAccessToken();
-  }
-
-  return getCurrentAdminSupabaseAccessToken();
+  return getAdminApiAccessToken();
 }
 
 function defaultErrorCode(status: number): string {

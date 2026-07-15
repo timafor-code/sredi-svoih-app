@@ -1,9 +1,10 @@
 # Avatar Storage
 
-PR 32G adds the backend-only foundation for API-owned avatar storage. PR 32H
-switches the mobile avatar service behind `EXPO_PUBLIC_AVATAR_PROVIDER=api`
-while keeping Supabase Storage as the default and fallback provider until
-cutover.
+PR 32G adds the backend-only foundation for API-owned avatar storage. Since
+PR 38, the mobile avatar service uses the Python API and API-configured
+S3-compatible storage only; no provider flag or Supabase Storage fallback is
+part of the frontend runtime. Historical provider-switch details below record
+the pre-cutover rollout only.
 
 ## Architecture
 

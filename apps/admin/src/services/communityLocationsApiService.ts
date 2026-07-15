@@ -1,5 +1,4 @@
 import { apiClient } from "./apiClient";
-import { normalizeAdminCommunityLocationRow } from "./communityLocationsSupabaseService";
 import type { AdminApiCommunityLocationResponse } from "../types/api";
 import type {
   AdminCommunityLocation,
@@ -25,7 +24,17 @@ function compactUndefined<T extends Record<string, unknown>>(payload: T): Partia
 function normalizeAdminApiCommunityLocation(
   row: AdminApiCommunityLocationResponse,
 ): AdminCommunityLocation {
-  return normalizeAdminCommunityLocationRow(row);
+  return {
+    id: row.id,
+    communityId: row.community_id,
+    title: row.title,
+    address: row.address,
+    isDefault: row.is_default,
+    isActive: row.is_active,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 function buildLocationApiPayload(

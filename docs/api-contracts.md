@@ -11,9 +11,10 @@ Mobile and web-admin must call the API through their app-specific wrappers.
 They must not connect directly to PostgreSQL, use a backend database URL, or
 perform authorization checks that belong on the API.
 
-Supabase remains a legacy/dev reference while provider flags still point to
-Supabase. The Python API owns authorization guards and transactional checks for
-domains that have moved to the API.
+The Python API owns authorization guards and transactional checks for every
+production mobile and web-admin domain. Historical provider-switch statements
+below record pre-PR 38 rollout work only; frontend provider flags and Supabase
+fallback are not current configuration.
 
 ## Contract Scope
 

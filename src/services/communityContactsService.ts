@@ -8,24 +8,9 @@ import type {
   HebrewDateJson,
 } from '@/types/contact';
 
-import { isMobileApiProviderEnabled } from './apiClient';
 
 export const COMMUNITY_CONTACTS_AUTH_REQUIRED = 'auth_required';
 export const COMMUNITY_CONTACTS_MEMBERSHIP_REQUIRED = 'membership_required';
-
-type SessionCapableSupabase = {
-  auth: {
-    getSession: () => Promise<{
-      data: { session: unknown | null };
-      error: { message: string } | null;
-    }>;
-  };
-};
-
-type SupabaseRpcError = {
-  code?: string;
-  message: string;
-};
 
 function toDateOnly(value: Date) {
   const year = String(value.getFullYear()).padStart(4, '0');
@@ -96,36 +81,6 @@ function getBackendDisplayName(row: CommunityContactRpcRow): string {
   return fullName || 'Community member';
 }
 
-async function assertAuthenticated(supabase: SessionCapableSupabase): Promise<void> {
-  const { data, error } = await supabase.auth.getSession();
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  if (!data.session) {
-    throw new Error(COMMUNITY_CONTACTS_AUTH_REQUIRED);
-  }
-}
-
-function normalizeCommunityContactsRpcError(error: SupabaseRpcError): Error {
-  const message = error.message.toLowerCase();
-
-  if (error.code === '28000' || message.includes('auth required')) {
-    return new Error(COMMUNITY_CONTACTS_AUTH_REQUIRED);
-  }
-
-  if (
-    error.code === '42501' ||
-    message.includes('active community membership required') ||
-    message.includes('membership required')
-  ) {
-    return new Error(COMMUNITY_CONTACTS_MEMBERSHIP_REQUIRED);
-  }
-
-  return new Error(error.message);
-}
-
 function toCommunityContact(contact: (typeof mockContacts)[number]): CommunityContact {
   const birthDate = parseRuDate(contact.dobGregorian);
 
@@ -182,20 +137,8 @@ export function mapCommunityContactRpcRow(row: CommunityContactRpcRow): Communit
 export async function listCommunityContactsFromBackend(
   communityId?: string,
 ): Promise<CommunityContact[]> {
-  const { supabase } = await import('./supabaseClient');
-  await assertAuthenticated(supabase);
-
-  const { data, error } = await supabase.rpc('list_community_contacts', {
-    p_community_id: communityId ?? null,
-  });
-
-  if (error) {
-    throw normalizeCommunityContactsRpcError(error);
-  }
-
-  return ((data ?? []) as CommunityContactRpcRow[])
-    .filter((row) => row.show_in_community_directory)
-    .map(mapCommunityContactRpcRow);
+  const communityContactsApiService = await import('./communityContactsApiService');
+  return communityContactsApiService.listCommunityContactsFromApi(communityId);
 }
 
 export async function listMockCommunityContacts(): Promise<CommunityContact[]> {
@@ -203,11 +146,5 @@ export async function listMockCommunityContacts(): Promise<CommunityContact[]> {
 }
 
 export async function listCommunityContacts(): Promise<CommunityContact[]> {
-  if (isMobileApiProviderEnabled('contacts')) {
-    const communityContactsApiService = await import('./communityContactsApiService');
-
-    return communityContactsApiService.listCommunityContactsFromApi();
-  }
-
   return listCommunityContactsFromBackend();
 }

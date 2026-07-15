@@ -4,15 +4,12 @@ The seating editor is available from the web-admin registrations capacity bucket
 UI. This document describes the implemented seating flow and the Phase 3 / PR 24
 beta UX polish around guest-pool clarity.
 
-The seating service is provider-aware. By default, and when
-`VITE_ADMIN_SEATING_PROVIDER` is missing, invalid, or set to `supabase`, it uses
-the regular authenticated Supabase browser client, role-checked RPCs, and RLS.
-When `VITE_ADMIN_SEATING_PROVIDER=api`, the same service facade uses the shared
-browser-safe admin `apiClient` and the Python `/admin/seating/*` endpoints. The
-canvas, geometry model, editor UX, template flow, assignments, and print model
-use the same frontend service contract in both modes.
+The seating service uses the shared browser-safe admin `apiClient` and the
+Python `/admin/seating/*` endpoints. The canvas, geometry model, editor UX,
+template flow, assignments, and print model keep the same frontend service
+contract.
 
-Neither mode requires privileged server keys, Supabase Admin API access, direct
+It requires no privileged server keys, Supabase Admin API access, direct
 database access from `apps/admin`, or direct access to `auth.users`.
 
 ## Status

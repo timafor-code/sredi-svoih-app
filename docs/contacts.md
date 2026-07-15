@@ -1,10 +1,14 @@
 # Contacts domain
 
-Раздел "Контакты" разделяет два источника данных: участников общины из Supabase и локальные iPhone contacts.
+Раздел "Контакты" разделяет два источника данных: участников общины через
+Python API и локальные iPhone contacts. Historical provider-switch references
+below describe the pre-PR 38 rollout only.
 
 ## Community contacts
 
-Community contacts должны приходить из Supabase через backend RPC, а не через прямой клиентский `select` из `profiles`, `community_memberships` или `profile_contact_visibility`.
+Community contacts должны приходить через Python API, а не через прямой
+клиентский `select` из `profiles`, `community_memberships` или
+`profile_contact_visibility`.
 
 Source of truth для каталога общины теперь живет в `public.profiles`:
 

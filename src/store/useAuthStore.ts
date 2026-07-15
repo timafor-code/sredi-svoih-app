@@ -1,4 +1,4 @@
-import type { Session, User } from '@supabase/supabase-js';
+import type { AppAuthSession, AppAuthUser } from '@/types/auth';
 import { create } from 'zustand';
 
 import {
@@ -36,8 +36,8 @@ import {
 import { authOperationGuards } from './authOperationGuards';
 
 type AuthState = {
-  session: Session | null;
-  user: User | null;
+  session: AppAuthSession | null;
+  user: AppAuthUser | null;
   profile: Profile | null;
   membership: CommunityMembership | null;
   loading: boolean;
@@ -153,7 +153,7 @@ function applyTransientAvatarUrl(
 }
 
 function profileAvatarUrlForSameUser(
-  currentUser: User | null,
+  currentUser: AppAuthUser | null,
   targetUserId: string,
   currentProfile: Profile | null,
 ): string | null {

@@ -1,5 +1,9 @@
 # Prayer Tracker
 
+> Historical pre-PR 38 persistence notes follow. The Prayer Tracker is now
+> API-only in mobile production and remains private; it has no frontend
+> provider flag or Supabase fallback.
+
 The Prayer Tracker MVP stores personal activity history for prayers, Shema, and Omer counting in `public.prayer_activity_logs`.
 
 ## Privacy Model

@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
-import { getAdminApiProvider } from "../services/apiClient";
 import {
   createAdminEventCategory,
   deleteAdminEventCategory,
@@ -50,22 +49,12 @@ const COMMUNITY_ID_ERROR =
 export function CategoriesPage() {
   const auth = useAdminAuth();
   const communityId = auth.membership?.community_id ?? null;
-  const categoriesProvider = getAdminApiProvider("events");
-  const isCategoriesApiProvider = categoriesProvider === "api";
-  const categoriesProviderLabel = isCategoriesApiProvider ? "API" : "Supabase";
-  const categoriesProviderTone: AdminBadgeTone = isCategoriesApiProvider ? "blue" : "green";
-  const categoriesToolbarDescription = isCategoriesApiProvider
-    ? "Список, создание и редактирование категорий идут через Python API event categories endpoints."
-    : "Управление через Supabase RPC admin_create_event_category / admin_update_event_category / admin_delete_event_category.";
-  const categoriesLoadingDescription = isCategoriesApiProvider
-    ? "Читаем категории через Python API event categories endpoint."
-    : "Читаем Supabase event_categories через admin_list_event_categories.";
-  const categoriesEmptyDescription = isCategoriesApiProvider
-    ? "API event categories endpoint вернул пустой список. Создайте первую категорию через кнопку «Добавить категорию»."
-    : "Supabase event_categories пока пуст. Создайте первую категорию через кнопку «Добавить категорию».";
-  const categoriesLoadErrorMessage = isCategoriesApiProvider
-    ? "Не удалось загрузить категории через API event categories endpoint."
-    : "Не удалось загрузить категории из Supabase.";
+  const categoriesProviderLabel = "API";
+  const categoriesProviderTone: AdminBadgeTone = "blue";
+  const categoriesToolbarDescription = "Список, создание и редактирование категорий идут через Python API event categories endpoints.";
+  const categoriesLoadingDescription = "Читаем категории через Python API event categories endpoint.";
+  const categoriesEmptyDescription = "API event categories endpoint вернул пустой список. Создайте первую категорию через кнопку «Добавить категорию».";
+  const categoriesLoadErrorMessage = "Не удалось загрузить категории через API event categories endpoint.";
 
   const [categories, setCategories] = useState<AdminEventCategory[]>([]);
   const [usageCounts, setUsageCounts] = useState<Record<string, number>>({});

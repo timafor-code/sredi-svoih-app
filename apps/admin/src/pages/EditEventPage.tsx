@@ -127,8 +127,8 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
         <Badge tone="blue">Редактирование</Badge>
         <h1>Редактировать событие</h1>
         <p>
-          Изменения сохраняются через RPC admin_update_event с текущей
-          пользовательской сессией Supabase.
+          Изменения сохраняются через Python API с текущей
+          пользовательской сессией.
         </p>
       </section>
 

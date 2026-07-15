@@ -1,5 +1,3 @@
-import type { Session } from "@supabase/supabase-js";
-
 import { apiClient, ApiClientError } from "./apiClient";
 import {
   clearAdminApiAuthTokens,
@@ -20,6 +18,7 @@ import type {
 } from "../types/api";
 import type {
   AdminAuthContext,
+  AdminAuthSession,
   AdminMembership,
   AdminMembershipStatus,
   AdminProfile,
@@ -189,8 +188,11 @@ async function fetchCurrentUser(): Promise<AdminApiCurrentUserResponse | null> {
   }
 }
 
-export async function getCurrentSession(): Promise<Session | null> {
-  return null;
+export async function getCurrentSession(): Promise<AdminAuthSession | null> {
+  const currentUser = await fetchCurrentUser();
+  return currentUser
+    ? { user: { id: currentUser.user.id, email: currentUser.user.email } }
+    : null;
 }
 
 export async function signInWithPassword(
@@ -249,7 +251,7 @@ export async function getCurrentAdminContext(): Promise<AdminAuthContext> {
 
   return {
     isAuthenticated: true,
-    session: null,
+    session: { user: { id: currentUser.user.id, email: currentUser.user.email } },
     profile: toAdminProfile(currentUser.profile, currentUser.user),
     membership,
     role,

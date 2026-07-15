@@ -7,7 +7,7 @@ Production-oriented bootstrap Expo React Native приложения по про
 - Expo + TypeScript
 - expo-router
 - Zustand
-- Supabase/PostgreSQL (подготовлено)
+- Python API + PostgreSQL
 - @hebcal/core (абстракция подготовлена)
 - expo-contacts / expo-notifications (абстракции подготовлены)
 
@@ -18,41 +18,20 @@ npm install
 npx expo start
 ```
 
-Приложение запускается в mock режиме даже без Supabase env keys.
+Приложение запускается в mock режиме без production API configuration.
 
-## Production provider cutover
+## Production runtime
 
-The Python API is the default production provider for migrated mobile domains.
-Production and Expo Go deployments therefore require a reachable
-`EXPO_PUBLIC_API_URL`; use the development computer's LAN address for Expo Go
-on an iPhone.
+Mobile production uses only the Python API. Configure a reachable
+`EXPO_PUBLIC_API_URL`; Expo Go on an iPhone must use the development computer's
+LAN address. Authentication, events, registrations, prayer, contacts, privacy,
+push tokens, and avatars never fall back to another frontend provider.
 
-```text
-EXPO_PUBLIC_AUTH_PROVIDER=api
-EXPO_PUBLIC_EVENTS_PROVIDER=api
-EXPO_PUBLIC_REGISTRATIONS_PROVIDER=api
-EXPO_PUBLIC_PRAYER_PROVIDER=api
-EXPO_PUBLIC_CONTACTS_PROVIDER=api
-EXPO_PUBLIC_AVATAR_PROVIDER=api
-EXPO_PUBLIC_PRIVACY_PROVIDER=api
-EXPO_PUBLIC_DEVICE_PROVIDER=api
-```
-
-Supabase URL and publishable-key configuration remains only for the explicit
-legacy/dev fallback. Set both providers before the operation:
-
-```text
-EXPO_PUBLIC_AUTH_PROVIDER=supabase
-EXPO_PUBLIC_<DOMAIN>_PROVIDER=supabase
-```
-
-`AUTH_PROVIDER=supabase` creates and supplies the Supabase user session, and
-the selected domain uses that session through the existing authenticated
-Supabase client. A domain provider set to `supabase` while auth remains `api`
-is not a supported fallback configuration. API request failures do not retry
-through Supabase; fallback is selected only by explicit environment
-configuration before the operation. Supabase code and historical migrations
-remain intentionally until PR 38 removes Supabase from the production runtime.
+Avatar upload, read, and deletion use the Python API with API-configured
+S3-compatible object storage. The frontend requires no Supabase URL, anon key,
+Auth, RPC, RLS, Storage, or provider flags. Historical `supabase/migrations/**`
+are retained as a migration archive, and owner-run `scripts/migration/**` may
+retain documented migration-only access; neither is part of production runtime.
 
 ## Структура
 

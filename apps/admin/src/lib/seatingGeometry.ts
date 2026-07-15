@@ -1,7 +1,7 @@
 // Pure seating geometry (block B, PR 9 — feature/admin-seating-geometry-lib).
 //
 // Ported from the v15 prototype (`docs/prototype/registrations-improved-seating-v15.html`).
-// This module is INTENTIONALLY pure: no React, no DOM, no Supabase, no
+// This module is INTENTIONALLY pure: no React, no DOM, no external client, no
 // localStorage, no CSS, no file/network IO, no side effects. Every function maps
 // inputs to outputs and never mutates its arguments. The UI editor (PR 11) and
 // auto-seating (PR 14) build on top of this; canvas scaling is a UI concern and

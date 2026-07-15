@@ -57,7 +57,7 @@ const testingItems = [
 ];
 
 const notProductionItems = [
-  "Overview не является analytics dashboard: все числа — это реальные значения существующих RPC, без прогнозов и графиков.",
+  "Overview не является analytics dashboard: все числа приходят из существующих API ответов, без прогнозов и графиков.",
   "Импорт с сайта в Phase 1 выполняется владельцем проекта через CLI/dev flow.",
   "Beta staging предназначен для закрытой проверки доступа и основных admin flows.",
 ];
@@ -340,7 +340,7 @@ export function OverviewPage({ onSectionChange }: OverviewPageProps) {
         <h1>Обзор</h1>
         <p>
           Живая стартовая страница: задачи, требующие внимания, ключевые показатели и
-          ближайшие события из текущей Supabase session.
+          ближайшие события из текущей API-сессии.
         </p>
       </section>
 

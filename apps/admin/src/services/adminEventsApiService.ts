@@ -191,6 +191,6 @@ export async function updateAdminEvent(
 
 export async function deleteAdminEvent(_eventId: string): Promise<AdminEvent> {
   throw new Error(
-    "Delete admin event is not available in API provider mode yet. Use archive or cancel instead, or switch VITE_ADMIN_EVENTS_PROVIDER back to supabase for the legacy hard-delete RPC.",
+    "Delete admin event is not available through the API. Use archive or cancel instead.",
   );
 }

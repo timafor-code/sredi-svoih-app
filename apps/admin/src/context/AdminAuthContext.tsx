@@ -7,23 +7,20 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Session } from "@supabase/supabase-js";
 
 import {
   getAdminAuthConfigurationError,
   getCurrentAdminContext,
-  isAdminApiAuthProviderEnabled,
   isAdminAuthConfigured,
   signInWithPassword,
   signOut as signOutService,
 } from "../services/adminAuthService";
-import { supabase } from "../services/supabaseClient";
-import type { AdminMembership, AdminProfile, AdminRole } from "../types/auth";
+import type { AdminAuthSession, AdminMembership, AdminProfile, AdminRole } from "../types/auth";
 
 type AdminAuthState = {
   loading: boolean;
   configMissing: boolean;
-  session: Session | null;
+  session: AdminAuthSession | null;
   profile: AdminProfile | null;
   membership: AdminMembership | null;
   role: AdminRole | null;
@@ -124,21 +121,6 @@ export function AdminAuthProvider({ children }: AdminAuthProviderProps) {
   useEffect(() => {
     void refresh();
 
-    if (isAdminApiAuthProviderEnabled()) {
-      return undefined;
-    }
-
-    if (!supabase) {
-      return undefined;
-    }
-
-    const { data } = supabase.auth.onAuthStateChange(() => {
-      void refresh();
-    });
-
-    return () => {
-      data.subscription.unsubscribe();
-    };
   }, [refresh]);
 
   const signIn = useCallback(

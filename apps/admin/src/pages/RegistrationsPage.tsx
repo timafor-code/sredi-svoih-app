@@ -19,7 +19,6 @@ import {
   SeatingLayoutEditor,
   type SeatingLayoutEditorSlot,
 } from "../components/seating/SeatingLayoutEditor";
-import { getAdminApiProvider } from "../services/apiClient";
 import { getAdminRegistrationCapacityAnalytics } from "../services/adminRegistrationCapacityService";
 import {
   listAdminEventCapacities,
@@ -167,18 +166,10 @@ export function RegistrationsPage() {
   const [seatingEditorSlot, setSeatingEditorSlot] =
     useState<SeatingLayoutEditorSlot | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const registrationsProvider = getAdminApiProvider("registrations");
-  const isRegistrationsApiProvider = registrationsProvider === "api";
-  const registrationsProviderLabel = isRegistrationsApiProvider ? "API" : "Supabase RPC";
-  const registrationsProviderTone: AdminBadgeTone = isRegistrationsApiProvider
-    ? "blue"
-    : "green";
-  const registrationsHeaderDescription = isRegistrationsApiProvider
-    ? "Рабочий центр заявок на события: список событий, таблица регистраций, детали участника, статусы, attendance и capacity управляются через Python API registration endpoints."
-    : "Рабочий центр заявок на события: список событий, таблица регистраций, детали участника, статусы, attendance и capacity используют Supabase admin registration RPC.";
-  const registrationActions = isRegistrationsApiProvider
-    ? API_REGISTRATION_ACTIONS
-    : REGISTRATION_ACTIONS;
+  const registrationsProviderLabel = "API";
+  const registrationsProviderTone: AdminBadgeTone = "blue";
+  const registrationsHeaderDescription = "Рабочий центр заявок на события: список событий, таблица регистраций, детали участника, статусы, attendance и capacity управляются через Python API registration endpoints.";
+  const registrationActions = API_REGISTRATION_ACTIONS;
 
   const pushToast = useCallback((kind: ToastKind, message: string) => {
     const id = Date.now() + Math.random();

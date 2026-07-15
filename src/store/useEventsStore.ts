@@ -313,7 +313,7 @@ function logMyRegistrationsLoadDebug(
   }
 
   console.info(`${MY_REGISTRATIONS_DEBUG_TAG} loadMyRegistrationsService result`, {
-    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? null,
+    apiUrl: process.env.EXPO_PUBLIC_API_URL ?? null,
     authUser: {
       id: user.id,
       email: user.email ?? null,
@@ -334,7 +334,7 @@ function logMyRegistrationsLoadErrorDebug(
   }
 
   console.warn(`${MY_REGISTRATIONS_DEBUG_TAG} loadMyRegistrationsService failed`, {
-    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? null,
+    apiUrl: process.env.EXPO_PUBLIC_API_URL ?? null,
     authUser: {
       id: user.id,
       email: user.email ?? null,

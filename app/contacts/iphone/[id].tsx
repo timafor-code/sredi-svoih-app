@@ -193,7 +193,7 @@ export default function IphoneContactDetail() {
           <View style={styles.privacyContent}>
             <Ionicons name="lock-closed-outline" size={18} color="#8DBBE8" />
             <Text style={styles.privacyText}>
-              Этот контакт хранится только на вашем iPhone и не отправляется в Supabase.
+              Этот контакт хранится только на вашем iPhone и не отправляется с устройства.
             </Text>
           </View>
         </GlassCard>

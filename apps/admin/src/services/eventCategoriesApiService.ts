@@ -87,7 +87,7 @@ export async function deleteAdminEventCategory(
   _previouslyActive: boolean,
 ): Promise<DeleteAdminEventCategoryResult> {
   throw new Error(
-    "Delete event category is not available in API provider mode yet. Edit the category and set it inactive, or switch VITE_ADMIN_EVENTS_PROVIDER back to supabase for the legacy delete/archive RPC.",
+    "Delete event category is not available through the API. Edit the category and set it inactive instead.",
   );
 }
 

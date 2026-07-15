@@ -16,8 +16,7 @@ export type PushTokenRegistrationStatus =
 export type DeviceTokenRow = {
   id: string;
   /**
-   * Legacy Supabase RPCs return the owner and raw token. The Python API
-   * deliberately omits both PII fields from its response.
+   * The Python API deliberately omits both PII fields from its response.
    */
   user_id?: string;
   platform: PushTokenPlatform;
