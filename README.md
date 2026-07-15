@@ -34,14 +34,25 @@ EXPO_PUBLIC_REGISTRATIONS_PROVIDER=api
 EXPO_PUBLIC_PRAYER_PROVIDER=api
 EXPO_PUBLIC_CONTACTS_PROVIDER=api
 EXPO_PUBLIC_AVATAR_PROVIDER=api
+EXPO_PUBLIC_PRIVACY_PROVIDER=api
 EXPO_PUBLIC_DEVICE_PROVIDER=api
 ```
 
 Supabase URL and publishable-key configuration remains only for the explicit
-legacy/dev fallback. Setting one individual provider to `supabase` opts just
-that domain into the legacy implementation; API request failures do not retry
-through Supabase. Supabase code and historical migrations remain intentionally
-until PR 38 removes Supabase from the production runtime.
+legacy/dev fallback. Set both providers before the operation:
+
+```text
+EXPO_PUBLIC_AUTH_PROVIDER=supabase
+EXPO_PUBLIC_<DOMAIN>_PROVIDER=supabase
+```
+
+`AUTH_PROVIDER=supabase` creates and supplies the Supabase user session, and
+the selected domain uses that session through the existing authenticated
+Supabase client. A domain provider set to `supabase` while auth remains `api`
+is not a supported fallback configuration. API request failures do not retry
+through Supabase; fallback is selected only by explicit environment
+configuration before the operation. Supabase code and historical migrations
+remain intentionally until PR 38 removes Supabase from the production runtime.
 
 ## Структура
 

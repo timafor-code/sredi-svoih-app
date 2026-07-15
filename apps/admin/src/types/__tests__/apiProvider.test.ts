@@ -2,7 +2,9 @@ import {
   ADMIN_API_PROVIDER_KEYS,
   normalizeAdminApiProvider,
 } from "../api";
-import { runApiProviderOperation } from "../../../../../src/types/api";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AdminApiProviderKey } from "../api";
 
 let passed = 0;
@@ -69,20 +71,31 @@ async function run(): Promise<void> {
     });
   });
 
-  await test("an API failure does not invoke the Supabase operation", async () => {
-    let supabaseWrites = 0;
+  await test("admin provider selection occurs before the request without fallback", () => {
+    const testDirectory = dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(
+      resolve(testDirectory, "../../services/adminEventsService.ts"),
+      "utf8",
+    ).replace(/\r\n/g, "\n");
+    const functionStart = source.indexOf("export async function listAdminEvents");
+    const nextFunction = source.indexOf("\nexport async function", functionStart + 1);
+    const listAdminEventsSource = source.slice(
+      functionStart,
+      nextFunction === -1 ? source.length : nextFunction,
+    );
 
-    await runApiProviderOperation(normalizeAdminApiProvider("api"), {
-      api: async () => {
-        throw new Error("api failed");
-      },
-      supabase: async () => {
-        supabaseWrites += 1;
-        return "legacy write";
-      },
-    }).catch(() => undefined);
-
-    assertEqual(supabaseWrites, 0, "Supabase writes after API failure");
+    assertEqual(
+      listAdminEventsSource.includes(
+        'if (isAdminApiProviderEnabled("events")) {\n    return listAdminEventsViaApi();\n  }\n\n  const supabase = requireSupabaseClient();',
+      ),
+      true,
+      "direct admin provider branch before Supabase request",
+    );
+    assertEqual(
+      listAdminEventsSource.includes("catch"),
+      false,
+      "API-error catch that could invoke Supabase",
+    );
   });
 
   console.log(`\nAdmin API provider tests: ${passed} passed, ${failures.length} failed`);

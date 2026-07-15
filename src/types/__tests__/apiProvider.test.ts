@@ -1,4 +1,5 @@
 import {
+  MOBILE_API_PROVIDER_KEYS,
   normalizeMobileApiProvider,
   runApiProviderOperation,
 } from '../api';
@@ -47,23 +48,22 @@ async function run(): Promise<void> {
   });
 
   await test('all PR 37 mobile provider variables default to API', () => {
-    const providerVariables: ReadonlyArray<
-      readonly [Exclude<MobileApiProviderKey, 'privacy'>, string]
-    > = [
-      ['auth', 'EXPO_PUBLIC_AUTH_PROVIDER'],
-      ['events', 'EXPO_PUBLIC_EVENTS_PROVIDER'],
-      ['registrations', 'EXPO_PUBLIC_REGISTRATIONS_PROVIDER'],
-      ['prayer', 'EXPO_PUBLIC_PRAYER_PROVIDER'],
-      ['contacts', 'EXPO_PUBLIC_CONTACTS_PROVIDER'],
-      ['avatar', 'EXPO_PUBLIC_AVATAR_PROVIDER'],
-      ['device', 'EXPO_PUBLIC_DEVICE_PROVIDER'],
-    ];
+    const providerVariables: Record<MobileApiProviderKey, string> = {
+      auth: 'EXPO_PUBLIC_AUTH_PROVIDER',
+      events: 'EXPO_PUBLIC_EVENTS_PROVIDER',
+      registrations: 'EXPO_PUBLIC_REGISTRATIONS_PROVIDER',
+      prayer: 'EXPO_PUBLIC_PRAYER_PROVIDER',
+      contacts: 'EXPO_PUBLIC_CONTACTS_PROVIDER',
+      avatar: 'EXPO_PUBLIC_AVATAR_PROVIDER',
+      privacy: 'EXPO_PUBLIC_PRIVACY_PROVIDER',
+      device: 'EXPO_PUBLIC_DEVICE_PROVIDER',
+    };
 
-    providerVariables.forEach(([, providerVariable]) => {
+    MOBILE_API_PROVIDER_KEYS.forEach((provider) => {
       assertEqual(
         normalizeMobileApiProvider(undefined),
         'api',
-        `${providerVariable} unset provider`,
+        `${providerVariables[provider]} unset provider`,
       );
     });
   });

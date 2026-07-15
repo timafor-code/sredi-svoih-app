@@ -14,22 +14,37 @@ Source of truth для полного UX остаётся `docs/prototype/admin-
 
 The Python API is the default production provider for all migrated admin
 domains. Production and staging deployments require a reachable `VITE_API_URL`.
-Set one individual provider to `supabase` only to select that domain's explicit
-legacy/dev fallback; an API failure does not retry through Supabase. The
-Supabase-specific overview above remains relevant only to that fallback.
+For an explicit legacy/dev Supabase fallback, set both providers before the
+operation:
+
+```text
+VITE_AUTH_PROVIDER=supabase
+VITE_ADMIN_<DOMAIN>_PROVIDER=supabase
+```
+
+`AUTH_PROVIDER=supabase` creates and supplies the Supabase user session, and
+the selected domain uses that session through the existing authenticated
+Supabase client. A domain provider set to `supabase` while auth remains `api`
+is not a supported fallback configuration. API failures do not retry through
+Supabase; fallback is selected only by explicit environment configuration
+before the operation. The Supabase-specific overview above remains relevant
+only to that fallback.
 
 Production API auth is API-owned. The temporary Supabase JWT bridge is a
-migration/testing mechanism, not the final production auth architecture.
-Supabase code and historical migrations remain intentionally until PR 38
-removes Supabase from the production runtime.
+migration/testing mechanism, not the final production auth architecture. The
+backend production configuration must keep `MIGRATION_ACCEPT_SUPABASE_JWT=false`;
+check older environments because they may have enabled the bridge. Do not add
+this backend-only setting to Expo, Vite, or `apps/admin` environment files.
+Supabase code and historical migrations remain intentionally until PR 38 removes
+Supabase from the production runtime.
 
 ## Environment
 
 With the default `api` providers, `apps/admin` uses the Python API and API-owned
-authentication. An explicit `supabase` provider uses the existing browser-safe
-authenticated Supabase client and its RLS/RPC boundary only for that domain.
-Never add elevated server credentials, Supabase Admin API credentials, or
-server connection strings to the browser admin.
+authentication. With both fallback providers set to `supabase`, the selected
+domain uses the existing browser-safe authenticated Supabase client and its
+RLS/RPC boundary. Never add elevated server credentials, Supabase Admin API
+credentials, or backend-only settings to the browser admin.
 
 Создайте локальный файл:
 

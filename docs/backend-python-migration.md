@@ -55,6 +55,7 @@ EXPO_PUBLIC_REGISTRATIONS_PROVIDER=api
 EXPO_PUBLIC_PRAYER_PROVIDER=api
 EXPO_PUBLIC_CONTACTS_PROVIDER=api
 EXPO_PUBLIC_AVATAR_PROVIDER=api
+EXPO_PUBLIC_PRIVACY_PROVIDER=api
 EXPO_PUBLIC_DEVICE_PROVIDER=api
 
 VITE_AUTH_PROVIDER=api
@@ -68,16 +69,32 @@ VITE_ADMIN_FEEDBACK_PROVIDER=api
 VITE_ADMIN_COMMUNITY_PROVIDER=api
 ```
 
-`supabase` remains valid only when it is explicitly configured for an
-individual domain, for legacy/dev fallback. Unset, empty, and unsupported
-provider values resolve to the API; API failures are surfaced without a retry
+`supabase` remains valid only for explicit legacy/dev fallback selected before
+the operation. Configure both auth and the selected domain provider:
+
+```text
+EXPO_PUBLIC_AUTH_PROVIDER=supabase
+EXPO_PUBLIC_<DOMAIN>_PROVIDER=supabase
+
+VITE_AUTH_PROVIDER=supabase
+VITE_ADMIN_<DOMAIN>_PROVIDER=supabase
+```
+
+`AUTH_PROVIDER=supabase` creates and supplies the Supabase user session; the
+selected domain then uses it through the existing authenticated Supabase client.
+Setting only a domain provider to `supabase` while auth remains `api` is not a
+supported fallback configuration. Unset, empty, and unsupported provider values
+resolve to the API, and API failures are surfaced without an automatic retry
 through Supabase. The historical provider-switch descriptions below record the
 pre-cutover rollout state and are superseded by this section.
 
 The temporary Supabase JWT bridge was a migration/testing mechanism, not the
-final production auth architecture. Production API auth is API-owned. Supabase
-code and historical migrations remain intentionally through cutover validation;
-PR 38 will remove Supabase from the production runtime.
+final production auth architecture. Production API auth is API-owned and the
+backend production configuration must keep `MIGRATION_ACCEPT_SUPABASE_JWT=false`.
+Check older deployment environments because they may have enabled the bridge.
+Do not add this backend-only setting to Expo, Vite, or `apps/admin` environment
+files. Supabase code and historical migrations remain intentionally through
+cutover validation; PR 38 will remove Supabase from the production runtime.
 
 ## Parallel Runtime Model
 
