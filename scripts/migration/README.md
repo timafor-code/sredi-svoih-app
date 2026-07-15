@@ -351,7 +351,107 @@ Failed applies roll back automatically and dry runs write nothing. Successful
 apply is intentionally not reversed by deleting rows: restore the approved
 backup/snapshot instead. There is no destructive undo command.
 
+## PR 36: live shadow read comparison
+
+`compare_shadow_reads.py` is an owner-run, aggregate-only verification utility
+for the last pre-cutover check. It compares live aggregate state in the existing
+Supabase PostgreSQL source and the new API PostgreSQL target, using separate
+repeatable-read, read-only transactions. It never imports, updates, deletes,
+synchronizes, repairs, or backfills either database.
+
+This is intentionally different from PR #325 validation: PR #325 compares the
+controlled export snapshot with API PostgreSQL. PR 36 compares live source and
+live target aggregate state shortly before provider cutover. It is not an
+object-storage migration and it does not switch either mobile or admin
+provider.
+
+No shadow comparison was run while this PR was created.
+
+### Required owner shell variables
+
+Set only these explicit owner-local shell variables, using placeholders in
+shared commands:
+
+```text
+SUPABASE_SHADOW_DATABASE_URL=<owner-local-supabase-postgresql-url>
+API_SHADOW_DATABASE_URL=<owner-local-api-postgresql-url>
+SHADOW_COMPARE_RUN_ACK=LOCAL_OR_OWNER_APPROVED_SHADOW_COMPARE
+```
+
+The script has no default database URL. It does not load `.env`, `.env.local`,
+API, admin, mobile, Expo, or Vite environment files. `--help` never connects to
+PostgreSQL.
+
+For example, first run only against owner-controlled local or synthetic
+databases:
+
+```powershell
+$env:SUPABASE_SHADOW_DATABASE_URL = '<owner-local-supabase-postgresql-url>'
+$env:API_SHADOW_DATABASE_URL = '<owner-local-api-postgresql-url>'
+$env:SHADOW_COMPARE_RUN_ACK = 'LOCAL_OR_OWNER_APPROVED_SHADOW_COMPARE'
+python scripts/migration/compare_shadow_reads.py
+```
+
+A connection is hosted unless it is loopback, `host.docker.internal`, or a
+`.local` hostname. Hosted source and target approvals are intentionally
+independent owner-command boundaries:
+
+```powershell
+python scripts/migration/compare_shadow_reads.py --allow-hosted-source-with-owner-command
+python scripts/migration/compare_shadow_reads.py --allow-hosted-target-with-owner-command
+```
+
+Use both flags only when the owner has separately approved both hosted
+connections. Neither flag is enabled by default.
+
+### Aggregates, reports, and exit codes
+
+The comparison checks aggregate event, occurrence, registration, membership,
+capacity-bucket, seating, Prayer Tracker, contacts/visibility, avatar,
+device-token, and push-job state. IDs may be used only in memory to form
+aggregate signatures; they are never printed or written into a report. Prayer
+Tracker comparisons use only total counts and per-user row-count signatures;
+the utility never selects or reports activity content, metadata, dates, or
+user IDs.
+
+The default output is one JSON report in the ignored repository-local
+`.migration-reports/` directory, named
+`shadow-read-compare-<UTC timestamp>.json`. An owner may choose a different
+directory without changing the comparison boundary:
+
+```powershell
+python scripts/migration/compare_shadow_reads.py --report-dir '<owner-controlled-report-directory>'
+```
+
+Report directories and report files must be real paths, not symbolic links;
+existing reports are never overwritten. Reports contain only aggregate counts,
+comparison states, mismatch categories, format metadata, and generation time.
+They never contain connection URLs, credentials, IDs, names, emails, phones,
+addresses, comments, prayer content, contact values, tokens, push payloads,
+avatar object keys, signed URLs, or database rows.
+
+Avatar reporting is deliberately honest: it uses `match`, `mismatch`, or
+`pending_storage_migration`. Because PR #325 did not migrate avatar objects, a
+source with avatar objects is reported as `pending_storage_migration`, never as
+a successful storage match.
+
+Exit code `0` means every required domain matched. Any mismatch, incomplete
+domain, pending storage migration, configuration error, connection error,
+schema error, safety error, or report-path error returns non-zero.
+
+### Owner manual checklist
+
+- Confirm `.migration-reports/` is ignored by Git.
+- Run the utility first only against owner-controlled local/synthetic source and target databases.
+- Confirm hosted source and target connections fail without their separate explicit owner flags.
+- Confirm a matching synthetic dataset returns exit code `0`.
+- Confirm a deliberate aggregate mismatch returns non-zero.
+- Confirm reports contain no IDs, names, emails, phones, addresses, comments, prayer content, contact data, tokens, push payloads, avatar keys, credentials, or database URLs.
+- Confirm the script performs no writes.
+- Confirm avatar state is shown honestly as `match`, `mismatch`, or `pending_storage_migration`.
+- Confirm no generated reports appear in `git status --short`.
+- Do not proceed to PR 37 provider cutover until the owner has reviewed the shadow comparison result and all cutover blockers.
+
 ## Next step
 
-The next roadmap PR is PR 36, `feature/backend-shadow-read-compare`. It is not
-implemented by these utilities.
+Provider cutover remains PR 37, `feature/backend-provider-cutover`.
