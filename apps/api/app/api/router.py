@@ -18,6 +18,7 @@ from app.api.admin import imports as admin_imports
 from app.api.admin import invites as admin_invites
 from app.api.admin import members as admin_members
 from app.api.admin import privacy as admin_privacy
+from app.api.admin import push_notifications as admin_push_notifications
 from app.api.admin import registrations as admin_registrations
 from app.api.admin import seating as admin_seating
 
@@ -29,6 +30,7 @@ api_router.include_router(admin_imports.router)
 api_router.include_router(admin_invites.router)
 api_router.include_router(admin_members.router)
 api_router.include_router(admin_privacy.router)
+api_router.include_router(admin_push_notifications.router)
 api_router.include_router(admin_registrations.router)
 api_router.include_router(admin_seating.router)
 api_router.include_router(avatar.router)

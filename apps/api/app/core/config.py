@@ -1,5 +1,7 @@
 from functools import lru_cache
 
+from typing import Literal
+
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -56,6 +58,17 @@ class Settings(BaseSettings):
     api_avatar_upload_url_ttl_seconds: int = Field(default=300, gt=0, le=3600)
     api_avatar_read_url_ttl_seconds: int = Field(default=300, gt=0, le=3600)
     api_avatar_max_size_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
+    api_push_enabled: bool = False
+    api_push_production_signoff: bool = False
+    api_push_token_environment: Literal[
+        "development", "preview", "production", "unknown"
+    ] = "development"
+    api_expo_push_access_token: str = ""
+    api_expo_push_send_url: str = "https://exp.host/--/api/v2/push/send"
+    api_expo_push_receipts_url: str = "https://exp.host/--/api/v2/push/getReceipts"
+    api_push_poll_interval_seconds: int = Field(default=5, ge=1, le=3600)
+    api_push_receipt_delay_minutes: int = Field(default=15, ge=0, le=1440)
+    api_push_request_timeout_seconds: int = Field(default=15, gt=0, le=120)
     db_dsn: str = Field(
         default="postgresql+asyncpg://sredi_api:sredi_api@localhost:55432/sredi_api",
         validation_alias=AliasChoices(_DB_DSN_ENV, "API_DB_DSN"),
@@ -74,6 +87,12 @@ class Settings(BaseSettings):
             for origin in self.api_cors_allowed_origins.split(",")
             if origin.strip()
         ]
+
+    @property
+    def push_sending_allowed(self) -> bool:
+        if not self.api_push_enabled:
+            return False
+        return self.app_env != "production" or self.api_push_production_signoff
 
 
 @lru_cache

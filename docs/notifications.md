@@ -371,7 +371,9 @@ registrations, profiles, or prayer data.
    - Keep Expo sending, Edge Functions, queue workers, cron/scheduler logic,
      web-admin UI, mobile UI, EAS, and TestFlight out of scope.
 
-Next PR: `feature/push-sender-edge-function`.
+The historical Supabase sequence above is superseded for the API migration by
+PR 32I. The next planned PR is PR 33:
+`feature/mobile-admin-feedback-device-api-switch`.
 
 ## Manual smoke checklist
 
@@ -390,3 +392,49 @@ Manual smoke is performed by the project owner, not by Codex:
 10. Confirm no Edge Function was added.
 11. Confirm no real push was sent.
 12. Confirm `supabase/functions/` untracked files were not touched.
+
+## API Event Push Pipeline (PR 32I)
+
+PR 32I implements a backend-only event-registrant push pipeline. It does not
+change mobile or web-admin UI, enqueue automatically from event changes, add
+campaigns or scheduling, or send a real push during automated checks.
+
+An authorized community `admin` or `event_manager` explicitly creates a job
+for one event, optionally narrowed to one occurrence. Recipients are distinct
+users with `pending`, `confirmed`, or `waitlisted` registrations, then one
+delivery per active Expo device token in the configured token environment.
+Tokens from development, preview, production, and unknown environments are not
+mixed. `profile.notification_preferences.events = false` excludes a recipient;
+a missing `events` key remains enabled under the current default.
+
+The worker claims queued jobs with database row locking, submits deliveries to
+Expo in batches of at most 100, and stores only ticket identifiers and
+normalized delivery state. A transport error, HTTP 429, or HTTP 5xx is retried
+with bounded exponential backoff and leaves unsent delivery rows eligible for a
+later attempt. Permanent HTTP request failures and permanent ticket failures
+are finalized without an indefinite retry loop. Successfully ticketed rows are
+never sent again.
+
+Expo tickets mean the request was accepted by Expo; they do not prove device
+delivery. After the configured delay (15 minutes by default), the worker checks
+up to 1000 ticket ids per receipt request. Receipt success moves a delivery to
+`receipt_checked`; an omitted/not-yet-ready receipt remains pending for a later
+check. Full raw ticket and receipt responses are never stored.
+
+`DeviceNotRegistered` from a ticket or receipt marks that delivery failed with
+a normalized error and soft-deactivates the linked device token. The row is not
+deleted, so the existing current-user device-token endpoint can reactivate it.
+Temporary provider failures do not deactivate a token.
+
+The worker is enabled only through backend configuration and runs as the
+`api_push_worker` Compose service behind the `push` profile. `API_PUSH_ENABLED`
+defaults to `false`; production additionally requires
+`API_PUSH_PRODUCTION_SIGNOFF=true`. Production push remains disabled until the
+project owner records explicit sign-off. Real delivery verification requires an
+EAS development build, TestFlight, or release build and is not performed by the
+agent.
+
+Logs may contain job ids, counts, normalized statuses, normalized Expo error
+codes, and request ids. They must not contain tokens, notification title/body/
+data, recipient PII, registration comments, access tokens, or raw provider
+responses.
