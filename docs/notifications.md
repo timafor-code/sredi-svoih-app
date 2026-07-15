@@ -419,7 +419,10 @@ Expo tickets mean the request was accepted by Expo; they do not prove device
 delivery. After the configured delay (15 minutes by default), the worker checks
 up to 1000 ticket ids per receipt request. Receipt success moves a delivery to
 `receipt_checked`; an omitted/not-yet-ready receipt remains pending for a later
-check. Full raw ticket and receipt responses are never stored.
+check and is deferred for another full receipt-delay interval. A retryable
+receipt-provider failure also leaves selected deliveries pending and defers them
+for that interval rather than polling the same rows every worker cycle. Full raw
+ticket and receipt responses are never stored.
 
 `DeviceNotRegistered` from a ticket or receipt marks that delivery failed with
 a normalized error and soft-deactivates the linked device token. The row is not

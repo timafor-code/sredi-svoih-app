@@ -332,6 +332,9 @@ class PushNotificationWorker:
                 try:
                     receipts = await expo_client.get_receipts(receipt_ids)  # type: ignore[attr-defined]
                 except ExpoPushRetryableError:
+                    now = _now()
+                    for delivery in deliveries:
+                        delivery.updated_at = now
                     logger.info("Push receipt check deferred delivery_count=%s", len(deliveries))
                     return len(deliveries)
                 except ExpoPushPermanentError:
@@ -352,6 +355,7 @@ class PushNotificationWorker:
                             continue
                         receipt = receipts.get(ticket_id)
                         if receipt is None:
+                            delivery.updated_at = now
                             continue
                         await self._apply_receipt(session, delivery, receipt, now)
                         affected_job_ids.add(delivery.job_id)

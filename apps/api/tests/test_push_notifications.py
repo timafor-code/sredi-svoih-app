@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import httpx
@@ -36,6 +37,7 @@ from app.services.expo_push import (
     ExpoPushRetryableError,
     ExpoPushTicket,
 )
+from app.workers import push_notifications as push_worker_module
 from app.workers.push_notifications import PushNotificationWorker
 
 
@@ -55,10 +57,12 @@ class FakeExpoClient:
         self,
         *,
         retry_send: bool = False,
+        retry_receipts: bool = False,
         ticket_error: str | None = None,
         receipts: dict[str, ExpoPushReceipt] | None = None,
     ) -> None:
         self.retry_send = retry_send
+        self.retry_receipts = retry_receipts
         self.ticket_error = ticket_error
         self.receipts = receipts or {}
         self.sent_batches: list[list[ExpoPushMessage]] = []
@@ -81,6 +85,8 @@ class FakeExpoClient:
 
     async def get_receipts(self, ticket_ids: list[str]) -> dict[str, ExpoPushReceipt]:
         self.receipt_requests.append(ticket_ids)
+        if self.retry_receipts:
+            raise ExpoPushRetryableError("retryable receipt test failure")
         return {
             ticket_id: receipt
             for ticket_id, receipt in self.receipts.items()
@@ -465,6 +471,152 @@ class PushNotificationPipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(invalid_delivery.status, "failed")
         self.assertFalse(invalid_token.is_active)
 
+    async def test_missing_receipts_are_deferred_without_immediate_repoll(self) -> None:
+        context = await self._create_context(role="admin")
+        old_updated_at = _now() - timedelta(minutes=20)
+        job_id, _ = await self._create_direct_job(
+            context,
+            delivery_count=1,
+            job_status="sent",
+            delivery_status="sent",
+            ticket_id="receipt-missing-deferred",
+            receipt_updated_at=old_updated_at,
+        )
+        expo = FakeExpoClient()
+        worker = PushNotificationWorker(
+            settings=Settings(
+                api_push_enabled=True,
+                api_push_receipt_delay_minutes=15,
+            ),
+            expo_client=expo,
+        )
+
+        await worker.run_once()
+        async with AsyncSessionLocal() as session:
+            delivery = await session.scalar(
+                select(PushNotificationDelivery).where(
+                    PushNotificationDelivery.job_id == job_id,
+                ),
+            )
+        assert delivery is not None
+        self.assertEqual(delivery.status, "sent")
+        self.assertIsNone(delivery.expo_receipt_id)
+        self.assertIsNone(delivery.error_message)
+        self.assertGreater(delivery.updated_at, old_updated_at)
+        self.assertEqual(expo.receipt_requests, [["receipt-missing-deferred"]])
+
+        await worker.run_once()
+        self.assertEqual(expo.receipt_requests, [["receipt-missing-deferred"]])
+
+    async def test_retryable_receipt_failures_are_deferred_without_token_change(self) -> None:
+        context = await self._create_context(role="admin")
+        old_updated_at = _now() - timedelta(minutes=20)
+        job_id, token_id = await self._create_direct_job(
+            context,
+            delivery_count=1,
+            job_status="sent",
+            delivery_status="sent",
+            ticket_id="receipt-retryable-deferred",
+            receipt_updated_at=old_updated_at,
+        )
+        expo = FakeExpoClient(retry_receipts=True)
+        worker = PushNotificationWorker(
+            settings=Settings(
+                api_push_enabled=True,
+                api_push_receipt_delay_minutes=15,
+            ),
+            expo_client=expo,
+        )
+
+        await worker.run_once()
+        async with AsyncSessionLocal() as session:
+            delivery = await session.scalar(
+                select(PushNotificationDelivery).where(
+                    PushNotificationDelivery.job_id == job_id,
+                ),
+            )
+            token = await session.get(DeviceToken, token_id)
+        assert delivery is not None
+        assert token is not None
+        self.assertEqual(delivery.status, "sent")
+        self.assertIsNone(delivery.expo_receipt_id)
+        self.assertIsNone(delivery.error_message)
+        self.assertGreater(delivery.updated_at, old_updated_at)
+        self.assertTrue(token.is_active)
+        self.assertEqual(expo.receipt_requests, [["receipt-retryable-deferred"]])
+
+        await worker.run_once()
+        self.assertEqual(expo.receipt_requests, [["receipt-retryable-deferred"]])
+
+    async def test_deferred_receipts_do_not_starve_later_receipt_batches(self) -> None:
+        context = await self._create_context(role="admin")
+        base_time = _now()
+        first_job_id, _ = await self._create_direct_job(
+            context,
+            delivery_count=1,
+            job_status="sent",
+            delivery_status="sent",
+            ticket_id="receipt-first",
+            receipt_updated_at=base_time - timedelta(minutes=20),
+        )
+        second_job_id, _ = await self._create_direct_job(
+            context,
+            delivery_count=1,
+            job_status="sent",
+            delivery_status="sent",
+            ticket_id="receipt-second",
+            receipt_updated_at=base_time - timedelta(minutes=19),
+        )
+        later_job_id, _ = await self._create_direct_job(
+            context,
+            delivery_count=1,
+            job_status="sent",
+            delivery_status="sent",
+            ticket_id="receipt-later",
+            receipt_updated_at=base_time - timedelta(minutes=18),
+        )
+        expo = FakeExpoClient(
+            receipts={"receipt-later": ExpoPushReceipt(status="ok")},
+        )
+        worker = PushNotificationWorker(
+            settings=Settings(
+                api_push_enabled=True,
+                api_push_receipt_delay_minutes=15,
+            ),
+            expo_client=expo,
+        )
+
+        with patch.object(push_worker_module, "_RECEIPT_BATCH_SIZE", 2):
+            await worker.run_once()
+            await worker.run_once()
+
+        self.assertEqual(expo.receipt_requests, [
+            ["receipt-first", "receipt-second"],
+            ["receipt-later"],
+        ])
+        async with AsyncSessionLocal() as session:
+            first_delivery = await session.scalar(
+                select(PushNotificationDelivery).where(
+                    PushNotificationDelivery.job_id == first_job_id,
+                ),
+            )
+            second_delivery = await session.scalar(
+                select(PushNotificationDelivery).where(
+                    PushNotificationDelivery.job_id == second_job_id,
+                ),
+            )
+            later_delivery = await session.scalar(
+                select(PushNotificationDelivery).where(
+                    PushNotificationDelivery.job_id == later_job_id,
+                ),
+            )
+        assert first_delivery is not None
+        assert second_delivery is not None
+        assert later_delivery is not None
+        self.assertEqual(first_delivery.status, "sent")
+        self.assertEqual(second_delivery.status, "sent")
+        self.assertEqual(later_delivery.status, "receipt_checked")
+
     async def test_expo_adapter_is_mocked_and_retries_transient_http_failures(self) -> None:
         settings = Settings(api_push_enabled=True)
         send_client = ExpoPushClient(
@@ -701,10 +853,13 @@ class PushNotificationPipelineTests(unittest.IsolatedAsyncioTestCase):
         delivery_status: str = "queued",
         ticket_id: str | None = None,
         aged_for_receipt: bool = False,
+        receipt_updated_at: datetime | None = None,
     ) -> tuple[UUID, UUID]:
         job_id = uuid4()
         token_ids: list[UUID] = []
-        updated_at = _now() - timedelta(minutes=20) if aged_for_receipt else _now()
+        updated_at = receipt_updated_at or (
+            _now() - timedelta(minutes=20) if aged_for_receipt else _now()
+        )
         async with AsyncSessionLocal() as session:
             async with session.begin():
                 job = PushNotificationJob(
