@@ -52,8 +52,8 @@ npm run typecheck
 
 ## Security boundary
 
-Do not add service-role keys, Supabase Admin API credentials, `DATABASE_URL`,
-or other server-only secrets to the web-admin. Prayer activity remains private
+Do not add service-role keys, Supabase Admin API credentials, backend database
+connection strings, or other server-only secrets to the web-admin. Prayer activity remains private
 and is never read or displayed in admin.
 
 ## Staging and manual verification
