@@ -118,7 +118,7 @@ SQL: dict[str, str] = {
             group by event_id, occurrence_id, capacity_unit_id
         )
         select bucket.event_id, bucket.occurrence_id, bucket.capacity_unit_id,
-               coalesce(unit.capacity, 0)::bigint as configured_capacity,
+               unit.capacity::bigint as configured_capacity,
                coalesce(reservation.reservation_count, 0)::bigint as reservation_count,
                coalesce(reservation.occupied_seats, 0)::bigint as occupied_seats,
                coalesce(reservation.represented_registration_count, 0)::bigint as represented_registration_count
@@ -440,11 +440,11 @@ async def compare_memberships(source: Any, target: Any, source_schema: dict[tupl
     )
 
 
-async def read_capacity_buckets(connection: Any) -> dict[tuple[Any, Any, Any], tuple[int, int, int, int]]:
+async def read_capacity_buckets(connection: Any) -> dict[tuple[Any, Any, Any], tuple[int | None, int, int, int]]:
     rows = await connection.fetch(SQL["capacity_buckets"])
     return {
         (row["event_id"], row["occurrence_id"], row["capacity_unit_id"]): (
-            int(row["configured_capacity"] or 0),
+            int(row["configured_capacity"]) if row["configured_capacity"] is not None else None,
             int(row["reservation_count"] or 0),
             int(row["occupied_seats"] or 0),
             int(row["represented_registration_count"] or 0),
@@ -453,7 +453,7 @@ async def read_capacity_buckets(connection: Any) -> dict[tuple[Any, Any, Any], t
     }
 
 
-def compare_capacity_bucket_sets(source: dict[tuple[Any, Any, Any], tuple[int, int, int, int]], target: dict[tuple[Any, Any, Any], tuple[int, int, int, int]]) -> dict[str, int]:
+def compare_capacity_bucket_sets(source: dict[tuple[Any, Any, Any], tuple[int | None, int, int, int]], target: dict[tuple[Any, Any, Any], tuple[int | None, int, int, int]]) -> dict[str, int]:
     source_keys = source.keys()
     target_keys = target.keys()
     shared = source_keys & target_keys
@@ -465,10 +465,12 @@ def compare_capacity_bucket_sets(source: dict[tuple[Any, Any, Any], tuple[int, i
     }
 
 
-def capacity_totals(buckets: dict[tuple[Any, Any, Any], tuple[int, int, int, int]]) -> dict[str, int]:
+def capacity_totals(buckets: dict[tuple[Any, Any, Any], tuple[int | None, int, int, int]]) -> dict[str, int]:
     return {
         "totalBucketCount": len(buckets),
-        "configuredCapacity": sum(value[0] for value in buckets.values()),
+        "limitedBucketCount": sum(value[0] is not None for value in buckets.values()),
+        "unlimitedBucketCount": sum(value[0] is None for value in buckets.values()),
+        "limitedConfiguredCapacity": sum(value[0] for value in buckets.values() if value[0] is not None),
         "occupiedSeats": sum(value[2] for value in buckets.values()),
         "reservationCount": sum(value[1] for value in buckets.values()),
     }
@@ -485,6 +487,18 @@ async def compare_capacity_buckets(source: Any, target: Any, source_schema: dict
     return completed_domain(capacity_totals(source_buckets), capacity_totals(target_buckets), comparison)
 
 
+async def read_seating_snapshot(connection: Any) -> tuple[tuple[int, ...], tuple[dict[tuple[Any, ...], int], ...]]:
+    totals = ("seating_templates_total", "seating_layouts_total", "seating_tables_total", "seating_connections_total", "seating_assignments_total")
+    group_statements = ("seating_layouts_by_slot", "seating_tables_by_slot", "seating_connections_by_slot", "seating_assignments_by_slot")
+    values = []
+    for statement in totals:
+        values.append(await read_total(connection, statement))
+    groups = []
+    for statement in group_statements:
+        groups.append(await read_groups(connection, statement, ("event_id", "occurrence_id", "capacity_unit_id")))
+    return tuple(values), tuple(groups)
+
+
 async def compare_seating(source: Any, target: Any, source_schema: dict[tuple[str, str], set[str]], target_schema: dict[tuple[str, str], set[str]]) -> dict[str, Any]:
     require_public_schema(source_schema, target_schema, {
         "event_seating_layout_templates": ("id",),
@@ -493,11 +507,8 @@ async def compare_seating(source: Any, target: Any, source_schema: dict[tuple[st
         "event_seating_table_connections": ("id", "layout_id"),
         "event_seating_assignments": ("id", "layout_id"),
     })
-    totals = ("seating_templates_total", "seating_layouts_total", "seating_tables_total", "seating_connections_total", "seating_assignments_total")
-    source_values, target_values = await asyncio.gather(asyncio.gather(*(read_total(source, item) for item in totals)), asyncio.gather(*(read_total(target, item) for item in totals)))
-    source_groups, target_groups = await asyncio.gather(
-        asyncio.gather(*(read_groups(source, item, ("event_id", "occurrence_id", "capacity_unit_id")) for item in ("seating_layouts_by_slot", "seating_tables_by_slot", "seating_connections_by_slot", "seating_assignments_by_slot"))),
-        asyncio.gather(*(read_groups(target, item, ("event_id", "occurrence_id", "capacity_unit_id")) for item in ("seating_layouts_by_slot", "seating_tables_by_slot", "seating_connections_by_slot", "seating_assignments_by_slot"))),
+    (source_values, source_groups), (target_values, target_groups) = await asyncio.gather(
+        read_seating_snapshot(source), read_seating_snapshot(target)
     )
     names = ("layoutTemplateCount", "layoutCount", "tableCount", "connectionCount", "assignmentCount")
     source_metrics = dict(zip(names, source_values, strict=True))
@@ -524,6 +535,16 @@ async def compare_prayer_tracker(source: Any, target: Any, source_schema: dict[t
     )
 
 
+async def read_contacts_snapshot(connection: Any) -> tuple[int, dict[str, int], dict[str, int], dict[tuple[Any, ...], int], dict[tuple[Any, ...], int]]:
+    visibility_fields = ("total_count", "directory_true_count", "phone_true_count", "email_true_count", "birth_date_true_count", "hebrew_birth_date_true_count", "city_true_count", "hebrew_name_true_count", "birthday_reminders_true_count")
+    community_total = await read_total(connection, "contacts_community_total")
+    visibility = await read_metrics(connection, "visibility_metrics", visibility_fields)
+    synced = await read_metrics(connection, "synced_contacts_metrics", ("total_count",))
+    community = await read_groups(connection, "contacts_by_community", ("community_id",))
+    synced_users = await read_groups(connection, "synced_contacts_by_user", ("user_id",))
+    return community_total, visibility, synced, community, synced_users
+
+
 async def compare_contacts(source: Any, target: Any, source_schema: dict[tuple[str, str], set[str]], target_schema: dict[tuple[str, str], set[str]]) -> dict[str, Any]:
     visibility_columns = ("user_id", "show_in_community_directory", "share_phone", "share_email", "share_birth_date", "share_hebrew_birth_date", "share_city", "share_hebrew_name", "birthday_reminders_enabled")
     require_public_schema(source_schema, target_schema, {
@@ -532,14 +553,8 @@ async def compare_contacts(source: Any, target: Any, source_schema: dict[tuple[s
         "synced_contacts": ("id", "user_id"),
     })
     visibility_fields = ("total_count", "directory_true_count", "phone_true_count", "email_true_count", "birth_date_true_count", "hebrew_birth_date_true_count", "city_true_count", "hebrew_name_true_count", "birthday_reminders_true_count")
-    source_community_total, target_community_total, source_visibility, target_visibility, source_synced, target_synced = await asyncio.gather(
-        read_total(source, "contacts_community_total"), read_total(target, "contacts_community_total"),
-        read_metrics(source, "visibility_metrics", visibility_fields), read_metrics(target, "visibility_metrics", visibility_fields),
-        read_metrics(source, "synced_contacts_metrics", ("total_count",)), read_metrics(target, "synced_contacts_metrics", ("total_count",)),
-    )
-    source_community, target_community, source_synced_users, target_synced_users = await asyncio.gather(
-        read_groups(source, "contacts_by_community", ("community_id",)), read_groups(target, "contacts_by_community", ("community_id",)),
-        read_groups(source, "synced_contacts_by_user", ("user_id",)), read_groups(target, "synced_contacts_by_user", ("user_id",)),
+    (source_community_total, source_visibility, source_synced, source_community, source_synced_users), (target_community_total, target_visibility, target_synced, target_community, target_synced_users) = await asyncio.gather(
+        read_contacts_snapshot(source), read_contacts_snapshot(target)
     )
     boolean_mismatches = sum(numeric_difference(source_visibility[field], target_visibility[field]) for field in visibility_fields[1:])
     return completed_domain(
@@ -573,14 +588,19 @@ async def compare_avatars(source: Any, target: Any, source_schema: dict[tuple[st
     return result
 
 
+async def read_device_token_snapshot(connection: Any) -> tuple[int, dict[tuple[Any, ...], int], dict[tuple[Any, ...], int], dict[tuple[Any, ...], int], dict[tuple[Any, ...], int]]:
+    total = await read_total(connection, "device_tokens_total")
+    active = await read_groups(connection, "device_tokens_by_active", ("is_active",))
+    environment = await read_groups(connection, "device_tokens_by_environment", ("environment",))
+    platform = await read_groups(connection, "device_tokens_by_platform", ("platform",))
+    provider = await read_groups(connection, "device_tokens_by_provider", ("push_provider",))
+    return total, active, environment, platform, provider
+
+
 async def compare_device_tokens(source: Any, target: Any, source_schema: dict[tuple[str, str], set[str]], target_schema: dict[tuple[str, str], set[str]]) -> dict[str, Any]:
     require_public_schema(source_schema, target_schema, {"device_tokens": ("id", "is_active", "environment", "platform", "push_provider")})
-    source_total, target_total = await asyncio.gather(read_total(source, "device_tokens_total"), read_total(target, "device_tokens_total"))
-    source_active, target_active, source_environment, target_environment, source_platform, target_platform, source_provider, target_provider = await asyncio.gather(
-        read_groups(source, "device_tokens_by_active", ("is_active",)), read_groups(target, "device_tokens_by_active", ("is_active",)),
-        read_groups(source, "device_tokens_by_environment", ("environment",)), read_groups(target, "device_tokens_by_environment", ("environment",)),
-        read_groups(source, "device_tokens_by_platform", ("platform",)), read_groups(target, "device_tokens_by_platform", ("platform",)),
-        read_groups(source, "device_tokens_by_provider", ("push_provider",)), read_groups(target, "device_tokens_by_provider", ("push_provider",)),
+    (source_total, source_active, source_environment, source_platform, source_provider), (target_total, target_active, target_environment, target_platform, target_provider) = await asyncio.gather(
+        read_device_token_snapshot(source), read_device_token_snapshot(target)
     )
     return completed_domain(
         {"totalCount": source_total}, {"totalCount": target_total},
@@ -588,13 +608,18 @@ async def compare_device_tokens(source: Any, target: Any, source_schema: dict[tu
     )
 
 
+async def read_push_job_snapshot(connection: Any) -> tuple[int, dict[tuple[Any, ...], int], dict[tuple[Any, ...], int], dict[tuple[Any, ...], int]]:
+    total = await read_total(connection, "push_jobs_total")
+    status = await read_groups(connection, "push_jobs_by_status", ("status",))
+    kind = await read_groups(connection, "push_jobs_by_kind", ("notification_kind",))
+    audience = await read_groups(connection, "push_jobs_by_audience", ("audience",))
+    return total, status, kind, audience
+
+
 async def compare_push_jobs(source: Any, target: Any, source_schema: dict[tuple[str, str], set[str]], target_schema: dict[tuple[str, str], set[str]]) -> dict[str, Any]:
     require_public_schema(source_schema, target_schema, {"push_notification_jobs": ("id", "status", "notification_kind", "audience")})
-    source_total, target_total = await asyncio.gather(read_total(source, "push_jobs_total"), read_total(target, "push_jobs_total"))
-    source_status, target_status, source_kind, target_kind, source_audience, target_audience = await asyncio.gather(
-        read_groups(source, "push_jobs_by_status", ("status",)), read_groups(target, "push_jobs_by_status", ("status",)),
-        read_groups(source, "push_jobs_by_kind", ("notification_kind",)), read_groups(target, "push_jobs_by_kind", ("notification_kind",)),
-        read_groups(source, "push_jobs_by_audience", ("audience",)), read_groups(target, "push_jobs_by_audience", ("audience",)),
+    (source_total, source_status, source_kind, source_audience), (target_total, target_status, target_kind, target_audience) = await asyncio.gather(
+        read_push_job_snapshot(source), read_push_job_snapshot(target)
     )
     return completed_domain(
         {"totalCount": source_total}, {"totalCount": target_total},

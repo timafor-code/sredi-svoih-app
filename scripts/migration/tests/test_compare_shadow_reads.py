@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import importlib.util
 import io
@@ -30,6 +31,85 @@ def local_environment(source: str = "postgresql://owner@localhost:5432/source", 
         COMPARE.SOURCE_ENV: source,
         COMPARE.TARGET_ENV: target,
     }
+
+
+class SingleOperationFakeConnection:
+    """Fail deterministically if two operations overlap on this connection."""
+
+    def __init__(self, fetch_rows: list[dict[str, object]] | None = None) -> None:
+        self.active_operations: list[str] = []
+        self.max_active_operations = 0
+        self.operations: list[str] = []
+        self.fetch_rows = fetch_rows or []
+
+    async def _operation(self, operation: str, result: object) -> object:
+        if self.active_operations:
+            raise RuntimeError("same-connection async operation overlap")
+        self.active_operations.append(operation)
+        self.max_active_operations = max(self.max_active_operations, len(self.active_operations))
+        try:
+            await asyncio.sleep(0)
+            self.operations.append(operation)
+            return result
+        finally:
+            self.active_operations.pop()
+
+    async def fetchval(self, statement: str) -> int:
+        return await self._operation("fetchval", 0)  # type: ignore[return-value]
+
+    async def fetchrow(self, statement: str, *values: object) -> dict[str, int]:
+        return await self._operation("fetchrow", {
+            "total_count": 0,
+            "directory_true_count": 0,
+            "phone_true_count": 0,
+            "email_true_count": 0,
+            "birth_date_true_count": 0,
+            "hebrew_birth_date_true_count": 0,
+            "city_true_count": 0,
+            "hebrew_name_true_count": 0,
+            "birthday_reminders_true_count": 0,
+        })  # type: ignore[return-value]
+
+    async def fetch(self, statement: str, *values: object) -> list[dict[str, object]]:
+        return await self._operation("fetch", self.fetch_rows)  # type: ignore[return-value]
+
+
+class ConnectionConcurrencyTests(unittest.TestCase):
+    def assert_runs_without_same_connection_overlap(self, callback: object, schema: dict[tuple[str, str], set[str]], expected_operations: int) -> None:
+        source = SingleOperationFakeConnection()
+        target = SingleOperationFakeConnection()
+        result = asyncio.run(callback(source, target, schema, schema))  # type: ignore[operator]
+        self.assertEqual(result["status"], "matched")
+        for connection in (source, target):
+            self.assertEqual(connection.max_active_operations, 1)
+            self.assertEqual(connection.active_operations, [])
+            self.assertEqual(len(connection.operations), expected_operations)
+
+    def test_compare_seating_sequences_each_connection(self) -> None:
+        schema = {
+            ("public", "event_seating_layout_templates"): {"id"},
+            ("public", "event_seating_layouts"): {"id", "event_id", "occurrence_id", "capacity_unit_id"},
+            ("public", "event_seating_tables"): {"id", "layout_id"},
+            ("public", "event_seating_table_connections"): {"id", "layout_id"},
+            ("public", "event_seating_assignments"): {"id", "layout_id"},
+        }
+        self.assert_runs_without_same_connection_overlap(COMPARE.compare_seating, schema, 9)
+
+    def test_compare_contacts_sequences_each_connection(self) -> None:
+        schema = {
+            ("public", "community_contacts"): {"id", "community_id"},
+            ("public", "profile_contact_visibility"): {"user_id", "show_in_community_directory", "share_phone", "share_email", "share_birth_date", "share_hebrew_birth_date", "share_city", "share_hebrew_name", "birthday_reminders_enabled"},
+            ("public", "synced_contacts"): {"id", "user_id"},
+        }
+        self.assert_runs_without_same_connection_overlap(COMPARE.compare_contacts, schema, 5)
+
+    def test_compare_device_tokens_sequences_each_connection(self) -> None:
+        schema = {("public", "device_tokens"): {"id", "is_active", "environment", "platform", "push_provider"}}
+        self.assert_runs_without_same_connection_overlap(COMPARE.compare_device_tokens, schema, 5)
+
+    def test_compare_push_jobs_sequences_each_connection(self) -> None:
+        schema = {("public", "push_notification_jobs"): {"id", "status", "notification_kind", "audience"}}
+        self.assert_runs_without_same_connection_overlap(COMPARE.compare_push_jobs, schema, 4)
 
 
 class ConfigurationTests(unittest.TestCase):
@@ -124,6 +204,37 @@ class AggregateComparisonTests(unittest.TestCase):
         for bucket_part in (*first_bucket, *second_bucket):
             if bucket_part is not None:
                 self.assertNotIn(str(bucket_part), serialized)
+
+    def test_capacity_buckets_preserve_unlimited_capacity_semantics(self) -> None:
+        bucket = ("event", "occurrence", "unit")
+        unlimited = {bucket: (None, 2, 5, 2)}
+        numeric = {bucket: (12, 2, 5, 2)}
+        self.assertEqual(COMPARE.compare_capacity_bucket_sets(unlimited, unlimited), {
+            "matchedBucketCount": 1,
+            "missingSourceBucketCount": 0,
+            "missingTargetBucketCount": 0,
+            "mismatchedBucketCount": 0,
+        })
+        self.assertEqual(COMPARE.compare_capacity_bucket_sets(unlimited, numeric)["mismatchedBucketCount"], 1)
+        self.assertEqual(COMPARE.compare_capacity_bucket_sets(numeric, unlimited)["mismatchedBucketCount"], 1)
+        self.assertEqual(COMPARE.compare_capacity_bucket_sets(numeric, numeric)["matchedBucketCount"], 1)
+
+    def test_capacity_bucket_adapter_and_totals_keep_unlimited_capacity_distinct_from_zero(self) -> None:
+        connection = SingleOperationFakeConnection([
+            {"event_id": "event-a", "occurrence_id": None, "capacity_unit_id": "unit-a", "configured_capacity": None, "reservation_count": 1, "occupied_seats": 2, "represented_registration_count": 1},
+            {"event_id": "event-b", "occurrence_id": None, "capacity_unit_id": "unit-b", "configured_capacity": 12, "reservation_count": 2, "occupied_seats": 3, "represented_registration_count": 2},
+            {"event_id": "event-c", "occurrence_id": None, "capacity_unit_id": "unit-c", "configured_capacity": 8, "reservation_count": 0, "occupied_seats": 0, "represented_registration_count": 0},
+        ])
+        buckets = asyncio.run(COMPARE.read_capacity_buckets(connection))
+        self.assertIsNone(buckets[("event-a", None, "unit-a")][0])
+        self.assertEqual(COMPARE.capacity_totals(buckets), {
+            "totalBucketCount": 3,
+            "limitedBucketCount": 2,
+            "unlimitedBucketCount": 1,
+            "limitedConfiguredCapacity": 20,
+            "occupiedSeats": 5,
+            "reservationCount": 3,
+        })
 
 
 class ReportSafetyTests(unittest.TestCase):
