@@ -21,6 +21,7 @@ import pg from 'pg';
 const { Client } = pg;
 
 const FORMAT_VERSION = '1.0.0';
+export const POSTGRES_DATE_OID = 1082;
 const ACKNOWLEDGEMENT = 'LOCAL_OR_OWNER_APPROVED_EXPORT';
 const DATABASE_URL_ENV = 'SUPABASE_EXPORT_DATABASE_URL';
 const ACK_ENV = 'SUPABASE_EXPORT_RUN_ACK';
@@ -78,6 +79,18 @@ const PUBLIC_TABLES = [
 ];
 
 class ExportError extends Error {}
+
+// node-postgres otherwise materializes PostgreSQL DATE as a local-time Date.
+// Keep its source text so JSON serialization cannot change its calendar day.
+export function parsePostgresDate(value) {
+  return value;
+}
+
+export function configurePostgresDateParser(typeRegistry = pg.types) {
+  typeRegistry.setTypeParser(POSTGRES_DATE_OID, parsePostgresDate);
+}
+
+configurePostgresDateParser();
 
 function printUsage() {
   console.log(`
@@ -420,7 +433,7 @@ async function inspectAvatarStorage(client) {
   };
 }
 
-function normalizeForJson(value, context) {
+export function normalizeForJson(value, context) {
   if (value === null) {
     return null;
   }
@@ -746,7 +759,12 @@ async function main() {
   await runExport(connectionString, options, outputDir);
 }
 
-main().catch((error) => {
-  console.error(`[error] ${safeErrorMessage(error)}`);
-  process.exitCode = 1;
-});
+const isEntrypoint = process.argv[1] !== undefined
+  && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isEntrypoint) {
+  main().catch((error) => {
+    console.error(`[error] ${safeErrorMessage(error)}`);
+    process.exitCode = 1;
+  });
+}
