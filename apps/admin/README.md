@@ -10,9 +10,26 @@ Staging web-admin публикуется как статический Vite buil
 
 Source of truth для полного UX остаётся `docs/prototype/admin-events-center.html`.
 
+## Provider cutover
+
+The Python API is the default production provider for all migrated admin
+domains. Production and staging deployments require a reachable `VITE_API_URL`.
+Set one individual provider to `supabase` only to select that domain's explicit
+legacy/dev fallback; an API failure does not retry through Supabase. The
+Supabase-specific overview above remains relevant only to that fallback.
+
+Production API auth is API-owned. The temporary Supabase JWT bridge is a
+migration/testing mechanism, not the final production auth architecture.
+Supabase code and historical migrations remain intentionally until PR 38
+removes Supabase from the production runtime.
+
 ## Environment
 
-`apps/admin` использует только обычный browser-safe Supabase client с пользовательской сессией. Админские действия должны проходить через RLS/RPC. Серверные ключи повышенных прав, Supabase Admin API и серверные connection strings нельзя добавлять в браузерную админку.
+With the default `api` providers, `apps/admin` uses the Python API and API-owned
+authentication. An explicit `supabase` provider uses the existing browser-safe
+authenticated Supabase client and its RLS/RPC boundary only for that domain.
+Never add elevated server credentials, Supabase Admin API credentials, or
+server connection strings to the browser admin.
 
 Создайте локальный файл:
 
@@ -25,6 +42,17 @@ cp apps/admin/.env.example apps/admin/.env.local
 ```bash
 VITE_SUPABASE_URL=http://127.0.0.1:54321
 VITE_SUPABASE_ANON_KEY=replace-with-local-anon-key
+VITE_API_URL=http://127.0.0.1:8000
+
+VITE_AUTH_PROVIDER=api
+VITE_ADMIN_EVENTS_PROVIDER=api
+VITE_ADMIN_REGISTRATIONS_PROVIDER=api
+VITE_ADMIN_MEMBERS_PROVIDER=api
+VITE_ADMIN_INVITES_PROVIDER=api
+VITE_ADMIN_SEATING_PROVIDER=api
+VITE_ADMIN_IMPORT_PROVIDER=api
+VITE_ADMIN_FEEDBACK_PROVIDER=api
+VITE_ADMIN_COMMUNITY_PROVIDER=api
 ```
 
 Для staging-хостинга задайте env vars в настройках выбранного static SPA host:
@@ -32,13 +60,26 @@ VITE_SUPABASE_ANON_KEY=replace-with-local-anon-key
 ```bash
 VITE_SUPABASE_URL=https://<project-ref>.supabase.co
 VITE_SUPABASE_ANON_KEY=<hosted-anon-or-publishable-key>
+VITE_API_URL=https://<api-host>
+VITE_AUTH_PROVIDER=api
+VITE_ADMIN_EVENTS_PROVIDER=api
+VITE_ADMIN_REGISTRATIONS_PROVIDER=api
+VITE_ADMIN_MEMBERS_PROVIDER=api
+VITE_ADMIN_INVITES_PROVIDER=api
+VITE_ADMIN_SEATING_PROVIDER=api
+VITE_ADMIN_IMPORT_PROVIDER=api
+VITE_ADMIN_FEEDBACK_PROVIDER=api
+VITE_ADMIN_COMMUNITY_PROVIDER=api
 VITE_ADMIN_ENV_LABEL=staging
 VITE_ADMIN_BASE_PATH=/admin-stage/
 ```
 
 `VITE_ADMIN_ENV_LABEL` необязателен и нужен только как визуальная пометка окружения в compact context текущего пользователя, например `staging`, `prod` или `local`. Он не влияет на auth, роли, RLS/RPC или доступы. `VITE_ADMIN_BASE_PATH=/admin-stage/` нужен для staging build, чтобы Vite генерировал asset URLs под `/admin-stage/assets/`, а не под `/assets/`. Реальные значения env нельзя коммитить; `.env.local` и `.env.production.local` остаются локальными файлами.
 
-Реальные права доступа всё равно должны проверяться на стороне Supabase через RLS/RPC и отдельные backend-контракты. Не добавляйте в `apps/admin` service-role ключи, Supabase Admin API credentials, `DATABASE_URL` или другие server-only database connection env vars.
+API-mode authorization is enforced by the Python API. Explicit Supabase fallback
+operations remain behind their existing authenticated RLS/RPC boundary. Do not
+add service-role keys, Supabase Admin API credentials, or any server-only
+database connection env vars to `apps/admin`.
 
 ## Staging deploy
 

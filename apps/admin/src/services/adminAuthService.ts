@@ -68,7 +68,7 @@ export function getAdminAuthProvider(): ApiProviderName {
   return getAdminApiProvider("auth");
 }
 
-// VITE_AUTH_PROVIDER=api is local/synthetic only until PR 37; Supabase stays default.
+// API is the PR 37 default; explicit VITE_AUTH_PROVIDER=supabase selects legacy/dev auth.
 export function isAdminApiAuthProviderEnabled(): boolean {
   return getAdminAuthProvider() === "api";
 }

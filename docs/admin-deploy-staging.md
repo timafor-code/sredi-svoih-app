@@ -57,7 +57,18 @@ Default mode admin import: `apply_review_only`. Events не публикуютс
 
 ## Access model
 
-`apps/admin` работает через обычный authenticated Supabase client в браузере. Клиент использует anon/publishable key, пользовательскую Supabase session и RLS/RPC.
+The Python API is the default production provider for all migrated admin
+domains. The Supabase-only statements in this historical staging guide apply
+only when the relevant provider is explicitly set to `supabase` for legacy/dev
+fallback. Production API auth is API-owned; the temporary Supabase JWT bridge
+is migration/testing-only, not final production architecture. Keep Supabase
+code and historical migrations through cutover validation; PR 38 removes
+Supabase from the production runtime.
+
+With the default `api` providers, `apps/admin` calls the Python API using
+API-owned authentication. An explicit `supabase` provider keeps the existing
+browser-safe authenticated Supabase client, anon/publishable key, user session,
+and RLS/RPC boundary for that selected legacy/dev domain.
 
 Админские действия должны оставаться на границе RLS/RPC. Не использовать Supabase Admin API, service-role key или серверные connection strings в browser-admin.
 
@@ -127,6 +138,16 @@ Staging host должен получить только browser-safe env vars:
 ```text
 VITE_SUPABASE_URL=https://<project-ref>.supabase.co
 VITE_SUPABASE_ANON_KEY=<hosted-anon-or-publishable-key>
+VITE_API_URL=https://<api-host>
+VITE_AUTH_PROVIDER=api
+VITE_ADMIN_EVENTS_PROVIDER=api
+VITE_ADMIN_REGISTRATIONS_PROVIDER=api
+VITE_ADMIN_MEMBERS_PROVIDER=api
+VITE_ADMIN_INVITES_PROVIDER=api
+VITE_ADMIN_SEATING_PROVIDER=api
+VITE_ADMIN_IMPORT_PROVIDER=api
+VITE_ADMIN_FEEDBACK_PROVIDER=api
+VITE_ADMIN_COMMUNITY_PROVIDER=api
 VITE_ADMIN_ENV_LABEL=staging
 VITE_ADMIN_BASE_PATH=/admin-stage/
 ```
@@ -290,7 +311,7 @@ Project owner manual deploy checklist:
 - `npm run admin:build` passes before publishing.
 - Published directory is exactly `apps/admin/dist`.
 - `apps/admin/.env.production.local` contains `VITE_ADMIN_BASE_PATH=/admin-stage/` before the staging build.
-- Staging hosting env contains `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_ADMIN_ENV_LABEL=staging`, and `VITE_ADMIN_BASE_PATH=/admin-stage/`.
+- Staging hosting env contains reachable `VITE_API_URL`, all nine API-default provider variables, `VITE_ADMIN_ENV_LABEL=staging`, and `VITE_ADMIN_BASE_PATH=/admin-stage/`. Supabase URL and anon/publishable-key values remain only for explicit legacy/dev provider fallback.
 - `.env.local` and `.env.production.local` are not committed.
 - `apps/admin` does not receive service-role keys, Supabase Admin API credentials, `DATABASE_URL`, or server-only connection strings.
 - Hosted Supabase Auth redirects include admin-stage and app-stage exact URLs.

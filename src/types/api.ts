@@ -5,10 +5,10 @@ export const API_PROVIDER_NAMES = ['supabase', 'api'] as const;
 
 export type ApiProviderName = (typeof API_PROVIDER_NAMES)[number];
 
-export function normalizeMobileApiProvider(
-  value: string | null | undefined,
-): ApiProviderName {
-  return value === 'api' ? 'api' : 'supabase';
+export function normalizeMobileApiProvider(value: unknown): ApiProviderName {
+  return typeof value === 'string' && value.trim().toLowerCase() === 'supabase'
+    ? 'supabase'
+    : 'api';
 }
 
 export async function runApiProviderOperation<T>(

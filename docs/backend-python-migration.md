@@ -42,6 +42,43 @@ No production mobile or admin surface may connect directly to PostgreSQL.
 `DATABASE_URL` is backend-only and must not be added to mobile, Expo env, Vite
 env, `apps/admin`, or frontend code.
 
+## PR 37 provider cutover
+
+The Python API is now the default production provider for every migrated
+mobile and web-admin domain. Production deployments require reachable
+`EXPO_PUBLIC_API_URL` and `VITE_API_URL` values. The documented defaults are:
+
+```text
+EXPO_PUBLIC_AUTH_PROVIDER=api
+EXPO_PUBLIC_EVENTS_PROVIDER=api
+EXPO_PUBLIC_REGISTRATIONS_PROVIDER=api
+EXPO_PUBLIC_PRAYER_PROVIDER=api
+EXPO_PUBLIC_CONTACTS_PROVIDER=api
+EXPO_PUBLIC_AVATAR_PROVIDER=api
+EXPO_PUBLIC_DEVICE_PROVIDER=api
+
+VITE_AUTH_PROVIDER=api
+VITE_ADMIN_EVENTS_PROVIDER=api
+VITE_ADMIN_REGISTRATIONS_PROVIDER=api
+VITE_ADMIN_MEMBERS_PROVIDER=api
+VITE_ADMIN_INVITES_PROVIDER=api
+VITE_ADMIN_SEATING_PROVIDER=api
+VITE_ADMIN_IMPORT_PROVIDER=api
+VITE_ADMIN_FEEDBACK_PROVIDER=api
+VITE_ADMIN_COMMUNITY_PROVIDER=api
+```
+
+`supabase` remains valid only when it is explicitly configured for an
+individual domain, for legacy/dev fallback. Unset, empty, and unsupported
+provider values resolve to the API; API failures are surfaced without a retry
+through Supabase. The historical provider-switch descriptions below record the
+pre-cutover rollout state and are superseded by this section.
+
+The temporary Supabase JWT bridge was a migration/testing mechanism, not the
+final production auth architecture. Production API auth is API-owned. Supabase
+code and historical migrations remain intentionally through cutover validation;
+PR 38 will remove Supabase from the production runtime.
+
 ## Parallel Runtime Model
 
 During migration, local Supabase remains active. The new Python API/PostgreSQL
