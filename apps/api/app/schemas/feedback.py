@@ -77,3 +77,16 @@ class AdminFeedbackResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AdminFeedbackListResponse(BaseModel):
+    items: list[AdminFeedbackResponse]
+    total_count: int
+    limit: int
+    offset: int
+
+
+class AdminFeedbackStatusUpdateRequest(BaseModel):
+    status: Literal["open", "reviewed", "resolved", "closed"]
+
+    model_config = ConfigDict(extra="forbid")

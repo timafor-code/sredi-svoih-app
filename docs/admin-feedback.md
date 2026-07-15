@@ -151,21 +151,35 @@ beta`. The page includes:
 The review page does not create GitHub issues, upload screenshots, send email,
 or delete feedback.
 
-## Provider Switch (PR 33)
+## API Feedback Management Prerequisite For PR 37
 
 `VITE_ADMIN_FEEDBACK_PROVIDER` defaults to `supabase`; an unset or unsupported
 value is also Supabase. This preserves the existing submission, inbox, and
-status RPC behavior. `api` uses the regular authenticated web-admin API client
-for feedback submission only. The dialog passes its active membership community
-id so the Python API can preserve the existing admin/event-manager community
-authorization rules without browser-side privilege escalation.
+status RPC behavior. In `api` mode, the regular authenticated web-admin API
+client now maps all existing Feedback-page operations to the Python API:
 
-The Python API currently has no feedback list or status-update route. In API
-mode, the existing Feedback page therefore keeps its normal loading/error
-states for those unsupported actions and does not call Supabase as a fallback.
-A failed API submission likewise never creates a legacy Supabase row. API mode
-is only for local, synthetic staging, or controlled migration testing; the
-production default is not switched in this PR.
+- `POST /admin/feedback` submits feedback for active `admin` and
+  `event_manager` memberships.
+- `GET /admin/feedback` returns the admin-only inbox with `status`, `severity`,
+  exact trimmed `section`, `limit`, and `offset` filters. Its response contains
+  `items`, `total_count`, `limit`, and `offset`; rows are ordered by
+  `created_at DESC` with an ID tie-breaker.
+- `PATCH /admin/feedback/{feedback_id}` updates the admin-only status workflow
+  and returns the complete updated feedback item.
+
+Inbox listing and status management require an active `admin` membership for
+the feedback community. `event_manager` can still submit feedback but cannot
+read the inbox or update its status. Out-of-scope and missing feedback IDs use
+the same safe not-found response.
+
+The API adapter never falls back to Supabase: an API request failure remains an
+API failure and cannot create, read, or update a legacy Supabase row. Explicit
+`supabase` provider mode continues to use the existing RPC path.
+
+This is the cutover prerequisite for PR 37,
+`feature/backend-provider-cutover`. Production provider defaults are not
+changed here; the next PR is responsible for deciding and applying those
+defaults.
 
 ## Statuses
 

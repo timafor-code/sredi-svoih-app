@@ -42,11 +42,16 @@ type AdminFeedbackApiResponse = {
   user_id: string;
 };
 
-export const ADMIN_FEEDBACK_LIST_API_UNSUPPORTED =
-  'Feedback list is not available in API provider mode yet. The Python API currently supports feedback submission only.';
+type AdminFeedbackApiListResponse = {
+  items: AdminFeedbackApiResponse[];
+  limit: number;
+  offset: number;
+  total_count: number;
+};
 
-export const ADMIN_FEEDBACK_STATUS_UPDATE_API_UNSUPPORTED =
-  'Feedback status updates are not available in API provider mode yet. The Python API currently supports feedback submission only.';
+type AdminFeedbackApiStatusUpdateRequest = {
+  status: AdminFeedbackStatus;
+};
 
 function requiredString(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) {
@@ -138,13 +143,52 @@ export async function createAdminFeedbackViaApi(
 }
 
 export async function listAdminFeedbackViaApi(
-  _filters: AdminFeedbackListFilters = {},
+  filters: AdminFeedbackListFilters = {},
 ): Promise<AdminFeedbackListResponse> {
-  throw new Error(ADMIN_FEEDBACK_LIST_API_UNSUPPORTED);
+  const response = await apiClient.get<AdminFeedbackApiListResponse>('/admin/feedback', {
+    query: {
+      limit: filters.limit,
+      offset: filters.offset,
+      section: optionalTrimmedString(filters.section),
+      severity: filters.severity ?? undefined,
+      status: filters.status ?? undefined,
+    },
+  });
+
+  if (!Array.isArray(response.items)) {
+    throw new Error('Feedback API response is missing items.');
+  }
+  if (!Number.isInteger(response.total_count) || response.total_count < 0) {
+    throw new Error('Feedback API response has an invalid total_count.');
+  }
+  if (!Number.isInteger(response.limit) || response.limit < 1) {
+    throw new Error('Feedback API response has an invalid limit.');
+  }
+  if (!Number.isInteger(response.offset) || response.offset < 0) {
+    throw new Error('Feedback API response has an invalid offset.');
+  }
+
+  return {
+    items: response.items.map((item) => ({
+      ...mapAdminFeedbackApiDto(item),
+      totalCount: response.total_count,
+    })),
+    limit: response.limit,
+    offset: response.offset,
+    totalCount: response.total_count,
+  };
 }
 
 export async function updateAdminFeedbackStatusViaApi(
-  _input: AdminFeedbackStatusUpdateInput,
+  input: AdminFeedbackStatusUpdateInput,
 ): Promise<AdminFeedbackStatusUpdateResponse> {
-  throw new Error(ADMIN_FEEDBACK_STATUS_UPDATE_API_UNSUPPORTED);
+  const feedbackId = requiredString(input.id, 'id');
+  const response = await apiClient.patch<
+    AdminFeedbackApiResponse,
+    AdminFeedbackApiStatusUpdateRequest
+  >(`/admin/feedback/${encodeURIComponent(feedbackId)}`, { status: input.status });
+  const feedback = mapAdminFeedbackApiDto(response);
+  const { totalCount: _totalCount, ...result } = feedback;
+
+  return result;
 }

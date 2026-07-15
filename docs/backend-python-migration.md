@@ -1587,9 +1587,9 @@ PR 33 adds provider dispatch only; it does not change FastAPI routes, Alembic,
 models, workers, or the push pipeline. `VITE_ADMIN_FEEDBACK_PROVIDER=api`
 uses the authenticated admin API client for feedback submission and includes
 the active membership community id required by a multi-community actor. The
-legacy feedback inbox and status RPCs remain on Supabase because the current
-Python API exposes no corresponding list or status-update endpoint. API mode
-does not retry a failed request through Supabase.
+legacy feedback inbox and status RPCs remained on Supabase until the subsequent
+feedback-management prerequisite added the missing Python API operations. API
+mode does not retry a failed request through Supabase.
 
 Mobile privacy requests use the new narrow
 `EXPO_PUBLIC_PRIVACY_PROVIDER=supabase|api` domain flag. The repository had no
@@ -1609,6 +1609,28 @@ migration-test controls. Expo Go on an iPhone needs
 `EXPO_PUBLIC_API_URL=http://<computer-lan-ip>:8000`, and Expo Push delivery
 remains a separately reviewed external transit decision. No push is sent by
 this PR.
+
+### API admin feedback management prerequisite for PR 37
+
+`feature/api-admin-feedback-management-endpoints` completes the Python API
+support needed for the existing web-admin Feedback page before provider-default
+cutover. It adds `GET /admin/feedback` with scoped status, severity, exact
+trimmed section, limit, and offset filtering, plus `PATCH
+/admin/feedback/{feedback_id}` for status management. Create remains available
+to active `admin` and `event_manager` members; inbox listing and status updates
+are active-admin-only for the feedback community.
+
+The list response carries `items`, `total_count`, `limit`, and `offset`, with
+the count calculated before pagination and deterministic `created_at DESC, id
+DESC` ordering. Status changes to `resolved` or `closed` set server-side
+resolution metadata for the acting API user; `open` and `reviewed` clear it.
+Out-of-scope and missing feedback IDs share a safe not-found response.
+
+The admin API adapter maps these routes without an API-to-Supabase fallback.
+Explicit `supabase` mode remains unchanged. This PR deliberately does not
+change production provider defaults, environment examples, schema, migrations,
+or Supabase RPC/RLS. The next PR is `feature/backend-provider-cutover` (PR 37),
+which is the only place to make the provider-default cutover decision.
 
 ## API Contract Foundation
 
