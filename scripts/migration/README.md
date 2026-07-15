@@ -130,3 +130,228 @@ After an authorized owner-run export:
 6. Securely delete temporary/test artifacts according to the storage provider and operating-system policy when they are no longer needed; do not rely on a Git cleanup.
 
 The future importer must preserve the source authorization and privacy boundaries rather than treating these local artifacts as permission to broaden access.
+
+## PR 35: API PostgreSQL import and validation
+
+`import_to_api_postgres.py` and `validate_migration.py` are owner-run PR 35
+utilities. They load only the controlled PR #324 artifact directory into the
+Python API PostgreSQL schema, then compare aggregate results. They do not
+contact Supabase, read `auth.users` or `auth.identities`, use Supabase Admin API
+or a service-role key, or load `.env`, `.env.local`, API/admin/mobile/Expo/Vite
+environment files.
+
+No import or validation was run while this tooling was created.
+
+### Prerequisites and connection boundary
+
+- Use an owner-controlled PR #324 export directory. Never commit its artifacts.
+- Run with the API Python environment, which provides the existing `asyncpg`
+  dependency. The scripts do not import API settings, so they cannot use its
+  development default connection string or dotenv behaviour.
+- The API local Docker runtime is `infra/docker-compose.api.yml`: PostgreSQL is
+  the `api_postgres` service and is normally bound to `127.0.0.1:55432`.
+
+Set credentials only in the owner shell, with placeholders in shared commands:
+
+```text
+API_MIGRATION_DATABASE_URL=<owner-local-api-postgresql-url>
+API_MIGRATION_RUN_ACK=LOCAL_OR_OWNER_APPROVED_IMPORT
+```
+
+There is no default database URL. This variable is intentionally distinct from
+the PR #324 export variable. A connection is hosted unless it targets loopback,
+`host.docker.internal`, or a `.local` hostname. A hosted target additionally
+requires `--allow-hosted-with-owner-command` after a separate owner approval;
+that flag is an approval boundary, not a convenience option.
+
+Help never connects to PostgreSQL:
+
+```powershell
+python scripts/migration/import_to_api_postgres.py --help
+python scripts/migration/validate_migration.py --help
+```
+
+### Input verification
+
+The importer accepts one explicit `--input-dir` with this exact PR #324 layout:
+
+```text
+<export-directory>/
+  manifest.json
+  checksums.sha256
+  tables/
+    *.jsonl
+  storage/
+    avatar_objects.jsonl
+```
+
+Before target preflight or any write transaction, it requires format `1.0.0`,
+verifies the manifest and every declared JSONL SHA-256, validates checksum-index
+entries, and rejects changed/missing/undeclared artifacts, nested files,
+symlinks, malformed JSONL, row-count mismatches, and duplicate public primary
+keys. The avatar artifact has no exported storage primary-key value, so its
+artifact identity is checked as `(bucket, object_key)`. Required PR #324 source
+tables must be `exported`; optional tables may be explicitly `skipped` and are
+reported as skipped, never treated as empty. Errors identify only domain, row,
+field, and category—not JSONL values.
+
+### Explicit mapping and order
+
+This is an explicit mapping, not a dynamic same-name loader. These verified
+compatible source domains preserve primary UUIDs where the API schema permits:
+
+```text
+communities -> communities                         profiles -> profiles
+community_memberships -> community_memberships     invites -> invites
+event_categories -> event_categories               community_event_locations -> community_event_locations
+events -> events                                   event_occurrences -> event_occurrences
+event_participation_options -> event_participation_options
+event_capacity_units -> event_capacity_units       event_participation_option_capacity_units -> event_participation_option_capacity_units
+event_registrations -> event_registrations         event_registration_option_selections -> event_registration_option_selections
+event_registration_capacity_reservations -> event_registration_capacity_reservations
+event_seating_layout_templates -> event_seating_layout_templates
+event_seating_layouts -> event_seating_layouts     event_seating_tables -> event_seating_tables
+event_seating_table_connections -> event_seating_table_connections
+event_seating_assignments -> event_seating_assignments
+community_contacts -> community_contacts           profile_contact_visibility -> profile_contact_visibility
+synced_contacts -> synced_contacts                 admin_feedback -> admin_feedback
+device_tokens -> device_tokens                     prayer_activity_logs -> prayer_activity_logs
+push_notification_jobs -> push_notification_jobs   push_notification_deliveries -> push_notification_deliveries
+event_import_sources -> event_import_sources       event_import_runs -> event_import_runs
+event_import_items -> event_import_items
+```
+
+The source profile UUID becomes both API `profiles.id` and `profiles.user_id`.
+The legacy `events.seats_total` is deliberately excluded because source
+migrations backfilled compatible `events.capacity`. API-only nullable seating
+fields use their verified defaults/nullability; no placeholders are invented.
+
+The website-import schema has verified transformations: source `name` maps to
+API `title`, `url` maps to `source_url`, and `parser_name` maps to API `key`
+only if it satisfies the API key constraint. Parser information is retained as
+legacy JSONB settings. A run's API `community_id` is derived from its source and
+mode is the required `apply_review_only`; an item with null `run_id` fails
+safely because the API requires that composite relationship.
+
+`privacy_requests` is not part of PR #324's exporter allowlist and is reported
+as `not_exported_by_pr324`; no privacy row is fabricated. Unknown source
+columns, unsupported domains, invalid enum/check values, unresolved references,
+or target schema mismatches fail closed. No Alembic migration is added.
+
+The deterministic order is communities, identities, profiles, memberships and
+invites, categories and locations, events, occurrences/options/capacity,
+registrations/selections/reservations, contacts/visibility, feedback/device/
+prayer, seating hierarchy, push jobs/deliveries, then import history. Foreign
+keys stay enabled; the scripts never truncate, delete, disable constraints, use
+`session_replication_role`, or replace source data.
+
+### Identity bootstrap and Auth limitation
+
+PR #324 has no Auth export. Candidate users are derived only from verified
+public UUID references (profiles, memberships, invitations, events,
+registrations, contacts, feedback, device tokens, prayer logs, seating, and
+push records). Each UUID is preserved as `app_users.id`. Valid public profile
+email/phone may be copied; invalid values are omitted and counted. Source and
+target email/phone uniqueness conflicts and missing profiles are counted without
+printing the values.
+
+Every bootstrap identity has `password_hash = null`. The importer does not copy
+password hashes, infer OAuth identities, create a password, or set verification
+timestamps. Imported users require the separately planned set-password flow
+before API authentication cutover.
+
+### Dry run and apply
+
+Choose exactly one mode; no default can write:
+
+```powershell
+$env:API_MIGRATION_DATABASE_URL = '<owner-local-api-postgresql-url>'
+$env:API_MIGRATION_RUN_ACK = 'LOCAL_OR_OWNER_APPROVED_IMPORT'
+python scripts/migration/import_to_api_postgres.py --input-dir '<owner-controlled-export-directory>' --dry-run
+```
+
+Dry run parses every artifact and validates UUIDs, JSON, date/timestamp,
+integer, `Decimal`, enum/check, uniqueness, and required-reference contracts.
+It performs schema and existing-data preflight in an explicit repeatable-read,
+read-only transaction and commits no writes; this is not exception-dependent
+rollback.
+
+Only after dry-run review and backup creation, an owner may separately approve:
+
+```powershell
+$env:API_MIGRATION_DATABASE_URL = '<owner-local-api-postgresql-url>'
+$env:API_MIGRATION_RUN_ACK = 'LOCAL_OR_OWNER_APPROVED_IMPORT'
+python scripts/migration/import_to_api_postgres.py --input-dir '<owner-controlled-export-directory>' --apply
+```
+
+Apply uses one explicit transaction and rolls back the complete import on any
+failure. By default any existing mapped target data is a conflict.
+`--allow-existing-data` permits only primary-key-equal, value-compatible rows;
+it never updates, replaces, deletes, or truncates data. Reports distinguish
+inserts, unchanged compatible rows, skips, conflicts, and missing references;
+automatic update count remains zero.
+
+### Avatars, validation, and reports
+
+PR #324's `storage/avatar_objects.jsonl` contains metadata only. PR 35 checks
+object-key shape and profile linkage, then reports
+`pending_storage_migration`. It does not download/upload objects, write an
+object-storage provider, create active avatar metadata, or claim avatars are
+migrated.
+
+After an approved apply, validate aggregate results only:
+
+```powershell
+$env:API_MIGRATION_DATABASE_URL = '<owner-local-api-postgresql-url>'
+$env:API_MIGRATION_RUN_ACK = 'LOCAL_OR_OWNER_APPROVED_IMPORT'
+python scripts/migration/validate_migration.py --input-dir '<owner-controlled-export-directory>'
+```
+
+Validation uses a repeatable-read, read-only transaction. Exit code `0` means
+supported checks passed; non-zero means failure or incomplete validation. It
+checks mapped counts, expected target primary keys, duplicate keys,
+profile/app-user and membership/app-user alignment, registration/event/
+occurrence alignment, selections/reservations, seating hierarchy, contacts and
+visibility, and aggregate prayer/device/contact, feedback, push, and pending
+avatar counts. It never reads private prayer content, feedback messages, raw
+device tokens, push payloads, contacts, or avatar metadata into a report.
+
+Reports contain aggregate counts, domain/status data, and safe error categories.
+They exclude names, emails, phones, addresses, comments, feedback/prayer text,
+tokens, payloads, invite codes, JWTs, password data, and database URLs. By
+default only an aggregate JSON summary is printed. To write a report, choose an
+existing owner-controlled directory outside the repository:
+
+```powershell
+python scripts/migration/import_to_api_postgres.py --input-dir '<owner-controlled-export-directory>' --dry-run --report-dir '<owner-controlled-report-directory>'
+python scripts/migration/validate_migration.py --input-dir '<owner-controlled-export-directory>' --report-dir '<owner-controlled-report-directory>'
+```
+
+Never commit reports or artifacts. Confirm with `git status --short` and
+securely remove temporary owner-local exports/reports when no longer needed.
+
+### Backup and rollback
+
+Before apply, create and test an owner-controlled API PostgreSQL backup/snapshot.
+The current local Docker runtime command shape, with placeholders only, is:
+
+```powershell
+docker compose -f infra/docker-compose.api.yml exec -T api_postgres pg_dump -U '<api-db-user>' -d '<api-db-name>' --format=custom > '<owner-controlled-backup-path>.dump'
+```
+
+Restoration is owner-controlled recovery, not an importer command. After
+separately confirming backup and target, a local command shape is:
+
+```powershell
+Get-Content -LiteralPath '<owner-controlled-backup-path>.dump' -AsByteStream | docker compose -f infra/docker-compose.api.yml exec -T api_postgres pg_restore -U '<api-db-user>' -d '<api-db-name>' --clean --if-exists
+```
+
+Do not run either command from this PR without separate owner instruction.
+Failed applies roll back automatically and dry runs write nothing. Successful
+apply is intentionally not reversed by deleting rows: restore the approved
+backup/snapshot instead. There is no destructive undo command.
+
+## Next step
+
+The next roadmap PR is PR 36, `feature/backend-shadow-read-compare`. It is not
+implemented by these utilities.
