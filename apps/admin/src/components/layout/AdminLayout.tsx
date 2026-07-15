@@ -64,6 +64,7 @@ export function AdminLayout({
         {canSubmitFeedback ? <AdminFeedbackButton onClick={openFeedbackDialog} /> : null}
         {canSubmitFeedback && isFeedbackDialogOpen ? (
           <AdminFeedbackDialog
+            communityId={membership?.community_id ?? null}
             onClose={closeFeedbackDialog}
             section={activeSection}
             sectionTitle={sectionTitle}

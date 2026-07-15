@@ -1581,6 +1581,35 @@ storage configuration, object keys, bucket names, credentials, image
 processing, or existing Supabase avatar object migration. The next PR is PR
 32I, `feature/api-push-pipeline`.
 
+### PR 33 mobile/admin feedback, privacy, and device API switch
+
+PR 33 adds provider dispatch only; it does not change FastAPI routes, Alembic,
+models, workers, or the push pipeline. `VITE_ADMIN_FEEDBACK_PROVIDER=api`
+uses the authenticated admin API client for feedback submission and includes
+the active membership community id required by a multi-community actor. The
+legacy feedback inbox and status RPCs remain on Supabase because the current
+Python API exposes no corresponding list or status-update endpoint. API mode
+does not retry a failed request through Supabase.
+
+Mobile privacy requests use the new narrow
+`EXPO_PUBLIC_PRIVACY_PROVIDER=supabase|api` domain flag. The repository had no
+legacy mobile privacy request facade, RPC, or UI, so API mode makes the
+current-user `POST/GET /privacy/requests` contract available without adding a
+screen; conservative Supabase mode reports the feature as unavailable rather
+than creating a new direct-table path. API responses are mapped without a
+`user_id`, so another user's request history cannot be exposed.
+
+`EXPO_PUBLIC_DEVICE_PROVIDER=api` routes existing Expo token upsert and
+same-process deactivation calls to `/me/device-tokens`. API responses retain
+token metadata and environment/platform/build fields but deliberately omit raw
+tokens. Raw push tokens and privacy-request contents are scrubbed from client
+error text and are never logged or persisted in added debug storage. Production
+defaults remain Supabase; API flags are local, synthetic staging, or controlled
+migration-test controls. Expo Go on an iPhone needs
+`EXPO_PUBLIC_API_URL=http://<computer-lan-ip>:8000`, and Expo Push delivery
+remains a separately reviewed external transit decision. No push is sent by
+this PR.
+
 ## API Contract Foundation
 
 `docs/api-contracts.md` defines the stable REST/JSON contract foundation before

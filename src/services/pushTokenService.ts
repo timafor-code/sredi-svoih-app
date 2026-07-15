@@ -12,6 +12,13 @@ import type {
   PushTokenRuntimeInfo,
   UpsertMyDeviceTokenInput,
 } from '@/types/pushToken';
+import { sanitizeExpoPushTokenErrorText } from '@/types/pushToken';
+import { isMobileApiProviderEnabled } from './apiClient';
+import {
+  deactivateMyDeviceTokenViaApi,
+  upsertMyDeviceTokenViaApi,
+} from './deviceTokenApiService';
+import { getSession } from './authService';
 import { supabase } from './supabaseClient';
 
 type NotificationPermissionStatus = 'granted' | 'denied' | 'undetermined' | 'unknown';
@@ -199,12 +206,12 @@ async function getRemoteNotificationPermissionStatus(
   return normalizeNotificationPermissionStatus(nextPermission?.status);
 }
 
-function normalizeRpcError(error: SupabaseRpcError): Error {
+function normalizeRpcError(error: SupabaseRpcError, knownToken?: string | null): Error {
   if (error.code === '28000' || error.message.toLowerCase().includes('auth required')) {
     return new Error(AUTH_REQUIRED_ERROR);
   }
 
-  return new Error(error.message);
+  return new Error(sanitizeExpoPushTokenErrorText(error, knownToken));
 }
 
 function normalizeRpcRow(data: unknown): DeviceTokenRow | null {
@@ -218,7 +225,7 @@ function normalizeRpcRow(data: unknown): DeviceTokenRow | null {
 }
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return sanitizeExpoPushTokenErrorText(error);
 }
 
 function getExpoTokenErrorStatus(message: string): PushTokenRegistrationStatus {
@@ -231,7 +238,7 @@ function getExpoTokenErrorStatus(message: string): PushTokenRegistrationStatus {
   return 'push_token_unavailable_in_current_runtime';
 }
 
-async function assertAuthenticated(): Promise<void> {
+async function assertSupabaseAuthenticated(): Promise<void> {
   const { data, error } = await supabase.auth.getSession();
 
   if (error) {
@@ -239,6 +246,18 @@ async function assertAuthenticated(): Promise<void> {
   }
 
   if (!data.session) {
+    throw new Error(AUTH_REQUIRED_ERROR);
+  }
+}
+
+async function assertAuthenticatedForDeviceProvider(): Promise<void> {
+  if (!isMobileApiProviderEnabled('device')) {
+    return assertSupabaseAuthenticated();
+  }
+
+  const session = await getSession();
+
+  if (!session) {
     throw new Error(AUTH_REQUIRED_ERROR);
   }
 }
@@ -312,7 +331,11 @@ export async function getExpoPushTokenStatus(
 export async function upsertMyDeviceToken(
   input: UpsertMyDeviceTokenInput,
 ): Promise<DeviceTokenRow> {
-  await assertAuthenticated();
+  await assertAuthenticatedForDeviceProvider();
+
+  if (isMobileApiProviderEnabled('device')) {
+    return upsertMyDeviceTokenViaApi(input);
+  }
 
   const { data, error } = await supabase.rpc('upsert_my_device_token', {
     p_app_version: input.appVersion ?? null,
@@ -324,7 +347,7 @@ export async function upsertMyDeviceToken(
   });
 
   if (error) {
-    throw normalizeRpcError(error);
+    throw normalizeRpcError(error, input.expoPushToken);
   }
 
   const row = normalizeRpcRow(data);
@@ -339,14 +362,18 @@ export async function upsertMyDeviceToken(
 export async function deactivateMyDeviceToken(
   expoPushToken: string,
 ): Promise<DeviceTokenRow | null> {
-  await assertAuthenticated();
+  await assertAuthenticatedForDeviceProvider();
+
+  if (isMobileApiProviderEnabled('device')) {
+    return deactivateMyDeviceTokenViaApi(expoPushToken);
+  }
 
   const { data, error } = await supabase.rpc('deactivate_my_device_token', {
     p_expo_push_token: expoPushToken,
   });
 
   if (error) {
-    throw normalizeRpcError(error);
+    throw normalizeRpcError(error, expoPushToken);
   }
 
   return normalizeRpcRow(data);
@@ -356,7 +383,7 @@ export async function registerCurrentDeviceForPush(): Promise<PushTokenRegistrat
   const runtime = getPushTokenRuntimeInfo();
 
   try {
-    await assertAuthenticated();
+    await assertAuthenticatedForDeviceProvider();
   } catch (error) {
     return {
       error: getErrorMessage(error),

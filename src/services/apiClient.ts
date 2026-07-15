@@ -7,10 +7,9 @@ import type {
   MobileApiProviderConfig,
   MobileApiProviderKey,
 } from '@/types/api';
+import { normalizeMobileApiProvider } from '@/types/api';
 
 const DEFAULT_API_TIMEOUT_MS = 15000;
-const DEFAULT_PROVIDER: ApiProviderName = 'supabase';
-
 type ApiHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 type ApiQueryValue = string | number | boolean | null | undefined;
 type ApiQueryParams = Record<string, ApiQueryValue | readonly ApiQueryValue[]>;
@@ -39,6 +38,7 @@ const providerEnvNames: Record<MobileApiProviderKey, string> = {
   prayer: 'EXPO_PUBLIC_PRAYER_PROVIDER',
   contacts: 'EXPO_PUBLIC_CONTACTS_PROVIDER',
   avatar: 'EXPO_PUBLIC_AVATAR_PROVIDER',
+  privacy: 'EXPO_PUBLIC_PRIVACY_PROVIDER',
   device: 'EXPO_PUBLIC_DEVICE_PROVIDER',
 };
 
@@ -79,20 +79,17 @@ export function normalizeApiBaseUrl(value: string | null | undefined): string | 
   return trimmed.replace(/\/+$/, '');
 }
 
-function normalizeProvider(value: string | null | undefined): ApiProviderName {
-  return value === 'api' ? 'api' : DEFAULT_PROVIDER;
-}
-
 export const apiBaseUrl = normalizeApiBaseUrl(process.env.EXPO_PUBLIC_API_URL);
 
 export const mobileApiProviderConfig: MobileApiProviderConfig = {
-  auth: normalizeProvider(process.env.EXPO_PUBLIC_AUTH_PROVIDER),
-  events: normalizeProvider(process.env.EXPO_PUBLIC_EVENTS_PROVIDER),
-  registrations: normalizeProvider(process.env.EXPO_PUBLIC_REGISTRATIONS_PROVIDER),
-  prayer: normalizeProvider(process.env.EXPO_PUBLIC_PRAYER_PROVIDER),
-  contacts: normalizeProvider(process.env.EXPO_PUBLIC_CONTACTS_PROVIDER),
-  avatar: normalizeProvider(process.env.EXPO_PUBLIC_AVATAR_PROVIDER),
-  device: normalizeProvider(process.env.EXPO_PUBLIC_DEVICE_PROVIDER),
+  auth: normalizeMobileApiProvider(process.env.EXPO_PUBLIC_AUTH_PROVIDER),
+  events: normalizeMobileApiProvider(process.env.EXPO_PUBLIC_EVENTS_PROVIDER),
+  registrations: normalizeMobileApiProvider(process.env.EXPO_PUBLIC_REGISTRATIONS_PROVIDER),
+  prayer: normalizeMobileApiProvider(process.env.EXPO_PUBLIC_PRAYER_PROVIDER),
+  contacts: normalizeMobileApiProvider(process.env.EXPO_PUBLIC_CONTACTS_PROVIDER),
+  avatar: normalizeMobileApiProvider(process.env.EXPO_PUBLIC_AVATAR_PROVIDER),
+  privacy: normalizeMobileApiProvider(process.env.EXPO_PUBLIC_PRIVACY_PROVIDER),
+  device: normalizeMobileApiProvider(process.env.EXPO_PUBLIC_DEVICE_PROVIDER),
 };
 
 export function getMobileApiProviderConfig(): MobileApiProviderConfig {

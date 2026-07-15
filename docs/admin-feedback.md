@@ -151,6 +151,22 @@ beta`. The page includes:
 The review page does not create GitHub issues, upload screenshots, send email,
 or delete feedback.
 
+## Provider Switch (PR 33)
+
+`VITE_ADMIN_FEEDBACK_PROVIDER` defaults to `supabase`; an unset or unsupported
+value is also Supabase. This preserves the existing submission, inbox, and
+status RPC behavior. `api` uses the regular authenticated web-admin API client
+for feedback submission only. The dialog passes its active membership community
+id so the Python API can preserve the existing admin/event-manager community
+authorization rules without browser-side privilege escalation.
+
+The Python API currently has no feedback list or status-update route. In API
+mode, the existing Feedback page therefore keeps its normal loading/error
+states for those unsupported actions and does not call Supabase as a fallback.
+A failed API submission likewise never creates a legacy Supabase row. API mode
+is only for local, synthetic staging, or controlled migration testing; the
+production default is not switched in this PR.
+
 ## Statuses
 
 - `open`: newly submitted or reopened feedback.

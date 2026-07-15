@@ -297,7 +297,7 @@ function getPushTokenResultMessage(result: PushTokenRegistrationResult): string 
     case 'not_authenticated':
       return 'Войдите в профиль, чтобы зарегистрировать это устройство.';
     case 'registration_failed':
-      return 'ExpoPushToken получен, но сохранить его через Supabase RPC не удалось.';
+      return 'ExpoPushToken получен, но сохранить его для push-уведомлений не удалось.';
     default:
       return 'Не удалось зарегистрировать устройство для push-уведомлений.';
   }

@@ -1878,6 +1878,22 @@ them. Payload limits mirror the table checks (`section` ≤ 80, `entity_type`
 `note/issue/blocker/idea`). New feedback is always created with
 `status = open`. No feedback inbox/list endpoint exists yet.
 
+### PR 33 client provider integration
+
+`VITE_ADMIN_FEEDBACK_PROVIDER` selects the existing web-admin feedback
+provider. An unset, `supabase`, or unsupported value selects Supabase; `api`
+uses the regular authenticated admin API client and `POST /admin/feedback`
+only. The feedback dialog supplies the selected active membership's
+`community_id`, which preserves the API's multi-community authorization check
+without sending a caller-selected author id.
+
+The legacy Supabase provider continues to support submission, inbox listing,
+and status updates through its RPCs. The current Python API has no feedback
+list or status-update endpoint, so API mode submits feedback but leaves the
+existing feedback page's loading/error behavior intact for list or status
+actions. It does not fall back to a Supabase RPC after API mode has been
+selected or after an API request fails.
+
 `GET /admin/privacy/requests` and `PATCH /admin/privacy/requests/{request_id}`
 require an active `admin` membership; `event_manager` is not allowed. The list
 is scoped to requests whose `community_id` is one of the actor's admin
@@ -1923,6 +1939,36 @@ including `status`, `resolution_note`, and `resolved_at`, but never
 endpoints record requests only: no export, deletion, or correction is
 executed, and no emails are sent. Admin review uses `/admin/privacy/requests`.
 Raw request messages are treated as personal data and are not logged.
+
+`EXPO_PUBLIC_PRIVACY_PROVIDER` is a narrow mobile domain flag added for PR 33:
+an unset, `supabase`, or unsupported value selects its conservative Supabase
+default, while `api` uses `POST` and `GET /privacy/requests` through the shared
+authenticated mobile API client. No previous mobile privacy-request facade,
+Supabase RPC, or screen exists in this repository, so Supabase mode explicitly
+reports that the request feature is unavailable rather than inventing a direct
+table write. No mobile screen changed in this PR. API mode only ever exposes
+the actor's own request history; it never sends or accepts `user_id`, and it
+does not fall back to Supabase after an API request starts.
+
+`EXPO_PUBLIC_DEVICE_PROVIDER` follows the same parsing rules. With `api`, the
+existing token registration facade calls `POST /me/device-tokens` and maps the
+token-metadata response back to its public shape without reintroducing the raw
+Expo token or owner id. Re-registering a refreshed token is the existing
+upsert/update lifecycle and keeps the supplied platform, app/build metadata,
+and development/preview/production/unknown environment together. The API
+deactivation endpoint is id-based while the legacy facade is token-based, so a
+successful registration retains only an in-memory token-to-id association for
+that app process; no token is persisted in debug storage. There is no current
+mobile logout/unregister caller. An API error never triggers a Supabase write,
+and raw push tokens or privacy-request contents must not be logged or returned
+in error text.
+
+All three flags remain Supabase by default until the final cutover. API mode is
+for local, synthetic staging, or controlled migration testing. For Expo Go on
+iPhone, configure `EXPO_PUBLIC_API_URL=http://<computer-lan-ip>:8000`; a
+loopback URL is only suitable for same-machine tools, not the phone. Expo Push
+remains an explicit external transit/processor decision when delivery is
+enabled; PR 33 does not send a push.
 
 ## Implementation Notes For Later PRs
 

@@ -60,7 +60,7 @@ transit/processor decision, not merely a storage decision.
 Production push enablement must review this caveat before rollout. A
 Russia-hosted push alternative may be chosen later if required by the owner.
 
-## Privacy Requests And Device Tokens (PR 32B)
+## Privacy Requests And Device Tokens (PR 32B / client integration PR 33)
 
 The Python API records data-subject style privacy requests in the API-owned
 `privacy_requests` table. `POST /privacy/requests` and `GET /privacy/requests`
@@ -77,6 +77,22 @@ never echo the raw Expo push token. Deactivation is a soft `is_active = false`
 update scoped to the owning user. The PR 32I worker uses these backend-owned
 rows only for explicit event-registrant jobs; the Expo Push caveat above applies
 to every outbound delivery attempt.
+
+PR 33 keeps Supabase as the default migration provider and adds narrowly scoped
+mobile `EXPO_PUBLIC_PRIVACY_PROVIDER` and `EXPO_PUBLIC_DEVICE_PROVIDER` API
+modes. Privacy API calls are current-user only and do not log request messages.
+The repository had no legacy mobile privacy request screen or Supabase request
+facade, so its conservative default reports that unavailable feature rather
+than adding a direct-table fallback. Device API responses and client error
+messages omit raw Expo tokens; the client does not persist them in new debug
+storage. A failed API request is never retried through Supabase. API provider
+modes are limited to local, synthetic staging, or controlled migration testing;
+production defaults do not change here.
+
+For Expo Go on iPhone, the mobile API base URL must use the development
+computer's LAN address (`http://<computer-lan-ip>:8000`). Expo Push delivery,
+if later enabled, remains an explicit external transit/processor decision and
+is outside PR 33; no push is sent by this client integration.
 
 ## Logging And Sensitive Values
 
