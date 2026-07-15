@@ -59,6 +59,12 @@ The selected output directory receives UTF-8, no-BOM artifacts:
 
 Each exported table is a JSON Lines file. Table order is fixed by the explicit allowlist, and records are ordered by the table's verified primary key. UUIDs remain strings; PostgreSQL timestamp values are serialized as stable ISO timestamps; JSON/JSONB stays structured JSON; null remains `null`; and byte/binary columns are refused instead of being dumped inline.
 
+### Date and timestamp values
+
+PostgreSQL `DATE` values are exported exactly as their source `YYYY-MM-DD` text, without any timezone conversion. This is independent of the operating-system timezone, the Node.js `TZ` setting, UTC offset, and daylight-saving time. PostgreSQL `timestamp` and `timestamptz` values remain separate values and continue to be serialized as ISO timestamps.
+
+Do not use any export artifact created before this DATE-only fix: affected values may already have the wrong calendar day. Do not manually edit old JSONL files, `manifest.json`, or `checksums.sha256` to repair them. Instead, create a new owner-local export in a new directory after this fix so that it has a new `manifest.json` and `checksums.sha256`.
+
 `manifest.json` includes the format version, creation timestamp, schema/table name, required/optional state, exported/skipped state, row count, verified primary-key order, artifact path, and SHA-256 checksum for every JSONL artifact. Missing optional feature tables are listed as `skipped` with a reason. Missing required core tables, a table without a primary key, or a binary column fail the export before it can report success.
 
 `checksums.sha256` is a standard verification index for `manifest.json` and every JSONL artifact. It permits checksum verification without opening or sharing the personal-data files.
