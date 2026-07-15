@@ -190,12 +190,12 @@ class AggregateComparisonTests(unittest.TestCase):
         self.assertNotIn(str(second_user), serialized)
 
     def test_capacity_bucket_comparison_exposes_only_aggregate_mismatches(self) -> None:
-        first_bucket = (uuid4(), None, uuid4())
-        second_bucket = (uuid4(), uuid4(), uuid4())
+        first_bucket = ("event-alpha", None, "unit-alpha")
+        second_bucket = ("event-beta", "occurrence-beta", "unit-beta")
         source = {first_bucket: (12, 2, 5, 2)}
         target = {first_bucket: (12, 3, 6, 2), second_bucket: (8, 0, 0, 0)}
         comparison = COMPARE.compare_capacity_bucket_sets(source, target)
-        report = COMPARE.make_report({"capacityBuckets": COMPARE.completed_domain(COMPARE.capacity_totals(source), COMPARE.capacity_totals(target), comparison)})
+        report = COMPARE.make_report({"capacityBuckets": COMPARE.completed_capacity_bucket_domain(COMPARE.capacity_totals(source), COMPARE.capacity_totals(target), comparison)})
         serialized = json.dumps(report)
         self.assertEqual(comparison["matchedBucketCount"], 0)
         self.assertEqual(comparison["missingSourceBucketCount"], 1)
@@ -204,6 +204,65 @@ class AggregateComparisonTests(unittest.TestCase):
         for bucket_part in (*first_bucket, *second_bucket):
             if bucket_part is not None:
                 self.assertNotIn(str(bucket_part), serialized)
+
+    def test_nonempty_matching_capacity_buckets_are_matched(self) -> None:
+        source = {
+            ("event-alpha", None, "unit-alpha"): (12, 2, 5, 2),
+            ("event-beta", "occurrence-beta", "unit-beta"): (8, 0, 0, 0),
+        }
+        comparison = COMPARE.compare_capacity_bucket_sets(source, dict(source))
+        domain = COMPARE.completed_capacity_bucket_domain(COMPARE.capacity_totals(source), COMPARE.capacity_totals(source), comparison)
+        self.assertEqual(comparison["matchedBucketCount"], 2)
+        self.assertEqual(comparison["mismatchedBucketCount"], 0)
+        self.assertEqual(comparison["missingSourceBucketCount"], 0)
+        self.assertEqual(comparison["missingTargetBucketCount"], 0)
+        self.assertEqual(domain["status"], "matched")
+
+    def test_empty_matching_capacity_buckets_are_matched(self) -> None:
+        comparison = COMPARE.compare_capacity_bucket_sets({}, {})
+        domain = COMPARE.completed_capacity_bucket_domain(COMPARE.capacity_totals({}), COMPARE.capacity_totals({}), comparison)
+        self.assertEqual(comparison["matchedBucketCount"], 0)
+        self.assertEqual(comparison["mismatchedBucketCount"], 0)
+        self.assertEqual(comparison["missingSourceBucketCount"], 0)
+        self.assertEqual(comparison["missingTargetBucketCount"], 0)
+        self.assertEqual(domain["status"], "matched")
+
+    def test_differing_capacity_bucket_is_mismatched(self) -> None:
+        bucket = ("event-alpha", None, "unit-alpha")
+        source = {bucket: (12, 2, 5, 2)}
+        target = {bucket: (12, 3, 5, 2)}
+        comparison = COMPARE.compare_capacity_bucket_sets(source, target)
+        domain = COMPARE.completed_capacity_bucket_domain(COMPARE.capacity_totals(source), COMPARE.capacity_totals(target), comparison)
+        self.assertGreater(comparison["mismatchedBucketCount"], 0)
+        self.assertEqual(domain["status"], "mismatched")
+
+    def test_source_only_capacity_bucket_is_mismatched(self) -> None:
+        source = {("event-alpha", None, "unit-alpha"): (12, 2, 5, 2)}
+        comparison = COMPARE.compare_capacity_bucket_sets(source, {})
+        domain = COMPARE.completed_capacity_bucket_domain(COMPARE.capacity_totals(source), COMPARE.capacity_totals({}), comparison)
+        self.assertGreater(comparison["missingTargetBucketCount"], 0)
+        self.assertEqual(domain["status"], "mismatched")
+
+    def test_target_only_capacity_bucket_is_mismatched(self) -> None:
+        target = {("event-alpha", None, "unit-alpha"): (12, 2, 5, 2)}
+        comparison = COMPARE.compare_capacity_bucket_sets({}, target)
+        domain = COMPARE.completed_capacity_bucket_domain(COMPARE.capacity_totals({}), COMPARE.capacity_totals(target), comparison)
+        self.assertGreater(comparison["missingSourceBucketCount"], 0)
+        self.assertEqual(domain["status"], "mismatched")
+
+    def test_capacity_bucket_match_contributes_to_eleven_matched_domains(self) -> None:
+        source = {("event-alpha", None, "unit-alpha"): (12, 2, 5, 2)}
+        comparison = COMPARE.compare_capacity_bucket_sets(source, dict(source))
+        domains = {
+            "capacityBuckets": COMPARE.completed_capacity_bucket_domain(COMPARE.capacity_totals(source), COMPARE.capacity_totals(source), comparison),
+            **{
+                f"matchedDomain{index}": COMPARE.completed_domain({"totalCount": 0}, {"totalCount": 0}, {"totalCountMismatchCount": 0})
+                for index in range(10)
+            },
+        }
+        report = COMPARE.make_report(domains)
+        self.assertEqual(report["outcome"], "matched")
+        self.assertEqual(report["summary"], {"matchedDomains": 11, "mismatchedDomains": 0, "incompleteDomains": 0})
 
     def test_capacity_buckets_preserve_unlimited_capacity_semantics(self) -> None:
         bucket = ("event", "occurrence", "unit")
