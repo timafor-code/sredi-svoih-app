@@ -1858,6 +1858,8 @@ defaults (`status = draft`, `visibility = hidden`) and do not send
 | Method | Path | Required role | Purpose |
 | --- | --- | --- | --- |
 | POST | `/admin/feedback` | admin/event_manager | Submit admin beta feedback. |
+| GET | `/admin/feedback` | admin | List scoped feedback inbox items. |
+| PATCH | `/admin/feedback/{feedback_id}` | admin | Update a scoped feedback status. |
 | GET | `/admin/privacy/requests` | admin | List privacy requests for review. |
 | PATCH | `/admin/privacy/requests/{request_id}` | admin | Update privacy request status or handling notes. |
 | POST | `/admin/events/{event_id}/push-notifications` | admin/event_manager | Create an event-registrant push notification job. |
@@ -1876,23 +1878,38 @@ several communities an explicit `community_id` is required and must be one of
 them. Payload limits mirror the table checks (`section` ≤ 80, `entity_type`
 ≤ 80, `message` ≤ 4000, `user_agent` ≤ 500, `url` ≤ 1000; `severity` in
 `note/issue/blocker/idea`). New feedback is always created with
-`status = open`. No feedback inbox/list endpoint exists yet.
+`status = open`.
+
+`GET /admin/feedback` is inbox-only and requires active `admin` memberships.
+It returns `data.items`, `data.total_count`, `data.limit`, and `data.offset`.
+The optional `status` (`open/reviewed/resolved/closed/all`), `severity`
+(`note/issue/blocker/idea/all`), and exact trimmed `section` filters are scoped
+to communities the actor actively administers. `limit` defaults to 50 and is
+capped at 100; `offset` defaults to 0. The count is calculated before
+pagination, and rows use `created_at DESC, id DESC` ordering.
+
+`PATCH /admin/feedback/{feedback_id}` accepts only `status`
+(`open/reviewed/resolved/closed`). It locks and updates a feedback row only
+when it belongs to an actively administered community, returning the complete
+item. `resolved` and `closed` stamp `resolved_at` and `resolved_by` from the
+server and API actor; `open` and `reviewed` clear both fields. Missing and
+out-of-scope IDs return the same not-found result.
 
 ### PR 33 client provider integration
 
 `VITE_ADMIN_FEEDBACK_PROVIDER` selects the existing web-admin feedback
 provider. An unset, `supabase`, or unsupported value selects Supabase; `api`
-uses the regular authenticated admin API client and `POST /admin/feedback`
-only. The feedback dialog supplies the selected active membership's
-`community_id`, which preserves the API's multi-community authorization check
-without sending a caller-selected author id.
+uses the regular authenticated admin API client for `POST`, `GET`, and `PATCH`
+feedback operations. The feedback dialog supplies the selected active
+membership's `community_id`, which preserves the API's multi-community
+authorization check without sending a caller-selected author id.
 
 The legacy Supabase provider continues to support submission, inbox listing,
-and status updates through its RPCs. The current Python API has no feedback
-list or status-update endpoint, so API mode submits feedback but leaves the
-existing feedback page's loading/error behavior intact for list or status
-actions. It does not fall back to a Supabase RPC after API mode has been
-selected or after an API request fails.
+and status updates through its RPCs. API mode now supports the same feedback
+page operations and does not fall back to a Supabase RPC after API mode has
+been selected or after an API request fails. This completes the feedback
+cutover prerequisite for PR 37, `feature/backend-provider-cutover`; production
+provider defaults remain unchanged in this PR.
 
 `GET /admin/privacy/requests` and `PATCH /admin/privacy/requests/{request_id}`
 require an active `admin` membership; `event_manager` is not allowed. The list
