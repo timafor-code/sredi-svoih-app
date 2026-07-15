@@ -1727,3 +1727,19 @@ The repository owner should configure `main` so it:
 The local migration plan must live at repository root as `plan.md` and must be
 ignored by Git. Historical or alternate local plans such as `PLAN*.md` are also
 local-only unless a future PR explicitly lists them in expected scope.
+
+## PR 32I Push Pipeline Status
+
+PR 32I adds the API-owned event-registrant push job endpoints, Expo adapter,
+and a small polling worker. The worker is local/Compose-configurable through
+backend-only `API_PUSH_*` variables and is intentionally isolated behind the
+`push` profile. It supports ticket and delayed receipt processing, retryable
+transport failures, and soft deactivation for permanently invalid Expo tokens.
+
+The pipeline does not add mobile integration, web-admin UI, automatic event
+pushes, campaigns, general scheduling, or a queue product. It stores data in
+the API database in Russia, while Expo delivery transmits the required tokens
+and notification payload to Expo; production remains disabled pending explicit
+owner sign-off. Real push verification requires an EAS development/TestFlight/
+release build and remains owner-only. The next PR is PR 33:
+`feature/mobile-admin-feedback-device-api-switch`.

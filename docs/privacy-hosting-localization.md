@@ -74,8 +74,9 @@ Device tokens registered through `POST /me/device-tokens` are push-token PII
 stored in the API-owned `device_tokens` table, upserted per
 `(user_id, expo_push_token)`. API responses return token metadata only and
 never echo the raw Expo push token. Deactivation is a soft `is_active = false`
-update scoped to the owning user. No push sending exists yet; the Expo Push
-caveat above applies when the push pipeline is implemented.
+update scoped to the owning user. The PR 32I worker uses these backend-owned
+rows only for explicit event-registrant jobs; the Expo Push caveat above applies
+to every outbound delivery attempt.
 
 ## Logging And Sensitive Values
 
@@ -112,3 +113,19 @@ Any service-role key needed by the owner for such scripts must stay in the
 owner's local environment. It must never be committed or placed in mobile,
 Expo env, Vite env, `apps/admin`, docs examples with real values, or frontend
 code.
+
+## API Push Delivery (PR 32I)
+
+PR 32I makes the data-transit decision explicit: device tokens and notification
+title, body, and data are stored in Russia with the API data, but are
+transmitted to Expo infrastructure when a delivery is attempted. This requires
+explicit project-owner production sign-off. The backend defaults
+`API_PUSH_ENABLED=false`; when `APP_ENV=production`, it refuses outbound Expo
+delivery unless `API_PUSH_PRODUCTION_SIGNOFF=true` as well. No agent check sends
+a real push.
+
+Only normalized job/delivery state and Expo ticket identifiers are retained for
+delivery processing. Raw Expo tokens, notification payloads, ticket/receipt
+response bodies, recipient names, email, phone, and registration comments must
+not enter logs or admin job-list responses. `DeviceNotRegistered` safely
+deactivates the associated device-token row without deleting it.

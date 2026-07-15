@@ -73,6 +73,19 @@ services:
       api_object_storage_init:
         condition: service_completed_successfully
 
+  api_push_worker:
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile.local
+    container_name: sredi_svoih_api_push_worker
+    profiles: ["push"]
+    command: ["python", "-m", "app.workers.push_notifications"]
+    env_file:
+      - ./env/api.env.example
+    depends_on:
+      api_postgres:
+        condition: service_healthy
+
 volumes:
   api_postgres_data:
   api_object_storage_data:

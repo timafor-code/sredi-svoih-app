@@ -1860,8 +1860,8 @@ defaults (`status = draft`, `visibility = hidden`) and do not send
 | POST | `/admin/feedback` | admin/event_manager | Submit admin beta feedback. |
 | GET | `/admin/privacy/requests` | admin | List privacy requests for review. |
 | PATCH | `/admin/privacy/requests/{request_id}` | admin | Update privacy request status or handling notes. |
-| POST | `/admin/events/{event_id}/push-notifications` | admin/event_manager | Create an event push notification job when push is implemented. |
-| GET | `/admin/push-jobs` | admin/event_manager | List push jobs scoped to the actor's community. |
+| POST | `/admin/events/{event_id}/push-notifications` | admin/event_manager | Create an event-registrant push notification job. |
+| GET | `/admin/push-jobs` | admin/event_manager | List scoped push jobs with aggregate delivery counts. |
 
 Feedback and push endpoints must avoid raw sensitive values in logs. Push
 delivery may involve Expo Push API as a delivery processor; production enablement
@@ -1937,3 +1937,36 @@ Raw request messages are treated as personal data and are not logged.
   authorization guards, and transactional write checks.
 - Supabase migrations and RPC contracts remain historical/reference material
   until the removal/cutover PRs.
+
+## Push Jobs (PR 32I)
+
+`POST /admin/events/{event_id}/push-notifications` and `GET /admin/push-jobs`
+require `Authorization: Bearer`. Both are available only to an active `admin`
+or `event_manager` in the relevant community. Missing and out-of-community
+events, occurrences, and filtered communities return the same non-leaking
+`404` envelope.
+
+The enqueue request is strict (`extra = "forbid"`):
+
+```json
+{
+  "occurrence_id": "optional UUID",
+  "notification_kind": "event_created | event_updated | event_cancelled",
+  "title": "non-empty, at most 160 characters",
+  "body": "non-empty, at most 2000 characters",
+  "data": {}
+}
+```
+
+The server derives `community_id` and `created_by` from the event and current
+user, always uses the `event_registrants` audience, and always starts the job
+in `queued` status. Callers cannot supply an audience, user, delivery list, or
+device token. A supplied occurrence must belong to the event.
+
+`GET /admin/push-jobs` accepts an optional `community_id`, `limit` (default
+50, maximum 200), and returns only scoped job metadata plus
+`delivery_count`, `queued_delivery_count`, `sent_delivery_count`,
+`failed_delivery_count`, `skipped_delivery_count`, and
+`receipt_checked_delivery_count`. It never returns recipient identities,
+Expo/device tokens, ticket or receipt payloads, profile names, contact details,
+or registration comments.
