@@ -21,6 +21,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Owner-local migration verification output
+.migration-reports/
+
 # OS / editors
 .DS_Store
 Thumbs.db
