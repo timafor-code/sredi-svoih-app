@@ -2,6 +2,12 @@ export const API_PROVIDER_NAMES = ["supabase", "api"] as const;
 
 export type ApiProviderName = (typeof API_PROVIDER_NAMES)[number];
 
+export function normalizeAdminApiProvider(value: unknown): ApiProviderName {
+  return typeof value === "string" && value.trim().toLowerCase() === "supabase"
+    ? "supabase"
+    : "api";
+}
+
 export const ADMIN_API_PROVIDER_KEYS = [
   "auth",
   "events",
