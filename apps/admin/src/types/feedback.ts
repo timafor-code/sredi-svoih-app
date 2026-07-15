@@ -13,6 +13,7 @@ export type AdminFeedbackEntityContext = {
 
 export type CreateAdminFeedbackInput = {
   section: AdminSection;
+  communityId?: string | null;
   url?: string | null;
   userAgent?: string | null;
   severity: AdminFeedbackSeverity;

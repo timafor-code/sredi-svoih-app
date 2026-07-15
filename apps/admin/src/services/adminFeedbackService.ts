@@ -1,3 +1,9 @@
+import { isAdminApiProviderEnabled } from "./apiClient";
+import {
+  createAdminFeedbackViaApi,
+  listAdminFeedbackViaApi,
+  updateAdminFeedbackStatusViaApi,
+} from "./adminFeedbackApiService";
 import { requireSupabaseClient } from "./supabaseClient";
 import {
   ADMIN_FEEDBACK_SEVERITIES,
@@ -380,6 +386,17 @@ export async function createAdminFeedback(
     payload.entity_id = entityId;
   }
 
+  if (isAdminApiProviderEnabled("feedback")) {
+    return createAdminFeedbackViaApi({
+      ...input,
+      entity: entityType && entityId ? { entityId, entityType } : null,
+      message: payload.message,
+      severity: payload.severity,
+      url: url ?? null,
+      userAgent: userAgent ?? null,
+    });
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase.rpc("admin_create_feedback", { payload });
 
@@ -393,8 +410,13 @@ export async function createAdminFeedback(
 export async function listAdminFeedback(
   filters: AdminFeedbackListFilters = {},
 ): Promise<AdminFeedbackListResponse> {
-  const supabase = requireSupabaseClient();
   const { limit, offset, payload } = buildListAdminFeedbackPayload(filters);
+
+  if (isAdminApiProviderEnabled("feedback")) {
+    return listAdminFeedbackViaApi(filters);
+  }
+
+  const supabase = requireSupabaseClient();
   const { data, error } = await supabase.rpc("admin_list_feedback", { payload });
 
   if (error) {
@@ -419,6 +441,14 @@ export async function updateAdminFeedbackStatus(
     id: requiredTrimmedString(input.id, "Feedback id", MAX_FEEDBACK_ID_LENGTH),
     status: normalizeStatus(input.status),
   };
+
+  if (isAdminApiProviderEnabled("feedback")) {
+    return updateAdminFeedbackStatusViaApi({
+      id: payload.id,
+      status: payload.status,
+    });
+  }
+
   const supabase = requireSupabaseClient();
   const { data, error } = await supabase.rpc("admin_update_feedback_status", { payload });
 

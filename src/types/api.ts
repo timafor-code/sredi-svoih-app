@@ -5,6 +5,22 @@ export const API_PROVIDER_NAMES = ['supabase', 'api'] as const;
 
 export type ApiProviderName = (typeof API_PROVIDER_NAMES)[number];
 
+export function normalizeMobileApiProvider(
+  value: string | null | undefined,
+): ApiProviderName {
+  return value === 'api' ? 'api' : 'supabase';
+}
+
+export async function runApiProviderOperation<T>(
+  provider: ApiProviderName,
+  operations: {
+    api: () => Promise<T>;
+    supabase: () => Promise<T>;
+  },
+): Promise<T> {
+  return provider === 'api' ? operations.api() : operations.supabase();
+}
+
 export const MOBILE_API_PROVIDER_KEYS = [
   'auth',
   'events',
@@ -12,6 +28,7 @@ export const MOBILE_API_PROVIDER_KEYS = [
   'prayer',
   'contacts',
   'avatar',
+  'privacy',
   'device',
 ] as const;
 

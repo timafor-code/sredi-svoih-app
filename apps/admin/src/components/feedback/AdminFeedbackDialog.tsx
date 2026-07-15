@@ -21,6 +21,7 @@ const SEVERITY_OPTIONS: ReadonlyArray<{
 type SubmitState = "idle" | "submitting" | "success" | "error";
 
 type AdminFeedbackDialogProps = {
+  communityId?: string | null;
   section: AdminSection;
   sectionTitle: string;
   entityContext?: AdminFeedbackEntityContext | null;
@@ -28,6 +29,7 @@ type AdminFeedbackDialogProps = {
 };
 
 export function AdminFeedbackDialog({
+  communityId = null,
   section,
   sectionTitle,
   entityContext = null,
@@ -81,6 +83,7 @@ export function AdminFeedbackDialog({
 
     try {
       await createAdminFeedback({
+        communityId,
         section,
         severity,
         message: trimmedMessage,
