@@ -1,29 +1,3 @@
-export const API_PROVIDER_NAMES = ["supabase", "api"] as const;
-
-export type ApiProviderName = (typeof API_PROVIDER_NAMES)[number];
-
-export function normalizeAdminApiProvider(value: unknown): ApiProviderName {
-  return typeof value === "string" && value.trim().toLowerCase() === "supabase"
-    ? "supabase"
-    : "api";
-}
-
-export const ADMIN_API_PROVIDER_KEYS = [
-  "auth",
-  "events",
-  "registrations",
-  "members",
-  "invites",
-  "seating",
-  "import",
-  "feedback",
-  "community",
-] as const;
-
-export type AdminApiProviderKey = (typeof ADMIN_API_PROVIDER_KEYS)[number];
-
-export type AdminApiProviderConfig = Record<AdminApiProviderKey, ApiProviderName>;
-
 export type ApiErrorDetail = {
   field?: string;
   code: string;

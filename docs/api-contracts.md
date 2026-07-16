@@ -11,9 +11,10 @@ Mobile and web-admin must call the API through their app-specific wrappers.
 They must not connect directly to PostgreSQL, use a backend database URL, or
 perform authorization checks that belong on the API.
 
-Supabase remains a legacy/dev reference while provider flags still point to
-Supabase. The Python API owns authorization guards and transactional checks for
-domains that have moved to the API.
+The Python API owns authorization guards and transactional checks for every
+production mobile and web-admin domain. Historical provider-switch statements
+below record pre-PR 38 rollout work only; frontend provider flags and Supabase
+fallback are not current configuration.
 
 ## Contract Scope
 
@@ -543,7 +544,7 @@ scoped to the authenticated actor.
 Current-user endpoints must not expose another user's hidden profile fields,
 device tokens, prayer logs, registration comments, or private contact data.
 Prayer tracker data remains personal; admin endpoints must not read or show
-`prayer_activity_logs`.
+the underlying prayer-log records.
 
 ### `PATCH /me/profile`
 
@@ -1647,10 +1648,10 @@ community cannot be pulled in through this endpoint.
 Privacy: admin members responses expose only app-user identity summary,
 profile fields, membership fields for the selected community, and
 community-scoped event registration history. The endpoints do not read or
-expose `prayer_activity_logs` or any prayer tracker data.
+expose private prayer-log records or any prayer tracker data.
 
-Admin member endpoints must not create auth users, set passwords, expose prayer
-tracker data, or read `prayer_activity_logs`.
+Admin member endpoints must not create user identities, set passwords, expose
+prayer tracker data, or read private prayer-log records.
 
 Invite endpoints may return a plaintext invite code once for display. The API
 must store only a safe derived value and must not send invite emails unless a
@@ -1741,8 +1742,8 @@ metadata without `code`. Because the existing invite auth flow accepts only
 `/auth/register-with-invite` or `/auth/accept-invite`.
 
 Admin invite creation writes only an invite row. It does not create users,
-profiles, memberships, passwords, password reset codes, Supabase Auth users, or
-email delivery jobs, and it does not send email automatically.
+profiles, memberships, passwords, password reset codes, legacy-provider
+identities, or email delivery jobs, and it does not send email automatically.
 
 ### Admin Seating
 
@@ -1770,7 +1771,8 @@ to the Python API database:
   rows rather than duplicated as a second layout-level JSONB blob.
 - `event_seating_assignments` stores layout-specific guest/reserve placements.
   Assignments reference `event_registrations` and `app_users` only; they do not
-  reference `auth.users` and are never copied from templates.
+  reference the legacy authentication relation and are never copied from
+  templates.
 
 PR 28 adds backend-only admin seating endpoints. They require an authenticated
 actor with `admin` or `event_manager` membership in the relevant community.
@@ -1850,8 +1852,8 @@ The schema creates:
 
 - `event_import_sources` for community-scoped website import source
   configuration. Sources reference `communities(id)` and optional audit users
-  through `app_users(id)`, never `auth.users`. Source settings are stored as a
-  JSONB object.
+  through `app_users(id)`, never the legacy authentication relation. Source
+  settings are stored as a JSONB object.
 - `event_import_runs` for one import attempt against a source. Runs carry the
   denormalized `community_id` for fast scoping and enforce consistency with the
   source community. The default and only supported schema mode is

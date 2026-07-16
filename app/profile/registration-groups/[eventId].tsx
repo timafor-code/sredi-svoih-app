@@ -105,7 +105,7 @@ export default function RegistrationGroupDetailScreen() {
     }
 
     console.info(`${MY_REGISTRATIONS_DEBUG_TAG} registration-group detail`, {
-      supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? null,
+      apiUrl: process.env.EXPO_PUBLIC_API_URL ?? null,
       authUser: {
         id: authUser.id,
         email: authUser.email ?? null,

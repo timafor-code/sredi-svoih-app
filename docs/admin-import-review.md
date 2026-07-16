@@ -1,11 +1,31 @@
 # Admin import review
 
-Current status: web-admin can trigger the `apply_review_only` Edge integration
-implemented in `supabase/functions/admin-website-import` and shows recent
-import run history from `event_import_runs`. Import Review now also surfaces
-dedupe state from `raw_payload.importReview.dedupe` in the compact queue and
-detail drawer. Older phased-plan language remains only where it describes
-future backend/apply work.
+## Exact-duplicate maintenance
+
+The Python API importer writes only review data. Exact repeats are skipped at
+ingest time by `source_id + external_id` or by `source_id + canonical source
+URL`; a title/time match remains a `possible_duplicate` for human review.
+
+For review rows accumulated before that guard was available, use the
+maintenance command from `apps/api`. It is dry-run by default and never
+physically deletes rows:
+
+```powershell
+python scripts/ignore_exact_import_duplicates.py --dry-run
+python scripts/ignore_exact_import_duplicates.py --dry-run --community-id <community-uuid>
+python scripts/ignore_exact_import_duplicates.py --apply --source-id <source-uuid>
+```
+
+`--apply` is the only mode that changes data. It keeps the earliest open item
+in each exact-duplicate group and marks only the extra `new`/`error` rows as
+`ignored`; it does not hide title/time-only possible duplicates. The command
+prints only reviewed-row, duplicate-group, planned-change, and changed counts.
+
+Current status: web-admin triggers the Python API `apply_review_only` import
+workflow and shows recent run history from `event_import_runs`. Import Review
+also surfaces dedupe state from `raw_payload.importReview.dedupe` in the compact
+queue and detail drawer. The browser uses no Supabase production runtime;
+historical Edge material below is retained only as migration context.
 
 Current UI status: the web-admin page is a human-facing review workspace. The
 main view shows a lightweight header with the latest run status, journal,
@@ -26,9 +46,8 @@ Phase 1 server/staging beta v1 завершена без import button. Теку
 
 ```text
 web-admin button
-  -> Supabase Edge Function
+  -> Python API
   -> parser/fetch
-  -> write RPC
   -> event_import_runs
   -> event_import_items
   -> review queue
@@ -38,14 +57,14 @@ Default mode: `apply_review_only`.
 
 В этом режиме backend flow создаёт import run и import items для проверки человеком. Import items попадают в review queue, а не напрямую в published events. No auto-publish: событие не становится published только потому, что parser нашёл карточку на сайте или смог уверенно распарсить дату.
 
-## Current Edge apply_review_only integration
+## Historical Edge apply_review_only integration
 
-Current implementation in `supabase/functions/admin-website-import` keeps
+Pre-cutover implementation in `supabase/functions/admin-website-import` kept
 health and dry-run modes and adds `apply_review_only` as the review-write mode.
 It uses the normal authenticated Supabase client with the caller's user session
 token and calls the existing write RPC. It does not use a service-role key,
 Supabase Admin API, server-only database connection strings, or raw
-`auth.users` reads.
+hosted-auth user-table reads.
 
 `sourceUrl` is validated through the shared website parser allowlist before any
 website fetch. Only `sredisvoih.com` and `www.sredisvoih.com` are accepted.
@@ -178,7 +197,7 @@ The RPC derives the community server-side from the caller's active
 `community_memberships` row with role `admin` or `event_manager`. `community_id`
 from the browser is not accepted as source of truth. The RPC reads
 `event_import_runs` and joins `event_import_sources` only for a safe source
-name. It does not read or write `auth.users`, does not create/update/publish
+name. It does not read or write the hosted-auth user table, does not create/update/publish
 events, and does not mutate `event_import_runs` or `event_import_items`.
 
 The history UI shows the latest run status and recent rows with:
@@ -317,13 +336,13 @@ Browser-admin работает только через обычный authentica
 - service-role key в browser-admin или browser-triggered import flow;
 - server-only database connection strings в `apps/admin`;
 - Supabase Admin API;
-- raw `auth.users` reads/writes;
+- raw hosted-auth user-table reads/writes;
 - server-only secrets в browser env;
 - прямые browser DB writes в import tables.
 
 Edge Function и write RPC должны проверять `auth.uid()` и роль пользователя. Админские действия остаются на RLS/RPC boundary. Events не публикуются автоматически.
 
-Privacy boundary: prayer tracker приватный. Этот admin import flow не читает и не показывает `prayer_activity_logs` и не меняет participants, registrations, seating или prayer tracker flows.
+Privacy boundary: prayer tracker приватный. Этот admin import flow не читает и не показывает private prayer-activity records и не меняет participants, registrations, seating или prayer tracker flows.
 
 ## Dedupe boundary
 

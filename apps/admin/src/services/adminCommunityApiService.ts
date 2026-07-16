@@ -1,10 +1,15 @@
 import { apiClient } from "./apiClient";
-import { normalizeAdminCommunityRow } from "./adminCommunitySupabaseService";
 import type { AdminApiCommunityResponse } from "../types/api";
 import type { AdminCommunity } from "../types/community";
 
 function normalizeAdminApiCommunity(row: AdminApiCommunityResponse): AdminCommunity {
-  return normalizeAdminCommunityRow(row);
+  return {
+    id: row.id,
+    name: row.name,
+    timezone: row.timezone,
+    websiteUrl: row.website_url,
+    createdAt: row.created_at,
+  };
 }
 
 export async function getAdminCommunity(

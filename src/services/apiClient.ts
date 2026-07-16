@@ -1,13 +1,9 @@
 import { getApiAccessToken } from '@/services/apiAuthTokenStore';
 import type {
   ApiErrorResponse,
-  ApiProviderName,
   ApiResponseEnvelope,
   ApiResponseMeta,
-  MobileApiProviderConfig,
-  MobileApiProviderKey,
 } from '@/types/api';
-import { normalizeMobileApiProvider } from '@/types/api';
 
 const DEFAULT_API_TIMEOUT_MS = 15000;
 type ApiHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -29,17 +25,6 @@ type ApiClientErrorInit = {
   error: ApiErrorResponse;
   requestId?: string | null;
   status: number;
-};
-
-const providerEnvNames: Record<MobileApiProviderKey, string> = {
-  auth: 'EXPO_PUBLIC_AUTH_PROVIDER',
-  events: 'EXPO_PUBLIC_EVENTS_PROVIDER',
-  registrations: 'EXPO_PUBLIC_REGISTRATIONS_PROVIDER',
-  prayer: 'EXPO_PUBLIC_PRAYER_PROVIDER',
-  contacts: 'EXPO_PUBLIC_CONTACTS_PROVIDER',
-  avatar: 'EXPO_PUBLIC_AVATAR_PROVIDER',
-  privacy: 'EXPO_PUBLIC_PRIVACY_PROVIDER',
-  device: 'EXPO_PUBLIC_DEVICE_PROVIDER',
 };
 
 export class ApiClientError extends Error {
@@ -80,29 +65,6 @@ export function normalizeApiBaseUrl(value: string | null | undefined): string | 
 }
 
 export const apiBaseUrl = normalizeApiBaseUrl(process.env.EXPO_PUBLIC_API_URL);
-
-export const mobileApiProviderConfig: MobileApiProviderConfig = {
-  auth: normalizeMobileApiProvider(process.env.EXPO_PUBLIC_AUTH_PROVIDER),
-  events: normalizeMobileApiProvider(process.env.EXPO_PUBLIC_EVENTS_PROVIDER),
-  registrations: normalizeMobileApiProvider(process.env.EXPO_PUBLIC_REGISTRATIONS_PROVIDER),
-  prayer: normalizeMobileApiProvider(process.env.EXPO_PUBLIC_PRAYER_PROVIDER),
-  contacts: normalizeMobileApiProvider(process.env.EXPO_PUBLIC_CONTACTS_PROVIDER),
-  avatar: normalizeMobileApiProvider(process.env.EXPO_PUBLIC_AVATAR_PROVIDER),
-  privacy: normalizeMobileApiProvider(process.env.EXPO_PUBLIC_PRIVACY_PROVIDER),
-  device: normalizeMobileApiProvider(process.env.EXPO_PUBLIC_DEVICE_PROVIDER),
-};
-
-export function getMobileApiProviderConfig(): MobileApiProviderConfig {
-  return { ...mobileApiProviderConfig };
-}
-
-export function getMobileApiProvider(provider: MobileApiProviderKey): ApiProviderName {
-  return mobileApiProviderConfig[provider];
-}
-
-export function isMobileApiProviderEnabled(provider: MobileApiProviderKey): boolean {
-  return getMobileApiProvider(provider) === 'api';
-}
 
 function appendQueryParam(url: URL, key: string, value: ApiQueryValue): void {
   if (value === null || value === undefined) {
@@ -188,13 +150,7 @@ async function parseJsonResponse(response: Response): Promise<unknown> {
 }
 
 async function getRequestAccessToken(): Promise<string | null> {
-  if (mobileApiProviderConfig.auth === 'api') {
-    return getApiAccessToken();
-  }
-
-  const { getCurrentSupabaseAccessToken } = await import('@/services/supabaseClient');
-
-  return getCurrentSupabaseAccessToken();
+  return getApiAccessToken();
 }
 
 function defaultErrorCode(status: number): string {
@@ -420,4 +376,4 @@ export const apiClient = {
 };
 
 export type { ApiRequestOptions };
-export { DEFAULT_API_TIMEOUT_MS, providerEnvNames };
+export { DEFAULT_API_TIMEOUT_MS };

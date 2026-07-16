@@ -1,4 +1,9 @@
-import type { Session } from "@supabase/supabase-js";
+export type AdminAuthSession = {
+  user: {
+    email: string | null;
+    id: string;
+  };
+};
 
 export type AdminRole = "admin" | "event_manager" | "member";
 
@@ -34,7 +39,7 @@ export type AdminMembership = {
 
 export type AdminAuthContext = {
   isAuthenticated: boolean;
-  session: Session | null;
+  session: AdminAuthSession | null;
   profile: AdminProfile | null;
   membership: AdminMembership | null;
   role: AdminRole | null;

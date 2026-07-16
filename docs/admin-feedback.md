@@ -9,9 +9,12 @@ Beta feedback lets admins and event managers report notes, issues, blockers, or
 ideas from the web-admin experience. Admins can also review the feedback inbox,
 filter items, and move items through a small status workflow.
 
-The browser uses the regular authenticated Supabase client. Admin actions stay
-behind RPC/RLS boundaries. No service-role key, Supabase Admin API, direct
-`auth.users` reads, or browser-side table access is used.
+The browser uses the regular authenticated Python API client. Admin actions
+stay behind API authorization boundaries. No service-role key, Supabase Admin
+API, direct `auth.users` reads, or browser-side table access is used.
+
+Provider-switch statements later in this historical rollout record describe
+pre-PR 38 behavior only; web-admin has no Supabase fallback.
 
 ## Table
 

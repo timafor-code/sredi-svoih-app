@@ -1,5 +1,9 @@
 # Privacy
 
+> Historical provider-switch notes below are retained for audit context. Mobile
+> and web-admin production use the Python API only and do not use a Supabase
+> frontend fallback.
+
 - Контакты читаются локально через `expo-contacts`.
 - Автоматической отправки всех контактов на сервер нет.
 - Для серверной синхронизации предусмотрен отдельный consent flow.

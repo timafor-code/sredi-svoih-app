@@ -267,7 +267,7 @@ export async function listImportItemsNeedingReview(
 
   try {
     rows = await apiClient.get<AdminApiImportItemResponse[] | null>(ADMIN_IMPORT_ITEMS_PATH, {
-      query: { limit: limitCount },
+      query: { limit: limitCount, needs_review: true },
     });
   } catch (error) {
     throw new Error(

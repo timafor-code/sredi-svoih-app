@@ -4,7 +4,7 @@ import { AdminHealthCheck } from "../components/settings/AdminHealthCheck";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
-import { getAdminApiProvider } from "../services/apiClient";
+import { apiBaseUrl } from "../services/apiClient";
 import { getAdminCommunity } from "../services/adminCommunityService";
 import {
   archiveAdminCommunityLocation,
@@ -12,7 +12,6 @@ import {
   listAdminCommunityLocations,
   updateAdminCommunityLocation,
 } from "../services/communityLocationsService";
-import { isSupabaseConfigured } from "../services/supabaseClient";
 import { useAdminAuth } from "../store/useAdminAuth";
 import type { AdminCommunity } from "../types/community";
 import type { AdminCommunityLocation } from "../types/communityLocations";
@@ -44,29 +43,15 @@ export function SettingsPage() {
   const communityId = auth.membership?.community_id ?? null;
   const canManageLocations = auth.isAdmin && Boolean(communityId);
   const adminEnvLabel = getAdminEnvLabel();
-  const supabaseHost = getSupabaseHost();
-  const communityProvider = getAdminApiProvider("community");
-  const isCommunityApiProvider = communityProvider === "api";
-  const communityProviderLabel = isCommunityApiProvider ? "API" : "Supabase";
-  const communityProviderTone = isCommunityApiProvider ? "blue" : "green";
-  const communitySnapshotDescription = isCommunityApiProvider
-    ? "Read-only snapshot активной community через Python API community endpoints. Редактирование общины появится отдельным потоком."
-    : "Read-only snapshot активной community из Supabase. Редактирование общины появится отдельным потоком.";
-  const communityLoadingLabel = isCommunityApiProvider
-    ? "Загружаем активную общину через Python API community endpoints..."
-    : "Загружаем активную общину из Supabase...";
-  const communityLoadErrorMessage = isCommunityApiProvider
-    ? "Не удалось загрузить данные общины через Python API community endpoints."
-    : "Не удалось загрузить данные общины.";
-  const locationsDescription = isCommunityApiProvider
-    ? "Справочник локаций для форм событий читается и сохраняется через Python API community endpoints. Поведение add/edit/archive не меняется."
-    : "Справочник локаций для форм событий читается и сохраняется через Supabase. Поведение add/edit/archive не меняется.";
-  const locationsLoadingLabel = isCommunityApiProvider
-    ? "Загружаем адреса общины через Python API community endpoints..."
-    : "Загружаем адреса общины из Supabase...";
-  const locationsLoadErrorMessage = isCommunityApiProvider
-    ? "Не удалось загрузить адреса общины через Python API community endpoints."
-    : "Не удалось загрузить адреса общины.";
+  const apiHost = getApiHost();
+  const communityProviderLabel = "API";
+  const communityProviderTone = "blue";
+  const communitySnapshotDescription = "Read-only snapshot активной community через Python API community endpoints. Редактирование общины появится отдельным потоком.";
+  const communityLoadingLabel = "Загружаем активную общину через Python API community endpoints...";
+  const communityLoadErrorMessage = "Не удалось загрузить данные общины через Python API community endpoints.";
+  const locationsDescription = "Справочник локаций для форм событий читается и сохраняется через Python API community endpoints. Поведение add/edit/archive не меняется.";
+  const locationsLoadingLabel = "Загружаем адреса общины через Python API community endpoints...";
+  const locationsLoadErrorMessage = "Не удалось загрузить адреса общины через Python API community endpoints.";
   const [community, setCommunity] = useState<AdminCommunity | null>(null);
   const [communityLoading, setCommunityLoading] = useState(false);
   const [communityError, setCommunityError] = useState<string | null>(null);
@@ -257,7 +242,7 @@ export function SettingsPage() {
     communityId,
     isAuthenticated: auth.isAuthenticated,
     role: auth.role,
-    supabaseHost,
+    apiHost,
   });
 
   return (
@@ -491,12 +476,12 @@ export function SettingsPage() {
             <span>Beta connection</span>
             <h2>Контекст подключения</h2>
             <p>
-              Web-admin работает через обычный authenticated Supabase client.
-              Админские действия остаются на границе RPC/RLS.
+              Web-admin работает через обычный authenticated Python API client.
+              Авторизация остаётся на API-границе.
             </p>
           </div>
-          <Badge tone={isSupabaseConfigured ? "green" : "red"}>
-            {isSupabaseConfigured ? "configured" : "config missing"}
+          <Badge tone={apiBaseUrl ? "green" : "red"}>
+            {apiBaseUrl ? "configured" : "config missing"}
           </Badge>
         </div>
 
@@ -610,16 +595,16 @@ function buildBetaConnectionRows(input: {
   communityId: string | null;
   isAuthenticated: boolean;
   role: string | null;
-  supabaseHost: string | null;
+  apiHost: string | null;
 }): SettingsFactRow[] {
   return [
     { label: "Environment label", value: input.adminEnvLabel ?? "Не задан" },
-    { label: "Supabase project", value: input.supabaseHost ?? "Не настроен" },
+    { label: "API host", value: input.apiHost ?? "Не настроен" },
     {
       label: "Browser client",
-      value: "Authenticated Supabase client + user session",
+      value: "Authenticated Python API client + user session",
     },
-    { label: "Access boundary", value: "Admin actions через RPC/RLS" },
+    { label: "Access boundary", value: "Admin actions through API authorization" },
     { label: "Current role", value: input.role ?? "Нет активной роли" },
     {
       label: "Admin access",
@@ -639,9 +624,8 @@ function getAdminEnvLabel(): string | null {
   return normalized ? normalized : null;
 }
 
-function getSupabaseHost(): string | null {
-  const value = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-  const normalized = value?.trim();
+function getApiHost(): string | null {
+  const normalized = apiBaseUrl;
 
   if (!normalized) {
     return null;
@@ -650,7 +634,7 @@ function getSupabaseHost(): string | null {
   try {
     return new URL(normalized).host;
   } catch {
-    return "Supabase URL configured";
+    return "API URL configured";
   }
 }
 

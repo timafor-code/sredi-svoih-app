@@ -685,7 +685,11 @@ export function SeatingLayoutEditor({
     setCapacitySyncError(null);
     setFeedback({ message: "Обновляем лимит регистрации...", tone: "muted" });
 
-    void updateCapacityUnitLimit(slot.bucket.capacityUnitId, nextCapacity)
+    void updateCapacityUnitLimit(
+      slot.event.eventId,
+      slot.bucket.capacityUnitId,
+      nextCapacity,
+    )
       .then((updatedUnit) => {
         setCapacityLimitOverride(updatedUnit.capacity);
         setIsCapacitySyncDialogOpen(false);

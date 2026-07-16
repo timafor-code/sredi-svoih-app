@@ -122,7 +122,7 @@ export default function ContactsSettingsScreen() {
 
         <GlassCard>
           <Text style={styles.messageText}>
-            Контакты iPhone не отправляются в Supabase и используются только локально на устройстве.
+            Контакты iPhone не отправляются с устройства и используются только локально.
           </Text>
         </GlassCard>
 

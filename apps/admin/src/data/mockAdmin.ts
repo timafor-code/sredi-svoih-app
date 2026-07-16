@@ -94,7 +94,7 @@ export const futureFeatures: Partial<Record<AdminSection, string[]>> = {
   invites: [
     "Invite backend и выдача кодов не входят в beta v1",
     "Email invitations не входят в beta v1",
-    "Beta-доступ выдаётся вручную через Supabase Auth, profiles и community_memberships",
+    "Beta-доступ выдаётся вручную через Python API membership rules",
   ],
   contacts: ["Раввин и администратор", "Координатор событий", "WhatsApp / Telegram", "Телефон и адрес общины"],
   notifications: ["Объявления участникам", "Push-уведомления", "Рассылки по записавшимся", "Напоминания о событиях"],

@@ -27,7 +27,8 @@ PostgreSQL or Russia-hosted object storage:
 - push jobs and deliveries;
 - seating assignments.
 
-Western Supabase may remain only for synthetic dev, staging, or demo data.
+Historical Supabase data may remain only in migration archives or synthetic,
+non-frontend fixtures. It is not a mobile or web-admin runtime dependency.
 
 ## Object Storage
 
@@ -78,16 +79,11 @@ update scoped to the owning user. The PR 32I worker uses these backend-owned
 rows only for explicit event-registrant jobs; the Expo Push caveat above applies
 to every outbound delivery attempt.
 
-PR 33 keeps Supabase as the default migration provider and adds narrowly scoped
-mobile `EXPO_PUBLIC_PRIVACY_PROVIDER` and `EXPO_PUBLIC_DEVICE_PROVIDER` API
-modes. Privacy API calls are current-user only and do not log request messages.
-The repository had no legacy mobile privacy request screen or Supabase request
-facade, so its conservative default reports that unavailable feature rather
-than adding a direct-table fallback. Device API responses and client error
-messages omit raw Expo tokens; the client does not persist them in new debug
-storage. A failed API request is never retried through Supabase. API provider
-modes are limited to local, synthetic staging, or controlled migration testing;
-production defaults do not change here.
+PR 38 makes privacy requests and device-token operations API-only in mobile
+production. Privacy API calls are current-user only and do not log request
+messages. Device API responses and client error messages omit raw Expo tokens;
+the client does not persist them in debug storage. There is no frontend
+fallback, direct-table access, or provider flag in production.
 
 For Expo Go on iPhone, the mobile API base URL must use the development
 computer's LAN address (`http://<computer-lan-ip>:8000`). Expo Push delivery,

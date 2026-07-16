@@ -4,26 +4,25 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
-import type { Session } from "@supabase/supabase-js";
 
 import {
   getAdminAuthConfigurationError,
   getCurrentAdminContext,
-  isAdminApiAuthProviderEnabled,
   isAdminAuthConfigured,
   signInWithPassword,
   signOut as signOutService,
+  subscribeToAdminSessionExpiry,
 } from "../services/adminAuthService";
-import { supabase } from "../services/supabaseClient";
-import type { AdminMembership, AdminProfile, AdminRole } from "../types/auth";
+import type { AdminAuthSession, AdminMembership, AdminProfile, AdminRole } from "../types/auth";
 
 type AdminAuthState = {
   loading: boolean;
   configMissing: boolean;
-  session: Session | null;
+  session: AdminAuthSession | null;
   profile: AdminProfile | null;
   membership: AdminMembership | null;
   role: AdminRole | null;
@@ -75,6 +74,7 @@ function friendlyAuthError(error: unknown): string {
 
 export function AdminAuthProvider({ children }: AdminAuthProviderProps) {
   const [state, setState] = useState<AdminAuthDataState>(initialAuthState);
+  const sessionExpiryRevision = useRef(0);
 
   const refresh = useCallback(async () => {
     const configError = getAdminAuthConfigurationError();
@@ -96,8 +96,14 @@ export function AdminAuthProvider({ children }: AdminAuthProviderProps) {
       error: null,
     }));
 
+    const expiryRevisionAtStart = sessionExpiryRevision.current;
+
     try {
       const context = await getCurrentAdminContext();
+
+      if (expiryRevisionAtStart !== sessionExpiryRevision.current) {
+        return;
+      }
 
       setState({
         loading: false,
@@ -113,6 +119,9 @@ export function AdminAuthProvider({ children }: AdminAuthProviderProps) {
         error: null,
       });
     } catch (error) {
+      if (expiryRevisionAtStart !== sessionExpiryRevision.current) {
+        return;
+      }
       setState((current) => ({
         ...current,
         loading: false,
@@ -124,22 +133,17 @@ export function AdminAuthProvider({ children }: AdminAuthProviderProps) {
   useEffect(() => {
     void refresh();
 
-    if (isAdminApiAuthProviderEnabled()) {
-      return undefined;
-    }
-
-    if (!supabase) {
-      return undefined;
-    }
-
-    const { data } = supabase.auth.onAuthStateChange(() => {
-      void refresh();
-    });
-
-    return () => {
-      data.subscription.unsubscribe();
-    };
   }, [refresh]);
+
+  useEffect(() => subscribeToAdminSessionExpiry(() => {
+    sessionExpiryRevision.current += 1;
+    setState({
+      ...initialAuthState,
+      loading: false,
+      configMissing: !isAdminAuthConfigured(),
+      error: "Сессия истекла. Войдите снова",
+    });
+  }), []);
 
   const signIn = useCallback(
     async (email: string, password: string) => {

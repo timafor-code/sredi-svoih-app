@@ -1,6 +1,11 @@
 # Mobile registrations debug
 
-This note is for checking a mobile "My registrations" mismatch against the local Supabase database.
+> Historical pre-PR 38 debugging record. Mobile production now uses only the
+> Python API; the Supabase values and SQL checks below are not runtime
+> configuration.
+
+This note is for checking a historical mobile "My registrations" mismatch
+against the local Supabase database.
 
 ## Goal
 

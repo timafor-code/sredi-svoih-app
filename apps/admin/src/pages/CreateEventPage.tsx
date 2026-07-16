@@ -127,7 +127,7 @@ export function CreateEventPage({ onBackToList, onCreated }: CreateEventPageProp
           <Badge tone="green">Создано</Badge>
           <h1>Событие создано</h1>
           <p>
-            Запись создана через RPC admin_create_event. Вернитесь к списку, чтобы
+            Запись создана через Python API. Вернитесь к списку, чтобы
             увидеть обновлённую таблицу событий.
           </p>
         </section>
@@ -156,7 +156,7 @@ export function CreateEventPage({ onBackToList, onCreated }: CreateEventPageProp
         <h1>Создать событие</h1>
         <p>
           Ручное создание события в текущей общине. Сохранение идёт через
-          admin_create_event с текущей пользовательской сессией Supabase.
+          Python API с текущей пользовательской сессией.
         </p>
       </section>
 

@@ -1,5 +1,4 @@
-import type { Session, User } from '@supabase/supabase-js';
-
+import type { AppAuthSession, AppAuthUser } from '@/types/auth';
 import type {
   ApiAuthEmailRequest,
   ApiAuthTokenResponse,
@@ -35,66 +34,35 @@ function isUnauthenticatedApiError(error: unknown): boolean {
   return error instanceof ApiClientError && error.status === 401;
 }
 
-function apiDateToSeconds(value: string): number {
-  const timestampMs = Date.parse(value);
-
-  if (!Number.isFinite(timestampMs)) {
-    return Math.floor(Date.now() / 1000);
-  }
-
-  return Math.floor(timestampMs / 1000);
-}
-
-function secondsUntil(value: string): number {
-  const timestampMs = Date.parse(value);
-
-  if (!Number.isFinite(timestampMs)) {
-    return 0;
-  }
-
-  return Math.max(0, Math.floor((timestampMs - Date.now()) / 1000));
-}
-
 function shouldRefreshTokens(tokens: ApiStoredAuthTokens): boolean {
   const expiresAtMs = Date.parse(tokens.expires_at);
 
   return !Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now() + API_AUTH_REFRESH_SKEW_MS;
 }
 
-function apiUserToSupabaseUser(user: ApiUserSummary): User {
+function apiUserToAppAuthUser(user: ApiUserSummary): AppAuthUser {
   return {
     id: user.id,
-    app_metadata: {
-      auth_provider: 'api',
-      provider: 'email',
-      providers: ['email'],
-    },
-    user_metadata: {},
-    aud: 'authenticated',
-    email: user.email ?? undefined,
-    phone: user.phone ?? undefined,
-    created_at: user.created_at,
-    confirmed_at: user.email_verified_at ?? user.phone_verified_at ?? undefined,
-    email_confirmed_at: user.email_verified_at ?? undefined,
-    phone_confirmed_at: user.phone_verified_at ?? undefined,
-    last_sign_in_at: user.last_login_at ?? undefined,
-    role: 'authenticated',
-    updated_at: user.updated_at,
-    is_anonymous: false,
-  } as User;
+    email: user.email,
+    phone: user.phone,
+    emailVerifiedAt: user.email_verified_at,
+    phoneVerifiedAt: user.phone_verified_at,
+    authMethod: 'email',
+    createdAt: user.created_at,
+    updatedAt: user.updated_at,
+  };
 }
 
 function apiTokensToSession(
   tokens: ApiAuthTokenResponse | ApiStoredAuthTokens,
   user: ApiUserSummary,
-): Session {
+): AppAuthSession {
   return {
-    access_token: tokens.access_token,
-    refresh_token: tokens.refresh_token,
-    token_type: 'bearer',
-    expires_in: secondsUntil(tokens.expires_at),
-    expires_at: apiDateToSeconds(tokens.expires_at),
-    user: apiUserToSupabaseUser(user),
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token,
+    tokenType: tokens.token_type,
+    expiresAt: tokens.expires_at,
+    user: apiUserToAppAuthUser(user),
   };
 }
 
@@ -227,7 +195,7 @@ async function fetchCurrentUser(): Promise<ApiCurrentUserResponse | null> {
   }
 }
 
-export async function getSession(): Promise<Session | null> {
+export async function getSession(): Promise<AppAuthSession | null> {
   const currentUser = await fetchCurrentUser();
 
   if (!currentUser) {
@@ -243,7 +211,7 @@ export async function getSession(): Promise<Session | null> {
   return apiTokensToSession(tokens, currentUser.user);
 }
 
-export async function signIn(email: string, password: string): Promise<Session> {
+export async function signIn(email: string, password: string): Promise<AppAuthSession> {
   const normalizedEmail = normalizeEmail(email);
 
   if (!normalizedEmail || !password) {

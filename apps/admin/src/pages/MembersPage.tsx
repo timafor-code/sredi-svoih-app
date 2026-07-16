@@ -29,7 +29,6 @@ import {
   setAdminUserMembership,
   updateAdminUserProfile,
 } from "../services/adminMembersService";
-import { getAdminApiProvider } from "../services/apiClient";
 import { useAdminAuth } from "../store/useAdminAuth";
 import type { AdminBadgeTone } from "../types/admin";
 import {
@@ -135,22 +134,12 @@ const MEMBERSHIP_LEFT_CONFIRM_MESSAGE =
 
 export function MembersPage() {
   const auth = useAdminAuth();
-  const membersProvider = getAdminApiProvider("members");
-  const isMembersApiProvider = membersProvider === "api";
-  const membersProviderLabel = isMembersApiProvider ? "API" : "Supabase";
-  const membersProviderTone: AdminBadgeTone = isMembersApiProvider ? "blue" : "green";
-  const membersHeaderDescription = isMembersApiProvider
-    ? "Пользователи приложения и члены общины через Python API members endpoints."
-    : "Пользователи приложения и члены общины из Supabase.";
-  const membersToolbarDescription = isMembersApiProvider
-    ? "Список читается через GET /admin/members для текущей общины."
-    : "Список читается через admin_list_users для текущей общины.";
-  const membersListSourceLabel = isMembersApiProvider
-    ? "GET /admin/members"
-    : "admin_list_users";
-  const membersEmptyStateDescription = isMembersApiProvider
-    ? "Измените фильтры или проверьте, что в Python API есть profiles."
-    : "Измените фильтры или проверьте, что в Supabase есть profiles.";
+  const membersProviderLabel = "API";
+  const membersProviderTone: AdminBadgeTone = "blue";
+  const membersHeaderDescription = "Пользователи приложения и члены общины через Python API members endpoints.";
+  const membersToolbarDescription = "Список читается через GET /admin/members для текущей общины.";
+  const membersListSourceLabel = "GET /admin/members";
+  const membersEmptyStateDescription = "Измените фильтры или проверьте, что в Python API есть profiles.";
   const communityId = auth.membership?.community_id ?? null;
   const requestSeq = useRef(0);
   const detailRequestSeq = useRef(0);

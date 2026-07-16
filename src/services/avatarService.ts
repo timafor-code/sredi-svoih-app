@@ -1,8 +1,11 @@
-import { isMobileApiProviderEnabled } from './apiClient';
-import { supabase } from './supabaseClient';
+import {
+  clearAvatarReadUrlCache,
+  deleteCurrentUserAvatar as deleteCurrentUserAvatarViaApi,
+  resolveAuthorizedAvatarReadUrl,
+  resolveCurrentUserAvatarReadUrl,
+  uploadProfileAvatarToApi,
+} from './avatarApiService';
 
-const AVATARS_BUCKET = 'avatars';
-const AVATAR_FILE_NAME = 'avatar.jpg';
 const IMAGE_CONTENT_TYPES: Record<string, string> = {
   heic: 'image/heic',
   heif: 'image/heif',
@@ -11,6 +14,7 @@ const IMAGE_CONTENT_TYPES: Record<string, string> = {
   png: 'image/png',
   webp: 'image/webp',
 };
+const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 export type UploadProfileAvatarInput = {
   base64?: string | null;
@@ -19,42 +23,22 @@ export type UploadProfileAvatarInput = {
   uri: string;
 };
 
-const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-
-function getSafeImageExtension(value: string | null | undefined): string {
-  const cleanValue = value?.split(/[?#]/)[0] ?? '';
-  const extension = cleanValue.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
-
-  if (!extension) {
-    return 'jpg';
-  }
-
-  return IMAGE_CONTENT_TYPES[extension] ? extension : 'jpg';
-}
-
 export function isApiAvatarProviderEnabled(): boolean {
-  return isMobileApiProviderEnabled('avatar');
+  return true;
 }
 
 export function getAvatarContentType(input: UploadProfileAvatarInput): string {
-  const normalizedMimeType = input.mimeType?.toLowerCase();
+  const mimeType = input.mimeType?.toLowerCase();
+  if (mimeType === 'image/jpg') return 'image/jpeg';
+  if (mimeType && Object.values(IMAGE_CONTENT_TYPES).includes(mimeType)) return mimeType;
 
-  if (normalizedMimeType === 'image/jpg') {
-    return 'image/jpeg';
-  }
-
-  if (normalizedMimeType && Object.values(IMAGE_CONTENT_TYPES).includes(normalizedMimeType)) {
-    return normalizedMimeType;
-  }
-
-  return IMAGE_CONTENT_TYPES[getSafeImageExtension(input.fileName ?? input.uri)] ?? 'image/jpeg';
+  const extension = (input.fileName ?? input.uri).split(/[?#]/)[0]
+    .match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() ?? 'jpg';
+  return IMAGE_CONTENT_TYPES[extension] ?? 'image/jpeg';
 }
 
 function decodeBase64ToArrayBuffer(value: string): ArrayBuffer {
-  const normalized = value
-    .replace(/[\r\n\s]/g, '')
-    .replace(/-/g, '+')
-    .replace(/_/g, '/')
+  const normalized = value.replace(/[\r\n\s]/g, '').replace(/-/g, '+').replace(/_/g, '/')
     .replace(/=+$/g, '');
   const bytes: number[] = [];
   let buffer = 0;
@@ -62,14 +46,9 @@ function decodeBase64ToArrayBuffer(value: string): ArrayBuffer {
 
   for (const char of normalized) {
     const index = BASE64_ALPHABET.indexOf(char);
-
-    if (index < 0) {
-      throw new Error('Не удалось прочитать выбранное фото.');
-    }
-
+    if (index < 0) throw new Error('Не удалось прочитать выбранное фото.');
     buffer = (buffer << 6) | index;
     bits += 6;
-
     if (bits >= 8) {
       bits -= 8;
       bytes.push((buffer >> bits) & 0xff);
@@ -80,141 +59,28 @@ function decodeBase64ToArrayBuffer(value: string): ArrayBuffer {
 }
 
 export async function readLocalAvatarImage(input: UploadProfileAvatarInput): Promise<ArrayBuffer> {
-  if (input.base64) {
-    return decodeBase64ToArrayBuffer(input.base64);
-  }
-
+  if (input.base64) return decodeBase64ToArrayBuffer(input.base64);
   try {
-    const response = await fetch(input.uri);
-
-    return response.arrayBuffer();
+    return await (await fetch(input.uri)).arrayBuffer();
   } catch {
     throw new Error('Не удалось прочитать выбранное фото.');
   }
 }
 
-async function uploadProfileAvatarToSupabase(input: UploadProfileAvatarInput): Promise<string> {
-  const { data, error } = await supabase.auth.getSession();
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const user = data.session?.user;
-
-  if (!user) {
-    throw new Error('Auth required');
-  }
-
-  const filePath = `${user.id}/${AVATAR_FILE_NAME}`;
-  const imageBody = await readLocalAvatarImage(input);
-  const { error: uploadError } = await supabase.storage
-    .from(AVATARS_BUCKET)
-    .upload(filePath, imageBody, {
-      cacheControl: '3600',
-      contentType: getAvatarContentType(input),
-      upsert: true,
-    });
-
-  if (uploadError) {
-    throw new Error(uploadError.message);
-  }
-
-  const { data: publicUrlData } = supabase.storage
-    .from(AVATARS_BUCKET)
-    .getPublicUrl(filePath);
-
-  return publicUrlData.publicUrl;
-}
-
-async function getCurrentSupabaseUserId(): Promise<string> {
-  const { data, error } = await supabase.auth.getSession();
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const userId = data.session?.user.id;
-
-  if (!userId) {
-    throw new Error('Auth required');
-  }
-
-  return userId;
-}
-
-function isMissingStorageObject(error: { message?: string; statusCode?: string | number }): boolean {
-  const statusCode = String(error.statusCode ?? '');
-  const message = error.message?.toLowerCase() ?? '';
-
-  return statusCode === '404' || message.includes('not found') || message.includes('not exist');
-}
-
-async function deleteCurrentUserSupabaseAvatar(): Promise<void> {
-  const userId = await getCurrentSupabaseUserId();
-  const filePath = `${userId}/${AVATAR_FILE_NAME}`;
-  const { error } = await supabase.storage
-    .from(AVATARS_BUCKET)
-    .remove([filePath]);
-
-  if (error && !isMissingStorageObject(error)) {
-    throw new Error(error.message);
-  }
-}
-
 export async function uploadProfileAvatar(input: UploadProfileAvatarInput): Promise<string> {
-  if (isApiAvatarProviderEnabled()) {
-    const avatarApiService = await import('./avatarApiService');
-
-    return avatarApiService.uploadProfileAvatarToApi(input);
-  }
-
-  return uploadProfileAvatarToSupabase(input);
+  return uploadProfileAvatarToApi(input);
 }
 
 export async function uploadAvatar(uri: string): Promise<string> {
   return uploadProfileAvatar({ uri });
 }
 
-export async function resolveCurrentUserAvatarReadUrl(): Promise<string | null> {
-  if (!isApiAvatarProviderEnabled()) {
-    return null;
-  }
-
-  const avatarApiService = await import('./avatarApiService');
-
-  return avatarApiService.resolveCurrentUserAvatarReadUrl();
-}
-
-export async function resolveAuthorizedAvatarReadUrl(
-  avatarId: string | null | undefined,
-): Promise<string | null> {
-  if (!isApiAvatarProviderEnabled()) {
-    return null;
-  }
-
-  const avatarApiService = await import('./avatarApiService');
-
-  return avatarApiService.resolveAuthorizedAvatarReadUrl(avatarId);
-}
+export { resolveAuthorizedAvatarReadUrl, resolveCurrentUserAvatarReadUrl };
 
 export async function deleteCurrentUserAvatar(): Promise<void> {
-  if (isApiAvatarProviderEnabled()) {
-    const avatarApiService = await import('./avatarApiService');
-
-    await avatarApiService.deleteCurrentUserAvatar();
-    return;
-  }
-
-  await deleteCurrentUserSupabaseAvatar();
+  await deleteCurrentUserAvatarViaApi();
 }
 
 export async function clearAvatarReadUrlMemoryCache(): Promise<void> {
-  if (!isApiAvatarProviderEnabled()) {
-    return;
-  }
-
-  const avatarApiService = await import('./avatarApiService');
-
-  avatarApiService.clearAvatarReadUrlCache();
+  clearAvatarReadUrlCache();
 }

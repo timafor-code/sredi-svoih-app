@@ -8,7 +8,7 @@
 // Type-only module: it exports types only, has no runtime code, and is NOT
 // wired into the importer, Edge Function, or UI. Keep it in sync with the
 // dedupe contract doc. Both the current CLI importer
-// (scripts/importWebsiteEvents.mjs) and the future Supabase Edge Function are
+// (scripts/importWebsiteEvents.mjs) and the future API import worker are
 // expected to write this same shape; the review queue reads it from
 // raw_payload.importReview.dedupe rather than from table status columns.
 //

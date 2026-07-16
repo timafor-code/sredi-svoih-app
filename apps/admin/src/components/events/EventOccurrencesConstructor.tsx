@@ -3,6 +3,10 @@ import { createPortal } from "react-dom";
 
 import { Button } from "../ui/Button";
 import {
+  buildOccurrencePayloadFields,
+  normalizeOccurrenceCapacityForDraft,
+} from "../../lib/eventOccurrenceDrafts";
+import {
   listAdminEventOccurrences,
   replaceAdminEventOccurrences,
 } from "../../services/adminEventOccurrencesService";
@@ -179,20 +183,6 @@ function cleanString(value: string): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-function parseInteger(value: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  if (!/^\d+$/.test(trimmed)) {
-    return Number.NaN;
-  }
-
-  const parsed = Number(trimmed);
-  return Number.isSafeInteger(parsed) ? parsed : Number.NaN;
-}
-
 function parseSortOrder(value: string, fallback: number): number {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -361,7 +351,7 @@ function buildDraftFromOccurrence(
       occurrence.registrationClosesAt,
       timezone,
     ),
-    capacity: occurrence.capacity === null ? "" : String(occurrence.capacity),
+    capacity: normalizeOccurrenceCapacityForDraft(occurrence.capacity),
     waitlistEnabled: occurrence.waitlistEnabled === true,
     requiresApproval: occurrence.requiresApproval === true,
     status,
@@ -473,14 +463,12 @@ function validateDraft(
       "Окончание регистрации должно быть позже начала регистрации.";
   }
 
-  let capacity: number | null = null;
-  if (draft.capacity.trim()) {
-    const parsedCapacity = parseInteger(draft.capacity);
-    if (parsedCapacity === null || Number.isNaN(parsedCapacity) || parsedCapacity <= 0) {
-      errors.capacity = "Лимит должен быть положительным целым числом.";
-    } else {
-      capacity = parsedCapacity;
-    }
+  const occurrencePayloadFields = buildOccurrencePayloadFields(
+    draft.capacity,
+    status ?? "active",
+  );
+  if (occurrencePayloadFields.error) {
+    errors.capacity = occurrencePayloadFields.error;
   }
 
   const parsedSortOrder = Number(draft.sortOrder);
@@ -506,7 +494,7 @@ function validateDraft(
       timezone,
       registrationOpensAt,
       registrationClosesAt,
-      capacity,
+      capacity: occurrencePayloadFields.capacity,
       waitlistEnabled: draft.waitlistEnabled,
       requiresApproval: draft.requiresApproval,
       status,
@@ -1220,8 +1208,9 @@ export function EventOccurrencesConstructor({
 
     setNowTimestamp(archiveTimestamp);
     setArchiveToast(null);
-    setDrafts(nextDrafts);
-    void persistDrafts(nextDrafts).then((saved) => {
+    void persistDrafts(nextDrafts, {
+      failureMessage: "Не удалось архивировать сеанс. Проверьте лимит и повторите попытку.",
+    }).then((saved) => {
       if (saved) {
         showArchiveToast(
           "Сеанс перенесён в архив. Регистрации сохранены.",
@@ -1272,8 +1261,9 @@ export function EventOccurrencesConstructor({
     setNowTimestamp(archiveTimestamp);
     setArchiveConfirmOpen(false);
     setArchiveToast(null);
-    setDrafts(nextDrafts);
-    void persistDrafts(nextDrafts).then((saved) => {
+    void persistDrafts(nextDrafts, {
+      failureMessage: "Не удалось архивировать прошедшие сеансы. Проверьте лимиты и повторите попытку.",
+    }).then((saved) => {
       if (saved) {
         showArchiveToast(
           `${archivedCount} прошедших сеансов перенесены в архив. Регистрации сохранены.`,
@@ -1290,7 +1280,6 @@ export function EventOccurrencesConstructor({
 
     const restoredDrafts = cloneDrafts(archiveToast.undoDrafts);
     setArchiveToast(null);
-    setDrafts(restoredDrafts);
     void persistDrafts(restoredDrafts);
   };
 
@@ -1407,6 +1396,12 @@ export function EventOccurrencesConstructor({
         </div>
       ) : null}
 
+      {saveError ? (
+        <div className="form-error event-occurrences-constructor__archive-error" role="alert">
+          {saveError}
+        </div>
+      ) : null}
+
       <OccurrenceGenerator
         disabled={disabled}
         eventCapacity={eventCapacity}
@@ -1503,10 +1498,6 @@ export function EventOccurrencesConstructor({
         {saving ? (
           <span className="event-occurrences-constructor__saving">
             Сохраняем...
-          </span>
-        ) : saveError ? (
-          <span className="event-occurrences-constructor__error" role="alert">
-            {saveError}
           </span>
         ) : savedAt ? (
           <span className="event-occurrences-constructor__saved">

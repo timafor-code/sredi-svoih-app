@@ -9,41 +9,6 @@ import type {
   ProfileVisibility,
 } from './profile';
 
-export const API_PROVIDER_NAMES = ['supabase', 'api'] as const;
-
-export type ApiProviderName = (typeof API_PROVIDER_NAMES)[number];
-
-export function normalizeMobileApiProvider(value: unknown): ApiProviderName {
-  return typeof value === 'string' && value.trim().toLowerCase() === 'supabase'
-    ? 'supabase'
-    : 'api';
-}
-
-export async function runApiProviderOperation<T>(
-  provider: ApiProviderName,
-  operations: {
-    api: () => Promise<T>;
-    supabase: () => Promise<T>;
-  },
-): Promise<T> {
-  return provider === 'api' ? operations.api() : operations.supabase();
-}
-
-export const MOBILE_API_PROVIDER_KEYS = [
-  'auth',
-  'events',
-  'registrations',
-  'prayer',
-  'contacts',
-  'avatar',
-  'privacy',
-  'device',
-] as const;
-
-export type MobileApiProviderKey = (typeof MOBILE_API_PROVIDER_KEYS)[number];
-
-export type MobileApiProviderConfig = Record<MobileApiProviderKey, ApiProviderName>;
-
 export type ApiErrorDetail = {
   field?: string;
   code: string;
