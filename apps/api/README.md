@@ -42,6 +42,24 @@ For Expo Go on an iPhone, use `http://<your-lan-ip>:8000` instead of
 `http://127.0.0.1:8000`. The container starts Uvicorn on `0.0.0.0:8000` so the
 phone can reach the computer over the LAN.
 
+## Owner-local Expo/iPhone avatar smoke
+
+For an owner-local Expo Go or iPhone avatar smoke only, expose the local object
+storage host and give the API a LAN-reachable public endpoint before starting
+the Compose stack:
+
+```powershell
+$env:API_OBJECT_STORAGE_HOST_BIND="0.0.0.0"
+$env:API_OBJECT_STORAGE_PUBLIC_ENDPOINT_URL="http://<computer-lan-ip>:59000"
+```
+
+This is local owner smoke configuration, not a production default. Production
+object-storage endpoints must remain private and environment-specific. The API
+container continues to use the internal Compose endpoint
+`http://api-object-storage:9000`; only signed URLs returned to the phone use
+the LAN-reachable public endpoint. Do not place storage credentials or other
+secrets in mobile, Expo, Vite, `apps/admin`, or committed env files.
+
 ## Auth email flows
 
 The API includes backend-only password reset, email verification, and

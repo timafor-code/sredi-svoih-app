@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { FormField } from '@/components/ui/FormField';
+import { MINIMUM_PASSWORD_LENGTH } from '@/services/authValidation';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
@@ -43,6 +44,16 @@ export function EmailSignUpForm({
     onEmailChange?.(value);
   }, [onEmailChange]);
 
+  const passwordMatchStatus = (
+    password.length > 0
+    && repeatPassword.length > 0
+    && repeatPassword.length >= password.length
+  )
+    ? repeatPassword === password
+      ? 'match'
+      : 'mismatch'
+    : null;
+
   const validate = useCallback((normalizedEmail: string) => {
     if (!normalizedEmail) {
       return 'Введите email для регистрации.';
@@ -52,7 +63,7 @@ export function EmailSignUpForm({
       return 'Введите пароль для регистрации.';
     }
 
-    if (password.length < 6) {
+    if (password.length < MINIMUM_PASSWORD_LENGTH) {
       return AUTH_ERROR_MESSAGES.weakPassword;
     }
 
@@ -158,7 +169,7 @@ export function EmailSignUpForm({
         label="Пароль"
         value={password}
         onChangeText={setPassword}
-        placeholder="Минимум 6 символов"
+        placeholder="Минимум 8 символов"
         secureTextEntry
       />
       <FormField
@@ -168,6 +179,36 @@ export function EmailSignUpForm({
         placeholder="Ещё раз пароль"
         secureTextEntry
       />
+      {passwordMatchStatus ? (
+        <View
+          accessible
+          accessibilityLabel={passwordMatchStatus === 'match' ? 'Пароли совпадают' : 'Пароли не совпадают'}
+          accessibilityLiveRegion="polite"
+          accessibilityRole="alert"
+          style={[
+            styles.passwordMatchBadge,
+            passwordMatchStatus === 'match'
+              ? styles.passwordMatchBadgeSuccess
+              : styles.passwordMatchBadgeError,
+          ]}
+        >
+          <Ionicons
+            name={passwordMatchStatus === 'match' ? 'checkmark-circle' : 'alert-circle'}
+            size={16}
+            color={passwordMatchStatus === 'match' ? colors.success : colors.danger}
+          />
+          <Text
+            style={[
+              styles.passwordMatchText,
+              passwordMatchStatus === 'match'
+                ? styles.passwordMatchTextSuccess
+                : styles.passwordMatchTextError,
+            ]}
+          >
+            {passwordMatchStatus === 'match' ? 'Пароли совпадают' : 'Пароли не совпадают'}
+          </Text>
+        </View>
+      ) : null}
       <PrimaryButton
         title={isSubmitting ? 'Создаём...' : 'Создать аккаунт'}
         disabled={isSubmitting}
@@ -181,6 +222,34 @@ export function EmailSignUpForm({
 const styles = StyleSheet.create({
   form: {
     gap: 12,
+  },
+  passwordMatchBadge: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  passwordMatchBadgeSuccess: {
+    backgroundColor: colors.accent.greenBg,
+    borderColor: colors.accent.greenBorder,
+  },
+  passwordMatchBadgeError: {
+    backgroundColor: colors.accent.redBg,
+    borderColor: colors.accent.redBorder,
+  },
+  passwordMatchText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  passwordMatchTextSuccess: {
+    color: colors.success,
+  },
+  passwordMatchTextError: {
+    color: colors.danger,
   },
   confirmationState: {
     alignItems: 'center',
