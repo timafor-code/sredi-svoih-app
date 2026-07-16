@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { FormField } from '@/components/ui/FormField';
+import { MINIMUM_PASSWORD_LENGTH } from '@/services/authValidation';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
@@ -52,7 +53,7 @@ export function EmailSignUpForm({
       return 'Введите пароль для регистрации.';
     }
 
-    if (password.length < 6) {
+    if (password.length < MINIMUM_PASSWORD_LENGTH) {
       return AUTH_ERROR_MESSAGES.weakPassword;
     }
 
@@ -158,7 +159,7 @@ export function EmailSignUpForm({
         label="Пароль"
         value={password}
         onChangeText={setPassword}
-        placeholder="Минимум 6 символов"
+        placeholder="Минимум 8 символов"
         secureTextEntry
       />
       <FormField

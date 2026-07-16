@@ -1,6 +1,5 @@
 import type { Session, User } from '@supabase/supabase-js';
 
-import { DEFAULT_BIRTHDAY_VISIBILITY, DEFAULT_PHONE_VISIBILITY, DEFAULT_PROFILE_VISIBILITY } from '@/types/profile';
 import type {
   ApiAuthEmailRequest,
   ApiAuthTokenResponse,
@@ -9,6 +8,7 @@ import type {
   ApiLogoutRequest,
   ApiOkResponse,
   ApiProfileSummary,
+  ApiProfileUpdateRequest,
   ApiRefreshRequest,
   ApiRegisterRequest,
   ApiRegisterResponse,
@@ -23,6 +23,7 @@ import {
   getApiAuthTokens,
   setApiAuthTokens,
 } from './apiAuthTokenStore';
+import { MINIMUM_PASSWORD_LENGTH } from './authValidation';
 
 const API_AUTH_REFRESH_SKEW_MS = 30_000;
 
@@ -97,48 +98,65 @@ function apiTokensToSession(
   };
 }
 
-function profileDisplayName(profile: ApiProfileSummary | null, user: ApiUserSummary): string | null {
-  if (profile?.display_name) {
-    return profile.display_name;
-  }
-
-  if (profile?.full_name) {
-    return profile.full_name;
-  }
-
-  return user.email?.split('@')[0] ?? null;
+function apiProfileToProfile(profile: ApiProfileSummary): Profile {
+  return {
+    id: profile.user_id,
+    community_id: profile.community_id,
+    full_name: profile.full_name,
+    hebrew_name: profile.hebrew_name,
+    city: profile.city,
+    created_at: profile.created_at,
+    display_name: profile.display_name,
+    first_name: profile.first_name,
+    last_name: profile.last_name,
+    phone: profile.phone,
+    email: profile.email,
+    avatar_url: profile.avatar_url,
+    birth_date: profile.birth_date,
+    birth_time_context: profile.birth_time_context,
+    hebrew_birth_date: profile.hebrew_birth_date,
+    tribe_status: profile.tribe_status,
+    marital_status: profile.marital_status,
+    about: profile.about,
+    profile_visibility: profile.profile_visibility,
+    birthday_visibility: profile.birthday_visibility,
+    phone_visibility: profile.phone_visibility,
+    notification_preferences: profile.notification_preferences,
+    nusach: profile.nusach,
+    onboarding_completed: profile.onboarding_completed,
+    updated_at: profile.updated_at,
+  };
 }
 
-function apiProfileToProfile(profile: ApiProfileSummary | null, user: ApiUserSummary): Profile {
-  const createdAt = profile?.created_at ?? user.created_at;
+function buildProfileUpdatePayload(profile: ProfileUpsert): ApiProfileUpdateRequest {
+  const payload: ApiProfileUpdateRequest = {};
 
-  return {
-    id: profile?.user_id ?? user.id,
-    community_id: profile?.community_id ?? null,
-    full_name: profile?.full_name ?? null,
-    hebrew_name: null,
-    city: profile?.city ?? null,
-    created_at: createdAt,
-    display_name: profileDisplayName(profile, user),
-    first_name: profile?.first_name ?? null,
-    last_name: profile?.last_name ?? null,
-    phone: user.phone,
-    email: user.email,
-    avatar_url: profile?.avatar_url ?? null,
-    birth_date: null,
-    birth_time_context: 'unknown',
-    hebrew_birth_date: null,
-    tribe_status: null,
-    marital_status: null,
-    about: null,
-    profile_visibility: DEFAULT_PROFILE_VISIBILITY,
-    birthday_visibility: DEFAULT_BIRTHDAY_VISIBILITY,
-    phone_visibility: DEFAULT_PHONE_VISIBILITY,
-    notification_preferences: null,
-    nusach: null,
-    onboarding_completed: profile?.onboarding_completed ?? false,
-    updated_at: profile?.updated_at ?? user.updated_at ?? null,
-  };
+  if (profile.display_name !== undefined) payload.display_name = profile.display_name;
+  if (profile.first_name !== undefined) payload.first_name = profile.first_name;
+  if (profile.last_name !== undefined) payload.last_name = profile.last_name;
+  if (profile.full_name !== undefined) payload.full_name = profile.full_name;
+  if (profile.hebrew_name !== undefined) payload.hebrew_name = profile.hebrew_name;
+  if (profile.birth_date !== undefined) payload.birth_date = profile.birth_date;
+  if (profile.hebrew_birth_date !== undefined) payload.hebrew_birth_date = profile.hebrew_birth_date;
+  if (profile.birth_time_context !== undefined) payload.birth_time_context = profile.birth_time_context;
+  if (profile.nusach !== undefined) payload.nusach = profile.nusach;
+  if (profile.tribe_status !== undefined) payload.tribe_status = profile.tribe_status;
+  if (profile.marital_status !== undefined) payload.marital_status = profile.marital_status;
+  if (profile.email !== undefined) payload.email = profile.email;
+  if (profile.phone !== undefined) payload.phone = profile.phone;
+  if (profile.city !== undefined) payload.city = profile.city;
+  if (profile.about !== undefined) payload.about = profile.about;
+  if (profile.profile_visibility !== undefined) payload.profile_visibility = profile.profile_visibility;
+  if (profile.birthday_visibility !== undefined) payload.birthday_visibility = profile.birthday_visibility;
+  if (profile.phone_visibility !== undefined) payload.phone_visibility = profile.phone_visibility;
+  if (profile.notification_preferences !== undefined) {
+    payload.notification_preferences = profile.notification_preferences;
+  }
+  if (profile.onboarding_completed !== undefined) {
+    payload.onboarding_completed = profile.onboarding_completed;
+  }
+
+  return payload;
 }
 
 async function refreshStoredSession(refreshToken: string): Promise<ApiAuthTokenResponse | null> {
@@ -253,6 +271,10 @@ export async function signUpWithEmail(email: string, password: string): Promise<
     throw new Error('Enter email and password to register.');
   }
 
+  if (password.length < MINIMUM_PASSWORD_LENGTH) {
+    throw new Error('Password must be at least ' + MINIMUM_PASSWORD_LENGTH + ' characters.');
+  }
+
   const registerResponse = await apiClient.post<ApiRegisterResponse, ApiRegisterRequest>(
     '/auth/register',
     {
@@ -277,7 +299,7 @@ export async function signUpWithEmail(email: string, password: string): Promise<
     session,
     user: session.user,
     profile: registerResponse.profile
-      ? apiProfileToProfile(registerResponse.profile, registerResponse.user)
+      ? apiProfileToProfile(registerResponse.profile)
       : null,
     needsEmailConfirmation: false,
   };
@@ -336,11 +358,11 @@ export async function signOut(): Promise<void> {
 export async function loadProfile(): Promise<Profile | null> {
   const currentUser = await fetchCurrentUser();
 
-  if (!currentUser) {
+  if (!currentUser?.profile) {
     return null;
   }
 
-  return apiProfileToProfile(currentUser.profile, currentUser.user);
+  return apiProfileToProfile(currentUser.profile);
 }
 
 export async function upsertProfile(profile: ProfileUpsert = {}): Promise<Profile> {
@@ -350,9 +372,20 @@ export async function upsertProfile(profile: ProfileUpsert = {}): Promise<Profil
     throw new Error('Auth required');
   }
 
-  if (Object.keys(profile).length > 0) {
-    throw new Error('Profile updates are not available through API auth yet.');
+  const payload = buildProfileUpdatePayload(profile);
+
+  if (Object.keys(payload).length === 0) {
+    if (!currentUser.profile) {
+      throw new Error('Profile is not available for update.');
+    }
+
+    return apiProfileToProfile(currentUser.profile);
   }
 
-  return apiProfileToProfile(currentUser.profile, currentUser.user);
+  const updatedProfile = await apiClient.patch<ApiProfileSummary, ApiProfileUpdateRequest>(
+    '/me/profile',
+    payload,
+  );
+
+  return apiProfileToProfile(updatedProfile);
 }
