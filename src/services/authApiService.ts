@@ -149,7 +149,7 @@ function buildProfileUpdatePayload(profile: ProfileUpsert): ApiProfileUpdateRequ
   if (profile.profile_visibility !== undefined) payload.profile_visibility = profile.profile_visibility;
   if (profile.birthday_visibility !== undefined) payload.birthday_visibility = profile.birthday_visibility;
   if (profile.phone_visibility !== undefined) payload.phone_visibility = profile.phone_visibility;
-  if (profile.notification_preferences !== undefined) {
+  if (profile.notification_preferences !== undefined && profile.notification_preferences !== null) {
     payload.notification_preferences = profile.notification_preferences;
   }
   if (profile.onboarding_completed !== undefined) {

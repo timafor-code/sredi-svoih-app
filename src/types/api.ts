@@ -135,7 +135,7 @@ export type ApiProfileUpdateRequest = {
   profile_visibility?: ProfileVisibility;
   birthday_visibility?: ProfileVisibility;
   phone_visibility?: ProfileVisibility;
-  notification_preferences?: ProfileNotificationPreferences | null;
+  notification_preferences?: ProfileNotificationPreferences;
   onboarding_completed?: boolean;
 };
 
