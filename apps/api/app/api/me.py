@@ -18,13 +18,35 @@ from app.schemas.community_contacts import (
 )
 from app.schemas.device_tokens import DeviceTokenRegisterRequest, DeviceTokenResponse
 from app.schemas.events import ApiResponse
+from app.schemas.current_user_profile import (
+    CurrentUserProfileResponse,
+    CurrentUserProfileUpdateRequest,
+)
 from app.services import community_contacts as community_contacts_service
+from app.services import current_user_profile as current_user_profile_service
 from app.services import device_tokens as device_tokens_service
 
 router = APIRouter(prefix="/me", tags=["me"])
 
 CurrentUser = Annotated[AppUser, Depends(require_auth)]
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
+
+
+@router.patch(
+    "/profile",
+    response_model=ApiResponse[CurrentUserProfileResponse],
+)
+async def update_profile(
+    payload: CurrentUserProfileUpdateRequest,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[CurrentUserProfileResponse]:
+    profile = await current_user_profile_service.update_current_user_profile(
+        session,
+        current_user,
+        payload,
+    )
+    return ApiResponse[CurrentUserProfileResponse](data=profile)
 
 
 @router.get(
