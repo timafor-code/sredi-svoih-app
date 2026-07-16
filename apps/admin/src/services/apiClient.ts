@@ -1,4 +1,5 @@
 import { getAdminApiAccessToken } from "./adminApiAuthTokenStore";
+import { retryAfterUnauthenticated } from "../lib/authRequestRecovery";
 import type {
   ApiErrorResponse,
   ApiResponseEnvelope,
@@ -28,6 +29,19 @@ type ApiClientErrorInit = {
   requestId?: string | null;
   status: number;
 };
+
+type AdminAuthRecoveryHandlers = {
+  refreshAccessToken: () => Promise<string | null>;
+  onSessionExpired: () => void;
+};
+
+let adminAuthRecoveryHandlers: AdminAuthRecoveryHandlers | null = null;
+
+export function configureAdminApiAuthRecovery(
+  handlers: AdminAuthRecoveryHandlers | null,
+): void {
+  adminAuthRecoveryHandlers = handlers;
+}
 
 export class ApiClientError extends Error {
   readonly code: string;
@@ -303,25 +317,50 @@ async function request<TData, TBody = unknown>(
   } = options;
   const url = buildApiUrl(path, query);
   const hasBody = body !== undefined;
-  const headers = createHeaders(customHeaders, hasBody);
+  const baseHeaders = createHeaders(customHeaders, hasBody);
   const abortController = createAbortController(signal, timeoutMs);
 
   try {
+    let accessToken: string | null = null;
     if (includeAuthToken) {
-      const accessToken = await getRequestAccessToken();
-
-      if (accessToken) {
-        headers.Authorization = `Bearer ${accessToken}`;
-      }
+      accessToken = await getRequestAccessToken();
     }
 
-    const response = await fetch(url, {
-      body: hasBody ? JSON.stringify(body) : undefined,
-      headers,
-      method,
-      signal: abortController.signal,
-    });
-    const responseBody = await parseJsonResponse(response);
+    const sendRequest = async (token: string | null) => {
+      const headers = { ...baseHeaders };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      const response = await fetch(url, {
+        body: hasBody ? JSON.stringify(body) : undefined,
+        headers,
+        method,
+        signal: abortController.signal,
+      });
+      return { response, responseBody: await parseJsonResponse(response) };
+    };
+
+    let requestResult = await sendRequest(accessToken);
+    if (includeAuthToken && accessToken && adminAuthRecoveryHandlers) {
+      requestResult = await retryAfterUnauthenticated({
+        accessToken,
+        initial: {
+          result: requestResult,
+          unauthenticated: requestResult.response.status === 401,
+        },
+        onFinalUnauthenticated: adminAuthRecoveryHandlers.onSessionExpired,
+        refreshAccessToken: adminAuthRecoveryHandlers.refreshAccessToken,
+        request: async (refreshedAccessToken) => {
+          const result = await sendRequest(refreshedAccessToken);
+          return {
+            result,
+            unauthenticated: result.response.status === 401,
+          };
+        },
+      });
+    }
+    const { response, responseBody } = requestResult;
 
     if (!response.ok) {
       const { error, requestId } = errorFromResponseBody(response.status, responseBody);

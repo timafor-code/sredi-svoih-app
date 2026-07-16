@@ -25,3 +25,7 @@ export async function signOut(): Promise<void> {
 export async function getCurrentAdminContext(): Promise<AdminAuthContext> {
   return adminAuthApiService.getCurrentAdminContext();
 }
+
+export function subscribeToAdminSessionExpiry(listener: () => void): () => void {
+  return adminAuthApiService.subscribeToAdminSessionExpiry(listener);
+}

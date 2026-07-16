@@ -10,6 +10,10 @@ import {
 } from "react";
 
 import { Button } from "../ui/Button";
+import {
+  buildEventUpdateInput,
+  type EventUpdateFormState,
+} from "../../lib/eventUpdatePatch";
 import type {
   AdminEvent,
   AdminEventKind,
@@ -41,27 +45,7 @@ type RegistrationModeSlotContext = {
   registrationMode: string;
 };
 
-type EventFormState = {
-  title: string;
-  eventKind: string;
-  shortDescription: string;
-  description: string;
-  category: string;
-  startDate: string;
-  startTime: string;
-  isPermanent: boolean;
-  endDate: string;
-  endTime: string;
-  timezone: string;
-  locationName: string;
-  address: string;
-  imageUrl: string;
-  status: string;
-  visibility: string;
-  registrationMode: string;
-  registrationUrl: string;
-  capacity: string;
-};
+type EventFormState = EventUpdateFormState;
 
 type StringFormField = {
   [Field in keyof EventFormState]: EventFormState[Field] extends string ? Field : never;
@@ -162,6 +146,7 @@ export function EventForm({
   const [isDirty, setIsDirty] = useState(false);
   const [hasSuccessfulEditSave, setHasSuccessfulEditSave] = useState(false);
   const previousEventIdRef = useRef<string | null>(initialEvent?.id ?? null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     const nextEventId = initialEvent?.id ?? null;
@@ -430,14 +415,34 @@ export function EventForm({
     const formForValidation = forceDraftHidden
       ? { ...form, status: "draft", visibility: "hidden" }
       : form;
-    const validation = validateForm(formForValidation);
+    const validation = validateForm(formForValidation, {
+      allowUnchangedLegacyCategory:
+        mode === "edit" &&
+        cleanString(form.category) === cleanString(initialEvent?.category ?? ""),
+    });
     setErrors(validation.errors);
 
     if (!validation.input) {
+      focusFirstInvalidField(formRef.current);
       return;
     }
 
-    const isSaved = await onSubmit(validation.input);
+    const updateInput = mode === "edit" && initialEvent
+      ? buildEventUpdateInput(
+          initialEvent,
+          buildInitialForm(initialEvent, forceDraftHidden),
+          formForValidation,
+          validation.input,
+        )
+      : validation.input;
+
+    if (mode === "edit" && Object.keys(updateInput).length === 0) {
+      setIsDirty(false);
+      setHasSuccessfulEditSave(true);
+      return;
+    }
+
+    const isSaved = await onSubmit(updateInput as AdminEventMutationInput);
 
     if (mode === "edit" && isSaved) {
       setIsDirty(false);
@@ -446,7 +451,7 @@ export function EventForm({
   };
 
   return (
-    <form className="event-create-form" noValidate onSubmit={handleSubmit}>
+    <form className="event-create-form" noValidate onSubmit={handleSubmit} ref={formRef}>
       {actionsPlacement === "stickyTop" ? (
         <div className="event-form-sticky-actions">
           <Button
@@ -465,6 +470,12 @@ export function EventForm({
           >
             {submitButtonLabel}
           </Button>
+        </div>
+      ) : null}
+
+      {actionsPlacement === "stickyTop" && firstValidationError(errors) ? (
+        <div className="form-error event-form-sticky-actions__error" role="alert">
+          {`Исправьте поле: ${firstValidationError(errors)}.`}
         </div>
       ) : null}
 
@@ -900,12 +911,13 @@ function buildFormFromEvent(event: AdminEvent): EventFormState {
     visibility: event.visibility,
     registrationMode: event.registrationMode,
     registrationUrl: event.registrationMode === "external_link" ? event.registrationUrl ?? "" : "",
-    capacity: event.capacity === null ? "" : String(event.capacity),
+    capacity: event.capacity && event.capacity > 0 ? String(event.capacity) : "",
   };
 }
 
 function validateForm(
   form: EventFormState,
+  options: { allowUnchangedLegacyCategory?: boolean } = {},
 ): { errors: FormErrors; input: AdminEventMutationInput | null } {
   const errors: FormErrors = {};
   const title = cleanString(form.title);
@@ -927,7 +939,7 @@ function validateForm(
     errors.eventKind = "Выберите корректный тип события.";
   }
 
-  if (!category) {
+  if (!category && !options.allowUnchangedLegacyCategory) {
     errors.category = "Укажите категорию события.";
   }
 
@@ -1002,7 +1014,7 @@ function validateForm(
     !startsAt ||
     !title ||
     !eventKind ||
-    !category ||
+    (!category && !options.allowUnchangedLegacyCategory) ||
     !status ||
     !visibility ||
     !registrationMode
@@ -1025,7 +1037,7 @@ function validateForm(
       locationName: cleanString(form.locationName),
       address: cleanString(form.address),
       imageUrl: cleanString(form.imageUrl),
-      category,
+      category: category ?? "",
       audience: null,
       visibility,
       status,
@@ -1039,6 +1051,34 @@ function validateForm(
       priceCurrency: DEFAULT_PRICE_CURRENCY,
     },
   };
+}
+
+function firstValidationError(errors: FormErrors): string | null {
+  const labels: Partial<Record<FormErrorKey, string>> = {
+    title: "Название",
+    eventKind: "Тип события",
+    category: "Категория",
+    startDate: "Дата начала",
+    startTime: "Время начала",
+    endDate: "Дата окончания",
+    endTime: "Время окончания",
+    timezone: "Часовой пояс",
+    status: "Статус",
+    visibility: "Видимость",
+    registrationMode: "Тип регистрации",
+    registrationUrl: "Ссылка регистрации",
+    capacity: "Лимит мест",
+  };
+  const key = Object.keys(errors).find((candidate) => candidate !== "form") as FormErrorKey | undefined;
+  return key ? labels[key] ?? "Поле формы" : null;
+}
+
+function focusFirstInvalidField(form: HTMLFormElement | null): void {
+  requestAnimationFrame(() => {
+    const field = form?.querySelector<HTMLElement>("[aria-invalid='true']");
+    field?.scrollIntoView({ behavior: "smooth", block: "center" });
+    field?.focus();
+  });
 }
 
 function isSameLocation(

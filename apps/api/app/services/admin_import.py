@@ -42,6 +42,7 @@ IMPORT_RUN_MODE = "apply_review_only"
 IMPORT_RUN_STATUS_STARTED = "started"
 IMPORT_RUN_STATUS_SUCCESS = "success"
 IMPORT_ITEM_STATUSES = frozenset({"new", "linked", "ignored", "error"})
+IMPORT_ITEM_REVIEW_STATUSES = frozenset({"new", "error"})
 
 
 @asynccontextmanager
@@ -416,6 +417,7 @@ async def list_admin_import_items(
     current_user: AppUser,
     *,
     status: str | None,
+    needs_review: bool,
     source_id: UUID | None,
     run_id: UUID | None,
     limit: int,
@@ -433,7 +435,9 @@ async def list_admin_import_items(
         .join(EventImportSource, EventImportSource.id == EventImportItem.source_id)
         .where(EventImportSource.community_id.in_(manageable_community_ids))
     )
-    if status_filter is not None:
+    if needs_review:
+        query = query.where(EventImportItem.status.in_(IMPORT_ITEM_REVIEW_STATUSES))
+    elif status_filter is not None:
         query = query.where(EventImportItem.status == status_filter)
     if source_id is not None:
         query = query.where(EventImportItem.source_id == source_id)

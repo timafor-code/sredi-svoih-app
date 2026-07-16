@@ -1,4 +1,9 @@
-import { apiClient, ApiClientError } from "./apiClient";
+import {
+  apiClient,
+  ApiClientError,
+  configureAdminApiAuthRecovery,
+} from "./apiClient";
+import { SingleFlightRefresh } from "../lib/authRequestRecovery";
 import {
   clearAdminApiAuthTokens,
   getAdminApiAuthTokens,
@@ -25,10 +30,10 @@ import type {
   AdminRole,
 } from "../types/auth";
 
-const API_AUTH_REFRESH_SKEW_MS = 30_000;
-
 const adminRoles: AdminRole[] = ["admin", "event_manager", "member"];
 const membershipStatuses: AdminMembershipStatus[] = ["pending", "active", "suspended", "left"];
+const sessionExpiryListeners = new Set<() => void>();
+const refreshCoordinator = new SingleFlightRefresh<AdminApiAuthTokenResponse | null>();
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -36,16 +41,6 @@ function normalizeEmail(email: string): string {
 
 function isUnauthenticatedApiError(error: unknown): boolean {
   return error instanceof ApiClientError && error.status === 401;
-}
-
-function shouldRefreshTokens(tokens: AdminApiStoredAuthTokens): boolean {
-  if (!tokens.expires_at) {
-    return false;
-  }
-
-  const expiresAtMs = Date.parse(tokens.expires_at);
-
-  return Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now() + API_AUTH_REFRESH_SKEW_MS;
 }
 
 function isAdminRole(role: unknown): role is AdminRole {
@@ -116,7 +111,17 @@ function chooseActiveMembership(
   );
 }
 
-async function refreshStoredTokens(
+function notifyAdminSessionExpired(): void {
+  clearAdminApiAuthTokens();
+  sessionExpiryListeners.forEach((listener) => listener());
+}
+
+export function subscribeToAdminSessionExpiry(listener: () => void): () => void {
+  sessionExpiryListeners.add(listener);
+  return () => sessionExpiryListeners.delete(listener);
+}
+
+async function requestTokenRefresh(
   refreshToken: string,
 ): Promise<AdminApiAuthTokenResponse | null> {
   try {
@@ -131,7 +136,7 @@ async function refreshStoredTokens(
     return response;
   } catch (error) {
     if (isUnauthenticatedApiError(error)) {
-      clearAdminApiAuthTokens();
+      notifyAdminSessionExpired();
       return null;
     }
 
@@ -139,24 +144,23 @@ async function refreshStoredTokens(
   }
 }
 
-async function ensureFreshTokens(): Promise<
-  AdminApiStoredAuthTokens | AdminApiAuthTokenResponse | null
-> {
-  const tokens = getAdminApiAuthTokens();
+async function refreshStoredTokens(refreshToken: string): Promise<AdminApiAuthTokenResponse | null> {
+  return refreshCoordinator.run(() => requestTokenRefresh(refreshToken));
+}
 
-  if (!tokens?.access_token) {
+async function refreshAdminApiAccessToken(): Promise<string | null> {
+  const tokens: AdminApiStoredAuthTokens | null = getAdminApiAuthTokens();
+
+  if (!tokens?.refresh_token) {
     return null;
   }
 
-  if (!shouldRefreshTokens(tokens)) {
-    return tokens;
-  }
-
-  return refreshStoredTokens(tokens.refresh_token);
+  const refreshed = await refreshStoredTokens(tokens.refresh_token);
+  return refreshed?.access_token ?? null;
 }
 
 async function fetchCurrentUser(): Promise<AdminApiCurrentUserResponse | null> {
-  const tokens = await ensureFreshTokens();
+  const tokens = getAdminApiAuthTokens();
 
   if (!tokens?.access_token) {
     return null;
@@ -165,28 +169,18 @@ async function fetchCurrentUser(): Promise<AdminApiCurrentUserResponse | null> {
   try {
     return await apiClient.get<AdminApiCurrentUserResponse>("/auth/me");
   } catch (error) {
-    if (!isUnauthenticatedApiError(error)) {
-      throw error;
-    }
-
-    const refreshedTokens = await refreshStoredTokens(tokens.refresh_token);
-
-    if (!refreshedTokens) {
+    if (isUnauthenticatedApiError(error)) {
       return null;
     }
 
-    try {
-      return await apiClient.get<AdminApiCurrentUserResponse>("/auth/me");
-    } catch (retryError) {
-      if (isUnauthenticatedApiError(retryError)) {
-        clearAdminApiAuthTokens();
-        return null;
-      }
-
-      throw retryError;
-    }
+    throw error;
   }
 }
+
+configureAdminApiAuthRecovery({
+  refreshAccessToken: refreshAdminApiAccessToken,
+  onSessionExpired: notifyAdminSessionExpired,
+});
 
 export async function getCurrentSession(): Promise<AdminAuthSession | null> {
   const currentUser = await fetchCurrentUser();

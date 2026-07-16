@@ -5,6 +5,7 @@ from collections import Counter
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from copy import deepcopy
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -28,6 +29,15 @@ RUN_STATUS_SUCCESS = "success"
 RUN_STATUS_FAILED = "failed"
 ITEM_STATUS_NEW = "new"
 ITEM_STATUS_ERROR = "error"
+SKIP_EXISTING_IMPORT_ITEM = "skip_existing_import_item"
+SKIP_EXISTING_EVENT = "skip_existing_event"
+WRITE_IMPORT_ITEM = "write_import_item"
+
+
+@dataclass(frozen=True, slots=True)
+class DedupeDecision:
+    action: str
+    outcome: dict[str, object]
 
 
 @asynccontextmanager
@@ -82,44 +92,60 @@ async def _matching_open_import_item_id(
     source_id: UUID,
     external_id: str | None,
     canonical_source_url: str | None,
-) -> UUID | None:
-    query = select(EventImportItem.id).where(
+) -> tuple[UUID, str] | None:
+    if not external_id and not canonical_source_url:
+        return None
+
+    query = select(EventImportItem).where(
         EventImportItem.source_id == source_id,
         EventImportItem.linked_event_id.is_(None),
         EventImportItem.status.in_([ITEM_STATUS_NEW, ITEM_STATUS_ERROR]),
     )
-    if external_id:
-        query = query.where(EventImportItem.external_id == external_id)
-    elif canonical_source_url:
-        query = query.where(EventImportItem.source_url == canonical_source_url)
-    else:
-        return None
-
-    return await session.scalar(
-        query.order_by(EventImportItem.created_at.desc(), EventImportItem.id.desc())
-        .limit(1),
+    candidates = list(
+        await session.scalars(
+            query.order_by(EventImportItem.created_at, EventImportItem.id),
+        )
     )
+    for candidate in candidates:
+        if external_id and candidate.external_id == external_id:
+            return candidate.id, "source_external_id"
+        if (
+            canonical_source_url
+            and dedupe.canonicalize_source_url(candidate.source_url) == canonical_source_url
+        ):
+            return candidate.id, "canonical_source_url"
+    return None
 
 
-async def _matching_event_by_external_id(
+async def _matching_existing_event(
     session: AsyncSession,
     *,
     community_id: UUID,
     external_id: str | None,
-) -> Event | None:
-    if not external_id:
+    canonical_source_url: str | None,
+) -> tuple[Event, str] | None:
+    if not external_id and not canonical_source_url:
         return None
 
-    return await session.scalar(
-        select(Event)
-        .where(
-            Event.community_id == community_id,
-            Event.source_type == WEBSITE_SOURCE_TYPE,
-            Event.source_external_id == external_id,
+    candidates = list(
+        await session.scalars(
+            select(Event)
+            .where(
+                Event.community_id == community_id,
+                Event.source_type == WEBSITE_SOURCE_TYPE,
+            )
+            .order_by(Event.created_at, Event.id)
         )
-        .order_by(Event.created_at, Event.id)
-        .limit(1),
     )
+    for candidate in candidates:
+        if external_id and candidate.source_external_id == external_id:
+            return candidate, "source_external_id"
+        if (
+            canonical_source_url
+            and dedupe.canonicalize_source_url(candidate.source_url) == canonical_source_url
+        ):
+            return candidate, "canonical_source_url"
+    return None
 
 
 async def _matching_event_by_title_and_time(
@@ -149,50 +175,66 @@ async def _dedupe_for_item(
     source: EventImportSource,
     item: ParsedImportItem,
     item_error: str | None,
-) -> dict[str, object]:
+) -> DedupeDecision:
     base_dedupe = _item_base_dedupe(item)
 
     if item_error:
-        return dedupe.finalize_dedupe(
-            base_dedupe,
-            {
-                "status": "error",
-                "reason": item_error,
-                "matchedBy": [],
-                "matchedEventId": None,
-                "matchedImportItemId": None,
-                "manualOverride": False,
-            },
+        return DedupeDecision(
+            action=WRITE_IMPORT_ITEM,
+            outcome=dedupe.finalize_dedupe(
+                base_dedupe,
+                {
+                    "status": "error",
+                    "reason": item_error,
+                    "matchedBy": [],
+                    "matchedEventId": None,
+                    "matchedImportItemId": None,
+                    "manualOverride": False,
+                },
+            ),
         )
 
     canonical_source_url = (
         str(base_dedupe.get("canonicalSourceUrl"))
         if base_dedupe and base_dedupe.get("canonicalSourceUrl")
-        else None
+        else dedupe.canonicalize_source_url(item.source_url)
     )
-    existing_item_id = await _matching_open_import_item_id(
+    existing_item = await _matching_open_import_item_id(
         session,
         source_id=source.id,
         external_id=item.external_id,
         canonical_source_url=canonical_source_url,
     )
-    if existing_item_id is not None:
-        return dedupe.finalize_dedupe(
-            base_dedupe,
-            dedupe.duplicate_import_item_outcome(existing_item_id),
+    if existing_item is not None:
+        existing_item_id, matched_by = existing_item
+        return DedupeDecision(
+            action=SKIP_EXISTING_IMPORT_ITEM,
+            outcome=dedupe.finalize_dedupe(
+                base_dedupe,
+                dedupe.duplicate_import_item_outcome(
+                    existing_item_id,
+                    matched_by=matched_by,
+                ),
+            ),
         )
 
-    existing_event = await _matching_event_by_external_id(
+    existing_event_match = await _matching_existing_event(
         session,
         community_id=source.community_id,
         external_id=item.external_id,
+        canonical_source_url=canonical_source_url,
     )
-    if existing_event is not None:
-        return dedupe.finalize_dedupe(
-            base_dedupe,
-            dedupe.linked_event_outcome(
-                event_id=existing_event.id,
-                manual_override=existing_event.manual_override,
+    if existing_event_match is not None:
+        existing_event, matched_by = existing_event_match
+        return DedupeDecision(
+            action=SKIP_EXISTING_EVENT,
+            outcome=dedupe.finalize_dedupe(
+                base_dedupe,
+                dedupe.linked_event_outcome(
+                    event_id=existing_event.id,
+                    manual_override=existing_event.manual_override,
+                    matched_by=matched_by,
+                ),
             ),
         )
 
@@ -202,12 +244,18 @@ async def _dedupe_for_item(
         item=item,
     )
     if possible_duplicate is not None:
-        return dedupe.finalize_dedupe(
-            base_dedupe,
-            dedupe.possible_duplicate_event_outcome(possible_duplicate.id),
+        return DedupeDecision(
+            action=WRITE_IMPORT_ITEM,
+            outcome=dedupe.finalize_dedupe(
+                base_dedupe,
+                dedupe.possible_duplicate_event_outcome(possible_duplicate.id),
+            ),
         )
 
-    return dedupe.finalize_dedupe(base_dedupe, dedupe.no_match_outcome())
+    return DedupeDecision(
+        action=WRITE_IMPORT_ITEM,
+        outcome=dedupe.finalize_dedupe(base_dedupe, dedupe.no_match_outcome()),
+    )
 
 
 def _summary_payload(
@@ -215,12 +263,22 @@ def _summary_payload(
     result: ParsedWebsiteResult,
     parsed_count: int,
     error_count: int,
+    written_count: int,
+    skipped_existing_import_item_count: int,
+    skipped_existing_event_count: int,
+    possible_duplicate_count: int,
     date_confidence_counts: Counter[str],
     dedupe_counts: Counter[str],
 ) -> dict[str, object]:
     return {
         "foundOnList": result.found_on_list,
-        "itemsWritten": len(result.items),
+        "itemsWritten": written_count,
+        "written": written_count,
+        "skipped": skipped_existing_import_item_count + skipped_existing_event_count,
+        "skippedExistingImportItem": skipped_existing_import_item_count,
+        "skippedExistingEvent": skipped_existing_event_count,
+        "possibleDuplicate": possible_duplicate_count,
+        "itemErrors": error_count,
         "parsedCount": parsed_count,
         "errorCount": error_count,
         "dateConfidenceCounts": dict(date_confidence_counts),
@@ -295,6 +353,10 @@ async def execute_review_import(
 
             parsed_count = 0
             error_count = 0
+            written_count = 0
+            skipped_existing_import_item_count = 0
+            skipped_existing_event_count = 0
+            possible_duplicate_count = 0
             date_confidence_counts: Counter[str] = Counter()
             dedupe_counts: Counter[str] = Counter()
 
@@ -307,20 +369,29 @@ async def execute_review_import(
                     parsed_count += 1
                 date_confidence_counts[item.date_confidence] += 1
 
-                item_dedupe = await _dedupe_for_item(
+                decision = await _dedupe_for_item(
                     session,
                     source=source,
                     item=item,
                     item_error=item_error,
                 )
-                dedupe_status = item_dedupe.get("status")
+                dedupe_status = decision.outcome.get("status")
                 if isinstance(dedupe_status, str):
                     dedupe_counts[dedupe_status] += 1
+
+                if dedupe_status == "possible_duplicate":
+                    possible_duplicate_count += 1
+                if decision.action == SKIP_EXISTING_IMPORT_ITEM:
+                    skipped_existing_import_item_count += 1
+                    continue
+                if decision.action == SKIP_EXISTING_EVENT:
+                    skipped_existing_event_count += 1
+                    continue
 
                 item_status = ITEM_STATUS_ERROR if item_error else ITEM_STATUS_NEW
                 raw_payload = _raw_payload_with_dedupe(
                     item,
-                    item_dedupe,
+                    decision.outcome,
                     import_status=item_status,
                     import_status_reason=item_error,
                 )
@@ -339,6 +410,7 @@ async def execute_review_import(
                         error=item_error,
                     ),
                 )
+                written_count += 1
 
             run.status = RUN_STATUS_SUCCESS
             run.finished_at = func.now()
@@ -355,6 +427,10 @@ async def execute_review_import(
                 result=result,
                 parsed_count=parsed_count,
                 error_count=error_count,
+                written_count=written_count,
+                skipped_existing_import_item_count=skipped_existing_import_item_count,
+                skipped_existing_event_count=skipped_existing_event_count,
+                possible_duplicate_count=possible_duplicate_count,
                 date_confidence_counts=date_confidence_counts,
                 dedupe_counts=dedupe_counts,
             )

@@ -128,11 +128,15 @@ def no_match_outcome() -> dict[str, Any]:
     }
 
 
-def duplicate_import_item_outcome(import_item_id: object) -> dict[str, Any]:
+def duplicate_import_item_outcome(
+    import_item_id: object,
+    *,
+    matched_by: str,
+) -> dict[str, Any]:
     return {
         "status": "duplicate",
         "reason": "An existing review item matched this source item.",
-        "matchedBy": ["source_external_id"],
+        "matchedBy": [matched_by],
         "matchedEventId": None,
         "matchedImportItemId": str(import_item_id),
         "manualOverride": False,
@@ -143,6 +147,7 @@ def linked_event_outcome(
     *,
     event_id: object,
     manual_override: bool,
+    matched_by: str,
 ) -> dict[str, Any]:
     if manual_override:
         return {
@@ -151,7 +156,7 @@ def linked_event_outcome(
                 "Matched existing event with manual_override=true; "
                 "left event unchanged for review."
             ),
-            "matchedBy": ["source_external_id"],
+            "matchedBy": [matched_by],
             "matchedEventId": str(event_id),
             "matchedImportItemId": None,
             "manualOverride": True,
@@ -159,8 +164,8 @@ def linked_event_outcome(
 
     return {
         "status": "linked_existing",
-        "reason": "Matched existing event by source_external_id.",
-        "matchedBy": ["source_external_id"],
+        "reason": f"Matched existing event by {matched_by}.",
+        "matchedBy": [matched_by],
         "matchedEventId": str(event_id),
         "matchedImportItemId": None,
         "manualOverride": False,
