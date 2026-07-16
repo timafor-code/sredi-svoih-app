@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.current_user_profile import CurrentUserProfileResponse
+
 
 def normalize_email(value: str) -> str:
     normalized = value.strip().casefold()
@@ -235,20 +237,7 @@ class AppUserSummary(BaseModel):
     updated_at: datetime
 
 
-class ProfileSummary(BaseModel):
-    id: UUID
-    user_id: UUID
-    community_id: UUID | None
-    display_name: str | None
-    first_name: str | None
-    last_name: str | None
-    full_name: str | None
-    avatar_url: str | None
-    avatar_id: UUID | None
-    city: str | None
-    onboarding_completed: bool
-    created_at: datetime
-    updated_at: datetime
+ProfileSummary = CurrentUserProfileResponse
 
 
 class CommunityMembershipSummary(BaseModel):

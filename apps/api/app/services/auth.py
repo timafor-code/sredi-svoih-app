@@ -42,6 +42,7 @@ from app.schemas.auth import (
     normalize_email,
 )
 from app.services import authorization as authorization_service
+from app.services import current_user_profile as current_user_profile_service
 from app.services.auth_email_service import (
     AuthEmailDeliveryError,
     send_email_verification_email,
@@ -138,21 +139,7 @@ def _profile_summary(profile: Profile | None) -> ProfileSummary | None:
     if profile is None:
         return None
 
-    return ProfileSummary(
-        id=profile.id,
-        user_id=profile.user_id,
-        community_id=profile.community_id,
-        display_name=profile.display_name,
-        first_name=profile.first_name,
-        last_name=profile.last_name,
-        full_name=profile.full_name,
-        avatar_url=profile.avatar_url,
-        avatar_id=profile.avatar_id,
-        city=profile.city,
-        onboarding_completed=profile.onboarding_completed,
-        created_at=profile.created_at,
-        updated_at=profile.updated_at,
-    )
+    return current_user_profile_service.serialize_current_user_profile(profile)
 
 
 def _membership_summary(

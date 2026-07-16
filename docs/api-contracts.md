@@ -286,7 +286,7 @@ production API auth.
 | POST | `/auth/login` | Public | Exchange email/password credentials for an access token and refresh session. |
 | POST | `/auth/refresh` | Public/session | Rotate a refresh session and return a new access token. |
 | POST | `/auth/logout` | Public/session | Revoke the submitted refresh session when present. |
-| GET | `/auth/me` | Authenticated | Return the current API user, profile summary, and active memberships. |
+| GET | `/auth/me` | Authenticated | Return the current API user, complete editable profile, and active memberships. |
 | POST | `/auth/request-password-reset` | Public | Request password reset delivery. |
 | POST | `/auth/confirm-password-reset` | Public | Confirm password reset code and set a new password. |
 | POST | `/auth/request-email-verification` | Public | Request email verification delivery. |
@@ -502,6 +502,18 @@ verification, and set-password are complete only after a valid confirmation;
 request endpoints are generic acceptance responses and must not reveal whether
 an email exists.
 
+`GET /auth/me` keeps its existing outer response object:
+`{ "user": ..., "profile": ..., "memberships": [...] }`. Its `profile` is
+either `null` or the complete editable profile shape used by
+`PATCH /me/profile`; it includes `id`, `user_id`, `community_id`,
+`display_name`, `first_name`, `last_name`, `full_name`, `hebrew_name`,
+profile contact `email` and `phone`, `avatar_id`, `avatar_url`, `birth_date`,
+`hebrew_birth_date`, `birth_time_context`, `nusach`, `city`, `tribe_status`,
+`marital_status`, `about`, the three visibility fields,
+`notification_preferences`, `onboarding_completed`, `created_at`, and
+`updated_at`. It does not expose password hashes, sessions, tokens, or another
+user's profile data.
+
 ## `/me/*`
 
 Current-user endpoints require `Authorization: Bearer <access_token>` and are
@@ -509,7 +521,6 @@ scoped to the authenticated actor.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/me` | Return the current API user, profile summary, active memberships, and roles needed by clients. |
 | PATCH | `/me/profile` | Update allowed profile fields for the current user. |
 | GET | `/me/memberships` | List the actor's community memberships and role/status values. |
 | GET | `/me/registrations` | List the actor's event registrations. |
@@ -533,6 +544,97 @@ Current-user endpoints must not expose another user's hidden profile fields,
 device tokens, prayer logs, registration comments, or private contact data.
 Prayer tracker data remains personal; admin endpoints must not read or show
 `prayer_activity_logs`.
+
+### `PATCH /me/profile`
+
+`PATCH /me/profile` requires `Authorization: Bearer <access_token>` and uses
+the authenticated actor only. There is no target user id in the path or
+request body, and a normal authenticated user needs no membership or elevated
+role to update their own existing profile. If the actor has no profile, the
+endpoint returns the safe `404 not_found` response and does not create a
+profile, membership, community, or role.
+
+The strict request body (`extra = "forbid"`) accepts only these partial-update
+fields:
+
+```text
+display_name, first_name, last_name, full_name, hebrew_name, birth_date,
+hebrew_birth_date, birth_time_context, nusach, tribe_status, marital_status,
+email, phone, city, about, profile_visibility, birthday_visibility,
+phone_visibility, notification_preferences, onboarding_completed
+```
+
+Omitted fields remain unchanged. Explicit `null` clears only nullable fields;
+non-nullable fields reject `null`, and an empty body is rejected. Optional text
+is trimmed (and an empty value becomes `null`); profile contact email is also
+normalized to lowercase. `birth_date` uses the standard ISO `YYYY-MM-DD`
+handling, `hebrew_birth_date` must be a JSON object or `null`, and
+`notification_preferences` must be a JSON object. Existing profile limits and
+enums are enforced: name/display/hebrew fields are at most 240 characters,
+first/last names 120, email 320, phone 32, city 120, nusach 64, and `about`
+200; `tribe_status` is `kohen | levi | israel | null`, `marital_status` is
+`single | married | divorced | widowed | other | null`,
+`birth_time_context` is `before_sunset | after_sunset | unknown`, and each
+visibility field is `rabbi_only | members | public`.
+
+Unknown and protected fields are rejected, including `id`, `user_id`,
+`community_id`, `avatar_id`, `avatar_url`, `created_at`, `updated_at`,
+memberships, roles, auth sessions, `password_hash`, login credentials in
+`app_users`, and verification timestamps. The server updates `updated_at` and
+locks the actor's profile row inside the transaction. Updating profile
+`email` or `phone` changes contact-profile data only; it never changes
+`app_users.email` or `app_users.phone` login credentials.
+
+Example request:
+
+```json
+{
+  "display_name": "Example User",
+  "about": null,
+  "notification_preferences": {
+    "event_reminders": true
+  }
+}
+```
+
+Successful responses use the standard envelope and return the complete current
+profile, with all fields listed for `GET /auth/me` above:
+
+```json
+{
+  "data": {
+    "id": "8c4d1c91-9dc7-40fa-a2fd-678e72ddba99",
+    "user_id": "4c0f2e79-7e42-49e7-a8a3-72d83a8d02ac",
+    "community_id": null,
+    "display_name": "Example User",
+    "first_name": null,
+    "last_name": null,
+    "full_name": null,
+    "hebrew_name": null,
+    "email": null,
+    "phone": null,
+    "avatar_id": null,
+    "avatar_url": null,
+    "birth_date": null,
+    "hebrew_birth_date": null,
+    "birth_time_context": "unknown",
+    "nusach": null,
+    "city": null,
+    "tribe_status": null,
+    "marital_status": null,
+    "about": null,
+    "profile_visibility": "members",
+    "birthday_visibility": "members",
+    "phone_visibility": "rabbi_only",
+    "notification_preferences": { "event_reminders": true },
+    "onboarding_completed": false,
+    "created_at": "2026-07-16T10:00:00Z",
+    "updated_at": "2026-07-16T10:05:00Z"
+  },
+  "error": null,
+  "meta": { "request_id": "8e9c2a4d-5e30-47c9-b749-1f8da61b82f5" }
+}
+```
 
 Implemented behavior (PR 32B): `POST /me/device-tokens` registers or refreshes
 one Expo push token for the authenticated actor. The endpoint upserts on the
