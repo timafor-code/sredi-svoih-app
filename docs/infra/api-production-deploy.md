@@ -141,8 +141,8 @@ following in the selected product:
 Owner-run staging checks:
 
 ```powershell
-curl -fsS https://<api-domain>/health
-curl -fsS https://<api-domain>/version
+curl.exe -fsS https://<api-domain>/health
+curl.exe -fsS https://<api-domain>/version
 ```
 
 Expected `/health` data is `status: "ok"` and the configured service name.
