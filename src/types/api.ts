@@ -1,5 +1,13 @@
 import type { PrayerActivityType } from './prayerTracker';
 import type { HebrewDateJson } from './contact';
+import type {
+  HebrewBirthDateProfile,
+  ProfileBirthTimeContext,
+  ProfileMaritalStatus,
+  ProfileNotificationPreferences,
+  ProfileTribeStatus,
+  ProfileVisibility,
+} from './profile';
 
 export const API_PROVIDER_NAMES = ['supabase', 'api'] as const;
 
@@ -86,12 +94,49 @@ export type ApiProfileSummary = {
   first_name: string | null;
   last_name: string | null;
   full_name: string | null;
+  hebrew_name: string | null;
+  email: string | null;
+  phone: string | null;
   avatar_id: string | null;
   avatar_url: string | null;
+  birth_date: string | null;
+  hebrew_birth_date: HebrewBirthDateProfile | null;
+  birth_time_context: ProfileBirthTimeContext;
+  nusach: string | null;
   city: string | null;
+  tribe_status: ProfileTribeStatus | null;
+  marital_status: ProfileMaritalStatus | null;
+  about: string | null;
+  profile_visibility: ProfileVisibility;
+  birthday_visibility: ProfileVisibility;
+  phone_visibility: ProfileVisibility;
+  notification_preferences: ProfileNotificationPreferences;
   onboarding_completed: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type ApiProfileUpdateRequest = {
+  display_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  full_name?: string | null;
+  hebrew_name?: string | null;
+  birth_date?: string | null;
+  hebrew_birth_date?: HebrewBirthDateProfile | null;
+  birth_time_context?: ProfileBirthTimeContext;
+  nusach?: string | null;
+  tribe_status?: ProfileTribeStatus | null;
+  marital_status?: ProfileMaritalStatus | null;
+  email?: string | null;
+  phone?: string | null;
+  city?: string | null;
+  about?: string | null;
+  profile_visibility?: ProfileVisibility;
+  birthday_visibility?: ProfileVisibility;
+  phone_visibility?: ProfileVisibility;
+  notification_preferences?: ProfileNotificationPreferences;
+  onboarding_completed?: boolean;
 };
 
 export type ApiCommunityMembershipSummary = {
