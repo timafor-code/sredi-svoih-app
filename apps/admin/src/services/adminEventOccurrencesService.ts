@@ -1,4 +1,5 @@
 import type { AdminEventOccurrence, AdminEventOccurrenceRow } from "../types/eventOccurrences";
+import { normalizeOccurrenceCapacityFromApi } from "../lib/eventOccurrenceDrafts";
 
 function string(value: unknown, fallback = ""): string {
   return value == null || String(value).trim() === "" ? fallback : String(value);
@@ -25,7 +26,7 @@ export function normalizeAdminEventOccurrenceRow(
     startsAt: string(row.starts_at), endsAt: nullableString(row.ends_at),
     timezone: string(row.timezone, "Europe/Moscow"),
     registrationOpensAt: nullableString(row.registration_opens_at),
-    registrationClosesAt: nullableString(row.registration_closes_at), capacity: nullableNumber(row.capacity),
+    registrationClosesAt: nullableString(row.registration_closes_at), capacity: normalizeOccurrenceCapacityFromApi(row.capacity),
     waitlistEnabled: nullableBoolean(row.waitlist_enabled), requiresApproval: nullableBoolean(row.requires_approval),
     status: string(row.status, "active"), sortOrder: nullableNumber(row.sort_order) ?? 0,
     createdAt: string(row.created_at), updatedAt: string(row.updated_at),

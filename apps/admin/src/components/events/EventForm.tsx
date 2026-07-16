@@ -14,6 +14,10 @@ import {
   buildEventUpdateInput,
   type EventUpdateFormState,
 } from "../../lib/eventUpdatePatch";
+import {
+  clearFormErrors,
+  firstActiveFormErrorKey,
+} from "../../lib/formErrors";
 import type {
   AdminEvent,
   AdminEventKind,
@@ -353,14 +357,16 @@ export function EventForm({
 
       return next;
     });
-    setErrors((current) => ({
-      ...current,
-      [field]: undefined,
-      endDate: field === "isPermanent" && value === true ? undefined : current.endDate,
-      endTime: field === "isPermanent" && value === true ? undefined : current.endTime,
-      registrationUrl: field === "registrationMode" ? undefined : current.registrationUrl,
-      form: undefined,
-    }));
+    setErrors((current) => {
+      const keysToClear: FormErrorKey[] = [field, "form"];
+      if (field === "isPermanent" && value === true) {
+        keysToClear.push("endDate", "endTime");
+      }
+      if (field === "registrationMode") {
+        keysToClear.push("registrationUrl");
+      }
+      return clearFormErrors(current, keysToClear);
+    });
 
     if (field === "registrationMode" && typeof value === "string") {
       onRegistrationModeChange?.(value);
@@ -391,12 +397,9 @@ export function EventForm({
       locationName: location?.title ?? "",
       address: location?.address ?? "",
     }));
-    setErrors((current) => ({
-      ...current,
-      locationName: undefined,
-      address: undefined,
-      form: undefined,
-    }));
+    setErrors((current) =>
+      clearFormErrors(current, ["locationName", "address", "form"]),
+    );
 
     if (mode === "edit") {
       setIsDirty(true);
@@ -1069,7 +1072,7 @@ function firstValidationError(errors: FormErrors): string | null {
     registrationUrl: "Ссылка регистрации",
     capacity: "Лимит мест",
   };
-  const key = Object.keys(errors).find((candidate) => candidate !== "form") as FormErrorKey | undefined;
+  const key = firstActiveFormErrorKey(errors, ["form"]);
   return key ? labels[key] ?? "Поле формы" : null;
 }
 
