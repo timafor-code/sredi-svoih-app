@@ -22,6 +22,8 @@ from app.schemas.admin_events import (
     AdminEventParticipationOptionsReplaceRequest,
     AdminEventResponse,
     AdminEventUpdateRequest,
+    AdminEventWebRegistrationResponse,
+    AdminEventWebRegistrationUpdateRequest,
 )
 from app.schemas.events import (
     ApiResponse,
@@ -170,6 +172,42 @@ async def update_admin_event(
         payload,
     )
     return ApiResponse[AdminEventResponse](data=AdminEventResponse.model_validate(event))
+
+
+@router.get(
+    "/events/{event_id}/web-registration",
+    response_model=ApiResponse[AdminEventWebRegistrationResponse],
+)
+async def get_admin_event_web_registration(
+    event_id: UUID,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[AdminEventWebRegistrationResponse]:
+    result = await admin_events_service.get_admin_event_web_registration(
+        session,
+        current_user,
+        event_id,
+    )
+    return ApiResponse[AdminEventWebRegistrationResponse](data=result)
+
+
+@router.patch(
+    "/events/{event_id}/web-registration",
+    response_model=ApiResponse[AdminEventWebRegistrationResponse],
+)
+async def update_admin_event_web_registration(
+    event_id: UUID,
+    payload: AdminEventWebRegistrationUpdateRequest,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[AdminEventWebRegistrationResponse]:
+    result = await admin_events_service.update_admin_event_web_registration(
+        session,
+        current_user,
+        event_id,
+        payload,
+    )
+    return ApiResponse[AdminEventWebRegistrationResponse](data=result)
 
 
 @router.post(

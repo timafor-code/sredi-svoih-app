@@ -49,7 +49,7 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
                 await session.flush()
                 session.add(EventCategory(community_id=self.community_id, slug="community", title="Community", color="#123456", icon="*"))
                 await session.flush()
-                session.add(Event(id=self.event_id, community_id=self.community_id, title="Synthetic intent event", starts_at=self.now + timedelta(days=2), category="community", registration_mode="internal_free", status="published", visibility="public"))
+                session.add(Event(id=self.event_id, community_id=self.community_id, title="Synthetic intent event", starts_at=self.now + timedelta(days=2), category="community", registration_mode="internal_free", status="published", visibility="public", web_visibility="unlisted"))
                 session.add(LegalDocument(id=self.document_id, document_type="event_registration_consent", version=f"intent-{self.document_id.hex}", title="Synthetic consent", content_hash="sha256:test-content", published_url="https://example.invalid/consent", effective_at=self.now - timedelta(days=1)))
 
     async def asyncTearDown(self) -> None:
@@ -194,7 +194,7 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
             event = await session.get(Event, self.event_id)
             event.registration_mode = "internal_paid"
             await session.commit()
-        await self._assert_http_error(409, "state_conflict")
+        await self._assert_http_error(404, "registration_unavailable")
         async with AsyncSessionLocal() as session:
             event = await session.get(Event, self.event_id)
             event.registration_mode = "internal_free"
@@ -269,7 +269,11 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(unknown.state, "not_available")
 
     async def test_invalid_event_and_legal_hash_are_rejected(self) -> None:
-        await self._assert_http_error(404, "not_found", event_id=uuid4())
+        await self._assert_http_error(
+            404,
+            "registration_unavailable",
+            event_id=uuid4(),
+        )
         await self._assert_http_error(422, "validation_error", legal_acceptances=[{"document_id": self.document_id, "content_hash": "wrong"}])
 
     async def test_database_is_at_alembic_head(self) -> None:

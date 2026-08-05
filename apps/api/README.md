@@ -85,6 +85,51 @@ the backend API environment:
 API_AUTH_CODE_TTL_MINUTES=30
 ```
 
+## Web event publication
+
+`events.web_visibility` is a separate publication switch with database values
+`disabled`, `unlisted`, and `listed`. Existing and new events default to
+`disabled`. It does not replace event `status`, `visibility`, or
+`registration_mode`, and the `events` table stores neither a public URL nor a
+slug.
+
+The backend-only `PUBLIC_WEB_BASE_URL` setting is the trusted origin for stable
+UUID links. It rejects credentials, query strings, fragments, and non-loopback
+plain HTTP; a trailing slash is removed. Do not derive canonical links from
+request headers or put this setting in mobile, Expo, Vite, or `apps/admin`.
+
+```powershell
+PUBLIC_WEB_BASE_URL=http://localhost:5174
+```
+
+The one URL builder produces `{base}/events/{event_id}` and, for an occurrence,
+`{base}/events/{event_id}?occurrence={occurrence_id}`. Links are computed and
+read-only, so renaming an event does not change them.
+
+Authenticated, community-scoped administrators use:
+
+```text
+GET   /admin/events/{event_id}/web-registration
+PATCH /admin/events/{event_id}/web-registration
+```
+
+GET returns the link even while disabled and includes only active occurrence
+links. PATCH accepts only `disabled` or `unlisted`; `listed` exists for the
+future catalog but is intentionally rejected by the MVP write contract.
+Enabling requires `registration_mode=internal_free`. A row lock, event update,
+and PII-free `admin_event_audit_entries` insert share one caller-owned
+transaction, so both commit or both roll back. Idempotent PATCH creates no
+additional audit row.
+
+The unauthenticated
+`GET /events/{event_id}/registration-form?channel=web` endpoint is available
+only when the event is published, public, `internal_free`, and `unlisted` or
+`listed`. It returns a minimized event contract, active occurrences, active
+free non-donation options, one current event-registration consent, an optional
+current privacy policy, and canonical registration state. Closed, not-yet-open,
+and full registrations keep the already-published page readable; the read does
+not reserve capacity. There is no public UI or events catalog in this PR.
+
 ## Public web registration intents
 
 The public flow implements create, resend, confirm, and credential-scoped status:
@@ -111,8 +156,10 @@ email. An equivalent retry after successful confirmation returns the same
 `flow_id` with `next_step=completed` and creates no new email, code,
 registration, legal acceptance, or plaintext credential.
 
-This endpoint currently accepts only `internal_free` registration. Paid and
-donation options are rejected. Exactly one active `event_registration_consent`
+This endpoint accepts only published/public `internal_free` events whose
+`web_visibility` is `unlisted` or `listed`. The publication gate is checked
+before submitted PII is persisted or email is sent. Paid and donation options
+are rejected. Exactly one active `event_registration_consent`
 with the matching content hash is mandatory (an active `privacy_policy` may be
 included), and questionnaire `answers` must remain empty. Registration preflight
 derives and validates `seats_count` through the canonical registration rules.
@@ -132,7 +179,11 @@ Confirmation re-resolves current email/phone identity and deletion state,
 revalidates legal documents, and calls the canonical registration service with
 `source_channel=public_web`. Capacity, windows, occurrences, options, duplicate
 registration, selections, and reservations are checked again under existing
-locks. No registration or capacity reservation exists before a valid code. A
+locks. Current web publication is rechecked under an event row lock before any
+identity mutation. Disabling an event therefore leaves an unfinished intent
+and its valid code unconsumed; re-enabling allows a retry before normal expiry.
+Already-confirmed registrations are never removed. No registration or capacity
+reservation exists before a valid code. A
 capacity failure rolls back identity/registration/legal changes and leaves the
 code usable until its normal expiry/attempt limit.
 
@@ -153,7 +204,7 @@ does not roll back the registration and is logged without raw PII or secrets.
 The rate limiter is process-local and must be replaced by shared/distributed
 storage before horizontally scaled production deployment. This PR adds no web
 UI, SMS, marketing email, analytics, or capacity hold. The next PR is
-`feature/api-web-event-publication`.
+`feature/public-web-event-registration-shell`.
 
 ## Admin event audit foundation
 
@@ -164,10 +215,10 @@ action is `event_web_visibility_changed`; state values are limited to
 `disabled`, `unlisted`, and `listed`.
 
 `record_event_web_visibility_change(...)` adds and flushes an entry in the
-caller's `AsyncSession` without committing or rolling back. This keeps a future
-event update and its audit entry atomic under the caller-owned transaction.
-This foundation is not connected to an endpoint in this PR. Integration occurs
-in `feature/api-web-event-publication`.
+caller's `AsyncSession` without committing or rolling back. The dedicated
+admin publication PATCH now calls it in the same transaction as the locked
+event update. No request body, URL, email, phone, IP address, or user agent is
+stored in the audit row.
 
 ## Temporary Supabase JWT bridge
 

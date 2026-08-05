@@ -1,8 +1,10 @@
 from functools import lru_cache
+from ipaddress import ip_address
+from urllib.parse import urlsplit, urlunsplit
 
 from typing import Literal
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DB_DSN_ENV = "DATABASE" + "_URL"
@@ -55,6 +57,7 @@ class Settings(BaseSettings):
         ge=1,
         le=3600,
     )
+    public_web_base_url: str = "http://localhost:5174"
     api_public_app_base_url: str = "http://localhost:8081"
     api_cors_allowed_origins: str = ",".join(_LOCAL_CORS_ALLOWED_ORIGINS)
     api_object_storage_enabled: bool = False
@@ -97,6 +100,46 @@ class Settings(BaseSettings):
             for origin in self.api_cors_allowed_origins.split(",")
             if origin.strip()
         ]
+
+    @field_validator("public_web_base_url")
+    @classmethod
+    def validate_public_web_base_url(cls, value: str) -> str:
+        parsed = urlsplit(value.strip())
+        if parsed.scheme not in {"http", "https"} or parsed.hostname is None:
+            raise ValueError("PUBLIC_WEB_BASE_URL must be an absolute HTTP(S) URL")
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("PUBLIC_WEB_BASE_URL must not contain user info")
+        if parsed.query:
+            raise ValueError("PUBLIC_WEB_BASE_URL must not contain a query string")
+        if parsed.fragment:
+            raise ValueError("PUBLIC_WEB_BASE_URL must not contain a fragment")
+
+        hostname = parsed.hostname.lower()
+        is_loopback = hostname == "localhost"
+        if not is_loopback:
+            try:
+                is_loopback = ip_address(hostname).is_loopback
+            except ValueError:
+                is_loopback = False
+        if parsed.scheme == "http" and not is_loopback:
+            raise ValueError(
+                "PUBLIC_WEB_BASE_URL requires HTTPS outside localhost/loopback",
+            )
+
+        try:
+            parsed.port
+        except ValueError as exc:
+            raise ValueError("PUBLIC_WEB_BASE_URL has an invalid port") from exc
+
+        return urlunsplit(
+            (
+                parsed.scheme.lower(),
+                parsed.netloc,
+                parsed.path.rstrip("/"),
+                "",
+                "",
+            ),
+        )
 
     @property
     def push_sending_allowed(self) -> bool:

@@ -38,6 +38,7 @@ from app.schemas.web_registration import (
     WebRegistrationResult,
 )
 from app.services import auth as auth_service
+from app.services import events as events_service
 from app.services import registrations as registrations_service
 from app.services.auth_tokens import hash_token
 from app.services.web_registration_email_service import (
@@ -443,6 +444,11 @@ async def create_intent(
     payload: WebRegistrationIntentRequest,
     ip: str | None,
 ) -> WebRegistrationIntentCreated:
+    await events_service.require_web_registration_event(
+        session,
+        payload.event_id,
+        for_update=True,
+    )
     key_hash = _idempotency_hash(payload.idempotency_key)
     fingerprint = _fingerprint(payload)
     flow_id = _flow_id(key_hash)
@@ -921,6 +927,16 @@ async def _confirm_once(
     if intent.status != EMAIL_REQUIRED or intent.expires_at <= now:
         await session.rollback()
         raise _invalid_code()
+
+    try:
+        await events_service.require_web_registration_event(
+            session,
+            intent.event_id,
+            for_update=True,
+        )
+    except events_service.WebRegistrationUnavailableError:
+        await session.rollback()
+        raise
 
     _apply_intent_rate_limit("confirm", intent, ip)
     submitted_hash = _verification_code_hash(intent.id, code)

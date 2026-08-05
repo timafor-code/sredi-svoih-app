@@ -491,6 +491,10 @@ class Event(Base):
             ),
             name="events_registration_mode_check",
         ),
+        CheckConstraint(
+            "web_visibility IN ('disabled', 'unlisted', 'listed')",
+            name="events_web_visibility_check",
+        ),
         CheckConstraint("capacity IS NULL OR capacity > 0", name="events_capacity_check"),
         CheckConstraint(
             "price_amount IS NULL OR price_amount >= 0",
@@ -583,6 +587,12 @@ class Event(Base):
         Text,
         nullable=False,
         server_default=text("'none'"),
+    )
+    web_visibility: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="disabled",
+        server_default=text("'disabled'"),
     )
     registration_url: Mapped[str | None] = mapped_column(Text)
     capacity: Mapped[int | None] = mapped_column(Integer)

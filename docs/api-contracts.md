@@ -1125,12 +1125,50 @@ The only currently supported action is `event_web_visibility_changed`.
 `old_state` and `new_state` are restricted to `disabled`, `unlisted`, and
 `listed`, and must differ. The narrow audit service validates these values,
 adds the row, and flushes the caller's `AsyncSession`; it never commits or
-rolls back. The future event mutation and audit row can therefore share one
-caller-owned transaction.
+rolls back. The dedicated event-publication PATCH locks the event and commits
+the event update plus audit row in one caller-owned transaction. A failure of
+either write rolls back both; an idempotent same-state PATCH creates no row.
+Audit rows contain no PII, request body, URL, IP address, or user agent.
 
-This PR exposes no audit endpoint and does not connect the service to existing
-admin actions. Endpoint integration is deferred to
-`feature/api-web-event-publication`.
+## Web Event Publication Contracts
+
+`events.web_visibility` is `NOT NULL`, defaults to `disabled` for existing and
+new rows, and is constrained to `disabled`, `unlisted`, or `listed`. It is
+independent from event `status`, `visibility`, and `registration_mode`.
+Neither a full public URL nor a slug is stored in PostgreSQL.
+
+`PUBLIC_WEB_BASE_URL` is backend-only trusted configuration. It is normalized
+without a trailing slash and rejects query strings, fragments, URL credentials,
+and non-loopback HTTP. Canonical URLs never use `Host`, `Origin`, `Referer`, or
+forwarded request headers:
+
+```text
+{PUBLIC_WEB_BASE_URL}/events/{event_id}
+{PUBLIC_WEB_BASE_URL}/events/{event_id}?occurrence={occurrence_id}
+```
+
+The occurrence query preselects a date only; API operations still validate that
+the occurrence belongs to the event.
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| GET | `/admin/events/{event_id}/web-registration` | Authenticated community-scoped read of `event_id`, `web_visibility`, the stable event URL, and active occurrence URLs ordered by start time and UUID. The URL is returned while disabled. |
+| PATCH | `/admin/events/{event_id}/web-registration` | Row-locked, audited change accepting only `disabled` or `unlisted`; enabling requires `internal_free`. `listed`, URLs, and unrelated event fields are rejected. |
+| GET | `/events/{event_id}/registration-form?channel=web` | Unauthenticated minimized form read for published/public/`internal_free` events whose web visibility is `unlisted` or `listed`. |
+
+The public form returns only safe event fields, canonical registration state,
+active occurrences, active free non-donation participation options, exactly one
+current `event_registration_consent`, and optionally the current
+`privacy_policy`. It excludes marketing consent, registrations, participant or
+membership data, audit rows, PII, and internal conflict data. Registration
+states are `open`, `not_yet_open`, `closed`, `full`, or `unavailable`; a closed
+window or full capacity does not hide an otherwise published page, and the read
+never reserves capacity.
+
+`listed` is supported by storage and direct public form reads for forward
+compatibility, but the MVP admin PATCH cannot enable it and no catalog or
+directory endpoint exists. This PR changes neither existing mobile event reads
+nor authenticated mobile registration.
 
 ## Registration Contracts
 
@@ -1142,13 +1180,12 @@ full product, identity, data, publication, privacy, retention, and delivery
 contracts; this section is the concise API index.
 
 Public event reads and authenticated mobile registration remain unchanged.
-Create intent, resend, confirm-email, and credential-scoped status are now
-implemented. The public registration-form/publication endpoint remains a
-target contract for `feature/api-web-event-publication`.
+Publication, registration-form, create intent, resend, confirm-email, and
+credential-scoped status are implemented. No public web UI is included.
 
 Public flow:
 
-| Method | Path | Target behavior |
+| Method | Path | Behavior |
 | --- | --- | --- |
 | GET | `/events/{event_id}/registration-form?channel=web` | Return only a publishable `unlisted`/`listed` web form; `disabled` is unavailable even by UUID. |
 | POST | `/web/registration-intents` | Create/reuse a short-lived intent after validation; do not create a registration or reserve capacity. |
@@ -1174,7 +1211,12 @@ same `flow_id` with `next_step=completed`; it sends no email, creates no code,
 registration, or legal acceptance, and never replays a plaintext set-password
 credential.
 
-The current intent release is free-only: the event must use `internal_free`,
+The current intent release is free-only: the event must be published/public,
+use `internal_free`, and have `web_visibility` set to `unlisted` or `listed`.
+This gate runs before intent PII persistence, conflict creation, user or
+registration creation, and verification email delivery. Disabled and other
+unsupported states use one generic `registration_unavailable` outcome. The
+event must use `internal_free`,
 and paid or donation option selections are rejected. Canonical registration
 preflight validates occurrences, registration windows, option membership and
 quantity rules, and derives `seats_count`; a conflicting client value is
@@ -1210,13 +1252,17 @@ no membership; claimed/legacy profiles are not overwritten, phone-only and
 differing-user states never create a duplicate or merge, and deletion-blocked
 processing is stopped with a neutral response.
 
-Finalization rebuilds the canonical registration request from the intent,
-rechecks legal-document versions and registration capacity under existing
-locks, and creates/reuses one registration with `source_channel=public_web`.
+Finalization first rechecks current web publication under an event row lock,
+then rebuilds the canonical registration request from the intent, rechecks
+legal-document versions and registration capacity under existing locks, and
+creates/reuses one registration with `source_channel=public_web`.
 Legal evidence uses `checkbox_plus_email_verification`, `public_web`, and
-`web-registration-email-code-v1`. Capacity failure rolls back the transaction,
-does not confirm the intent, and does not consume the valid code. There is no
-capacity reservation before confirmation.
+`web-registration-email-code-v1`. Capacity failure or publication being
+disabled rolls back the transaction, performs no identity/profile/registration
+mutation, does not confirm the intent, and does not consume the valid code.
+Re-enabling permits retry while the intent and code remain valid. Disabling
+never removes an already-confirmed registration. There is no capacity
+reservation before confirmation.
 
 `without_password` returns no credential. For `create_account`, a passwordless
 user receives a first-response-only hash-backed set-password handoff accepted
@@ -1227,14 +1273,14 @@ registration. Status returns only public state, minimal registration data, and
 an account next step without plaintext secrets. The current limiter is
 process-local and requires shared storage for horizontal production scaling.
 No web UI, SMS, marketing email, or analytics is included. Next PR:
-`feature/api-web-event-publication`.
+`feature/public-web-event-registration-shell`.
 
 Administrative publication:
 
-| Method | Path | Target behavior |
+| Method | Path | Behavior |
 | --- | --- | --- |
-| GET | `/admin/events/{event_id}/web-registration` | Return `web_visibility` and backend-computed event/occurrence URLs. |
-| PATCH | `/admin/events/{event_id}/web-registration` | Update managed publication fields only; never accept a caller-provided URL. |
+| GET | `/admin/events/{event_id}/web-registration` | Return `web_visibility` and backend-computed event/active-occurrence URLs. |
+| PATCH | `/admin/events/{event_id}/web-registration` | Atomically update `disabled`/`unlisted` publication plus audit; never accept a caller-provided URL or `listed`. |
 
 The stable page is `/events/{event_id}` with optional occurrence preselection
 through `?occurrence={occurrence_id}`. Links are computed from trusted backend
