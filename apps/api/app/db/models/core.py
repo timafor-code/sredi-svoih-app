@@ -1045,6 +1045,71 @@ class LegalAcceptance(Base):
     created_at: Mapped[datetime] = timestamptz_now()
 
 
+class WebRegistrationIntent(Base):
+    __tablename__ = "web_registration_intents"
+    __table_args__ = (
+        CheckConstraint("btrim(flow_token_hash) <> ''", name="web_registration_intents_flow_hash_not_empty"),
+        CheckConstraint("btrim(first_name) <> ''", name="web_registration_intents_first_name_not_empty"),
+        CheckConstraint("btrim(last_name) <> ''", name="web_registration_intents_last_name_not_empty"),
+        CheckConstraint("btrim(email_normalized) <> ''", name="web_registration_intents_email_not_empty"),
+        CheckConstraint("btrim(phone_normalized) <> ''", name="web_registration_intents_phone_not_empty"),
+        CheckConstraint("seats_count > 0", name="web_registration_intents_seats_positive"),
+        CheckConstraint("account_choice IN ('without_password', 'create_account')", name="web_registration_intents_account_choice_check"),
+        CheckConstraint("status IN ('email_verification_required', 'confirmed', 'expired', 'failed')", name="web_registration_intents_status_check"),
+        CheckConstraint("btrim(idempotency_key_hash) <> ''", name="web_registration_intents_idempotency_hash_not_empty"),
+        CheckConstraint("btrim(request_fingerprint_hash) <> ''", name="web_registration_intents_fingerprint_not_empty"),
+        CheckConstraint("expires_at > created_at", name="web_registration_intents_expiry_check"),
+        CheckConstraint("confirmed_at IS NULL OR status = 'confirmed'", name="web_registration_intents_confirmed_at_check"),
+        UniqueConstraint("flow_token_hash", name="web_registration_intents_flow_token_hash_key"),
+        UniqueConstraint("idempotency_key_hash", name="web_registration_intents_idempotency_key_hash_key"),
+        Index("web_registration_intents_expires_at_idx", "expires_at"),
+        Index("web_registration_intents_event_id_idx", "event_id"),
+        Index("web_registration_intents_occurrence_id_idx", "occurrence_id"),
+        Index("web_registration_intents_status_idx", "status"),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    flow_token_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    event_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
+    occurrence_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("event_occurrences.id", ondelete="CASCADE"))
+    matched_user_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("app_users.id", ondelete="SET NULL"))
+    first_name: Mapped[str] = mapped_column(Text, nullable=False)
+    last_name: Mapped[str] = mapped_column(Text, nullable=False)
+    email_normalized: Mapped[str] = mapped_column(Text, nullable=False)
+    phone_normalized: Mapped[str] = mapped_column(Text, nullable=False)
+    seats_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    option_payload: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
+    answer_payload: Mapped[list[Any] | None] = mapped_column(JSONB)
+    legal_acceptance_payload: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
+    account_choice: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    idempotency_key_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    request_fingerprint_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = timestamptz_now()
+
+
+class WebRegistrationIdentityConflict(Base):
+    __tablename__ = "web_registration_identity_conflicts"
+    __table_args__ = (
+        CheckConstraint("category = 'email_phone_different_users'", name="web_registration_identity_conflicts_category_check"),
+        CheckConstraint("status IN ('open', 'resolved')", name="web_registration_identity_conflicts_status_check"),
+        CheckConstraint("resolved_at IS NULL OR status = 'resolved'", name="web_registration_identity_conflicts_resolved_at_check"),
+        UniqueConstraint("registration_intent_id", name="web_registration_identity_conflicts_intent_key"),
+        Index("web_registration_identity_conflicts_status_idx", "status"),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    registration_intent_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("web_registration_intents.id", ondelete="CASCADE"), nullable=False)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    email_user_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True)
+    phone_user_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'open'"))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = timestamptz_now()
+
+
 class EventRegistrationOptionSelection(Base):
     __tablename__ = "event_registration_option_selections"
     __table_args__ = (

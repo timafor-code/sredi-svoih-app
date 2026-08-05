@@ -1121,10 +1121,9 @@ The approved web-registration specification is
 full product, identity, data, publication, privacy, retention, and delivery
 contracts; this section is the concise API index.
 
-Current behavior remains unchanged: public event reads exist, while
-`POST /events/{event_id}/register` requires the authenticated current user.
-The endpoints and model additions below are target contracts and are not
-implemented by this documentation PR.
+Public event reads and authenticated registration remain unchanged. The public
+intent creation and credential-scoped status endpoints are now implemented;
+the form, resend, and confirmation endpoints remain target contracts.
 
 Public flow:
 
@@ -1135,6 +1134,21 @@ Public flow:
 | POST | `/web/registration-intents/{flow_id}/resend-code` | Rate-limited, enumeration-safe email-code resend. |
 | POST | `/web/registration-intents/{flow_id}/confirm-email` | Consume a hash-only code, resolve identity safely, re-check capacity transactionally, then create the registration. |
 | GET | `/web/registration-intents/{flow_id}/status` | Return flow-authorized state without exposing identity matches. |
+
+Intent creation normalizes email case-insensitively (including a lowercase
+IDNA domain), Russian phones to `+7XXXXXXXXXX`, and collapsed/trimmed names.
+Opaque flow credentials and client idempotency keys are stored only as hashes.
+Equivalent retries return the same deterministic opaque flow credential;
+materially different normalized payloads cannot reuse the key, and database
+uniqueness selects one canonical row under concurrency. Identity-sensitive
+cases return the same public shape and are persisted as failed flows; differing
+email/phone owners additionally create a technical-ID-only open conflict row.
+
+The provisional backend-only lifetime is 24 hours and is configurable with
+`API_WEB_REGISTRATION_INTENT_TTL_HOURS` (positive, at most 168). Launch
+retention approval remains unresolved. This implementation sends no email,
+creates no verification-code row, user, final registration, legal acceptance,
+or capacity reservation, and exposes no web UI.
 
 Administrative publication:
 

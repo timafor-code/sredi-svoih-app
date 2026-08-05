@@ -219,6 +219,14 @@ idempotency values must not appear in logs. Successful completion moves only
 required data into canonical records, then clears or deletes the intent under
 short retention.
 
+Implementation status: the intent table, public create/status endpoints,
+normalization, hash-only flow/idempotency lookup, database-backed idempotency,
+and minimal identity-conflict persistence are implemented. The provisional
+24-hour TTL is backend-configurable through
+`API_WEB_REGISTRATION_INTENT_TTL_HOURS`; final retention approval is still a
+launch gate. No email, verification-code table, final registration, capacity
+reservation, user creation/mutation, or web UI is implemented in this step.
+
 ### `web_registration_verification_codes`
 
 ```text
@@ -381,7 +389,7 @@ are not approvals and must not be presented as final values.
 1. `docs/web-registration-contracts` — this documentation-only contract PR.
 2. `feature/api-web-registration-identity-schema` — claim/source/legal schema (implemented).
 3. `feature/api-web-registration-intents` — intent, normalization, dedupe,
-   conflict policy, and idempotency without email delivery.
+   conflict policy, and idempotency without email delivery (implemented).
 4. `feature/api-web-registration-email-finalize` — hash-only codes, SMTP
    templates, verification, and transactional capacity finalization.
 5. `feature/api-web-event-publication` — `web_visibility`, admin publication,

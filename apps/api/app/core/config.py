@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     api_email_smtp_starttls: bool = True
     api_auth_email_rate_limit_window_seconds: int = Field(default=900, gt=0)
     api_auth_email_rate_limit_max_attempts: int = Field(default=5, gt=0)
+    api_web_registration_intent_ttl_hours: int = Field(default=24, gt=0, le=168)
+    api_web_registration_rate_limit_window_seconds: int = Field(default=900, gt=0)
+    api_web_registration_rate_limit_max_attempts: int = Field(default=10, gt=0)
     api_public_app_base_url: str = "http://localhost:8081"
     api_cors_allowed_origins: str = ",".join(_LOCAL_CORS_ALLOWED_ORIGINS)
     api_object_storage_enabled: bool = False
