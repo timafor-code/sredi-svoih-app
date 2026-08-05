@@ -141,6 +141,14 @@ state and never an occupied place. The result may change between submit and
 confirmation because capacity is checked again. Retries must be idempotent and
 must not create duplicate flows, users, registrations, or capacity usage.
 
+For the current intent implementation, only `internal_free` events are
+processable. Paid and donation selections are rejected. Registration preflight
+uses the canonical occurrence, window, option, quantity, and seat-count rules;
+capacity is not reserved and is rechecked transactionally in PR 4. Exactly one
+active `event_registration_consent` with its exact content hash is mandatory;
+an active `privacy_policy` may accompany it, while marketing consent is outside
+this MVP. Questionnaire `answers` must remain empty and are stored as null.
+
 ## Identity Normalization And Conflict Rules
 
 - Email is trimmed, Unicode-valid, domain-normalized, and compared
@@ -219,6 +227,18 @@ idempotency values must not appear in logs. Successful completion moves only
 required data into canonical records, then clears or deletes the intent under
 short retention.
 
+Implementation status: the intent table, public create/status endpoints,
+normalization, hash-only flow/idempotency lookup, database-backed idempotency,
+and minimal identity-conflict persistence are implemented. The provisional
+24-hour TTL is backend-configurable through
+`API_WEB_REGISTRATION_INTENT_TTL_HOURS`; final retention approval is still a
+launch gate. No email, verification-code table, final registration, capacity
+reservation, user creation/mutation, or web UI is implemented in this step.
+Phone-only and differing-user identity conflicts return one generic
+support/recovery error. Differing users retain only the minimal technical
+conflict record; deletion-pending matches create neither an intent nor a
+conflict and begin no new submitted-PII processing.
+
 ### `web_registration_verification_codes`
 
 ```text
@@ -292,11 +312,12 @@ enumeration-safe errors.
 | GET | `/web/registration-intents/{flow_id}/status` | Return only the state authorized by the opaque flow credential. |
 
 Intent creation accepts the event/occurrence, the four MVP identity fields,
-seat and option selections, allowed answers, versioned legal acceptances,
+free seat and option selections, an empty `answers` list, and versioned legal acceptances including exactly one event-registration consent,
 `account_choice` (`without_password` or `create_account`), and an opaque
-idempotency value. Its response returns an opaque `flow_id`,
-`next_step = confirm_email`, and `expires_at`; it never states whether contact
-values already existed. Confirmation returns the final registration state and,
+idempotency value. A processable response returns an opaque `flow_id`,
+`next_step = confirm_email`, and `expires_at`; sensitive identity conflicts
+instead return the same generic support/recovery error and never state whether
+contact values already existed. Confirmation returns the final registration state and,
 when selected, a one-time transition into the existing set-password flow.
 
 ## Target Administrative Publication Contracts
@@ -381,7 +402,7 @@ are not approvals and must not be presented as final values.
 1. `docs/web-registration-contracts` — this documentation-only contract PR.
 2. `feature/api-web-registration-identity-schema` — claim/source/legal schema (implemented).
 3. `feature/api-web-registration-intents` — intent, normalization, dedupe,
-   conflict policy, and idempotency without email delivery.
+   conflict policy, and idempotency without email delivery (implemented).
 4. `feature/api-web-registration-email-finalize` — hash-only codes, SMTP
    templates, verification, and transactional capacity finalization.
 5. `feature/api-web-event-publication` — `web_visibility`, admin publication,

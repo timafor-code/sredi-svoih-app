@@ -20,6 +20,8 @@ from app.db.models import (
     LegalDocument,
     PasswordResetCode,
     Profile,
+    WebRegistrationIdentityConflict,
+    WebRegistrationIntent,
 )
 
 __all__ = [
@@ -44,4 +46,6 @@ __all__ = [
     "LegalDocument",
     "PasswordResetCode",
     "Profile",
+    "WebRegistrationIdentityConflict",
+    "WebRegistrationIntent",
 ]

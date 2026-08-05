@@ -27,6 +27,8 @@ from app.db.models.core import (
     PushNotificationDelivery,
     PushNotificationJob,
     SyncedContact,
+    WebRegistrationIdentityConflict,
+    WebRegistrationIntent,
 )
 from app.db.models.imports import (
     EventImportItem,
@@ -88,4 +90,6 @@ __all__ = [
     "PushNotificationDelivery",
     "PushNotificationJob",
     "SyncedContact",
+    "WebRegistrationIdentityConflict",
+    "WebRegistrationIntent",
 ]
