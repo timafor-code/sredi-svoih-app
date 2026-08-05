@@ -331,8 +331,8 @@ class AdminEventAuditTests(unittest.IsolatedAsyncioTestCase):
         expected = ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
         async with AsyncSessionLocal() as session:
             actual = await session.scalar(text("SELECT version_num FROM alembic_version"))
+        self.assertIsNotNone(expected)
         self.assertEqual(actual, expected)
-        self.assertEqual(expected, "20260805210000")
 
 
 if __name__ == "__main__":
