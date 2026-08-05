@@ -111,6 +111,55 @@ Production logging must avoid raw personal and secret values, including:
 Logs should prefer counts, ids that are safe for the context, hashes where
 appropriate, and validation summaries.
 
+## Public Web Registration Boundaries
+
+The complete target specification is
+[`docs/web-event-registration.md`](web-event-registration.md). These rules are
+documentation contracts; they do not imply that the public web application,
+registration intents, legal tables, SMTP templates, or erasure worker already
+exist.
+
+Mobile, the future separate Vite + React `apps/web`, and web-admin use the same
+FastAPI API and canonical PostgreSQL data model. The public form must not be
+placed inside `apps/admin`, and no frontend receives direct database access or
+backend credentials.
+
+For public registration, Russian residency requirements apply to primary
+PostgreSQL, replicas, backups, S3-compatible object storage, SMTP
+infrastructure, and logs. Every processor and infrastructure location requires
+approval before launch. The MVP includes no foreign analytics, advertising
+pixels, reCAPTCHA, or third-party trackers.
+
+The MVP minimizes collection to first name, last name, phone, email, and a
+separate affirmative personal-data consent. The privacy policy and separate
+consent must be accessible before submission, consent must not be preselected,
+and the acceptance must identify an immutable version of the legal document.
+The MVP does not collect passport data, health information, religious status
+or beliefs, nationality, conversion status, Jewish status, or other
+special-category questionnaire data.
+
+In addition to the existing logging restrictions, public registration and
+privacy execution must never log raw questionnaire answers or verification
+codes. Raw email, phone, names, questionnaire answers, registration comments,
+JWTs, refresh tokens, verification codes, magic links, privacy-request text,
+or full email bodies must not enter application, access, SMTP, analytics,
+error, or infrastructure logs. Verification codes, passwords, refresh tokens,
+and invite codes are never stored in plaintext; only appropriate hashes or
+revocable server-side session state are stored.
+
+Deletion must cover every applicable PII store, including PostgreSQL primary
+and replicas, profile/contact/auth/session data, registration option and
+capacity rows, questionnaire answers, device/contact/avatar data, S3 objects,
+exports, logs, and backups under their approved schedules. The execution must
+be idempotent, release capacity for cancelled future registrations, replay an
+erasure register after restore, and create required destruction evidence
+without retaining the erased PII. Retention periods and any legally required
+limited preservation remain launch decisions and must not be invented.
+
+The `prayer_activity_logs` data remains private. It must not be exposed through
+web-admin, public registration, privacy administration views, exports for event
+operations, or conflict-review tooling.
+
 ## Migration Script Carve-Out
 
 Future owner-run scripts under `scripts/migration/**` may inspect Supabase Auth

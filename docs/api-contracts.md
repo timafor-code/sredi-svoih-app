@@ -1112,7 +1112,61 @@ Error Codes); the mobile API client still tolerates the legacy FastAPI
 Event responses must not leak unpublished admin notes, hidden capacity internals
 that are not needed by the client, or private registration data.
 
-## `/registrations/*`
+## Registration Contracts
+
+### Web Event Registration Target Contracts
+
+The approved web-registration specification is
+[`docs/web-event-registration.md`](web-event-registration.md). It preserves the
+full product, identity, data, publication, privacy, retention, and delivery
+contracts; this section is the concise API index.
+
+Current behavior remains unchanged: public event reads exist, while
+`POST /events/{event_id}/register` requires the authenticated current user.
+The endpoints and model additions below are target contracts and are not
+implemented by this documentation PR.
+
+Public flow:
+
+| Method | Path | Target behavior |
+| --- | --- | --- |
+| GET | `/events/{event_id}/registration-form?channel=web` | Return only a publishable `unlisted`/`listed` web form; `disabled` is unavailable even by UUID. |
+| POST | `/web/registration-intents` | Create/reuse a short-lived intent after validation; do not create a registration or reserve capacity. |
+| POST | `/web/registration-intents/{flow_id}/resend-code` | Rate-limited, enumeration-safe email-code resend. |
+| POST | `/web/registration-intents/{flow_id}/confirm-email` | Consume a hash-only code, resolve identity safely, re-check capacity transactionally, then create the registration. |
+| GET | `/web/registration-intents/{flow_id}/status` | Return flow-authorized state without exposing identity matches. |
+
+Administrative publication:
+
+| Method | Path | Target behavior |
+| --- | --- | --- |
+| GET | `/admin/events/{event_id}/web-registration` | Return `web_visibility` and backend-computed event/occurrence URLs. |
+| PATCH | `/admin/events/{event_id}/web-registration` | Update managed publication fields only; never accept a caller-provided URL. |
+
+The stable page is `/events/{event_id}` with optional occurrence preselection
+through `?occurrence={occurrence_id}`. Links are computed from trusted backend
+configuration and the event UUID. Existing/new events default to `disabled`;
+the MVP permits `unlisted` but not `listed` until the public directory exists.
+
+Privacy self-service target surface:
+
+| Method | Path | Target behavior |
+| --- | --- | --- |
+| POST | `/privacy/access/request` | Generic, enumeration-safe access-code request. |
+| POST | `/privacy/access/confirm` | Create a short-lived own-data-only privacy session. |
+| GET | `/privacy/data-summary` | Return the verified subject's data categories. |
+| POST | `/privacy/data-export` | Request/produce a scoped export under approved retention. |
+| POST | `/privacy/requests` | Expanded target behavior for a verified privacy session; the current authenticated endpoint only records a request. |
+| POST | `/privacy/requests/{request_id}/confirm-erasure` | Confirm destructive execution and stop new processing. |
+| POST | `/privacy/requests/{request_id}/cancel-erasure` | Cancel while the execution state permits. |
+
+All pre-verification responses are generic. Email is compared in normalized,
+case-insensitive form and phone in E.164 form. Conflicting rows are never
+merged automatically. Email verification is an intent state, not an
+`event_registrations` status. The final row is created only after verification
+and the transactional capacity re-check.
+
+### Current Authenticated Registration Contracts
 
 Registration endpoints require an authenticated user unless a later endpoint
 explicitly documents a public pre-auth flow. Payment gateway integration is out
