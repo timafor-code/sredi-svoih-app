@@ -98,12 +98,18 @@ GET  /web/registration-intents/{flow_id}/status
 
 Inputs are normalized (case-insensitive email, Russian E.164 phone, and
 trimmed/collapsed names). Opaque flow/idempotency values and six-digit email
-codes are hash-only at rest. A successful create means the verification email
+codes are hash-only at rest. Code hashes include the registration intent ID,
+are unique within that intent, and may safely represent the same six-digit code
+in different intents. Generation checks the intent's complete code history and
+retries a bounded number of times rather than reissuing a previous code. A
+successful create means the verification email
 was accepted by the existing SMTP delivery contour. If email is disabled or
 delivery fails, create returns safe `503 email_delivery_unavailable`; the
 intent remains available for an idempotent retry, but no code row is committed.
 An active code makes an equivalent retry return the same flow without another
-email.
+email. An equivalent retry after successful confirmation returns the same
+`flow_id` with `next_step=completed` and creates no new email, code,
+registration, legal acceptance, or plaintext credential.
 
 This endpoint currently accepts only `internal_free` registration. Paid and
 donation options are rejected. Exactly one active `event_registration_consent`

@@ -101,7 +101,7 @@ class WebRegistrationIntentRequest(BaseModel):
 
 class WebRegistrationIntentCreated(BaseModel):
     flow_id: str
-    next_step: Literal["confirm_email"] = "confirm_email"
+    next_step: Literal["confirm_email", "completed"] = "confirm_email"
     expires_at: datetime
 
 

@@ -39,7 +39,7 @@ from app.schemas.web_registration import (
 )
 from app.services import auth as auth_service
 from app.services import registrations as registrations_service
-from app.services.auth_tokens import hash_token, verify_token_hash
+from app.services.auth_tokens import hash_token
 from app.services.web_registration_email_service import (
     WebRegistrationEmailDeliveryError,
     send_web_registration_result,
@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 EMAIL_REQUIRED = "email_verification_required"
 CONFIRMED = "confirmed"
 FAILED = "failed"
+VERIFICATION_CODE_GENERATION_MAX_ATTEMPTS = 10
 IDENTITY_UNAVAILABLE_DETAIL = {
     "code": "identity_confirmation_unavailable",
     "message": "Не удалось автоматически подтвердить данные. Используйте восстановление доступа или обратитесь в поддержку.",
@@ -195,6 +196,46 @@ def _fingerprint(payload: WebRegistrationIntentRequest) -> str:
 
 def _new_verification_code() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def _verification_code_hash(intent_id: UUID, code: str) -> str:
+    return hash_token(f"web-registration-code:{intent_id}:{code}")
+
+
+def _verify_verification_code(
+    intent_id: UUID,
+    code: str,
+    code_hash: str,
+) -> bool:
+    try:
+        submitted_hash = _verification_code_hash(intent_id, code)
+    except ValueError:
+        return False
+    return hmac.compare_digest(submitted_hash, code_hash)
+
+
+async def _new_unique_verification_code(
+    session: AsyncSession,
+    intent_id: UUID,
+) -> tuple[str, str]:
+    for _ in range(VERIFICATION_CODE_GENERATION_MAX_ATTEMPTS):
+        code = _new_verification_code()
+        code_hash = _verification_code_hash(intent_id, code)
+        existing_id = await session.scalar(
+            select(WebRegistrationVerificationCode.id)
+            .where(
+                WebRegistrationVerificationCode.registration_intent_id == intent_id,
+                WebRegistrationVerificationCode.code_hash == code_hash,
+            )
+            .limit(1),
+        )
+        if existing_id is None:
+            return code, code_hash
+    raise _error(
+        status.HTTP_500_INTERNAL_SERVER_ERROR,
+        "verification_code_generation_unavailable",
+        "Unable to generate verification code",
+    )
 
 
 def _code_expiry(now: datetime) -> datetime:
@@ -375,10 +416,10 @@ async def _issue_initial_code(
         return
 
     _apply_intent_rate_limit("issue", intent, ip)
-    code = _new_verification_code()
+    code, code_hash = await _new_unique_verification_code(session, intent.id)
     code_row = WebRegistrationVerificationCode(
         registration_intent_id=intent.id,
-        code_hash=hash_token(code),
+        code_hash=code_hash,
         expires_at=_code_expiry(now),
         attempt_count=0,
         created_at=now,
@@ -417,17 +458,18 @@ async def create_intent(
                 "idempotency_conflict",
                 "Idempotency key cannot be reused",
             )
-        if existing.expires_at <= _now():
-            raise _flow_unavailable()
-        if existing.status == FAILED:
-            raise _identity_unavailable()
         if existing.status == CONFIRMED:
             response = WebRegistrationIntentCreated(
                 flow_id=flow_id,
+                next_step="completed",
                 expires_at=existing.expires_at,
             )
             await session.rollback()
             return response
+        if existing.expires_at <= _now():
+            raise _flow_unavailable()
+        if existing.status == FAILED:
+            raise _identity_unavailable()
         if existing.status != EMAIL_REQUIRED:
             raise _flow_unavailable()
         intent_id = existing.id
@@ -510,6 +552,12 @@ async def create_intent(
             intent_expires_at = intent.expires_at
         if resolved_status == FAILED:
             raise _identity_unavailable()
+        if resolved_status == CONFIRMED:
+            return WebRegistrationIntentCreated(
+                flow_id=flow_id,
+                next_step="completed",
+                expires_at=intent_expires_at,
+            )
 
     await _issue_initial_code(session, intent_id, ip)
     return WebRegistrationIntentCreated(
@@ -562,10 +610,10 @@ async def resend_code(
                 headers={"Retry-After": str(retry_after)},
             )
 
-    code = _new_verification_code()
+    code, code_hash = await _new_unique_verification_code(session, intent.id)
     code_row = WebRegistrationVerificationCode(
         registration_intent_id=intent.id,
-        code_hash=hash_token(code),
+        code_hash=code_hash,
         expires_at=_code_expiry(now),
         attempt_count=0,
         created_at=now,
@@ -875,7 +923,7 @@ async def _confirm_once(
         raise _invalid_code()
 
     _apply_intent_rate_limit("confirm", intent, ip)
-    submitted_hash = hash_token(code)
+    submitted_hash = _verification_code_hash(intent.id, code)
     code_row = await session.scalar(
         select(WebRegistrationVerificationCode)
         .where(
@@ -888,7 +936,7 @@ async def _confirm_once(
         code_row is None
         or code_row.consumed_at is not None
         or code_row.expires_at <= now
-        or not verify_token_hash(code, code_row.code_hash)
+        or not _verify_verification_code(intent.id, code, code_row.code_hash)
     ):
         await _record_invalid_attempt(session, intent.id, now)
         raise _invalid_code()

@@ -204,7 +204,13 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
             )
             intent_id = intent.id
             self.assertNotEqual(code_row.code_hash, plaintext)
-            self.assertTrue(verify_token_hash(plaintext, code_row.code_hash))
+            self.assertTrue(
+                service._verify_verification_code(
+                    intent.id,
+                    plaintext,
+                    code_row.code_hash,
+                ),
+            )
             self.assertEqual(code_row.attempt_count, 0)
             columns = set(
                 await session.scalars(
@@ -226,6 +232,53 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                     "created_at",
                 },
             )
+            unique_constraints = dict(
+                (
+                    row.conname,
+                    list(row.column_names),
+                )
+                for row in (
+                    await session.execute(
+                        text(
+                            "SELECT con.conname, "
+                            "array_agg(att.attname ORDER BY key_column.ordinality) "
+                            "AS column_names "
+                            "FROM pg_constraint AS con "
+                            "JOIN pg_class AS rel ON rel.oid = con.conrelid "
+                            "CROSS JOIN LATERAL unnest(con.conkey) WITH ORDINALITY "
+                            "AS key_column(attnum, ordinality) "
+                            "JOIN pg_attribute AS att "
+                            "ON att.attrelid = rel.oid "
+                            "AND att.attnum = key_column.attnum "
+                            "WHERE rel.relname = "
+                            "'web_registration_verification_codes' "
+                            "AND con.contype = 'u' "
+                            "GROUP BY con.conname",
+                        ),
+                    )
+                ).all()
+            )
+            constraint_name = (
+                "web_registration_verification_codes_intent_code_hash_key"
+            )
+            self.assertNotIn(
+                "web_registration_verification_codes_hash_key",
+                unique_constraints,
+            )
+            self.assertEqual(
+                unique_constraints[constraint_name],
+                ["registration_intent_id", "code_hash"],
+            )
+            index_definition = await session.scalar(
+                text(
+                    "SELECT indexdef FROM pg_indexes "
+                    "WHERE tablename = 'web_registration_verification_codes' "
+                    "AND indexname = :index_name",
+                ),
+                {"index_name": constraint_name},
+            )
+            self.assertIn("CREATE UNIQUE INDEX", index_definition)
+            self.assertIn("(registration_intent_id, code_hash)", index_definition)
             code_row.attempt_count = -1
             with self.assertRaises(IntegrityError):
                 await session.commit()
@@ -334,6 +387,82 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(recovered.flow_id, service._flow_id(service._idempotency_hash("web-finalize-delivery-recovery")))
 
+    async def test_same_plaintext_code_is_scoped_to_each_intent(self) -> None:
+        second_payload = self.payload(
+            email=f"web-finalize-second-{self.marker}@example.invalid",
+            phone=f"+7902{int(self.marker[:8], 16) % 10**7:07d}",
+            idempotency_key=f"web-finalize-second-{self.marker}",
+        )
+        with patch(
+            "app.services.web_registration._new_verification_code",
+            side_effect=["123456", "123456"],
+        ):
+            first, first_code = await self.create()
+            second, second_code = await self.create(second_payload)
+
+        self.assertEqual(first_code, "123456")
+        self.assertEqual(second_code, "123456")
+        self.assertEqual(len(self.verification_deliveries), 2)
+        async with AsyncSessionLocal() as session:
+            first_intent = await session.scalar(
+                select(WebRegistrationIntent).where(
+                    WebRegistrationIntent.flow_token_hash
+                    == service._flow_hash(first.flow_id),
+                ),
+            )
+            second_intent = await session.scalar(
+                select(WebRegistrationIntent).where(
+                    WebRegistrationIntent.flow_token_hash
+                    == service._flow_hash(second.flow_id),
+                ),
+            )
+            rows = list(
+                await session.scalars(
+                    select(WebRegistrationVerificationCode).where(
+                        WebRegistrationVerificationCode.registration_intent_id.in_(
+                            [first_intent.id, second_intent.id],
+                        ),
+                    ),
+                ),
+            )
+        self.assertEqual(len(rows), 2)
+        rows_by_intent = {row.registration_intent_id: row for row in rows}
+        first_row = rows_by_intent[first_intent.id]
+        second_row = rows_by_intent[second_intent.id]
+        self.assertNotEqual(first_row.code_hash, second_row.code_hash)
+        self.assertFalse(
+            service._verify_verification_code(
+                second_intent.id,
+                first_code,
+                first_row.code_hash,
+            ),
+        )
+        self.assertFalse(
+            service._verify_verification_code(
+                first_intent.id,
+                second_code,
+                second_row.code_hash,
+            ),
+        )
+
+        async with AsyncSessionLocal() as session:
+            first_result = await service.confirm_email(
+                session,
+                first.flow_id,
+                first_code,
+                "192.0.2.21",
+            )
+        async with AsyncSessionLocal() as session:
+            second_result = await service.confirm_email(
+                session,
+                second.flow_id,
+                second_code,
+                "192.0.2.22",
+            )
+        self.assertEqual(first_result.intent_status, "confirmed")
+        self.assertEqual(second_result.intent_status, "confirmed")
+        self.assertNotEqual(first_result.registration.id, second_result.registration.id)
+
     def test_disabled_email_is_not_success(self) -> None:
         with self.assertRaises(WebRegistrationEmailDeliveryError):
             send_web_registration_verification_code(
@@ -387,6 +516,59 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                 created.flow_id,
                 new_code,
                 "192.0.2.3",
+            )
+        self.assertEqual(result.intent_status, "confirmed")
+
+    async def test_resend_retries_a_code_used_before_by_the_same_intent(self) -> None:
+        with patch(
+            "app.services.web_registration._new_verification_code",
+            side_effect=["123456", "123456", "654321"],
+        ):
+            created, old_code = await self.create()
+            async with AsyncSessionLocal() as session:
+                intent = await session.scalar(
+                    select(WebRegistrationIntent).where(
+                        WebRegistrationIntent.flow_token_hash
+                        == service._flow_hash(created.flow_id),
+                    ),
+                )
+            await self.backdate_latest_code(intent.id)
+            async with AsyncSessionLocal() as session:
+                await service.resend_code(session, created.flow_id, "192.0.2.23")
+
+        new_code = self.verification_deliveries[-1][1]
+        self.assertEqual(old_code, "123456")
+        self.assertEqual(new_code, "654321")
+        async with AsyncSessionLocal() as session:
+            rows = list(
+                await session.scalars(
+                    select(WebRegistrationVerificationCode)
+                    .where(
+                        WebRegistrationVerificationCode.registration_intent_id
+                        == intent.id,
+                    )
+                    .order_by(WebRegistrationVerificationCode.created_at),
+                ),
+            )
+        self.assertEqual(len(rows), 2)
+        self.assertIsNotNone(rows[0].consumed_at)
+        self.assertNotEqual(rows[0].code_hash, rows[1].code_hash)
+
+        async with AsyncSessionLocal() as session:
+            with self.assertRaises(HTTPException) as invalid:
+                await service.confirm_email(
+                    session,
+                    created.flow_id,
+                    old_code,
+                    "192.0.2.23",
+                )
+        self.assertEqual(invalid.exception.detail, service.INVALID_CODE_DETAIL)
+        async with AsyncSessionLocal() as session:
+            result = await service.confirm_email(
+                session,
+                created.flow_id,
+                new_code,
+                "192.0.2.23",
             )
         self.assertEqual(result.intent_status, "confirmed")
 
@@ -837,6 +1019,103 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(self.email, combined_logs)
         self.assertNotIn(code, combined_logs)
         self.assertNotIn(flow_id, combined_logs)
+
+    async def test_completed_intent_create_retry_has_no_side_effects(self) -> None:
+        payload = self.payload(idempotency_key=f"web-finalize-completed-{self.marker}")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            create_response = await client.post(
+                "/web/registration-intents",
+                json=payload.model_dump(mode="json"),
+            )
+            self.assertEqual(create_response.status_code, 201)
+            created_data = create_response.json()["data"]
+            self.assertEqual(created_data["next_step"], "confirm_email")
+            flow_id = created_data["flow_id"]
+            code = self.verification_deliveries[-1][1]
+            confirm_response = await client.post(
+                f"/web/registration-intents/{flow_id}/confirm-email",
+                json={"code": code},
+            )
+            self.assertEqual(confirm_response.status_code, 200)
+
+            async with AsyncSessionLocal() as session:
+                intent = await session.scalar(
+                    select(WebRegistrationIntent).where(
+                        WebRegistrationIntent.flow_token_hash
+                        == service._flow_hash(flow_id),
+                    ),
+                )
+                registration_count = await session.scalar(
+                    select(func.count())
+                    .select_from(EventRegistration)
+                    .where(EventRegistration.event_id == self.event_id),
+                )
+                code_count = await session.scalar(
+                    select(func.count())
+                    .select_from(WebRegistrationVerificationCode)
+                    .where(
+                        WebRegistrationVerificationCode.registration_intent_id
+                        == intent.id,
+                    ),
+                )
+                acceptance_count = await session.scalar(
+                    select(func.count())
+                    .select_from(LegalAcceptance)
+                    .where(LegalAcceptance.registration_id.is_not(None)),
+                )
+            delivery_counts = (
+                len(self.verification_deliveries),
+                len(self.result_deliveries),
+            )
+
+            retry_response = await client.post(
+                "/web/registration-intents",
+                json=payload.model_dump(mode="json"),
+            )
+            self.assertEqual(retry_response.status_code, 201)
+
+        retry_data = retry_response.json()["data"]
+        self.assertEqual(retry_data["flow_id"], flow_id)
+        self.assertEqual(retry_data["next_step"], "completed")
+        self.assertEqual(
+            set(retry_data),
+            {"flow_id", "next_step", "expires_at"},
+        )
+        self.assertEqual(
+            delivery_counts,
+            (len(self.verification_deliveries), len(self.result_deliveries)),
+        )
+        async with AsyncSessionLocal() as session:
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(EventRegistration)
+                    .where(EventRegistration.event_id == self.event_id),
+                ),
+                registration_count,
+            )
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(WebRegistrationVerificationCode)
+                    .where(
+                        WebRegistrationVerificationCode.registration_intent_id
+                        == intent.id,
+                    ),
+                ),
+                code_count,
+            )
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(LegalAcceptance)
+                    .where(LegalAcceptance.registration_id.is_not(None)),
+                ),
+                acceptance_count,
+            )
 
     async def test_unknown_flow_is_generic_and_migration_is_head(self) -> None:
         async with AsyncSessionLocal() as session:

@@ -1148,6 +1148,12 @@ The shared public outcome is the generic `identity_confirmation_unavailable`
 support/recovery error and never `confirm_email`. If either matched identity is
 deletion-pending, no intent, conflict, or submitted PII is persisted.
 
+A processable new intent and an equivalent retry before confirmation return
+`next_step=confirm_email`. An equivalent retry after confirmation returns the
+same `flow_id` with `next_step=completed`; it sends no email, creates no code,
+registration, or legal acceptance, and never replays a plaintext set-password
+credential.
+
 The current intent release is free-only: the event must use `internal_free`,
 and paid or donation option selections are rejected. Canonical registration
 preflight validates occurrences, registration windows, option membership and
@@ -1158,8 +1164,12 @@ but marketing consent is not accepted. `answers` must be an empty list and the
 intent stores no answer payload until the questionnaire PR.
 
 Create sends a Russian verification-code email through the existing SMTP
-adapter. Six-digit codes are stored only as unique hashes with intent cascade,
-expiry, consumption time, and attempt count. Defaults are 15 minutes, five
+adapter. Six-digit codes are stored only as intent-scoped hashes with intent
+cascade, expiry, consumption time, and attempt count. The composite
+`registration_intent_id + code_hash` uniqueness/index permits the same
+plaintext code in different intents but forbids reuse within one intent.
+Generation checks all prior rows for that intent, including consumed and
+expired codes, and uses bounded retries before a safe server error. Defaults are 15 minutes, five
 attempts, and a 60-second resend cooldown through
 `API_WEB_REGISTRATION_CODE_TTL_MINUTES`,
 `API_WEB_REGISTRATION_CODE_MAX_ATTEMPTS`, and
@@ -1170,7 +1180,8 @@ email. Successful resend commits the new code and consumes old active codes in
 one transaction; delivery failure rolls back the new row and preserves the old
 code.
 
-Confirm accepts only `{"code":"123456"}`. Invalid, expired, consumed,
+Confirm accepts only `{"code":"123456"}`. Lookup and verification both scope
+the submitted hash to the supplied intent. Invalid, expired, consumed,
 wrong-flow, and unknown codes share `invalid_verification_code` / `Код
 недействителен или истёк`; failed attempts persist atomically and the code is
 consumed at the configured limit. Current identity is re-resolved after email

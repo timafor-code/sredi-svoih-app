@@ -69,8 +69,9 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
+            "registration_intent_id",
             "code_hash",
-            name="web_registration_verification_codes_hash_key",
+            name="web_registration_verification_codes_intent_code_hash_key",
         ),
     )
     op.create_index(

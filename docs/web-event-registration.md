@@ -254,6 +254,11 @@ created_at
 ```
 
 Codes are expiring, attempt-limited, single-use, and hash-only at rest.
+Each hash includes the registration intent ID and is unique only together with
+that ID, so equal six-digit plaintext codes in different intents do not
+collide. Lookup is intent-scoped. Generation checks all prior codes for the
+locked intent, including consumed and expired rows, and retries a bounded
+number of times so a resend never repeats a code used earlier by that intent.
 The backend defaults are a 15-minute TTL, five failed attempts, and a 60-second
 resend cooldown. A new resend invalidates older active codes only after SMTP
 delivery succeeds. SMTP disabled/failure is a safe 503 and never commits the
@@ -325,6 +330,9 @@ idempotency value. A processable response returns an opaque `flow_id`,
 instead return the same generic support/recovery error and never state whether
 contact values already existed. Confirmation returns the final registration state and,
 when selected, a one-time transition into the existing set-password flow.
+An equivalent create retry after confirmation returns the same `flow_id` with
+`next_step = completed` and has no email, code, registration, legal-acceptance,
+or plaintext-credential side effects.
 
 `POST .../resend-code` returns only `next_step=confirm_email` and the new
 expiry. `POST .../confirm-email` accepts a strict six-digit code. Successful
