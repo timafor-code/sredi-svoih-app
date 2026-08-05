@@ -110,6 +110,7 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                         registration_mode="internal_free",
                         status="published",
                         visibility="public",
+                        web_visibility="unlisted",
                         capacity=2,
                     ),
                 )

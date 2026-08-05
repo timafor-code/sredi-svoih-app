@@ -9,6 +9,7 @@ from fastapi import HTTPException, status as http_status
 from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.db.models.core import (
     AppUser,
     CommunityMembership,
@@ -28,15 +29,23 @@ from app.schemas.admin_events import (
     AdminEventCategoryUpdateRequest,
     AdminEventCreateRequest,
     AdminEventOccurrenceResponse,
+    AdminEventOccurrenceUrlResponse,
     AdminEventOccurrencesReplaceRequest,
     AdminEventParticipationOptionUpsertRequest,
     AdminEventParticipationOptionResponse,
     AdminEventParticipationOptionsReplaceRequest,
     AdminOptionCapacityUnitMappingResponse,
     AdminEventUpdateRequest,
+    AdminEventWebRegistrationResponse,
+    AdminEventWebRegistrationUpdateRequest,
 )
+from app.services.admin_audit import record_event_web_visibility_change
 from app.services.authorization import ACTIVE_STATUS, EVENT_MANAGER_ROLES
-from app.services.events import decode_events_cursor, encode_events_cursor
+from app.services.events import (
+    build_public_event_url,
+    decode_events_cursor,
+    encode_events_cursor,
+)
 
 DEFAULT_PAGE_LIMIT = 50
 MAX_PAGE_LIMIT = 100
@@ -458,6 +467,87 @@ async def transition_admin_event_status(
         await session.flush()
         await session.refresh(event)
         return event
+
+
+async def _build_admin_event_web_registration_response(
+    session: AsyncSession,
+    event: Event,
+) -> AdminEventWebRegistrationResponse:
+    base_url = get_settings().public_web_base_url
+    occurrences = list(
+        await session.scalars(
+            select(EventOccurrence)
+            .where(
+                EventOccurrence.event_id == event.id,
+                EventOccurrence.status == "active",
+            )
+            .order_by(EventOccurrence.starts_at, EventOccurrence.id),
+        ),
+    )
+    return AdminEventWebRegistrationResponse(
+        event_id=event.id,
+        web_visibility=event.web_visibility,
+        public_registration_url=build_public_event_url(base_url, event.id),
+        occurrence_urls=[
+            AdminEventOccurrenceUrlResponse(
+                occurrence_id=occurrence.id,
+                starts_at=occurrence.starts_at,
+                url=build_public_event_url(base_url, event.id, occurrence.id),
+            )
+            for occurrence in occurrences
+        ],
+    )
+
+
+async def get_admin_event_web_registration(
+    session: AsyncSession,
+    current_user: AppUser,
+    event_id: UUID,
+) -> AdminEventWebRegistrationResponse:
+    event = await get_admin_event(session, current_user, event_id)
+    return await _build_admin_event_web_registration_response(session, event)
+
+
+async def update_admin_event_web_registration(
+    session: AsyncSession,
+    current_user: AppUser,
+    event_id: UUID,
+    payload: AdminEventWebRegistrationUpdateRequest,
+) -> AdminEventWebRegistrationResponse:
+    manageable_community_ids = await resolve_manageable_community_ids(
+        session,
+        current_user,
+    )
+    _require_manageable_communities(manageable_community_ids)
+
+    async with _transaction_scope(session):
+        event = await _lock_admin_event(
+            session,
+            event_id=event_id,
+            manageable_community_ids=manageable_community_ids,
+        )
+        old_visibility = event.web_visibility
+        new_visibility = payload.web_visibility
+        if new_visibility == "unlisted" and event.registration_mode != "internal_free":
+            raise _validation_error(
+                "Web registration requires registration_mode=internal_free",
+            )
+
+        if old_visibility != new_visibility:
+            now = _now()
+            event.web_visibility = new_visibility
+            event.updated_by = current_user.id
+            event.updated_at = now
+            await record_event_web_visibility_change(
+                session,
+                actor_user_id=current_user.id,
+                event_id=event.id,
+                old_visibility=old_visibility,
+                new_visibility=new_visibility,
+            )
+            await session.flush()
+
+    return await _build_admin_event_web_registration_response(session, event)
 
 
 def _reject_null_fields(updates: dict[str, object], field_names: set[str]) -> None:

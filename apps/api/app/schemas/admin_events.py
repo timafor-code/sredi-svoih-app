@@ -25,6 +25,8 @@ AdminEventRegistrationMode = Literal[
     "internal_paid",
 ]
 AdminEventOccurrenceStatus = Literal["active", "hidden", "cancelled", "archived"]
+AdminEventWebVisibility = Literal["disabled", "unlisted", "listed"]
+AdminEventWebVisibilityUpdate = Literal["disabled", "unlisted"]
 AdminEventOccurrenceRegistrationState = Literal[
     "open",
     "not_yet_open",
@@ -349,6 +351,32 @@ class AdminEventResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AdminEventWebRegistrationUpdateRequest(BaseModel):
+    web_visibility: AdminEventWebVisibilityUpdate
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AdminEventOccurrenceUrlResponse(BaseModel):
+    occurrence_id: UUID
+    starts_at: datetime
+    url: str
+
+    @field_validator("starts_at")
+    @classmethod
+    def require_timezone_field(cls, value: datetime) -> datetime:
+        validated = _require_timezone(value)
+        assert validated is not None
+        return validated
+
+
+class AdminEventWebRegistrationResponse(BaseModel):
+    event_id: UUID
+    web_visibility: AdminEventWebVisibility
+    public_registration_url: str
+    occurrence_urls: list[AdminEventOccurrenceUrlResponse]
 
 
 class AdminEventCategoryCreateRequest(BaseModel):

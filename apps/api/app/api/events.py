@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -20,6 +20,7 @@ from app.schemas.events import (
     ListResponseMeta,
     PaginatedApiResponse,
     PaginationMeta,
+    WebEventRegistrationFormResponse,
 )
 from app.services import events as events_service
 from app.services.events import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
@@ -92,6 +93,19 @@ async def get_event(
         member_community_ids,
     )
     return ApiResponse[EventResponse](data=EventResponse.model_validate(event))
+
+
+@router.get(
+    "/events/{event_id}/registration-form",
+    response_model=ApiResponse[WebEventRegistrationFormResponse],
+)
+async def get_event_registration_form(
+    event_id: UUID,
+    session: DbSession,
+    channel: Annotated[Literal["web"], Query()],
+) -> ApiResponse[WebEventRegistrationFormResponse]:
+    result = await events_service.get_web_registration_form(session, event_id)
+    return ApiResponse[WebEventRegistrationFormResponse](data=result)
 
 
 @router.get(

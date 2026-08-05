@@ -1,8 +1,7 @@
 # Web Event Registration
 
-Specification source: user-provided `webreg.md`, version 1.3, dated
-2026-08-05. Repository architecture source: root `plan.md`, version
-`2026-07-06 v2.7`.
+Specification source: `webreg.md`, version 1.3, dated 2026-08-05. The current
+FastAPI/PostgreSQL implementation is verified against the repository code.
 
 This is a technical specification, not a legal opinion. Legal and operational
 launch decisions listed below require approval by the operator and qualified
@@ -24,14 +23,15 @@ Current repository behavior:
   list requests only; they do not execute export, correction, or erasure;
 - the intent, email verification/finalization, identity/source/legal schema,
   and canonical public-web registration path are implemented;
-- publication, public web UI, and privacy execution remain future contracts.
+- event publication, computed UUID links, and the public registration-form API
+  are implemented; public web UI and privacy execution remain future contracts.
 
 Mobile, public web, and web-admin must use one FastAPI API and one canonical
 PostgreSQL model. They must not create a second backend, a separate web-user
 database, or direct frontend access to PostgreSQL. Supabase is not restored as
 the production data or authentication runtime.
 
-The future public frontend must be a separate Vite + React application at
+The next public frontend must be a separate Vite + React application at
 `apps/web`. It must not be implemented inside the closed administrative
 application at `apps/admin`. `apps/web` does not exist yet and is outside this
 documentation PR.
@@ -71,13 +71,16 @@ The occurrence query only preselects a date; the backend must verify that the
 occurrence belongs to the event. The URL contains no PII or secret and is not
 an authorization mechanism.
 
-The backend derives the absolute URL from trusted public-web base URL
-configuration and the stable event UUID. It returns the URL to web-admin as a
+The backend derives the absolute URL from the backend-only
+`PUBLIC_WEB_BASE_URL` configuration and the stable event UUID. The setting is
+normalized without a trailing slash and rejects credentials, query strings,
+fragments, and non-loopback HTTP. Host, Origin, Referer, and forwarded headers
+never influence the canonical link. The API returns the URL to web-admin as a
 read-only value. Administrators never enter, edit, or persist a full public
 URL. Renaming an event must not invalidate its UUID URL. Disabling and later
 re-enabling web publication must restore the same URL.
 
-Target `web_visibility` values are:
+Implemented `web_visibility` values are:
 
 - `disabled`: page and form unavailable even when the UUID is known;
 - `unlisted`: accessible only by direct link and excluded from the future
@@ -85,9 +88,10 @@ Target `web_visibility` values are:
 - `listed`: also eligible for the future public events directory when the
   event satisfies the normal publication rules.
 
-Existing and new events default to `disabled`. `listed` is not enabled in the
-MVP: administrative writes must reject it, or the UI must withhold it, until
-the public directory exists. The MVP operator may explicitly switch an event
+Existing and new events default to `disabled`. The value is a constrained,
+non-null event column, but neither the full URL nor a slug is stored in the
+database. `listed` is not enabled by the MVP admin PATCH, although direct form
+reads support fixtures/future data using it. The MVP operator may explicitly switch an event
 to `unlisted`; no event becomes web-visible merely because it exists or is
 renamed. The future directory is a separate, paginated event-card surface and
 must never list `unlisted` events.
@@ -174,8 +178,8 @@ collisions without raw PII in output or logs.
 
 ## Target Data Contracts
 
-The identity/source/legal, intent, and verification-code contracts below are
-implemented. Publication, questionnaires, and privacy execution remain target
+The identity/source/legal, intent, verification-code, and publication contracts
+below are implemented. Questionnaires and privacy execution remain target
 contracts for later PRs.
 
 ### `app_users`
@@ -311,8 +315,8 @@ destruction_evidence_id null
 
 ## Public API Contracts
 
-All endpoints except the registration-form read are implemented. They use the
-repository's standard JSON envelope and generic, enumeration-safe errors.
+All endpoints in this table are implemented. They use the repository's
+standard JSON envelope and generic, enumeration-safe errors.
 
 | Method | Path | Contract |
 | --- | --- | --- |
@@ -321,6 +325,12 @@ repository's standard JSON envelope and generic, enumeration-safe errors.
 | POST | `/web/registration-intents/{flow_id}/resend-code` | Rate-limited generic resend; do not reveal identity state. |
 | POST | `/web/registration-intents/{flow_id}/confirm-email` | Consume the code, resolve identity, re-check capacity transactionally, and create the final registration. |
 | GET | `/web/registration-intents/{flow_id}/status` | Return only the state authorized by the opaque flow credential. |
+
+Form reads and new intents require the event to be simultaneously `published`,
+`public`, `internal_free`, and `unlisted` or `listed`. The intent gate runs
+before submitted names/contact data are persisted, before conflict or user
+creation, and before email delivery. Unsupported states share one generic
+`registration_unavailable` response.
 
 Intent creation accepts the event/occurrence, the four MVP identity fields,
 free seat and option selections, an empty `answers` list, and versioned legal acceptances including exactly one event-registration consent,
@@ -336,9 +346,13 @@ or plaintext-credential side effects.
 
 `POST .../resend-code` returns only `next_step=confirm_email` and the new
 expiry. `POST .../confirm-email` accepts a strict six-digit code. Successful
-confirmation re-resolves identity, revalidates legal versions, and calls the
-canonical registration service with `source_channel=public_web`. Capacity
-failure leaves the intent unconfirmed and the valid code unconsumed.
+confirmation rechecks current publication under an event row lock, then
+re-resolves identity, revalidates legal versions, and calls the canonical
+registration service with `source_channel=public_web`. Capacity failure or a
+move to `disabled` leaves the intent unconfirmed and the valid code unconsumed,
+with no user/profile/registration/legal/set-password mutation. Re-enabling
+allows retry while the intent and code are valid; existing confirmed
+registrations are not removed.
 
 New people become `web_guest`/`unclaimed` with a minimal profile, verified
 email, unverified phone, no password, and no membership. Unclaimed email owners
@@ -356,9 +370,10 @@ Registration-result email runs after commit and its failure cannot undo the
 registration. Status is PII-free and contains only public state, minimal final
 registration data, and an account next step without secrets.
 
-## Target Administrative Publication Contracts
+## Administrative Publication Contracts
 
-These endpoints are **not currently implemented**:
+These endpoints are implemented with existing authenticated, community-scoped
+admin authorization:
 
 ```text
 GET   /admin/events/{event_id}/web-registration
@@ -370,7 +385,19 @@ The read response contains `event_id`, `web_visibility`, computed
 managed settings such as `web_visibility`; it never accepts a caller-provided
 URL. In the MVP it accepts only `disabled` and `unlisted`. Existing admin
 authorization guards scope access to the event's community, and publication
-changes produce a PII-free audit record.
+changes produce a PII-free audit record. PATCH locks the event and commits the
+event change plus `admin_event_audit_entries` row atomically. The row contains
+only technical IDs/action/old/new/timestamp; repeated same-state PATCH creates
+no row. Enabling `unlisted` requires `registration_mode=internal_free`.
+
+The public registration-form read is available only for events that are
+simultaneously `published`, `public`, `internal_free`, and `unlisted` or
+`listed`. It returns active occurrences, active free non-donation options, one
+current event-registration consent, an optional privacy policy, and a canonical
+`open`, `not_yet_open`, `closed`, `full`, or `unavailable` state. Closed and
+full pages remain readable and the endpoint never reserves capacity. No event
+catalog, public UI, or `apps/admin` UI change is included in this PR. The next
+PR is `feature/public-web-event-registration-shell`.
 
 ## Target Privacy Self-Service Contracts
 

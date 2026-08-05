@@ -38,6 +38,7 @@ from app.schemas.web_registration import (
     WebRegistrationResult,
 )
 from app.services import auth as auth_service
+from app.services import events as events_service
 from app.services import registrations as registrations_service
 from app.services.auth_tokens import hash_token
 from app.services.web_registration_email_service import (
@@ -466,6 +467,11 @@ async def create_intent(
             )
             await session.rollback()
             return response
+        await events_service.require_web_registration_event(
+            session,
+            payload.event_id,
+            for_update=True,
+        )
         if existing.expires_at <= _now():
             raise _flow_unavailable()
         if existing.status == FAILED:
@@ -476,6 +482,11 @@ async def create_intent(
         intent_expires_at = existing.expires_at
         await session.rollback()
     else:
+        await events_service.require_web_registration_event(
+            session,
+            payload.event_id,
+            for_update=True,
+        )
         _apply_submit_rate_limit(payload, ip)
         seats_count = await _validate_references(session, payload)
         intent_status, matched_user_id, conflict_users = await _identity_state(
@@ -921,6 +932,16 @@ async def _confirm_once(
     if intent.status != EMAIL_REQUIRED or intent.expires_at <= now:
         await session.rollback()
         raise _invalid_code()
+
+    try:
+        await events_service.require_web_registration_event(
+            session,
+            intent.event_id,
+            for_update=True,
+        )
+    except events_service.WebRegistrationUnavailableError:
+        await session.rollback()
+        raise
 
     _apply_intent_rate_limit("confirm", intent, ip)
     submitted_hash = _verification_code_hash(intent.id, code)
