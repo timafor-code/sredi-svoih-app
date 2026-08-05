@@ -22,9 +22,9 @@ Current repository behavior:
   set-password, SMTP delivery, and hash-only auth codes already exist;
 - authenticated `POST /privacy/requests` and `GET /privacy/requests` record and
   list requests only; they do not execute export, correction, or erasure;
-- the web-registration intent, publication, legal-acceptance, account-claim,
-  and privacy-execution contracts below are
-  not implemented. The identity/source/legal schema foundation is implemented.
+- the intent, email verification/finalization, identity/source/legal schema,
+  and canonical public-web registration path are implemented;
+- publication, public web UI, and privacy execution remain future contracts.
 
 Mobile, public web, and web-admin must use one FastAPI API and one canonical
 PostgreSQL model. They must not create a second backend, a separate web-user
@@ -141,10 +141,10 @@ state and never an occupied place. The result may change between submit and
 confirmation because capacity is checked again. Retries must be idempotent and
 must not create duplicate flows, users, registrations, or capacity usage.
 
-For the current intent implementation, only `internal_free` events are
+For the current implementation, only `internal_free` events are
 processable. Paid and donation selections are rejected. Registration preflight
 uses the canonical occurrence, window, option, quantity, and seat-count rules;
-capacity is not reserved and is rechecked transactionally in PR 4. Exactly one
+capacity is not reserved and is rechecked transactionally at confirmation. Exactly one
 active `event_registration_consent` with its exact content hash is mandatory;
 an active `privacy_policy` may accompany it, while marketing consent is outside
 this MVP. Questionnaire `answers` must remain empty and are stored as null.
@@ -174,8 +174,9 @@ collisions without raw PII in output or logs.
 
 ## Target Data Contracts
 
-These are proposed contracts for later Alembic/model PRs; none is added by this
-documentation PR.
+The identity/source/legal, intent, and verification-code contracts below are
+implemented. Publication, questionnaires, and privacy execution remain target
+contracts for later PRs.
 
 ### `app_users`
 
@@ -229,11 +230,12 @@ short retention.
 
 Implementation status: the intent table, public create/status endpoints,
 normalization, hash-only flow/idempotency lookup, database-backed idempotency,
-and minimal identity-conflict persistence are implemented. The provisional
+minimal identity-conflict persistence, initial SMTP delivery, resend, and
+transactional confirmation are implemented. The provisional
 24-hour TTL is backend-configurable through
 `API_WEB_REGISTRATION_INTENT_TTL_HOURS`; final retention approval is still a
-launch gate. No email, verification-code table, final registration, capacity
-reservation, user creation/mutation, or web UI is implemented in this step.
+launch gate. No capacity is reserved before confirmation and no web UI is
+implemented in this step.
 Phone-only and differing-user identity conflicts return one generic
 support/recovery error. Differing users retain only the minimal technical
 conflict record; deletion-pending matches create neither an intent nor a
@@ -252,6 +254,11 @@ created_at
 ```
 
 Codes are expiring, attempt-limited, single-use, and hash-only at rest.
+The backend defaults are a 15-minute TTL, five failed attempts, and a 60-second
+resend cooldown. A new resend invalidates older active codes only after SMTP
+delivery succeeds. SMTP disabled/failure is a safe 503 and never commits the
+new code. Plaintext codes exist only in memory for delivery and are never
+stored or logged.
 
 ### `legal_documents` And `legal_acceptances`
 
@@ -297,11 +304,10 @@ failure_code null
 destruction_evidence_id null
 ```
 
-## Target Public API Contracts
+## Public API Contracts
 
-All endpoints in this section are **target contracts and are not currently
-implemented**. They use the repository's standard JSON envelope and generic,
-enumeration-safe errors.
+All endpoints except the registration-form read are implemented. They use the
+repository's standard JSON envelope and generic, enumeration-safe errors.
 
 | Method | Path | Contract |
 | --- | --- | --- |
@@ -319,6 +325,28 @@ idempotency value. A processable response returns an opaque `flow_id`,
 instead return the same generic support/recovery error and never state whether
 contact values already existed. Confirmation returns the final registration state and,
 when selected, a one-time transition into the existing set-password flow.
+
+`POST .../resend-code` returns only `next_step=confirm_email` and the new
+expiry. `POST .../confirm-email` accepts a strict six-digit code. Successful
+confirmation re-resolves identity, revalidates legal versions, and calls the
+canonical registration service with `source_channel=public_web`. Capacity
+failure leaves the intent unconfirmed and the valid code unconsumed.
+
+New people become `web_guest`/`unclaimed` with a minimal profile, verified
+email, unverified phone, no password, and no membership. Unclaimed email owners
+may receive a still-free submitted phone; claimed/legacy profiles and login
+contacts are not overwritten. Phone-only, different-user, and deletion-blocked
+states share a neutral recovery outcome and never auto-merge.
+
+Legal evidence is created only after confirmation with
+`checkbox_plus_email_verification`, `public_web`, and
+`web-registration-email-code-v1`. `without_password` returns no set-password
+credential. `create_account` returns a first-response-only hash-backed handoff
+for the existing `/auth/confirm-set-password`; replay returns
+`request_set_password`, and a user with a password receives `sign_in`.
+Registration-result email runs after commit and its failure cannot undo the
+registration. Status is PII-free and contains only public state, minimal final
+registration data, and an account next step without secrets.
 
 ## Target Administrative Publication Contracts
 
@@ -404,7 +432,7 @@ are not approvals and must not be presented as final values.
 3. `feature/api-web-registration-intents` — intent, normalization, dedupe,
    conflict policy, and idempotency without email delivery (implemented).
 4. `feature/api-web-registration-email-finalize` — hash-only codes, SMTP
-   templates, verification, and transactional capacity finalization.
+   templates, verification, and transactional capacity finalization (implemented).
 5. `feature/api-web-event-publication` — `web_visibility`, admin publication,
    and computed UUID links.
 6. `feature/public-web-event-registration-shell` — create the separate

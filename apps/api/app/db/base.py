@@ -22,6 +22,7 @@ from app.db.models import (
     Profile,
     WebRegistrationIdentityConflict,
     WebRegistrationIntent,
+    WebRegistrationVerificationCode,
 )
 
 __all__ = [
@@ -48,4 +49,5 @@ __all__ = [
     "Profile",
     "WebRegistrationIdentityConflict",
     "WebRegistrationIntent",
+    "WebRegistrationVerificationCode",
 ]

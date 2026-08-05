@@ -87,15 +87,23 @@ API_AUTH_CODE_TTL_MINUTES=30
 
 ## Public web registration intents
 
-`POST /web/registration-intents` and credential-scoped
-`GET /web/registration-intents/{flow_id}/status` implement the short-lived
-public intent foundation. Inputs are normalized (case-insensitive email,
-Russian E.164 phone, and trimmed/collapsed names); opaque flow and idempotency
-values are hash-only at rest, and database uniqueness makes retries
-idempotent. Sensitive identity cases use neutral responses and a differing-user
-case stores only intent/user technical IDs in an open conflict record. Phone-only
-and differing-user matches return the same generic support/recovery error;
-deletion-pending identities create no intent, conflict, or new PII processing.
+The public flow implements create, resend, confirm, and credential-scoped status:
+
+```text
+POST /web/registration-intents
+POST /web/registration-intents/{flow_id}/resend-code
+POST /web/registration-intents/{flow_id}/confirm-email
+GET  /web/registration-intents/{flow_id}/status
+```
+
+Inputs are normalized (case-insensitive email, Russian E.164 phone, and
+trimmed/collapsed names). Opaque flow/idempotency values and six-digit email
+codes are hash-only at rest. A successful create means the verification email
+was accepted by the existing SMTP delivery contour. If email is disabled or
+delivery fails, create returns safe `503 email_delivery_unavailable`; the
+intent remains available for an idempotent retry, but no code row is committed.
+An active code makes an equivalent retry return the same flow without another
+email.
 
 This endpoint currently accepts only `internal_free` registration. Paid and
 donation options are rejected. Exactly one active `event_registration_consent`
@@ -103,18 +111,43 @@ with the matching content hash is mandatory (an active `privacy_policy` may be
 included), and questionnaire `answers` must remain empty. Registration preflight
 derives and validates `seats_count` through the canonical registration rules.
 
-The provisional backend-only TTL defaults to 24 hours and is bounded to seven
-days:
+Verification codes are single-use and attempt-limited. Resend replaces the old
+code only after the new email succeeds; a delivery failure leaves the old code
+valid. Defaults are backend-only:
 
 ```powershell
 API_WEB_REGISTRATION_INTENT_TTL_HOURS=24
+API_WEB_REGISTRATION_CODE_TTL_MINUTES=15
+API_WEB_REGISTRATION_CODE_MAX_ATTEMPTS=5
+API_WEB_REGISTRATION_RESEND_COOLDOWN_SECONDS=60
 ```
 
-Launch retention approval remains unresolved. This contour does not send
-email, create verification codes, users, final registrations, legal acceptance
-rows, capacity reservations, or web UI. The next implementation PR is
-`feature/api-web-registration-email-finalize`; it rechecks capacity
-transactionally before creating the final registration.
+Confirmation re-resolves current email/phone identity and deletion state,
+revalidates legal documents, and calls the canonical registration service with
+`source_channel=public_web`. Capacity, windows, occurrences, options, duplicate
+registration, selections, and reservations are checked again under existing
+locks. No registration or capacity reservation exists before a valid code. A
+capacity failure rolls back identity/registration/legal changes and leaves the
+code usable until its normal expiry/attempt limit.
+
+New identities become `web_guest`/`unclaimed` with a minimal profile and no
+membership. Claimed and legacy profiles are not overwritten. Phone-only,
+differing-user, and deletion-blocked cases use neutral support/recovery
+responses and never auto-merge users. Legal evidence uses
+`checkbox_plus_email_verification`, `public_web`, and
+`web-registration-email-code-v1`.
+
+`without_password` returns no password credential. `create_account` for a
+passwordless user returns a first-response-only hash-backed handoff accepted by
+the existing `/auth/confirm-set-password`; replay returns
+`request_set_password`, while an existing password returns `sign_in`.
+Registration-result email is sent after commit, so secondary delivery failure
+does not roll back the registration and is logged without raw PII or secrets.
+
+The rate limiter is process-local and must be replaced by shared/distributed
+storage before horizontally scaled production deployment. This PR adds no web
+UI, SMS, marketing email, analytics, or capacity hold. The next PR is
+`feature/api-web-event-publication`.
 
 ## Temporary Supabase JWT bridge
 

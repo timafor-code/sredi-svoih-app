@@ -105,6 +105,39 @@ class WebRegistrationIntentCreated(BaseModel):
     expires_at: datetime
 
 
+class WebRegistrationResendResult(BaseModel):
+    next_step: Literal["confirm_email"] = "confirm_email"
+    expires_at: datetime
+
+
+class WebRegistrationConfirmRequest(BaseModel):
+    code: str = Field(pattern=r"^\d{6}$")
+    model_config = ConfigDict(extra="forbid")
+
+
+class WebRegistrationResult(BaseModel):
+    id: UUID
+    event_id: UUID
+    occurrence_id: UUID | None
+    status: Literal["confirmed", "pending", "waitlisted", "attended"]
+    seats_count: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+AccountNextStep = Literal["none", "set_password", "sign_in", "request_set_password"]
+
+
+class WebRegistrationConfirmResult(BaseModel):
+    intent_status: Literal["confirmed"] = "confirmed"
+    registration: WebRegistrationResult
+    account_next_step: AccountNextStep
+    set_password_code: str | None = None
+    set_password_expires_at: datetime | None = None
+
+
 class WebRegistrationIntentStatus(BaseModel):
-    state: Literal["email_verification_required", "not_available"]
+    state: Literal["email_verification_required", "confirmed", "not_available"]
     expires_at: datetime | None = None
+    registration: WebRegistrationResult | None = None
+    account_next_step: AccountNextStep | None = None

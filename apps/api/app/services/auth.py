@@ -635,6 +635,35 @@ async def create_set_password_code(
     return _email_request_response()
 
 
+async def issue_set_password_handoff(
+    session: AsyncSession,
+    *,
+    user: AppUser,
+) -> tuple[str, datetime]:
+    """Issue a hash-only set-password credential in the caller's transaction."""
+    if user.password_hash is not None:
+        raise AuthConflictError("Password is already set")
+
+    now = _now()
+    expires_at = now + _auth_code_ttl()
+    code = _new_auth_code()
+    await _invalidate_user_auth_codes(
+        session,
+        AuthSetPasswordCode,
+        user_id=user.id,
+        now=now,
+    )
+    session.add(
+        AuthSetPasswordCode(
+            user_id=user.id,
+            code_hash=hash_token(code),
+            expires_at=expires_at,
+        ),
+    )
+    await session.flush()
+    return code, expires_at
+
+
 async def confirm_set_password(
     session: AsyncSession,
     *,

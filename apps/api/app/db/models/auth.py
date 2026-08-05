@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Text,
     UniqueConstraint,
 )
@@ -158,3 +159,51 @@ class AuthSetPasswordCode(Base):
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = timestamptz_now()
     updated_at: Mapped[datetime] = timestamptz_now()
+
+
+class WebRegistrationVerificationCode(Base):
+    __tablename__ = "web_registration_verification_codes"
+    __table_args__ = (
+        CheckConstraint(
+            "btrim(code_hash) <> ''",
+            name="web_registration_verification_codes_hash_not_empty",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="web_registration_verification_codes_attempt_count_check",
+        ),
+        CheckConstraint(
+            "expires_at > created_at",
+            name="web_registration_verification_codes_expiry_check",
+        ),
+        CheckConstraint(
+            "consumed_at IS NULL OR consumed_at >= created_at",
+            name="web_registration_verification_codes_consumed_check",
+        ),
+        UniqueConstraint(
+            "code_hash",
+            name="web_registration_verification_codes_hash_key",
+        ),
+        Index(
+            "web_registration_verification_codes_intent_id_idx",
+            "registration_intent_id",
+        ),
+        Index("web_registration_verification_codes_expires_at_idx", "expires_at"),
+        Index("web_registration_verification_codes_consumed_at_idx", "consumed_at"),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    registration_intent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("web_registration_intents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    code_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
+    created_at: Mapped[datetime] = timestamptz_now()
