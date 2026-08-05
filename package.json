@@ -16,7 +16,12 @@
     "admin:dev": "npm --prefix apps/admin run dev",
     "admin:build": "npm --prefix apps/admin run build",
     "admin:typecheck": "npm --prefix apps/admin run typecheck",
-    "admin:preview": "npm --prefix apps/admin run preview"
+    "admin:preview": "npm --prefix apps/admin run preview",
+    "web:dev": "npm --prefix apps/web run dev",
+    "web:typecheck": "npm --prefix apps/web run typecheck",
+    "web:test": "npm --prefix apps/web run test",
+    "web:build": "npm --prefix apps/web run build",
+    "web:preview": "npm --prefix apps/web run preview"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
