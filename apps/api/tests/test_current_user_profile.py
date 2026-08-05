@@ -75,6 +75,8 @@ class CurrentUserProfileTests(unittest.IsolatedAsyncioTestCase):
                             email=self.login_email,
                             phone=self.login_phone,
                             password_hash="not-a-public-value",
+                            account_origin="password_signup",
+                            claim_state="claimed",
                             status="active",
                         ),
                         Profile(
@@ -107,6 +109,8 @@ class CurrentUserProfileTests(unittest.IsolatedAsyncioTestCase):
                             email="other-login@example.invalid",
                             phone="+70000000003",
                             password_hash="other-not-a-public-value",
+                            account_origin="password_signup",
+                            claim_state="claimed",
                             status="active",
                         ),
                         Profile(
@@ -248,7 +252,15 @@ class CurrentUserProfileTests(unittest.IsolatedAsyncioTestCase):
         self.extra_user_ids.append(missing_profile_user_id)
         async with AsyncSessionLocal() as session:
             async with session.begin():
-                session.add(AppUser(id=missing_profile_user_id, status="active"))
+                session.add(
+                    AppUser(
+                        id=missing_profile_user_id,
+                        account_origin="migration",
+                        claim_state="legacy_external",
+                        claimed_at=None,
+                        status="active",
+                    ),
+                )
 
         response = await self._request(
             "PATCH",

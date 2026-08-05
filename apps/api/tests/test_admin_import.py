@@ -42,6 +42,8 @@ class AdminImportTests(unittest.IsolatedAsyncioTestCase):
                             id=self.actor_id,
                             email=f"import-{self.actor_id.hex[:12]}@example.invalid",
                             password_hash="not-a-public-value",
+                            account_origin="password_signup",
+                            claim_state="claimed",
                             status="active",
                         ),
                         CommunityMembership(

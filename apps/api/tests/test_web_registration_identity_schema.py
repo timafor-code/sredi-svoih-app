@@ -4,6 +4,8 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import delete, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 
@@ -363,6 +365,9 @@ class WebRegistrationIdentitySchemaTests(unittest.IsolatedAsyncioTestCase):
                 )
 
     async def test_database_is_at_alembic_head(self) -> None:
+        expected_revision = ScriptDirectory.from_config(
+            Config("alembic.ini"),
+        ).get_current_head()
         async with AsyncSessionLocal() as session:
             revision = await session.scalar(text("SELECT version_num FROM alembic_version"))
-        self.assertEqual(revision, "20260805120000")
+        self.assertEqual(revision, expected_revision)

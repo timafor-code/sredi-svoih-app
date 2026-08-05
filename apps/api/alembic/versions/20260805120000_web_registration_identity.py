@@ -59,13 +59,11 @@ def upgrade() -> None:
         "app_users",
         "account_origin",
         nullable=False,
-        server_default=sa.text("'password_signup'"),
     )
     op.alter_column(
         "app_users",
         "claim_state",
         nullable=False,
-        server_default=sa.text("'claimed'"),
     )
     op.create_check_constraint(
         "app_users_account_origin_check",
@@ -80,13 +78,10 @@ def upgrade() -> None:
 
     op.add_column(
         "event_registrations",
-        sa.Column(
-            "source_channel",
-            sa.Text(),
-            server_default=sa.text("'mobile'"),
-            nullable=False,
-        ),
+        sa.Column("source_channel", sa.Text(), nullable=True),
     )
+    op.execute("UPDATE event_registrations SET source_channel = 'mobile'")
+    op.alter_column("event_registrations", "source_channel", nullable=False)
     op.create_check_constraint(
         "event_registrations_source_channel_check",
         "event_registrations",

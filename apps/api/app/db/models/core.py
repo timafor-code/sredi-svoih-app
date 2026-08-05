@@ -153,16 +153,8 @@ class AppUser(Base):
     email: Mapped[str | None] = mapped_column(Text)
     phone: Mapped[str | None] = mapped_column(Text)
     password_hash: Mapped[str | None] = mapped_column(Text)
-    account_origin: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-        server_default=text("'password_signup'"),
-    )
-    claim_state: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-        server_default=text("'claimed'"),
-    )
+    account_origin: Mapped[str] = mapped_column(Text, nullable=False)
+    claim_state: Mapped[str] = mapped_column(Text, nullable=False)
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deletion_requested_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
@@ -941,11 +933,7 @@ class EventRegistration(Base):
         nullable=False,
         server_default=text("'pending'"),
     )
-    source_channel: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-        server_default=text("'mobile'"),
-    )
+    source_channel: Mapped[str] = mapped_column(Text, nullable=False)
     seats_count: Mapped[int] = mapped_column(
         Integer,
         nullable=False,

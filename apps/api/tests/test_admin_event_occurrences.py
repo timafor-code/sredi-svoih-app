@@ -47,6 +47,8 @@ class AdminEventOccurrenceTests(unittest.IsolatedAsyncioTestCase):
                         id=self.actor_id,
                         email=f"occurrence-{self.actor_id.hex[:12]}@example.invalid",
                         password_hash="not-a-public-value",
+                        account_origin="password_signup",
+                        claim_state="claimed",
                         status="active",
                     ),
                 ])
@@ -107,6 +109,7 @@ class AdminEventOccurrenceTests(unittest.IsolatedAsyncioTestCase):
                             user_id=self.actor_id,
                             occurrence_id=self.occurrence_id,
                             status="confirmed",
+                            source_channel="mobile",
                         ),
                     ],
                 )

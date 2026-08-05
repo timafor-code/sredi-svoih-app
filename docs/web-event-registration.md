@@ -23,7 +23,7 @@ Current repository behavior:
 - authenticated `POST /privacy/requests` and `GET /privacy/requests` record and
   list requests only; they do not execute export, correction, or erasure;
 - the web-registration intent, publication, legal-acceptance, account-claim,
-  intent, publication, account-claim, and privacy-execution contracts below are
+  and privacy-execution contracts below are
   not implemented. The identity/source/legal schema foundation is implemented.
 
 Mobile, public web, and web-admin must use one FastAPI API and one canonical
