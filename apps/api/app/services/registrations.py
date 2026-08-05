@@ -573,6 +573,7 @@ async def _create_registration(
     session: AsyncSession,
     *,
     current_user: AppUser,
+    source_channel: str = "mobile",
     event: Event,
     occurrence: EventOccurrence | None,
     payload: RegisterEventRequest,
@@ -587,7 +588,7 @@ async def _create_registration(
         occurrence_id=occurrence.id if occurrence is not None else None,
         user_id=current_user.id,
         status=registration_status,
-        source_channel="mobile",
+        source_channel=source_channel,
         seats_count=seats_count,
         guest_names=payload.guest_names,
         comment=payload.comment,
@@ -824,51 +825,13 @@ async def register_current_user_for_event(
     )
 
     async with _transaction_scope(session):
-        event = await _lock_visible_event(session, event_id, member_community_ids)
-        if event.registration_mode not in INTERNAL_REGISTRATION_MODES:
-            raise _validation_error(
-                "Internal registration is not available for this event",
-            )
-
-        has_occurrences = await _event_has_occurrences(session, event.id)
-        if _requires_occurrence(event, payload, has_occurrences=has_occurrences):
-            raise _validation_error("occurrence_id is required for this event")
-
-        occurrence = await _lock_occurrence(session, event, payload.occurrence_id)
-        existing_registration = await _lock_existing_active_registration(
+        registration = await register_user_for_event(
             session,
-            event_id=event.id,
-            user_id=current_user.id,
-            occurrence_id=occurrence.id if occurrence is not None else None,
-        )
-        if existing_registration is not None:
-            return await _fetch_registration_response(
-                session,
-                user_id=current_user.id,
-                member_community_ids=member_community_ids,
-                registration_id=existing_registration.id,
-            )
-
-        prepared_selections, reservation_drafts, seats_count, legacy_seats_count = (
-            await _prepare_options(session, event, payload)
-        )
-        await _enforce_capacity(
-            session,
-            event=event,
-            occurrence=occurrence,
-            reservation_drafts=reservation_drafts,
-            legacy_seats_count=legacy_seats_count,
-        )
-
-        registration = await _create_registration(
-            session,
-            current_user=current_user,
-            event=event,
-            occurrence=occurrence,
+            user=current_user,
+            event_id=event_id,
             payload=payload,
-            prepared_selections=prepared_selections,
-            reservation_drafts=reservation_drafts,
-            seats_count=seats_count,
+            source_channel="mobile",
+            member_community_ids=member_community_ids,
         )
         return await _fetch_registration_response(
             session,
@@ -876,6 +839,63 @@ async def register_current_user_for_event(
             member_community_ids=member_community_ids,
             registration_id=registration.id,
         )
+
+
+async def register_user_for_event(
+    session: AsyncSession,
+    *,
+    user: AppUser,
+    event_id: UUID,
+    payload: RegisterEventRequest,
+    source_channel: str,
+    member_community_ids: Sequence[UUID] = (),
+) -> EventRegistration:
+    """Create or return a registration inside the caller's transaction."""
+    if source_channel not in {"mobile", "public_web", "admin"}:
+        raise ValueError("unsupported registration source channel")
+
+    event = await _lock_visible_event(session, event_id, member_community_ids)
+    if event.registration_mode not in INTERNAL_REGISTRATION_MODES:
+        raise _validation_error(
+            "Internal registration is not available for this event",
+        )
+
+    has_occurrences = await _event_has_occurrences(session, event.id)
+    if _requires_occurrence(event, payload, has_occurrences=has_occurrences):
+        raise _validation_error("occurrence_id is required for this event")
+
+    occurrence = await _lock_occurrence(session, event, payload.occurrence_id)
+    existing_registration = await _lock_existing_active_registration(
+        session,
+        event_id=event.id,
+        user_id=user.id,
+        occurrence_id=occurrence.id if occurrence is not None else None,
+    )
+    if existing_registration is not None:
+        return existing_registration
+
+    prepared_selections, reservation_drafts, seats_count, legacy_seats_count = (
+        await _prepare_options(session, event, payload)
+    )
+    await _enforce_capacity(
+        session,
+        event=event,
+        occurrence=occurrence,
+        reservation_drafts=reservation_drafts,
+        legacy_seats_count=legacy_seats_count,
+    )
+
+    return await _create_registration(
+        session,
+        current_user=user,
+        source_channel=source_channel,
+        event=event,
+        occurrence=occurrence,
+        payload=payload,
+        prepared_selections=prepared_selections,
+        reservation_drafts=reservation_drafts,
+        seats_count=seats_count,
+    )
 
 
 async def cancel_current_user_registration(

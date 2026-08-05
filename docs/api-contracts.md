@@ -1121,9 +1121,10 @@ The approved web-registration specification is
 full product, identity, data, publication, privacy, retention, and delivery
 contracts; this section is the concise API index.
 
-Public event reads and authenticated registration remain unchanged. The public
-intent creation and credential-scoped status endpoints are now implemented;
-the form, resend, and confirmation endpoints remain target contracts.
+Public event reads and authenticated mobile registration remain unchanged.
+Create intent, resend, confirm-email, and credential-scoped status are now
+implemented. The public registration-form/publication endpoint remains a
+target contract for `feature/api-web-event-publication`.
 
 Public flow:
 
@@ -1147,6 +1148,12 @@ The shared public outcome is the generic `identity_confirmation_unavailable`
 support/recovery error and never `confirm_email`. If either matched identity is
 deletion-pending, no intent, conflict, or submitted PII is persisted.
 
+A processable new intent and an equivalent retry before confirmation return
+`next_step=confirm_email`. An equivalent retry after confirmation returns the
+same `flow_id` with `next_step=completed`; it sends no email, creates no code,
+registration, or legal acceptance, and never replays a plaintext set-password
+credential.
+
 The current intent release is free-only: the event must use `internal_free`,
 and paid or donation option selections are rejected. Canonical registration
 preflight validates occurrences, registration windows, option membership and
@@ -1156,13 +1163,51 @@ exact content hash is required. An active `privacy_policy` may also be supplied,
 but marketing consent is not accepted. `answers` must be an empty list and the
 intent stores no answer payload until the questionnaire PR.
 
-The provisional backend-only lifetime is 24 hours and is configurable with
-`API_WEB_REGISTRATION_INTENT_TTL_HOURS` (positive, at most 168). Launch
-retention approval remains unresolved. This implementation sends no email,
-creates no verification-code row, user, final registration, legal acceptance,
-or capacity reservation, and exposes no web UI. Capacity is rechecked and the
-final registration is created in PR 4,
-`feature/api-web-registration-email-finalize`.
+Create sends a Russian verification-code email through the existing SMTP
+adapter. Six-digit codes are stored only as intent-scoped hashes with intent
+cascade, expiry, consumption time, and attempt count. The composite
+`registration_intent_id + code_hash` uniqueness/index permits the same
+plaintext code in different intents but forbids reuse within one intent.
+Generation checks all prior rows for that intent, including consumed and
+expired codes, and uses bounded retries before a safe server error. Defaults are 15 minutes, five
+attempts, and a 60-second resend cooldown through
+`API_WEB_REGISTRATION_CODE_TTL_MINUTES`,
+`API_WEB_REGISTRATION_CODE_MAX_ATTEMPTS`, and
+`API_WEB_REGISTRATION_RESEND_COOLDOWN_SECONDS`. Disabled or failed SMTP returns
+safe `503 email_delivery_unavailable`; no code row is committed, while the
+intent remains retryable. Equivalent retry with an active code sends no second
+email. Successful resend commits the new code and consumes old active codes in
+one transaction; delivery failure rolls back the new row and preserves the old
+code.
+
+Confirm accepts only `{"code":"123456"}`. Lookup and verification both scope
+the submitted hash to the supplied intent. Invalid, expired, consumed,
+wrong-flow, and unknown codes share `invalid_verification_code` / `Код
+недействителен или истёк`; failed attempts persist atomically and the code is
+consumed at the configured limit. Current identity is re-resolved after email
+proof. New users are `web_guest`/`unclaimed` and receive a minimal profile but
+no membership; claimed/legacy profiles are not overwritten, phone-only and
+differing-user states never create a duplicate or merge, and deletion-blocked
+processing is stopped with a neutral response.
+
+Finalization rebuilds the canonical registration request from the intent,
+rechecks legal-document versions and registration capacity under existing
+locks, and creates/reuses one registration with `source_channel=public_web`.
+Legal evidence uses `checkbox_plus_email_verification`, `public_web`, and
+`web-registration-email-code-v1`. Capacity failure rolls back the transaction,
+does not confirm the intent, and does not consume the valid code. There is no
+capacity reservation before confirmation.
+
+`without_password` returns no credential. For `create_account`, a passwordless
+user receives a first-response-only hash-backed set-password handoff accepted
+by existing `POST /auth/confirm-set-password`; replay returns
+`request_set_password`. Existing password users receive `sign_in`. A Russian
+registration-result email is attempted after commit and cannot roll back the
+registration. Status returns only public state, minimal registration data, and
+an account next step without plaintext secrets. The current limiter is
+process-local and requires shared storage for horizontal production scaling.
+No web UI, SMS, marketing email, or analytics is included. Next PR:
+`feature/api-web-event-publication`.
 
 Administrative publication:
 

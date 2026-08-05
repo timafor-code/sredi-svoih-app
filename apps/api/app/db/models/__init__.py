@@ -47,6 +47,7 @@ from app.db.models.auth import (
     AuthSession,
     AuthSetPasswordCode,
     PasswordResetCode,
+    WebRegistrationVerificationCode,
 )
 
 __all__ = [
@@ -92,4 +93,5 @@ __all__ = [
     "SyncedContact",
     "WebRegistrationIdentityConflict",
     "WebRegistrationIntent",
+    "WebRegistrationVerificationCode",
 ]

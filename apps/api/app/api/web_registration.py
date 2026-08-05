@@ -8,9 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db_session
 from app.schemas.common import ApiResponse
 from app.schemas.web_registration import (
+    WebRegistrationConfirmRequest,
+    WebRegistrationConfirmResult,
     WebRegistrationIntentCreated,
     WebRegistrationIntentRequest,
     WebRegistrationIntentStatus,
+    WebRegistrationResendResult,
 )
 from app.services import web_registration as service
 
@@ -34,3 +37,39 @@ async def get_registration_intent_status(
     session: DbSession,
 ) -> ApiResponse[WebRegistrationIntentStatus]:
     return ApiResponse[WebRegistrationIntentStatus](data=await service.get_intent_status(session, flow_id))
+
+
+@router.post(
+    "/{flow_id}/resend-code",
+    response_model=ApiResponse[WebRegistrationResendResult],
+)
+async def resend_registration_code(
+    flow_id: str,
+    session: DbSession,
+    request: Request,
+) -> ApiResponse[WebRegistrationResendResult]:
+    result = await service.resend_code(
+        session,
+        flow_id,
+        request.client.host if request.client else None,
+    )
+    return ApiResponse[WebRegistrationResendResult](data=result)
+
+
+@router.post(
+    "/{flow_id}/confirm-email",
+    response_model=ApiResponse[WebRegistrationConfirmResult],
+)
+async def confirm_registration_email(
+    flow_id: str,
+    payload: WebRegistrationConfirmRequest,
+    session: DbSession,
+    request: Request,
+) -> ApiResponse[WebRegistrationConfirmResult]:
+    result = await service.confirm_email(
+        session,
+        flow_id,
+        payload.code,
+        request.client.host if request.client else None,
+    )
+    return ApiResponse[WebRegistrationConfirmResult](data=result)

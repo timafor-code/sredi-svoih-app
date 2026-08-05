@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from unittest.mock import patch
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -29,11 +30,17 @@ from app.db.session import AsyncSessionLocal, engine
 from app.main import app
 from app.schemas.web_registration import WebRegistrationIntentRequest
 from app.services import web_registration as service
+from app.services.email_delivery import EmailSendResult
 
 
 class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         service._rate_limiter = None
+        self.email_patcher = patch(
+            "app.services.web_registration.send_web_registration_verification_code",
+            return_value=EmailSendResult(sent=True, disabled=False),
+        )
+        self.email_patcher.start()
         self.community_id, self.event_id, self.document_id = uuid4(), uuid4(), uuid4()
         self.now = datetime.now(UTC).replace(microsecond=0)
         async with AsyncSessionLocal() as session:
@@ -46,6 +53,7 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
                 session.add(LegalDocument(id=self.document_id, document_type="event_registration_consent", version=f"intent-{self.document_id.hex}", title="Synthetic consent", content_hash="sha256:test-content", published_url="https://example.invalid/consent", effective_at=self.now - timedelta(days=1)))
 
     async def asyncTearDown(self) -> None:
+        self.email_patcher.stop()
         async with AsyncSessionLocal() as session:
             async with session.begin():
                 await session.execute(delete(AppUser).where(AppUser.email.like("intent-%@example.invalid")))
@@ -251,7 +259,12 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
         async with AsyncSessionLocal() as session:
             current = await service.get_intent_status(session, created.flow_id)
             unknown = await service.get_intent_status(session, "x" * 43)
-        self.assertEqual(current.model_dump().keys(), {"state", "expires_at"})
+        self.assertEqual(
+            current.model_dump().keys(),
+            {"state", "expires_at", "registration", "account_next_step"},
+        )
+        self.assertIsNone(current.registration)
+        self.assertIsNone(current.account_next_step)
         self.assertEqual(current.state, "email_verification_required")
         self.assertEqual(unknown.state, "not_available")
 
