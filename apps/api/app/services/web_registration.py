@@ -444,11 +444,6 @@ async def create_intent(
     payload: WebRegistrationIntentRequest,
     ip: str | None,
 ) -> WebRegistrationIntentCreated:
-    await events_service.require_web_registration_event(
-        session,
-        payload.event_id,
-        for_update=True,
-    )
     key_hash = _idempotency_hash(payload.idempotency_key)
     fingerprint = _fingerprint(payload)
     flow_id = _flow_id(key_hash)
@@ -472,6 +467,11 @@ async def create_intent(
             )
             await session.rollback()
             return response
+        await events_service.require_web_registration_event(
+            session,
+            payload.event_id,
+            for_update=True,
+        )
         if existing.expires_at <= _now():
             raise _flow_unavailable()
         if existing.status == FAILED:
@@ -482,6 +482,11 @@ async def create_intent(
         intent_expires_at = existing.expires_at
         await session.rollback()
     else:
+        await events_service.require_web_registration_event(
+            session,
+            payload.event_id,
+            for_update=True,
+        )
         _apply_submit_rate_limit(payload, ip)
         seats_count = await _validate_references(session, payload)
         intent_status, matched_user_id, conflict_users = await _identity_state(

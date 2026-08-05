@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import Settings
 from app.core.tokens import create_access_token
 from app.db.models.audit import AdminEventAuditEntry
-from app.db.models.auth import WebRegistrationVerificationCode
+from app.db.models.auth import AuthSetPasswordCode, WebRegistrationVerificationCode
 from app.db.models.core import (
     AppUser,
     Community,
@@ -25,6 +25,7 @@ from app.db.models.core import (
     EventOccurrence,
     EventParticipationOption,
     EventRegistration,
+    LegalAcceptance,
     LegalDocument,
     WebRegistrationIntent,
 )
@@ -309,7 +310,13 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(revision)
         assert revision is not None
         self.assertEqual(revision.down_revision, "20260805210000")
-        self.assertEqual(script.get_current_head(), "20260805220000")
+        expected_head = script.get_current_head()
+        self.assertIsNotNone(expected_head)
+        async with AsyncSessionLocal() as session:
+            actual_head = await session.scalar(
+                text("SELECT version_num FROM alembic_version"),
+            )
+        self.assertEqual(actual_head, expected_head)
 
         async with engine.connect() as connection:
             schema = await connection.run_sync(
@@ -813,6 +820,197 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(confirmed.intent_status, "confirmed")
             await self._set_event(web_visibility="disabled")
             self.assertEqual(await self._registration_count(), 1)
+
+    async def test_completed_retry_survives_publication_disable(self) -> None:
+        verification_deliveries: list[str] = []
+        result_deliveries: list[str] = []
+
+        def capture_verification(**kwargs):
+            verification_deliveries.append(kwargs["code"])
+            return EmailSendResult(sent=True, disabled=False)
+
+        def capture_result(**kwargs):
+            result_deliveries.append(kwargs["registration_status"])
+            return EmailSendResult(sent=True, disabled=False)
+
+        completed_key = "publication-completed-retry"
+        payload = self._intent_payload(key=completed_key)
+        payload_json = payload.model_dump(mode="json")
+
+        async def persisted_counts() -> dict[str, int]:
+            async with AsyncSessionLocal() as session:
+                intent = await session.scalar(
+                    select(WebRegistrationIntent).where(
+                        WebRegistrationIntent.idempotency_key_hash
+                        == web_registration._idempotency_hash(completed_key),
+                    ),
+                )
+                assert intent is not None
+                verification_codes = await session.scalar(
+                    select(func.count())
+                    .select_from(WebRegistrationVerificationCode)
+                    .where(
+                        WebRegistrationVerificationCode.registration_intent_id
+                        == intent.id,
+                    ),
+                )
+                registrations = await session.scalar(
+                    select(func.count())
+                    .select_from(EventRegistration)
+                    .where(EventRegistration.event_id == self.event_id),
+                )
+                legal_acceptances = await session.scalar(
+                    select(func.count())
+                    .select_from(LegalAcceptance)
+                    .join(
+                        EventRegistration,
+                        LegalAcceptance.registration_id == EventRegistration.id,
+                    )
+                    .where(EventRegistration.event_id == self.event_id),
+                )
+                set_password_codes = await session.scalar(
+                    select(func.count()).select_from(AuthSetPasswordCode),
+                )
+            return {
+                "verification_codes": verification_codes or 0,
+                "registrations": registrations or 0,
+                "legal_acceptances": legal_acceptances or 0,
+                "set_password_codes": set_password_codes or 0,
+            }
+
+        await self._set_event(web_visibility="unlisted")
+        with (
+            patch(
+                "app.services.web_registration.send_web_registration_verification_code",
+                side_effect=capture_verification,
+            ),
+            patch(
+                "app.services.web_registration.send_web_registration_result",
+                side_effect=capture_result,
+            ),
+        ):
+            created_response = await self._request(
+                "POST",
+                "/web/registration-intents",
+                json=payload_json,
+            )
+            self.assertEqual(created_response.status_code, 201)
+            flow_id = created_response.json()["data"]["flow_id"]
+            confirmation_response = await self._request(
+                "POST",
+                f"/web/registration-intents/{flow_id}/confirm-email",
+                json={"code": verification_deliveries[-1]},
+            )
+            self.assertEqual(confirmation_response.status_code, 200)
+            self.assertEqual(
+                confirmation_response.json()["data"]["intent_status"],
+                "confirmed",
+            )
+
+            baseline_counts = await persisted_counts()
+            baseline_verification_emails = len(verification_deliveries)
+            baseline_result_emails = len(result_deliveries)
+
+            await self._set_event(web_visibility="disabled")
+            retry_response = await self._request(
+                "POST",
+                "/web/registration-intents",
+                json=payload_json,
+            )
+            self.assertEqual(retry_response.status_code, 201)
+            self.assertEqual(retry_response.json()["data"]["flow_id"], flow_id)
+            self.assertEqual(retry_response.json()["data"]["next_step"], "completed")
+            self.assertNotIn("set_password_code", retry_response.json()["data"])
+            self.assertEqual(await persisted_counts(), baseline_counts)
+            self.assertEqual(len(verification_deliveries), baseline_verification_emails)
+            self.assertEqual(len(result_deliveries), baseline_result_emails)
+
+            disabled_payload_json = dict(payload_json)
+            disabled_email = f"publication-web-disabled-{self.marker}@example.invalid"
+            disabled_payload_json.update(
+                {
+                    "email": disabled_email,
+                    "phone": f"+7901{int(self.marker[:8], 16) % 10**7:07d}",
+                    "idempotency_key": "publication-disabled-new",
+                },
+            )
+            disabled_response = await self._request(
+                "POST",
+                "/web/registration-intents",
+                json=disabled_payload_json,
+            )
+            self.assertEqual(disabled_response.status_code, 404)
+            self.assertEqual(
+                disabled_response.json()["error"]["code"],
+                "registration_unavailable",
+            )
+            async with AsyncSessionLocal() as session:
+                disabled_intent = await session.scalar(
+                    select(WebRegistrationIntent).where(
+                        WebRegistrationIntent.idempotency_key_hash
+                        == web_registration._idempotency_hash(
+                            "publication-disabled-new",
+                        ),
+                    ),
+                )
+                disabled_user = await session.scalar(
+                    select(AppUser).where(AppUser.email == disabled_email),
+                )
+            self.assertIsNone(disabled_intent)
+            self.assertIsNone(disabled_user)
+            self.assertEqual(len(verification_deliveries), baseline_verification_emails)
+            self.assertEqual(len(result_deliveries), baseline_result_emails)
+
+            await self._set_event(web_visibility="unlisted")
+            unfinished_payload_json = dict(payload_json)
+            unfinished_payload_json.update(
+                {
+                    "email": f"publication-web-unfinished-{self.marker}@example.invalid",
+                    "phone": f"+7902{int(self.marker[:8], 16) % 10**7:07d}",
+                    "idempotency_key": "publication-unfinished-disable",
+                },
+            )
+            unfinished_response = await self._request(
+                "POST",
+                "/web/registration-intents",
+                json=unfinished_payload_json,
+            )
+            self.assertEqual(unfinished_response.status_code, 201)
+            unfinished_flow_id = unfinished_response.json()["data"]["flow_id"]
+            unfinished_code = verification_deliveries[-1]
+            await self._set_event(web_visibility="disabled")
+            blocked_confirmation = await self._request(
+                "POST",
+                f"/web/registration-intents/{unfinished_flow_id}/confirm-email",
+                json={"code": unfinished_code},
+            )
+            self.assertEqual(blocked_confirmation.status_code, 404)
+            self.assertEqual(
+                blocked_confirmation.json()["error"]["code"],
+                "registration_unavailable",
+            )
+            async with AsyncSessionLocal() as session:
+                unfinished_intent = await session.scalar(
+                    select(WebRegistrationIntent).where(
+                        WebRegistrationIntent.idempotency_key_hash
+                        == web_registration._idempotency_hash(
+                            "publication-unfinished-disable",
+                        ),
+                    ),
+                )
+                assert unfinished_intent is not None
+                unfinished_code_row = await session.scalar(
+                    select(WebRegistrationVerificationCode).where(
+                        WebRegistrationVerificationCode.registration_intent_id
+                        == unfinished_intent.id,
+                    ),
+                )
+            assert unfinished_code_row is not None
+            self.assertEqual(unfinished_intent.status, "email_verification_required")
+            self.assertIsNone(unfinished_intent.confirmed_at)
+            self.assertIsNone(unfinished_code_row.consumed_at)
+            self.assertEqual(await self._registration_count(), 1)
+            self.assertEqual(len(result_deliveries), baseline_result_emails)
 
 
 if __name__ == "__main__":
