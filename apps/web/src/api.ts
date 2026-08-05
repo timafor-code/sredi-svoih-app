@@ -19,6 +19,21 @@ const REGISTRATION_STATES = new Set<WebRegistrationState>([
 export class RegistrationUnavailableError extends Error {}
 export class PublicApiError extends Error {}
 
+const LOCAL_HTTP_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+export function isSafePublicUrl(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+
+  if (!parsed.hostname || parsed.username || parsed.password) return false;
+  if (parsed.protocol === "https:") return true;
+  return parsed.protocol === "http:" && LOCAL_HTTP_HOSTNAMES.has(parsed.hostname.toLowerCase());
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -97,6 +112,7 @@ function isLegalDocument(value: unknown): value is WebRegistrationLegalDocument 
     && typeof value.title === "string"
     && typeof value.content_hash === "string"
     && typeof value.published_url === "string"
+    && isSafePublicUrl(value.published_url)
     && isDateTime(value.effective_at);
 }
 
@@ -183,5 +199,14 @@ export async function getWebEventRegistrationForm(
     throw new PublicApiError();
   }
 
-  return (body as ApiResponse<WebEventRegistrationFormResponse>).data;
+  const data = (body as ApiResponse<WebEventRegistrationFormResponse>).data;
+  return {
+    ...data,
+    event: {
+      ...data.event,
+      image_url: data.event.image_url && isSafePublicUrl(data.event.image_url)
+        ? data.event.image_url
+        : null,
+    },
+  };
 }

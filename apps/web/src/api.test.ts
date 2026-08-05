@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getWebEventRegistrationForm, PublicApiError } from "./api";
+import { getWebEventRegistrationForm, isSafePublicUrl, PublicApiError } from "./api";
 import { EVENT_ID, eventResponse } from "./test/fixtures";
 
 function fetchResponse(body: unknown, status = 200) {
@@ -41,5 +41,67 @@ describe("public event API", () => {
     data.event.id = "77777777-7777-4777-8777-777777777777";
     vi.mocked(fetch).mockImplementation(() => fetchResponse({ data, error: null, meta: {} }));
     await expect(getWebEventRegistrationForm(EVENT_ID)).rejects.toBeInstanceOf(PublicApiError);
+  });
+
+  it.each([
+    "https://example.invalid/consent",
+    "http://localhost:5174/consent",
+    "http://127.0.0.1:5174/consent",
+    "http://[::1]:5174/consent",
+  ])("accepts safe public URL %s", (value) => {
+    expect(isSafePublicUrl(value)).toBe(true);
+  });
+
+  it.each([
+    "javascript:alert(1)",
+    "data:text/html,<h1>unsafe</h1>",
+    "file:///tmp/consent.html",
+    "blob:https://example.invalid/id",
+    "mailto:person@example.invalid",
+    "ftp://example.invalid/consent",
+    "https://user:password@example.invalid/consent",
+    "not a URL",
+  ])("rejects unsafe public URL %s", (value) => {
+    expect(isSafePublicUrl(value)).toBe(false);
+  });
+
+  it.each([
+    "https://example.invalid/consent",
+    "http://localhost:5174/consent",
+    "http://127.0.0.1:5174/consent",
+  ])("accepts a response with safe consent URL %s", async (publishedUrl) => {
+    const data = eventResponse();
+    const consent = data.legal_documents.find((document) => document.document_type === "event_registration_consent");
+    if (!consent) throw new Error("Missing consent fixture");
+    consent.published_url = publishedUrl;
+    vi.mocked(fetch).mockImplementation(() => fetchResponse({ data, error: null, meta: {} }));
+    await expect(getWebEventRegistrationForm(EVENT_ID)).resolves.toEqual(data);
+  });
+
+  it("rejects a response with an unsafe consent URL", async () => {
+    const data = eventResponse();
+    const consent = data.legal_documents.find((document) => document.document_type === "event_registration_consent");
+    if (!consent) throw new Error("Missing consent fixture");
+    consent.published_url = "javascript:alert(1)";
+    vi.mocked(fetch).mockImplementation(() => fetchResponse({ data, error: null, meta: {} }));
+    await expect(getWebEventRegistrationForm(EVENT_ID)).rejects.toBeInstanceOf(PublicApiError);
+  });
+
+  it("rejects a response with an unsafe privacy URL", async () => {
+    const data = eventResponse();
+    const privacy = data.legal_documents.find((document) => document.document_type === "privacy_policy");
+    if (!privacy) throw new Error("Missing privacy fixture");
+    privacy.published_url = "data:text/html,unsafe";
+    vi.mocked(fetch).mockImplementation(() => fetchResponse({ data, error: null, meta: {} }));
+    await expect(getWebEventRegistrationForm(EVENT_ID)).rejects.toBeInstanceOf(PublicApiError);
+  });
+
+  it("normalizes an unsafe optional image URL to null", async () => {
+    const data = eventResponse();
+    data.event.image_url = "file:///tmp/event.jpg";
+    vi.mocked(fetch).mockImplementation(() => fetchResponse({ data, error: null, meta: {} }));
+    await expect(getWebEventRegistrationForm(EVENT_ID)).resolves.toMatchObject({
+      event: { image_url: null },
+    });
   });
 });

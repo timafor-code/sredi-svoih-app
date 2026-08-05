@@ -1,6 +1,5 @@
 import {
   type ChangeEvent,
-  type FormEvent,
   type ReactNode,
   useEffect,
   useMemo,
@@ -30,6 +29,7 @@ import {
   validateName,
   validatePersonalFields,
   validatePhone,
+  validateSeatsCount,
 } from "./validation";
 
 const DEFAULT_TITLE = "Регистрация на мероприятие — Среди Своих";
@@ -265,6 +265,7 @@ function ParticipationOptions({
 }
 
 type FormValues = Record<PersonalField, string> & {
+  seatsCount: string;
   accountChoice: AccountChoice | null;
   consent: boolean;
 };
@@ -272,7 +273,7 @@ type FormValues = Record<PersonalField, string> & {
 type FormErrors = PersonalErrors & {
   occurrence?: string;
   options?: string;
-  accountChoice?: string;
+  seatsCount?: string;
   consent?: string;
 };
 
@@ -296,6 +297,7 @@ function RegistrationForm({
     lastName: "",
     phone: "",
     email: "",
+    seatsCount: "1",
     accountChoice: null,
     consent: false,
   };
@@ -329,6 +331,12 @@ function RegistrationForm({
     } else if (field === "email") {
       setValues((current) => ({ ...current, email: current.email.trim() }));
     }
+  };
+
+  const updateSeatsCount = (value: string) => {
+    setValues((current) => ({ ...current, seatsCount: value }));
+    setErrors((current) => ({ ...current, seatsCount: undefined }));
+    setNotice(null);
   };
 
   const onOptionSelectionChange = (
@@ -369,11 +377,11 @@ function RegistrationForm({
     const orderedIds: Array<[keyof FormErrors, string]> = [
       ["occurrence", "occurrence-select"],
       ["options", "options"],
+      ["seatsCount", "seats-count"],
       ["firstName", "first-name"],
       ["lastName", "last-name"],
       ["phone", "phone"],
       ["email", "email"],
-      ["accountChoice", "account-without-password"],
       ["consent", "consent"],
     ];
     const first = orderedIds.find(([field]) => nextErrors[field]);
@@ -382,13 +390,13 @@ function RegistrationForm({
     else document.getElementById(first[1])?.focus();
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const continueWithAccountChoice = (accountChoice: AccountChoice) => {
     const normalizedValues = {
       ...values,
       firstName: normalizeName(values.firstName),
       lastName: normalizeName(values.lastName),
       email: values.email.trim(),
+      accountChoice,
     };
     setValues(normalizedValues);
     const nextErrors: FormErrors = validatePersonalFields(normalizedValues);
@@ -396,7 +404,8 @@ function RegistrationForm({
     if (options.length > 0 && !Object.values(selections).some((selection) => selection.selected)) {
       nextErrors.options = "Выберите вариант участия.";
     }
-    if (!values.accountChoice) nextErrors.accountChoice = "Выберите один из вариантов продолжения.";
+    const seatsCountError = validateSeatsCount(normalizedValues.seatsCount);
+    if (seatsCountError) nextErrors.seatsCount = seatsCountError;
     if (!values.consent) nextErrors.consent = "Подтвердите согласие для продолжения.";
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
@@ -431,7 +440,7 @@ function RegistrationForm({
   );
 
   return (
-    <form className="registration-form" noValidate onSubmit={handleSubmit}>
+    <form className="registration-form" noValidate onSubmit={(event) => event.preventDefault()}>
       <ParticipationOptions
         options={options}
         selections={selections}
@@ -440,6 +449,32 @@ function RegistrationForm({
         error={errors.options}
         focusRef={optionsRef}
       />
+
+      <section className="surface section-card" aria-labelledby="seats-heading">
+        <h2 id="seats-heading">Количество мест</h2>
+        <div className="form-field seats-field">
+          <label htmlFor="seats-count">Количество мест</label>
+          <input
+            id="seats-count"
+            type="number"
+            min={1}
+            max={1000}
+            step={1}
+            inputMode="numeric"
+            value={values.seatsCount}
+            aria-invalid={Boolean(errors.seatsCount)}
+            aria-describedby={errors.seatsCount ? "seats-count-error" : undefined}
+            onChange={(event) => updateSeatsCount(event.target.value)}
+            onBlur={() => {
+              const error = validateSeatsCount(values.seatsCount);
+              setErrors((current) => ({ ...current, seatsCount: error ?? undefined }));
+            }}
+          />
+          {errors.seatsCount ? (
+            <p className="field-error" id="seats-count-error" role="alert">{errors.seatsCount}</p>
+          ) : null}
+        </div>
+      </section>
 
       <section className="surface section-card" aria-labelledby="personal-heading">
         <h2 id="personal-heading">Ваши данные</h2>
@@ -450,53 +485,6 @@ function RegistrationForm({
           {field("email", "email", "Email", { type: "email", autoComplete: "email", inputMode: "email", maxLength: 254 })}
         </div>
       </section>
-
-      <fieldset className="surface section-card choice-fieldset" aria-describedby={errors.accountChoice ? "account-choice-error" : undefined}>
-        <legend>Как продолжить</legend>
-        <div className="account-choice-grid">
-          <label className="account-choice-card">
-            <input
-              id="account-without-password"
-              type="radio"
-              name="account-choice"
-              value="without_password"
-              checked={values.accountChoice === "without_password"}
-              onChange={() => {
-                setValues((current) => ({ ...current, accountChoice: "without_password" }));
-                setErrors((current) => ({ ...current, accountChoice: undefined }));
-              }}
-            />
-            <span>
-              <strong>Продолжить без пароля</strong>
-              <small>Подтвердите email и запишитесь на мероприятие. Пароль не нужен. Чтобы ваши записи не дублировались, мы сохраним одну техническую карточку. Управлять или удалить данные можно по коду из email.</small>
-            </span>
-          </label>
-          <label className="account-choice-card">
-            <input
-              type="radio"
-              name="account-choice"
-              value="create_account"
-              checked={values.accountChoice === "create_account"}
-              onChange={() => {
-                setValues((current) => ({ ...current, accountChoice: "create_account" }));
-                setErrors((current) => ({ ...current, accountChoice: undefined }));
-              }}
-            />
-            <span>
-              <strong>Создать аккаунт</strong>
-              <small>Задайте пароль один раз, чтобы в дальнейшем не вводить данные повторно и видеть свои регистрации в приложении и на сайте.</small>
-            </span>
-          </label>
-        </div>
-        {errors.accountChoice ? <p className="field-error" id="account-choice-error" role="alert">{errors.accountChoice}</p> : null}
-        <button
-          className="text-button"
-          type="button"
-          onClick={() => setNotice("Вход для существующего аккаунта будет подключён на следующем этапе.")}
-        >
-          У меня уже есть аккаунт
-        </button>
-      </fieldset>
 
       <section className="surface section-card legal-section" aria-labelledby="legal-heading">
         <h2 id="legal-heading">Согласие на обработку данных</h2>
@@ -529,7 +517,41 @@ function RegistrationForm({
         {errors.consent ? <p className="field-error" id="consent-error" role="alert">{errors.consent}</p> : null}
       </section>
 
-      <button className="primary-button" type="submit">Продолжить</button>
+      <section className="surface section-card" aria-labelledby="account-actions-heading">
+        <h2 id="account-actions-heading">Как продолжить</h2>
+        <div className="account-action-grid">
+          <div className="account-action-card">
+            <p>Подтвердите email и запишитесь на мероприятие. Пароль не нужен. Чтобы ваши записи не дублировались, мы сохраним одну техническую карточку. Управлять или удалить данные можно по коду из email.</p>
+            <button
+              className="primary-button"
+              type="button"
+              aria-pressed={values.accountChoice === "without_password"}
+              onClick={() => continueWithAccountChoice("without_password")}
+            >
+              Продолжить без пароля
+            </button>
+          </div>
+          <div className="account-action-card">
+            <p>Задайте пароль один раз, чтобы в дальнейшем не вводить данные повторно и видеть свои регистрации в приложении и на сайте.</p>
+            <button
+              className="secondary-button"
+              type="button"
+              aria-pressed={values.accountChoice === "create_account"}
+              onClick={() => continueWithAccountChoice("create_account")}
+            >
+              Создать аккаунт
+            </button>
+          </div>
+        </div>
+        <button
+          className="text-button"
+          type="button"
+          onClick={() => setNotice("Вход для существующего аккаунта будет подключён на следующем этапе.")}
+        >
+          У меня уже есть аккаунт
+        </button>
+      </section>
+
       {notice ? <p className="form-notice" role="status">{notice}</p> : null}
     </form>
   );

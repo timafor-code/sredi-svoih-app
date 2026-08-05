@@ -4,6 +4,7 @@ import {
   normalizeRussianPhone,
   validateEmail,
   validateName,
+  validateSeatsCount,
 } from "./validation";
 
 describe("public form validation", () => {
@@ -24,5 +25,13 @@ describe("public form validation", () => {
   it("trims and collapses names while rejecting control characters", () => {
     expect(normalizeName("  Анна   Мария  ")).toBe("Анна Мария");
     expect(validateName("Анна\u0000")).not.toBeNull();
+  });
+
+  it.each(["0", "-1", "1001", "1.5", ""])("rejects invalid seats count %j", (value) => {
+    expect(validateSeatsCount(value)).not.toBeNull();
+  });
+
+  it.each(["1", "1000"])("accepts seats count boundary %s", (value) => {
+    expect(validateSeatsCount(value)).toBeNull();
   });
 });

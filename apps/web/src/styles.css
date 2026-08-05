@@ -247,7 +247,6 @@ legend,
 }
 
 .radio-card-grid,
-.account-choice-grid,
 .option-list {
   display: grid;
   gap: 12px;
@@ -255,7 +254,6 @@ legend,
 }
 
 .radio-card,
-.account-choice-card,
 .option-card {
   min-width: 0;
   border: 1px solid var(--border);
@@ -264,7 +262,6 @@ legend,
 }
 
 .radio-card,
-.account-choice-card,
 .option-select {
   min-height: 54px;
   display: flex;
@@ -274,14 +271,12 @@ legend,
 }
 
 .radio-card:has(input:checked),
-.account-choice-card:has(input:checked),
 .option-card:has(input:checked) {
   border-color: rgba(240, 122, 42, 0.7);
   background: rgba(240, 122, 42, 0.11);
 }
 
 .radio-card input,
-.account-choice-card input,
 .option-select input,
 .consent-control input {
   flex: 0 0 auto;
@@ -292,7 +287,6 @@ legend,
 }
 
 .radio-card span,
-.account-choice-card span,
 .option-select span {
   min-width: 0;
   display: grid;
@@ -301,7 +295,6 @@ legend,
 }
 
 .radio-card small,
-.account-choice-card small,
 .option-select small {
   color: var(--text-muted);
   font-size: 0.9rem;
@@ -350,6 +343,11 @@ legend,
 
 .form-field {
   min-width: 0;
+}
+
+.seats-field {
+  max-width: 240px;
+  margin-top: 22px;
 }
 
 .form-field label,
@@ -419,6 +417,31 @@ select {
   text-underline-offset: 4px;
 }
 
+.account-action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.account-action-card {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 18px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.account-action-card p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
 .legal-section p {
   margin: 14px 0 0;
   line-height: 1.5;
@@ -434,7 +457,8 @@ select {
   line-height: 1.55;
 }
 
-.primary-button {
+.primary-button,
+.secondary-button {
   width: 100%;
   min-height: 50px;
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -443,10 +467,19 @@ select {
   background: linear-gradient(135deg, var(--brand-red), #c91e35);
   color: var(--text);
   font-weight: 850;
+}
+
+.primary-button {
   box-shadow: 0 12px 30px rgba(229, 44, 54, 0.23);
 }
 
-.primary-button:hover {
+.secondary-button {
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+.primary-button:hover,
+.secondary-button:hover {
   filter: brightness(1.08);
 }
 
@@ -572,6 +605,10 @@ select {
   .form-grid {
     grid-template-columns: 1fr;
     gap: 14px;
+  }
+
+  .account-action-grid {
+    grid-template-columns: 1fr;
   }
 
   .event-facts div {

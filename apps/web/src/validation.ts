@@ -3,6 +3,16 @@ export type PersonalErrors = Partial<Record<PersonalField, string>>;
 
 const CONTROL_CHARACTER = /\p{C}/u;
 
+export function validateSeatsCount(value: string): string | null {
+  const normalized = value.trim();
+  if (!normalized) return "Укажите количество мест.";
+  const seatsCount = Number(normalized);
+  if (!Number.isInteger(seatsCount) || seatsCount < 1 || seatsCount > 1000) {
+    return "Введите целое количество мест от 1 до 1000.";
+  }
+  return null;
+}
+
 export function normalizeName(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
