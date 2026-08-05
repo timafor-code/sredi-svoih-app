@@ -155,6 +155,20 @@ storage before horizontally scaled production deployment. This PR adds no web
 UI, SMS, marketing email, analytics, or capacity hold. The next PR is
 `feature/api-web-event-publication`.
 
+## Admin event audit foundation
+
+`admin_event_audit_entries` is the durable, PII-free audit table for technical
+event publication state changes. It stores only the entry UUID, actor UUID,
+event UUID, action, old/new state, and creation timestamp. The only supported
+action is `event_web_visibility_changed`; state values are limited to
+`disabled`, `unlisted`, and `listed`.
+
+`record_event_web_visibility_change(...)` adds and flushes an entry in the
+caller's `AsyncSession` without committing or rolling back. This keeps a future
+event update and its audit entry atomic under the caller-owned transaction.
+This foundation is not connected to an endpoint in this PR. Integration occurs
+in `feature/api-web-event-publication`.
+
 ## Temporary Supabase JWT bridge
 
 For Level 3 mixed-provider testing only, the API can accept verified Supabase

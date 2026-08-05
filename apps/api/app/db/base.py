@@ -1,4 +1,5 @@
 from app.db.models import (
+    AdminEventAuditEntry,
     AppUser,
     AuthEmailVerificationCode,
     AuthSession,
@@ -26,6 +27,7 @@ from app.db.models import (
 )
 
 __all__ = [
+    "AdminEventAuditEntry",
     "AppUser",
     "AuthEmailVerificationCode",
     "AuthSession",

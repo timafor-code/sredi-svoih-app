@@ -1,4 +1,5 @@
 from app.db.models.base import Base
+from app.db.models.audit import AdminEventAuditEntry
 from app.db.models.avatar import ProfileAvatar
 from app.db.models.core import (
     AdminFeedback,
@@ -52,6 +53,7 @@ from app.db.models.auth import (
 
 __all__ = [
     "AdminFeedback",
+    "AdminEventAuditEntry",
     "AppUser",
     "AuthEmailVerificationCode",
     "AuthSession",

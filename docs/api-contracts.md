@@ -1112,6 +1112,26 @@ Error Codes); the mobile API client still tolerates the legacy FastAPI
 Event responses must not leak unpublished admin notes, hidden capacity internals
 that are not needed by the client, or private registration data.
 
+## Admin Event Audit Foundation
+
+The durable `admin_event_audit_entries` table records PII-free technical state
+changes for event web publication. Each row contains only `id`,
+`actor_user_id`, `event_id`, `action`, `old_state`, `new_state`, and
+`created_at`. Actor and event references are immutable technical UUID values;
+they are intentionally not cascading foreign keys, so later user/event
+lifecycle operations neither delete history nor become blocked by it.
+
+The only currently supported action is `event_web_visibility_changed`.
+`old_state` and `new_state` are restricted to `disabled`, `unlisted`, and
+`listed`, and must differ. The narrow audit service validates these values,
+adds the row, and flushes the caller's `AsyncSession`; it never commits or
+rolls back. The future event mutation and audit row can therefore share one
+caller-owned transaction.
+
+This PR exposes no audit endpoint and does not connect the service to existing
+admin actions. Endpoint integration is deferred to
+`feature/api-web-event-publication`.
+
 ## Registration Contracts
 
 ### Web Event Registration Target Contracts
