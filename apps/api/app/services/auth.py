@@ -650,6 +650,8 @@ async def confirm_set_password(
 
     now = _now()
     user.password_hash = hash_password(new_password)
+    user.claim_state = "claimed"
+    user.claimed_at = now
     user.updated_at = now
     await _invalidate_user_auth_codes(
         session,
@@ -692,6 +694,9 @@ async def register_password_user_with_invite(
             user = AppUser(
                 email=normalized_email,
                 password_hash=hash_password(password),
+                account_origin="invite",
+                claim_state="claimed",
+                claimed_at=now,
                 status=authorization_service.ACTIVE_STATUS,
                 last_login_at=now,
                 updated_at=now,
@@ -801,9 +806,13 @@ async def register_password_user(
     if existing_user is not None:
         raise AuthConflictError("Email is already registered")
 
+    now = _now()
     user = AppUser(
         email=normalized_email,
         password_hash=hash_password(password),
+        account_origin="password_signup",
+        claim_state="claimed",
+        claimed_at=now,
         status=authorization_service.ACTIVE_STATUS,
     )
     session.add(user)

@@ -23,7 +23,8 @@ Current repository behavior:
 - authenticated `POST /privacy/requests` and `GET /privacy/requests` record and
   list requests only; they do not execute export, correction, or erasure;
 - the web-registration intent, publication, legal-acceptance, account-claim,
-  and privacy-execution contracts below are not implemented.
+  intent, publication, account-claim, and privacy-execution contracts below are
+  not implemented. The identity/source/legal schema foundation is implemented.
 
 Mobile, public web, and web-admin must use one FastAPI API and one canonical
 PostgreSQL model. They must not create a second backend, a separate web-user
@@ -378,7 +379,7 @@ are not approvals and must not be presented as final values.
 ## Implementation Sequence
 
 1. `docs/web-registration-contracts` — this documentation-only contract PR.
-2. `feature/api-web-registration-identity-schema` — claim/source/legal schema.
+2. `feature/api-web-registration-identity-schema` — claim/source/legal schema (implemented).
 3. `feature/api-web-registration-intents` — intent, normalization, dedupe,
    conflict policy, and idempotency without email delivery.
 4. `feature/api-web-registration-email-finalize` — hash-only codes, SMTP

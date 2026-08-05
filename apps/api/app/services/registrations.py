@@ -544,6 +544,7 @@ async def _create_registration(
         occurrence_id=occurrence.id if occurrence is not None else None,
         user_id=current_user.id,
         status=registration_status,
+        source_channel="mobile",
         seats_count=seats_count,
         guest_names=payload.guest_names,
         comment=payload.comment,
