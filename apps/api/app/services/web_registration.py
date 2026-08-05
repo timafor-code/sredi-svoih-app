@@ -17,8 +17,6 @@ from app.core.hashids import hash_ip_optional
 from app.core.rate_limits import AuthEmailRateLimitConfig, InMemoryAuthEmailRateLimiter
 from app.db.models.core import (
     AppUser,
-    EventOccurrence,
-    EventParticipationOption,
     LegalDocument,
     WebRegistrationIdentityConflict,
     WebRegistrationIntent,
@@ -28,11 +26,16 @@ from app.schemas.web_registration import (
     WebRegistrationIntentRequest,
     WebRegistrationIntentStatus,
 )
-from app.services import events as events_service
+from app.schemas.registrations import RegisterEventRequest
+from app.services import registrations as registrations_service
 from app.services.auth_tokens import hash_token
 
 EMAIL_REQUIRED = "email_verification_required"
 FAILED = "failed"
+IDENTITY_UNAVAILABLE_DETAIL = {
+    "code": "identity_confirmation_unavailable",
+    "message": "Не удалось автоматически подтвердить данные. Используйте восстановление доступа или обратитесь в поддержку.",
+}
 _rate_limiter: InMemoryAuthEmailRateLimiter | None = None
 
 
@@ -86,49 +89,41 @@ def _fingerprint(payload: WebRegistrationIntentRequest) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-async def _validate_references(session: AsyncSession, payload: WebRegistrationIntentRequest) -> None:
-    event = await events_service.get_visible_event(session, payload.event_id, [])
-    if event.registration_mode not in ("internal_free", "internal_paid"):
-        raise _error(status.HTTP_409_CONFLICT, "state_conflict", "Registration is not available")
-    if payload.occurrence_id is not None:
-        occurrence = await session.scalar(select(EventOccurrence).where(
-            EventOccurrence.id == payload.occurrence_id,
-            EventOccurrence.event_id == event.id,
-            EventOccurrence.status == events_service.OCCURRENCE_VISIBLE_STATUS,
-        ))
-        if occurrence is None:
-            raise _error(status.HTTP_404_NOT_FOUND, "not_found", "Occurrence not found")
-        now = _now()
-        if occurrence.registration_opens_at and now < occurrence.registration_opens_at:
-            raise _error(status.HTTP_409_CONFLICT, "state_conflict", "Registration is not open yet")
-        if occurrence.registration_closes_at and now > occurrence.registration_closes_at:
-            raise _error(status.HTTP_409_CONFLICT, "state_conflict", "Registration is closed")
-    option_ids = [item.option_id for item in payload.option_selections]
-    if len(option_ids) != len(set(option_ids)):
-        raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", "Duplicate participation option selection")
-    if option_ids:
-        options = list(await session.scalars(select(EventParticipationOption).where(EventParticipationOption.id.in_(option_ids))))
-        by_id = {item.id: item for item in options}
-        for selection in payload.option_selections:
-            option = by_id.get(selection.option_id)
-            if option is None or option.event_id != event.id or not option.is_active:
-                raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", "Participation option is not available")
-            if not option.allow_quantity and selection.quantity != 1:
-                raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", "Invalid option quantity")
-            if selection.quantity < option.min_quantity or selection.quantity > option.max_quantity:
-                raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", "Invalid option quantity")
+async def _validate_references(session: AsyncSession, payload: WebRegistrationIntentRequest) -> int:
+    if payload.answers:
+        raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", "Questionnaire answers are not available")
+
+    preflight = await registrations_service.preflight_registration(
+        session,
+        payload.event_id,
+        RegisterEventRequest(
+            occurrence_id=payload.occurrence_id,
+            seats_count=payload.seats_count,
+            option_selections=[item.model_dump() for item in payload.option_selections],
+        ),
+        free_only=True,
+    )
     document_ids = [item.document_id for item in payload.legal_acceptances]
     if len(document_ids) != len(set(document_ids)):
         raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", "Duplicate legal acceptance")
     documents = list(await session.scalars(select(LegalDocument).where(LegalDocument.id.in_(document_ids))))
     by_id = {item.id: item for item in documents}
     now = _now()
+    document_types: list[str] = []
     for acceptance in payload.legal_acceptances:
         document = by_id.get(acceptance.document_id)
         if document is None or document.content_hash != acceptance.content_hash:
             raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", "Legal document is not available")
         if document.effective_at > now or (document.retired_at is not None and document.retired_at <= now):
             raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", "Legal document is not available")
+        if document.document_type not in ("event_registration_consent", "privacy_policy"):
+            raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", "Legal document is not available")
+        document_types.append(document.document_type)
+    if len(document_types) != len(set(document_types)):
+        raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", "Duplicate legal document type")
+    if document_types.count("event_registration_consent") != 1:
+        raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", "Event registration consent is required")
+    return preflight.seats_count
 
 
 async def _identity_state(session: AsyncSession, payload: WebRegistrationIntentRequest):
@@ -136,7 +131,7 @@ async def _identity_state(session: AsyncSession, payload: WebRegistrationIntentR
     phone_user = await session.scalar(select(AppUser).where(AppUser.phone == payload.phone))
     deletion = any(user and (user.deletion_requested_at is not None or user.erased_at is not None or user.status == "deletion_pending") for user in (email_user, phone_user))
     if deletion:
-        return FAILED, None, None
+        return "deletion_pending", None, None
     if email_user and phone_user and email_user.id != phone_user.id:
         return FAILED, None, (email_user.id, phone_user.id)
     if phone_user and not email_user:
@@ -149,6 +144,10 @@ def _response(intent: WebRegistrationIntent, flow_id: str) -> WebRegistrationInt
     return WebRegistrationIntentCreated(flow_id=flow_id, expires_at=intent.expires_at)
 
 
+def _identity_unavailable() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=IDENTITY_UNAVAILABLE_DETAIL)
+
+
 async def create_intent(session: AsyncSession, payload: WebRegistrationIntentRequest, ip: str | None) -> WebRegistrationIntentCreated:
     key_hash = _idempotency_hash(payload.idempotency_key)
     fingerprint = _fingerprint(payload)
@@ -159,20 +158,25 @@ async def create_intent(session: AsyncSession, payload: WebRegistrationIntentReq
             raise _error(status.HTTP_409_CONFLICT, "idempotency_conflict", "Idempotency key cannot be reused")
         if existing.expires_at <= _now():
             raise _error(status.HTTP_409_CONFLICT, "intent_not_available", "Registration intent is not available")
+        if existing.status == FAILED:
+            raise _identity_unavailable()
         return _response(existing, flow_id)
 
     _apply_rate_limit(payload, ip)
-    await _validate_references(session, payload)
+    seats_count = await _validate_references(session, payload)
     intent_status, matched_user_id, conflict_users = await _identity_state(session, payload)
+    if intent_status == "deletion_pending":
+        await session.rollback()
+        raise _identity_unavailable()
     now = _now()
     intent = WebRegistrationIntent(
         flow_token_hash=hash_token(flow_id), event_id=payload.event_id,
         occurrence_id=payload.occurrence_id, matched_user_id=matched_user_id,
         first_name=payload.first_name, last_name=payload.last_name,
         email_normalized=payload.email, phone_normalized=payload.phone,
-        seats_count=payload.seats_count,
+        seats_count=seats_count,
         option_payload=[item.model_dump(mode="json") for item in payload.option_selections],
-        answer_payload=payload.answers or None,
+        answer_payload=None,
         legal_acceptance_payload=[item.model_dump(mode="json") for item in payload.legal_acceptances],
         account_choice=payload.account_choice, status=intent_status,
         idempotency_key_hash=key_hash, request_fingerprint_hash=fingerprint,
@@ -197,6 +201,8 @@ async def create_intent(session: AsyncSession, payload: WebRegistrationIntentReq
         if existing.expires_at <= _now():
             raise _error(status.HTTP_409_CONFLICT, "intent_not_available", "Registration intent is not available")
         intent = existing
+    if intent.status == FAILED:
+        raise _identity_unavailable()
     return _response(intent, flow_id)
 
 

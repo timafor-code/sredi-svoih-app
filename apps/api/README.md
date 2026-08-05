@@ -93,7 +93,15 @@ public intent foundation. Inputs are normalized (case-insensitive email,
 Russian E.164 phone, and trimmed/collapsed names); opaque flow and idempotency
 values are hash-only at rest, and database uniqueness makes retries
 idempotent. Sensitive identity cases use neutral responses and a differing-user
-case stores only intent/user technical IDs in an open conflict record.
+case stores only intent/user technical IDs in an open conflict record. Phone-only
+and differing-user matches return the same generic support/recovery error;
+deletion-pending identities create no intent, conflict, or new PII processing.
+
+This endpoint currently accepts only `internal_free` registration. Paid and
+donation options are rejected. Exactly one active `event_registration_consent`
+with the matching content hash is mandatory (an active `privacy_policy` may be
+included), and questionnaire `answers` must remain empty. Registration preflight
+derives and validates `seats_count` through the canonical registration rules.
 
 The provisional backend-only TTL defaults to 24 hours and is bounded to seven
 days:
@@ -105,7 +113,8 @@ API_WEB_REGISTRATION_INTENT_TTL_HOURS=24
 Launch retention approval remains unresolved. This contour does not send
 email, create verification codes, users, final registrations, legal acceptance
 rows, capacity reservations, or web UI. The next implementation PR is
-`feature/api-web-registration-email-finalize`.
+`feature/api-web-registration-email-finalize`; it rechecks capacity
+transactionally before creating the final registration.
 
 ## Temporary Supabase JWT bridge
 

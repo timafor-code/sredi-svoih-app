@@ -1143,12 +1143,26 @@ materially different normalized payloads cannot reuse the key, and database
 uniqueness selects one canonical row under concurrency. Identity-sensitive
 cases return the same public shape and are persisted as failed flows; differing
 email/phone owners additionally create a technical-ID-only open conflict row.
+The shared public outcome is the generic `identity_confirmation_unavailable`
+support/recovery error and never `confirm_email`. If either matched identity is
+deletion-pending, no intent, conflict, or submitted PII is persisted.
+
+The current intent release is free-only: the event must use `internal_free`,
+and paid or donation option selections are rejected. Canonical registration
+preflight validates occurrences, registration windows, option membership and
+quantity rules, and derives `seats_count`; a conflicting client value is
+rejected. Exactly one active, non-retired `event_registration_consent` with an
+exact content hash is required. An active `privacy_policy` may also be supplied,
+but marketing consent is not accepted. `answers` must be an empty list and the
+intent stores no answer payload until the questionnaire PR.
 
 The provisional backend-only lifetime is 24 hours and is configurable with
 `API_WEB_REGISTRATION_INTENT_TTL_HOURS` (positive, at most 168). Launch
 retention approval remains unresolved. This implementation sends no email,
 creates no verification-code row, user, final registration, legal acceptance,
-or capacity reservation, and exposes no web UI.
+or capacity reservation, and exposes no web UI. Capacity is rechecked and the
+final registration is created in PR 4,
+`feature/api-web-registration-email-finalize`.
 
 Administrative publication:
 

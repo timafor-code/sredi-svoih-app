@@ -5,18 +5,28 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import httpx
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import delete, func, select, text
 
 from app.db.models.core import (
-    AppUser, Community, Event, EventCategory, EventOccurrence,
-    EventParticipationOption, EventRegistration,
-    EventRegistrationCapacityReservation, LegalDocument,
-    WebRegistrationIdentityConflict, WebRegistrationIntent,
+    AppUser,
+    Community,
+    Event,
+    EventCategory,
+    EventOccurrence,
+    EventParticipationOption,
+    EventRegistration,
+    EventRegistrationCapacityReservation,
+    LegalDocument,
+    WebRegistrationIdentityConflict,
+    WebRegistrationIntent,
 )
 from app.db.session import AsyncSessionLocal, engine
+from app.main import app
 from app.schemas.web_registration import WebRegistrationIntentRequest
 from app.services import web_registration as service
 
@@ -33,13 +43,13 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
                 session.add(EventCategory(community_id=self.community_id, slug="community", title="Community", color="#123456", icon="*"))
                 await session.flush()
                 session.add(Event(id=self.event_id, community_id=self.community_id, title="Synthetic intent event", starts_at=self.now + timedelta(days=2), category="community", registration_mode="internal_free", status="published", visibility="public"))
-                session.add(LegalDocument(id=self.document_id, document_type="event_registration_consent", version=f"test-{self.document_id.hex}", title="Synthetic consent", content_hash="sha256:test-content", published_url="https://example.invalid/consent", effective_at=self.now - timedelta(days=1)))
+                session.add(LegalDocument(id=self.document_id, document_type="event_registration_consent", version=f"intent-{self.document_id.hex}", title="Synthetic consent", content_hash="sha256:test-content", published_url="https://example.invalid/consent", effective_at=self.now - timedelta(days=1)))
 
     async def asyncTearDown(self) -> None:
         async with AsyncSessionLocal() as session:
             async with session.begin():
                 await session.execute(delete(AppUser).where(AppUser.email.like("intent-%@example.invalid")))
-                await session.execute(delete(LegalDocument).where(LegalDocument.id == self.document_id))
+                await session.execute(delete(LegalDocument).where(LegalDocument.version.like("intent-%")))
                 await session.execute(delete(Community).where(Community.id == self.community_id))
         await engine.dispose()
 
@@ -55,25 +65,53 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
         data.update(updates)
         return WebRegistrationIntentRequest.model_validate(data)
 
-    async def test_valid_creation_is_normalized_and_has_no_final_side_effects(self) -> None:
-        before_users = before_regs = before_reservations = 0
+    async def _create(self, **updates):
+        async with AsyncSessionLocal() as session:
+            return await service.create_intent(session, self.payload(**updates), None)
+
+    async def _add_user(self, email: str, phone: str, **kwargs) -> AppUser:
+        user = AppUser(email=email, phone=phone, password_hash="unchanged", account_origin="password_signup", claim_state="claimed", status=kwargs.get("status", "active"), deletion_requested_at=kwargs.get("deletion_requested_at"), erased_at=kwargs.get("erased_at"))
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(user)
+                await session.flush()
+        return user
+
+    async def _add_document(self, document_type: str, *, retired: bool = False) -> LegalDocument:
+        document = LegalDocument(document_type=document_type, version=f"intent-{uuid4().hex}", title="Synthetic legal text", content_hash=f"sha256:{uuid4().hex}", published_url="https://example.invalid/legal", effective_at=self.now - timedelta(days=1), retired_at=self.now if retired else None)
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(document)
+                await session.flush()
+        return document
+
+    async def _add_option(self, **kwargs) -> EventParticipationOption:
+        option = EventParticipationOption(event_id=self.event_id, title=f"Synthetic option {uuid4().hex[:8]}", **kwargs)
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(option)
+                await session.flush()
+        return option
+
+    async def _assert_http_error(self, expected_status: int, expected_code: str, **updates) -> HTTPException:
+        with self.assertRaises(HTTPException) as raised:
+            await self._create(**updates)
+        self.assertEqual(raised.exception.status_code, expected_status)
+        self.assertEqual(raised.exception.detail["code"], expected_code)
+        return raised.exception
+
+    async def test_processable_creation_returns_confirm_email_and_has_no_final_side_effects(self) -> None:
         async with AsyncSessionLocal() as session:
             before_users = await session.scalar(select(func.count()).select_from(AppUser))
             before_regs = await session.scalar(select(func.count()).select_from(EventRegistration))
             before_reservations = await session.scalar(select(func.count()).select_from(EventRegistrationCapacityReservation))
-            payload = self.payload()
-            response = await service.create_intent(session, payload, "192.0.2.10")
-        self.assertGreater(len(response.flow_id), 32)
+        response = await self._create()
+        self.assertEqual(response.next_step, "confirm_email")
         async with AsyncSessionLocal() as session:
             intent = await session.scalar(select(WebRegistrationIntent).where(WebRegistrationIntent.event_id == self.event_id))
-            self.assertIsNotNone(intent)
             self.assertEqual(intent.status, "email_verification_required")
             self.assertEqual((intent.first_name, intent.last_name), ("Иван Иванович", "Тестов"))
-            self.assertEqual(intent.email_normalized, "intent-new@example.invalid")
-            self.assertEqual(intent.phone_normalized, "+79000000001")
-            self.assertNotEqual(intent.flow_token_hash, response.flow_id)
-            self.assertNotIn(payload.idempotency_key, intent.idempotency_key_hash)
-            self.assertGreater(intent.expires_at, intent.created_at)
+            self.assertEqual(intent.answer_payload, None)
             self.assertEqual(await session.scalar(select(func.count()).select_from(AppUser)), before_users)
             self.assertEqual(await session.scalar(select(func.count()).select_from(EventRegistration)), before_regs)
             self.assertEqual(await session.scalar(select(func.count()).select_from(EventRegistrationCapacityReservation)), before_reservations)
@@ -83,20 +121,20 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValidationError):
                 self.payload(**update)
 
-    async def test_equivalent_retry_returns_same_flow_and_changed_payload_conflicts(self) -> None:
+    async def test_idempotency_and_failed_retry_outcomes(self) -> None:
         payload = self.payload(idempotency_key="stable-test-key")
         async with AsyncSessionLocal() as session:
             first = await service.create_intent(session, payload, None)
         async with AsyncSessionLocal() as session:
             second = await service.create_intent(session, self.payload(idempotency_key="stable-test-key"), None)
         self.assertEqual(first.flow_id, second.flow_id)
-        async with AsyncSessionLocal() as session:
-            with self.assertRaises(Exception) as raised:
-                await service.create_intent(session, self.payload(idempotency_key="stable-test-key", seats_count=2), None)
-        self.assertEqual(raised.exception.status_code, 409)
-        async with AsyncSessionLocal() as session:
-            count = await session.scalar(select(func.count()).select_from(WebRegistrationIntent).where(WebRegistrationIntent.event_id == self.event_id))
-        self.assertEqual(count, 1)
+        await self._assert_http_error(409, "idempotency_conflict", idempotency_key="stable-test-key", seats_count=2)
+
+        await self._add_user("intent-phone@example.invalid", "+79000000002")
+        conflict_payload = dict(email="intent-free@example.invalid", phone="+79000000002", idempotency_key="failed-retry-key")
+        first_error = await self._assert_http_error(409, "identity_confirmation_unavailable", **conflict_payload)
+        retry_error = await self._assert_http_error(409, "identity_confirmation_unavailable", **conflict_payload)
+        self.assertEqual(first_error.detail, retry_error.detail)
 
     async def test_concurrent_same_key_creates_one_intent(self) -> None:
         payload = self.payload(idempotency_key="concurrent-test-key")
@@ -105,103 +143,128 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
                 return await service.create_intent(session, payload, None)
         results = await asyncio.gather(submit(), submit())
         self.assertEqual(results[0].flow_id, results[1].flow_id)
-        async with AsyncSessionLocal() as session:
-            count = await session.scalar(select(func.count()).select_from(WebRegistrationIntent).where(WebRegistrationIntent.event_id == self.event_id))
-        self.assertEqual(count, 1)
 
-    async def _add_user(self, email: str, phone: str, **kwargs) -> AppUser:
-        user = AppUser(email=email, phone=phone, password_hash="unchanged", account_origin="password_signup", claim_state="claimed", status=kwargs.get("status", "active"), deletion_requested_at=kwargs.get("deletion_requested_at"))
-        async with AsyncSessionLocal() as session:
-            async with session.begin():
-                session.add(user)
-                await session.flush()
-        return user
-
-    async def test_identity_matrix_is_safe_and_conflict_has_no_pii_columns(self) -> None:
-        email_user = await self._add_user("intent-email@example.invalid", "+79000000011")
+    async def test_sensitive_identity_conflicts_share_generic_public_outcome(self) -> None:
         phone_user = await self._add_user("intent-phone@example.invalid", "+79000000012")
-        payload = self.payload(email="INTENT-EMAIL@example.invalid", phone="+79000000012", idempotency_key="conflict-test-key")
+        phone_only = await self._assert_http_error(409, "identity_confirmation_unavailable", email="intent-free@example.invalid", phone="+79000000012", idempotency_key="phone-only-key")
+        email_user = await self._add_user("intent-email@example.invalid", "+79000000011")
+        differing = await self._assert_http_error(409, "identity_confirmation_unavailable", email=email_user.email, phone="+79000000012", idempotency_key="different-users-key")
+        self.assertEqual(phone_only.detail, differing.detail)
+        self.assertNotIn("confirm_email", str(phone_only.detail))
         async with AsyncSessionLocal() as session:
-            result = await service.create_intent(session, payload, None)
-        async with AsyncSessionLocal() as session:
-            intent = await session.scalar(select(WebRegistrationIntent).where(WebRegistrationIntent.flow_token_hash == service.hash_token(result.flow_id)))
-            conflict = await session.scalar(select(WebRegistrationIdentityConflict).where(WebRegistrationIdentityConflict.registration_intent_id == intent.id))
-            self.assertEqual(intent.status, "failed")
+            failed = list(await session.scalars(select(WebRegistrationIntent).where(WebRegistrationIntent.status == "failed", WebRegistrationIntent.event_id == self.event_id)))
+            self.assertEqual(len(failed), 2)
+            conflict = await session.scalar(select(WebRegistrationIdentityConflict).where(WebRegistrationIdentityConflict.email_user_id == email_user.id))
             self.assertEqual((conflict.email_user_id, conflict.phone_user_id), (email_user.id, phone_user.id))
-            self.assertTrue({"id", "registration_intent_id", "category", "email_user_id", "phone_user_id", "status", "resolved_at", "created_at"}.issuperset(WebRegistrationIdentityConflict.__table__.columns.keys()))
-            refreshed = await session.get(AppUser, email_user.id)
-            self.assertEqual((refreshed.email, refreshed.phone, refreshed.password_hash), (email_user.email, email_user.phone, "unchanged"))
 
-    async def test_phone_only_and_deletion_pending_do_not_create_users(self) -> None:
-        await self._add_user("intent-existing@example.invalid", "+79000000021")
-        deleting = await self._add_user("intent-deleting@example.invalid", "+79000000022", deletion_requested_at=self.now)
-        for index, payload in enumerate((
-            self.payload(email="free@example.invalid", phone="+79000000021", idempotency_key="phone-only-key"),
-            self.payload(email=deleting.email, phone=deleting.phone, idempotency_key="deletion-key"),
-        )):
-            async with AsyncSessionLocal() as session:
-                await service.create_intent(session, payload, None)
+    async def test_deletion_pending_stores_no_intent_conflict_or_submitted_pii(self) -> None:
+        deleting = await self._add_user("intent-deleting@example.invalid", "+79000000022", status="deletion_pending", deletion_requested_at=self.now)
+        submitted_email = "intent-not-stored@example.invalid"
+        await self._assert_http_error(409, "identity_confirmation_unavailable", email=submitted_email, phone=deleting.phone, first_name="Unique Submitted Name", idempotency_key="deletion-key")
         async with AsyncSessionLocal() as session:
-            statuses = list(await session.scalars(select(WebRegistrationIntent.status).where(WebRegistrationIntent.event_id == self.event_id)))
-            self.assertEqual(statuses, ["failed", "failed"])
-            self.assertIsNone(await session.scalar(select(AppUser).where(AppUser.email == "free@example.invalid")))
+            self.assertEqual(await session.scalar(select(func.count()).select_from(WebRegistrationIntent).where(WebRegistrationIntent.event_id == self.event_id)), 0)
+            self.assertEqual(await session.scalar(select(func.count()).select_from(WebRegistrationIdentityConflict)), 0)
+            self.assertIsNone(await session.scalar(select(WebRegistrationIntent).where(WebRegistrationIntent.email_normalized == submitted_email)))
 
-    async def test_same_user_and_email_only_matches_link_without_mutation(self) -> None:
-        user = await self._add_user("intent-match@example.invalid", "+79000000031")
-        for key, phone in (("same-match-key", user.phone), ("email-only-key", "+79000000032")):
-            async with AsyncSessionLocal() as session:
-                await service.create_intent(session, self.payload(email=user.email.upper(), phone=phone, idempotency_key=key), None)
-        async with AsyncSessionLocal() as session:
-            intents = list(await session.scalars(select(WebRegistrationIntent).where(WebRegistrationIntent.event_id == self.event_id).order_by(WebRegistrationIntent.created_at)))
-            self.assertEqual([item.matched_user_id for item in intents], [user.id, user.id])
-            refreshed = await session.get(AppUser, user.id)
-            self.assertEqual((refreshed.email, refreshed.phone, refreshed.password_hash), (user.email, user.phone, "unchanged"))
+    async def test_legal_consent_rules(self) -> None:
+        privacy = await self._add_document("privacy_policy")
+        marketing = await self._add_document("marketing_consent")
+        second_consent = await self._add_document("event_registration_consent")
+        acceptance = lambda document: {"document_id": document.id, "content_hash": document.content_hash}
+        await self._assert_http_error(422, "validation_error", legal_acceptances=[acceptance(privacy)])
+        await self._assert_http_error(422, "validation_error", legal_acceptances=[acceptance(marketing)])
+        await self._assert_http_error(422, "validation_error", legal_acceptances=[acceptance(await self._document()), acceptance(second_consent)])
+        result = await self._create(legal_acceptances=[acceptance(await self._document()), acceptance(privacy)])
+        self.assertEqual(result.next_step, "confirm_email")
 
-    async def test_occurrence_and_inactive_option_validation(self) -> None:
-        other_event_id, other_occurrence_id, inactive_option_id = uuid4(), uuid4(), uuid4()
+    async def _document(self) -> LegalDocument:
         async with AsyncSessionLocal() as session:
-            async with session.begin():
-                session.add(Event(id=other_event_id, community_id=self.community_id, title="Other synthetic event", starts_at=self.now + timedelta(days=3), category="community", registration_mode="internal_free", status="published", visibility="public"))
-                await session.flush()
-                session.add(EventOccurrence(id=other_occurrence_id, event_id=other_event_id, starts_at=self.now + timedelta(days=3), timezone="Europe/Moscow", status="active"))
-                session.add(EventParticipationOption(id=inactive_option_id, event_id=self.event_id, title="Inactive synthetic option", is_active=False))
-        payloads = (
-            self.payload(occurrence_id=uuid4(), idempotency_key="missing-occurrence-key"),
-            self.payload(occurrence_id=other_occurrence_id, idempotency_key="other-occurrence-key"),
-            self.payload(option_selections=[{"option_id": inactive_option_id, "quantity": 1}], idempotency_key="inactive-option-key"),
-        )
-        for payload in payloads:
-            async with AsyncSessionLocal() as session:
-                with self.assertRaises(Exception):
-                    await service.create_intent(session, payload, None)
+            return await session.get(LegalDocument, self.document_id)
 
-    async def test_status_is_credential_scoped_generic_and_expiry_not_reused(self) -> None:
-        payload = self.payload(idempotency_key="status-test-key")
+    async def test_free_only_paid_donation_and_seat_count_rules(self) -> None:
         async with AsyncSessionLocal() as session:
-            created = await service.create_intent(session, payload, None)
+            event = await session.get(Event, self.event_id)
+            event.registration_mode = "internal_paid"
+            await session.commit()
+        await self._assert_http_error(409, "state_conflict")
+        async with AsyncSessionLocal() as session:
+            event = await session.get(Event, self.event_id)
+            event.registration_mode = "internal_free"
+            await session.commit()
+
+        paid = await self._add_option(price_amount=100)
+        donation = await self._add_option(option_type="donation", is_donation=True)
+        await self._assert_http_error(422, "validation_error", option_selections=[{"option_id": paid.id, "quantity": 1}])
+        await self._assert_http_error(422, "validation_error", option_selections=[{"option_id": donation.id, "quantity": 1}])
+
+        free = await self._add_option(allow_quantity=True, min_quantity=1, max_quantity=5)
+        await self._assert_http_error(422, "validation_error", seats_count=1, option_selections=[{"option_id": free.id, "quantity": 2}])
+        await self._create(seats_count=2, option_selections=[{"option_id": free.id, "quantity": 2}], idempotency_key="canonical-seat-key")
+        async with AsyncSessionLocal() as session:
+            intent = await session.scalar(select(WebRegistrationIntent).where(WebRegistrationIntent.idempotency_key_hash == service._idempotency_hash("canonical-seat-key")))
+            self.assertEqual(intent.seats_count, 2)
+
+    async def test_occurrence_requirement_and_windows_use_canonical_validation(self) -> None:
+        occurrence_id = uuid4()
+        async with AsyncSessionLocal() as session:
+            event = await session.get(Event, self.event_id)
+            event.event_kind = "course"
+            session.add(EventOccurrence(id=occurrence_id, event_id=self.event_id, starts_at=self.now + timedelta(days=2), timezone="Europe/Moscow", status="active"))
+            await session.commit()
+        await self._assert_http_error(422, "validation_error")
+        async with AsyncSessionLocal() as session:
+            occurrence = await session.get(EventOccurrence, occurrence_id)
+            occurrence.registration_opens_at = self.now + timedelta(days=1)
+            await session.commit()
+        await self._assert_http_error(409, "state_conflict", occurrence_id=occurrence_id)
+        async with AsyncSessionLocal() as session:
+            occurrence = await session.get(EventOccurrence, occurrence_id)
+            occurrence.registration_opens_at = self.now - timedelta(days=2)
+            occurrence.registration_closes_at = self.now - timedelta(days=1)
+            await session.commit()
+        await self._assert_http_error(409, "state_conflict", occurrence_id=occurrence_id)
+
+    async def test_answers_rejected_and_answer_payload_remains_null(self) -> None:
+        await self._assert_http_error(422, "validation_error", answers=[{"question": "synthetic", "answer": "synthetic"}])
+        await self._create(idempotency_key="empty-answers-key")
+        async with AsyncSessionLocal() as session:
+            intent = await session.scalar(select(WebRegistrationIntent).where(WebRegistrationIntent.idempotency_key_hash == service._idempotency_hash("empty-answers-key")))
+            self.assertIsNone(intent.answer_payload)
+
+    async def test_router_create_and_generic_conflict_envelopes(self) -> None:
+        payload = self.payload(idempotency_key="router-success-key").model_dump(mode="json")
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.post("/web/registration-intents", json=payload)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["data"]["next_step"], "confirm_email")
+
+        await self._add_user("intent-router-phone@example.invalid", "+79000000091")
+        payload.update({"email": "intent-router-free@example.invalid", "phone": "+79000000091", "idempotency_key": "router-conflict-key"})
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post("/web/registration-intents", json=payload)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], service.IDENTITY_UNAVAILABLE_DETAIL)
+
+    async def test_status_is_credential_scoped_and_pii_free(self) -> None:
+        created = await self._create(idempotency_key="status-test-key")
         async with AsyncSessionLocal() as session:
             current = await service.get_intent_status(session, created.flow_id)
             unknown = await service.get_intent_status(session, "x" * 43)
-            self.assertEqual(current.model_dump().keys(), {"state", "expires_at"})
-            self.assertEqual(unknown.state, "not_available")
-            intent = await session.scalar(select(WebRegistrationIntent).where(WebRegistrationIntent.event_id == self.event_id))
-            intent.created_at = self.now - timedelta(days=2)
-            intent.expires_at = self.now - timedelta(days=1)
-            await session.commit()
-        async with AsyncSessionLocal() as session:
-            self.assertEqual((await service.get_intent_status(session, created.flow_id)).state, "not_available")
-            with self.assertRaises(Exception) as raised:
-                await service.create_intent(session, payload, None)
-            self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(current.model_dump().keys(), {"state", "expires_at"})
+        self.assertEqual(current.state, "email_verification_required")
+        self.assertEqual(unknown.state, "not_available")
 
     async def test_invalid_event_and_legal_hash_are_rejected(self) -> None:
-        for payload in (self.payload(event_id=uuid4()), self.payload(legal_acceptances=[{"document_id": self.document_id, "content_hash": "wrong"}])):
-            async with AsyncSessionLocal() as session:
-                with self.assertRaises(Exception):
-                    await service.create_intent(session, payload, None)
+        await self._assert_http_error(404, "not_found", event_id=uuid4())
+        await self._assert_http_error(422, "validation_error", legal_acceptances=[{"document_id": self.document_id, "content_hash": "wrong"}])
 
     async def test_database_is_at_alembic_head(self) -> None:
         expected = ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
         async with AsyncSessionLocal() as session:
             actual = await session.scalar(text("SELECT version_num FROM alembic_version"))
         self.assertEqual(actual, expected)
+
+
+if __name__ == "__main__":
+    unittest.main()

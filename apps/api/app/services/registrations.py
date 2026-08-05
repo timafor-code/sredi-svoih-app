@@ -67,6 +67,13 @@ class _CapacityReservationDraft:
     seats_count: int
 
 
+@dataclass(frozen=True)
+class RegistrationPreflight:
+    event: Event
+    occurrence: EventOccurrence | None
+    seats_count: int
+
+
 @asynccontextmanager
 async def _transaction_scope(session: AsyncSession) -> AsyncIterator[None]:
     if session.in_transaction():
@@ -400,6 +407,42 @@ async def _prepare_options(
         reservation_drafts,
         registration_seats_count,
         legacy_seats_count,
+    )
+
+
+async def preflight_registration(
+    session: AsyncSession,
+    event_id: UUID,
+    payload: RegisterEventRequest,
+    *,
+    member_community_ids: Sequence[UUID] = (),
+    free_only: bool = False,
+) -> RegistrationPreflight:
+    """Validate registration inputs without creating or reserving anything."""
+    event = await _lock_visible_event(session, event_id, member_community_ids)
+    if event.registration_mode not in INTERNAL_REGISTRATION_MODES:
+        raise _state_conflict("Registration is not available")
+    if free_only and event.registration_mode != FREE_REGISTRATION_MODE:
+        raise _state_conflict("Registration is not available")
+
+    has_occurrences = await _event_has_occurrences(session, event.id)
+    if _requires_occurrence(event, payload, has_occurrences=has_occurrences):
+        raise _validation_error("occurrence_id is required for this event")
+    occurrence = await _lock_occurrence(session, event, payload.occurrence_id)
+    prepared, _, seats_count, _ = await _prepare_options(session, event, payload)
+
+    if free_only and any(
+        selection.option.is_donation or selection.option.price_amount > 0
+        for selection in prepared
+    ):
+        raise _validation_error("Participation option is not available")
+    if payload.option_selections and payload.seats_count != seats_count:
+        raise _validation_error("seats_count does not match selected options")
+
+    return RegistrationPreflight(
+        event=event,
+        occurrence=occurrence,
+        seats_count=seats_count,
     )
 
 
