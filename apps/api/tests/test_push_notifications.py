@@ -721,7 +721,13 @@ class PushNotificationPipelineTests(unittest.IsolatedAsyncioTestCase):
                             city="Moscow",
                             slug=f"push-{community_id.hex[:20]}",
                         ),
-                        AppUser(id=actor_id, status="active"),
+                        AppUser(
+                            id=actor_id,
+                            account_origin="migration",
+                            claim_state="legacy_external",
+                            claimed_at=None,
+                            status="active",
+                        ),
                         CommunityMembership(
                             id=uuid4(),
                             community_id=community_id,
@@ -768,7 +774,13 @@ class PushNotificationPipelineTests(unittest.IsolatedAsyncioTestCase):
             async with session.begin():
                 session.add_all(
                     [
-                        AppUser(id=user_id, status="active"),
+                        AppUser(
+                            id=user_id,
+                            account_origin="migration",
+                            claim_state="legacy_external",
+                            claimed_at=None,
+                            status="active",
+                        ),
                         Profile(
                             id=uuid4(),
                             user_id=user_id,
@@ -796,6 +808,7 @@ class PushNotificationPipelineTests(unittest.IsolatedAsyncioTestCase):
                         user_id=user_id,
                         occurrence_id=occurrence_id,
                         status=registration_status,
+                        source_channel="mobile",
                     ),
                 )
         return user_id
@@ -815,6 +828,7 @@ class PushNotificationPipelineTests(unittest.IsolatedAsyncioTestCase):
                         event_id=event_id,
                         user_id=user_id,
                         status=status,
+                        source_channel="mobile",
                     ),
                 )
 

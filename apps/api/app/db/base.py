@@ -16,6 +16,8 @@ from app.db.models import (
     EventRegistrationCapacityReservation,
     EventRegistrationOptionSelection,
     Invite,
+    LegalAcceptance,
+    LegalDocument,
     PasswordResetCode,
     Profile,
 )
@@ -38,6 +40,8 @@ __all__ = [
     "EventRegistrationCapacityReservation",
     "EventRegistrationOptionSelection",
     "Invite",
+    "LegalAcceptance",
+    "LegalDocument",
     "PasswordResetCode",
     "Profile",
 ]

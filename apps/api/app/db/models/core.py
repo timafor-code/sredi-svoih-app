@@ -133,6 +133,14 @@ class AppUser(Base):
     __table_args__ = (
         UniqueConstraint("phone", name="app_users_phone_key"),
         CheckConstraint("btrim(status) <> ''", name="app_users_status_not_empty"),
+        CheckConstraint(
+            "account_origin IN ('password_signup', 'invite', 'web_guest', 'migration', 'admin')",
+            name="app_users_account_origin_check",
+        ),
+        CheckConstraint(
+            "claim_state IN ('unclaimed', 'claimed', 'legacy_external')",
+            name="app_users_claim_state_check",
+        ),
         Index(
             "app_users_email_lower_key",
             text("lower(email)"),
@@ -145,6 +153,13 @@ class AppUser(Base):
     email: Mapped[str | None] = mapped_column(Text)
     phone: Mapped[str | None] = mapped_column(Text)
     password_hash: Mapped[str | None] = mapped_column(Text)
+    account_origin: Mapped[str] = mapped_column(Text, nullable=False)
+    claim_state: Mapped[str] = mapped_column(Text, nullable=False)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
+    erased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(
         Text,
         nullable=False,
@@ -882,6 +897,10 @@ class EventRegistration(Base):
         ),
         CheckConstraint("seats_count > 0", name="event_registrations_seats_count_check"),
         CheckConstraint(
+            "source_channel IN ('mobile', 'public_web', 'admin')",
+            name="event_registrations_source_channel_check",
+        ),
+        CheckConstraint(
             (
                 "payment_status IN ('not_required', 'pending', 'succeeded', "
                 "'failed', 'cancelled', 'refunded', 'paid')"
@@ -914,6 +933,7 @@ class EventRegistration(Base):
         nullable=False,
         server_default=text("'pending'"),
     )
+    source_channel: Mapped[str] = mapped_column(Text, nullable=False)
     seats_count: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -936,6 +956,93 @@ class EventRegistration(Base):
     payment_id: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = timestamptz_now()
     updated_at: Mapped[datetime] = timestamptz_now()
+
+
+class LegalDocument(Base):
+    __tablename__ = "legal_documents"
+    __table_args__ = (
+        CheckConstraint(
+            "document_type IN ('privacy_policy', 'event_registration_consent', 'marketing_consent')",
+            name="legal_documents_document_type_check",
+        ),
+        CheckConstraint("btrim(version) <> ''", name="legal_documents_version_not_empty"),
+        CheckConstraint("btrim(title) <> ''", name="legal_documents_title_not_empty"),
+        CheckConstraint(
+            "btrim(content_hash) <> ''",
+            name="legal_documents_content_hash_not_empty",
+        ),
+        CheckConstraint(
+            "btrim(published_url) <> ''",
+            name="legal_documents_published_url_not_empty",
+        ),
+        CheckConstraint(
+            "retired_at IS NULL OR retired_at >= effective_at",
+            name="legal_documents_retired_after_effective_check",
+        ),
+        UniqueConstraint(
+            "document_type",
+            "version",
+            name="legal_documents_document_type_version_key",
+        ),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    document_type: Mapped[str] = mapped_column(Text, nullable=False)
+    version: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    published_url: Mapped[str] = mapped_column(Text, nullable=False)
+    effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()
+
+
+class LegalAcceptance(Base):
+    __tablename__ = "legal_acceptances"
+    __table_args__ = (
+        CheckConstraint(
+            "acceptance_method IN ('checkbox_plus_email_verification', 'authenticated_action')",
+            name="legal_acceptances_acceptance_method_check",
+        ),
+        CheckConstraint(
+            "source_channel IN ('mobile', 'public_web', 'admin')",
+            name="legal_acceptances_source_channel_check",
+        ),
+        CheckConstraint(
+            "btrim(evidence_version) <> ''",
+            name="legal_acceptances_evidence_version_not_empty",
+        ),
+        Index("legal_acceptances_user_id_idx", "user_id"),
+        Index("legal_acceptances_registration_id_idx", "registration_id"),
+        Index("legal_acceptances_legal_document_id_idx", "legal_document_id"),
+        Index("legal_acceptances_accepted_at_idx", "accepted_at"),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    # Acceptances are personal evidence and are removed with the canonical user.
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # Registration deletion preserves account-level evidence without a dangling FK.
+    registration_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("event_registrations.id", ondelete="SET NULL"),
+    )
+    # Published legal versions cannot be deleted while acceptance evidence refers to them.
+    legal_document_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("legal_documents.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    acceptance_method: Mapped[str] = mapped_column(Text, nullable=False)
+    source_channel: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_version: Mapped[str] = mapped_column(Text, nullable=False)
+    retention_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = timestamptz_now()
 
 
 class EventRegistrationOptionSelection(Base):
