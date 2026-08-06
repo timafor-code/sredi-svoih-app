@@ -113,17 +113,24 @@ async def create_privacy_request(
     session: AsyncSession,
     current_user: AppUser,
     payload: PrivacyRequestCreateRequest,
+    *,
+    identity_verified: bool = False,
 ) -> PrivacyRequest:
     community_id = await _resolve_request_community_id(session, current_user, payload)
 
     async with _transaction_scope(session):
+        now = _now()
         privacy_request = PrivacyRequest(
             user_id=current_user.id,
             community_id=community_id,
             request_type=payload.request_type,
             message=payload.message,
             status="open",
+            identity_verified_at=now if identity_verified else None,
         )
+        if identity_verified:
+            privacy_request.created_at = now
+            privacy_request.updated_at = now
         session.add(privacy_request)
         await session.flush()
         await session.refresh(privacy_request)

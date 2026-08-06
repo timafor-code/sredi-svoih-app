@@ -1287,9 +1287,8 @@ through `?occurrence={occurrence_id}`. Links are computed from trusted backend
 configuration and the event UUID. Existing/new events default to `disabled`;
 the MVP permits `unlisted` but not `listed` until the public directory exists.
 
-The PostgreSQL privacy self-service foundation is implemented, but every
-email-scoped endpoint in the following table remains a target and is not
-implemented. Access codes are stored only as `code_hash`; short-lived privacy
+The PostgreSQL privacy self-service foundation and access runtime are implemented.
+Access codes are stored only as `code_hash`; short-lived privacy
 session credentials are stored only as `token_hash`. Neither table stores a
 plaintext code, token, email, or phone.
 
@@ -1297,19 +1296,20 @@ The only permitted privacy-session scope is `privacy_self_service`. A privacy
 session is separate from an auth session and grants only the future verified
 subject-data operations explicitly attached to that scope. It grants no login,
 password, profile editing, admin, refresh-token, or ordinary account access.
-This foundation creates no privacy bearer token or browser cookie at runtime.
+The runtime issues an opaque privacy bearer token only after canonical-email
+code confirmation. It creates no browser cookie or ordinary auth credential.
 
-Privacy self-service target surface:
+Privacy self-service surface:
 
-| Method | Path | Target behavior |
+| Method | Path | Behavior |
 | --- | --- | --- |
-| POST | `/privacy/access/request` | Generic, enumeration-safe access-code request. |
-| POST | `/privacy/access/confirm` | Create a short-lived own-data-only privacy session. |
-| GET | `/privacy/data-summary` | Return the verified subject's data categories. |
-| POST | `/privacy/data-export` | Request/produce a scoped export under approved retention. |
-| POST | `/privacy/requests` | Expanded target behavior for a verified privacy session; the current authenticated endpoint only records a request. |
-| POST | `/privacy/requests/{request_id}/confirm-erasure` | Confirm destructive execution and stop new processing. |
-| POST | `/privacy/requests/{request_id}/cancel-erasure` | Cancel while the execution state permits. |
+| POST | `/privacy/access/request` | Implemented generic, enumeration-safe access-code request. |
+| POST | `/privacy/access/confirm` | Implemented short-lived own-data-only privacy session issuance. |
+| GET | `/privacy/data-summary` | Implemented verified-subject category counts/presence. |
+| POST | `/privacy/data-export` | Implemented synchronous allowlisted JSON export v1. |
+| POST | `/privacy/requests` | Implemented for ordinary auth and verified privacy sessions. |
+| POST | `/privacy/requests/{request_id}/confirm-erasure` | Target; not implemented. |
+| POST | `/privacy/requests/{request_id}/cancel-erasure` | Target; not implemented. |
 
 All pre-verification responses are generic. Email is compared in normalized,
 case-insensitive form and phone in E.164 form. Conflicting rows are never
@@ -2246,35 +2246,159 @@ Privacy endpoints are the user-facing contract for data-subject style requests.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/privacy/requests` | Authenticated | Create a privacy request linked to the current user. |
+| POST | `/privacy/access/request` | Public | Request an enumeration-safe canonical-email code. |
+| POST | `/privacy/access/confirm` | Public | Exchange a valid six-digit code for a privacy session. |
+| GET | `/privacy/data-summary` | Privacy session | Return only own-data counts/presence. |
+| POST | `/privacy/data-export` | Privacy session | Return synchronous allowlisted JSON export v1. |
+| POST | `/privacy/requests` | Authenticated or privacy session | Create a privacy request linked to the verified user. |
 | GET | `/privacy/requests` | Authenticated | List privacy requests owned by the current user. |
 
-Implemented behavior (PR 32B): both endpoints require
-`Authorization: Bearer <access_token>`; a public/anonymous request form is not
-implemented and would be a separate future contract. `POST /privacy/requests`
+### Access request and confirmation
+
+`POST /privacy/access/request` accepts `{"email":"user@example.ru"}`. Email
+uses the existing canonical normalizer and is matched only against
+`lower(app_users.email)`. Profile email, phone, membership, password, claim
+state, and ordinary account status are not ownership or eligibility sources.
+An identity with `erased_at` is not sent a code.
+
+Every syntactically valid request returns HTTP 202 with the same envelope for a
+known, unknown, erased, rate-limited, SMTP-disabled, or SMTP-failure case:
+
+```json
+{
+  "data": {"accepted": true},
+  "error": null,
+  "meta": {"request_id": "8e9c2a4d-5e30-47c9-b749-1f8da61b82f5"}
+}
+```
+
+Eligible requests generate exactly six ASCII digits. Plaintext exists only in
+memory and the email. The database stores the server-secret HMAC of
+`privacy-access-code:{user_id}:{code}` through the existing token hasher. A
+successfully delivered replacement invalidates older active codes. Disabled or
+failed delivery rolls the transaction back, so no new usable code remains.
+
+Local settings are:
+
+```text
+API_PRIVACY_EMAIL_RATE_LIMIT_WINDOW_SECONDS=900
+API_PRIVACY_EMAIL_RATE_LIMIT_MAX_ATTEMPTS=5
+API_PRIVACY_ACCESS_CODE_TTL_MINUTES=15
+API_PRIVACY_ACCESS_CODE_MAX_ATTEMPTS=5
+```
+
+The limiter key is a hash of normalized email. The current limiter is
+process-local; distributed/shared rate limiting is a production launch gate,
+with no provider selected here.
+
+`POST /privacy/access/confirm` accepts:
+
+```json
+{
+  "email": "user@example.ru",
+  "code": "123456"
+}
+```
+
+Unknown fields are rejected. Surrounding code whitespace is trimmed before the
+strict six-ASCII-digit check. Unknown email, wrong/expired/consumed code,
+attempt exhaustion, and erased identity all return HTTP 400 with
+`invalid_or_expired_privacy_code` and the generic message
+`Invalid or expired privacy access code`. A wrong code increments the locked
+current code's attempt count.
+
+Success atomically consumes the code, revokes older active privacy sessions,
+and stores only the hash of a newly generated opaque token using the domain
+input `privacy-session:{token}`. Response:
+
+```json
+{
+  "data": {
+    "privacy_session_token": "<opaque-token>",
+    "token_type": "bearer",
+    "scope": "privacy_self_service",
+    "expires_at": "2026-08-06T12:00:00Z"
+  },
+  "error": null,
+  "meta": {"request_id": "8e9c2a4d-5e30-47c9-b749-1f8da61b82f5"}
+}
+```
+
+The token is returned once. `API_PRIVACY_SESSION_TTL_MINUTES` defaults locally
+to 15. It is opaque, not a JWT, creates no refresh token or `auth_sessions` row,
+and does not update login/account/profile/membership state.
+
+### Privacy session authorization
+
+Protected privacy endpoints accept
+`Authorization: Bearer <privacy_session_token>`. The dedicated dependency
+verifies the domain-separated token hash, fixed scope, expiry, revocation, and
+a still-existing non-erased user, then updates `last_used_at`. An ordinary API
+JWT cannot call summary/export. A privacy token cannot call `/auth/me`, ordinary
+`/me/*`, `/admin/*`, member/event management, password, or profile mutation
+endpoints. Stable authorization errors are `privacy_session_required`,
+`privacy_session_expired`, and `privacy_session_revoked`.
+
+### Data summary and synchronous JSON export
+
+`GET /privacy/data-summary` returns `generated_at` and only category
+`record_count`/presence plus `available_for_export`. Category codes are
+`account`, `profile`, `memberships`, `event_registrations`,
+`registration_options`, `legal_acceptances`, `privacy_requests`,
+`device_metadata`, `synced_contacts_summary`, and `avatar_metadata`.
+
+`POST /privacy/data-export` accepts only `{"format":"json"}`. Its standard JSON
+response contains `export_version = privacy-self-service-v1`, `generated_at`,
+`included_categories`, `excluded_categories`, and only the verified subject's
+explicitly allowlisted account/profile/membership/registration/option/legal/
+privacy-request/device/synced-contact-count/avatar metadata. `device_id` is
+included because the existing current-user device contract already returns it;
+`expo_push_token` is never included. No ZIP, CSV, PDF, file, S3 object,
+background job, attachment, or download link is created.
+
+Excluded markers include `prayer_activity`, `feedback_content`,
+`avatar_binary`, and `synced_contact_hashes`. The implementation does not query,
+join, count, summarize, or serialize `prayer_activity_logs`. It also excludes
+password/session/code hashes, other users' records, raw push tokens,
+contact hashes/third-party contact data, avatar binary/object key/bucket/ETag/
+signed URL, and storage credentials. Dependency failures use
+`privacy_export_unavailable` without exposing database exception text.
+
+### Privacy requests
+
+The authenticated behavior introduced in PR 32B remains. `POST /privacy/requests`
 accepts `request_type` (`data_export`, `deletion`, `correction`, `other`), an
 optional `message` (≤ 4000 chars), and an optional `community_id`. A supplied
 `community_id` must be a community where the caller has an active membership;
 when omitted, the caller's single active membership community is used, and a
 caller with zero or multiple memberships gets a request without a community
 link. Requests are always created with `status = open` and `user_id` forced to
-the current user; a spoofed `user_id` field is rejected by the schema.
+the verified user; a spoofed `user_id` field is rejected by the schema. A
+privacy-session request sets `identity_verified_at`; ordinary API-auth creation
+keeps its previous response shape and semantics without another email code.
 `GET /privacy/requests` returns only the caller's own requests (newest first)
 including `status`, `resolution_note`, and `resolved_at`, but never
-`resolved_by`. `Idempotency-Key` support is not implemented yet. These
-endpoints record requests only: no export, deletion, or correction is
-executed, and no emails are sent. Admin review uses `/admin/privacy/requests`.
+`resolved_by`. `Idempotency-Key` support is not implemented yet. Request
+creation records the request only: deletion/correction execution is not
+performed and no request email is sent. Admin review uses
+`/admin/privacy/requests`.
 Raw request messages are treated as personal data and are not logged.
 
-Schema status: `privacy_access_codes`, `privacy_access_sessions`, the expanded
-`privacy_requests` lifecycle fields, and PII-free
-`privacy_destruction_evidence` are implemented as storage foundation only.
+Schema/runtime status: `privacy_access_codes`, `privacy_access_sessions`, the
+expanded `privacy_requests` lifecycle fields, and PII-free
+`privacy_destruction_evidence` reuse the PR #344 storage foundation.
 `privacy_requests.user_id` is nullable and uses `ON DELETE SET NULL`; evidence
 has no user foreign key and contains only allowlisted technical category codes.
-The email-scoped request/confirm, summary, export, destructive confirmation,
-cancellation, and erasure-worker behaviors remain unimplemented. Existing
-authenticated and admin privacy response shapes do not expose the new internal
-lifecycle or evidence fields.
+Email-scoped request/confirm, summary, synchronous JSON export, and verified
+request creation are implemented. Destructive confirmation, cancellation,
+processing stop, deletion, worker execution, and evidence completion remain
+not implemented. Creating a deletion request changes none of those states.
+`GET /privacy/requests` remains ordinary-auth-only. Existing authenticated list
+and admin privacy response shapes do not expose internal lifecycle or evidence
+fields.
+
+Real SMTP smoke is deferred to the production SMTP/deploy stage. Automated
+tests use fakes/mocks around the existing SMTP delivery boundary.
 
 `EXPO_PUBLIC_PRIVACY_PROVIDER` is a narrow mobile domain flag added for PR 33:
 an unset, `supabase`, or unsupported value selects its conservative Supabase
