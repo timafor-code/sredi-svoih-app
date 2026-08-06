@@ -1426,6 +1426,38 @@ no account deletion/export fulfillment, no emails, and no Supabase
 migrations/RPC/RLS/Edge Function changes. The next PR is
 `feature/api-prayer-tracker-endpoints`.
 
+### Privacy self-service schema foundation
+
+`feature/api-privacy-self-service-foundation` adds PostgreSQL and Alembic
+storage only for later email-scoped privacy access and erasure execution:
+
+- `privacy_access_codes` stores only a unique `code_hash`, expiry, consumption,
+  attempt, user, and timestamp metadata. It has no plaintext code, email,
+  phone, or token column.
+- `privacy_access_sessions` stores only a unique `token_hash`, expiry,
+  revocation/use timestamps, user link, and the fixed
+  `privacy_self_service` scope. These rows are not auth sessions and grant no
+  login, password, profile, admin, refresh-token, or ordinary account rights.
+- `privacy_requests` gains identity verification, processing stop, execution,
+  completion, due-date, failure, and destruction-evidence fields with ordered
+  lifecycle constraints. No due date or legal SLA is assigned automatically.
+- `privacy_requests.user_id` is nullable and uses `ON DELETE SET NULL`, allowing
+  a completed minimal technical request record to survive final `app_users`
+  deletion after a future worker clears request-message PII.
+- `privacy_destruction_evidence` is independent of `app_users` and retains only
+  a one-way subject reference hash, execution version, narrow result status,
+  allowlisted technical category codes, completion/retention timestamps, and
+  creation time. It has no raw email, phone, name, address, message, or user
+  foreign key and cannot reconstruct contact data.
+
+This foundation does not issue codes or sessions, create cookies or bearer
+tokens, send email, expose summary/export endpoints, stop processing, delete
+data, revoke auth, cancel registrations, release capacity, run a worker, or
+populate destruction evidence. Those behaviors remain split between
+`feature/api-privacy-self-service-access` and
+`feature/api-privacy-erasure-execution`. Existing authenticated and admin
+privacy request behavior and response contracts remain unchanged.
+
 ### PR 32C API Prayer Tracker endpoints
 
 PR 32C implements the backend-only private Prayer Tracker API on the existing

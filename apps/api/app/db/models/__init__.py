@@ -22,6 +22,7 @@ from app.db.models.core import (
     LegalAcceptance,
     LegalDocument,
     PrayerActivityLog,
+    PrivacyDestructionEvidence,
     PrivacyRequest,
     Profile,
     ProfileContactVisibility,
@@ -48,6 +49,8 @@ from app.db.models.auth import (
     AuthSession,
     AuthSetPasswordCode,
     PasswordResetCode,
+    PrivacyAccessCode,
+    PrivacyAccessSession,
     WebRegistrationVerificationCode,
 )
 
@@ -86,6 +89,9 @@ __all__ = [
     "LegalDocument",
     "PasswordResetCode",
     "PrayerActivityLog",
+    "PrivacyAccessCode",
+    "PrivacyAccessSession",
+    "PrivacyDestructionEvidence",
     "PrivacyRequest",
     "Profile",
     "ProfileAvatar",
