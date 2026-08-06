@@ -1458,6 +1458,82 @@ populate destruction evidence. Those behaviors remain split between
 `feature/api-privacy-erasure-execution`. Existing authenticated and admin
 privacy request behavior and response contracts remain unchanged.
 
+### Privacy self-service access runtime
+
+`feature/api-privacy-self-service-access` uses the PR #344 tables without a new
+migration. It implements canonical-email access request/confirmation, a
+fixed-scope privacy session, own-data summary, synchronous limited JSON export,
+and privacy-session request creation. It does not implement erasure execution.
+
+Backend-only local settings are:
+
+```text
+API_PRIVACY_EMAIL_RATE_LIMIT_WINDOW_SECONDS=900
+API_PRIVACY_EMAIL_RATE_LIMIT_MAX_ATTEMPTS=5
+API_PRIVACY_ACCESS_CODE_TTL_MINUTES=15
+API_PRIVACY_ACCESS_CODE_MAX_ATTEMPTS=5
+API_PRIVACY_SESSION_TTL_MINUTES=15
+```
+
+The request limiter is the existing process-local in-memory implementation and
+uses only a token-secret HMAC of normalized email as its key. Shared/distributed
+rate limiting is a production launch gate; no provider is selected here.
+
+The access endpoint resolves ownership only through case-insensitive canonical
+`app_users.email`. It does not use profile contact data, phone, membership,
+external identity, or password/claim/account-active eligibility. Before proof,
+all valid requests return the same HTTP 202 accepted envelope, including
+unknown, erased, rate-limited, SMTP-disabled, and SMTP-failure cases.
+The synchronous response path performs none of those decisions: it schedules
+the same FastAPI/Starlette post-response handler for every valid request and
+does not wait for lookup, code creation, or SMTP. The handler creates its own
+`AsyncSession`; the hashed per-email limiter and canonical lookup run only
+there.
+
+Access codes are six ASCII digits generated with `secrets`. Plaintext exists
+only in memory and the outbound privacy email. At rest, the existing HMAC token
+hasher receives `privacy-access-code:{user_id}:{code}`, so equal codes for
+different users have different hashes. A successful delivery atomically makes
+the new code usable and invalidates older active codes. Disabled or failed SMTP
+rolls the transaction back and leaves no new usable credential. Provider
+details, recipient, and code are not logged. Real SMTP smoke is deferred to the
+production SMTP/deploy stage; automated tests use fakes/mocks around the
+existing `send_email` boundary.
+
+Access request/confirmation, summary, and export responses set
+`Cache-Control: no-store`, preventing privacy credentials and personal data
+from being retained by browser or intermediary caches.
+
+Successful confirmation consumes the locked code, revokes prior privacy
+sessions, and returns an opaque `secrets.token_urlsafe` credential once. Only
+the HMAC of `privacy-session:{token}` is stored. The fixed
+`privacy_self_service` session is not an API JWT or `auth_sessions` row and
+creates no refresh token, cookie, login, password/profile mutation, membership,
+or ordinary account authority. Its dependency verifies hash, scope, expiry,
+revocation, and a non-erased user and updates `last_used_at`.
+
+The summary reads only own-category counts/presence. The synchronous
+`privacy-self-service-v1` JSON export uses field-by-field allowlists for the
+verified user's account, profile, memberships, registrations and option
+snapshots, legal acceptances, privacy requests, safe device metadata,
+synced-contact count, and safe avatar metadata. It creates no file, object,
+queue job, email attachment, or download URL. It excludes password and
+credential hashes, raw push tokens, synced-contact hashes/third-party data,
+avatar binaries/object keys/ETags/signed URLs/storage configuration, other
+users' records, and feedback content. Prayer activity is reported only as an
+excluded marker; runtime performs no query, join, count, or serialization of
+`prayer_activity_logs`.
+
+`POST /privacy/requests` now accepts ordinary API auth or a verified privacy
+session. Privacy-session creation forces the verified user id and stamps
+`identity_verified_at`, while preserving the existing active-membership
+community resolution. Ordinary-auth behavior and `GET /privacy/requests`
+remain unchanged. A deletion request still only records an open request: it
+does not change user status, set processing-stop timestamps, revoke auth,
+cancel registrations, release capacity, run a worker, delete data, or create
+destruction evidence. Confirmation/cancellation endpoints and all destructive
+execution remain in `feature/api-privacy-erasure-execution`.
+
 ### PR 32C API Prayer Tracker endpoints
 
 PR 32C implements the backend-only private Prayer Tracker API on the existing

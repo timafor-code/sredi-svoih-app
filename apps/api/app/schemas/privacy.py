@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 PrivacyRequestType = Literal["data_export", "deletion", "correction", "other"]
 PrivacyRequestStatus = Literal["open", "reviewed", "resolved", "rejected", "closed"]
+PrivacySessionScope = Literal["privacy_self_service"]
 
 
 def _normalize_optional_text(value: str | None) -> str | None:
@@ -48,6 +49,89 @@ class PrivacyRequestResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PrivacyAccessRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email_field(cls, value: str) -> str:
+        from app.schemas.auth import normalize_email
+
+        return normalize_email(value)
+
+
+class PrivacyAccessAcceptedResponse(BaseModel):
+    accepted: bool = True
+
+
+class PrivacyAccessConfirmRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    code: str = Field(min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email_field(cls, value: str) -> str:
+        from app.schemas.auth import normalize_email
+
+        return normalize_email(value)
+
+    @field_validator("code", mode="before")
+    @classmethod
+    def normalize_code_field(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
+class PrivacySessionResponse(BaseModel):
+    privacy_session_token: str
+    token_type: Literal["bearer"] = "bearer"
+    scope: PrivacySessionScope = "privacy_self_service"
+    expires_at: datetime
+
+
+class PrivacyCategorySummary(BaseModel):
+    code: str
+    record_count: int = Field(ge=0)
+    available_for_export: bool
+
+
+class PrivacyExcludedCategory(BaseModel):
+    code: str
+    reason: str
+
+
+class PrivacyDataSummaryResponse(BaseModel):
+    generated_at: datetime
+    categories: list[PrivacyCategorySummary]
+    excluded_categories: list[PrivacyExcludedCategory]
+
+
+class PrivacyDataExportRequest(BaseModel):
+    format: Literal["json"]
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class PrivacyDataExportResponse(BaseModel):
+    export_version: Literal["privacy-self-service-v1"]
+    generated_at: datetime
+    included_categories: list[str]
+    excluded_categories: list[PrivacyExcludedCategory]
+    account: dict[str, Any]
+    profile: dict[str, Any] | None
+    memberships: list[dict[str, Any]]
+    event_registrations: list[dict[str, Any]]
+    registration_options: list[dict[str, Any]]
+    legal_acceptances: list[dict[str, Any]]
+    privacy_requests: list[dict[str, Any]]
+    device_metadata: list[dict[str, Any]]
+    synced_contacts_summary: dict[str, int]
+    avatar_metadata: list[dict[str, Any]]
 
 
 class AdminPrivacyRequestResponse(PrivacyRequestResponse):

@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     api_email_smtp_starttls: bool = True
     api_auth_email_rate_limit_window_seconds: int = Field(default=900, gt=0)
     api_auth_email_rate_limit_max_attempts: int = Field(default=5, gt=0)
+    api_privacy_email_rate_limit_window_seconds: int = Field(default=900, gt=0)
+    api_privacy_email_rate_limit_max_attempts: int = Field(default=5, gt=0)
+    api_privacy_access_code_ttl_minutes: int = Field(default=15, ge=1, le=120)
+    api_privacy_access_code_max_attempts: int = Field(default=5, ge=1, le=20)
+    api_privacy_session_ttl_minutes: int = Field(default=15, ge=1, le=120)
     api_web_registration_intent_ttl_hours: int = Field(default=24, gt=0, le=168)
     api_web_registration_rate_limit_window_seconds: int = Field(default=900, gt=0)
     api_web_registration_rate_limit_max_attempts: int = Field(default=10, gt=0)

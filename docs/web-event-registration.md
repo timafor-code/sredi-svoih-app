@@ -21,10 +21,10 @@ Current repository behavior:
   set-password, SMTP delivery, and hash-only auth codes already exist;
 - authenticated `POST /privacy/requests` and `GET /privacy/requests` record and
   list requests only; they do not execute export, correction, or erasure;
-- the privacy self-service schema foundation is implemented with hash-only
-  access credentials, fixed-scope short-lived session storage, request
-  lifecycle fields, nullable request ownership, and PII-free destruction
-  evidence; no self-service access or erasure runtime is implemented;
+- the privacy self-service schema foundation and access runtime are implemented:
+  canonical-email verification issues hash-only codes and a short-lived,
+  fixed-scope privacy session for own-data summary, limited JSON export, and
+  request creation; erasure execution is not implemented;
 - the intent, email verification/finalization, identity/source/legal schema,
   and canonical public-web registration path are implemented;
 - event publication, computed UUID links, and the public registration-form API
@@ -182,10 +182,10 @@ collisions without raw PII in output or logs.
 
 ## Target Data Contracts
 
-The identity/source/legal, intent, verification-code, publication, and privacy
-self-service schema-foundation contracts below are implemented. Questionnaires,
-privacy access endpoints, export, and privacy execution remain target contracts
-for later PRs.
+The identity/source/legal, intent, verification-code, publication, privacy
+self-service foundation, and privacy access/export v1 contracts below are
+implemented. Questionnaires and privacy erasure execution remain target
+contracts for later PRs.
 
 ### `app_users`
 
@@ -304,13 +304,14 @@ policy is insufficient.
 
 ### Privacy Access And Erasure Execution
 
-The database foundation stores privacy access codes as globally unique
+The database foundation and runtime store privacy access codes as globally unique
 `code_hash` values and stores privacy session credentials as globally unique
 `token_hash` values. It stores no plaintext code, session token, email, or
 phone in either credential table. Privacy sessions have the single fixed scope
 `privacy_self_service`; they are not auth sessions and confer no login,
 password, profile-editing, ordinary account, or admin rights. Runtime issuance,
-confirmation, and authorization are not implemented yet.
+confirmation, and authorization are implemented only for the privacy endpoints
+described below.
 
 Implemented execution lifecycle fields in `privacy_requests` are:
 
@@ -417,12 +418,9 @@ full pages remain readable and the endpoint never reserves capacity. No event
 catalog, public UI, or `apps/admin` UI change is included in this PR. The next
 PR is `feature/public-web-event-registration-shell`.
 
-## Target Privacy Self-Service Contracts
+## Privacy Self-Service Contracts
 
-Only authenticated request recording/listing currently exists. The following
-self-service/access/execution behaviors are **target contracts and are not
-currently implemented** (including the expanded behavior of the existing
-`POST /privacy/requests` path):
+These access behaviors are implemented:
 
 ```text
 POST /privacy/access/request
@@ -430,14 +428,62 @@ POST /privacy/access/confirm
 GET  /privacy/data-summary
 POST /privacy/data-export
 POST /privacy/requests
+```
+
+`POST /privacy/access/request` normalizes the submitted email and looks up only
+`lower(app_users.email)`. It always returns HTTP 202 with the same
+`accepted=true` envelope for known, unknown, erased, rate-limited, SMTP-disabled,
+and SMTP-failure cases. Eligible users receive a six-digit code. The database
+stores only a server-secret HMAC produced from the user-id-separated code input;
+failed delivery rolls back the new code and leaves no usable credential.
+Every valid request schedules the same managed post-response handler, which
+opens its own database session and performs the hashed per-email rate limit,
+canonical lookup, code transaction, and SMTP delivery only after the 202
+response has been sent. No raw `asyncio.create_task` is used.
+
+`POST /privacy/access/confirm` uses one enumeration-safe
+`invalid_or_expired_privacy_code` error for an unknown or erased subject and for
+wrong, expired, consumed, or attempt-exhausted codes. Successful confirmation
+atomically consumes the code, revokes earlier privacy sessions, and returns one
+opaque plaintext token. Only its domain-separated hash is stored. The privacy
+session has a 15-minute local default, fixed `privacy_self_service` scope, no
+refresh credential, and is neither a JWT nor an ordinary auth session.
+
+`GET /privacy/data-summary` returns only own-data counts/presence for account,
+profile, memberships, registrations and option snapshots, legal acceptances,
+privacy requests, device metadata, synced-contact summary, and avatar metadata.
+`POST /privacy/data-export` supports only synchronous `{"format":"json"}` and
+returns `privacy-self-service-v1` with explicit field allowlists. It creates no
+file, object-storage artifact, background job, attachment, or download link.
+Push tokens, synced-contact hashes/data, avatar binary/object keys/signed URLs,
+password/session hashes, other users' records, and feedback content are absent.
+Prayer activity is represented only by an excluded-category marker; the
+summary and export do not query or count `prayer_activity_logs`.
+Access request/confirmation, summary, and export responses include
+`Cache-Control: no-store`.
+
+The existing `POST /privacy/requests` accepts either ordinary API auth or a
+verified privacy session. Privacy-session creation forces the verified user id,
+sets `identity_verified_at`, and applies the existing active-membership
+community resolution. It only records the request. `GET /privacy/requests`
+remains ordinary-auth-only.
+
+The following destructive endpoints and execution behavior remain target-only
+and are not implemented:
+
+```text
 POST /privacy/requests/{request_id}/confirm-erasure
 POST /privacy/requests/{request_id}/cancel-erasure
 ```
 
-Access request always returns generic success. Confirmation creates a short,
-scoped privacy session that cannot act as an ordinary account session, change
-passwords, or access another person. Erasure confirmation is a distinct
-destructive action; cancellation is allowed only while execution rules permit.
+Creating a deletion request does not change user status, stop processing,
+revoke auth sessions, cancel registrations, release capacity, run a worker, or
+create destruction evidence. Those actions belong to the erasure-execution PR.
+
+Real SMTP smoke is deferred to the production SMTP/deploy stage; automated
+coverage uses fakes/mocks around the existing SMTP boundary. The current
+email limiter is process-local with 900-second/five-attempt local defaults.
+A distributed production limiter is a launch gate; no provider is selected here.
 
 ## Privacy, Retention, And Destruction
 
@@ -499,7 +545,8 @@ are not approvals and must not be presented as final values.
      credentials, scoped-session, lifecycle, nullable ownership, destruction
      evidence, and schema/regression tests (implemented);
    - `feature/api-privacy-self-service-access` — access request/confirmation,
-     privacy session runtime, summary, and export (not implemented);
+     privacy session runtime, summary, limited JSON export, and verified request
+     creation (implemented);
    - `feature/api-privacy-erasure-execution` — destructive confirmation,
      processing stop, deletion worker, and evidence completion (not implemented).
 10. `feature/admin-web-registration-operations` — source/status, conflict, and
