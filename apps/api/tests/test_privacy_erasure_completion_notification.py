@@ -614,9 +614,28 @@ class PrivacyErasureCompletionNotificationDatabaseTests(
         async def fail_before_commit(_session) -> None:
             raise SQLAlchemyError("synthetic post-outbox failure")
 
+        class MemoryRegister:
+            def __init__(self) -> None:
+                self.objects: dict[str, bytes] = {}
+
+            async def get_object(self, key: str) -> bytes | None:
+                return self.objects.get(key)
+
+            async def put_object_if_absent(self, key: str, body: bytes) -> bool:
+                if key in self.objects:
+                    return False
+                self.objects[key] = body
+                return True
+
+            async def list_object_keys(self, prefix: str) -> list[str]:
+                return sorted(key for key in self.objects if key.startswith(prefix))
+
+        register = MemoryRegister()
+
         failed = await execute_privacy_erasure_request(
             request_id,
             settings=self.settings,
+            register_storage_factory=lambda: register,
             before_commit=fail_before_commit,
             notification_email_sender=lambda **_kwargs: EmailSendResult(
                 sent=True,
@@ -643,6 +662,7 @@ class PrivacyErasureCompletionNotificationDatabaseTests(
         completed = await execute_privacy_erasure_request(
             request_id,
             settings=self.settings,
+            register_storage_factory=lambda: register,
             notification_email_sender=lambda **_kwargs: EmailSendResult(
                 sent=True,
                 disabled=False,

@@ -116,11 +116,11 @@ appropriate, and validation summaries.
 
 ## Public Web Registration Boundaries
 
-The complete target specification is
+The complete specification is
 [`docs/web-event-registration.md`](web-event-registration.md). These rules are
-documentation contracts; they do not imply that the public web application,
-registration intents, legal tables, SMTP templates, or erasure worker already
-exist.
+documentation contracts. Registration intents, legal tables, SMTP templates,
+and the privacy-erasure worker and restore replay are implemented; the public
+web application remains separate work.
 
 Mobile, the future separate Vite + React `apps/web`, and web-admin use the same
 FastAPI API and canonical PostgreSQL data model. The public form must not be
@@ -161,11 +161,12 @@ avatar object from the configured private S3-compatible Russian storage before
 committing PostgreSQL identity deletion. Retention periods and any legally
 required limited preservation remain launch decisions and must not be invented.
 
-No claim is made that backups are currently purged. A restore-erasure replay
-mechanism, tested restore procedure, and evidence that erased identities are
-not reintroduced are launch gates. Backup retention remains unresolved and
-must be approved rather than inferred from application behavior; this worker
-does not establish production readiness.
+No claim is made that backups are currently purged. The owner-run
+restore-erasure replay mechanism is implemented, but a real restore drill and
+approved backup policy remain launch gates. Backup retention remains
+unresolved and must be approved rather than inferred from application
+behavior; this worker and replay command do not establish production
+readiness.
 
 The `prayer_activity_logs` data remains private. It must not be exposed through
 web-admin, public registration, privacy administration views, exports for event
@@ -224,8 +225,41 @@ and preserves operational audit rows through nullable actor FKs. Prayer
 activity remains unread: execution uses only a direct user-scoped `DELETE`
 without selecting or logging its content.
 
-Backup cleanup and restore-erasure replay remain unimplemented launch gates;
-the worker does not silently assign a backup retention period.
+Before irreversible avatar or PostgreSQL deletion, the worker validates a
+versioned private restore-erasure register and its token-hash-key fingerprint,
+then durably writes an idempotent PII-free subject marker. Failure records the
+stable `privacy_erasure_restore_register_unavailable` code where possible and
+leaves the avatar, PostgreSQL personal graph, evidence, and canonical user
+untouched. The register uses the configured backend-only S3-compatible storage
+under `API_PRIVACY_ERASURE_REGISTER_PREFIX`; it is never exposed to mobile or
+web-admin.
+
+## Restore-Erasure Register And Replay
+
+The restore-erasure register is independent of primary PostgreSQL backups. It
+contains strict version metadata, a non-secret fingerprint proving compatibility
+with `API_TOKEN_HASH_SECRET`, and one immutable/idempotent marker per keyed
+subject reference. It contains no raw UUID, name, email, phone, request text,
+prayer data, registration comment, credential, notification recipient, or
+avatar object key. It is PII-free but remains sensitive backend operational
+data and must remain private in approved Russia-hosted S3-compatible storage.
+
+The owner-run `scripts/run_privacy_erasure_restore_replay.py` command defaults
+to dry-run; mutation requires `--apply`. It preflights all metadata and markers
+before database mutation, scans restored `app_users` identifiers only to
+recompute the established subject hash, deletes matched private avatar objects
+and the shared personal-data manifest, deletes `app_users` last, and writes
+PII-free replay evidence when the schema supports it. It never creates a
+privacy request or completion notification. Output is aggregate counts and
+stable failure codes only. Prayer activity remains unread and is handled only
+through the canonical direct user-scoped `DELETE` without `RETURNING`.
+
+Register availability is a production erasure requirement. Its retention must
+cover every PostgreSQL backup that remains restorable, but this repository does
+not approve or invent a duration. Backup retention and purge remain
+owner/legal/operations decisions. The command does not restore a backup, does
+not purge backups, and does not prove the production backup policy or a real
+restore drill complete.
 
 ## Encrypted Erasure Completion Notification
 
@@ -239,8 +273,8 @@ auth, token-hash, SMTP, password, and provider credentials.
 Ciphertext and nonce are cleared after successful delivery or expiry of the
 explicitly approved window. Backups may temporarily retain older ciphertext;
 this change does not claim that production backup purge is solved. A restored
-database still requires a tested restore-erasure replay mechanism before it is
-opened for service.
+database must run the owner-controlled restore replay and remaining validation
+before it is opened for service.
 
 The SMTP provider and every relevant infrastructure location require explicit
 approval. Russian plain-text templates and application-side encryption do not
