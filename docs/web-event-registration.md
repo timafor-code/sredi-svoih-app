@@ -331,8 +331,9 @@ destruction_evidence_id null
 minimal request record may remain after final user deletion. The implemented
 `privacy_destruction_evidence` table has no user foreign key or raw contact,
 profile, address, or request-message fields. It permits only technical category
-codes and `completed` or `completed_with_retention` result status. No worker
-creates this evidence yet, and no retention duration is implied by the schema.
+codes and `completed` or `completed_with_retention` result status. The worker
+creates this evidence atomically with an encrypted completion-notification
+outbox; no retention duration is implied by the schema.
 
 ## Public API Contracts
 
@@ -542,7 +543,7 @@ are not approvals and must not be presented as final values.
    controls in web-admin.
 8. `feature/public-web-registration-account-claim` — intent confirmation,
    passwordless path, and account claim.
-9. Privacy self-service is split into four PRs:
+9. Privacy self-service is split into five PRs:
    - `feature/api-privacy-self-service-foundation` — PostgreSQL/Alembic
      credentials, scoped-session, lifecycle, nullable ownership, destruction
      evidence, and schema/regression tests (implemented);
@@ -554,7 +555,10 @@ are not approvals and must not be presented as final values.
      pending-intent invalidation, future free-registration cancellation, and
      safe cancellation before execution (implemented);
    - `feature/api-privacy-erasure-worker` — irreversible PostgreSQL/S3
-     deletion and evidence completion (implemented).
+     deletion and evidence completion (implemented);
+   - `feature/api-privacy-erasure-completion-notification` — encrypted
+     transactional completion outbox, Russian templates, post-commit delivery,
+     and one-request CLI retry (implemented).
 10. `feature/admin-web-registration-operations` — source/status, conflict, and
     privacy due-date operations.
 11. `feature/web-event-questionnaires-basic` — allowlisted ordinary questions
@@ -638,7 +642,22 @@ evidence row containing a keyed subject reference and sorted technical category
 codes, never raw identifiers, counts, contact data, object keys, payment data,
 request text, or prayer data.
 
-Automatic scheduling, queue polling, reliable completion notification, backup
-erasure replay, and final retention periods are not implemented. Reliable
-completion notification is reserved for
-`feature/api-privacy-erasure-completion-notification`.
+Migration `20260806200000` adds one encrypted completion-notification row per
+successful execution. It is created in the same PostgreSQL transaction as
+destruction evidence, request completion, and final `app_users` deletion. It
+stores no raw email or message body. The canonical recipient is protected with
+a dedicated backend-only AES-256-GCM key and authenticated row identifiers.
+
+After commit, the worker sends one of two plain-text Russian transactional
+templates for `completed` or `completed_with_retention`. A normal concurrent
+retry is serialized by a PostgreSQL row lock. SMTP failure does not roll back
+erasure: rerunning the same one-request CLI retries only pending delivery,
+without another S3 or PostgreSQL deletion. Encrypted recipient bytes are
+cleared after delivery or expiry. Delivery remains at-least-once because a
+crash after SMTP acceptance but before outbox commit can cause a duplicate.
+
+Pre-migration worker-v1 completions without an outbox remain completed and
+report `legacy_notification_unavailable`; no recipient is reconstructed.
+Automatic scheduling, queue polling, backup erasure replay, and final retention
+periods remain unimplemented. Production SMTP selection and infrastructure
+residency approval remain launch gates.

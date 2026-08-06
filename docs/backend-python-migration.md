@@ -1977,6 +1977,25 @@ user-scoped `DELETE`, without selecting content.
 Migration `20260806180000` extends destruction-evidence category checks only
 for the current graph. Completion atomically creates one PII-free evidence row
 and scrubs retained privacy-request lifecycle rows. No scheduler, polling, HTTP
-worker endpoint, backup replay, or completion email is included. Reliable
-completion notification remains the next PR:
-`feature/api-privacy-erasure-completion-notification`.
+worker endpoint, or backup replay is included.
+
+Migration `20260806200000` adds a minimal encrypted transactional outbox for
+completion notification. Worker-v2 validates a dedicated backend-only
+`API_PRIVACY_ERASURE_NOTIFICATION_KEY_B64`, key id, explicit delivery window,
+and canonical email before it sets `execution_started_at` or touches S3. The
+email is encrypted with AES-256-GCM and AAD binding protocol version, outbox,
+request, evidence, and key identifiers. Evidence creation, outbox insertion,
+request completion, and final user deletion share one PostgreSQL transaction.
+
+After that transaction commits, the same one-request worker attempts a Russian
+plain-text `completed` or `completed_with_retention` message. SMTP failure
+leaves erasure completed and retains only the encrypted recipient for a later
+rerun of the same CLI command. Delivery locks the outbox row; normal concurrent
+retries produce one SMTP call, while SMTP semantics remain at-least-once across
+a crash after provider acceptance and before commit. Successful or expired
+delivery clears ciphertext and nonce. A worker-v1 completion without an outbox
+reports `legacy_notification_unavailable` and never reconstructs identity.
+
+Scheduler/polling and production SMTP approval remain outside this PR. The
+next privacy-erasure PR is `feature/api-privacy-erasure-restore-replay`; it must
+address restore replay without restoring erased application users.

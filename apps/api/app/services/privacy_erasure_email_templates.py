@@ -11,17 +11,51 @@ class RenderedPrivacyErasureEmail:
 
 def render_privacy_erasure_accepted_email() -> RenderedPrivacyErasureEmail:
     return RenderedPrivacyErasureEmail(
-        subject="Data deletion request accepted",
+        subject="Запрос на удаление данных принят",
         text_body="\n".join(
             (
-                "Your data deletion request has been accepted.",
-                "New processing has been stopped and future free event "
-                "registrations have been cancelled.",
-                "You may cancel the deletion request only before irreversible "
-                "execution begins.",
-                "Cancelled event registrations are not restored automatically; "
-                "you must register again after cancelling the request.",
-                "This notice does not confirm that final deletion is complete.",
+                "Ваш запрос на удаление персональных данных принят.",
+                "Новая обработка данных остановлена, а будущие бесплатные "
+                "регистрации на мероприятия отменены.",
+                "Отменить запрос можно только до начала необратимого исполнения.",
+                "Отменённые регистрации автоматически не восстанавливаются.",
+                "Это письмо не подтверждает окончательное удаление данных.",
+            ),
+        ),
+    )
+
+
+def render_privacy_erasure_completed_email() -> RenderedPrivacyErasureEmail:
+    return RenderedPrivacyErasureEmail(
+        subject="Удаление персональных данных завершено",
+        text_body="\n".join(
+            (
+                "Ваш запрос на удаление персональных данных выполнен.",
+                "Применимые персональные данные удалены либо необратимо обезличены.",
+                "Активные доступы прекращены.",
+                "Прежние регистрации и учётная запись не восстанавливаются.",
+                "При повторном использовании сервиса потребуется новая регистрация "
+                "или новая техническая запись.",
+                "Вопросы можно направить оператору по контактам, указанным в "
+                "политике обработки персональных данных.",
+            ),
+        ),
+    )
+
+
+def render_privacy_erasure_completed_with_retention_email(
+) -> RenderedPrivacyErasureEmail:
+    return RenderedPrivacyErasureEmail(
+        subject="Основная обработка персональных данных прекращена",
+        text_body="\n".join(
+            (
+                "Основная обработка ваших персональных данных прекращена.",
+                "Применимые персональные данные удалены.",
+                "Отдельные сведения могут ограниченно сохраняться только при "
+                "наличии законного основания.",
+                "Это письмо не перечисляет конкретные сохраняемые сведения.",
+                "Подробности можно запросить у оператора по контактам, указанным "
+                "в политике обработки персональных данных.",
             ),
         ),
     )
