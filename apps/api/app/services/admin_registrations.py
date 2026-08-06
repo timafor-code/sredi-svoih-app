@@ -50,6 +50,7 @@ REGISTRATION_STATUSES = frozenset(
         "no_show",
     },
 )
+REGISTRATION_SOURCE_CHANNELS = frozenset({"mobile", "public_web", "admin"})
 CAPACITY_REGISTRATION_STATUSES = frozenset(
     {"confirmed", "pending", "attended", "no_show"},
 )
@@ -172,6 +173,17 @@ def _normalize_status_filter(status: str | None) -> str | None:
     return normalized
 
 
+def _normalize_source_channel_filter(source_channel: str | None) -> str | None:
+    normalized = _first_text(source_channel)
+    if normalized is None:
+        return None
+
+    normalized = normalized.lower()
+    if normalized not in REGISTRATION_SOURCE_CHANNELS:
+        raise _validation_error("Invalid registration source channel")
+    return normalized
+
+
 async def _resolve_manageable_event(
     session: AsyncSession,
     current_user: AppUser,
@@ -279,6 +291,7 @@ def _registration_response(
             user.phone if user is not None else None,
         ),
         status=registration.status,
+        source_channel=registration.source_channel,
         seats_count=registration.seats_count,
         guest_names=_json_list(registration.guest_names),
         comment=registration.comment,
@@ -373,6 +386,7 @@ async def list_admin_event_registrations(
     *,
     occurrence_id: UUID | None,
     status: str | None,
+    source_channel: str | None,
     search: str | None,
     limit: int,
     offset: int,
@@ -384,12 +398,15 @@ async def list_admin_event_registrations(
         occurrence_id=occurrence_id,
     )
     status_filter = _normalize_status_filter(status)
+    source_channel_filter = _normalize_source_channel_filter(source_channel)
 
     query = _registration_row_query().where(EventRegistration.event_id == event.id)
     if occurrence_id is not None:
         query = query.where(EventRegistration.occurrence_id == occurrence_id)
     if status_filter is not None:
         query = query.where(EventRegistration.status == status_filter)
+    if source_channel_filter is not None:
+        query = query.where(EventRegistration.source_channel == source_channel_filter)
 
     normalized_search = _first_text(search)
     if normalized_search is not None:

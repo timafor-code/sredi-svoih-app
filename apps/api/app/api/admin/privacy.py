@@ -13,6 +13,7 @@ from app.schemas.events import ApiResponse
 from app.schemas.privacy import (
     AdminPrivacyRequestResponse,
     AdminPrivacyRequestUpdateRequest,
+    PrivacyRequestType,
     PrivacyRequestStatus,
 )
 from app.services import privacy as privacy_service
@@ -32,12 +33,16 @@ async def list_admin_privacy_requests(
     current_user: CurrentUser,
     status: Annotated[PrivacyRequestStatus | None, Query()] = None,
     community_id: Annotated[UUID | None, Query()] = None,
+    request_type: Annotated[PrivacyRequestType | None, Query()] = None,
+    overdue_only: Annotated[bool, Query()] = False,
 ) -> ApiResponse[list[AdminPrivacyRequestResponse]]:
     privacy_requests = await privacy_service.list_admin_privacy_requests(
         session,
         current_user,
         status=status,
         community_id=community_id,
+        request_type=request_type,
+        overdue_only=overdue_only,
     )
     return ApiResponse[list[AdminPrivacyRequestResponse]](
         data=[

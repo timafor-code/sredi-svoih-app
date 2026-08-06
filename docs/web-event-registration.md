@@ -522,8 +522,31 @@ are not approvals and must not be presented as final values.
   continues to use bearer authorization.
 - Admin access remains community-scoped. Unconfirmed intents are not final
   registrations and do not appear as occupied capacity. Identity conflicts
-  require a minimal-data review queue.
+  use an admin-only minimal-data review queue. The queue exposes only technical
+  identifiers and lifecycle state; it never returns submitted contact/form
+  payloads and never merges identities automatically.
 - `prayer_activity_logs` remain private and must not be exposed in admin.
+
+The backend operations foundation exposes canonical registration
+`source_channel` (`mobile`, `public_web`, or `admin`) and an optional source
+filter through the existing admin registration list. It also exposes
+`GET /admin/web-registration/operations-summary`,
+`GET /admin/web-registration/conflicts`, and
+`PATCH /admin/web-registration/conflicts/{conflict_id}` for active admins only.
+Summary data is aggregate-only. Active verification intents must be unexpired
+and do not reserve registration capacity. Conflict resolution records only
+`open`/`resolved` state and backend resolution time; it cannot edit users,
+profiles, login email/phone, intents, or registrations.
+
+Admin privacy list responses include `identity_verified_at`,
+`processing_stopped_at`, `execution_started_at`, `completed_at`, `due_at`,
+`failure_code`, `destruction_evidence_id`, and `cancelled_at`. Optional
+`request_type` and `overdue_only` filters supplement existing status/community
+filters. Overdue means a non-terminal (`resolved`, `rejected`, and `closed` are
+terminal) request with a non-null past `due_at`. These admin operations never
+run erasure or restore replay, expose encrypted notification fields, or read
+prayer activity. This release adds backend contracts only; web-admin UI follows
+in focused PRs.
 
 ## Implementation Sequence
 
@@ -560,8 +583,10 @@ are not approvals and must not be presented as final values.
    - `feature/api-privacy-erasure-restore-replay` — private external PII-free
      register, shared deletion manifest, and owner-run restore replay
      (implemented; closes the split PR 9 implementation series).
-10. `feature/admin-web-registration-operations` — source/status, conflict, and
-    privacy due-date operations.
+10. `feature/api-admin-web-registration-operations-foundation` — backend
+    source/status, aggregate summary, safe conflict queue, and privacy due-date
+    contracts (implemented). Focused web-admin UI work begins with
+    `feature/admin-registration-source-status`.
 11. `feature/web-event-questionnaires-basic` — allowlisted ordinary questions
     with purpose/retention only.
 12. `ops/public-web-production-deploy` — Russian hosting, TLS/CSP/CORS, SMTP,
@@ -569,7 +594,7 @@ are not approvals and must not be presented as final values.
 13. After MVP: `feature/public-web-events-directory` — paginated `listed` event
     cards; never expose `unlisted` events.
 
-The next implementation PR is `feature/admin-web-registration-operations`.
+The next implementation PR is `feature/admin-registration-source-status`.
 
 ## Open Launch Decisions
 

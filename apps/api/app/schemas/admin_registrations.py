@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
+
+RegistrationSourceChannel = Literal["mobile", "public_web", "admin"]
 
 
 class AdminRegistrationSelectedOptionResponse(BaseModel):
@@ -31,6 +34,7 @@ class AdminEventRegistrationResponse(BaseModel):
     email: str | None
     phone: str | None
     status: str
+    source_channel: RegistrationSourceChannel
     seats_count: int
     guest_names: list[object]
     comment: str | None
