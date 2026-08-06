@@ -2560,23 +2560,36 @@ python scripts/run_privacy_erasure.py --request-id <UUID>
 ```
 
 Safe stdout JSON contains `request_id`, `execution_version`, and one stable
-result: `completed`, `already_completed`, `retryable_failure`, or
-`not_eligible`. It may include a destruction-evidence id after completion and
-one stable failure code:
+erasure result: `completed`, `already_completed`, `retryable_failure`, or
+`not_eligible`. It also contains `notification_result`: `sent`, `already_sent`,
+`retryable_failure`, `expired`, `legacy_notification_unavailable`, or
+`not_created`. It may include a destruction-evidence id after completion and
+only stable erasure/notification failure codes:
 
 - `privacy_erasure_manual_review_required`;
 - `privacy_erasure_avatar_storage_failed`;
 - `privacy_erasure_database_failed`;
 - `privacy_erasure_subject_missing`;
-- `privacy_erasure_subject_state_invalid`.
+- `privacy_erasure_subject_state_invalid`;
+- `privacy_erasure_notification_configuration_unavailable`;
+- `privacy_erasure_notification_recipient_missing`;
+- `privacy_erasure_notification_encryption_failed`;
+- `privacy_erasure_notification_key_unavailable`;
+- `privacy_erasure_notification_decryption_failed`;
+- `privacy_erasure_notification_delivery_unavailable`;
+- `privacy_erasure_notification_delivery_window_expired`.
 
-Completed and already-completed results exit 0, retryable failures exit 1,
-ineligible/manual-review states exit 2, and invalid arguments exit 64. Output
-never contains a user id, contact data, object key, category count,
-payment/prayer data, SQL/provider detail, or exception text. A valid completed
-request returns its existing evidence without calling S3 again.
+Completed/already-completed plus sent/already-sent results exit 0; legacy
+already-completed plus `legacy_notification_unavailable` also exits 0.
+Retryable erasure or notification failure exits 1, ineligible/manual-review or
+expired notification exits 2, and invalid arguments exit 64. Output never
+contains user identity/contact data, encrypted recipient, nonce, key id,
+delivery window, SMTP configuration/body, object key, category count,
+payment/prayer data, SQL/provider detail, or exception text.
 
-No completion email is sent by this worker. Reliable post-commit notification
-requires a separate PII-controlled transactional outbox and remains scoped to
-`feature/api-privacy-erasure-completion-notification`. Scheduling and polling
-are also not implemented.
+A completed request returns its existing evidence without another S3 or
+PostgreSQL deletion and retries only pending notification delivery. Completion
+delivery is post-commit and at-least-once. PostgreSQL row locking prevents a
+duplicate from normal concurrent retries, but a crash after SMTP acceptance
+and before outbox commit can cause another delivery. There is no HTTP/admin/
+public outbox endpoint, scheduler, batch, or polling contract.

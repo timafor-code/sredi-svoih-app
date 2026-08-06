@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import importlib.util
 import json
 from pathlib import Path
@@ -14,6 +15,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import delete, event, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.config import Settings
 from app.db.models.audit import AdminEventAuditEntry
 from app.db.models.auth import (
     AuthEmailVerificationCode,
@@ -39,6 +41,7 @@ from app.db.models.core import (
     LegalDocument,
     PrayerActivityLog,
     PrivacyDestructionEvidence,
+    PrivacyErasureNotificationOutbox,
     PrivacyRequest,
     Profile,
     ProfileContactVisibility,
@@ -57,6 +60,7 @@ from app.services.privacy_erasure_worker import (
     PrivacyErasureWorkerResult,
     execute_privacy_erasure_request,
 )
+from app.services.email_delivery import EmailSendResult
 
 
 def _load_cli_module():
@@ -95,6 +99,13 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.user_ids: set[UUID] = {self.other_user_id}
         self.request_ids: set[UUID] = set()
         self.evidence_ids: set[UUID] = set()
+        self.notification_settings = Settings(
+            api_privacy_erasure_notification_key_b64=base64.b64encode(
+                b"synthetic-worker-notice-key-32bx"
+            ).decode("ascii"),
+            api_privacy_erasure_notification_key_id="synthetic-worker-key-v1",
+            api_privacy_erasure_notification_delivery_window_hours=24,
+        )
 
         async with AsyncSessionLocal() as session:
             async with session.begin():
@@ -186,6 +197,15 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                         )
         finally:
             await engine.dispose()
+
+    @staticmethod
+    def _send_notification(**_kwargs) -> EmailSendResult:
+        return EmailSendResult(sent=True, disabled=False)
+
+    async def _execute_worker(self, request_id: UUID, **kwargs):
+        kwargs.setdefault("settings", self.notification_settings)
+        kwargs.setdefault("notification_email_sender", self._send_notification)
+        return await execute_privacy_erasure_request(request_id, **kwargs)
 
     async def _add_subject(
         self,
@@ -493,7 +513,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
 
         event.listen(engine.sync_engine, "before_cursor_execute", capture_statement)
         try:
-            first = await execute_privacy_erasure_request(
+            first = await self._execute_worker(
                 request_id,
                 storage_factory=lambda: storage,
             )
@@ -501,6 +521,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
             event.remove(engine.sync_engine, "before_cursor_execute", capture_statement)
 
         self.assertEqual(first.result, "completed")
+        self.assertEqual(first.notification_result, "sent")
         self.assertIsNotNone(first.destruction_evidence_id)
         self.evidence_ids.add(first.destruction_evidence_id)
         self.assertEqual(storage.deleted, [ids["avatar_key"]])
@@ -519,6 +540,12 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                 first.destruction_evidence_id,
             )
             audit = await session.get(AdminEventAuditEntry, ids["audit"])
+            outbox = await session.scalar(
+                select(PrivacyErasureNotificationOutbox).where(
+                    PrivacyErasureNotificationOutbox.privacy_request_id
+                    == request_id,
+                ),
+            )
             checks = {
                 "user": await session.get(AppUser, user_id),
                 "profile": await session.get(Profile, ids["profile"]),
@@ -595,6 +622,10 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertIsNotNone(audit)
+        self.assertIsNotNone(outbox)
+        self.assertEqual(outbox.status, "sent")
+        self.assertIsNone(outbox.recipient_ciphertext)
+        self.assertIsNone(outbox.recipient_nonce)
         self.assertIsNone(audit.actor_user_id)
         self.assertEqual(audit.event_id, self.event_id)
         self.assertEqual(audit.action, "event_web_visibility_changed")
@@ -606,13 +637,14 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(other_user)
         self.assertIsNotNone(other_membership)
 
-        second = await execute_privacy_erasure_request(
+        second = await self._execute_worker(
             request_id,
             storage_factory=lambda: (_ for _ in ()).throw(
                 AssertionError("storage must not be used"),
             ),
         )
         self.assertEqual(second.result, "already_completed")
+        self.assertEqual(second.notification_result, "already_sent")
         self.assertEqual(second.destruction_evidence_id, first.destruction_evidence_id)
 
     async def test_avatar_failure_preserves_database_and_is_retryable(self) -> None:
@@ -632,7 +664,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                 )
         storage = _FakeAvatarStorage(fail=True)
         with self.assertNoLogs("app.services.privacy_erasure_worker", level="WARNING"):
-            result = await execute_privacy_erasure_request(
+            result = await self._execute_worker(
                 request_id,
                 storage_factory=lambda: storage,
             )
@@ -672,7 +704,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
         async def fail_after_storage(_session) -> None:
             raise SQLAlchemyError("synthetic database failure")
 
-        failed = await execute_privacy_erasure_request(
+        failed = await self._execute_worker(
             request_id,
             storage_factory=lambda: storage,
             after_storage=fail_after_storage,
@@ -683,7 +715,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(await session.get(AppUser, user_id))
             self.assertIsNotNone(await session.get(ProfileAvatar, avatar_id))
 
-        completed = await execute_privacy_erasure_request(
+        completed = await self._execute_worker(
             request_id,
             storage_factory=lambda: storage,
         )
@@ -713,7 +745,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                         payment_status="paid",
                     ),
                 )
-        manual = await execute_privacy_erasure_request(
+        manual = await self._execute_worker(
             paid_request,
             storage_factory=lambda: (_ for _ in ()).throw(
                 AssertionError("storage must not be used"),
@@ -735,7 +767,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
         ]
         for values in cases:
             user_id, request_id, _, _ = await self._add_subject(**values)
-            result = await execute_privacy_erasure_request(
+            result = await self._execute_worker(
                 request_id,
                 storage_factory=lambda: (_ for _ in ()).throw(
                     AssertionError("storage must not be used"),
@@ -750,7 +782,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
         async with AsyncSessionLocal() as session:
             async with session.begin():
                 await session.execute(delete(AppUser).where(AppUser.id == user_id))
-        result = await execute_privacy_erasure_request(request_id)
+        result = await self._execute_worker(request_id)
         self.assertEqual(result.result, "not_eligible")
         self.assertEqual(result.failure_code, SUBJECT_MISSING_FAILURE_CODE)
         async with AsyncSessionLocal() as session:
@@ -766,8 +798,8 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_concurrent_workers_serialize_to_one_evidence(self) -> None:
         user_id, request_id, _, _ = await self._add_subject()
         results = await asyncio.gather(
-            execute_privacy_erasure_request(request_id),
-            execute_privacy_erasure_request(request_id),
+            self._execute_worker(request_id),
+            self._execute_worker(request_id),
         )
         self.assertEqual(
             {result.result for result in results},
@@ -804,12 +836,39 @@ class PrivacyErasureCliTests(unittest.TestCase):
         request_id = uuid4()
         evidence_id = uuid4()
         cases = [
-            ("completed", None, 0),
-            ("already_completed", None, 0),
-            ("retryable_failure", DATABASE_FAILURE_CODE, 1),
-            ("not_eligible", MANUAL_REVIEW_FAILURE_CODE, 2),
+            ("completed", None, "sent", None, 0),
+            ("already_completed", None, "already_sent", None, 0),
+            (
+                "already_completed",
+                None,
+                "legacy_notification_unavailable",
+                None,
+                0,
+            ),
+            ("retryable_failure", DATABASE_FAILURE_CODE, "not_created", None, 1),
+            ("not_eligible", MANUAL_REVIEW_FAILURE_CODE, "not_created", None, 2),
+            (
+                "completed",
+                None,
+                "retryable_failure",
+                "privacy_erasure_notification_delivery_unavailable",
+                1,
+            ),
+            (
+                "already_completed",
+                None,
+                "expired",
+                "privacy_erasure_notification_delivery_window_expired",
+                2,
+            ),
         ]
-        for result_name, failure_code, expected_exit in cases:
+        for (
+            result_name,
+            failure_code,
+            notification_result,
+            notification_failure_code,
+            expected_exit,
+        ) in cases:
             result = PrivacyErasureWorkerResult(
                 request_id=request_id,
                 result=result_name,
@@ -817,6 +876,8 @@ class PrivacyErasureCliTests(unittest.TestCase):
                 if result_name in {"completed", "already_completed"}
                 else None,
                 failure_code=failure_code,
+                notification_result=notification_result,
+                notification_failure_code=notification_failure_code,
             )
             stdout = StringIO()
             with patch.object(
@@ -831,6 +892,7 @@ class PrivacyErasureCliTests(unittest.TestCase):
             self.assertEqual(exit_code, expected_exit)
             self.assertEqual(payload["request_id"], str(request_id))
             self.assertEqual(payload["result"], result_name)
+            self.assertEqual(payload["notification_result"], notification_result)
             self.assertEqual(
                 payload["execution_version"],
                 PRIVACY_ERASURE_EXECUTION_VERSION,

@@ -34,8 +34,16 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _exit_code(result: str) -> int:
-    if result in {"completed", "already_completed"}:
+def _exit_code(result: str, notification_result: str) -> int:
+    if notification_result == "retryable_failure":
+        return 1
+    if notification_result == "expired":
+        return 2
+    if result in {"completed", "already_completed"} and notification_result in {
+        "sent",
+        "already_sent",
+        "legacy_notification_unavailable",
+    }:
         return 0
     if result == "retryable_failure":
         return 1
@@ -54,13 +62,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         "request_id": str(result.request_id),
         "result": result.result,
         "execution_version": result.execution_version,
+        "notification_result": result.notification_result,
     }
     if result.destruction_evidence_id is not None:
         payload["destruction_evidence_id"] = str(result.destruction_evidence_id)
     if result.failure_code is not None:
         payload["failure_code"] = result.failure_code
+    if result.notification_failure_code is not None:
+        payload["notification_failure_code"] = result.notification_failure_code
     print(json.dumps(payload, sort_keys=True))
-    return _exit_code(result.result)
+    return _exit_code(result.result, result.notification_result)
 
 
 if __name__ == "__main__":

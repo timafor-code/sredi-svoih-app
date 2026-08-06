@@ -2,16 +2,17 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import logging
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import column, delete, func, or_, select, table, update
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings, get_settings
 from app.db.models.auth import (
     AuthEmailVerificationCode,
     AuthSession,
@@ -30,6 +31,7 @@ from app.db.models.core import (
     Invite,
     LegalAcceptance,
     PrivacyDestructionEvidence,
+    PrivacyErasureNotificationOutbox,
     PrivacyRequest,
     Profile,
     ProfileContactVisibility,
@@ -45,16 +47,36 @@ from app.services.privacy_erasure import (
     DELETION_PENDING_STATUS,
     has_retention_sensitive_registration_data,
 )
+from app.services.privacy_erasure_completion_notification import (
+    DELIVERY_UNAVAILABLE,
+    PrivacyErasureNotificationResult,
+    deliver_privacy_erasure_completion_notification,
+)
+from app.services.privacy_erasure_notification_crypto import (
+    PrivacyErasureNotificationCryptoError,
+    PrivacyErasureNotificationEncryptionConfig,
+    encrypt_notification_recipient,
+    load_notification_encryption_config,
+)
 from app.storage.s3 import get_avatar_storage
 
 logger = logging.getLogger(__name__)
 
-PRIVACY_ERASURE_EXECUTION_VERSION = "privacy-erasure-worker-v1"
+PRIVACY_ERASURE_EXECUTION_VERSION = "privacy-erasure-worker-v2"
 MANUAL_REVIEW_FAILURE_CODE = "privacy_erasure_manual_review_required"
 AVATAR_STORAGE_FAILURE_CODE = "privacy_erasure_avatar_storage_failed"
 DATABASE_FAILURE_CODE = "privacy_erasure_database_failed"
 SUBJECT_MISSING_FAILURE_CODE = "privacy_erasure_subject_missing"
 SUBJECT_STATE_FAILURE_CODE = "privacy_erasure_subject_state_invalid"
+NOTIFICATION_CONFIGURATION_FAILURE_CODE = (
+    "privacy_erasure_notification_configuration_unavailable"
+)
+NOTIFICATION_RECIPIENT_MISSING_FAILURE_CODE = (
+    "privacy_erasure_notification_recipient_missing"
+)
+NOTIFICATION_ENCRYPTION_FAILURE_CODE = (
+    "privacy_erasure_notification_encryption_failed"
+)
 
 _PRAYER_ACTIVITY_LOGS = table(
     "prayer_activity_logs",
@@ -69,14 +91,22 @@ class PrivacyErasureWorkerResult:
     execution_version: str = PRIVACY_ERASURE_EXECUTION_VERSION
     destruction_evidence_id: UUID | None = None
     failure_code: str | None = None
+    notification_result: str = "not_created"
+    notification_failure_code: str | None = None
 
 
 @dataclass(frozen=True)
 class _ClaimedRequest:
     user_id: UUID
+    recipient: str
+    notification_config: PrivacyErasureNotificationEncryptionConfig
 
 
 class _AvatarDeletionFailed(RuntimeError):
+    pass
+
+
+class _NotificationEncryptionFailed(RuntimeError):
     pass
 
 
@@ -90,12 +120,16 @@ def _result(
     *,
     evidence_id: UUID | None = None,
     failure_code: str | None = None,
+    notification_result: str = "not_created",
+    notification_failure_code: str | None = None,
 ) -> PrivacyErasureWorkerResult:
     return PrivacyErasureWorkerResult(
         request_id=request_id,
         result=result,
         destruction_evidence_id=evidence_id,
         failure_code=failure_code,
+        notification_result=notification_result,
+        notification_failure_code=notification_failure_code,
     )
 
 
@@ -112,7 +146,10 @@ async def _completed_result(
         PrivacyDestructionEvidence,
         privacy_request.destruction_evidence_id,
     )
-    if evidence is None or evidence.result_status != "completed":
+    if evidence is None or evidence.result_status not in {
+        "completed",
+        "completed_with_retention",
+    }:
         return None
     return _result(
         privacy_request.id,
@@ -145,6 +182,7 @@ async def _claim(
     *,
     session_factory: Any,
     now_provider: Callable[[], datetime],
+    settings: Settings,
 ) -> _ClaimedRequest | PrivacyErasureWorkerResult:
     async with session_factory() as session:
         async with session.begin():
@@ -210,11 +248,36 @@ async def _claim(
                     failure_code=MANUAL_REVIEW_FAILURE_CODE,
                 )
 
+            try:
+                notification_config = load_notification_encryption_config(settings)
+            except PrivacyErasureNotificationCryptoError:
+                privacy_request.failure_code = NOTIFICATION_CONFIGURATION_FAILURE_CODE
+                privacy_request.updated_at = now
+                return _result(
+                    request_id,
+                    "retryable_failure",
+                    failure_code=NOTIFICATION_CONFIGURATION_FAILURE_CODE,
+                )
+            if user.email is None or not user.email.strip():
+                privacy_request.failure_code = (
+                    NOTIFICATION_RECIPIENT_MISSING_FAILURE_CODE
+                )
+                privacy_request.updated_at = now
+                return _result(
+                    request_id,
+                    "not_eligible",
+                    failure_code=NOTIFICATION_RECIPIENT_MISSING_FAILURE_CODE,
+                )
+
             if privacy_request.execution_started_at is None:
                 privacy_request.execution_started_at = now
             privacy_request.failure_code = None
             privacy_request.updated_at = now
-            return _ClaimedRequest(user_id=user.id)
+            return _ClaimedRequest(
+                user_id=user.id,
+                recipient=user.email,
+                notification_config=notification_config,
+            )
 
 
 async def _record_failure_code(
@@ -384,6 +447,8 @@ async def _delete_content_graph(
     privacy_request: PrivacyRequest,
     now: datetime,
     avatar_keys: list[str],
+    recipient: str,
+    notification_config: PrivacyErasureNotificationEncryptionConfig,
 ) -> UUID:
     categories = {"account"}
     if user.email is not None or user.phone is not None:
@@ -453,6 +518,36 @@ async def _delete_content_graph(
     session.add(evidence)
     await session.flush()
 
+    outbox_id = uuid4()
+    try:
+        encrypted_recipient = encrypt_notification_recipient(
+            recipient,
+            outbox_id=outbox_id,
+            privacy_request_id=privacy_request.id,
+            destruction_evidence_id=evidence.id,
+            config=notification_config,
+        )
+    except Exception:  # noqa: BLE001 - crypto details must not escape.
+        raise _NotificationEncryptionFailed() from None
+    session.add(
+        PrivacyErasureNotificationOutbox(
+            id=outbox_id,
+            privacy_request_id=privacy_request.id,
+            destruction_evidence_id=evidence.id,
+            notification_kind=evidence.result_status,
+            status="pending",
+            recipient_ciphertext=encrypted_recipient.ciphertext,
+            recipient_nonce=encrypted_recipient.nonce,
+            encryption_key_id=encrypted_recipient.key_id,
+            attempt_count=0,
+            expires_at=now
+            + timedelta(hours=notification_config.delivery_window_hours),
+            created_at=now,
+            updated_at=now,
+        ),
+    )
+    await session.flush()
+
     privacy_request.status = "resolved"
     privacy_request.resolved_at = now
     privacy_request.completed_at = now
@@ -475,12 +570,13 @@ async def _delete_content_graph(
 
 async def _execute(
     request_id: UUID,
-    claimed_user_id: UUID,
+    claimed: _ClaimedRequest,
     *,
     session_factory: Any,
     storage_factory: Callable[[], Any],
     now_provider: Callable[[], datetime],
     after_storage: Callable[[AsyncSession], Awaitable[None]] | None,
+    before_commit: Callable[[AsyncSession], Awaitable[None]] | None,
 ) -> PrivacyErasureWorkerResult:
     async with session_factory() as session:
         async with session.begin():
@@ -499,7 +595,7 @@ async def _execute(
             if completed is not None:
                 return completed
             if (
-                privacy_request.user_id != claimed_user_id
+                privacy_request.user_id != claimed.user_id
                 or not _request_lifecycle_is_eligible(privacy_request)
                 or privacy_request.execution_started_at is None
             ):
@@ -511,7 +607,7 @@ async def _execute(
 
             user = await session.scalar(
                 select(AppUser)
-                .where(AppUser.id == claimed_user_id)
+                .where(AppUser.id == claimed.user_id)
                 .with_for_update(),
             )
             if user is None:
@@ -565,7 +661,11 @@ async def _execute(
                 privacy_request=privacy_request,
                 now=now,
                 avatar_keys=avatar_keys,
+                recipient=claimed.recipient,
+                notification_config=claimed.notification_config,
             )
+            if before_commit is not None:
+                await before_commit(session)
             return _result(
                 request_id,
                 "completed",
@@ -580,12 +680,20 @@ async def execute_privacy_erasure_request(
     storage_factory: Callable[[], Any] = get_avatar_storage,
     now_provider: Callable[[], datetime] = _now,
     after_storage: Callable[[AsyncSession], Awaitable[None]] | None = None,
+    before_commit: Callable[[AsyncSession], Awaitable[None]] | None = None,
+    settings: Settings | None = None,
+    notification_delivery: Callable[..., Awaitable[PrivacyErasureNotificationResult]] = (
+        deliver_privacy_erasure_completion_notification
+    ),
+    notification_email_sender: Callable[..., Any] | None = None,
 ) -> PrivacyErasureWorkerResult:
+    resolved_settings = settings or get_settings()
     try:
         claim = await _claim(
             request_id,
             session_factory=session_factory,
             now_provider=now_provider,
+            settings=resolved_settings,
         )
     except SQLAlchemyError:
         await _record_failure_code(
@@ -600,17 +708,38 @@ async def execute_privacy_erasure_request(
             failure_code=DATABASE_FAILURE_CODE,
         )
     if isinstance(claim, PrivacyErasureWorkerResult):
+        if claim.result == "already_completed":
+            return await _attach_notification_result(
+                claim,
+                session_factory=session_factory,
+                settings=resolved_settings,
+                notification_delivery=notification_delivery,
+                notification_email_sender=notification_email_sender,
+                now_provider=now_provider,
+            )
         return claim
 
     try:
-        return await _execute(
+        execution_result = await _execute(
             request_id,
-            claim.user_id,
+            claim,
             session_factory=session_factory,
             storage_factory=storage_factory,
             now_provider=now_provider,
             after_storage=after_storage,
+            before_commit=before_commit,
         )
+        del claim
+        if execution_result.result == "completed":
+            return await _attach_notification_result(
+                execution_result,
+                session_factory=session_factory,
+                settings=resolved_settings,
+                notification_delivery=notification_delivery,
+                notification_email_sender=notification_email_sender,
+                now_provider=now_provider,
+            )
+        return execution_result
     except _AvatarDeletionFailed:
         await _record_failure_code(
             request_id,
@@ -622,6 +751,18 @@ async def execute_privacy_erasure_request(
             request_id,
             "retryable_failure",
             failure_code=AVATAR_STORAGE_FAILURE_CODE,
+        )
+    except _NotificationEncryptionFailed:
+        await _record_failure_code(
+            request_id,
+            NOTIFICATION_ENCRYPTION_FAILURE_CODE,
+            session_factory=session_factory,
+            now_provider=now_provider,
+        )
+        return _result(
+            request_id,
+            "retryable_failure",
+            failure_code=NOTIFICATION_ENCRYPTION_FAILURE_CODE,
         )
     except SQLAlchemyError:
         await _record_failure_code(
@@ -635,3 +776,39 @@ async def execute_privacy_erasure_request(
             "retryable_failure",
             failure_code=DATABASE_FAILURE_CODE,
         )
+
+
+async def _attach_notification_result(
+    worker_result: PrivacyErasureWorkerResult,
+    *,
+    session_factory: Any,
+    settings: Settings,
+    notification_delivery: Callable[..., Awaitable[PrivacyErasureNotificationResult]],
+    notification_email_sender: Callable[..., Any] | None,
+    now_provider: Callable[[], datetime],
+) -> PrivacyErasureWorkerResult:
+    delivery_kwargs: dict[str, Any] = {
+        "session_factory": session_factory,
+        "settings": settings,
+        "now_provider": now_provider,
+    }
+    if notification_email_sender is not None:
+        delivery_kwargs["email_sender"] = notification_email_sender
+    try:
+        notification = await notification_delivery(
+            worker_result.request_id,
+            **delivery_kwargs,
+        )
+    except Exception:  # noqa: BLE001 - delivery/provider details must not escape.
+        notification = PrivacyErasureNotificationResult(
+            "retryable_failure",
+            DELIVERY_UNAVAILABLE,
+        )
+    return _result(
+        worker_result.request_id,
+        worker_result.result,
+        evidence_id=worker_result.destruction_evidence_id,
+        failure_code=worker_result.failure_code,
+        notification_result=notification.result,
+        notification_failure_code=notification.failure_code,
+    )

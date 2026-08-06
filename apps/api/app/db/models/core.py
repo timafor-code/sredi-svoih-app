@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     Numeric,
     Text,
     UniqueConstraint,
@@ -1753,6 +1754,109 @@ class PrivacyRequest(Base):
         PG_UUID(as_uuid=True),
         ForeignKey("privacy_destruction_evidence.id", ondelete="SET NULL"),
     )
+    created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()
+
+
+class PrivacyErasureNotificationOutbox(Base):
+    __tablename__ = "privacy_erasure_notification_outbox"
+    __table_args__ = (
+        CheckConstraint(
+            "notification_kind IN ('completed', 'completed_with_retention')",
+            name="privacy_erasure_notification_outbox_kind_check",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'failed', 'sent', 'expired')",
+            name="privacy_erasure_notification_outbox_status_check",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="privacy_erasure_notification_outbox_attempt_count_check",
+        ),
+        CheckConstraint(
+            "expires_at > created_at",
+            name="privacy_erasure_notification_outbox_expiry_check",
+        ),
+        CheckConstraint(
+            "btrim(encryption_key_id) <> ''",
+            name="privacy_erasure_notification_outbox_key_id_not_empty",
+        ),
+        CheckConstraint(
+            "failure_code IS NULL OR btrim(failure_code) <> ''",
+            name="privacy_erasure_notification_outbox_failure_code_not_empty",
+        ),
+        CheckConstraint(
+            "((status IN ('pending', 'failed') "
+            "AND recipient_ciphertext IS NOT NULL AND recipient_nonce IS NOT NULL) "
+            "OR (status IN ('sent', 'expired') "
+            "AND recipient_ciphertext IS NULL AND recipient_nonce IS NULL))",
+            name="privacy_erasure_notification_outbox_recipient_lifecycle_check",
+        ),
+        CheckConstraint(
+            "((status = 'sent' AND sent_at IS NOT NULL) "
+            "OR (status <> 'sent' AND sent_at IS NULL))",
+            name="privacy_erasure_notification_outbox_sent_at_status_check",
+        ),
+        CheckConstraint(
+            "status <> 'sent' OR failure_code IS NULL",
+            name="privacy_erasure_notification_outbox_sent_without_failure_check",
+        ),
+        CheckConstraint(
+            "last_attempt_at IS NULL OR last_attempt_at >= created_at",
+            name="privacy_erasure_notification_outbox_attempt_after_created_check",
+        ),
+        CheckConstraint(
+            "sent_at IS NULL OR sent_at >= created_at",
+            name="privacy_erasure_notification_outbox_sent_after_created_check",
+        ),
+        UniqueConstraint(
+            "privacy_request_id",
+            name="privacy_erasure_notification_outbox_privacy_request_id_key",
+        ),
+        UniqueConstraint(
+            "destruction_evidence_id",
+            name="privacy_erasure_notification_outbox_evidence_id_key",
+        ),
+        Index(
+            "privacy_erasure_notification_outbox_status_created_idx",
+            "status",
+            "created_at",
+        ),
+        Index(
+            "privacy_erasure_notification_outbox_expires_at_idx",
+            "expires_at",
+        ),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    privacy_request_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("privacy_requests.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    destruction_evidence_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("privacy_destruction_evidence.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    notification_kind: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'pending'"),
+    )
+    recipient_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary)
+    recipient_nonce: Mapped[bytes | None] = mapped_column(LargeBinary)
+    encryption_key_id: Mapped[str] = mapped_column(Text, nullable=False)
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    failure_code: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = timestamptz_now()
     updated_at: Mapped[datetime] = timestamptz_now()
 

@@ -69,8 +69,10 @@ are scoped to the authenticated user; admin review through
 `/admin/privacy/requests` is admin-only and community-scoped. These endpoints
 record and track requests. Irreversible deletion is not exposed as an API
 endpoint; after explicit privacy-session confirmation, an operator executes one
-request through the backend CLI. No completion email is sent by the current
-worker. Request `message` text is personal data and must not be logged raw.
+request through the backend CLI. The current worker creates an encrypted
+completion-notification outbox atomically with erasure and attempts delivery
+only after commit. Request `message` text is personal data and must not be
+logged raw.
 
 Device tokens registered through `POST /me/device-tokens` are push-token PII
 stored in the API-owned `device_tokens` table, upserted per
@@ -224,3 +226,22 @@ without selecting or logging its content.
 
 Backup cleanup and restore-erasure replay remain unimplemented launch gates;
 the worker does not silently assign a backup retention period.
+
+## Encrypted Erasure Completion Notification
+
+The notification outbox is part of the production personal-data contour and
+must be hosted in Russia with primary PostgreSQL and its replicas. Ciphertext
+is still personal data: it is retained only for completion delivery and is not
+used for login, matching, marketing, analytics, admin display, evidence, or
+export. The AES-256-GCM key is backend-only and must be held separately from
+auth, token-hash, SMTP, password, and provider credentials.
+
+Ciphertext and nonce are cleared after successful delivery or expiry of the
+explicitly approved window. Backups may temporarily retain older ciphertext;
+this change does not claim that production backup purge is solved. A restored
+database still requires a tested restore-erasure replay mechanism before it is
+opened for service.
+
+The SMTP provider and every relevant infrastructure location require explicit
+approval. Russian plain-text templates and application-side encryption do not
+by themselves establish production residency or production readiness.

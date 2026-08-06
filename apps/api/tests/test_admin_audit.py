@@ -370,8 +370,10 @@ class AdminEventAuditTests(unittest.IsolatedAsyncioTestCase):
 
     def test_actor_fk_migration_metadata_and_guards(self) -> None:
         script = ScriptDirectory.from_config(Config("alembic.ini"))
-        self.assertEqual(script.get_current_head(), "20260806190000")
+        self.assertEqual(script.get_current_head(), "20260806200000")
+        notification_revision = script.get_revision("20260806200000")
         revision = script.get_revision("20260806190000")
+        self.assertEqual(notification_revision.down_revision, "20260806190000")
         self.assertEqual(revision.down_revision, "20260806180000")
 
         migration_op = MagicMock()
