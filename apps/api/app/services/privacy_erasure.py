@@ -264,6 +264,7 @@ async def _confirm_in_transaction(
     privacy_request.updated_at = now
 
     user.status = DELETION_PENDING_STATUS
+    user.auth_token_version += 1
     user.deletion_requested_at = now
     user.updated_at = now
 

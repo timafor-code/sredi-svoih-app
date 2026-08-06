@@ -13,7 +13,7 @@ from app.core.supabase_jwt import (
     SupabaseJwtDecodeError,
     decode_supabase_access_token_subject,
 )
-from app.core.tokens import AccessTokenDecodeError, decode_access_token_subject
+from app.core.tokens import AccessTokenDecodeError, decode_access_token
 from app.db.models.core import (
     AppUser,
     CommunityMembership,
@@ -40,10 +40,19 @@ async def get_current_user(
 
     token = credentials.credentials
     try:
-        user_id = decode_access_token_subject(token)
-        return await authorization_service.require_active_user(session, user_id)
+        decoded_token = decode_access_token(token)
     except AccessTokenDecodeError:
         pass
+    else:
+        user = await authorization_service.require_active_user(
+            session,
+            decoded_token.user_id,
+        )
+        if decoded_token.auth_token_version != user.auth_token_version:
+            raise authorization_service.AuthenticationRequiredError(
+                "Invalid access token",
+            )
+        return user
 
     settings = get_settings()
     if not settings.migration_accept_supabase_jwt:
@@ -56,7 +65,12 @@ async def get_current_user(
             "Invalid access token",
         ) from exc
 
-    return await authorization_service.require_active_user(session, user_id)
+    user = await authorization_service.require_active_user(session, user_id)
+    if user.auth_token_version != 0:
+        raise authorization_service.AuthenticationRequiredError(
+            "Invalid access token",
+        )
+    return user
 
 
 async def get_optional_current_user(

@@ -82,7 +82,11 @@ class PrivacySelfServiceSchemaTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_alembic_head_and_database_metadata_include_foundation(self) -> None:
         script = ScriptDirectory.from_config(Config("alembic.ini"))
-        self.assertEqual(script.get_current_head(), "20260806160000")
+        self.assertEqual(script.get_current_head(), "20260806170000")
+        self.assertEqual(
+            script.get_revision("20260806170000").down_revision,
+            "20260806160000",
+        )
         self.assertEqual(
             script.get_revision("20260806160000").down_revision,
             "20260806120000",

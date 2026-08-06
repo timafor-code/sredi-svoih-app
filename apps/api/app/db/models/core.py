@@ -134,6 +134,10 @@ class AppUser(Base):
         UniqueConstraint("phone", name="app_users_phone_key"),
         CheckConstraint("btrim(status) <> ''", name="app_users_status_not_empty"),
         CheckConstraint(
+            "auth_token_version >= 0",
+            name="app_users_auth_token_version_nonnegative_check",
+        ),
+        CheckConstraint(
             "account_origin IN ('password_signup', 'invite', 'web_guest', 'migration', 'admin')",
             name="app_users_account_origin_check",
         ),
@@ -164,6 +168,11 @@ class AppUser(Base):
         Text,
         nullable=False,
         server_default=text("'active'"),
+    )
+    auth_token_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
     )
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

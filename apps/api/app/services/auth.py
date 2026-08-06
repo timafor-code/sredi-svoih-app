@@ -115,10 +115,17 @@ def _auth_code_expiration_minutes() -> int:
     return get_settings().api_auth_code_ttl_minutes
 
 
-def _issue_access_token(user_id: UUID) -> tuple[str, datetime]:
+def _issue_access_token(user: AppUser) -> tuple[str, datetime]:
     ttl = _access_token_ttl()
     expires_at = _now() + ttl
-    return create_access_token(user_id, expires_delta=ttl), expires_at
+    return (
+        create_access_token(
+            user.id,
+            expires_delta=ttl,
+            auth_token_version=user.auth_token_version,
+        ),
+        expires_at,
+    )
 
 
 def _user_summary(user: AppUser) -> AppUserSummary:
@@ -165,7 +172,7 @@ def _community_summary(community: Community) -> CommunitySummary:
 
 
 def _token_response(user: AppUser, refresh_token: str) -> AuthTokenResponse:
-    access_token, expires_at = _issue_access_token(user.id)
+    access_token, expires_at = _issue_access_token(user)
     return AuthTokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -769,7 +776,7 @@ async def register_password_user_with_invite(
     await session.refresh(user_profile)
     await session.refresh(membership)
 
-    access_token, expires_at = _issue_access_token(user.id)
+    access_token, expires_at = _issue_access_token(user)
     profile_summary = _profile_summary(user_profile)
     if profile_summary is None:
         raise RuntimeError("invite registration profile was not created")

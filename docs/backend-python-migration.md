@@ -538,7 +538,11 @@ The bridge resolves the verified Supabase JWT `sub` as an API `app_users.id`
 UUID. The API database must already contain UUID-aligned `app_users` rows, such
 as the PR 5 dev-only seed mapping used for local protected smoke. Unknown
 Supabase users are rejected with a clean 401/403 response and are never
-auto-provisioned from claims.
+auto-provisioned from claims. A resolved user must also have API credential
+version `0`; once that version is incremented during confirmed erasure, neither
+the old Supabase JWT nor pre-confirmation native API JWTs become valid again if
+the erasure request is cancelled. A subsequent active-user login issues a
+native JWT with the current version.
 
 Mobile and web-admin may keep auth provider set to Supabase while a selected
 domain provider is set to API locally. In that mixed-provider mode, API client

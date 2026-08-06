@@ -8,13 +8,15 @@ from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import httpx
+import jwt
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import delete, func, inspect, select
 from sqlalchemy.exc import IntegrityError
 
+from app.core.config import get_settings
 from app.core.passwords import hash_password
-from app.core.tokens import create_access_token
+from app.core.tokens import create_access_token, decode_access_token
 from app.db.models.auth import (
     AuthEmailVerificationCode,
     AuthSession,
@@ -261,6 +263,36 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
             json={"confirmation": "delete_my_data"},
         )
 
+    @staticmethod
+    def _legacy_access_token(user_id: UUID) -> str:
+        settings = get_settings()
+        issued_at = datetime.now(UTC)
+        payload: dict[str, object] = {
+            "sub": str(user_id),
+            "iat": issued_at,
+            "exp": issued_at
+            + timedelta(minutes=settings.api_access_token_ttl_minutes),
+            "typ": "access",
+        }
+        if settings.api_jwt_issuer:
+            payload["iss"] = settings.api_jwt_issuer
+        if settings.api_jwt_audience:
+            payload["aud"] = settings.api_jwt_audience
+        return jwt.encode(payload, settings.api_jwt_secret, algorithm="HS256")
+
+    @staticmethod
+    def _supabase_access_token(user_id: UUID, signing_key: str) -> str:
+        issued_at = datetime.now(UTC)
+        return jwt.encode(
+            {
+                "sub": str(user_id),
+                "iat": issued_at,
+                "exp": issued_at + timedelta(minutes=15),
+            },
+            signing_key,
+            algorithm="HS256",
+        )
+
     async def _new_privacy_token_via_email(self, email: str) -> str:
         deliveries: list[str] = []
 
@@ -353,9 +385,11 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_migration_metadata_constraints_queue_index_and_defaults(self) -> None:
         script = ScriptDirectory.from_config(Config("alembic.ini"))
-        self.assertEqual(script.get_current_head(), "20260806160000")
-        revision = script.get_revision("20260806160000")
-        self.assertEqual(revision.down_revision, "20260806120000")
+        self.assertEqual(script.get_current_head(), "20260806170000")
+        token_revision = script.get_revision("20260806170000")
+        lifecycle_revision = script.get_revision("20260806160000")
+        self.assertEqual(token_revision.down_revision, "20260806160000")
+        self.assertEqual(lifecycle_revision.down_revision, "20260806120000")
 
         async with engine.connect() as connection:
             metadata = await connection.run_sync(self._read_lifecycle_metadata)
@@ -363,6 +397,11 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
             {"pre_deletion_user_status", "cancelled_at"}.issubset(
                 metadata["columns"],
             ),
+        )
+        self.assertIn("auth_token_version", metadata["app_user_columns"])
+        self.assertIn(
+            "app_users_auth_token_version_nonnegative_check",
+            metadata["app_user_constraints"],
         )
         self.assertTrue(
             {
@@ -387,28 +426,59 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertIn(fragment.lower(), predicate.lower())
 
-        downgrade_source = pyinspect.getsource(revision.module.downgrade)
-        self.assertIn("privacy_requests_deletion_queue_idx", downgrade_source)
-        self.assertIn('drop_column("privacy_requests", "cancelled_at")', downgrade_source)
+        lifecycle_downgrade_source = pyinspect.getsource(
+            lifecycle_revision.module.downgrade,
+        )
+        self.assertIn(
+            "privacy_requests_deletion_queue_idx",
+            lifecycle_downgrade_source,
+        )
+        self.assertIn(
+            'drop_column("privacy_requests", "cancelled_at")',
+            lifecycle_downgrade_source,
+        )
         self.assertIn(
             'drop_column("privacy_requests", "pre_deletion_user_status")',
-            downgrade_source,
+            lifecycle_downgrade_source,
         )
-        self.assertNotIn("due_at", pyinspect.getsource(revision.module.upgrade))
-        self.assertNotIn("retention", pyinspect.getsource(revision.module.upgrade))
+        self.assertNotIn(
+            "due_at",
+            pyinspect.getsource(lifecycle_revision.module.upgrade),
+        )
+        self.assertNotIn(
+            "retention",
+            pyinspect.getsource(lifecycle_revision.module.upgrade),
+        )
+        token_upgrade_source = pyinspect.getsource(token_revision.module.upgrade)
+        token_downgrade_source = pyinspect.getsource(token_revision.module.downgrade)
+        self.assertIn("auth_token_version", token_upgrade_source)
+        self.assertIn("auth_token_version >= 0", token_upgrade_source)
+        self.assertIn(
+            'drop_column("app_users", "auth_token_version")',
+            token_downgrade_source,
+        )
 
         user_id, _, _ = await self._add_user()
         request_id = await self._add_request(user_id)
         async with AsyncSessionLocal() as session:
             row = await session.get(PrivacyRequest, request_id)
+            user = await session.get(AppUser, user_id)
         self.assertIsNone(row.pre_deletion_user_status)
         self.assertIsNone(row.cancelled_at)
+        self.assertEqual(user.auth_token_version, 0)
 
     @staticmethod
     def _read_lifecycle_metadata(sync_connection) -> dict[str, object]:
         inspector = inspect(sync_connection)
         indexes = inspector.get_indexes("privacy_requests")
         return {
+            "app_user_columns": {
+                item["name"] for item in inspector.get_columns("app_users")
+            },
+            "app_user_constraints": {
+                item["name"]
+                for item in inspector.get_check_constraints("app_users")
+            },
             "columns": {
                 item["name"] for item in inspector.get_columns("privacy_requests")
             },
@@ -688,6 +758,7 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(user.status, "deletion_pending")
+        self.assertEqual(user.auth_token_version, 1)
         self.assertIsNotNone(user.deletion_requested_at)
         self.assertEqual(request.pre_deletion_user_status, "active")
         self.assertIsNotNone(request.identity_verified_at)
@@ -740,8 +811,10 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 registration_ids["confirmed"],
             )
             replayed_request = await session.get(PrivacyRequest, request_id)
+            replayed_user = await session.get(AppUser, user_id)
         self.assertEqual(replayed_registration.cancelled_at, first_cancelled_at)
         self.assertEqual(replayed_request.pre_deletion_user_status, "active")
+        self.assertEqual(replayed_user.auth_token_version, 1)
 
     async def test_financial_indicators_fail_closed_without_partial_mutation(self) -> None:
         cases = ("paid", "donation", "payment_id", "priced_option")
@@ -809,6 +882,7 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
                         ),
                     )
                 self.assertEqual(user.status, "active")
+                self.assertEqual(user.auth_token_version, 0)
                 self.assertIsNone(user.deletion_requested_at)
                 self.assertIsNone(request.processing_stopped_at)
                 self.assertIsNone(request.pre_deletion_user_status)
@@ -1012,6 +1086,7 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
                         credentials["reset_code"],
                     )
                 self.assertEqual(user.status, original_status)
+                self.assertEqual(user.auth_token_version, 1)
                 self.assertIsNone(user.deletion_requested_at)
                 self.assertEqual(request.status, "closed")
                 self.assertEqual(request.pre_deletion_user_status, original_status)
@@ -1040,6 +1115,152 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
                     login.status_code,
                     200 if original_status == "active" else 401,
                 )
+
+    async def test_cancel_does_not_revive_native_access_or_refresh_credentials(self) -> None:
+        user_id, email, _ = await self._add_user()
+        other_id, _, _ = await self._add_user()
+        request_id = await self._add_request(user_id)
+        privacy_token = await self._add_privacy_session(user_id)
+
+        login = await self.client.post(
+            "/auth/login",
+            json={"email": email, "password": "Synthetic-password-1"},
+        )
+        self.assertEqual(login.status_code, 200)
+        old_access_token = login.json()["access_token"]
+        old_refresh_token = login.json()["refresh_token"]
+        self.assertEqual(decode_access_token(old_access_token).auth_token_version, 0)
+        other_access_token = create_access_token(other_id)
+
+        before = await self.client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {old_access_token}"},
+        )
+        other_before = await self.client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {other_access_token}"},
+        )
+        self.assertEqual(before.status_code, 200)
+        self.assertEqual(other_before.status_code, 200)
+
+        confirmed = await self._confirm(request_id, privacy_token)
+        self.assertEqual(confirmed.status_code, 200)
+        during_pending = await self.client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {old_access_token}"},
+        )
+        self.assertEqual(during_pending.status_code, 401)
+
+        cancel_token = await self._new_privacy_token_via_email(email)
+        repeated = await self._confirm(request_id, cancel_token)
+        self.assertEqual(repeated.status_code, 200)
+        async with AsyncSessionLocal() as session:
+            repeated_user = await session.get(AppUser, user_id)
+        self.assertEqual(repeated_user.auth_token_version, 1)
+
+        cancelled = await self.client.post(
+            f"/privacy/requests/{request_id}/cancel-erasure",
+            headers={"Authorization": f"Bearer {cancel_token}"},
+        )
+        self.assertEqual(cancelled.status_code, 200)
+
+        after_cancel = await self.client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {old_access_token}"},
+        )
+        revoked_refresh = await self.client.post(
+            "/auth/refresh",
+            json={"refresh_token": old_refresh_token},
+        )
+        other_after = await self.client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {other_access_token}"},
+        )
+        self.assertEqual(after_cancel.status_code, 401)
+        self.assertEqual(revoked_refresh.status_code, 401)
+        self.assertEqual(other_after.status_code, 200)
+
+        new_login = await self.client.post(
+            "/auth/login",
+            json={"email": email, "password": "Synthetic-password-1"},
+        )
+        self.assertEqual(new_login.status_code, 200)
+        new_access_token = new_login.json()["access_token"]
+        self.assertEqual(decode_access_token(new_access_token).auth_token_version, 1)
+        current = await self.client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {new_access_token}"},
+        )
+        self.assertEqual(current.status_code, 200)
+
+    async def test_legacy_native_token_is_limited_to_version_zero(self) -> None:
+        user_id, _, _ = await self._add_user()
+        legacy_token = self._legacy_access_token(user_id)
+        decoded = decode_access_token(legacy_token)
+        self.assertEqual(decoded.auth_token_version, 0)
+
+        accepted = await self.client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {legacy_token}"},
+        )
+        self.assertEqual(accepted.status_code, 200)
+
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                user = await session.get(AppUser, user_id, with_for_update=True)
+                user.auth_token_version = 1
+
+        rejected = await self.client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {legacy_token}"},
+        )
+        self.assertEqual(rejected.status_code, 401)
+
+    async def test_supabase_fallback_is_limited_to_version_zero(self) -> None:
+        user_id, email, _ = await self._add_user()
+        request_id = await self._add_request(user_id)
+        privacy_token = await self._add_privacy_session(user_id)
+        signing_key = f"synthetic-supabase-signing-key-{self.marker}"
+        supabase_token = self._supabase_access_token(user_id, signing_key)
+        bridge_settings = get_settings().model_copy(
+            update={
+                "migration_accept_supabase_jwt": True,
+                "supabase_jwt_signing_key": signing_key,
+                "supabase_jwt_issuer": "",
+                "supabase_jwt_audience": "",
+            },
+        )
+
+        with (
+            patch(
+                "app.core.authorization.get_settings",
+                return_value=bridge_settings,
+            ),
+            patch(
+                "app.core.supabase_jwt.get_settings",
+                return_value=bridge_settings,
+            ),
+        ):
+            accepted = await self.client.get(
+                "/auth/me",
+                headers={"Authorization": f"Bearer {supabase_token}"},
+            )
+            self.assertEqual(accepted.status_code, 200)
+
+            confirmed = await self._confirm(request_id, privacy_token)
+            self.assertEqual(confirmed.status_code, 200)
+            cancel_token = await self._new_privacy_token_via_email(email)
+            cancelled = await self.client.post(
+                f"/privacy/requests/{request_id}/cancel-erasure",
+                headers={"Authorization": f"Bearer {cancel_token}"},
+            )
+            self.assertEqual(cancelled.status_code, 200)
+
+            rejected = await self.client.get(
+                "/auth/me",
+                headers={"Authorization": f"Bearer {supabase_token}"},
+            )
+            self.assertEqual(rejected.status_code, 401)
 
     async def test_cancel_rejects_foreign_started_and_completed_requests(self) -> None:
         user_id, _, _ = await self._add_user(status="deletion_pending")
