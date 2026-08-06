@@ -13,11 +13,9 @@ from app.db.models.core import AppUser, CommunityMembership, PrivacyRequest
 from app.schemas.privacy import (
     AdminPrivacyRequestUpdateRequest,
     PrivacyRequestCreateRequest,
+    TERMINAL_PRIVACY_REQUEST_STATUSES,
 )
 from app.services.authorization import ACTIVE_STATUS, ADMIN_ROLES
-
-RESOLVED_STATUSES = frozenset({"resolved", "rejected", "closed"})
-
 
 @asynccontextmanager
 async def _transaction_scope(session: AsyncSession) -> AsyncIterator[None]:
@@ -155,6 +153,8 @@ async def list_admin_privacy_requests(
     *,
     status: str | None = None,
     community_id: UUID | None = None,
+    request_type: str | None = None,
+    overdue_only: bool = False,
 ) -> list[PrivacyRequest]:
     admin_community_ids = await _resolve_admin_community_ids(session, current_user)
     if not admin_community_ids:
@@ -172,6 +172,14 @@ async def list_admin_privacy_requests(
     )
     if status is not None:
         query = query.where(PrivacyRequest.status == status)
+    if request_type is not None:
+        query = query.where(PrivacyRequest.request_type == request_type)
+    if overdue_only:
+        query = query.where(
+            PrivacyRequest.status.not_in(TERMINAL_PRIVACY_REQUEST_STATUSES),
+            PrivacyRequest.due_at.is_not(None),
+            PrivacyRequest.due_at < _now(),
+        )
 
     result = await session.scalars(
         query.order_by(PrivacyRequest.created_at.desc(), PrivacyRequest.id.asc()),
@@ -213,7 +221,7 @@ async def update_admin_privacy_request(
 
         if "status" in updates:
             privacy_request.status = updates["status"]
-            if updates["status"] in RESOLVED_STATUSES:
+            if updates["status"] in TERMINAL_PRIVACY_REQUEST_STATUSES:
                 privacy_request.resolved_at = _now()
                 privacy_request.resolved_by = current_user.id
             else:

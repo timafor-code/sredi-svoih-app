@@ -12,6 +12,7 @@ from app.db.session import get_db_session
 from app.schemas.admin_registrations import (
     AdminEventRegistrationResponse,
     AdminRegistrationCapacityAnalyticsResponse,
+    RegistrationSourceChannel,
 )
 from app.schemas.events import ApiResponse
 from app.services import admin_registrations as admin_registrations_service
@@ -33,6 +34,7 @@ async def list_admin_event_registrations(
     current_user: CurrentUser,
     occurrence_id: Annotated[UUID | None, Query()] = None,
     status: Annotated[str | None, Query(max_length=32)] = None,
+    source_channel: Annotated[RegistrationSourceChannel | None, Query()] = None,
     search: Annotated[str | None, Query(max_length=200)] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -43,6 +45,7 @@ async def list_admin_event_registrations(
         event_id,
         occurrence_id=occurrence_id,
         status=status,
+        source_channel=source_channel,
         search=search,
         limit=limit,
         offset=offset,

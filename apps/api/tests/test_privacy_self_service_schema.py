@@ -680,7 +680,7 @@ class PrivacySelfServiceSchemaTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(updated_data["status"], "reviewed")
             self.assertEqual(updated_data["user_id"], str(subject_id))
             self.assertIsNone(updated_data["resolved_by"])
-            self.assertFalse(
+            self.assertTrue(
                 {
                     "identity_verified_at",
                     "processing_stopped_at",
@@ -689,8 +689,8 @@ class PrivacySelfServiceSchemaTests(unittest.IsolatedAsyncioTestCase):
                     "due_at",
                     "failure_code",
                     "destruction_evidence_id",
-                }
-                & set(updated_data),
+                    "cancelled_at",
+                }.issubset(updated_data),
             )
 
         async with AsyncSessionLocal() as session:

@@ -22,6 +22,7 @@ from app.api.admin import privacy as admin_privacy
 from app.api.admin import push_notifications as admin_push_notifications
 from app.api.admin import registrations as admin_registrations
 from app.api.admin import seating as admin_seating
+from app.api.admin import web_registration_operations as admin_web_registration_operations
 
 api_router = APIRouter()
 api_router.include_router(admin_community.router)
@@ -34,6 +35,7 @@ api_router.include_router(admin_privacy.router)
 api_router.include_router(admin_push_notifications.router)
 api_router.include_router(admin_registrations.router)
 api_router.include_router(admin_seating.router)
+api_router.include_router(admin_web_registration_operations.router)
 api_router.include_router(avatar.router)
 api_router.include_router(auth.router)
 api_router.include_router(community.router)

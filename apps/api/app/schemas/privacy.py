@@ -9,6 +9,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 PrivacyRequestType = Literal["data_export", "deletion", "correction", "other"]
 PrivacyRequestStatus = Literal["open", "reviewed", "resolved", "rejected", "closed"]
 PrivacySessionScope = Literal["privacy_self_service"]
+TERMINAL_PRIVACY_REQUEST_STATUSES = frozenset({"resolved", "rejected", "closed"})
 
 
 def _normalize_optional_text(value: str | None) -> str | None:
@@ -137,6 +138,14 @@ class PrivacyDataExportResponse(BaseModel):
 class AdminPrivacyRequestResponse(PrivacyRequestResponse):
     user_id: UUID | None
     resolved_by: UUID | None
+    identity_verified_at: datetime | None
+    processing_stopped_at: datetime | None
+    execution_started_at: datetime | None
+    completed_at: datetime | None
+    due_at: datetime | None
+    failure_code: str | None
+    destruction_evidence_id: UUID | None
+    cancelled_at: datetime | None
 
 
 class PrivacyErasureConfirmRequest(BaseModel):

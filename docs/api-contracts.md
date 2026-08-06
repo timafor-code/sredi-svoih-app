@@ -1281,7 +1281,7 @@ registration. Status returns only public state, minimal registration data, and
 an account next step without plaintext secrets. The current limiter is
 process-local and requires shared storage for horizontal production scaling.
 No web UI, SMS, marketing email, or analytics is included. The next
-implementation PR is `feature/admin-web-registration-operations`.
+implementation PR is `feature/admin-registration-source-status`.
 
 Administrative publication:
 
@@ -1655,6 +1655,9 @@ remain registration capacity buckets, not seating.
 | POST | `/admin/registrations/{registration_id}/waitlist` | Move a registration to waitlist. |
 | POST | `/admin/registrations/{registration_id}/attended` | Mark attended. |
 | POST | `/admin/registrations/{registration_id}/no-show` | Mark no-show. |
+| GET | `/admin/web-registration/operations-summary` | Return community-scoped aggregate web-registration/privacy operation counts for an active admin. |
+| GET | `/admin/web-registration/conflicts` | List the allowlisted technical identity-conflict queue for communities actively administered by the actor. |
+| PATCH | `/admin/web-registration/conflicts/{conflict_id}` | Mark one scoped identity conflict `open` or `resolved` without changing either identity. |
 
 Admin registration actions must be transactional and community-scoped. Excel
 export remains a client/admin service concern until a later PR proves that a
@@ -1669,16 +1672,42 @@ actors without any manageable admin/event-manager membership receive
 `403 forbidden`.
 
 `GET /admin/events/{event_id}/registrations` accepts `occurrence_id`,
-`status`, `search`, `limit`, and `offset` query parameters. `status=all` or an
-omitted status returns every status. The list response mirrors the current
+`status`, `source_channel`, `search`, `limit`, and `offset` query parameters.
+`source_channel` accepts only `mobile`, `public_web`, or `admin` and filters the
+canonical value stored on `event_registrations`; it is never derived from user
+or metadata state. `status=all` or an omitted status returns every status. The
+list response mirrors the current
 web-admin registration row needs: registration ids, event and occurrence ids,
-participant user id, display name, email, phone, status, seats, guest names,
+participant user id, display name, email, phone, status, `source_channel`, seats, guest names,
 comment, payment status/id, registration/confirmation/cancellation timestamps,
 occurrence title/times, selected participation-option snapshots, total amount,
 and created/updated timestamps. When `occurrence_id` is provided, the
 occurrence must belong to the event and only that occurrence's registrations
 are returned. When it is omitted, the endpoint returns event-scoped
 registrations across the event.
+
+The web-registration operations endpoints require an active `admin`
+membership; `event_manager` and `member` are rejected. The optional
+`community_id` on the summary selects one actively administered community; if
+omitted, counts are scoped across the actor's active admin communities. The
+summary returns only `active_email_verification_intents`,
+`open_identity_conflicts`, `open_privacy_requests`, and
+`overdue_privacy_requests`. An active verification intent has status
+`email_verification_required` and a future `expires_at`; expired and confirmed
+intents are excluded. Unconfirmed intents are not final registrations, reserve
+no seats, and do not occupy capacity.
+
+`GET /admin/web-registration/conflicts` supports `status=open|resolved`,
+`limit`, and `offset`. Its response is restricted to conflict/intent technical
+ids, category/status, event/occurrence ids, intent status, and creation/
+resolution timestamps. Submitted names and contact data, option/answer/legal
+payloads, flow credentials, verification codes, and idempotency/fingerprint
+hashes are not selected or returned. `PATCH` accepts only `status=open|resolved`:
+resolving uses backend time and is idempotent, while reopening clears
+`resolved_at`. It never merges users, edits either profile or login identity,
+changes the intent, or creates a registration. Cross-community ids use the same
+safe not-found response as missing ids. Automatic identity merging is
+explicitly prohibited.
 
 `GET /admin/events/{event_id}/registration-capacity` accepts optional
 `occurrence_id`. For capacity analytics, an omitted `occurrence_id` scopes to
@@ -2231,16 +2260,29 @@ provider defaults remain unchanged in this PR.
 `GET /admin/privacy/requests` and `PATCH /admin/privacy/requests/{request_id}`
 require an active `admin` membership; `event_manager` is not allowed. The list
 is scoped to requests whose `community_id` is one of the actor's admin
-communities and supports optional `status` and `community_id` query filters
+communities and supports optional `status`, `community_id`, `request_type`, and
+`overdue_only` query filters
 (a `community_id` outside the actor's admin communities returns `403`).
+`overdue_only=true` returns only requests with a non-null past `due_at` whose
+status is not terminal; the single terminal set is `resolved`, `rejected`, and
+`closed`. Admin responses preserve existing status/resolution fields and also
+return `identity_verified_at`, `processing_stopped_at`, `execution_started_at`,
+`completed_at`, `due_at`, `failure_code`, `destruction_evidence_id`, and
+`cancelled_at`. They do not expose destruction-evidence category details or
+encrypted notification recipient/ciphertext metadata.
 Requests without a `community_id` are not visible to community admins and are
 reserved for a future global-admin surface. `PATCH` updates only `status`
 (`open/reviewed/resolved/rejected/closed`) and `resolution_note` (≤ 4000).
 Moving to `resolved`, `rejected`, or `closed` stamps `resolved_at` and
 `resolved_by` with the acting admin; moving back to `open` or `reviewed`
 clears them. Request fulfillment (export/deletion execution) is out of scope;
-these endpoints only record and track requests. Push endpoints remain
+these endpoints only record and track requests. They do not run erasure or
+restore replay and do not query or serialize `prayer_activity_logs`. Push endpoints remain
 unimplemented.
+
+The source, summary, conflict, and expanded privacy contracts in this release
+are backend-only. Web-admin UI and TypeScript-client integration follow in
+focused PRs, beginning with `feature/admin-registration-source-status`.
 
 ### Later Admin Groups
 
@@ -2640,4 +2682,4 @@ approved here. Backup retention/purge, production S3 and SMTP residency, and a
 real restore drill remain owner/legal/operations responsibilities. The replay
 command does not restore or purge backups and does not claim production backup
 policy complete. The next implementation PR is
-`feature/admin-web-registration-operations`.
+`feature/admin-registration-source-status`.
