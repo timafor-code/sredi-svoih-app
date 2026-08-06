@@ -12,6 +12,7 @@ import type {
   AdminRegistrationAttendanceStatus,
   AdminRegistrationEventSummary,
   AdminRegistrationOptionSelectionSummary,
+  AdminRegistrationSourceChannel,
   AdminRegistrationStatus,
   AdminRegistrationStatusUpdate,
   ListEventRegistrationsParams,
@@ -101,6 +102,14 @@ function normalizeSelectedOptions(
   return value.map(normalizeSelectionValue);
 }
 
+function normalizeRegistrationSourceChannel(value: unknown): AdminRegistrationSourceChannel {
+  if (value === "mobile" || value === "public_web" || value === "admin") {
+    return value;
+  }
+
+  throw new Error("Admin registration API returned an unsupported source_channel.");
+}
+
 function normalizeEventRegistrationRow(
   row: AdminApiEventRegistrationResponse,
 ): AdminEventRegistrationRow {
@@ -113,6 +122,7 @@ function normalizeEventRegistrationRow(
     email: nullableString(row.email),
     phone: nullableString(row.phone),
     status: requiredString(row.status, "pending"),
+    sourceChannel: normalizeRegistrationSourceChannel(row.source_channel),
     seatsCount: safeNumber(row.seats_count, 1),
     guestNames: normalizeStringArray(row.guest_names),
     comment: nullableString(row.comment),
@@ -286,6 +296,10 @@ export async function listEventRegistrations(
         occurrence_id: params.occurrenceId ?? undefined,
         offset: params.offset ?? undefined,
         search: params.search ?? undefined,
+        source_channel:
+          params.sourceChannel && params.sourceChannel !== "all"
+            ? params.sourceChannel
+            : undefined,
         status: params.status ?? undefined,
       },
     },

@@ -1,3 +1,5 @@
+import type { AdminRegistrationSourceChannel } from "./registrations";
+
 export type ApiErrorDetail = {
   field?: string;
   code: string;
@@ -292,6 +294,7 @@ export type AdminApiEventRegistrationResponse = {
   email: string | null;
   phone: string | null;
   status: string;
+  source_channel: AdminRegistrationSourceChannel;
   seats_count: number;
   guest_names: unknown[];
   comment: string | null;

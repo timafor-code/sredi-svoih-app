@@ -10,6 +10,8 @@ import {
   formatPaymentStatus,
   formatRegistrationAmount,
   getInitials,
+  getRegistrationSourceLabel,
+  getRegistrationSourceTone,
   getRegistrationStatusLabel,
   getRegistrationStatusTone,
   isSimulatedPaymentId,
@@ -50,6 +52,9 @@ export function RegistrationDetailPanel({
           <Badge tone={getRegistrationStatusTone(registration.status)}>
             {getRegistrationStatusLabel(registration.status)}
           </Badge>
+          <Badge tone={getRegistrationSourceTone(registration.sourceChannel)}>
+            {getRegistrationSourceLabel(registration.sourceChannel)}
+          </Badge>
           <Badge tone="glass">{registration.seatsCount} мест</Badge>
         </div>
       </div>
@@ -66,6 +71,10 @@ export function RegistrationDetailPanel({
         <DetailRow
           label="Сеанс"
           value={registration.occurrenceTitle ?? "Без отдельного сеанса"}
+        />
+        <DetailRow
+          label="Источник регистрации"
+          value={getRegistrationSourceLabel(registration.sourceChannel)}
         />
       </DetailSection>
 
