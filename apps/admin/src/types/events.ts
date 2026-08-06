@@ -19,6 +19,8 @@ export type AdminEventStatus = (typeof ADMIN_EVENT_STATUSES)[number];
 export type AdminEventVisibility = (typeof ADMIN_EVENT_VISIBILITIES)[number];
 export type AdminEventKind = (typeof ADMIN_EVENT_KINDS)[number];
 export type AdminEventRegistrationMode = (typeof ADMIN_EVENT_REGISTRATION_MODES)[number];
+export type AdminEventWebVisibility = "disabled" | "unlisted" | "listed";
+export type AdminEventWebVisibilityUpdate = Exclude<AdminEventWebVisibility, "listed">;
 
 export const EVENT_STATUS_LABELS: Record<AdminEventStatus, string> = {
   draft: "Черновик",
@@ -198,3 +200,20 @@ export type CreateAdminEventInput = AdminEventMutationInput & {
 };
 
 export type UpdateAdminEventInput = Partial<AdminEventMutationInput>;
+
+export type AdminEventOccurrenceUrl = {
+  occurrenceId: string;
+  startsAt: string;
+  url: string;
+};
+
+export type AdminEventWebRegistration = {
+  eventId: string;
+  webVisibility: AdminEventWebVisibility;
+  publicRegistrationUrl: string;
+  occurrenceUrls: AdminEventOccurrenceUrl[];
+};
+
+export type UpdateAdminEventWebRegistrationInput = {
+  webVisibility: AdminEventWebVisibilityUpdate;
+};

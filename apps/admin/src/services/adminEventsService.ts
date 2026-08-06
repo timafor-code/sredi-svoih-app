@@ -46,3 +46,7 @@ export {
   updateRegistrationStatus,
 } from "./adminRegistrationApiService";
 export { listAdminEventOccurrences as listRegistrationEventOccurrences } from "./adminEventOccurrencesApiService";
+export {
+  getAdminEventWebRegistration,
+  updateAdminEventWebRegistration,
+} from "./adminEventWebRegistrationService";
