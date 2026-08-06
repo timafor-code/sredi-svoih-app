@@ -24,11 +24,13 @@ Current repository behavior:
 - the privacy self-service schema foundation and access runtime are implemented:
   canonical-email verification issues hash-only codes and a short-lived,
   fixed-scope privacy session for own-data summary, limited JSON export, and
-  request creation; erasure execution is not implemented;
+  request creation; the reversible erasure lifecycle is implemented, while
+  irreversible worker execution is not;
 - the intent, email verification/finalization, identity/source/legal schema,
   and canonical public-web registration path are implemented;
 - event publication, computed UUID links, and the public registration-form API
-  are implemented; public web UI and privacy execution remain future contracts.
+  are implemented; public web UI and irreversible privacy worker execution
+  remain future contracts.
 
 Mobile, public web, and web-admin must use one FastAPI API and one canonical
 PostgreSQL model. They must not create a second backend, a separate web-user
@@ -540,15 +542,19 @@ are not approvals and must not be presented as final values.
    controls in web-admin.
 8. `feature/public-web-registration-account-claim` — intent confirmation,
    passwordless path, and account claim.
-9. Privacy self-service is split into three PRs:
+9. Privacy self-service is split into four PRs:
    - `feature/api-privacy-self-service-foundation` — PostgreSQL/Alembic
      credentials, scoped-session, lifecycle, nullable ownership, destruction
      evidence, and schema/regression tests (implemented);
    - `feature/api-privacy-self-service-access` — access request/confirmation,
      privacy session runtime, summary, limited JSON export, and verified request
      creation (implemented);
-   - `feature/api-privacy-erasure-execution` — destructive confirmation,
-     processing stop, deletion worker, and evidence completion (not implemented).
+   - `feature/api-privacy-erasure-lifecycle` — destructive confirmation,
+     reversible `deletion_pending` processing stop, credential revocation,
+     pending-intent invalidation, future free-registration cancellation, and
+     safe cancellation before execution (implemented);
+   - `feature/api-privacy-erasure-worker` — irreversible PostgreSQL/S3
+     deletion and evidence completion (not implemented).
 10. `feature/admin-web-registration-operations` — source/status, conflict, and
     privacy due-date operations.
 11. `feature/web-event-questionnaires-basic` — allowlisted ordinary questions
@@ -573,3 +579,27 @@ No value is invented for these unresolved decisions:
 - final privacy-policy and separate consent text;
 - whether capacity should ever be temporarily reserved before email
   confirmation (baseline MVP: no reservation).
+
+## Reversible Privacy Erasure Lifecycle
+
+`POST /privacy/requests/{request_id}/confirm-erasure` accepts only a valid
+`privacy_self_service` session and the exact confirmation literal
+`delete_my_data`. Before changing state, the API fails closed when any
+registration has a non-`internal_free` mode, payment identifier, financial
+payment status, priced option snapshot, or donation marker. Such requests need
+manual review until an approved retention matrix exists.
+
+A successful confirmation atomically moves the canonical user to
+`deletion_pending`, revokes auth/privacy sessions and one-time codes, removes
+only unfinished web-registration intents matched by canonical normalized
+`app_users.email`, and cancels future free registrations in canonical
+cancellable statuses. Past, attended, no-show, paid, and donation records are
+unchanged. Cancelled registrations stop counting toward capacity through the
+existing registration-status rules; capacity reservation rows are not deleted.
+
+`POST /privacy/requests/{request_id}/cancel-erasure` is available through a new
+privacy session only until worker execution begins. It restores the saved user
+status but never restores old credentials or cancelled registrations. The user
+must authenticate again and re-register, subject to current capacity. Existing
+and new public web-registration flows return generic identity/flow outcomes for
+`deletion_pending` users without exposing account status.

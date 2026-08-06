@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,8 +10,6 @@ from app.core.authorization import require_auth
 from app.db.models.core import AppUser
 from app.db.session import get_db_session
 from app.schemas.events import ApiResponse
-from app.schemas.privacy import PrivacyRequestCreateRequest, PrivacyRequestResponse
-from app.services import privacy as privacy_service
 from app.schemas.privacy import (
     PrivacyAccessAcceptedResponse,
     PrivacyAccessConfirmRequest,
@@ -18,9 +17,15 @@ from app.schemas.privacy import (
     PrivacyDataExportRequest,
     PrivacyDataExportResponse,
     PrivacyDataSummaryResponse,
+    PrivacyErasureConfirmRequest,
+    PrivacyErasureLifecycleResponse,
+    PrivacyRequestCreateRequest,
+    PrivacyRequestResponse,
     PrivacySessionResponse,
 )
+from app.services import privacy as privacy_service
 from app.services import privacy_access as privacy_access_service
+from app.services import privacy_erasure as privacy_erasure_service
 
 router = APIRouter(prefix="/privacy", tags=["privacy"])
 
@@ -128,6 +133,45 @@ async def create_privacy_request(
     return ApiResponse[PrivacyRequestResponse](
         data=PrivacyRequestResponse.model_validate(privacy_request),
     )
+
+
+@router.post(
+    "/requests/{request_id}/confirm-erasure",
+    response_model=ApiResponse[PrivacyErasureLifecycleResponse],
+)
+async def confirm_privacy_erasure(
+    request_id: UUID,
+    payload: PrivacyErasureConfirmRequest,
+    session: DbSession,
+    principal: PrivacyPrincipal,
+    response: Response,
+) -> ApiResponse[PrivacyErasureLifecycleResponse]:
+    response.headers["Cache-Control"] = "no-store"
+    result = await privacy_erasure_service.confirm_erasure(
+        session,
+        request_id=request_id,
+        user_id=principal.user_id,
+    )
+    return ApiResponse[PrivacyErasureLifecycleResponse](data=result)
+
+
+@router.post(
+    "/requests/{request_id}/cancel-erasure",
+    response_model=ApiResponse[PrivacyErasureLifecycleResponse],
+)
+async def cancel_privacy_erasure(
+    request_id: UUID,
+    session: DbSession,
+    principal: PrivacyPrincipal,
+    response: Response,
+) -> ApiResponse[PrivacyErasureLifecycleResponse]:
+    response.headers["Cache-Control"] = "no-store"
+    result = await privacy_erasure_service.cancel_erasure(
+        session,
+        request_id=request_id,
+        user_id=principal.user_id,
+    )
+    return ApiResponse[PrivacyErasureLifecycleResponse](data=result)
 
 
 @router.get(

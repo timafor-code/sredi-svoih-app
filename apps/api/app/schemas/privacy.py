@@ -135,8 +135,22 @@ class PrivacyDataExportResponse(BaseModel):
 
 
 class AdminPrivacyRequestResponse(PrivacyRequestResponse):
-    user_id: UUID
+    user_id: UUID | None
     resolved_by: UUID | None
+
+
+class PrivacyErasureConfirmRequest(BaseModel):
+    confirmation: Literal["delete_my_data"]
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class PrivacyErasureLifecycleResponse(BaseModel):
+    request_id: UUID
+    state: Literal["deletion_pending", "cancelled"]
+    processing_stopped_at: datetime
+    cancelled_at: datetime | None
+    registrations_require_reregistration_after_cancel: Literal[True] = True
 
 
 class AdminPrivacyRequestUpdateRequest(BaseModel):

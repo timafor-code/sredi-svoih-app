@@ -878,12 +878,25 @@ class PrivacySelfServiceAccessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(active_auth_sessions, 1)
         self.assertEqual(evidence_count, 0)
 
-        for suffix in ("confirm-erasure", "cancel-erasure"):
-            missing = await self.client.post(
-                f"/privacy/requests/{request_id}/{suffix}",
-                headers=self._bearer(token),
-            )
-            self.assertEqual(missing.status_code, 404)
+        lifecycle_calls = (
+            ("confirm-erasure", {"json": {"confirmation": "delete_my_data"}}),
+            ("cancel-erasure", {}),
+        )
+        for suffix, request_kwargs in lifecycle_calls:
+            for headers in (
+                None,
+                self._bearer(create_access_token(self.user_id)),
+            ):
+                rejected = await self.client.post(
+                    f"/privacy/requests/{request_id}/{suffix}",
+                    headers=headers,
+                    **request_kwargs,
+                )
+                self.assertEqual(rejected.status_code, 401)
+                self.assertEqual(
+                    rejected.json()["error"]["code"],
+                    "privacy_session_required",
+                )
 
     async def test_existing_authenticated_request_semantics_and_get_remain_auth_only(self) -> None:
         headers = self._bearer(create_access_token(self.other_user_id))

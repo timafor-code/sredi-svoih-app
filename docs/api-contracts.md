@@ -2488,3 +2488,55 @@ device token. A supplied occurrence must belong to the event.
 `receipt_checked_delivery_count`. It never returns recipient identities,
 Expo/device tokens, ticket or receipt payloads, profile names, contact details,
 or registration comments.
+
+## Privacy Erasure Lifecycle
+
+Both lifecycle routes require `Authorization: Bearer <privacy_session_token>`.
+An ordinary API JWT is not accepted. Responses set `Cache-Control: no-store`.
+
+### `POST /privacy/requests/{request_id}/confirm-erasure`
+
+The strict request body is:
+
+```json
+{
+  "confirmation": "delete_my_data"
+}
+```
+
+The response data is PII-free:
+
+```json
+{
+  "request_id": "UUID",
+  "state": "deletion_pending",
+  "processing_stopped_at": "2026-08-06T16:00:00Z",
+  "cancelled_at": null,
+  "registrations_require_reregistration_after_cancel": true
+}
+```
+
+Confirmation is idempotent for an already-confirmed request. The first
+successful transition revokes active auth/privacy sessions and codes, including
+the presenting privacy session. It stops unfinished public registration flows
+matched by canonical email and cancels future free registrations. It does not
+set `execution_started_at`, `completed_at`, `due_at`, or destruction evidence,
+and it does not delete the user or stored personal data.
+
+If payment, donation, priced-option, or non-free registration evidence exists,
+the route returns `409 privacy_erasure_manual_review_required` without any
+partial state change. Foreign request ids use the safe `404 not_found` shape.
+
+### `POST /privacy/requests/{request_id}/cancel-erasure`
+
+No request body is accepted. A successful response uses the same PII-free
+fields with `state = cancelled` and a non-null `cancelled_at`. Cancellation
+restores the saved user status and clears `deletion_requested_at`, but old
+sessions/codes and cancelled registrations are never restored. The subject must
+sign in or recover access again and re-register for events. Once
+`execution_started_at` is set, cancellation returns
+`409 privacy_erasure_already_started`.
+
+The future worker may select only deletion requests with a processing-stop
+timestamp, no cancellation, no completion, and a still-existing
+`deletion_pending` app user. Only that worker may set `execution_started_at`.

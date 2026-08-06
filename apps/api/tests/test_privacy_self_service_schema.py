@@ -82,10 +82,10 @@ class PrivacySelfServiceSchemaTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_alembic_head_and_database_metadata_include_foundation(self) -> None:
         script = ScriptDirectory.from_config(Config("alembic.ini"))
-        self.assertEqual(script.get_current_head(), "20260806120000")
+        self.assertEqual(script.get_current_head(), "20260806160000")
         self.assertEqual(
-            script.get_revision("20260806120000").down_revision,
-            "20260805220000",
+            script.get_revision("20260806160000").down_revision,
+            "20260806120000",
         )
 
         async with engine.connect() as connection:
@@ -345,6 +345,7 @@ class PrivacySelfServiceSchemaTests(unittest.IsolatedAsyncioTestCase):
                     user_id=user_id,
                     request_type="deletion",
                     status="open",
+                    pre_deletion_user_status="active",
                     identity_verified_at=now + timedelta(seconds=1),
                     processing_stopped_at=now + timedelta(seconds=2),
                     execution_started_at=now + timedelta(seconds=3),
@@ -395,6 +396,7 @@ class PrivacySelfServiceSchemaTests(unittest.IsolatedAsyncioTestCase):
                     PrivacyRequest(
                         user_id=user_id,
                         request_type="deletion",
+                        pre_deletion_user_status="active",
                         identity_verified_at=now + timedelta(seconds=1),
                         processing_stopped_at=now + timedelta(seconds=2),
                         execution_started_at=now + timedelta(seconds=3),
@@ -504,6 +506,7 @@ class PrivacySelfServiceSchemaTests(unittest.IsolatedAsyncioTestCase):
                         id=request_id,
                         user_id=user_id,
                         request_type="deletion",
+                        pre_deletion_user_status="active",
                         identity_verified_at=now + timedelta(seconds=1),
                         processing_stopped_at=now + timedelta(seconds=2),
                         execution_started_at=now + timedelta(seconds=3),

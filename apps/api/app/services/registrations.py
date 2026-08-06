@@ -898,6 +898,39 @@ async def register_user_for_event(
     )
 
 
+async def cancel_future_free_registrations_for_erasure(
+    session: AsyncSession,
+    *,
+    user_id: UUID,
+    now: datetime,
+) -> int:
+    """Cancel cancellable future free registrations in the caller transaction."""
+    registrations = list(
+        await session.scalars(
+            select(EventRegistration)
+            .join(Event, Event.id == EventRegistration.event_id)
+            .outerjoin(
+                EventOccurrence,
+                EventOccurrence.id == EventRegistration.occurrence_id,
+            )
+            .where(
+                EventRegistration.user_id == user_id,
+                EventRegistration.status.in_(CANCELLABLE_REGISTRATION_STATUSES),
+                Event.registration_mode == FREE_REGISTRATION_MODE,
+                func.coalesce(EventOccurrence.starts_at, Event.starts_at) > now,
+            )
+            .order_by(EventRegistration.id)
+            .with_for_update(of=EventRegistration),
+        ),
+    )
+    for registration in registrations:
+        registration.status = "cancelled"
+        registration.cancelled_at = now
+        registration.updated_at = now
+    await session.flush()
+    return len(registrations)
+
+
 async def cancel_current_user_registration(
     session: AsyncSession,
     current_user: AppUser,
