@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import require_auth
@@ -43,13 +43,17 @@ PrivacyRequestActor = Annotated[
 )
 async def request_privacy_access(
     payload: PrivacyAccessRequest,
-    session: DbSession,
+    background_tasks: BackgroundTasks,
+    response: Response,
 ) -> ApiResponse[PrivacyAccessAcceptedResponse]:
-    result = await privacy_access_service.request_privacy_access(
-        session,
+    response.headers["Cache-Control"] = "no-store"
+    background_tasks.add_task(
+        privacy_access_service.process_privacy_access_request,
         normalized_email=payload.email,
     )
-    return ApiResponse[PrivacyAccessAcceptedResponse](data=result)
+    return ApiResponse[PrivacyAccessAcceptedResponse](
+        data=PrivacyAccessAcceptedResponse(),
+    )
 
 
 @router.post(
@@ -59,7 +63,9 @@ async def request_privacy_access(
 async def confirm_privacy_access(
     payload: PrivacyAccessConfirmRequest,
     session: DbSession,
+    response: Response,
 ) -> ApiResponse[PrivacySessionResponse]:
+    response.headers["Cache-Control"] = "no-store"
     result = await privacy_access_service.confirm_privacy_access(
         session,
         normalized_email=payload.email,
@@ -75,7 +81,9 @@ async def confirm_privacy_access(
 async def get_privacy_data_summary(
     session: DbSession,
     principal: PrivacyPrincipal,
+    response: Response,
 ) -> ApiResponse[PrivacyDataSummaryResponse]:
+    response.headers["Cache-Control"] = "no-store"
     result = await privacy_access_service.build_data_summary(
         session,
         principal.user_id,
@@ -91,7 +99,9 @@ async def export_privacy_data(
     payload: PrivacyDataExportRequest,
     session: DbSession,
     principal: PrivacyPrincipal,
+    response: Response,
 ) -> ApiResponse[PrivacyDataExportResponse]:
+    response.headers["Cache-Control"] = "no-store"
     result = await privacy_access_service.build_data_export(
         session,
         principal.user_id,

@@ -436,6 +436,10 @@ POST /privacy/requests
 and SMTP-failure cases. Eligible users receive a six-digit code. The database
 stores only a server-secret HMAC produced from the user-id-separated code input;
 failed delivery rolls back the new code and leaves no usable credential.
+Every valid request schedules the same managed post-response handler, which
+opens its own database session and performs the hashed per-email rate limit,
+canonical lookup, code transaction, and SMTP delivery only after the 202
+response has been sent. No raw `asyncio.create_task` is used.
 
 `POST /privacy/access/confirm` uses one enumeration-safe
 `invalid_or_expired_privacy_code` error for an unknown or erased subject and for
@@ -455,6 +459,8 @@ Push tokens, synced-contact hashes/data, avatar binary/object keys/signed URLs,
 password/session hashes, other users' records, and feedback content are absent.
 Prayer activity is represented only by an excluded-category marker; the
 summary and export do not query or count `prayer_activity_logs`.
+Access request/confirmation, summary, and export responses include
+`Cache-Control: no-store`.
 
 The existing `POST /privacy/requests` accepts either ordinary API auth or a
 verified privacy session. Privacy-session creation forces the verified user id,

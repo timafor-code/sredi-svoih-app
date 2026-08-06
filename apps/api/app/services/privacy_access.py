@@ -12,6 +12,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.core.authorization import get_current_user
 from app.core.config import get_settings
@@ -33,9 +34,8 @@ from app.db.models.core import (
     Profile,
     SyncedContact,
 )
-from app.db.session import get_db_session
+from app.db.session import AsyncSessionLocal, get_db_session
 from app.schemas.privacy import (
-    PrivacyAccessAcceptedResponse,
     PrivacyCategorySummary,
     PrivacyDataExportResponse,
     PrivacyDataSummaryResponse,
@@ -160,21 +160,35 @@ async def _new_unique_code(
     raise RuntimeError("Unable to generate privacy access credential")
 
 
-async def request_privacy_access(
+async def process_privacy_access_request(
+    *,
+    normalized_email: str,
+) -> None:
+    try:
+        async with AsyncSessionLocal() as session:
+            await _process_privacy_access_request(
+                session,
+                normalized_email=normalized_email,
+            )
+    except Exception:
+        logger.warning("Privacy access request could not be completed")
+
+
+async def _process_privacy_access_request(
     session: AsyncSession,
     *,
     normalized_email: str,
-) -> PrivacyAccessAcceptedResponse:
+) -> None:
     decision = _privacy_rate_limiter().consume(
         _privacy_email_rate_limit_key(normalized_email),
     )
     if not decision.allowed:
-        return PrivacyAccessAcceptedResponse()
+        return
 
     user = await _find_user_by_email(session, normalized_email)
     if user is None or user.email is None or user.erased_at is not None:
         await session.rollback()
-        return PrivacyAccessAcceptedResponse()
+        return
 
     settings = get_settings()
     try:
@@ -200,7 +214,8 @@ async def request_privacy_access(
             ),
         )
         await session.flush()
-        delivery = send_privacy_access_code(
+        delivery = await run_in_threadpool(
+            send_privacy_access_code,
             to_address=user.email,
             code=code,
             expiration_minutes=settings.api_privacy_access_code_ttl_minutes,
@@ -215,8 +230,6 @@ async def request_privacy_access(
     except Exception:
         await session.rollback()
         logger.warning("Privacy access request could not be completed")
-
-    return PrivacyAccessAcceptedResponse()
 
 
 async def confirm_privacy_access(

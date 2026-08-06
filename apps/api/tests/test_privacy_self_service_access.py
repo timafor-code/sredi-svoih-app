@@ -3,12 +3,14 @@ from __future__ import annotations
 import logging
 import unittest
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import httpx
+from fastapi import BackgroundTasks, Response
 from sqlalchemy import delete, event, func, select, update
 
+from app.api import privacy as privacy_api
 from app.core.tokens import create_access_token
 from app.db.models.auth import AuthSession, PrivacyAccessCode, PrivacyAccessSession
 from app.db.models.avatar import ProfileAvatar
@@ -30,6 +32,7 @@ from app.db.models.core import (
 )
 from app.db.session import AsyncSessionLocal, engine
 from app.main import app
+from app.schemas.privacy import PrivacyAccessRequest
 from app.services import privacy_access as service
 from app.services.auth_tokens import hash_token
 from app.services.email_delivery import EmailSendResult
@@ -315,6 +318,60 @@ class PrivacySelfServiceAccessTests(unittest.IsolatedAsyncioTestCase):
     def _bearer(token: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {token}"}
 
+    async def test_access_route_only_schedules_the_same_background_handler(self) -> None:
+        scheduled = []
+        with patch("app.services.privacy_access.send_privacy_access_code") as delivery:
+            for email in (
+                self.email,
+                f"missing-{self.marker}@example.invalid",
+            ):
+                background_tasks = BackgroundTasks()
+                response = Response()
+                result = await privacy_api.request_privacy_access(
+                    PrivacyAccessRequest(email=email),
+                    background_tasks,
+                    response,
+                )
+
+                self.assertTrue(result.data.accepted)
+                self.assertEqual(response.headers["Cache-Control"], "no-store")
+                self.assertEqual(len(background_tasks.tasks), 1)
+                scheduled.append(background_tasks.tasks[0])
+
+        delivery.assert_not_called()
+        self.assertIs(scheduled[0].func, service.process_privacy_access_request)
+        self.assertIs(scheduled[1].func, service.process_privacy_access_request)
+        self.assertEqual(scheduled[0].kwargs, {"normalized_email": self.email})
+        self.assertEqual(
+            scheduled[1].kwargs,
+            {"normalized_email": f"missing-{self.marker}@example.invalid"},
+        )
+
+    async def test_background_handler_opens_its_own_database_session(self) -> None:
+        background_session = object()
+
+        class SessionContext:
+            async def __aenter__(self):
+                return background_session
+
+            async def __aexit__(self, _exc_type, _exc, _traceback):
+                return False
+
+        processor = AsyncMock()
+        with patch.object(service, "AsyncSessionLocal", return_value=SessionContext()), patch.object(
+            service,
+            "_process_privacy_access_request",
+            processor,
+        ):
+            await service.process_privacy_access_request(
+                normalized_email=self.email,
+            )
+
+        processor.assert_awaited_once_with(
+            background_session,
+            normalized_email=self.email,
+        )
+
     async def test_access_request_is_generic_and_uses_only_canonical_email(self) -> None:
         known = await self.client.post(
             "/privacy/access/request",
@@ -339,6 +396,22 @@ class PrivacySelfServiceAccessTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(response.json()["error"])
             self.assertEqual(set(response.json()["meta"]), {"request_id"})
         self.assertEqual([item[0] for item in self.deliveries], [self.email])
+        async with AsyncSessionLocal() as session:
+            code_counts = {
+                user_id: await session.scalar(
+                    select(func.count(PrivacyAccessCode.id)).where(
+                        PrivacyAccessCode.user_id == user_id,
+                    ),
+                )
+                for user_id in (
+                    self.user_id,
+                    self.other_user_id,
+                    self.erased_user_id,
+                )
+            }
+        self.assertEqual(code_counts[self.user_id], 1)
+        self.assertEqual(code_counts[self.other_user_id], 0)
+        self.assertEqual(code_counts[self.erased_user_id], 0)
 
     async def test_passwordless_suspended_user_needs_no_membership(self) -> None:
         async with AsyncSessionLocal() as session:
@@ -362,6 +435,13 @@ class PrivacySelfServiceAccessTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(item.status_code == 202 for item in responses))
         self.assertTrue(all(item.json()["data"] == {"accepted": True} for item in responses))
         self.assertEqual(len(self.deliveries), 5)
+        async with AsyncSessionLocal() as session:
+            created_before_rate_limit = await session.scalar(
+                select(func.count(PrivacyAccessCode.id)).where(
+                    PrivacyAccessCode.user_id == self.user_id,
+                ),
+            )
+        self.assertEqual(created_before_rate_limit, 5)
 
         service._privacy_email_rate_limiter = None
         with patch(
@@ -396,6 +476,37 @@ class PrivacySelfServiceAccessTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
         self.assertEqual(usable, 0)
+
+    async def test_privacy_credentials_and_data_are_not_cacheable(self) -> None:
+        requested = await self.client.post(
+            "/privacy/access/request",
+            json={"email": self.email},
+        )
+        self.assertEqual(requested.headers.get("Cache-Control"), "no-store")
+        code = self.deliveries[-1][1]
+
+        confirmed = await self.client.post(
+            "/privacy/access/confirm",
+            json={"email": self.email, "code": code},
+        )
+        self.assertEqual(confirmed.status_code, 200)
+        self.assertEqual(confirmed.headers.get("Cache-Control"), "no-store")
+        token = confirmed.json()["data"]["privacy_session_token"]
+
+        summary = await self.client.get(
+            "/privacy/data-summary",
+            headers=self._bearer(token),
+        )
+        self.assertEqual(summary.status_code, 200)
+        self.assertEqual(summary.headers.get("Cache-Control"), "no-store")
+
+        exported = await self.client.post(
+            "/privacy/data-export",
+            headers=self._bearer(token),
+            json={"format": "json"},
+        )
+        self.assertEqual(exported.status_code, 200)
+        self.assertEqual(exported.headers.get("Cache-Control"), "no-store")
 
     async def test_codes_are_hash_only_user_domain_separated_and_replaced(self) -> None:
         with patch("app.services.privacy_access.secrets.randbelow", return_value=123456):

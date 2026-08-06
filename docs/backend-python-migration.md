@@ -1484,6 +1484,11 @@ The access endpoint resolves ownership only through case-insensitive canonical
 external identity, or password/claim/account-active eligibility. Before proof,
 all valid requests return the same HTTP 202 accepted envelope, including
 unknown, erased, rate-limited, SMTP-disabled, and SMTP-failure cases.
+The synchronous response path performs none of those decisions: it schedules
+the same FastAPI/Starlette post-response handler for every valid request and
+does not wait for lookup, code creation, or SMTP. The handler creates its own
+`AsyncSession`; the hashed per-email limiter and canonical lookup run only
+there.
 
 Access codes are six ASCII digits generated with `secrets`. Plaintext exists
 only in memory and the outbound privacy email. At rest, the existing HMAC token
@@ -1494,6 +1499,10 @@ rolls the transaction back and leaves no new usable credential. Provider
 details, recipient, and code are not logged. Real SMTP smoke is deferred to the
 production SMTP/deploy stage; automated tests use fakes/mocks around the
 existing `send_email` boundary.
+
+Access request/confirmation, summary, and export responses set
+`Cache-Control: no-store`, preventing privacy credentials and personal data
+from being retained by browser or intermediary caches.
 
 Successful confirmation consumes the locked code, revokes prior privacy
 sessions, and returns an opaque `secrets.token_urlsafe` credential once. Only

@@ -2272,11 +2272,19 @@ known, unknown, erased, rate-limited, SMTP-disabled, or SMTP-failure case:
 }
 ```
 
+The response path only schedules the same managed post-response handler for
+every valid request. It does not wait for rate limiting, user lookup, code
+creation, or SMTP delivery. The handler opens its own database session; only
+inside that session does it apply the hashed per-email limiter and canonical
+`app_users.email` lookup.
+
 Eligible requests generate exactly six ASCII digits. Plaintext exists only in
 memory and the email. The database stores the server-secret HMAC of
 `privacy-access-code:{user_id}:{code}` through the existing token hasher. A
 successfully delivered replacement invalidates older active codes. Disabled or
 failed delivery rolls the transaction back, so no new usable code remains.
+The user row is locked while the replacement is prepared, and commit occurs
+only after successful delivery.
 
 Local settings are:
 
@@ -2327,6 +2335,10 @@ input `privacy-session:{token}`. Response:
 The token is returned once. `API_PRIVACY_SESSION_TTL_MINUTES` defaults locally
 to 15. It is opaque, not a JWT, creates no refresh token or `auth_sessions` row,
 and does not update login/account/profile/membership state.
+
+Successful responses from access request/confirmation, data summary, and data
+export include `Cache-Control: no-store`; privacy tokens and personal data must
+not be retained by browser or intermediary caches.
 
 ### Privacy session authorization
 
