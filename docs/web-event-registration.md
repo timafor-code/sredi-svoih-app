@@ -470,17 +470,17 @@ sets `identity_verified_at`, and applies the existing active-membership
 community resolution. It only records the request. `GET /privacy/requests`
 remains ordinary-auth-only.
 
-The following destructive endpoints and execution behavior remain target-only
-and are not implemented:
+The destructive lifecycle endpoints are implemented:
 
 ```text
 POST /privacy/requests/{request_id}/confirm-erasure
 POST /privacy/requests/{request_id}/cancel-erasure
 ```
 
-Creating a deletion request does not change user status, stop processing,
-revoke auth sessions, cancel registrations, release capacity, run a worker, or
-create destruction evidence. Those actions belong to the erasure-execution PR.
+Creating a deletion request alone does not change user status or run erasure.
+Explicit privacy-session confirmation performs the reversible processing stop;
+the separate operational worker CLI performs irreversible execution for one
+request id. Cancellation remains available only before worker claim.
 
 Real SMTP smoke is deferred to the production SMTP/deploy stage; automated
 coverage uses fakes/mocks around the existing SMTP boundary. The current
@@ -554,7 +554,7 @@ are not approvals and must not be presented as final values.
      pending-intent invalidation, future free-registration cancellation, and
      safe cancellation before execution (implemented);
    - `feature/api-privacy-erasure-worker` — irreversible PostgreSQL/S3
-     deletion and evidence completion (not implemented).
+     deletion and evidence completion (implemented).
 10. `feature/admin-web-registration-operations` — source/status, conflict, and
     privacy due-date operations.
 11. `feature/web-event-questionnaires-basic` — allowlisted ordinary questions
@@ -603,3 +603,42 @@ status but never restores old credentials or cancelled registrations. The user
 must authenticate again and re-register, subject to current capacity. Existing
 and new public web-registration flows return generic identity/flow outcomes for
 `deletion_pending` users without exposing account status.
+
+## Privacy Erasure Worker
+
+Irreversible erasure is an explicit one-request operational action, not an HTTP
+endpoint or automatic queue consumer:
+
+```text
+python scripts/run_privacy_erasure.py --request-id <UUID>
+```
+
+The worker first claims and commits the confirmed request under PostgreSQL row
+locks by setting `execution_started_at`. A separate execution transaction
+locks the request and canonical user again, repeats lifecycle and financial
+fail-closed checks, and holds the request lock through private-S3 deletion and
+PostgreSQL completion. Concurrent runs therefore serialize; retries preserve
+the original claim timestamp, and a run after completion returns
+`already_completed` without another S3 call or evidence row.
+
+All recorded avatar objects are deleted from private S3 before PostgreSQL PII.
+An S3 failure rolls the execution transaction back and leaves database PII for
+retry. PostgreSQL deletion removes the verified subject's credentials,
+sessions, profile/contact surfaces, memberships, free registrations and their
+dependents, legal acceptances, feedback, web intents, device data, synced
+contacts, and avatar metadata. Prayer activity is removed only by a direct
+user-scoped `DELETE`; its rows and content are never selected, serialized,
+counted by type, or logged.
+
+Privacy-request content is scrubbed while minimal technical lifecycle rows
+remain. `app_users` is deleted last. Operational actor references, including
+admin event-publication audit history, remain and become `NULL` through
+verified `ON DELETE SET NULL` foreign keys. The same transaction creates one
+evidence row containing a keyed subject reference and sorted technical category
+codes, never raw identifiers, counts, contact data, object keys, payment data,
+request text, or prayer data.
+
+Automatic scheduling, queue polling, reliable completion notification, backup
+erasure replay, and final retention periods are not implemented. Reliable
+completion notification is reserved for
+`feature/api-privacy-erasure-completion-notification`.

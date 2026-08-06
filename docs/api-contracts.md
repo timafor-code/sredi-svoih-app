@@ -1316,8 +1316,8 @@ Privacy self-service surface:
 | GET | `/privacy/data-summary` | Implemented verified-subject category counts/presence. |
 | POST | `/privacy/data-export` | Implemented synchronous allowlisted JSON export v1. |
 | POST | `/privacy/requests` | Implemented for ordinary auth and verified privacy sessions. |
-| POST | `/privacy/requests/{request_id}/confirm-erasure` | Target; not implemented. |
-| POST | `/privacy/requests/{request_id}/cancel-erasure` | Target; not implemented. |
+| POST | `/privacy/requests/{request_id}/confirm-erasure` | Implemented privacy-session-only processing stop. |
+| POST | `/privacy/requests/{request_id}/cancel-erasure` | Implemented before irreversible worker claim. |
 
 All pre-verification responses are generic. Email is compared in normalized,
 case-insensitive form and phone in E.164 form. Conflicting rows are never
@@ -2409,10 +2409,11 @@ expanded `privacy_requests` lifecycle fields, and PII-free
 `privacy_destruction_evidence` reuse the PR #344 storage foundation.
 `privacy_requests.user_id` is nullable and uses `ON DELETE SET NULL`; evidence
 has no user foreign key and contains only allowlisted technical category codes.
-Email-scoped request/confirm, summary, synchronous JSON export, and verified
-request creation are implemented. Destructive confirmation, cancellation,
-processing stop, deletion, worker execution, and evidence completion remain
-not implemented. Creating a deletion request changes none of those states.
+Email-scoped request/confirm, summary, synchronous JSON export, verified
+request creation, destructive confirmation/cancellation, processing stop, and
+one-request worker execution are implemented. Creating a deletion request alone
+changes none of those states; execution requires explicit confirmation and an
+explicit operational CLI invocation.
 `GET /privacy/requests` remains ordinary-auth-only. Existing authenticated list
 and admin privacy response shapes do not expose internal lifecycle or evidence
 fields.
@@ -2545,6 +2546,37 @@ sign in or recover access again and re-register for events. Once
 `execution_started_at` is set, cancellation returns
 `409 privacy_erasure_already_started`.
 
-The future worker may select only deletion requests with a processing-stop
+The worker accepts only deletion requests with a processing-stop
 timestamp, no cancellation, no completion, and a still-existing
 `deletion_pending` app user. Only that worker may set `execution_started_at`.
+
+### Operational privacy-erasure CLI
+
+Privacy erasure has no HTTP, admin, or public worker endpoint. An operator runs
+exactly one confirmed request:
+
+```text
+python scripts/run_privacy_erasure.py --request-id <UUID>
+```
+
+Safe stdout JSON contains `request_id`, `execution_version`, and one stable
+result: `completed`, `already_completed`, `retryable_failure`, or
+`not_eligible`. It may include a destruction-evidence id after completion and
+one stable failure code:
+
+- `privacy_erasure_manual_review_required`;
+- `privacy_erasure_avatar_storage_failed`;
+- `privacy_erasure_database_failed`;
+- `privacy_erasure_subject_missing`;
+- `privacy_erasure_subject_state_invalid`.
+
+Completed and already-completed results exit 0, retryable failures exit 1,
+ineligible/manual-review states exit 2, and invalid arguments exit 64. Output
+never contains a user id, contact data, object key, category count,
+payment/prayer data, SQL/provider detail, or exception text. A valid completed
+request returns its existing evidence without calling S3 again.
+
+No completion email is sent by this worker. Reliable post-commit notification
+requires a separate PII-controlled transactional outbox and remains scoped to
+`feature/api-privacy-erasure-completion-notification`. Scheduling and polling
+are also not implemented.

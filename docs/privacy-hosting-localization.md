@@ -67,9 +67,10 @@ The Python API records data-subject style privacy requests in the API-owned
 `privacy_requests` table. `POST /privacy/requests` and `GET /privacy/requests`
 are scoped to the authenticated user; admin review through
 `/admin/privacy/requests` is admin-only and community-scoped. These endpoints
-record and track requests only: no export, deletion, or correction is executed
-by the API in this phase, and no emails are sent. Request `message` text is
-treated as personal data and must not be logged raw.
+record and track requests. Irreversible deletion is not exposed as an API
+endpoint; after explicit privacy-session confirmation, an operator executes one
+request through the backend CLI. No completion email is sent by the current
+worker. Request `message` text is personal data and must not be logged raw.
 
 Device tokens registered through `POST /me/device-tokens` are push-token PII
 stored in the API-owned `device_tokens` table, upserted per
@@ -153,8 +154,16 @@ capacity rows, questionnaire answers, device/contact/avatar data, S3 objects,
 exports, logs, and backups under their approved schedules. The execution must
 be idempotent, release capacity for cancelled future registrations, replay an
 erasure register after restore, and create required destruction evidence
-without retaining the erased PII. Retention periods and any legally required
-limited preservation remain launch decisions and must not be invented.
+without retaining the erased PII. The current worker deletes every recorded
+avatar object from the configured private S3-compatible Russian storage before
+committing PostgreSQL identity deletion. Retention periods and any legally
+required limited preservation remain launch decisions and must not be invented.
+
+No claim is made that backups are currently purged. A restore-erasure replay
+mechanism, tested restore procedure, and evidence that erased identities are
+not reintroduced are launch gates. Backup retention remains unresolved and
+must be approved rather than inferred from application behavior; this worker
+does not establish production readiness.
 
 The `prayer_activity_logs` data remains private. It must not be exposed through
 web-admin, public registration, privacy administration views, exports for event
@@ -207,6 +216,11 @@ approved retention matrix exists.
 
 Cancellation is allowed only before irreversible worker execution. It restores
 the saved user status but does not restore credentials or registrations. The
-separate worker remains responsible for user-scoped physical deletion, S3
-object removal, backup/retention handling, and destruction evidence. Prayer
-activity remains unread and unchanged in this lifecycle stage.
+one-request worker now performs user-scoped PostgreSQL deletion, private-S3
+object removal, and PII-free destruction evidence. It deletes `app_users` last
+and preserves operational audit rows through nullable actor FKs. Prayer
+activity remains unread: execution uses only a direct user-scoped `DELETE`
+without selecting or logging its content.
+
+Backup cleanup and restore-erasure replay remain unimplemented launch gates;
+the worker does not silently assign a backup retention period.

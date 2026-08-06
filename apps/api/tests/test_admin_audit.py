@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect as python_inspect
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from alembic.config import Config
@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.audit import AdminEventAuditEntry
+from app.db.models.core import AppUser
 from app.db.session import AsyncSessionLocal, engine
 from app.services import admin_audit as service
 
@@ -21,6 +22,16 @@ class AdminEventAuditTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.actor_user_id = uuid4()
         self.event_id = uuid4()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(
+                    AppUser(
+                        id=self.actor_user_id,
+                        account_origin="admin",
+                        claim_state="claimed",
+                        status="active",
+                    ),
+                )
 
     async def asyncTearDown(self) -> None:
         try:
@@ -34,6 +45,9 @@ class AdminEventAuditTests(unittest.IsolatedAsyncioTestCase):
                                 AdminEventAuditEntry.event_id == self.event_id,
                             ),
                         ),
+                    )
+                    await session.execute(
+                        delete(AppUser).where(AppUser.id == self.actor_user_id),
                     )
         finally:
             await engine.dispose()
@@ -67,7 +81,14 @@ class AdminEventAuditTests(unittest.IsolatedAsyncioTestCase):
         }
         model_columns = inspect(AdminEventAuditEntry).columns
         self.assertEqual(set(model_columns.keys()), expected_columns)
-        self.assertTrue(all(not column.nullable for column in model_columns))
+        self.assertTrue(model_columns["actor_user_id"].nullable)
+        self.assertTrue(
+            all(
+                not column.nullable
+                for name, column in model_columns.items()
+                if name != "actor_user_id"
+            ),
+        )
         self.assertTrue(
             all(not isinstance(column.type, (JSON, JSONB)) for column in model_columns),
         )
@@ -109,8 +130,28 @@ class AdminEventAuditTests(unittest.IsolatedAsyncioTestCase):
             {column["name"] for column in database_schema["columns"]},
             expected_columns,
         )
-        self.assertTrue(all(not column["nullable"] for column in database_schema["columns"]))
-        self.assertEqual(database_schema["foreign_keys"], [])
+        nullable_by_name = {
+            column["name"]: column["nullable"]
+            for column in database_schema["columns"]
+        }
+        self.assertTrue(nullable_by_name["actor_user_id"])
+        self.assertTrue(
+            all(
+                not nullable
+                for name, nullable in nullable_by_name.items()
+                if name != "actor_user_id"
+            ),
+        )
+        self.assertEqual(len(database_schema["foreign_keys"]), 1)
+        actor_fk = database_schema["foreign_keys"][0]
+        self.assertEqual(
+            actor_fk["name"],
+            "admin_event_audit_entries_actor_user_id_fkey",
+        )
+        self.assertEqual(actor_fk["constrained_columns"], ["actor_user_id"])
+        self.assertEqual(actor_fk["referred_table"], "app_users")
+        self.assertEqual(actor_fk["referred_columns"], ["id"])
+        self.assertEqual(actor_fk["options"].get("ondelete"), "SET NULL")
         self.assertEqual(
             {constraint["name"] for constraint in database_schema["constraints"]},
             {
@@ -326,6 +367,62 @@ class AdminEventAuditTests(unittest.IsolatedAsyncioTestCase):
         service_source = python_inspect.getsource(service)
         self.assertNotIn("logging", service_source)
         self.assertNotIn("logger", service_source)
+
+    def test_actor_fk_migration_metadata_and_guards(self) -> None:
+        script = ScriptDirectory.from_config(Config("alembic.ini"))
+        self.assertEqual(script.get_current_head(), "20260806190000")
+        revision = script.get_revision("20260806190000")
+        self.assertEqual(revision.down_revision, "20260806180000")
+
+        migration_op = MagicMock()
+        bind = migration_op.get_bind.return_value
+        orphan_marker = uuid4()
+        bind.scalar.return_value = 1
+        with patch.object(revision.module, "op", migration_op):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "orphan actor aggregate count: 1",
+            ) as raised:
+                revision.module.upgrade()
+        self.assertNotIn(str(orphan_marker), str(raised.exception))
+        migration_op.alter_column.assert_not_called()
+        migration_op.create_foreign_key.assert_not_called()
+
+        migration_op.reset_mock()
+        migration_op.get_bind.return_value.scalar.return_value = 0
+        with patch.object(revision.module, "op", migration_op):
+            revision.module.upgrade()
+        migration_op.alter_column.assert_called_once()
+        migration_op.create_foreign_key.assert_called_once_with(
+            "admin_event_audit_entries_actor_user_id_fkey",
+            "admin_event_audit_entries",
+            "app_users",
+            ["actor_user_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
+
+        migration_op.reset_mock()
+        migration_op.get_bind.return_value.scalar.return_value = 1
+        with patch.object(revision.module, "op", migration_op):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "null actor aggregate count: 1",
+            ):
+                revision.module.downgrade()
+        migration_op.drop_constraint.assert_not_called()
+        migration_op.alter_column.assert_not_called()
+
+        migration_op.reset_mock()
+        migration_op.get_bind.return_value.scalar.return_value = 0
+        with patch.object(revision.module, "op", migration_op):
+            revision.module.downgrade()
+        migration_op.drop_constraint.assert_called_once_with(
+            "admin_event_audit_entries_actor_user_id_fkey",
+            "admin_event_audit_entries",
+            type_="foreignkey",
+        )
+        migration_op.alter_column.assert_called_once()
 
     async def test_database_is_at_dynamic_alembic_head(self) -> None:
         expected = ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
