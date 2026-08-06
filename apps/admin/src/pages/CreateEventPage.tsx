@@ -182,6 +182,11 @@ export function CreateEventPage({ onBackToList, onCreated }: CreateEventPageProp
           submitting={submitting}
         />
       </GlassCard>
+
+      <GlassCard className="event-web-registration-create-notice" elevated>
+        <h2>Веб-регистрация</h2>
+        <p>Сохраните событие, чтобы получить стабильную ссылку на страницу регистрации.</p>
+      </GlassCard>
     </div>
   );
 }

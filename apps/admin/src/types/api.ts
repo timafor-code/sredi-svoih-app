@@ -169,6 +169,21 @@ export type AdminApiEventResponse = {
   updated_at: string;
 };
 
+export type AdminApiEventWebVisibility = "disabled" | "unlisted" | "listed";
+
+export type AdminApiEventOccurrenceUrlResponse = {
+  occurrence_id: string;
+  starts_at: string;
+  url: string;
+};
+
+export type AdminApiEventWebRegistrationResponse = {
+  event_id: string;
+  web_visibility: AdminApiEventWebVisibility;
+  public_registration_url: string;
+  occurrence_urls: AdminApiEventOccurrenceUrlResponse[];
+};
+
 export type AdminApiEventCategoryResponse = {
   id: string;
   community_id: string;

@@ -4357,6 +4357,149 @@ a {
   overflow: hidden;
 }
 
+.event-web-registration-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.event-web-registration-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.event-web-registration-card__head h2,
+.event-web-registration-create-notice h2 {
+  margin: 0 0 5px;
+  color: var(--text);
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.event-web-registration-card__head p,
+.event-web-registration-create-notice p,
+.event-web-registration-card__availability p,
+.event-web-registration-card__listed p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.event-web-registration-card__state {
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.event-web-registration-card__publication {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.event-web-registration-card__listed,
+.event-web-registration-card__availability {
+  display: grid;
+  gap: 4px;
+  border-left: 3px solid var(--gold);
+  padding: 10px 12px;
+  background: rgba(242, 184, 75, 0.08);
+}
+
+.event-web-registration-card__listed {
+  border-left-color: #9badff;
+  background: rgba(107, 127, 212, 0.1);
+}
+
+.event-web-registration-card__listed strong,
+.event-web-registration-card__availability strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.event-web-registration-card__main-link {
+  display: grid;
+  gap: 10px;
+}
+
+.event-web-registration-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.event-web-registration-card__open-link {
+  text-decoration: none;
+}
+
+.event-web-registration-feedback {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.event-web-registration-feedback--success {
+  color: var(--green);
+}
+
+.event-web-registration-feedback--error {
+  color: #ff9ca2;
+}
+
+.event-web-registration-card__occurrences {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--glass-border);
+  padding-top: 14px;
+}
+
+.event-web-registration-card__occurrences h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.event-web-registration-card__occurrences ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.event-web-registration-card__occurrences li {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.event-web-registration-card__occurrences li > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.event-web-registration-card__occurrences strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.event-web-registration-create-notice {
+  border-left: 3px solid var(--gold);
+  padding: 14px 16px;
+}
+
 .event-occurrences-constructor {
   display: grid;
   gap: 12px;
@@ -10929,6 +11072,7 @@ a {
   .event-action-dialog__states,
   .event-form-grid--two,
   .event-form-grid--time,
+  .event-web-registration-card__publication,
   .settings-location-form,
   .settings-location-row {
     grid-template-columns: 1fr;
@@ -11104,6 +11248,7 @@ a {
   .event-form-sticky-actions .button,
   .event-action-dialog__actions .button,
   .event-create-success .button,
+  .event-web-registration-card__actions .button,
   .settings-location-form__actions .button,
   .settings-location-row__actions .button {
     width: 100%;

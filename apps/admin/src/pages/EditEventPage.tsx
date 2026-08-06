@@ -4,6 +4,7 @@ import { EventForm } from "../components/events/EventForm";
 import { EventCapacityUnitsConstructor } from "../components/events/EventCapacityUnitsConstructor";
 import { EventOccurrencesConstructor } from "../components/events/EventOccurrencesConstructor";
 import { ParticipationOptionsConstructor } from "../components/events/ParticipationOptionsConstructor";
+import { EventWebRegistrationCard } from "../components/events/EventWebRegistrationCard";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
@@ -177,6 +178,8 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
           submitting={submitting}
         />
       </GlassCard>
+
+      <EventWebRegistrationCard eventId={currentEvent.id} />
 
       <GlassCard className="event-occurrences-card" elevated>
         <EventOccurrencesConstructor
