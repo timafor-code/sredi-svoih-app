@@ -483,6 +483,14 @@ select {
   filter: brightness(1.08);
 }
 
+.primary-button:disabled,
+.secondary-button:disabled,
+.text-button:disabled {
+  cursor: not-allowed;
+  filter: none;
+  opacity: 0.58;
+}
+
 .form-notice {
   margin: 0;
   padding: 16px 18px;
@@ -491,6 +499,106 @@ select {
   background: rgba(255, 200, 50, 0.08);
   color: var(--text-secondary);
   line-height: 1.5;
+}
+
+.form-error {
+  margin: 0;
+  padding: 16px 18px;
+  border: 1px solid rgba(255, 119, 119, 0.4);
+  border-radius: 14px;
+  background: rgba(255, 119, 119, 0.09);
+  color: #ffb8b8;
+  line-height: 1.5;
+}
+
+.flow-card {
+  display: grid;
+  gap: 18px;
+}
+
+.flow-card .muted-copy,
+.flow-card .form-notice,
+.flow-card .form-error {
+  margin: 0;
+}
+
+.flow-expiry {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.code-field {
+  max-width: 260px;
+}
+
+.code-field input {
+  font-size: 1.4rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.22em;
+  text-align: center;
+}
+
+.flow-actions,
+.flow-live,
+.account-followup {
+  display: grid;
+  gap: 12px;
+}
+
+.flow-actions .text-button {
+  margin-top: 0;
+}
+
+.registration-result {
+  margin: 0;
+  padding: 15px 17px;
+  border: 1px solid rgba(112, 207, 121, 0.3);
+  border-radius: 14px;
+  background: rgba(112, 207, 121, 0.08);
+  color: var(--text-secondary);
+  font-weight: 750;
+  line-height: 1.5;
+}
+
+.result-pending,
+.result-waitlisted {
+  border-color: rgba(255, 200, 50, 0.32);
+  background: rgba(255, 200, 50, 0.08);
+}
+
+.result-details {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.result-details div {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.45fr) 1fr;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.result-details dt {
+  color: var(--text-muted);
+}
+
+.result-details dd {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.account-followup {
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.account-followup h3 {
+  margin: 0;
+  font-size: 1.1rem;
 }
 
 .site-footer {
@@ -614,6 +722,11 @@ select {
   .event-facts div {
     grid-template-columns: 1fr;
     gap: 5px;
+  }
+
+  .result-details div {
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
 
   .quantity-label {

@@ -7,22 +7,33 @@ import {
   useState,
 } from "react";
 import {
+  confirmSetPassword,
+  confirmWebRegistrationEmail,
+  createWebRegistrationIntent,
+  getWebRegistrationIntentStatus,
   getWebEventRegistrationForm,
   PublicApiError,
   RegistrationUnavailableError,
+  requestSetPassword,
+  resendWebRegistrationCode,
 } from "./api";
 import { formatDate, formatDateTimeRange, formatTime } from "./format";
 import { parseRoute, replaceOccurrenceQuery } from "./route";
 import type {
   AccountChoice,
+  AccountNextStep,
   WebEventRegistrationFormResponse,
+  WebRegistrationConfirmResult,
+  WebRegistrationIntentRequest,
   WebRegistrationLegalDocument,
   WebRegistrationOccurrence,
   WebRegistrationParticipationOption,
+  WebRegistrationResult,
   WebRegistrationState,
 } from "./types";
 import {
   normalizeName,
+  normalizeRussianPhone,
   type PersonalErrors,
   type PersonalField,
   validateEmail,
@@ -33,6 +44,57 @@ import {
 } from "./validation";
 
 const DEFAULT_TITLE = "Регистрация на мероприятие — Среди Своих";
+
+function createIdempotencyKey(): string {
+  if (!globalThis.crypto?.getRandomValues) throw new Error("Web Crypto is unavailable");
+  const bytes = new Uint8Array(24);
+  globalThis.crypto.getRandomValues(bytes);
+  return `web-${Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function formatExpiry(value: string): string {
+  return new Intl.DateTimeFormat("ru-RU", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function safeApiError(error: unknown, context: "create" | "confirm" | "resend" | "status" | "password"): string {
+  if (!(error instanceof PublicApiError)) {
+    return context === "confirm"
+      ? "Не удалось получить ответ после подтверждения. Проверьте статус перед повторной попыткой."
+      : "Не удалось связаться с сервером. Проверьте соединение и попробуйте снова.";
+  }
+  switch (error.code) {
+    case "registration_unavailable":
+      return "Регистрация на мероприятие стала недоступна.";
+    case "state_conflict":
+      return "Окно регистрации закрыто или регистрация сейчас недоступна.";
+    case "capacity_unavailable":
+      return "Свободных мест больше нет.";
+    case "invalid_verification_code":
+      return "Код неверный или истёк. Проверьте код и попробуйте снова.";
+    case "registration_intent_not_available":
+      return "Срок действия регистрации истёк. Начните заново.";
+    case "resend_cooldown":
+    case "rate_limited":
+      return "Код можно будет отправить повторно немного позже.";
+    case "email_delivery_unavailable":
+    case "service_unavailable":
+      return "Отправка email временно недоступна. Попробуйте позже.";
+    case "identity_confirmation_unavailable":
+      return "Не удалось автоматически подтвердить данные. Используйте восстановление доступа или обратитесь в поддержку.";
+    case "bad_request":
+    case "conflict":
+      return context === "password"
+        ? "Код задания пароля недействителен или истёк. Запросите новый код."
+        : "Не удалось обработать запрос. Проверьте данные и попробуйте снова.";
+    case "validation_error":
+      return "Проверьте введённые данные. Если всё верно, начните регистрацию заново.";
+    default:
+      return "Произошла неизвестная ошибка сервера. Попробуйте позже.";
+  }
+}
 
 const STATUS_LABELS: Record<WebRegistrationState, string> = {
   open: "Регистрация открыта",
@@ -277,8 +339,18 @@ type FormErrors = PersonalErrors & {
   consent?: string;
 };
 
+type FlowStage = "form" | "verification" | "success";
+
+const SUCCESS_COPY: Record<WebRegistrationResult["status"], string> = {
+  confirmed: "Регистрация подтверждена.",
+  pending: "Заявка отправлена и ожидает подтверждения организатора.",
+  waitlisted: "Вы добавлены в лист ожидания. Участие пока не подтверждено.",
+  attended: "Регистрация сохранена.",
+};
+
 function RegistrationForm({
   eventId,
+  eventTitle,
   occurrences,
   selectedOccurrenceId,
   options,
@@ -286,6 +358,7 @@ function RegistrationForm({
   privacyDocument,
 }: {
   eventId: string;
+  eventTitle: string;
   occurrences: WebRegistrationOccurrence[];
   selectedOccurrenceId: string | null;
   options: WebRegistrationParticipationOption[];
@@ -305,18 +378,75 @@ function RegistrationForm({
   const [errors, setErrors] = useState<FormErrors>({});
   const [selections, setSelections] = useState<Record<string, OptionSelection>>({});
   const [notice, setNotice] = useState<string | null>(null);
+  const [flowError, setFlowError] = useState<string | null>(null);
+  const [stage, setStage] = useState<FlowStage>("form");
+  const [flowId, setFlowId] = useState<string | null>(null);
+  const [flowExpiresAt, setFlowExpiresAt] = useState<string | null>(null);
+  const [emailCode, setEmailCode] = useState("");
+  const [busyAction, setBusyAction] = useState<"create" | "confirm" | "resend" | "status" | "request_password" | "password" | null>(null);
+  const [confirmationUnknown, setConfirmationUnknown] = useState(false);
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [registration, setRegistration] = useState<WebRegistrationResult | null>(null);
+  const [accountNextStep, setAccountNextStep] = useState<AccountNextStep | null>(null);
+  const [setPasswordCode, setSetPasswordCode] = useState<string | null>(null);
+  const [setPasswordExpiresAt, setSetPasswordExpiresAt] = useState<string | null>(null);
+  const [requestedPasswordCode, setRequestedPasswordCode] = useState("");
+  const [passwordRequestSent, setPasswordRequestSent] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [repeatPassword, setRepeatPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [accountCompleted, setAccountCompleted] = useState(false);
   const optionsRef = useRef<HTMLFieldSetElement>(null);
+  const emailCodeRef = useRef<HTMLInputElement>(null);
+  const passwordCodeRef = useRef<HTMLInputElement>(null);
+  const newPasswordRef = useRef<HTMLInputElement>(null);
+  const repeatPasswordRef = useRef<HTMLInputElement>(null);
+  const submittingRef = useRef(false);
+  const idempotencyRef = useRef<{ signature: string; key: string } | null>(null);
 
   useEffect(() => {
     setValues(emptyValues);
     setErrors({});
     setSelections({});
     setNotice(null);
+    setFlowError(null);
+    setStage("form");
+    setFlowId(null);
+    setFlowExpiresAt(null);
+    setRegistration(null);
+    setAccountNextStep(null);
+    setSetPasswordCode(null);
+    idempotencyRef.current = null;
   }, [eventId]);
+
+  useEffect(() => {
+    if (stage === "verification") emailCodeRef.current?.focus();
+  }, [stage]);
+
+  useEffect(() => {
+    if (passwordRequestSent) passwordCodeRef.current?.focus();
+  }, [passwordRequestSent]);
+
+  useEffect(() => {
+    if (cooldownUntil === null) {
+      setCooldownSeconds(0);
+      return;
+    }
+    const update = () => {
+      const remaining = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+      setCooldownSeconds(remaining);
+      if (remaining === 0) setCooldownUntil(null);
+    };
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [cooldownUntil]);
 
   const updateField = (field: PersonalField, value: string) => {
     setValues((current) => ({ ...current, [field]: value }));
     setNotice(null);
+    setFlowError(null);
   };
 
   const validateField = (field: PersonalField) => {
@@ -337,6 +467,7 @@ function RegistrationForm({
     setValues((current) => ({ ...current, seatsCount: value }));
     setErrors((current) => ({ ...current, seatsCount: undefined }));
     setNotice(null);
+    setFlowError(null);
   };
 
   const onOptionSelectionChange = (
@@ -357,6 +488,7 @@ function RegistrationForm({
     });
     setErrors((current) => ({ ...current, options: undefined }));
     setNotice(null);
+    setFlowError(null);
   };
 
   const onOptionQuantityChange = (
@@ -371,6 +503,7 @@ function RegistrationForm({
       },
     }));
     setNotice(null);
+    setFlowError(null);
   };
 
   const focusFirstError = (nextErrors: FormErrors) => {
@@ -390,7 +523,61 @@ function RegistrationForm({
     else document.getElementById(first[1])?.focus();
   };
 
-  const continueWithAccountChoice = (accountChoice: AccountChoice) => {
+  const completeRegistration = (
+    result: WebRegistrationResult,
+    nextStep: AccountNextStep,
+    passwordCode: string | null = null,
+    passwordExpiry: string | null = null,
+  ) => {
+    if (result.event_id.toLowerCase() !== eventId.toLowerCase()) {
+      throw new PublicApiError("invalid_response");
+    }
+    setRegistration(result);
+    setAccountNextStep(nextStep === "set_password" && !passwordCode ? "request_set_password" : nextStep);
+    setSetPasswordCode(passwordCode);
+    setSetPasswordExpiresAt(passwordExpiry);
+    setFlowId(null);
+    setEmailCode("");
+    setStage("success");
+    setFlowError(null);
+    setNotice(null);
+    setConfirmationUnknown(false);
+  };
+
+  const applyStatus = (status: Awaited<ReturnType<typeof getWebRegistrationIntentStatus>>) => {
+    if (status.state === "confirmed" && status.registration && status.account_next_step) {
+      completeRegistration(status.registration, status.account_next_step);
+      return;
+    }
+    if (status.state === "email_verification_required") {
+      setStage("verification");
+      setFlowExpiresAt(status.expires_at);
+      setConfirmationUnknown(false);
+      setFlowError(null);
+      setNotice("Подтверждение ещё не завершено. Введите код из письма.");
+      return;
+    }
+    setFlowError("Срок действия регистрации истёк или регистрация недоступна. Начните заново.");
+    setConfirmationUnknown(false);
+  };
+
+  const checkStatus = async (currentFlowId = flowId) => {
+    if (!currentFlowId || submittingRef.current) return;
+    submittingRef.current = true;
+    setBusyAction("status");
+    setFlowError(null);
+    try {
+      applyStatus(await getWebRegistrationIntentStatus(currentFlowId));
+    } catch (error: unknown) {
+      setFlowError(safeApiError(error, "status"));
+    } finally {
+      submittingRef.current = false;
+      setBusyAction(null);
+    }
+  };
+
+  const continueWithAccountChoice = async (accountChoice: AccountChoice) => {
+    if (submittingRef.current) return;
     const normalizedValues = {
       ...values,
       firstName: normalizeName(values.firstName),
@@ -414,8 +601,183 @@ function RegistrationForm({
       return;
     }
 
-    // PR 8 (feature/public-web-registration-account-claim) will connect POST /web/registration-intents here.
-    setNotice("Форма заполнена. Отправка кода подтверждения будет подключена на следующем этапе.");
+    const phone = normalizeRussianPhone(normalizedValues.phone);
+    if (!phone) return;
+    const requestWithoutKey: Omit<WebRegistrationIntentRequest, "idempotency_key"> = {
+      event_id: eventId,
+      occurrence_id: selectedOccurrenceId,
+      first_name: normalizedValues.firstName,
+      last_name: normalizedValues.lastName,
+      phone,
+      email: normalizedValues.email,
+      seats_count: Number(normalizedValues.seatsCount),
+      option_selections: options
+        .filter((option) => selections[option.id]?.selected)
+        .map((option) => ({
+          option_id: option.id,
+          quantity: selections[option.id]?.quantity ?? option.min_quantity,
+        })),
+      answers: [],
+      legal_acceptances: [{
+        document_id: consentDocument.id,
+        content_hash: consentDocument.content_hash,
+      }],
+      account_choice: accountChoice,
+    };
+    const signature = JSON.stringify(requestWithoutKey);
+    try {
+      if (!idempotencyRef.current || idempotencyRef.current.signature !== signature) {
+        idempotencyRef.current = { signature, key: createIdempotencyKey() };
+      }
+    } catch {
+      setFlowError("Этот браузер не поддерживает безопасное создание регистрации.");
+      return;
+    }
+    const payload: WebRegistrationIntentRequest = {
+      ...requestWithoutKey,
+      idempotency_key: idempotencyRef.current.key,
+    };
+
+    submittingRef.current = true;
+    setBusyAction("create");
+    setFlowError(null);
+    setNotice("Отправляем данные и запрашиваем код подтверждения…");
+    try {
+      const created = await createWebRegistrationIntent(payload);
+      setFlowId(created.flow_id);
+      setFlowExpiresAt(created.expires_at);
+      if (created.next_step === "completed") {
+        const status = await getWebRegistrationIntentStatus(created.flow_id);
+        applyStatus(status);
+      } else {
+        setEmailCode("");
+        setStage("verification");
+        setNotice(null);
+      }
+    } catch (error: unknown) {
+      setFlowError(safeApiError(error, "create"));
+      setNotice(null);
+    } finally {
+      submittingRef.current = false;
+      setBusyAction(null);
+    }
+  };
+
+  const confirmEmail = async () => {
+    if (!flowId || emailCode.length !== 6 || submittingRef.current) return;
+    submittingRef.current = true;
+    setBusyAction("confirm");
+    setFlowError(null);
+    setNotice("Проверяем код…");
+    try {
+      const confirmed: WebRegistrationConfirmResult = await confirmWebRegistrationEmail(flowId, emailCode);
+      completeRegistration(
+        confirmed.registration,
+        confirmed.account_next_step,
+        confirmed.set_password_code,
+        confirmed.set_password_expires_at,
+      );
+    } catch (error: unknown) {
+      const ambiguous = !(error instanceof PublicApiError);
+      setConfirmationUnknown(ambiguous);
+      setFlowError(safeApiError(error, "confirm"));
+      setNotice(null);
+      window.requestAnimationFrame(() => emailCodeRef.current?.focus());
+    } finally {
+      submittingRef.current = false;
+      setBusyAction(null);
+    }
+  };
+
+  const resendCode = async () => {
+    if (!flowId || submittingRef.current || cooldownSeconds > 0) return;
+    submittingRef.current = true;
+    setBusyAction("resend");
+    setFlowError(null);
+    setNotice("Отправляем новый код…");
+    try {
+      const resent = await resendWebRegistrationCode(flowId);
+      setFlowExpiresAt(resent.expires_at);
+      setEmailCode("");
+      setNotice("Новый код отправлен. Старый код больше не действует.");
+      window.requestAnimationFrame(() => emailCodeRef.current?.focus());
+    } catch (error: unknown) {
+      if (error instanceof PublicApiError && error.retryAfterSeconds !== null) {
+        setCooldownUntil(Date.now() + error.retryAfterSeconds * 1000);
+      }
+      setFlowError(safeApiError(error, "resend"));
+      setNotice(null);
+    } finally {
+      submittingRef.current = false;
+      setBusyAction(null);
+    }
+  };
+
+  const startNewFlow = () => {
+    idempotencyRef.current = null;
+    setFlowId(null);
+    setFlowExpiresAt(null);
+    setEmailCode("");
+    setFlowError(null);
+    setNotice(null);
+    setConfirmationUnknown(false);
+    setCooldownUntil(null);
+    setStage("form");
+  };
+
+  const sendPasswordCode = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setBusyAction("request_password");
+    setPasswordError(null);
+    try {
+      await requestSetPassword(values.email);
+      setPasswordRequestSent(true);
+      setRequestedPasswordCode("");
+      setNotice("Если задание пароля доступно, код отправлен на указанный email.");
+    } catch (error: unknown) {
+      setPasswordError(safeApiError(error, "password"));
+    } finally {
+      submittingRef.current = false;
+      setBusyAction(null);
+    }
+  };
+
+  const submitPassword = async () => {
+    if (submittingRef.current) return;
+    const code = setPasswordCode ?? requestedPasswordCode.trim();
+    if (!code) {
+      setPasswordError("Введите код из письма.");
+      passwordCodeRef.current?.focus();
+      return;
+    }
+    if (newPassword.length < 8) {
+      setPasswordError("Пароль должен содержать минимум 8 символов.");
+      newPasswordRef.current?.focus();
+      return;
+    }
+    if (newPassword !== repeatPassword) {
+      setPasswordError("Пароли не совпадают.");
+      repeatPasswordRef.current?.focus();
+      return;
+    }
+    submittingRef.current = true;
+    setBusyAction("password");
+    setPasswordError(null);
+    try {
+      await confirmSetPassword(code, newPassword);
+      setAccountCompleted(true);
+      setSetPasswordCode(null);
+      setRequestedPasswordCode("");
+      setNewPassword("");
+      setRepeatPassword("");
+      setNotice("Аккаунт создан для этой же регистрации.");
+    } catch (error: unknown) {
+      setPasswordError(safeApiError(error, "password"));
+    } finally {
+      submittingRef.current = false;
+      setBusyAction(null);
+    }
   };
 
   const field = (
@@ -438,6 +800,122 @@ function RegistrationForm({
       {errors[key] ? <p className="field-error" id={`${id}-error`} role="alert">{errors[key]}</p> : null}
     </div>
   );
+
+  if (stage === "verification") {
+    return (
+      <section className="surface section-card flow-card" aria-labelledby="verification-heading">
+        <p className="eyebrow">Подтверждение email</p>
+        <h2 id="verification-heading">Введите код из письма</h2>
+        <p className="muted-copy">Шестизначный код отправлен на указанный email.</p>
+        {flowExpiresAt ? <p className="flow-expiry">Текущий срок действия: до {formatExpiry(flowExpiresAt)}.</p> : null}
+        <div className="form-field code-field">
+          <label htmlFor="email-code">Код подтверждения</label>
+          <input
+            ref={emailCodeRef}
+            id="email-code"
+            value={emailCode}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="[0-9]{6}"
+            maxLength={6}
+            aria-invalid={Boolean(flowError && !confirmationUnknown)}
+            aria-describedby={flowError ? "verification-error" : undefined}
+            onChange={(event) => {
+              setEmailCode(event.target.value.replace(/\D/g, "").slice(0, 6));
+              setFlowError(null);
+            }}
+          />
+        </div>
+        <div className="flow-actions">
+          <button className="primary-button" type="button" disabled={emailCode.length !== 6 || busyAction !== null} onClick={confirmEmail}>
+            {busyAction === "confirm" ? "Проверяем…" : "Подтвердить email"}
+          </button>
+          <button className="secondary-button" type="button" disabled={busyAction !== null || cooldownSeconds > 0} onClick={resendCode}>
+            {busyAction === "resend"
+              ? "Отправляем…"
+              : cooldownSeconds > 0
+                ? `Повторная отправка через ${cooldownSeconds} сек.`
+                : "Отправить код повторно"}
+          </button>
+          {confirmationUnknown ? (
+            <button className="secondary-button" type="button" disabled={busyAction !== null} onClick={() => checkStatus()}>
+              {busyAction === "status" ? "Проверяем…" : "Проверить статус"}
+            </button>
+          ) : null}
+          <button className="text-button" type="button" disabled={busyAction !== null} onClick={startNewFlow}>Изменить данные и начать заново</button>
+        </div>
+        <div className="flow-live" aria-live="polite" aria-atomic="true">
+          {notice ? <p className="form-notice" role="status">{notice}</p> : null}
+          {flowError ? <p className="form-error" id="verification-error" role="alert">{flowError}</p> : null}
+        </div>
+      </section>
+    );
+  }
+
+  if (stage === "success" && registration) {
+    const resultOccurrence = occurrences.find((item) => item.id === registration.occurrence_id);
+    const showPasswordForm = accountNextStep === "set_password"
+      || (accountNextStep === "request_set_password" && passwordRequestSent);
+    return (
+      <section className="surface section-card flow-card success-card" aria-labelledby="success-heading" aria-live="polite">
+        <p className="eyebrow">Готово</p>
+        <h2 id="success-heading">Регистрация успешно сохранена</h2>
+        <p className={`registration-result result-${registration.status}`}>{SUCCESS_COPY[registration.status]}</p>
+        <dl className="result-details">
+          <div><dt>Мероприятие</dt><dd>{eventTitle}</dd></div>
+          <div><dt>Количество мест</dt><dd>{registration.seats_count}</dd></div>
+          {resultOccurrence ? (
+            <div><dt>Выбранная дата</dt><dd>{formatDateTimeRange(resultOccurrence.starts_at, resultOccurrence.ends_at, resultOccurrence.timezone)}</dd></div>
+          ) : null}
+        </dl>
+
+        {accountNextStep === "none" ? <p className="muted-copy">Регистрация сохранена. Код подтверждения был отправлен на указанный email. Пароль и web-сессия не создавались.</p> : null}
+        {accountNextStep === "sign_in" ? <p className="muted-copy">Регистрация сохранена. Для управления аккаунтом можно войти с существующим паролем.</p> : null}
+        {accountNextStep === "request_set_password" && !passwordRequestSent ? (
+          <div className="account-followup">
+            <p className="muted-copy">Чтобы задать пароль, запросите одноразовый код. Ответ не раскрывает, существует ли аккаунт.</p>
+            <button className="secondary-button" type="button" disabled={busyAction !== null} onClick={sendPasswordCode}>
+              {busyAction === "request_password" ? "Отправляем…" : "Запросить код задания пароля"}
+            </button>
+          </div>
+        ) : null}
+        {showPasswordForm && !accountCompleted ? (
+          <div className="account-followup" aria-labelledby="password-heading">
+            <h3 id="password-heading">Задать пароль</h3>
+            {accountNextStep === "request_set_password" ? (
+              <div className="form-field">
+                <label htmlFor="set-password-email-code">Код из письма</label>
+                <input
+                  ref={passwordCodeRef}
+                  id="set-password-email-code"
+                  value={requestedPasswordCode}
+                  autoComplete="one-time-code"
+                  maxLength={512}
+                  onChange={(event) => setRequestedPasswordCode(event.target.value)}
+                />
+              </div>
+            ) : null}
+            <div className="form-field">
+              <label htmlFor="new-password">Новый пароль</label>
+              <input ref={newPasswordRef} id="new-password" type="password" minLength={8} maxLength={1024} autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+            </div>
+            <div className="form-field">
+              <label htmlFor="repeat-password">Повтор нового пароля</label>
+              <input ref={repeatPasswordRef} id="repeat-password" type="password" minLength={8} maxLength={1024} autoComplete="new-password" value={repeatPassword} onChange={(event) => setRepeatPassword(event.target.value)} />
+            </div>
+            {setPasswordExpiresAt ? <p className="flow-expiry">Код действует до {formatExpiry(setPasswordExpiresAt)}.</p> : null}
+            <button className="primary-button" type="button" disabled={busyAction !== null} onClick={submitPassword}>
+              {busyAction === "password" ? "Сохраняем…" : "Задать пароль"}
+            </button>
+          </div>
+        ) : null}
+        <div className="flow-live" aria-live="polite" aria-atomic="true">
+          {notice ? <p className="form-notice" role="status">{notice}</p> : null}
+          {passwordError ? <p className="form-error" role="alert">{passwordError}</p> : null}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <form className="registration-form" noValidate onSubmit={(event) => event.preventDefault()}>
@@ -526,9 +1004,10 @@ function RegistrationForm({
               className="primary-button"
               type="button"
               aria-pressed={values.accountChoice === "without_password"}
-              onClick={() => continueWithAccountChoice("without_password")}
+              disabled={busyAction !== null}
+              onClick={() => void continueWithAccountChoice("without_password")}
             >
-              Продолжить без пароля
+              {busyAction === "create" && values.accountChoice === "without_password" ? "Отправляем…" : "Продолжить без пароля"}
             </button>
           </div>
           <div className="account-action-card">
@@ -537,22 +1016,27 @@ function RegistrationForm({
               className="secondary-button"
               type="button"
               aria-pressed={values.accountChoice === "create_account"}
-              onClick={() => continueWithAccountChoice("create_account")}
+              disabled={busyAction !== null}
+              onClick={() => void continueWithAccountChoice("create_account")}
             >
-              Создать аккаунт
+              {busyAction === "create" && values.accountChoice === "create_account" ? "Отправляем…" : "Создать аккаунт"}
             </button>
           </div>
         </div>
         <button
           className="text-button"
           type="button"
-          onClick={() => setNotice("Вход для существующего аккаунта будет подключён на следующем этапе.")}
+          disabled={busyAction !== null}
+          onClick={() => setNotice("Можно продолжить регистрацию через подтверждение email без обязательного ввода пароля. Регистрация будет связана с существующим аккаунтом, а основные данные подтверждённого профиля не будут молча перезаписаны.")}
         >
           У меня уже есть аккаунт
         </button>
       </section>
 
-      {notice ? <p className="form-notice" role="status">{notice}</p> : null}
+      <div className="flow-live" aria-live="polite" aria-atomic="true">
+        {notice ? <p className="form-notice" role="status">{notice}</p> : null}
+        {flowError ? <p className="form-error" role="alert">{flowError}</p> : null}
+      </div>
     </form>
   );
 }
@@ -616,6 +1100,7 @@ function EventPage({ data, requestedOccurrenceId }: {
             <RegistrationForm
               key={data.event.id}
               eventId={data.event.id}
+              eventTitle={data.event.title}
               occurrences={data.occurrences}
               selectedOccurrenceId={selectedOccurrenceId}
               options={data.participation_options}

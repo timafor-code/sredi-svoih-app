@@ -90,3 +90,70 @@ export type WebEventRegistrationFormResponse = {
 };
 
 export type AccountChoice = "without_password" | "create_account";
+
+export type WebOptionSelection = {
+  option_id: string;
+  quantity: number;
+};
+
+export type WebLegalAcceptance = {
+  document_id: string;
+  content_hash: string;
+};
+
+export type WebRegistrationIntentRequest = {
+  event_id: string;
+  occurrence_id: string | null;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  email: string;
+  seats_count: number;
+  option_selections: WebOptionSelection[];
+  answers: [];
+  legal_acceptances: WebLegalAcceptance[];
+  account_choice: AccountChoice;
+  idempotency_key: string;
+};
+
+export type WebRegistrationIntentCreated = {
+  flow_id: string;
+  next_step: "confirm_email" | "completed";
+  expires_at: string;
+};
+
+export type WebRegistrationStatus = "confirmed" | "pending" | "waitlisted" | "attended";
+
+export type WebRegistrationResult = {
+  id: string;
+  event_id: string;
+  occurrence_id: string | null;
+  status: WebRegistrationStatus;
+  seats_count: number;
+};
+
+export type AccountNextStep = "none" | "set_password" | "sign_in" | "request_set_password";
+
+export type WebRegistrationConfirmResult = {
+  intent_status: "confirmed";
+  registration: WebRegistrationResult;
+  account_next_step: AccountNextStep;
+  set_password_code: string | null;
+  set_password_expires_at: string | null;
+};
+
+export type WebRegistrationIntentStatus = {
+  state: "email_verification_required" | "confirmed" | "not_available";
+  expires_at: string | null;
+  registration: WebRegistrationResult | null;
+  account_next_step: AccountNextStep | null;
+};
+
+export type WebRegistrationResendResult = {
+  next_step: "confirm_email";
+  expires_at: string;
+};
+
+export type AuthCodeResult = {
+  ok: true;
+};

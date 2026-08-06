@@ -6,16 +6,51 @@ import {
   EVENT_ID,
   OCCURRENCE_ONE_ID,
   OCCURRENCE_TWO_ID,
+  OPTION_ID,
   eventResponse,
   responseWithOccurrences,
 } from "./test/fixtures";
 
-function response(body: unknown, status = 200): Promise<Response> {
+function response(body: unknown, status = 200, headers: Record<string, string> = {}): Promise<Response> {
   return Promise.resolve({
     ok: status >= 200 && status < 300,
     status,
+    headers: new Headers(headers),
     json: vi.fn().mockResolvedValue(body),
   } as unknown as Response);
+}
+
+const FLOW_ID = "opaque-flow-credential";
+const REGISTRATION_ID = "77777777-7777-4777-8777-777777777777";
+const EXPIRES_AT = "2026-09-12T18:00:00+03:00";
+const SET_PASSWORD_CODE = "opaque-set-password-code-with-sufficient-length";
+
+function envelope<T>(data: T) {
+  return { data, error: null, meta: {} };
+}
+
+function intentCreated(nextStep: "confirm_email" | "completed" = "confirm_email") {
+  return envelope({ flow_id: FLOW_ID, next_step: nextStep, expires_at: EXPIRES_AT });
+}
+
+function registrationResult(
+  status: "confirmed" | "pending" | "waitlisted" = "confirmed",
+  accountNextStep: "none" | "set_password" | "sign_in" | "request_set_password" = "none",
+  occurrenceId: string | null = null,
+) {
+  return envelope({
+    intent_status: "confirmed",
+    registration: {
+      id: REGISTRATION_ID,
+      event_id: EVENT_ID,
+      occurrence_id: occurrenceId,
+      status,
+      seats_count: 1,
+    },
+    account_next_step: accountNextStep,
+    set_password_code: accountNextStep === "set_password" ? SET_PASSWORD_CODE : null,
+    set_password_expires_at: accountNextStep === "set_password" ? EXPIRES_AT : null,
+  });
 }
 
 function successfulFetch(data = eventResponse()) {
@@ -37,8 +72,26 @@ async function fillValidForm(
   await user.type(screen.getByLabelText("Фамилия"), "Иванова");
   await user.type(screen.getByLabelText("Телефон"), "+7 (999) 123-45-67");
   await user.type(screen.getByLabelText("Email"), "anna@example.ru");
-  await user.click(screen.getByLabelText(/Основное участие/));
+  await user.click(screen.getByRole("checkbox", { name: /Основное участие/ }));
   if (consent) await user.click(screen.getByLabelText(/Я ознакомился/));
+}
+
+async function createIntent(
+  user: ReturnType<typeof userEvent.setup>,
+  choice: "Продолжить без пароля" | "Создать аккаунт" = "Продолжить без пароля",
+) {
+  vi.mocked(fetch).mockImplementationOnce(() => response(intentCreated(), 201));
+  await user.click(screen.getByRole("button", { name: choice }));
+  await screen.findByRole("heading", { name: "Введите код из письма" });
+}
+
+async function confirmIntent(
+  user: ReturnType<typeof userEvent.setup>,
+  result = registrationResult(),
+) {
+  vi.mocked(fetch).mockImplementationOnce(() => response(result));
+  await user.type(screen.getByLabelText("Код подтверждения"), "123456");
+  await user.click(screen.getByRole("button", { name: "Подтвердить email" }));
 }
 
 describe("public event page", () => {
@@ -339,21 +392,38 @@ describe("local form shell", () => {
     await renderEvent();
     const initialUrl = window.location.href;
     await userEvent.click(screen.getByRole("button", { name: "У меня уже есть аккаунт" }));
-    expect(screen.getByRole("status")).toHaveTextContent("Вход для существующего аккаунта будет подключён на следующем этапе.");
+    expect(screen.getByRole("status")).toHaveTextContent("Можно продолжить регистрацию через подтверждение email");
+    expect(screen.getByRole("status")).toHaveTextContent("не будут молча перезаписаны");
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(window.location.href).toBe(initialUrl);
   });
 
-  it.each(["Продолжить без пароля", "Создать аккаунт"])("normalizes names and stops %s before any POST request", async (buttonName) => {
+  it.each([
+    ["Продолжить без пароля", "without_password"],
+    ["Создать аккаунт", "create_account"],
+  ] as const)("normalizes names and submits %s through the shared intent flow", async (buttonName, accountChoice) => {
     const user = userEvent.setup();
     await renderEvent();
     await fillValidForm(user);
+    vi.mocked(fetch).mockImplementationOnce(() => response(intentCreated(), 201));
     await user.click(screen.getByRole("button", { name: buttonName }));
-    expect(screen.getByLabelText("Имя")).toHaveValue("Анна Мария");
-    expect(screen.getByRole("status")).toHaveTextContent("Форма заполнена. Отправка кода подтверждения будет подключена на следующем этапе.");
-    expect(screen.queryByText(/email отправлен|регистрация создана|место зарезервировано/i)).not.toBeInTheDocument();
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(fetch).mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
+    expect(await screen.findByLabelText("Код подтверждения")).toHaveFocus();
+    const request = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body));
+    expect(request).toMatchObject({
+      event_id: EVENT_ID,
+      occurrence_id: null,
+      first_name: "Анна Мария",
+      last_name: "Иванова",
+      phone: "+79991234567",
+      email: "anna@example.ru",
+      seats_count: 1,
+      option_selections: [{ option_id: OPTION_ID, quantity: 1 }],
+      answers: [],
+      legal_acceptances: [{ document_id: "55555555-5555-4555-8555-555555555555", content_hash: "consent-hash" }],
+      account_choice: accountChoice,
+    });
+    expect(request.legal_acceptances).toHaveLength(1);
+    expect(request.idempotency_key).toMatch(/^web-[a-f0-9]{48}$/);
   });
 
   it("does not persist or expose edited form data", async () => {
@@ -374,5 +444,257 @@ describe("local form shell", () => {
     expect(window.location.href).not.toContain("create_account");
     expect(document.title).not.toContain("secret");
     expect(within(document.body).queryByText("secret@example.test")).not.toBeInTheDocument();
+  });
+});
+
+describe("registration intent and account claim flow", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+
+  async function setupValidForm(data = eventResponse(), search = "") {
+    const user = userEvent.setup();
+    await renderEvent(data, search);
+    await fillValidForm(user);
+    return user;
+  }
+
+  it("completes the without-password flow without creating a web session", async () => {
+    const user = await setupValidForm();
+    await createIntent(user);
+    await confirmIntent(user);
+    expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
+    expect(screen.getByText("Регистрация подтверждена.")).toBeInTheDocument();
+    expect(screen.getByText(/Код подтверждения был отправлен.*Пароль и web-сессия не создавались/)).toBeInTheDocument();
+    expect(screen.getAllByText("Шаббат для друзей")).toHaveLength(2);
+    expect(screen.getByText("1")).toBeInTheDocument();
+    expect(screen.queryByText(REGISTRATION_ID)).not.toBeInTheDocument();
+  });
+
+  it("claims the same registration through the direct set-password handoff", async () => {
+    const user = await setupValidForm();
+    await createIntent(user, "Создать аккаунт");
+    await confirmIntent(user, registrationResult("confirmed", "set_password"));
+    const password = screen.getByLabelText("Новый пароль");
+    const repeat = screen.getByLabelText("Повтор нового пароля");
+    expect(password).toHaveAttribute("autocomplete", "new-password");
+    expect(repeat).toHaveAttribute("autocomplete", "new-password");
+    await user.type(password, "strong-pass-123");
+    await user.type(repeat, "strong-pass-123");
+    vi.mocked(fetch).mockImplementationOnce(() => response({ ok: true }));
+    await user.click(screen.getByRole("button", { name: "Задать пароль" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Аккаунт создан для этой же регистрации");
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls.at(-1)?.[1]?.body));
+    expect(body).toEqual({ code: SET_PASSWORD_CODE, new_password: "strong-pass-123" });
+    expect(window.location.href).not.toContain(SET_PASSWORD_CODE);
+    expect(window.location.href).not.toContain("strong-pass-123");
+  });
+
+  it("shows the neutral sign-in next step without forcing authentication", async () => {
+    const user = await setupValidForm();
+    await createIntent(user, "Создать аккаунт");
+    await confirmIntent(user, registrationResult("confirmed", "sign_in"));
+    expect(await screen.findByText("Регистрация сохранена. Для управления аккаунтом можно войти с существующим паролем.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Новый пароль")).not.toBeInTheDocument();
+  });
+
+  it("requests and confirms a set-password code after a replay", async () => {
+    const user = await setupValidForm();
+    await createIntent(user, "Создать аккаунт");
+    await confirmIntent(user, registrationResult("confirmed", "request_set_password"));
+    vi.mocked(fetch).mockImplementationOnce(() => response({ ok: true }));
+    await user.click(await screen.findByRole("button", { name: "Запросить код задания пароля" }));
+    const code = await screen.findByLabelText("Код из письма");
+    expect(code).toHaveFocus();
+    await user.type(code, "emailed-set-password-code");
+    await user.type(screen.getByLabelText("Новый пароль"), "strong-pass-123");
+    await user.type(screen.getByLabelText("Повтор нового пароля"), "strong-pass-123");
+    vi.mocked(fetch).mockImplementationOnce(() => response({ ok: true }));
+    await user.click(screen.getByRole("button", { name: "Задать пароль" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Аккаунт создан для этой же регистрации");
+    const authCalls = vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes("/auth/"));
+    expect(authCalls.map(([input]) => String(input))).toEqual([
+      "/api/auth/request-set-password",
+      "/api/auth/confirm-set-password",
+    ]);
+  });
+
+  it("submits occurrence, seats, and only selected option quantities", async () => {
+    const data = responseWithOccurrences();
+    data.participation_options[0].allow_quantity = true;
+    data.participation_options[0].max_quantity = 4;
+    const user = await setupValidForm(data, `?occurrence=${OCCURRENCE_TWO_ID}`);
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Количество мест" }), { target: { value: "3" } });
+    fireEvent.change(screen.getByLabelText("Количество: Основное участие"), { target: { value: "3" } });
+    vi.mocked(fetch).mockImplementationOnce(() => response(intentCreated(), 201));
+    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body));
+    expect(body).toMatchObject({
+      occurrence_id: OCCURRENCE_TWO_ID,
+      seats_count: 3,
+      option_selections: [{ option_id: OPTION_ID, quantity: 3 }],
+    });
+    const result = registrationResult("confirmed", "none", OCCURRENCE_TWO_ID);
+    result.data.registration.seats_count = 3;
+    await confirmIntent(user, result);
+    expect(await screen.findByText("Выбранная дата")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+  });
+
+  it("reuses an idempotency key after a network failure and rotates it after payload changes", async () => {
+    const user = await setupValidForm();
+    vi.mocked(fetch).mockRejectedValueOnce(new TypeError("offline"));
+    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await screen.findByRole("alert");
+    const firstBody = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body));
+
+    vi.mocked(fetch).mockRejectedValueOnce(new TypeError("offline"));
+    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    const retryBody = JSON.parse(String(vi.mocked(fetch).mock.calls[2][1]?.body));
+    expect(retryBody.idempotency_key).toBe(firstBody.idempotency_key);
+
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Количество мест" }), { target: { value: "2" } });
+    vi.mocked(fetch).mockRejectedValueOnce(new TypeError("offline"));
+    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    const changedBody = JSON.parse(String(vi.mocked(fetch).mock.calls[3][1]?.body));
+    expect(changedBody.idempotency_key).not.toBe(firstBody.idempotency_key);
+  });
+
+  it("blocks a double click while intent creation is in flight", async () => {
+    const user = await setupValidForm();
+    let resolvePost!: (value: Response) => void;
+    vi.mocked(fetch).mockImplementationOnce(() => new Promise((resolve) => { resolvePost = resolve; }));
+    const button = screen.getByRole("button", { name: "Продолжить без пароля" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    resolvePost(await response(intentCreated(), 201));
+    expect(await screen.findByLabelText("Код подтверждения")).toHaveFocus();
+  });
+
+  it("accepts exactly six digits and keeps the field editable after an invalid code", async () => {
+    const user = await setupValidForm();
+    await createIntent(user);
+    const code = screen.getByLabelText("Код подтверждения");
+    fireEvent.change(code, { target: { value: "12a34567" } });
+    expect(code).toHaveValue("123456");
+    vi.mocked(fetch).mockImplementationOnce(() => response({ data: null, error: { code: "invalid_verification_code", message: "unsafe" }, meta: {} }, 400));
+    await user.click(screen.getByRole("button", { name: "Подтвердить email" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Код неверный или истёк");
+    expect(code).toHaveFocus();
+    expect(code).toBeEnabled();
+  });
+
+  it("resends only on demand, clears the old code, and handles Retry-After cooldown", async () => {
+    const user = await setupValidForm();
+    await createIntent(user);
+    await user.type(screen.getByLabelText("Код подтверждения"), "123456");
+    expect(fetch).toHaveBeenCalledTimes(2);
+    vi.mocked(fetch).mockImplementationOnce(() => response(envelope({ next_step: "confirm_email", expires_at: EXPIRES_AT })));
+    await user.click(screen.getByRole("button", { name: "Отправить код повторно" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Новый код отправлен");
+    expect(screen.getByLabelText("Код подтверждения")).toHaveValue("");
+
+    vi.mocked(fetch).mockImplementationOnce(() => response({ data: null, error: { code: "resend_cooldown", message: "technical" }, meta: {} }, 429, { "Retry-After": "9" }));
+    await user.click(screen.getByRole("button", { name: "Отправить код повторно" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("немного позже");
+    expect(screen.getByRole("button", { name: /Повторная отправка через/ })).toBeDisabled();
+  });
+
+  it("uses status after create returns completed", async () => {
+    const user = await setupValidForm();
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response(intentCreated("completed"), 201))
+      .mockImplementationOnce(() => response(envelope({
+        state: "confirmed",
+        expires_at: null,
+        registration: { id: REGISTRATION_ID, event_id: EVENT_ID, occurrence_id: null, status: "confirmed", seats_count: 1 },
+        account_next_step: "none",
+      })));
+    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
+    expect(vi.mocked(fetch).mock.calls[2][0]).toBe(`/api/web/registration-intents/${FLOW_ID}/status`);
+  });
+
+  it("recovers an ambiguous confirmation through the explicit status action", async () => {
+    const user = await setupValidForm();
+    await createIntent(user);
+    vi.mocked(fetch).mockRejectedValueOnce(new TypeError("connection lost"));
+    await user.type(screen.getByLabelText("Код подтверждения"), "123456");
+    await user.click(screen.getByRole("button", { name: "Подтвердить email" }));
+    expect(await screen.findByRole("button", { name: "Проверить статус" })).toBeInTheDocument();
+    vi.mocked(fetch).mockImplementationOnce(() => response(envelope({
+      state: "confirmed",
+      expires_at: null,
+      registration: { id: REGISTRATION_ID, event_id: EVENT_ID, occurrence_id: null, status: "pending", seats_count: 1 },
+      account_next_step: "none",
+    })));
+    await user.click(screen.getByRole("button", { name: "Проверить статус" }));
+    expect(await screen.findByText(/ожидает подтверждения организатора/)).toBeInTheDocument();
+  });
+
+  it("shows an expired-flow state returned by status without polling", async () => {
+    const user = await setupValidForm();
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response(intentCreated("completed"), 201))
+      .mockImplementationOnce(() => response(envelope({ state: "not_available", expires_at: null, registration: null, account_next_step: null })));
+    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("истёк или регистрация недоступна");
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ["confirmed", "Регистрация подтверждена."],
+    ["pending", "ожидает подтверждения организатора"],
+    ["waitlisted", "лист ожидания"],
+  ] as const)("distinguishes the %s success result", async (status, copy) => {
+    const user = await setupValidForm();
+    await createIntent(user);
+    await confirmIntent(user, registrationResult(status));
+    expect(await screen.findByText(new RegExp(copy))).toBeInTheDocument();
+  });
+
+  it.each([
+    ["identity_confirmation_unavailable", 409, "Не удалось автоматически подтвердить данные"],
+    ["registration_unavailable", 404, "Регистрация на мероприятие стала недоступна"],
+    ["state_conflict", 409, "Окно регистрации закрыто"],
+    ["capacity_unavailable", 409, "Свободных мест больше нет"],
+    ["email_delivery_unavailable", 503, "Отправка email временно недоступна"],
+  ] as const)("maps %s to a safe Russian error", async (code, status, safeCopy) => {
+    const user = await setupValidForm();
+    vi.mocked(fetch).mockImplementationOnce(() => response({
+      data: null,
+      error: { code, message: "email already exists; phone belongs to user 123" },
+      meta: {},
+    }, status));
+    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(safeCopy);
+    expect(alert).not.toHaveTextContent("email already exists");
+    expect(alert).not.toHaveTextContent("phone belongs");
+  });
+
+  it("keeps credentials and PII out of storage and URL while preserving keyboard focus order", async () => {
+    const storageSpy = vi.spyOn(Storage.prototype, "setItem");
+    const initialCookie = document.cookie;
+    const user = await setupValidForm();
+    const originalUrl = window.location.href;
+    await createIntent(user);
+    const code = screen.getByLabelText("Код подтверждения");
+    expect(code).toHaveFocus();
+    await user.type(code, "123456");
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Подтвердить email" })).toHaveFocus();
+    expect(storageSpy).not.toHaveBeenCalled();
+    expect(window.localStorage).toHaveLength(0);
+    expect(window.sessionStorage).toHaveLength(0);
+    expect(document.cookie).toBe(initialCookie);
+    expect(window.location.href).toBe(originalUrl);
+    expect(window.location.href).not.toContain(FLOW_ID);
+    expect(window.location.href).not.toContain("123456");
   });
 });

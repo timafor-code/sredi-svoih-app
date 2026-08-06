@@ -1,9 +1,17 @@
 import type {
+  AccountNextStep,
   ApiResponse,
+  AuthCodeResult,
   WebEventRegistrationFormResponse,
+  WebRegistrationConfirmResult,
+  WebRegistrationIntentCreated,
+  WebRegistrationIntentRequest,
+  WebRegistrationIntentStatus,
   WebRegistrationLegalDocument,
   WebRegistrationOccurrence,
   WebRegistrationParticipationOption,
+  WebRegistrationResendResult,
+  WebRegistrationResult,
   WebRegistrationState,
 } from "./types";
 import { UUID_PATTERN } from "./route";
@@ -17,7 +25,19 @@ const REGISTRATION_STATES = new Set<WebRegistrationState>([
 ]);
 
 export class RegistrationUnavailableError extends Error {}
-export class PublicApiError extends Error {}
+export class PublicApiError extends Error {
+  readonly code: string;
+  readonly status: number | null;
+  readonly retryAfterSeconds: number | null;
+
+  constructor(code = "invalid_response", status: number | null = null, retryAfterSeconds: number | null = null) {
+    super("Public API request failed");
+    this.name = "PublicApiError";
+    this.code = code;
+    this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
 
 const LOCAL_HTTP_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -34,7 +54,7 @@ export function isSafePublicUrl(value: string): boolean {
   return parsed.protocol === "http:" && LOCAL_HTTP_HOSTNAMES.has(parsed.hostname.toLowerCase());
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -64,6 +84,82 @@ function isNullableDateTime(value: unknown): value is string | null {
 
 function isState(value: unknown): value is WebRegistrationState {
   return typeof value === "string" && REGISTRATION_STATES.has(value as WebRegistrationState);
+}
+
+const ACCOUNT_NEXT_STEPS = new Set<AccountNextStep>([
+  "none",
+  "set_password",
+  "sign_in",
+  "request_set_password",
+]);
+
+function isAccountNextStep(value: unknown): value is AccountNextStep {
+  return typeof value === "string" && ACCOUNT_NEXT_STEPS.has(value as AccountNextStep);
+}
+
+function isOpaqueCredential(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 8 && value.length <= 2048;
+}
+
+function isRegistrationResult(value: unknown): value is WebRegistrationResult {
+  if (!isRecord(value)) return false;
+  return isUuid(value.id)
+    && isUuid(value.event_id)
+    && (value.occurrence_id === null || isUuid(value.occurrence_id))
+    && ["confirmed", "pending", "waitlisted", "attended"].includes(String(value.status))
+    && Number.isInteger(value.seats_count)
+    && typeof value.seats_count === "number"
+    && value.seats_count >= 1;
+}
+
+function isIntentCreated(value: unknown): value is WebRegistrationIntentCreated {
+  if (!isRecord(value)) return false;
+  return isOpaqueCredential(value.flow_id)
+    && (value.next_step === "confirm_email" || value.next_step === "completed")
+    && isDateTime(value.expires_at);
+}
+
+function isResendResult(value: unknown): value is WebRegistrationResendResult {
+  return isRecord(value)
+    && value.next_step === "confirm_email"
+    && isDateTime(value.expires_at);
+}
+
+function isConfirmResult(value: unknown): value is WebRegistrationConfirmResult {
+  if (!isRecord(value)
+    || value.intent_status !== "confirmed"
+    || !isRegistrationResult(value.registration)
+    || !isAccountNextStep(value.account_next_step)
+    || !isNullableDateTime(value.set_password_expires_at)) return false;
+  if (value.account_next_step === "set_password") {
+    return isOpaqueCredential(value.set_password_code) && isDateTime(value.set_password_expires_at);
+  }
+  return value.set_password_code === null;
+}
+
+function isIntentStatus(value: unknown): value is WebRegistrationIntentStatus {
+  if (!isRecord(value)
+    || !["email_verification_required", "confirmed", "not_available"].includes(String(value.state))
+    || !isNullableDateTime(value.expires_at)
+    || !(value.registration === null || isRegistrationResult(value.registration))
+    || !(value.account_next_step === null || isAccountNextStep(value.account_next_step))) return false;
+  if (value.state === "confirmed") {
+    return isRegistrationResult(value.registration) && isAccountNextStep(value.account_next_step);
+  }
+  return value.registration === null && value.account_next_step === null;
+}
+
+function isAuthCodeResult(value: unknown): value is AuthCodeResult {
+  return isRecord(value) && value.ok === true;
+}
+
+function isErrorEnvelope(value: unknown): value is { error: { code: string } } {
+  return isRecord(value)
+    && value.data === null
+    && isRecord(value.error)
+    && typeof value.error.code === "string"
+    && typeof value.error.message === "string"
+    && isRecord(value.meta);
 }
 
 function isOccurrence(value: unknown): value is WebRegistrationOccurrence {
@@ -209,4 +305,115 @@ export async function getWebEventRegistrationForm(
         : null,
     },
   };
+}
+
+function retryAfterSeconds(response: Response): number | null {
+  const value = response.headers.get("Retry-After");
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+  const date = Date.parse(value);
+  if (!Number.isFinite(date)) return null;
+  return Math.max(0, Math.ceil((date - Date.now()) / 1000));
+}
+
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    throw new PublicApiError("invalid_response", response.status);
+  }
+}
+
+async function publicJsonRequest<T>(
+  path: string,
+  init: RequestInit,
+  validator: (value: unknown) => value is T,
+): Promise<T> {
+  const response = await fetch(`${normalizedBaseUrl()}${path}`, {
+    ...init,
+    headers: {
+      Accept: "application/json",
+      ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
+      ...init.headers,
+    },
+    credentials: "omit",
+  });
+  const body = await readJson(response);
+  if (!response.ok) {
+    if (!isErrorEnvelope(body)) throw new PublicApiError("invalid_response", response.status);
+    throw new PublicApiError(body.error.code, response.status, retryAfterSeconds(response));
+  }
+  if (!isRecord(body) || body.error !== null || !isRecord(body.meta) || !validator(body.data)) {
+    throw new PublicApiError("invalid_response", response.status);
+  }
+  return body.data;
+}
+
+async function authCodeRequest(path: string, body: Record<string, string>): Promise<AuthCodeResult> {
+  const response = await fetch(`${normalizedBaseUrl()}${path}`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    credentials: "omit",
+    body: JSON.stringify(body),
+  });
+  const responseBody = await readJson(response);
+  if (!response.ok) {
+    if (!isErrorEnvelope(responseBody)) throw new PublicApiError("invalid_response", response.status);
+    throw new PublicApiError(responseBody.error.code, response.status, retryAfterSeconds(response));
+  }
+  if (!isAuthCodeResult(responseBody)) throw new PublicApiError("invalid_response", response.status);
+  return responseBody;
+}
+
+export function createWebRegistrationIntent(
+  payload: WebRegistrationIntentRequest,
+): Promise<WebRegistrationIntentCreated> {
+  return publicJsonRequest(
+    "/web/registration-intents",
+    { method: "POST", body: JSON.stringify(payload) },
+    isIntentCreated,
+  );
+}
+
+export function getWebRegistrationIntentStatus(
+  flowId: string,
+): Promise<WebRegistrationIntentStatus> {
+  return publicJsonRequest(
+    `/web/registration-intents/${encodeURIComponent(flowId)}/status`,
+    { method: "GET" },
+    isIntentStatus,
+  );
+}
+
+export function resendWebRegistrationCode(
+  flowId: string,
+): Promise<WebRegistrationResendResult> {
+  return publicJsonRequest(
+    `/web/registration-intents/${encodeURIComponent(flowId)}/resend-code`,
+    { method: "POST" },
+    isResendResult,
+  );
+}
+
+export function confirmWebRegistrationEmail(
+  flowId: string,
+  code: string,
+): Promise<WebRegistrationConfirmResult> {
+  return publicJsonRequest(
+    `/web/registration-intents/${encodeURIComponent(flowId)}/confirm-email`,
+    { method: "POST", body: JSON.stringify({ code }) },
+    isConfirmResult,
+  );
+}
+
+export function requestSetPassword(email: string): Promise<AuthCodeResult> {
+  return authCodeRequest("/auth/request-set-password", { email });
+}
+
+export function confirmSetPassword(code: string, newPassword: string): Promise<AuthCodeResult> {
+  return authCodeRequest("/auth/confirm-set-password", {
+    code,
+    new_password: newPassword,
+  });
 }
