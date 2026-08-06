@@ -11,6 +11,7 @@ from sqlalchemy import (
     Integer,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -207,4 +208,103 @@ class WebRegistrationVerificationCode(Base):
         nullable=False,
         server_default="0",
     )
+    created_at: Mapped[datetime] = timestamptz_now()
+
+
+class PrivacyAccessCode(Base):
+    __tablename__ = "privacy_access_codes"
+    __table_args__ = (
+        CheckConstraint(
+            "btrim(code_hash) <> ''",
+            name="privacy_access_codes_code_hash_not_empty",
+        ),
+        CheckConstraint(
+            "expires_at > created_at",
+            name="privacy_access_codes_expires_after_created_check",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="privacy_access_codes_attempt_count_check",
+        ),
+        CheckConstraint(
+            "consumed_at IS NULL OR consumed_at >= created_at",
+            name="privacy_access_codes_consumed_after_created_check",
+        ),
+        UniqueConstraint("code_hash", name="privacy_access_codes_code_hash_key"),
+        Index("privacy_access_codes_user_id_idx", "user_id"),
+        Index("privacy_access_codes_expires_at_idx", "expires_at"),
+        Index(
+            "privacy_access_codes_active_user_expires_idx",
+            "user_id",
+            "expires_at",
+            postgresql_where=text("consumed_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    code_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
+    created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()
+
+
+class PrivacyAccessSession(Base):
+    __tablename__ = "privacy_access_sessions"
+    __table_args__ = (
+        CheckConstraint(
+            "btrim(token_hash) <> ''",
+            name="privacy_access_sessions_token_hash_not_empty",
+        ),
+        CheckConstraint(
+            "scope = 'privacy_self_service'",
+            name="privacy_access_sessions_scope_check",
+        ),
+        CheckConstraint(
+            "expires_at > created_at",
+            name="privacy_access_sessions_expires_after_created_check",
+        ),
+        CheckConstraint(
+            "revoked_at IS NULL OR revoked_at >= created_at",
+            name="privacy_access_sessions_revoked_after_created_check",
+        ),
+        CheckConstraint(
+            "last_used_at IS NULL OR last_used_at >= created_at",
+            name="privacy_access_sessions_last_used_after_created_check",
+        ),
+        UniqueConstraint(
+            "token_hash",
+            name="privacy_access_sessions_token_hash_key",
+        ),
+        Index("privacy_access_sessions_user_id_idx", "user_id"),
+        Index("privacy_access_sessions_expires_at_idx", "expires_at"),
+        Index(
+            "privacy_access_sessions_active_user_expires_idx",
+            "user_id",
+            "expires_at",
+            postgresql_where=text("revoked_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    token_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    scope: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = timestamptz_now()

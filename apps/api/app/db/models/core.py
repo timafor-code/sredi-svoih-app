@@ -1519,6 +1519,70 @@ class PrayerActivityLog(Base):
     updated_at: Mapped[datetime] = timestamptz_now()
 
 
+class PrivacyDestructionEvidence(Base):
+    __tablename__ = "privacy_destruction_evidence"
+    __table_args__ = (
+        CheckConstraint(
+            "btrim(subject_ref_hash) <> ''",
+            name="privacy_destruction_evidence_subject_hash_not_empty",
+        ),
+        CheckConstraint(
+            "btrim(execution_version) <> ''",
+            name="privacy_destruction_evidence_execution_version_not_empty",
+        ),
+        CheckConstraint(
+            "result_status IN ('completed', 'completed_with_retention')",
+            name="privacy_destruction_evidence_result_status_check",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(categories_deleted) = 'array' "
+            "AND categories_deleted <@ "
+            "'[\"account\", \"profile\", \"contact\", \"membership\", "
+            "\"registration\", \"credential\", \"session\", \"device\", "
+            "\"synced_contact\", \"avatar\", \"privacy_request_content\"]'::jsonb",
+            name="privacy_destruction_evidence_categories_deleted_check",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(categories_retained) = 'array' "
+            "AND categories_retained <@ "
+            "'[\"account\", \"profile\", \"contact\", \"membership\", "
+            "\"registration\", \"credential\", \"session\", \"device\", "
+            "\"synced_contact\", \"avatar\", \"privacy_request_content\"]'::jsonb",
+            name="privacy_destruction_evidence_categories_retained_check",
+        ),
+        CheckConstraint(
+            "retention_until IS NULL OR retention_until >= completed_at",
+            name="privacy_destruction_evidence_retention_after_completed_check",
+        ),
+        Index(
+            "privacy_destruction_evidence_subject_ref_hash_idx",
+            "subject_ref_hash",
+        ),
+        Index(
+            "privacy_destruction_evidence_completed_at_idx",
+            "completed_at",
+        ),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    subject_ref_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    execution_version: Mapped[str] = mapped_column(Text, nullable=False)
+    result_status: Mapped[str] = mapped_column(Text, nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    categories_deleted: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'::jsonb"),
+    )
+    categories_retained: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'::jsonb"),
+    )
+    retention_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = timestamptz_now()
+
+
 class PrivacyRequest(Base):
     __tablename__ = "privacy_requests"
     __table_args__ = (
@@ -1538,6 +1602,44 @@ class PrivacyRequest(Base):
             "resolution_note IS NULL OR char_length(resolution_note) <= 4000",
             name="privacy_requests_resolution_note_length_check",
         ),
+        CheckConstraint(
+            "identity_verified_at IS NULL OR identity_verified_at >= created_at",
+            name="privacy_requests_identity_verified_order_check",
+        ),
+        CheckConstraint(
+            "processing_stopped_at IS NULL OR "
+            "(identity_verified_at IS NOT NULL "
+            "AND processing_stopped_at >= identity_verified_at)",
+            name="privacy_requests_processing_stopped_order_check",
+        ),
+        CheckConstraint(
+            "execution_started_at IS NULL OR "
+            "(processing_stopped_at IS NOT NULL "
+            "AND execution_started_at >= processing_stopped_at)",
+            name="privacy_requests_execution_started_order_check",
+        ),
+        CheckConstraint(
+            "completed_at IS NULL OR "
+            "(execution_started_at IS NOT NULL "
+            "AND completed_at >= execution_started_at)",
+            name="privacy_requests_completed_order_check",
+        ),
+        CheckConstraint(
+            "due_at IS NULL OR due_at >= created_at",
+            name="privacy_requests_due_after_created_check",
+        ),
+        CheckConstraint(
+            "failure_code IS NULL OR btrim(failure_code) <> ''",
+            name="privacy_requests_failure_code_not_empty",
+        ),
+        CheckConstraint(
+            "completed_at IS NULL OR failure_code IS NULL",
+            name="privacy_requests_completed_without_failure_check",
+        ),
+        CheckConstraint(
+            "destruction_evidence_id IS NULL OR completed_at IS NOT NULL",
+            name="privacy_requests_evidence_after_completed_check",
+        ),
         Index("privacy_requests_user_created_idx", "user_id", text("created_at DESC")),
         Index(
             "privacy_requests_community_created_idx",
@@ -1545,13 +1647,16 @@ class PrivacyRequest(Base):
             text("created_at DESC"),
         ),
         Index("privacy_requests_status_created_idx", "status", text("created_at DESC")),
+        Index(
+            "privacy_requests_destruction_evidence_id_idx",
+            "destruction_evidence_id",
+        ),
     )
 
     id: Mapped[UUID] = uuid_pk()
-    user_id: Mapped[UUID] = mapped_column(
+    user_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("app_users.id", ondelete="CASCADE"),
-        nullable=False,
+        ForeignKey("app_users.id", ondelete="SET NULL"),
     )
     community_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -1569,6 +1674,22 @@ class PrivacyRequest(Base):
     resolved_by: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("app_users.id", ondelete="SET NULL"),
+    )
+    identity_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
+    processing_stopped_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
+    execution_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failure_code: Mapped[str | None] = mapped_column(Text)
+    destruction_evidence_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("privacy_destruction_evidence.id", ondelete="SET NULL"),
     )
     created_at: Mapped[datetime] = timestamptz_now()
     updated_at: Mapped[datetime] = timestamptz_now()

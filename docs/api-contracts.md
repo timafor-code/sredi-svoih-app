@@ -1287,6 +1287,18 @@ through `?occurrence={occurrence_id}`. Links are computed from trusted backend
 configuration and the event UUID. Existing/new events default to `disabled`;
 the MVP permits `unlisted` but not `listed` until the public directory exists.
 
+The PostgreSQL privacy self-service foundation is implemented, but every
+email-scoped endpoint in the following table remains a target and is not
+implemented. Access codes are stored only as `code_hash`; short-lived privacy
+session credentials are stored only as `token_hash`. Neither table stores a
+plaintext code, token, email, or phone.
+
+The only permitted privacy-session scope is `privacy_self_service`. A privacy
+session is separate from an auth session and grants only the future verified
+subject-data operations explicitly attached to that scope. It grants no login,
+password, profile editing, admin, refresh-token, or ordinary account access.
+This foundation creates no privacy bearer token or browser cookie at runtime.
+
 Privacy self-service target surface:
 
 | Method | Path | Target behavior |
@@ -2253,6 +2265,16 @@ including `status`, `resolution_note`, and `resolved_at`, but never
 endpoints record requests only: no export, deletion, or correction is
 executed, and no emails are sent. Admin review uses `/admin/privacy/requests`.
 Raw request messages are treated as personal data and are not logged.
+
+Schema status: `privacy_access_codes`, `privacy_access_sessions`, the expanded
+`privacy_requests` lifecycle fields, and PII-free
+`privacy_destruction_evidence` are implemented as storage foundation only.
+`privacy_requests.user_id` is nullable and uses `ON DELETE SET NULL`; evidence
+has no user foreign key and contains only allowlisted technical category codes.
+The email-scoped request/confirm, summary, export, destructive confirmation,
+cancellation, and erasure-worker behaviors remain unimplemented. Existing
+authenticated and admin privacy response shapes do not expose the new internal
+lifecycle or evidence fields.
 
 `EXPO_PUBLIC_PRIVACY_PROVIDER` is a narrow mobile domain flag added for PR 33:
 an unset, `supabase`, or unsupported value selects its conservative Supabase

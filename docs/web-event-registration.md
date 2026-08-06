@@ -21,6 +21,10 @@ Current repository behavior:
   set-password, SMTP delivery, and hash-only auth codes already exist;
 - authenticated `POST /privacy/requests` and `GET /privacy/requests` record and
   list requests only; they do not execute export, correction, or erasure;
+- the privacy self-service schema foundation is implemented with hash-only
+  access credentials, fixed-scope short-lived session storage, request
+  lifecycle fields, nullable request ownership, and PII-free destruction
+  evidence; no self-service access or erasure runtime is implemented;
 - the intent, email verification/finalization, identity/source/legal schema,
   and canonical public-web registration path are implemented;
 - event publication, computed UUID links, and the public registration-form API
@@ -178,9 +182,10 @@ collisions without raw PII in output or logs.
 
 ## Target Data Contracts
 
-The identity/source/legal, intent, verification-code, and publication contracts
-below are implemented. Questionnaires and privacy execution remain target
-contracts for later PRs.
+The identity/source/legal, intent, verification-code, publication, and privacy
+self-service schema-foundation contracts below are implemented. Questionnaires,
+privacy access endpoints, export, and privacy execution remain target contracts
+for later PRs.
 
 ### `app_users`
 
@@ -299,9 +304,15 @@ policy is insufficient.
 
 ### Privacy Access And Erasure Execution
 
-Hash-only access codes and a narrowly scoped, short-lived privacy session must
-support access to the verified person's own data only. Target execution state
-in `privacy_requests` or a separate erasure job includes:
+The database foundation stores privacy access codes as globally unique
+`code_hash` values and stores privacy session credentials as globally unique
+`token_hash` values. It stores no plaintext code, session token, email, or
+phone in either credential table. Privacy sessions have the single fixed scope
+`privacy_self_service`; they are not auth sessions and confer no login,
+password, profile-editing, ordinary account, or admin rights. Runtime issuance,
+confirmation, and authorization are not implemented yet.
+
+Implemented execution lifecycle fields in `privacy_requests` are:
 
 ```text
 identity_verified_at
@@ -312,6 +323,13 @@ due_at
 failure_code null
 destruction_evidence_id null
 ```
+
+`privacy_requests.user_id` is nullable with `ON DELETE SET NULL`, so a completed
+minimal request record may remain after final user deletion. The implemented
+`privacy_destruction_evidence` table has no user foreign key or raw contact,
+profile, address, or request-message fields. It permits only technical category
+codes and `completed` or `completed_with_retention` result status. No worker
+creates this evidence yet, and no retention duration is implied by the schema.
 
 ## Public API Contracts
 
@@ -476,8 +494,14 @@ are not approvals and must not be presented as final values.
    controls in web-admin.
 8. `feature/public-web-registration-account-claim` — intent confirmation,
    passwordless path, and account claim.
-9. `feature/api-privacy-self-service-erasure` — scoped access, export, erasure,
-   destruction evidence, and tests; split schema/worker if needed.
+9. Privacy self-service is split into three PRs:
+   - `feature/api-privacy-self-service-foundation` — PostgreSQL/Alembic
+     credentials, scoped-session, lifecycle, nullable ownership, destruction
+     evidence, and schema/regression tests (implemented);
+   - `feature/api-privacy-self-service-access` — access request/confirmation,
+     privacy session runtime, summary, and export (not implemented);
+   - `feature/api-privacy-erasure-execution` — destructive confirmation,
+     processing stop, deletion worker, and evidence completion (not implemented).
 10. `feature/admin-web-registration-operations` — source/status, conflict, and
     privacy due-date operations.
 11. `feature/web-event-questionnaires-basic` — allowlisted ordinary questions
