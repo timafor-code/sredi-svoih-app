@@ -3,6 +3,19 @@ import type {
   AdminEventRegistrationMode,
 } from "./events";
 
+export const ADMIN_REGISTRATION_SOURCE_CHANNELS = [
+  "mobile",
+  "public_web",
+  "admin",
+] as const;
+
+export type AdminRegistrationSourceChannel =
+  (typeof ADMIN_REGISTRATION_SOURCE_CHANNELS)[number];
+
+export type AdminRegistrationSourceFilter =
+  | "all"
+  | AdminRegistrationSourceChannel;
+
 export const ADMIN_REGISTRATION_STATUSES = [
   "pending",
   "confirmed",
@@ -111,6 +124,7 @@ export type AdminEventRegistrationRow = {
   email: string | null;
   phone: string | null;
   status: AdminRegistrationStatus | string;
+  sourceChannel: AdminRegistrationSourceChannel;
   seatsCount: number;
   guestNames: string[];
   comment: string | null;
@@ -132,6 +146,7 @@ export type ListEventRegistrationsParams = {
   eventId: string;
   occurrenceId?: string | null;
   status?: AdminRegistrationStatus | "all" | null;
+  sourceChannel?: AdminRegistrationSourceFilter | null;
   search?: string | null;
   limit?: number | null;
   offset?: number | null;

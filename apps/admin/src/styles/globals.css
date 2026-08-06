@@ -9600,7 +9600,38 @@ a {
 
 .registration-controls {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 0.42fr);
+  align-items: end;
   gap: 12px;
+}
+
+.registration-source-field {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.registration-source-field span {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.registration-source-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  outline: 0;
+  padding: 0 11px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.registration-source-field select:focus {
+  border-color: rgba(242, 184, 75, 0.62);
 }
 
 .registrations-export-group {
@@ -9832,6 +9863,14 @@ a {
   overflow: visible;
   text-overflow: clip;
   white-space: normal;
+}
+
+.registration-table-stack--status {
+  justify-items: start;
+}
+
+.registration-table-source {
+  display: inline-flex;
 }
 
 .registration-avatar {
@@ -10869,6 +10908,10 @@ a {
 }
 
 @media (max-width: 900px) {
+  .registration-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .registration-capacity-buckets {
     grid-template-columns: 1fr;
   }

@@ -34,7 +34,9 @@ import type { AdminBadgeTone } from "../types/admin";
 import type {
   AdminEventRegistrationRow,
   AdminRegistrationEventSummary,
+  AdminRegistrationSourceFilter,
 } from "../types/registrations";
+import { ADMIN_REGISTRATION_SOURCE_CHANNELS } from "../types/registrations";
 import type {
   AdminRegistrationCapacityAnalytics,
   AdminRegistrationCapacityBucket,
@@ -44,6 +46,7 @@ import {
   formatEventKind,
   formatRegistrationCount,
   getDestructiveActionDescription,
+  getRegistrationSourceLabel,
   getRegistrationStatusLabel,
   getRegistrationStatusTone,
 } from "../components/registrations/formatters";
@@ -150,6 +153,8 @@ export function RegistrationsPage() {
   const [capacityAnalyticsLoading, setCapacityAnalyticsLoading] = useState(false);
   const [capacityAnalyticsError, setCapacityAnalyticsError] = useState<string | null>(null);
   const [registrationSearch, setRegistrationSearch] = useState("");
+  const [registrationSourceFilter, setRegistrationSourceFilter] =
+    useState<AdminRegistrationSourceFilter>("all");
   const [offset, setOffset] = useState(0);
   const [selectedRegistrationId, setSelectedRegistrationId] = useState<string | null>(null);
 
@@ -279,6 +284,7 @@ export function RegistrationsPage() {
           eventId: selectedEventId,
           occurrenceId: eventHasOccurrences ? selectedOccurrenceId : null,
           status: "all",
+          sourceChannel: registrationSourceFilter,
           search: registrationSearch.trim() || null,
           limit: REGISTRATION_PAGE_SIZE,
           offset,
@@ -314,6 +320,7 @@ export function RegistrationsPage() {
       eventHasOccurrences,
       offset,
       registrationSearch,
+      registrationSourceFilter,
       selectedEventId,
       selectedOccurrenceId,
     ],
@@ -619,6 +626,15 @@ export function RegistrationsPage() {
     setOffset(0);
   }, []);
 
+  const handleRegistrationSourceFilterChange = useCallback(
+    (nextSourceFilter: AdminRegistrationSourceFilter) => {
+      setRegistrationSourceFilter(nextSourceFilter);
+      setSelectedRegistrationId(null);
+      setOffset(0);
+    },
+    [],
+  );
+
   const handleCloseRegistrationModal = useCallback(() => {
     setSelectedRegistrationId(null);
   }, []);
@@ -782,6 +798,24 @@ export function RegistrationsPage() {
                     value={registrationSearch}
                   />
                 </label>
+                <label className="registration-source-field">
+                  <span>Источник регистрации</span>
+                  <select
+                    onChange={(event) =>
+                      handleRegistrationSourceFilterChange(
+                        event.target.value as AdminRegistrationSourceFilter,
+                      )
+                    }
+                    value={registrationSourceFilter}
+                  >
+                    <option value="all">Все источники</option>
+                    {ADMIN_REGISTRATION_SOURCE_CHANNELS.map((sourceChannel) => (
+                      <option key={sourceChannel} value={sourceChannel}>
+                        {getRegistrationSourceLabel(sourceChannel)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
 
               <div className="registrations-table-panel">
@@ -876,6 +910,7 @@ export function RegistrationsPage() {
                     description={formatRegistrationsEmptyDescription({
                       eventHasOccurrences,
                       registrationSearch,
+                      registrationSourceFilter,
                       selectedOccurrence,
                     })}
                     title="Нет заявок"
@@ -1114,18 +1149,21 @@ function RegistrationOccurrenceBar({
 function formatRegistrationsEmptyDescription({
   eventHasOccurrences,
   registrationSearch,
+  registrationSourceFilter,
   selectedOccurrence,
 }: {
   eventHasOccurrences: boolean;
   registrationSearch: string;
+  registrationSourceFilter: AdminRegistrationSourceFilter;
   selectedOccurrence: AdminEventOccurrence | null;
 }): string {
   const hasSearch = registrationSearch.trim().length > 0;
+  const hasSourceFilter = registrationSourceFilter !== "all";
 
-  if (hasSearch) {
+  if (hasSearch || hasSourceFilter) {
     return eventHasOccurrences
-      ? "В текущем выбранном сеансе нет заявок под этот поиск. Очистите поиск или проверьте другую дату."
-      : "В выбранном событии нет заявок под этот поиск. Очистите поиск, если ожидаете участников.";
+      ? "В текущем выбранном сеансе нет заявок по заданным условиям. Поиск или фильтр источника могут скрывать регистрации; измените фильтры или проверьте другую дату."
+      : "В выбранном событии нет заявок по заданным условиям. Поиск или фильтр источника могут скрывать регистрации; измените фильтры, если ожидаете участников.";
   }
 
   if (eventHasOccurrences && selectedOccurrence) {

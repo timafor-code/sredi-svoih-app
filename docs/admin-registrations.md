@@ -2,10 +2,10 @@
 
 Production page: `apps/admin/src/pages/RegistrationsPage.tsx`.
 
-The registrations workspace uses the regular authenticated Supabase client.
-Admin reads/writes stay behind RPC/RLS policies; browser code must not use
-privileged server keys, Supabase Admin API access, server-only database
-connection strings, or direct access to `auth.users`.
+The registrations workspace uses the authenticated Python API. Admin
+reads/writes remain community-scoped; browser code must not use privileged
+server keys, Supabase Admin API access, server-only database connection strings,
+or direct access to `auth.users`.
 
 ## Status
 
@@ -21,6 +21,8 @@ Registrations v15 is implemented for the admin workflow and now includes Phase
 - bucket breakdown with list and donut/chart modes;
 - registrations table with row click/keyboard access and participant detail
   modal;
+- canonical registration-source badges for mobile, public web, and admin-created
+  registrations, plus a server-side source filter;
 - status and attendance actions;
 - Excel export from the registrations table header;
 - seating editor opened from capacity buckets.
@@ -31,8 +33,8 @@ are documented in `docs/admin-seating.md`.
 ## Architecture
 
 - `RegistrationsPage.tsx` owns selected event/occurrence state, data loading,
-  filters, pagination, toasts, status actions, Excel export, and seating modal
-  state.
+  search/source filters, pagination, toasts, status actions, Excel export, and
+  seating modal state.
 - `RegistrationEventsPanel.tsx` renders the event list and event search.
 - `RegistrationCapacityBucketsOverview.tsx` renders capacity totals, capacity
   modes, bucket rows, bucket breakdown, donation/non-seat markers, and the
@@ -63,16 +65,30 @@ The page should make the current scope obvious before showing operational data:
 
 ## Table Filters And Search
 
-The registrations table filters server results by the selected event/occurrence
-context, status filter, search string, page size, and offset. Search/filters do
-not change the selected event or occurrence.
+The registrations table requests server results by the selected
+event/occurrence context, search string, registration source, page size, and
+offset. Registration source is the canonical API value `mobile`, `public_web`,
+or `admin`; it is never inferred from profile, contact, or registration data.
+The visible source badges are `Mobile`, `Web`, and `Admin`, with the full Russian
+source name available in the table and registration details.
+
+Source filtering is performed by FastAPI through the `source_channel` query
+parameter, not by filtering one already loaded page in the browser. Search and
+source filters can be combined with occurrence selection. Changing the source
+filter resets pagination and closes selected-registration details, while event
+and occurrence changes preserve the selected source filter.
 
 Empty table states distinguish between:
 
 - no registrations for the selected event;
 - no registrations for the selected occurrence;
-- no matches for the current status filter or search;
+- no matches for the current search or source filter;
 - registration load failure for the current context.
+
+Mobile and public-web registrations remain records in the same canonical
+`event_registrations` table. Source visibility/filtering does not affect
+capacity, status transitions, attendance, payment state, seating, selected
+options, or notification behavior.
 
 ## Excel Export
 
@@ -183,7 +199,9 @@ Not run by Codex. Manual smoke is performed by the project owner.
 - capacity reservation business logic changes;
 - donation business logic changes;
 - registration status transition or attendance logic changes.
+- identity-conflict resolution, operations-summary, or privacy operations UI;
+- user/profile/login-identity editing or merging.
 
 ## Next PR
 
-`feature/admin-feedback-review-list`
+`feature/admin-web-registration-operations-ui`

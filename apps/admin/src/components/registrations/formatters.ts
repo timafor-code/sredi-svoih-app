@@ -3,7 +3,42 @@ import type {
   AdminEventRegistrationRow,
   AdminRegistrationEventSummary,
   AdminRegistrationOptionSelectionSummary,
+  AdminRegistrationSourceChannel,
 } from "../../types/registrations";
+
+const REGISTRATION_SOURCE_LABELS: Record<AdminRegistrationSourceChannel, string> = {
+  admin: "Добавлено администратором",
+  mobile: "Мобильное приложение",
+  public_web: "Веб-регистрация",
+};
+
+const REGISTRATION_SOURCE_COMPACT_LABELS: Record<AdminRegistrationSourceChannel, string> = {
+  admin: "Admin",
+  mobile: "Mobile",
+  public_web: "Web",
+};
+
+const REGISTRATION_SOURCE_TONES: Record<AdminRegistrationSourceChannel, AdminBadgeTone> = {
+  admin: "purple",
+  mobile: "blue",
+  public_web: "gold",
+};
+
+export function getRegistrationSourceLabel(source: AdminRegistrationSourceChannel): string {
+  return REGISTRATION_SOURCE_LABELS[source];
+}
+
+export function getRegistrationSourceCompactLabel(
+  source: AdminRegistrationSourceChannel,
+): string {
+  return REGISTRATION_SOURCE_COMPACT_LABELS[source];
+}
+
+export function getRegistrationSourceTone(
+  source: AdminRegistrationSourceChannel,
+): AdminBadgeTone {
+  return REGISTRATION_SOURCE_TONES[source];
+}
 
 export function formatDateTime(value: string | null): string {
   if (!value) {

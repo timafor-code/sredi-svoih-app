@@ -207,7 +207,10 @@ source_channel  mobile | public_web | admin
 ```
 
 The existing final statuses remain canonical. Email-verification status stays
-in the intent.
+in the intent. Mobile, public-web, and admin-created registrations remain rows
+in this same canonical `event_registrations` table. The source value is
+visibility/filtering metadata and does not change capacity accounting or status
+transitions.
 
 ### `web_registration_intents`
 
@@ -529,7 +532,9 @@ are not approvals and must not be presented as final values.
 
 The backend operations foundation exposes canonical registration
 `source_channel` (`mobile`, `public_web`, or `admin`) and an optional source
-filter through the existing admin registration list. It also exposes
+filter through the existing admin registration list. Web-admin displays this
+canonical value as a source badge and sends source filtering to FastAPI instead
+of filtering one loaded page in the browser. It also exposes
 `GET /admin/web-registration/operations-summary`,
 `GET /admin/web-registration/conflicts`, and
 `PATCH /admin/web-registration/conflicts/{conflict_id}` for active admins only.
@@ -545,8 +550,9 @@ Admin privacy list responses include `identity_verified_at`,
 filters. Overdue means a non-terminal (`resolved`, `rejected`, and `closed` are
 terminal) request with a non-null past `due_at`. These admin operations never
 run erasure or restore replay, expose encrypted notification fields, or read
-prayer activity. This release adds backend contracts only; web-admin UI follows
-in focused PRs.
+prayer activity. Identity conflicts are not resolved from the registrations UI.
+The operations-summary, identity-conflict, and privacy operations UI is deferred
+to `feature/admin-web-registration-operations-ui`.
 
 ## Implementation Sequence
 
@@ -585,16 +591,20 @@ in focused PRs.
      (implemented; closes the split PR 9 implementation series).
 10. `feature/api-admin-web-registration-operations-foundation` — backend
     source/status, aggregate summary, safe conflict queue, and privacy due-date
-    contracts (implemented). Focused web-admin UI work begins with
-    `feature/admin-registration-source-status`.
-11. `feature/web-event-questionnaires-basic` — allowlisted ordinary questions
+    contracts (implemented).
+11. `feature/admin-registration-source-status` — canonical source badges and
+    FastAPI-backed source filtering in the existing registrations UI
+    (implemented).
+12. `feature/admin-web-registration-operations-ui` — operations summary,
+    identity-conflict, and privacy operations UI.
+13. `feature/web-event-questionnaires-basic` — allowlisted ordinary questions
     with purpose/retention only.
-12. `ops/public-web-production-deploy` — Russian hosting, TLS/CSP/CORS, SMTP,
+14. `ops/public-web-production-deploy` — Russian hosting, TLS/CSP/CORS, SMTP,
     restore-erasure drill, and owner launch checklist.
-13. After MVP: `feature/public-web-events-directory` — paginated `listed` event
+15. After MVP: `feature/public-web-events-directory` — paginated `listed` event
     cards; never expose `unlisted` events.
 
-The next implementation PR is `feature/admin-registration-source-status`.
+The next implementation PR is `feature/admin-web-registration-operations-ui`.
 
 ## Open Launch Decisions
 

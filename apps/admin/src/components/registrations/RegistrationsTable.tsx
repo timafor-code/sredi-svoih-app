@@ -11,6 +11,9 @@ import {
   formatPaymentStatus,
   formatRegistrationAmount,
   getInitials,
+  getRegistrationSourceCompactLabel,
+  getRegistrationSourceLabel,
+  getRegistrationSourceTone,
   getRegistrationStatusLabel,
   getRegistrationStatusTone,
   isSimulatedPaymentId,
@@ -109,7 +112,7 @@ export function RegistrationsTable({
         <div className="data-table__row data-table__row--head" role="row">
           <span role="columnheader">Участник</span>
           <span role="columnheader">Контакты</span>
-          <span role="columnheader">Статус</span>
+          <span role="columnheader">Статус / источник</span>
           <span role="columnheader">Дата/сеанс</span>
           <span role="columnheader">Мест</span>
           <span role="columnheader">Опции</span>
@@ -121,6 +124,7 @@ export function RegistrationsTable({
         {registrations.map((registration) => {
           const isSelected = registration.id === selectedRegistrationId;
           const fullOptionsLabel = formatOptionsFull(registration.selectedOptions);
+          const sourceLabel = getRegistrationSourceLabel(registration.sourceChannel);
 
           return (
             <div
@@ -157,11 +161,20 @@ export function RegistrationsTable({
                 <span>{registration.email ?? "email не указан"}</span>
                 <small>{registration.phone ?? "телефон не указан"}</small>
               </div>
-              <span role="cell">
+              <div className="registration-table-stack registration-table-stack--status" role="cell">
                 <Badge tone={getRegistrationStatusTone(registration.status)}>
                   {getRegistrationStatusLabel(registration.status)}
                 </Badge>
-              </span>
+                <div
+                  aria-label={`Источник регистрации: ${sourceLabel}`}
+                  className="registration-table-source"
+                  title={sourceLabel}
+                >
+                  <Badge tone={getRegistrationSourceTone(registration.sourceChannel)}>
+                    {getRegistrationSourceCompactLabel(registration.sourceChannel)}
+                  </Badge>
+                </div>
+              </div>
               <div className="registration-table-stack" role="cell">
                 <span>{formatOccurrenceLabel(registration, event)}</span>
                 {registration.occurrenceTitle ? <small>{registration.occurrenceTitle}</small> : null}
