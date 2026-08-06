@@ -29,6 +29,11 @@ The owner must separately select, document, and exercise object-storage
 versioning or backup/export recovery so that DB metadata and objects can be
 recovered consistently.
 
+They also do not make PostgreSQL erasure durable across restoration from an
+older point in time. The private restore-erasure register must be stored
+independently of primary PostgreSQL backups and configured from the approved
+backend-only Russia-hosted S3-compatible storage contour.
+
 ## Backup prerequisites
 
 Before scheduling a backup job, confirm all of the following:
@@ -181,12 +186,52 @@ in a restore test.
    completing failure analysis. Its disposal must not affect production,
    backups, storage artifacts, or ordinary staging.
 
+## Mandatory restore-erasure replay order
+
+For every restore that could later receive application traffic:
+
+1. Restore PostgreSQL into an isolated environment with application traffic
+   blocked.
+2. Configure the same backend `API_TOKEN_HASH_SECRET` and private
+   `API_PRIVACY_ERASURE_REGISTER_PREFIX` plus approved S3-compatible storage.
+3. Apply Alembic migrations to head.
+4. Run restore replay in dry-run mode:
+
+   ```powershell
+   python scripts/run_privacy_erasure_restore_replay.py
+   ```
+
+5. Review aggregate results only. Stop on invalid metadata, unsupported
+   version, key-fingerprint mismatch, malformed marker, storage/database
+   failure, or any partial result.
+6. Run restore replay with explicit mutation:
+
+   ```powershell
+   python scripts/run_privacy_erasure_restore_replay.py --apply
+   ```
+
+7. Run dry-run again and confirm no matched restored subjects remain.
+8. Perform the remaining restore validation in this runbook.
+9. Only then allow application traffic.
+
+The register is PII-free but sensitive operational data. It must remain
+private, backend-only, available whenever erasure runs, and retained for every
+backup that remains restorable. No retention duration is approved here;
+register retention, backup retention, and backup purge are owner/legal/operations
+decisions. The replay command does not restore a backup, create or purge a
+backup, send completion email, expose an API endpoint, or claim that production
+backup policy is complete. Production smoke and real restore drills are
+owner-only operations.
+
 ## Restore-test checklist
 
 - [ ] Artifact checksum, size, and source timestamp match protected inventory.
 - [ ] A second operator/owner confirmed host/database are the separate disposable target.
 - [ ] `pg_restore` completed with `--exit-on-error`; no unreviewed warnings were ignored.
 - [ ] `alembic current` matches expected migration state for the release under test.
+- [ ] Restore replay preflight and dry-run succeeded with the same token-hash
+  secret and independent private register; `--apply` succeeded; the final
+  dry-run reports no matched restored subjects.
 - [ ] Run read-only integrity checks returning counts/metadata only: confirm
   `alembic_version` and compare counts for an owner-reviewed set of current API
   tables. Do not export rows or inspect raw profiles, contacts, messages,

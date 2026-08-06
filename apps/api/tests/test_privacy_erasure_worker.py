@@ -56,9 +56,14 @@ from app.services.privacy_erasure_worker import (
     DATABASE_FAILURE_CODE,
     MANUAL_REVIEW_FAILURE_CODE,
     PRIVACY_ERASURE_EXECUTION_VERSION,
+    RESTORE_REGISTER_FAILURE_CODE,
     SUBJECT_MISSING_FAILURE_CODE,
     PrivacyErasureWorkerResult,
     execute_privacy_erasure_request,
+)
+from app.services.privacy_erasure_restore_register import (
+    ensure_restore_register_marker,
+    privacy_erasure_subject_ref_hash,
 )
 from app.services.email_delivery import EmailSendResult
 
@@ -87,6 +92,33 @@ class _FakeAvatarStorage:
             raise RuntimeError(f"synthetic provider failure for {object_key}")
 
 
+class _FakeRegisterStorage:
+    def __init__(self, *, fail_reads: bool = False, fail_writes: bool = False) -> None:
+        self.fail_reads = fail_reads
+        self.fail_writes = fail_writes
+        self.objects: dict[str, bytes] = {}
+        self.put_calls: list[str] = []
+
+    async def get_object(self, key: str) -> bytes | None:
+        if self.fail_reads:
+            raise RuntimeError("synthetic register read failure with provider details")
+        return self.objects.get(key)
+
+    async def put_object_if_absent(self, key: str, body: bytes) -> bool:
+        self.put_calls.append(key)
+        if self.fail_writes:
+            raise RuntimeError("synthetic register write failure with provider details")
+        if key in self.objects:
+            return False
+        self.objects[key] = body
+        return True
+
+    async def list_object_keys(self, prefix: str) -> list[str]:
+        if self.fail_reads:
+            raise RuntimeError("synthetic register listing failure with provider details")
+        return sorted(key for key in self.objects if key.startswith(prefix))
+
+
 class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         await engine.dispose()
@@ -106,6 +138,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
             api_privacy_erasure_notification_key_id="synthetic-worker-key-v1",
             api_privacy_erasure_notification_delivery_window_hours=24,
         )
+        self.register_storage = _FakeRegisterStorage()
 
         async with AsyncSessionLocal() as session:
             async with session.begin():
@@ -205,6 +238,10 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
     async def _execute_worker(self, request_id: UUID, **kwargs):
         kwargs.setdefault("settings", self.notification_settings)
         kwargs.setdefault("notification_email_sender", self._send_notification)
+        kwargs.setdefault(
+            "register_storage_factory",
+            lambda: self.register_storage,
+        )
         return await execute_privacy_erasure_request(request_id, **kwargs)
 
     async def _add_subject(
@@ -683,6 +720,132 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(request.completed_at)
         self.assertEqual(request.failure_code, AVATAR_STORAGE_FAILURE_CODE)
         self.assertEqual(evidence_count, 0)
+
+    async def test_restore_register_is_durable_before_avatar_deletion(self) -> None:
+        user_id, request_id, _, _ = await self._add_subject()
+        avatar_id = uuid4()
+        object_key = f"synthetic/avatar/{uuid4().hex}"
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(
+                    ProfileAvatar(
+                        id=avatar_id,
+                        user_id=user_id,
+                        object_key=object_key,
+                        content_type="image/png",
+                        status="active",
+                    ),
+                )
+        events: list[str] = []
+
+        class OrderedRegister(_FakeRegisterStorage):
+            async def put_object_if_absent(self, key: str, body: bytes) -> bool:
+                events.append("register")
+                return await super().put_object_if_absent(key, body)
+
+        class OrderedAvatar(_FakeAvatarStorage):
+            async def delete_avatar(self, *, object_key: str) -> None:
+                events.append("avatar")
+                await super().delete_avatar(object_key=object_key)
+
+        register = OrderedRegister()
+        result = await self._execute_worker(
+            request_id,
+            register_storage_factory=lambda: register,
+            storage_factory=OrderedAvatar,
+        )
+        self.assertEqual(result.result, "completed")
+        self.evidence_ids.add(result.destruction_evidence_id)
+        self.assertEqual(events[-1], "avatar")
+        self.assertTrue(events.index("register") < events.index("avatar"))
+        self.assertEqual(len(register.objects), 2)
+
+    async def test_restore_register_failure_and_key_mismatch_preserve_everything(self) -> None:
+        for storage in (
+            _FakeRegisterStorage(fail_writes=True),
+            _FakeRegisterStorage(),
+        ):
+            user_id, request_id, _, _ = await self._add_subject()
+            avatar_id = uuid4()
+            object_key = f"synthetic/avatar/{uuid4().hex}"
+            async with AsyncSessionLocal() as session:
+                async with session.begin():
+                    session.add(
+                        ProfileAvatar(
+                            id=avatar_id,
+                            user_id=user_id,
+                            object_key=object_key,
+                            content_type="image/png",
+                            status="active",
+                        ),
+                    )
+            if not storage.fail_writes:
+                other_settings = self.notification_settings.model_copy(
+                    update={"api_token_hash_secret": "different-synthetic-hash-key"},
+                )
+                other_hash = privacy_erasure_subject_ref_hash(user_id, other_settings)
+                await ensure_restore_register_marker(
+                    storage,
+                    settings=other_settings,
+                    subject_ref_hash=other_hash,
+                )
+            avatar_storage = _FakeAvatarStorage()
+            result = await self._execute_worker(
+                request_id,
+                register_storage_factory=lambda storage=storage: storage,
+                storage_factory=lambda: avatar_storage,
+            )
+            self.assertEqual(result.result, "retryable_failure")
+            self.assertEqual(result.failure_code, RESTORE_REGISTER_FAILURE_CODE)
+            self.assertEqual(avatar_storage.deleted, [])
+            async with AsyncSessionLocal() as session:
+                request = await session.get(PrivacyRequest, request_id)
+                self.assertIsNotNone(await session.get(AppUser, user_id))
+                self.assertIsNotNone(await session.get(ProfileAvatar, avatar_id))
+                self.assertIsNone(request.completed_at)
+                self.assertEqual(request.failure_code, RESTORE_REGISTER_FAILURE_CODE)
+
+    async def test_identical_marker_is_accepted_and_incompatible_marker_fails_closed(self) -> None:
+        accepted_user, accepted_request, _, _ = await self._add_subject()
+        subject_hash = privacy_erasure_subject_ref_hash(
+            accepted_user,
+            self.notification_settings,
+        )
+        await ensure_restore_register_marker(
+            self.register_storage,
+            settings=self.notification_settings,
+            subject_ref_hash=subject_hash,
+        )
+        before_keys = set(self.register_storage.objects)
+        accepted = await self._execute_worker(accepted_request)
+        self.assertEqual(accepted.result, "completed")
+        self.evidence_ids.add(accepted.destruction_evidence_id)
+        self.assertEqual(set(self.register_storage.objects), before_keys)
+
+        failed_user, failed_request, _, _ = await self._add_subject()
+        failed_hash = privacy_erasure_subject_ref_hash(
+            failed_user,
+            self.notification_settings,
+        )
+        await ensure_restore_register_marker(
+            self.register_storage,
+            settings=self.notification_settings,
+            subject_ref_hash=failed_hash,
+        )
+        marker_key = next(
+            key
+            for key, value in self.register_storage.objects.items()
+            if failed_hash.encode("ascii") in value
+        )
+        self.register_storage.objects[marker_key] = (
+            b'{"format_version":"privacy-erasure-register-marker-v1",'
+            b'"subject_ref_hash":"hmac-sha256-v1:' + b"0" * 64 + b'"}\n'
+        )
+        failed = await self._execute_worker(failed_request)
+        self.assertEqual(failed.result, "retryable_failure")
+        self.assertEqual(failed.failure_code, RESTORE_REGISTER_FAILURE_CODE)
+        async with AsyncSessionLocal() as session:
+            self.assertIsNotNone(await session.get(AppUser, failed_user))
 
     async def test_database_failure_after_storage_rolls_back_and_retry_completes(self) -> None:
         user_id, request_id, _, _ = await self._add_subject()

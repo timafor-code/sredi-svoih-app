@@ -1280,8 +1280,8 @@ registration-result email is attempted after commit and cannot roll back the
 registration. Status returns only public state, minimal registration data, and
 an account next step without plaintext secrets. The current limiter is
 process-local and requires shared storage for horizontal production scaling.
-No web UI, SMS, marketing email, or analytics is included. Next PR:
-`feature/public-web-event-registration-shell`.
+No web UI, SMS, marketing email, or analytics is included. The next
+implementation PR is `feature/admin-web-registration-operations`.
 
 Administrative publication:
 
@@ -2410,10 +2410,12 @@ expanded `privacy_requests` lifecycle fields, and PII-free
 `privacy_requests.user_id` is nullable and uses `ON DELETE SET NULL`; evidence
 has no user foreign key and contains only allowlisted technical category codes.
 Email-scoped request/confirm, summary, synchronous JSON export, verified
-request creation, destructive confirmation/cancellation, processing stop, and
-one-request worker execution are implemented. Creating a deletion request alone
-changes none of those states; execution requires explicit confirmation and an
-explicit operational CLI invocation.
+request creation, destructive confirmation/cancellation, processing stop,
+one-request worker execution, encrypted completion delivery, and owner-run
+restore replay are implemented. This closes the split PR 9 privacy self-service
+and erasure implementation series. Creating a deletion request alone changes
+none of those states; execution requires explicit confirmation and an explicit
+operational CLI invocation.
 `GET /privacy/requests` remains ordinary-auth-only. Existing authenticated list
 and admin privacy response shapes do not expose internal lifecycle or evidence
 fields.
@@ -2574,6 +2576,7 @@ only stable erasure/notification failure codes:
 - `privacy_erasure_notification_configuration_unavailable`;
 - `privacy_erasure_notification_recipient_missing`;
 - `privacy_erasure_notification_encryption_failed`;
+- `privacy_erasure_restore_register_unavailable`;
 - `privacy_erasure_notification_key_unavailable`;
 - `privacy_erasure_notification_decryption_failed`;
 - `privacy_erasure_notification_delivery_unavailable`;
@@ -2593,3 +2596,48 @@ delivery is post-commit and at-least-once. PostgreSQL row locking prevents a
 duplicate from normal concurrent retries, but a crash after SMTP acceptance
 and before outbox commit can cause another delivery. There is no HTTP/admin/
 public outbox endpoint, scheduler, batch, or polling contract.
+
+### Owner-run privacy-erasure restore replay
+
+Before the ordinary worker's first irreversible deletion, it validates strict
+external-register version metadata and a non-secret fingerprint proving
+compatibility with the configured `API_TOKEN_HASH_SECRET`, then conditionally
+writes one immutable/idempotent PII-free marker for the established
+`subject_ref_hash`. An unavailable, mismatched, malformed, or incompatible
+register leaves private avatar objects, PostgreSQL personal data, evidence,
+and `app_users` untouched for a safe retry. The register is private,
+backend-only, stored under `API_PRIVACY_ERASURE_REGISTER_PREFIX` in the same
+approved S3-compatible contour, and independent of the PostgreSQL backup being
+restored. It stores no raw UUID, name, email, phone, request/prayer/registration
+content, credential, notification recipient, or avatar object key.
+
+Restore replay is an owner-run CLI, not an HTTP or admin endpoint:
+
+```text
+python scripts/run_privacy_erasure_restore_replay.py [--apply]
+```
+
+The default is dry-run. `--apply` is required for mutation. The command
+preflights all metadata and markers before any database deletion, scans restored
+`app_users`, recomputes the same keyed subject reference, and matches only
+external markers. Apply deletes private avatar objects, uses the ordinary
+worker's shared deletion manifest, deletes `app_users` last, and creates PII-free
+local evidence with execution version `privacy-erasure-restore-replay-v1`.
+Already absent subjects are successful idempotent results. Replay never creates
+a privacy request or completion notification and never changes an external
+marker. Prayer activity is never selected, counted, serialized, or returned;
+the only operation is a direct user-scoped `DELETE` without `RETURNING`.
+
+Output contains aggregate `mode`, register version, marker/user/match/deleted/
+already-absent/failed counts, `result`, and an optional stable failure code. It
+contains no individual UUID, subject hash, PII, object key, credential, prayer
+content, or provider detail. Invalid metadata/version/key/marker, unavailable
+storage, database failure, and partial replay exit non-zero.
+
+Register availability is required for production erasure, and register
+retention must cover every backup that remains restorable. No duration is
+approved here. Backup retention/purge, production S3 and SMTP residency, and a
+real restore drill remain owner/legal/operations responsibilities. The replay
+command does not restore or purge backups and does not claim production backup
+policy complete. The next implementation PR is
+`feature/admin-web-registration-operations`.

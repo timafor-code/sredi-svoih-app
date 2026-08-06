@@ -7,45 +7,26 @@ import logging
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import column, delete, func, or_, select, table, update
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
-from app.db.models.auth import (
-    AuthEmailVerificationCode,
-    AuthSession,
-    AuthSetPasswordCode,
-    PasswordResetCode,
-    PrivacyAccessCode,
-    PrivacyAccessSession,
-)
-from app.db.models.avatar import ProfileAvatar
 from app.db.models.core import (
-    AdminFeedback,
     AppUser,
-    CommunityMembership,
-    DeviceToken,
-    EventRegistration,
-    Invite,
-    LegalAcceptance,
     PrivacyDestructionEvidence,
     PrivacyErasureNotificationOutbox,
     PrivacyRequest,
-    Profile,
-    ProfileContactVisibility,
-    PushNotificationDelivery,
-    PushNotificationJob,
-    SyncedContact,
-    WebRegistrationIntent,
 )
-from app.db.models.seating import EventSeatingAssignment
 from app.db.session import AsyncSessionLocal
-from app.services.auth_tokens import hash_token
 from app.services.privacy_erasure import (
     DELETION_PENDING_STATUS,
     has_retention_sensitive_registration_data,
+)
+from app.services.privacy_erasure_deletion_manifest import (
+    apply_privacy_erasure_deletion_manifest,
+    collect_private_avatar_keys,
+    delete_app_user_last,
 )
 from app.services.privacy_erasure_completion_notification import (
     DELIVERY_UNAVAILABLE,
@@ -58,11 +39,19 @@ from app.services.privacy_erasure_notification_crypto import (
     encrypt_notification_recipient,
     load_notification_encryption_config,
 )
+from app.services.privacy_erasure_restore_register import (
+    REGISTER_UNAVAILABLE,
+    ensure_restore_register_marker,
+    privacy_erasure_subject_ref_hash,
+)
+from app.storage.privacy_erasure_register import (
+    S3PrivacyErasureRegisterStorage,
+)
 from app.storage.s3 import get_avatar_storage
 
 logger = logging.getLogger(__name__)
 
-PRIVACY_ERASURE_EXECUTION_VERSION = "privacy-erasure-worker-v2"
+PRIVACY_ERASURE_EXECUTION_VERSION = "privacy-erasure-worker-v3"
 MANUAL_REVIEW_FAILURE_CODE = "privacy_erasure_manual_review_required"
 AVATAR_STORAGE_FAILURE_CODE = "privacy_erasure_avatar_storage_failed"
 DATABASE_FAILURE_CODE = "privacy_erasure_database_failed"
@@ -77,11 +66,7 @@ NOTIFICATION_RECIPIENT_MISSING_FAILURE_CODE = (
 NOTIFICATION_ENCRYPTION_FAILURE_CODE = (
     "privacy_erasure_notification_encryption_failed"
 )
-
-_PRAYER_ACTIVITY_LOGS = table(
-    "prayer_activity_logs",
-    column("user_id", PG_UUID(as_uuid=True)),
-)
+RESTORE_REGISTER_FAILURE_CODE = REGISTER_UNAVAILABLE
 
 
 @dataclass(frozen=True)
@@ -107,6 +92,10 @@ class _AvatarDeletionFailed(RuntimeError):
 
 
 class _NotificationEncryptionFailed(RuntimeError):
+    pass
+
+
+class _RestoreRegisterFailed(RuntimeError):
     pass
 
 
@@ -306,140 +295,6 @@ async def _record_failure_code(
         logger.warning("Privacy erasure failure state could not be recorded")
 
 
-async def _delete_rows(
-    session: AsyncSession,
-    model: Any,
-    criterion: Any,
-) -> bool:
-    result = await session.execute(
-        delete(model)
-        .where(criterion)
-        .execution_options(synchronize_session=False),
-    )
-    return bool(result.rowcount and result.rowcount > 0)
-
-
-async def _delete_credentials_and_sessions(
-    session: AsyncSession,
-    user_id: UUID,
-    categories: set[str],
-) -> None:
-    for model in (
-        AuthEmailVerificationCode,
-        PasswordResetCode,
-        AuthSetPasswordCode,
-        PrivacyAccessCode,
-    ):
-        if await _delete_rows(session, model, model.user_id == user_id):
-            categories.add("credential")
-    for model in (AuthSession, PrivacyAccessSession):
-        if await _delete_rows(session, model, model.user_id == user_id):
-            categories.add("session")
-
-
-async def _delete_personal_surfaces(
-    session: AsyncSession,
-    user: AppUser,
-    categories: set[str],
-) -> None:
-    if await _delete_rows(session, Profile, Profile.user_id == user.id):
-        categories.update(("profile", "contact"))
-    if await _delete_rows(
-        session,
-        ProfileContactVisibility,
-        ProfileContactVisibility.user_id == user.id,
-    ):
-        categories.add("contact")
-    if await _delete_rows(session, DeviceToken, DeviceToken.user_id == user.id):
-        categories.add("device")
-    if await _delete_rows(
-        session,
-        PushNotificationDelivery,
-        PushNotificationDelivery.user_id == user.id,
-    ):
-        categories.add("device")
-    if await _delete_rows(
-        session,
-        PushNotificationJob,
-        PushNotificationJob.target_user_id == user.id,
-    ):
-        categories.add("device")
-    if await _delete_rows(session, SyncedContact, SyncedContact.user_id == user.id):
-        categories.add("synced_contact")
-
-    if user.email is not None:
-        result = await session.execute(
-            update(Invite)
-            .where(
-                Invite.email.is_not(None),
-                func.lower(Invite.email) == user.email.lower(),
-            )
-            .values(email=None)
-            .execution_options(synchronize_session=False),
-        )
-        if result.rowcount and result.rowcount > 0:
-            categories.add("contact")
-    if user.phone is not None:
-        result = await session.execute(
-            update(Invite)
-            .where(Invite.phone == user.phone)
-            .values(phone=None)
-            .execution_options(synchronize_session=False),
-        )
-        if result.rowcount and result.rowcount > 0:
-            categories.add("contact")
-
-
-async def _delete_registrations_and_memberships(
-    session: AsyncSession,
-    user_id: UUID,
-    categories: set[str],
-) -> None:
-    if await _delete_rows(
-        session,
-        EventSeatingAssignment,
-        EventSeatingAssignment.user_id == user_id,
-    ):
-        categories.add("registration")
-    if await _delete_rows(
-        session,
-        LegalAcceptance,
-        LegalAcceptance.user_id == user_id,
-    ):
-        categories.add("legal_acceptance")
-    if await _delete_rows(
-        session,
-        EventRegistration,
-        EventRegistration.user_id == user_id,
-    ):
-        categories.add("registration")
-    if await _delete_rows(
-        session,
-        CommunityMembership,
-        CommunityMembership.user_id == user_id,
-    ):
-        categories.add("membership")
-
-
-async def _delete_web_registration_intents(
-    session: AsyncSession,
-    user: AppUser,
-) -> bool:
-    criteria = [WebRegistrationIntent.matched_user_id == user.id]
-    if user.email is not None:
-        criteria.append(
-            func.lower(WebRegistrationIntent.email_normalized)
-            == user.email.lower(),
-        )
-    if user.phone is not None:
-        criteria.append(WebRegistrationIntent.phone_normalized == user.phone)
-    return await _delete_rows(
-        session,
-        WebRegistrationIntent,
-        or_(*criteria),
-    )
-
-
 async def _delete_content_graph(
     session: AsyncSession,
     *,
@@ -447,70 +302,21 @@ async def _delete_content_graph(
     privacy_request: PrivacyRequest,
     now: datetime,
     avatar_keys: list[str],
+    subject_ref_hash: str,
     recipient: str,
     notification_config: PrivacyErasureNotificationEncryptionConfig,
 ) -> UUID:
-    categories = {"account"}
-    if user.email is not None or user.phone is not None:
-        categories.add("contact")
-    if user.password_hash is not None:
-        categories.add("credential")
-    await _delete_credentials_and_sessions(session, user.id, categories)
-    await _delete_personal_surfaces(session, user, categories)
-    await _delete_registrations_and_memberships(session, user.id, categories)
-
-    prayer_result = await session.execute(
-        delete(_PRAYER_ACTIVITY_LOGS).where(
-            _PRAYER_ACTIVITY_LOGS.c.user_id == user.id,
-        ),
-    )
-    if prayer_result.rowcount and prayer_result.rowcount > 0:
-        categories.add("prayer_activity")
-
-    if await _delete_rows(
+    manifest = await apply_privacy_erasure_deletion_manifest(
         session,
-        AdminFeedback,
-        AdminFeedback.user_id == user.id,
-    ):
-        categories.add("feedback")
-    if await _delete_web_registration_intents(session, user):
-        categories.add("web_registration_intent")
-
-    content_exists = await session.scalar(
-        select(PrivacyRequest.id)
-        .where(
-            PrivacyRequest.user_id == user.id,
-            or_(
-                PrivacyRequest.message.is_not(None),
-                PrivacyRequest.resolution_note.is_not(None),
-            ),
-        )
-        .limit(1),
+        user=user,
+        avatar_keys=avatar_keys,
     )
-    await session.execute(
-        update(PrivacyRequest)
-        .where(PrivacyRequest.user_id == user.id)
-        .values(message=None, resolution_note=None)
-        .execution_options(synchronize_session=False),
-    )
-    if content_exists is not None:
-        categories.add("privacy_request_content")
-
-    if await _delete_rows(
-        session,
-        ProfileAvatar,
-        ProfileAvatar.user_id == user.id,
-    ):
-        categories.add("avatar")
-    elif avatar_keys:
-        categories.add("avatar")
-
     evidence = PrivacyDestructionEvidence(
-        subject_ref_hash=hash_token(f"privacy-erasure-subject:{user.id}"),
+        subject_ref_hash=subject_ref_hash,
         execution_version=PRIVACY_ERASURE_EXECUTION_VERSION,
         result_status="completed",
         completed_at=now,
-        categories_deleted=sorted(categories),
+        categories_deleted=manifest.categories_deleted,
         categories_retained=[],
         retention_until=None,
         created_at=now,
@@ -558,13 +364,7 @@ async def _delete_content_graph(
     privacy_request.updated_at = now
     await session.flush()
 
-    deleted = await session.execute(
-        delete(AppUser)
-        .where(AppUser.id == user.id)
-        .execution_options(synchronize_session=False),
-    )
-    if deleted.rowcount != 1:
-        raise SQLAlchemyError("privacy erasure subject delete did not affect one row")
+    await delete_app_user_last(session, user.id)
     return evidence.id
 
 
@@ -572,6 +372,9 @@ async def _execute(
     request_id: UUID,
     claimed: _ClaimedRequest,
     *,
+    subject_ref_hash: str,
+    register_storage: Any,
+    settings: Settings,
     session_factory: Any,
     storage_factory: Callable[[], Any],
     now_provider: Callable[[], datetime],
@@ -635,14 +438,18 @@ async def _execute(
                     failure_code=MANUAL_REVIEW_FAILURE_CODE,
                 )
 
-            avatar_keys = list(
-                (
-                    await session.scalars(
-                        select(ProfileAvatar.object_key).where(
-                            ProfileAvatar.user_id == user.id,
-                        ),
-                    )
-                ).all(),
+            try:
+                await ensure_restore_register_marker(
+                    register_storage,
+                    settings=settings,
+                    subject_ref_hash=subject_ref_hash,
+                )
+            except Exception:  # noqa: BLE001 - provider details must not escape.
+                raise _RestoreRegisterFailed() from None
+
+            avatar_keys = await collect_private_avatar_keys(
+                session,
+                user.id,
             )
             if avatar_keys:
                 storage = storage_factory()
@@ -661,6 +468,7 @@ async def _execute(
                 privacy_request=privacy_request,
                 now=now,
                 avatar_keys=avatar_keys,
+                subject_ref_hash=subject_ref_hash,
                 recipient=claimed.recipient,
                 notification_config=claimed.notification_config,
             )
@@ -678,6 +486,7 @@ async def execute_privacy_erasure_request(
     *,
     session_factory: Any = AsyncSessionLocal,
     storage_factory: Callable[[], Any] = get_avatar_storage,
+    register_storage_factory: Callable[[], Any] | None = None,
     now_provider: Callable[[], datetime] = _now,
     after_storage: Callable[[AsyncSession], Awaitable[None]] | None = None,
     before_commit: Callable[[AsyncSession], Awaitable[None]] | None = None,
@@ -720,9 +529,35 @@ async def execute_privacy_erasure_request(
         return claim
 
     try:
+        subject_ref_hash = privacy_erasure_subject_ref_hash(
+            claim.user_id,
+            resolved_settings,
+        )
+        register_storage = (
+            register_storage_factory()
+            if register_storage_factory is not None
+            else S3PrivacyErasureRegisterStorage(resolved_settings)
+        )
+    except Exception:  # noqa: BLE001 - configuration details must not escape.
+        await _record_failure_code(
+            request_id,
+            RESTORE_REGISTER_FAILURE_CODE,
+            session_factory=session_factory,
+            now_provider=now_provider,
+        )
+        return _result(
+            request_id,
+            "retryable_failure",
+            failure_code=RESTORE_REGISTER_FAILURE_CODE,
+        )
+
+    try:
         execution_result = await _execute(
             request_id,
             claim,
+            subject_ref_hash=subject_ref_hash,
+            register_storage=register_storage,
+            settings=resolved_settings,
             session_factory=session_factory,
             storage_factory=storage_factory,
             now_provider=now_provider,
@@ -740,6 +575,18 @@ async def execute_privacy_erasure_request(
                 now_provider=now_provider,
             )
         return execution_result
+    except _RestoreRegisterFailed:
+        await _record_failure_code(
+            request_id,
+            RESTORE_REGISTER_FAILURE_CODE,
+            session_factory=session_factory,
+            now_provider=now_provider,
+        )
+        return _result(
+            request_id,
+            "retryable_failure",
+            failure_code=RESTORE_REGISTER_FAILURE_CODE,
+        )
     except _AvatarDeletionFailed:
         await _record_failure_code(
             request_id,

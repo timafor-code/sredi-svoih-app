@@ -19,18 +19,17 @@ Current repository behavior:
   user;
 - password hash fields may be null, and email verification, password reset,
   set-password, SMTP delivery, and hash-only auth codes already exist;
-- authenticated `POST /privacy/requests` and `GET /privacy/requests` record and
-  list requests only; they do not execute export, correction, or erasure;
-- the privacy self-service schema foundation and access runtime are implemented:
+- authenticated and verified privacy self-service request flows are implemented;
+- the complete split privacy self-service and erasure series is implemented:
   canonical-email verification issues hash-only codes and a short-lived,
   fixed-scope privacy session for own-data summary, limited JSON export, and
-  request creation; the reversible erasure lifecycle is implemented, while
-  irreversible worker execution is not;
+  request creation; reversible erasure lifecycle, irreversible worker,
+  encrypted completion notification, external restore-erasure register, and
+  owner-run restore replay are implemented;
 - the intent, email verification/finalization, identity/source/legal schema,
   and canonical public-web registration path are implemented;
 - event publication, computed UUID links, and the public registration-form API
-  are implemented; public web UI and irreversible privacy worker execution
-  remain future contracts.
+  are implemented; the public web UI remains a separate contract.
 
 Mobile, public web, and web-admin must use one FastAPI API and one canonical
 PostgreSQL model. They must not create a second backend, a separate web-user
@@ -184,10 +183,9 @@ collisions without raw PII in output or logs.
 
 ## Target Data Contracts
 
-The identity/source/legal, intent, verification-code, publication, privacy
-self-service foundation, and privacy access/export v1 contracts below are
-implemented. Questionnaires and privacy erasure execution remain target
-contracts for later PRs.
+The identity/source/legal, intent, verification-code, publication, and complete
+privacy self-service/access/erasure contracts below are implemented.
+Questionnaires remain a target contract for a later PR.
 
 ### `app_users`
 
@@ -418,8 +416,8 @@ simultaneously `published`, `public`, `internal_free`, and `unlisted` or
 current event-registration consent, an optional privacy policy, and a canonical
 `open`, `not_yet_open`, `closed`, `full`, or `unavailable` state. Closed and
 full pages remain readable and the endpoint never reserves capacity. No event
-catalog, public UI, or `apps/admin` UI change is included in this PR. The next
-PR is `feature/public-web-event-registration-shell`.
+catalog, public UI, or `apps/admin` UI change is included here. The next
+implementation PR is `feature/admin-web-registration-operations`.
 
 ## Privacy Self-Service Contracts
 
@@ -543,7 +541,7 @@ are not approvals and must not be presented as final values.
    controls in web-admin.
 8. `feature/public-web-registration-account-claim` — intent confirmation,
    passwordless path, and account claim.
-9. Privacy self-service is split into five PRs:
+9. Privacy self-service and erasure are split into six implemented PRs:
    - `feature/api-privacy-self-service-foundation` — PostgreSQL/Alembic
      credentials, scoped-session, lifecycle, nullable ownership, destruction
      evidence, and schema/regression tests (implemented);
@@ -558,7 +556,10 @@ are not approvals and must not be presented as final values.
      deletion and evidence completion (implemented);
    - `feature/api-privacy-erasure-completion-notification` — encrypted
      transactional completion outbox, Russian templates, post-commit delivery,
-     and one-request CLI retry (implemented).
+     and one-request CLI retry (implemented);
+   - `feature/api-privacy-erasure-restore-replay` — private external PII-free
+     register, shared deletion manifest, and owner-run restore replay
+     (implemented; closes the split PR 9 implementation series).
 10. `feature/admin-web-registration-operations` — source/status, conflict, and
     privacy due-date operations.
 11. `feature/web-event-questionnaires-basic` — allowlisted ordinary questions
@@ -567,6 +568,8 @@ are not approvals and must not be presented as final values.
     restore-erasure drill, and owner launch checklist.
 13. After MVP: `feature/public-web-events-directory` — paginated `listed` event
     cards; never expose `unlisted` events.
+
+The next implementation PR is `feature/admin-web-registration-operations`.
 
 ## Open Launch Decisions
 
@@ -658,6 +661,11 @@ crash after SMTP acceptance but before outbox commit can cause a duplicate.
 
 Pre-migration worker-v1 completions without an outbox remain completed and
 report `legacy_notification_unavailable`; no recipient is reconstructed.
-Automatic scheduling, queue polling, backup erasure replay, and final retention
-periods remain unimplemented. Production SMTP selection and infrastructure
-residency approval remain launch gates.
+Before avatar or PostgreSQL deletion, worker-v3 validates the external private
+register's version and non-secret hash-key fingerprint and writes an idempotent
+PII-free subject marker. Failure leaves all personal data intact for retry.
+The owner-run restore replay defaults to dry-run, preflights every marker before
+mutation, reuses the same deletion manifest, writes PII-free replay evidence,
+and never creates a request or notification. Automatic scheduling, backup
+creation/purge, final retention periods, production SMTP/storage residency
+approval, and a real restore drill remain launch responsibilities.
