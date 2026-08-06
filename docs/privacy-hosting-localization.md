@@ -190,3 +190,23 @@ delivery processing. Raw Expo tokens, notification payloads, ticket/receipt
 response bodies, recipient names, email, phone, and registration comments must
 not enter logs or admin job-list responses. `DeviceNotRegistered` safely
 deactivates the associated device-token row without deleting it.
+
+## Reversible Erasure Processing Stop
+
+The API lifecycle stage verifies the canonical email through a fixed-scope
+privacy session, then records a reversible processing stop without physically
+deleting the app user, profile, registrations, avatar metadata/object, or other
+personal stores. Active credentials are revoked and new ordinary account or
+registration processing is blocked while the user is `deletion_pending`.
+
+Automatic lifecycle confirmation is restricted to the free registration
+contour. Any payment identifier, financial payment state, non-free registration
+mode, priced option, or donation marker returns a generic manual-review
+conflict. No claim is made that financial records can be removed until an
+approved retention matrix exists.
+
+Cancellation is allowed only before irreversible worker execution. It restores
+the saved user status but does not restore credentials or registrations. The
+separate worker remains responsible for user-scoped physical deletion, S3
+object removal, backup/retention handling, and destruction evidence. Prayer
+activity remains unread and unchanged in this lifecycle stage.

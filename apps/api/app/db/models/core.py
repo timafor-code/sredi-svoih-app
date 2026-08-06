@@ -134,6 +134,10 @@ class AppUser(Base):
         UniqueConstraint("phone", name="app_users_phone_key"),
         CheckConstraint("btrim(status) <> ''", name="app_users_status_not_empty"),
         CheckConstraint(
+            "auth_token_version >= 0",
+            name="app_users_auth_token_version_nonnegative_check",
+        ),
+        CheckConstraint(
             "account_origin IN ('password_signup', 'invite', 'web_guest', 'migration', 'admin')",
             name="app_users_account_origin_check",
         ),
@@ -164,6 +168,11 @@ class AppUser(Base):
         Text,
         nullable=False,
         server_default=text("'active'"),
+    )
+    auth_token_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
     )
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -1640,6 +1649,42 @@ class PrivacyRequest(Base):
             "destruction_evidence_id IS NULL OR completed_at IS NOT NULL",
             name="privacy_requests_evidence_after_completed_check",
         ),
+        CheckConstraint(
+            "pre_deletion_user_status IS NULL OR "
+            "btrim(pre_deletion_user_status) <> ''",
+            name="privacy_requests_pre_deletion_status_not_empty",
+        ),
+        CheckConstraint(
+            "pre_deletion_user_status IS NULL OR "
+            "pre_deletion_user_status <> 'deletion_pending'",
+            name="privacy_requests_pre_deletion_status_not_pending",
+        ),
+        CheckConstraint(
+            "processing_stopped_at IS NULL OR "
+            "(pre_deletion_user_status IS NOT NULL AND "
+            "btrim(pre_deletion_user_status) <> '')",
+            name="privacy_requests_processing_requires_pre_status",
+        ),
+        CheckConstraint(
+            "cancelled_at IS NULL OR processing_stopped_at IS NOT NULL",
+            name="privacy_requests_cancelled_requires_processing_stop",
+        ),
+        CheckConstraint(
+            "cancelled_at IS NULL OR cancelled_at >= processing_stopped_at",
+            name="privacy_requests_cancelled_after_processing_stop",
+        ),
+        CheckConstraint(
+            "cancelled_at IS NULL OR completed_at IS NULL",
+            name="privacy_requests_cancelled_without_completion",
+        ),
+        CheckConstraint(
+            "cancelled_at IS NULL OR destruction_evidence_id IS NULL",
+            name="privacy_requests_cancelled_without_evidence",
+        ),
+        CheckConstraint(
+            "cancelled_at IS NULL OR execution_started_at IS NULL",
+            name="privacy_requests_cancelled_before_execution",
+        ),
         Index("privacy_requests_user_created_idx", "user_id", text("created_at DESC")),
         Index(
             "privacy_requests_community_created_idx",
@@ -1650,6 +1695,17 @@ class PrivacyRequest(Base):
         Index(
             "privacy_requests_destruction_evidence_id_idx",
             "destruction_evidence_id",
+        ),
+        Index(
+            "privacy_requests_deletion_queue_idx",
+            "created_at",
+            "id",
+            postgresql_where=text(
+                "request_type = 'deletion' "
+                "AND processing_stopped_at IS NOT NULL "
+                "AND cancelled_at IS NULL "
+                "AND completed_at IS NULL"
+            ),
         ),
     )
 
@@ -1687,6 +1743,8 @@ class PrivacyRequest(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     failure_code: Mapped[str | None] = mapped_column(Text)
+    pre_deletion_user_status: Mapped[str | None] = mapped_column(Text)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     destruction_evidence_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("privacy_destruction_evidence.id", ondelete="SET NULL"),

@@ -538,7 +538,11 @@ The bridge resolves the verified Supabase JWT `sub` as an API `app_users.id`
 UUID. The API database must already contain UUID-aligned `app_users` rows, such
 as the PR 5 dev-only seed mapping used for local protected smoke. Unknown
 Supabase users are rejected with a clean 401/403 response and are never
-auto-provisioned from claims.
+auto-provisioned from claims. A resolved user must also have API credential
+version `0`; once that version is incremented during confirmed erasure, neither
+the old Supabase JWT nor pre-confirmation native API JWTs become valid again if
+the erasure request is cancelled. A subsequent active-user login issues a
+native JWT with the current version.
 
 Mobile and web-admin may keep auth provider set to Supabase while a selected
 domain provider is set to API locally. In that mixed-provider mode, API client
@@ -1455,7 +1459,8 @@ tokens, send email, expose summary/export endpoints, stop processing, delete
 data, revoke auth, cancel registrations, release capacity, run a worker, or
 populate destruction evidence. Those behaviors remain split between
 `feature/api-privacy-self-service-access` and
-`feature/api-privacy-erasure-execution`. Existing authenticated and admin
+`feature/api-privacy-erasure-lifecycle`, followed by
+`feature/api-privacy-erasure-worker`. Existing authenticated and admin
 privacy request behavior and response contracts remain unchanged.
 
 ### Privacy self-service access runtime
@@ -1532,7 +1537,9 @@ remain unchanged. A deletion request still only records an open request: it
 does not change user status, set processing-stop timestamps, revoke auth,
 cancel registrations, release capacity, run a worker, delete data, or create
 destruction evidence. Confirmation/cancellation endpoints and all destructive
-execution remain in `feature/api-privacy-erasure-execution`.
+execution were subsequently split: the reversible endpoints are implemented in
+`feature/api-privacy-erasure-lifecycle`, while irreversible execution remains
+in `feature/api-privacy-erasure-worker`.
 
 ### PR 32C API Prayer Tracker endpoints
 
@@ -1917,3 +1924,33 @@ and notification payload to Expo; production remains disabled pending explicit
 owner sign-off. Real push verification requires an EAS development/TestFlight/
 release build and remains owner-only. The next PR is PR 33:
 `feature/mobile-admin-feedback-device-api-switch`.
+
+## Privacy Erasure Lifecycle Split
+
+`feature/api-privacy-erasure-lifecycle` implements only reversible lifecycle
+work. A privacy-session-only explicit confirmation locks the privacy request and
+canonical app user, fails closed for retention-sensitive financial evidence,
+stores the previous user status, changes the user to `deletion_pending`, and
+sets `processing_stopped_at`. It atomically revokes active auth/privacy
+credentials, removes unfinished canonical-email web intents, and cancels future
+free registrations using the canonical cancellable-status and capacity rules.
+
+The public auth and web-registration boundaries keep their generic responses.
+The existing active-user authorization dependency blocks login-backed profile,
+device-token, invite, and authenticated registration writes. Privacy access
+remains available while the app user exists and `erased_at` is null, allowing a
+new privacy session to cancel before execution.
+
+Cancellation restores `pre_deletion_user_status`, closes the request, and
+records `cancelled_at`. It deliberately does not restore old sessions, one-time
+codes, refresh tokens, cancelled registrations, or capacity reservations. A
+request-accepted email is attempted only after the lifecycle transaction
+commits; failure is logged generically and never rolls the state back. The
+notice explicitly does not claim final deletion.
+
+The separate `feature/api-privacy-erasure-worker` will select only deletion
+requests with `processing_stopped_at IS NOT NULL`, `cancelled_at IS NULL`, and
+`completed_at IS NULL` whose app user remains `deletion_pending`. The API never
+sets `execution_started_at`; only that worker may begin irreversible PostgreSQL
+and S3 execution. This lifecycle PR does not read, count, update, export, or
+delete prayer activity.

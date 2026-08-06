@@ -174,6 +174,12 @@ tokens, refresh tokens, password reset codes, invite codes, or comparable
 secrets. Expired, missing, malformed, or revoked tokens return HTTP 401 with
 `unauthenticated`.
 
+Native API access JWTs carry an integer `ver` claim copied from the user's
+current API credential version. Authorization requires that claim to match the
+current `app_users` value. Legacy native tokens without `ver` are treated as
+version `0` and are accepted only while the user's credential version remains
+`0`.
+
 Temporary Level 3 migration testing may enable a backend-only Supabase JWT
 bridge with `MIGRATION_ACCEPT_SUPABASE_JWT=true`. When enabled, protected API
 dependencies first validate the normal API JWT. If that fails, the API may
@@ -181,7 +187,9 @@ validate a Supabase access JWT signature and expiry with backend-only
 `SUPABASE_JWT_SECRET`, optionally enforcing configured issuer or audience, then
 resolve `sub` to an existing `app_users.id` UUID in the API database. Unknown
 or inactive users must receive a clean 401/403 response and must not be
-auto-provisioned from JWT claims. The bridge is default-off, for local/staged
+auto-provisioned from JWT claims. Supabase JWTs are accepted only while the
+resolved user's API credential version is `0`, so migration credentials cannot
+be revived after an erasure cancellation. The bridge is default-off, for local/staged
 mixed-provider testing only, and must be disabled before final provider cutover
 in PR 37.
 
@@ -2488,3 +2496,55 @@ device token. A supplied occurrence must belong to the event.
 `receipt_checked_delivery_count`. It never returns recipient identities,
 Expo/device tokens, ticket or receipt payloads, profile names, contact details,
 or registration comments.
+
+## Privacy Erasure Lifecycle
+
+Both lifecycle routes require `Authorization: Bearer <privacy_session_token>`.
+An ordinary API JWT is not accepted. Responses set `Cache-Control: no-store`.
+
+### `POST /privacy/requests/{request_id}/confirm-erasure`
+
+The strict request body is:
+
+```json
+{
+  "confirmation": "delete_my_data"
+}
+```
+
+The response data is PII-free:
+
+```json
+{
+  "request_id": "UUID",
+  "state": "deletion_pending",
+  "processing_stopped_at": "2026-08-06T16:00:00Z",
+  "cancelled_at": null,
+  "registrations_require_reregistration_after_cancel": true
+}
+```
+
+Confirmation is idempotent for an already-confirmed request. The first
+successful transition revokes active auth/privacy sessions and codes, including
+the presenting privacy session. It stops unfinished public registration flows
+matched by canonical email and cancels future free registrations. It does not
+set `execution_started_at`, `completed_at`, `due_at`, or destruction evidence,
+and it does not delete the user or stored personal data.
+
+If payment, donation, priced-option, or non-free registration evidence exists,
+the route returns `409 privacy_erasure_manual_review_required` without any
+partial state change. Foreign request ids use the safe `404 not_found` shape.
+
+### `POST /privacy/requests/{request_id}/cancel-erasure`
+
+No request body is accepted. A successful response uses the same PII-free
+fields with `state = cancelled` and a non-null `cancelled_at`. Cancellation
+restores the saved user status and clears `deletion_requested_at`, but old
+sessions/codes and cancelled registrations are never restored. The subject must
+sign in or recover access again and re-register for events. Once
+`execution_started_at` is set, cancellation returns
+`409 privacy_erasure_already_started`.
+
+The future worker may select only deletion requests with a processing-stop
+timestamp, no cancellation, no completion, and a still-existing
+`deletion_pending` app user. Only that worker may set `execution_started_at`.
