@@ -1948,9 +1948,35 @@ request-accepted email is attempted only after the lifecycle transaction
 commits; failure is logged generically and never rolls the state back. The
 notice explicitly does not claim final deletion.
 
-The separate `feature/api-privacy-erasure-worker` will select only deletion
-requests with `processing_stopped_at IS NOT NULL`, `cancelled_at IS NULL`, and
-`completed_at IS NULL` whose app user remains `deletion_pending`. The API never
-sets `execution_started_at`; only that worker may begin irreversible PostgreSQL
-and S3 execution. This lifecycle PR does not read, count, update, export, or
-delete prayer activity.
+`feature/api-privacy-erasure-worker` implements irreversible execution for one
+explicit request id:
+
+```text
+python scripts/run_privacy_erasure.py --request-id <UUID>
+```
+
+Every direct and indirect `app_users` relationship is inventoried for its FK,
+delete action, PII content, and operational-retention role. The deletion
+manifest explicitly removes subject-owned credentials/sessions, profile and
+contact surfaces, registrations and their option/capacity/seating dependents,
+memberships, legal acceptances, feedback, web intents, device/contact data,
+avatars, and privacy-request content. Global events, communities, legal
+documents, and actor-only operational rows remain. The admin event-audit actor
+link is nullable with `ON DELETE SET NULL`; its migration refuses orphan actors
+before adding the FK and refuses unsafe downgrade after actors become null.
+
+Claim and execution use separate transactions. Claim locks the request and
+user, repeats the canonical financial fail-closed check, commits
+`execution_started_at`, and preserves retry. Execution locks both rows again
+and holds the request lock through S3 and database work, serializing concurrent
+calls. Avatar objects are deleted before PostgreSQL PII; an S3 failure rolls
+back database deletion, and retry repeats the idempotent object delete.
+`app_users` is deleted last. Prayer rows are removed only by a direct
+user-scoped `DELETE`, without selecting content.
+
+Migration `20260806180000` extends destruction-evidence category checks only
+for the current graph. Completion atomically creates one PII-free evidence row
+and scrubs retained privacy-request lifecycle rows. No scheduler, polling, HTTP
+worker endpoint, backup replay, or completion email is included. Reliable
+completion notification remains the next PR:
+`feature/api-privacy-erasure-completion-notification`.

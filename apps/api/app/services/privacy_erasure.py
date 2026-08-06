@@ -128,7 +128,7 @@ def _response(
     )
 
 
-async def _has_retention_sensitive_registration_data(
+async def has_retention_sensitive_registration_data(
     session: AsyncSession,
     user_id: UUID,
 ) -> bool:
@@ -252,7 +252,7 @@ async def _confirm_in_transaction(
 
     if user.status == DELETION_PENDING_STATUS:
         raise _not_available()
-    if await _has_retention_sensitive_registration_data(session, user.id):
+    if await has_retention_sensitive_registration_data(session, user.id):
         raise _manual_review_required()
 
     now = _now()

@@ -82,7 +82,15 @@ class PrivacySelfServiceSchemaTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_alembic_head_and_database_metadata_include_foundation(self) -> None:
         script = ScriptDirectory.from_config(Config("alembic.ini"))
-        self.assertEqual(script.get_current_head(), "20260806170000")
+        self.assertEqual(script.get_current_head(), "20260806190000")
+        self.assertEqual(
+            script.get_revision("20260806190000").down_revision,
+            "20260806180000",
+        )
+        self.assertEqual(
+            script.get_revision("20260806180000").down_revision,
+            "20260806170000",
+        )
         self.assertEqual(
             script.get_revision("20260806170000").down_revision,
             "20260806160000",
@@ -452,6 +460,39 @@ class PrivacySelfServiceSchemaTests(unittest.IsolatedAsyncioTestCase):
                 await session.refresh(valid)
                 self.assertEqual(valid.categories_deleted, [])
                 self.assertEqual(valid.categories_retained, [])
+
+                allowlist_id = uuid4()
+                self.evidence_ids.append(allowlist_id)
+                allowed_categories = [
+                    "account",
+                    "profile",
+                    "contact",
+                    "membership",
+                    "registration",
+                    "credential",
+                    "session",
+                    "device",
+                    "synced_contact",
+                    "avatar",
+                    "privacy_request_content",
+                    "prayer_activity",
+                    "legal_acceptance",
+                    "feedback",
+                    "web_registration_intent",
+                ]
+                session.add(
+                    PrivacyDestructionEvidence(
+                        id=allowlist_id,
+                        subject_ref_hash=f"allowlist-hash-{uuid4().hex}",
+                        execution_version="privacy-erasure-worker-v1",
+                        result_status="completed",
+                        completed_at=now,
+                        categories_deleted=allowed_categories,
+                        categories_retained=allowed_categories,
+                        created_at=now,
+                    ),
+                )
+                await session.flush()
 
                 await self._assert_rejected(
                     session,

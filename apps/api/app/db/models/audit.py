@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Index, Text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,9 +41,10 @@ class AdminEventAuditEntry(Base):
     )
 
     id: Mapped[UUID] = uuid_pk()
-    actor_user_id: Mapped[UUID] = mapped_column(
+    actor_user_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
-        nullable=False,
+        ForeignKey("app_users.id", ondelete="SET NULL"),
+        nullable=True,
     )
     event_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),

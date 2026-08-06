@@ -1548,7 +1548,9 @@ class PrivacyDestructionEvidence(Base):
             "AND categories_deleted <@ "
             "'[\"account\", \"profile\", \"contact\", \"membership\", "
             "\"registration\", \"credential\", \"session\", \"device\", "
-            "\"synced_contact\", \"avatar\", \"privacy_request_content\"]'::jsonb",
+            "\"synced_contact\", \"avatar\", \"privacy_request_content\", "
+            "\"prayer_activity\", \"legal_acceptance\", \"feedback\", "
+            "\"web_registration_intent\"]'::jsonb",
             name="privacy_destruction_evidence_categories_deleted_check",
         ),
         CheckConstraint(
@@ -1556,7 +1558,9 @@ class PrivacyDestructionEvidence(Base):
             "AND categories_retained <@ "
             "'[\"account\", \"profile\", \"contact\", \"membership\", "
             "\"registration\", \"credential\", \"session\", \"device\", "
-            "\"synced_contact\", \"avatar\", \"privacy_request_content\"]'::jsonb",
+            "\"synced_contact\", \"avatar\", \"privacy_request_content\", "
+            "\"prayer_activity\", \"legal_acceptance\", \"feedback\", "
+            "\"web_registration_intent\"]'::jsonb",
             name="privacy_destruction_evidence_categories_retained_check",
         ),
         CheckConstraint(
