@@ -43,7 +43,9 @@
 .identity-conflicts-panel__head,
 .identity-conflicts-panel__page-head,
 .identity-conflict-row__title,
-.identity-conflict-row__actions {
+.identity-conflict-row__actions,
+.privacy-due-dates-panel__head,
+.privacy-due-date-row__title {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -51,7 +53,8 @@
 }
 
 .web-registration-operations__head h2,
-.identity-conflicts-panel__head h3 {
+.identity-conflicts-panel__head h3,
+.privacy-due-dates-panel__head h3 {
   margin: 4px 0 6px;
   color: var(--text);
 }
@@ -60,12 +63,14 @@
   font-size: 22px;
 }
 
-.identity-conflicts-panel__head h3 {
+.identity-conflicts-panel__head h3,
+.privacy-due-dates-panel__head h3 {
   font-size: 18px;
 }
 
 .web-registration-operations__head p,
-.identity-conflicts-panel__head p {
+.identity-conflicts-panel__head p,
+.privacy-due-dates-panel__head p {
   max-width: 760px;
   margin: 0;
   color: var(--text-soft);
@@ -268,6 +273,103 @@
   padding-top: 12px;
 }
 
+.privacy-due-dates-panel {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  border-top: 1px solid var(--glass-border);
+  padding-top: 18px;
+}
+
+.privacy-due-dates-panel__controls,
+.privacy-due-dates-panel__filters {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.privacy-due-dates-panel__filters .button.is-active {
+  border-color: rgba(242, 184, 75, 0.38);
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
+.privacy-due-dates-list {
+  display: grid;
+  gap: 10px;
+}
+
+.privacy-due-date-row {
+  display: grid;
+  gap: 13px;
+  min-width: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 14px;
+  background: rgba(8, 8, 17, 0.26);
+}
+
+.privacy-due-date-row--overdue {
+  border-color: rgba(229, 44, 54, 0.38);
+  background: rgba(229, 44, 54, 0.06);
+}
+
+.privacy-due-date-row__title {
+  align-items: center;
+}
+
+.privacy-due-date-row__title > div {
+  display: grid;
+  gap: 3px;
+}
+
+.privacy-due-date-row__title span {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.privacy-due-date-row__title strong {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+.privacy-due-date-row__metadata {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.privacy-due-date-row__metadata > div {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 9px;
+  background: var(--glass);
+}
+
+.privacy-due-date-row__metadata dt {
+  margin-bottom: 5px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.privacy-due-date-row__metadata dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+}
+
 .identity-conflict-dialog__technical-id {
   display: grid;
   gap: 4px;
@@ -310,19 +412,25 @@
   .identity-conflict-row__metadata {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .privacy-due-date-row__metadata {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
   .web-registration-operations__head,
   .identity-conflicts-panel__head,
   .identity-conflict-row__actions,
-  .web-registration-operations__error {
+  .web-registration-operations__error,
+  .privacy-due-dates-panel__head {
     align-items: stretch;
     flex-direction: column;
   }
 
   .web-registration-summary-grid,
-  .identity-conflict-row__metadata {
+  .identity-conflict-row__metadata,
+  .privacy-due-date-row__metadata {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -332,7 +440,9 @@
 
   .identity-conflict-row__actions .button,
   .web-registration-operations__head > .button,
-  .web-registration-operations__error .button {
+  .web-registration-operations__error .button,
+  .privacy-due-dates-panel__controls,
+  .privacy-due-dates-panel__controls > .button {
     width: 100%;
   }
 }

@@ -543,21 +543,20 @@ and do not reserve registration capacity. Conflict resolution records only
 `open`/`resolved` state and backend resolution time; it cannot edit users,
 profiles, login email/phone, intents, or registrations.
 
-Admin privacy list responses include `identity_verified_at`,
-`processing_stopped_at`, `execution_started_at`, `completed_at`, `due_at`,
-`failure_code`, `destruction_evidence_id`, and `cancelled_at`. Optional
-`request_type` and `overdue_only` filters supplement existing status/community
-filters. Overdue means a non-terminal (`resolved`, `rejected`, and `closed` are
-terminal) request with a non-null past `due_at`. These admin operations never
-run erasure or restore replay, expose encrypted notification fields, or read
-prayer activity.
+The admin-only privacy due-date UI consumes only request id, request type,
+status, creation time, and the FastAPI-provided `due_at` from
+`GET /admin/privacy/requests`. Its default view omits `overdue_only`; the single
+`Просроченные` filter reloads through FastAPI with `overdue_only=true`.
+Overdue means a non-terminal (`resolved`, `rejected`, and `closed` are terminal)
+request with a non-null past `due_at`. The browser does not derive a deadline
+from `created_at`.
 
 The Registrations page now renders an admin-only web-registration operations
 surface. Its summary shows active unexpired email-verification intents, open
 identity conflicts, open privacy requests, and overdue privacy requests.
 Confirmed and expired intents are excluded from the active count. The two
-privacy counts are informational; privacy-request list and lifecycle management
-are deferred to `feature/admin-privacy-requests-ui`.
+privacy counts remain unchanged, and the compact privacy due-date list below
+the conflict queue provides their read-only detail.
 
 The conflict queue exposes only allowlisted technical metadata and masks user,
 event, occurrence, and conflict identifiers in the primary UI. It never shows
@@ -566,6 +565,15 @@ codes, or hashes. Resolve/reopen changes only the conflict operational status;
 it does not merge users or edit profiles, login identities, intents, or
 registrations. Automatic identity merge remains prohibited. `event_manager`
 users do not render or call this admin-only surface.
+
+The privacy due-date list shows only Russian request-type/status labels,
+creation time, the authoritative due time or `Срок не установлен`, a shortened
+technical request id, and an explicit overdue badge where applicable. It does
+not display request contents, resolution notes, user identity or contact data,
+or privacy lifecycle execution fields. It has no status-changing, erasure,
+restore-replay, or other privacy execution action. `event_manager` users do not
+call the privacy endpoint. No profile, event-participation, or prayer data is
+joined or requested; the prayer tracker remains private.
 
 ## Implementation Sequence
 
@@ -602,24 +610,24 @@ users do not render or call this admin-only surface.
    - `feature/api-privacy-erasure-restore-replay` — private external PII-free
      register, shared deletion manifest, and owner-run restore replay
      (implemented; closes the split PR 9 implementation series).
-10. `feature/api-admin-web-registration-operations-foundation` — backend
-    source/status, aggregate summary, safe conflict queue, and privacy due-date
-    contracts (implemented).
-11. `feature/admin-registration-source-status` — canonical source badges and
-    FastAPI-backed source filtering in the existing registrations UI
-    (implemented).
-12. `feature/admin-web-registration-operations-ui` — admin-only operations
-    summary and safe identity-conflict queue (implemented).
-13. `feature/admin-privacy-requests-ui` — admin privacy-request list and
-    lifecycle management.
-14. `feature/web-event-questionnaires-basic` — allowlisted ordinary questions
+10. Web-registration admin operations — source/status, conflict queue, and
+    privacy due dates, split across these implemented branches:
+    - `feature/api-admin-web-registration-operations-foundation` — backend
+      contracts and aggregate summary;
+    - `feature/admin-registration-source-status` — canonical source badges and
+      FastAPI-backed source filtering;
+    - `feature/admin-web-registration-operations-ui` — admin-only summary and
+      safe identity-conflict queue;
+    - `feature/admin-privacy-due-dates` — read-only privacy due-date detail
+      (implemented; completes webreg PR 10).
+11. `feature/web-event-questionnaires-basic` — allowlisted ordinary questions
     with purpose/retention only.
-15. `ops/public-web-production-deploy` — Russian hosting, TLS/CSP/CORS, SMTP,
+12. `ops/public-web-production-deploy` — Russian hosting, TLS/CSP/CORS, SMTP,
     restore-erasure drill, and owner launch checklist.
-16. After MVP: `feature/public-web-events-directory` — paginated `listed` event
+13. After MVP: `feature/public-web-events-directory` — paginated `listed` event
     cards; never expose `unlisted` events.
 
-The next implementation PR is `feature/admin-privacy-requests-ui`.
+The next implementation PR is `feature/web-event-questionnaires-basic`.
 
 ## Open Launch Decisions
 

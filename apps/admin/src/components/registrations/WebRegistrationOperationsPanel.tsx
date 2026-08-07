@@ -5,6 +5,7 @@ import type { AdminWebRegistrationOperationsSummary } from "../../types/webRegis
 import { Button } from "../ui/Button";
 import { GlassCard } from "../ui/GlassCard";
 import { IdentityConflictsPanel } from "./IdentityConflictsPanel";
+import { PrivacyDueDatesPanel } from "./PrivacyDueDatesPanel";
 
 type SummaryCardProps = {
   label: string;
@@ -60,7 +61,7 @@ export function WebRegistrationOperationsPanel() {
     void loadSummary().catch(() => undefined);
   }, [loadSummary]);
 
-  const privacyNote = "Обработка запросов будет добавлена в следующем PR.";
+  const privacyNote = "Детали по срокам показаны ниже.";
 
   return (
     <GlassCard className="web-registration-operations" elevated>
@@ -116,6 +117,8 @@ export function WebRegistrationOperationsPanel() {
         onConflictUpdated={loadSummary}
         refreshRevision={queueRefreshRevision}
       />
+
+      <PrivacyDueDatesPanel refreshRevision={queueRefreshRevision} />
     </GlassCard>
   );
 }
