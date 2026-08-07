@@ -186,9 +186,8 @@ The summary displays only four aggregate counts: active email-verification
 intents, open identity conflicts, open privacy requests, and overdue privacy
 requests. Active intents have `email_verification_required` status and a future
 expiry; expired and confirmed intents are excluded. Zero is displayed as zero,
-without invented trends or comparisons. Privacy counts are informational in
-this PR, and privacy-request processing UI is deferred to
-`feature/admin-privacy-requests-ui`.
+without invented trends or comparisons. The privacy due-date list below the
+conflict queue provides the read-only detail behind the privacy counts.
 
 The conflict queue requests 20 rows at a time with an explicit `open` or
 `resolved` filter and an offset. It exposes only allowlisted technical metadata:
@@ -204,6 +203,28 @@ action edits profiles, login email/phone, intents, or registrations. The queue
 and summary are refreshed after success while preserving the selected filter;
 if the current page becomes empty, pagination returns to the previous page.
 Automatic identity merge remains prohibited.
+
+The compact privacy due-date list uses the authenticated
+`GET /admin/privacy/requests` endpoint and normalizes only request id, request
+type, status, creation time, and `due_at`. The default `Все` filter omits
+`overdue_only`; `Просроченные` reloads through FastAPI with
+`overdue_only=true`. The API-provided `due_at` is authoritative: the browser
+does not calculate a legal deadline from the creation time. A non-terminal
+request with a non-null past deadline is marked `Просрочено`; resolved,
+rejected, and closed requests are terminal, and a null deadline is shown as
+`Срок не установлен`.
+
+This admin-only list is visibility, not privacy-request management. It is
+read-only, shows shortened technical request ids, and does not display request
+contents, resolution notes, names, email addresses, phone numbers, user ids,
+or lifecycle execution fields. It offers no status changes, erasure, restore
+replay, or other privacy execution action. `event_manager` users neither render
+the panel nor call the endpoint. The panel does not join or call profile,
+event-participation, or prayer data; the prayer tracker remains private.
+
+Together, canonical registration source/status, the conflict queue, and this
+privacy due-date list complete the web-registration PR 10 admin operations
+scope.
 
 ## Manual Smoke Checklist
 
@@ -235,9 +256,9 @@ Not run by Codex. Manual smoke is performed by the project owner.
 - capacity reservation business logic changes;
 - donation business logic changes;
 - registration status transition or attendance logic changes.
-- privacy-request list or lifecycle operations UI;
+- general privacy-request management or lifecycle execution UI;
 - user/profile/login-identity editing or merging.
 
 ## Next PR
 
-`feature/admin-privacy-requests-ui`
+`feature/web-event-questionnaires-basic`
