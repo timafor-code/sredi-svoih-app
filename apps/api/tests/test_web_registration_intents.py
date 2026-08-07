@@ -21,7 +21,10 @@ from app.db.models.core import (
     EventOccurrence,
     EventParticipationOption,
     EventRegistration,
+    EventRegistrationAnswer,
     EventRegistrationCapacityReservation,
+    EventRegistrationForm,
+    EventRegistrationFormField,
     LegalDocument,
     WebRegistrationIdentityConflict,
     WebRegistrationIntent,
@@ -66,7 +69,8 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
             "event_id": self.event_id, "occurrence_id": None,
             "first_name": "  Иван   Иванович ", "last_name": "  Тестов  ",
             "phone": "8 (900) 000-00-01", "email": " Intent-NEW@Example.Invalid ",
-            "seats_count": 1, "option_selections": [], "answers": [],
+            "seats_count": 1, "option_selections": [],
+            "questionnaire_form_id": None, "answers": [],
             "legal_acceptances": [{"document_id": self.document_id, "content_hash": "sha256:test-content"}],
             "account_choice": "without_password", "idempotency_key": f"test-key-{uuid4().hex}",
         }
@@ -101,7 +105,58 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
                 await session.flush()
         return option
 
+    async def _add_questionnaire(self):
+        form = EventRegistrationForm(
+            event_id=self.event_id,
+            channel="web",
+            version=1,
+            purpose="Collect ordinary logistics",
+            status="draft",
+        )
+        definitions = [
+            ("short", "short_text", True, [], {"min_length": 2, "max_length": 5}),
+            ("long", "long_text", False, [], {"min_length": 2, "max_length": 20}),
+            ("single", "single_select", True, [{"value": "a", "label": "A"}, {"value": "b", "label": "B"}], {}),
+            ("multi", "multi_select", True, [{"value": "x", "label": "X"}, {"value": "y", "label": "Y"}, {"value": "z", "label": "Z"}], {"min_selections": 1, "max_selections": 2}),
+            ("boolean", "boolean", True, [], {}),
+        ]
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(form)
+                await session.flush()
+                fields = []
+                for sort_order, (key, field_type, required, options, validation) in enumerate(definitions):
+                    field = EventRegistrationFormField(
+                        form_id=form.id,
+                        field_key=key,
+                        field_type=field_type,
+                        label=f"Question {key}",
+                        required=required,
+                        purpose="Ordinary event logistics",
+                        retention_days=7 + sort_order,
+                        options_payload=options,
+                        validation_payload=validation,
+                        data_category="ordinary",
+                        sort_order=sort_order,
+                    )
+                    session.add(field)
+                    fields.append(field)
+                await session.flush()
+                form.status = "published"
+                form.published_at = self.now
+            return form.id, {field.field_key: field.id for field in fields}
+
+    @staticmethod
+    def _valid_answers(field_ids):
+        return [
+            {"field_id": field_ids["short"], "value": " ok "},
+            {"field_id": field_ids["single"], "value": "a"},
+            {"field_id": field_ids["multi"], "value": ["x", "y"]},
+            {"field_id": field_ids["boolean"], "value": False},
+        ]
+
     async def _assert_http_error(self, expected_status: int, expected_code: str, **updates) -> HTTPException:
+        service._rate_limiter = None
         with self.assertRaises(HTTPException) as raised:
             await self._create(**updates)
         self.assertEqual(raised.exception.status_code, expected_status)
@@ -171,7 +226,18 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
         await self._assert_http_error(409, "identity_confirmation_unavailable", email=submitted_email, phone=deleting.phone, first_name="Unique Submitted Name", idempotency_key="deletion-key")
         async with AsyncSessionLocal() as session:
             self.assertEqual(await session.scalar(select(func.count()).select_from(WebRegistrationIntent).where(WebRegistrationIntent.event_id == self.event_id)), 0)
-            self.assertEqual(await session.scalar(select(func.count()).select_from(WebRegistrationIdentityConflict)), 0)
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(WebRegistrationIdentityConflict)
+                    .join(
+                        WebRegistrationIntent,
+                        WebRegistrationIntent.id == WebRegistrationIdentityConflict.registration_intent_id,
+                    )
+                    .where(WebRegistrationIntent.event_id == self.event_id)
+                ),
+                0,
+            )
             self.assertIsNone(await session.scalar(select(WebRegistrationIntent).where(WebRegistrationIntent.email_normalized == submitted_email)))
 
     async def test_legal_consent_rules(self) -> None:
@@ -232,12 +298,107 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
             await session.commit()
         await self._assert_http_error(409, "state_conflict", occurrence_id=occurrence_id)
 
-    async def test_answers_rejected_and_answer_payload_remains_null(self) -> None:
-        await self._assert_http_error(422, "validation_error", answers=[{"question": "synthetic", "answer": "synthetic"}])
+    async def test_no_questionnaire_requires_null_form_and_empty_answers(self) -> None:
+        await self._assert_http_error(
+            409,
+            "questionnaire_changed",
+            questionnaire_form_id=uuid4(),
+        )
         await self._create(idempotency_key="empty-answers-key")
         async with AsyncSessionLocal() as session:
             intent = await session.scalar(select(WebRegistrationIntent).where(WebRegistrationIntent.idempotency_key_hash == service._idempotency_hash("empty-answers-key")))
             self.assertIsNone(intent.answer_payload)
+            self.assertIsNone(intent.questionnaire_form_id)
+
+    async def test_questionnaire_binding_validation_normalization_and_temporary_storage(self) -> None:
+        form_id, field_ids = await self._add_questionnaire()
+        valid_answers = self._valid_answers(field_ids)
+        await self._assert_http_error(409, "questionnaire_changed")
+        await self._assert_http_error(
+            409,
+            "questionnaire_changed",
+            questionnaire_form_id=uuid4(),
+            answers=valid_answers,
+        )
+        await self._assert_http_error(
+            422,
+            "validation_error",
+            questionnaire_form_id=form_id,
+            answers=valid_answers + [valid_answers[0]],
+        )
+        await self._assert_http_error(
+            422,
+            "validation_error",
+            questionnaire_form_id=form_id,
+            answers=[item for item in valid_answers if item["field_id"] != field_ids["single"]],
+        )
+        await self._assert_http_error(
+            422,
+            "validation_error",
+            questionnaire_form_id=form_id,
+            answers=[{**valid_answers[0], "field_id": uuid4()}] + valid_answers[1:],
+        )
+
+        invalid_values = [
+            ("short", "x"),
+            ("short", "abcdef"),
+            ("short", "ok\u0000"),
+            ("long", "x"),
+            ("long", "x" * 21),
+            ("single", "unknown"),
+            ("multi", ["x", "x"]),
+            ("multi", []),
+            ("multi", ["x", "y", "z"]),
+            ("multi", ["unknown"]),
+            ("boolean", "false"),
+        ]
+        by_field = {item["field_id"]: item for item in valid_answers}
+        for key, value in invalid_values:
+            answers = [dict(item) for item in valid_answers]
+            target_id = field_ids[key]
+            if target_id in by_field:
+                for item in answers:
+                    if item["field_id"] == target_id:
+                        item["value"] = value
+                        break
+            else:
+                answers.append({"field_id": target_id, "value": value})
+            await self._assert_http_error(
+                422,
+                "validation_error",
+                questionnaire_form_id=form_id,
+                answers=answers,
+            )
+
+        await self._create(
+            questionnaire_form_id=form_id,
+            answers=valid_answers,
+            idempotency_key="questionnaire-valid-key",
+        )
+        async with AsyncSessionLocal() as session:
+            intent = await session.scalar(
+                select(WebRegistrationIntent).where(
+                    WebRegistrationIntent.idempotency_key_hash
+                    == service._idempotency_hash("questionnaire-valid-key"),
+                ),
+            )
+            self.assertEqual(intent.questionnaire_form_id, form_id)
+            self.assertEqual(intent.answer_payload[0]["value"], "ok")
+            self.assertEqual(intent.answer_payload[-1]["value"], False)
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count()).select_from(EventRegistrationAnswer),
+                ),
+                0,
+            )
+
+        await self._assert_http_error(
+            409,
+            "idempotency_conflict",
+            questionnaire_form_id=form_id,
+            answers=[{**valid_answers[0], "value": "new"}, *valid_answers[1:]],
+            idempotency_key="questionnaire-valid-key",
+        )
 
     async def test_router_create_and_generic_conflict_envelopes(self) -> None:
         payload = self.payload(idempotency_key="router-success-key").model_dump(mode="json")

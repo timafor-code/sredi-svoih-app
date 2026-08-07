@@ -1136,6 +1136,47 @@ class EventRegistration(Base):
     updated_at: Mapped[datetime] = timestamptz_now()
 
 
+class EventRegistrationAnswer(Base):
+    __tablename__ = "event_registration_answers"
+    __table_args__ = (
+        CheckConstraint(
+            "jsonb_typeof(value_payload) IN ('string', 'boolean') OR "
+            "(jsonb_typeof(value_payload) = 'array' AND "
+            "NOT jsonb_path_exists(value_payload, "
+            "'$[*] ? (@.type() != \"string\")'))",
+            name="event_registration_answers_value_shape_check",
+        ),
+        UniqueConstraint(
+            "registration_id",
+            "field_id",
+            name="event_registration_answers_registration_field_key",
+        ),
+        Index(
+            "event_registration_answers_registration_id_idx",
+            "registration_id",
+        ),
+        Index("event_registration_answers_purge_at_idx", "purge_at"),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    registration_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("event_registrations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    field_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("event_registration_form_fields.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    value_payload: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = timestamptz_now()
+    purge_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+
 class LegalDocument(Base):
     __tablename__ = "legal_documents"
     __table_args__ = (
@@ -1250,6 +1291,10 @@ class WebRegistrationIntent(Base):
     flow_token_hash: Mapped[str] = mapped_column(Text, nullable=False)
     event_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
     occurrence_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("event_occurrences.id", ondelete="CASCADE"))
+    questionnaire_form_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("event_registration_forms.id", ondelete="CASCADE"),
+    )
     matched_user_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("app_users.id", ondelete="SET NULL"))
     first_name: Mapped[str] = mapped_column(Text, nullable=False)
     last_name: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1709,7 +1754,7 @@ class PrivacyDestructionEvidence(Base):
             "\"registration\", \"credential\", \"session\", \"device\", "
             "\"synced_contact\", \"avatar\", \"privacy_request_content\", "
             "\"prayer_activity\", \"legal_acceptance\", \"feedback\", "
-            "\"web_registration_intent\"]'::jsonb",
+            "\"web_registration_intent\", \"questionnaire_answer\"]'::jsonb",
             name="privacy_destruction_evidence_categories_deleted_check",
         ),
         CheckConstraint(
@@ -1719,7 +1764,7 @@ class PrivacyDestructionEvidence(Base):
             "\"registration\", \"credential\", \"session\", \"device\", "
             "\"synced_contact\", \"avatar\", \"privacy_request_content\", "
             "\"prayer_activity\", \"legal_acceptance\", \"feedback\", "
-            "\"web_registration_intent\"]'::jsonb",
+            "\"web_registration_intent\", \"questionnaire_answer\"]'::jsonb",
             name="privacy_destruction_evidence_categories_retained_check",
         ),
         CheckConstraint(

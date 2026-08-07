@@ -35,7 +35,10 @@ from app.db.models.core import (
     EventCapacityUnit,
     EventCategory,
     EventRegistration,
+    EventRegistrationAnswer,
     EventRegistrationCapacityReservation,
+    EventRegistrationForm,
+    EventRegistrationFormField,
     EventRegistrationOptionSelection,
     LegalAcceptance,
     LegalDocument,
@@ -127,6 +130,8 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.community_id = uuid4()
         self.event_id = uuid4()
         self.legal_document_id = uuid4()
+        self.questionnaire_form_id = uuid4()
+        self.questionnaire_field_id = uuid4()
         self.other_user_id = uuid4()
         self.user_ids: set[UUID] = {self.other_user_id}
         self.request_ids: set[UUID] = set()
@@ -159,7 +164,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                         ),
                     ],
                 )
-                await session.flush()
+            async with session.begin():
                 session.add(
                     EventCategory(
                         community_id=self.community_id,
@@ -194,6 +199,36 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                         ),
                     ],
                 )
+                await session.flush()
+                questionnaire = EventRegistrationForm(
+                    id=self.questionnaire_form_id,
+                    event_id=self.event_id,
+                    channel="web",
+                    version=1,
+                    purpose="Ordinary worker test questionnaire",
+                    status="draft",
+                )
+                session.add(questionnaire)
+                await session.flush()
+                session.add(
+                    EventRegistrationFormField(
+                        id=self.questionnaire_field_id,
+                        form_id=self.questionnaire_form_id,
+                        field_key="worker_note",
+                        field_type="short_text",
+                        label="Worker note",
+                        required=False,
+                        purpose="Ordinary worker test purpose",
+                        retention_days=7,
+                        options_payload=[],
+                        validation_payload={},
+                        data_category="ordinary",
+                        sort_order=0,
+                    ),
+                )
+                await session.flush()
+                questionnaire.status = "published"
+                questionnaire.published_at = self.now
 
     async def asyncTearDown(self) -> None:
         try:
@@ -216,6 +251,11 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                                 PrivacyDestructionEvidence.id.in_(self.evidence_ids),
                             ),
                         )
+                    await session.execute(
+                        delete(LegalAcceptance).where(
+                            LegalAcceptance.legal_document_id == self.legal_document_id,
+                        ),
+                    )
                     await session.execute(
                         delete(LegalDocument).where(
                             LegalDocument.id == self.legal_document_id,
@@ -308,6 +348,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
             "profile": uuid4(),
             "avatar": uuid4(),
             "registration": uuid4(),
+            "answer": uuid4(),
             "selection": uuid4(),
             "capacity_unit": uuid4(),
             "reservation": uuid4(),
@@ -424,6 +465,14 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                             total_amount=0,
                             seats_count=1,
                             is_donation=False,
+                        ),
+                        EventRegistrationAnswer(
+                            id=ids["answer"],
+                            registration_id=ids["registration"],
+                            field_id=self.questionnaire_field_id,
+                            value_payload="Synthetic answer",
+                            created_at=self.now,
+                            purge_at=self.now + timedelta(days=7),
                         ),
                         EventRegistrationCapacityReservation(
                             id=ids["reservation"],
@@ -557,7 +606,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
         finally:
             event.remove(engine.sync_engine, "before_cursor_execute", capture_statement)
 
-        self.assertEqual(first.result, "completed")
+        self.assertEqual(first.result, "completed", repr(first))
         self.assertEqual(first.notification_result, "sent")
         self.assertIsNotNone(first.destruction_evidence_id)
         self.evidence_ids.add(first.destruction_evidence_id)
@@ -590,6 +639,10 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                 "registration": await session.get(
                     EventRegistration,
                     ids["registration"],
+                ),
+                "answer": await session.get(
+                    EventRegistrationAnswer,
+                    ids["answer"],
                 ),
                 "selection": await session.get(
                     EventRegistrationOptionSelection,
@@ -652,6 +705,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                 "prayer_activity",
                 "privacy_request_content",
                 "profile",
+                "questionnaire_answer",
                 "registration",
                 "session",
                 "synced_contact",

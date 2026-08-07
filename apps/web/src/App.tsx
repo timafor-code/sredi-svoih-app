@@ -18,6 +18,13 @@ import {
   resendWebRegistrationCode,
 } from "./api";
 import { formatDate, formatDateTimeRange, formatTime } from "./format";
+import { QuestionnaireFields } from "./QuestionnaireFields";
+import {
+  focusFirstQuestionnaireError,
+  type QuestionnaireErrors,
+  type QuestionnaireValues,
+  validateQuestionnaire,
+} from "./questionnaire";
 import { parseRoute, replaceOccurrenceQuery } from "./route";
 import type {
   AccountChoice,
@@ -28,6 +35,8 @@ import type {
   WebRegistrationLegalDocument,
   WebRegistrationOccurrence,
   WebRegistrationParticipationOption,
+  WebQuestionnaireAnswerValue,
+  WebQuestionnaireField,
   WebRegistrationResult,
   WebRegistrationState,
 } from "./types";
@@ -68,6 +77,8 @@ function safeApiError(error: unknown, context: "create" | "confirm" | "resend" |
   switch (error.code) {
     case "registration_unavailable":
       return "Регистрация на мероприятие стала недоступна.";
+    case "questionnaire_changed":
+      return "Анкета регистрации была обновлена. Обновите страницу и заполните дополнительные вопросы ещё раз.";
     case "state_conflict":
       return "Окно регистрации закрыто или регистрация сейчас недоступна.";
     case "capacity_unavailable":
@@ -354,6 +365,8 @@ function RegistrationForm({
   occurrences,
   selectedOccurrenceId,
   options,
+  questionnaireFormId,
+  questions,
   consentDocument,
   privacyDocument,
 }: {
@@ -362,6 +375,8 @@ function RegistrationForm({
   occurrences: WebRegistrationOccurrence[];
   selectedOccurrenceId: string | null;
   options: WebRegistrationParticipationOption[];
+  questionnaireFormId: string | null;
+  questions: WebQuestionnaireField[];
   consentDocument: WebRegistrationLegalDocument;
   privacyDocument?: WebRegistrationLegalDocument;
 }): ReactNode {
@@ -377,6 +392,8 @@ function RegistrationForm({
   const [values, setValues] = useState<FormValues>(emptyValues);
   const [errors, setErrors] = useState<FormErrors>({});
   const [selections, setSelections] = useState<Record<string, OptionSelection>>({});
+  const [questionnaireValues, setQuestionnaireValues] = useState<QuestionnaireValues>({});
+  const [questionnaireErrors, setQuestionnaireErrors] = useState<QuestionnaireErrors>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [flowError, setFlowError] = useState<string | null>(null);
   const [stage, setStage] = useState<FlowStage>("form");
@@ -409,6 +426,8 @@ function RegistrationForm({
     setValues(emptyValues);
     setErrors({});
     setSelections({});
+    setQuestionnaireValues({});
+    setQuestionnaireErrors({});
     setNotice(null);
     setFlowError(null);
     setStage("form");
@@ -506,18 +525,37 @@ function RegistrationForm({
     setFlowError(null);
   };
 
-  const focusFirstError = (nextErrors: FormErrors) => {
-    const orderedIds: Array<[keyof FormErrors, string]> = [
+  const onQuestionnaireChange = (fieldId: string, value: WebQuestionnaireAnswerValue) => {
+    setQuestionnaireValues((current) => ({ ...current, [fieldId]: value }));
+    setQuestionnaireErrors((current) => ({ ...current, [fieldId]: undefined }));
+    setNotice(null);
+    setFlowError(null);
+  };
+
+  const focusFirstError = (
+    nextErrors: FormErrors,
+    nextQuestionnaireErrors: QuestionnaireErrors,
+  ) => {
+    const beforeQuestionnaire: Array<[keyof FormErrors, string]> = [
       ["occurrence", "occurrence-select"],
       ["options", "options"],
       ["seatsCount", "seats-count"],
+    ];
+    const before = beforeQuestionnaire.find(([field]) => nextErrors[field]);
+    if (before) {
+      if (before[0] === "options") optionsRef.current?.focus();
+      else document.getElementById(before[1])?.focus();
+      return;
+    }
+    if (focusFirstQuestionnaireError(questions, nextQuestionnaireErrors)) return;
+    const afterQuestionnaire: Array<[keyof FormErrors, string]> = [
       ["firstName", "first-name"],
       ["lastName", "last-name"],
       ["phone", "phone"],
       ["email", "email"],
       ["consent", "consent"],
     ];
-    const first = orderedIds.find(([field]) => nextErrors[field]);
+    const first = afterQuestionnaire.find(([field]) => nextErrors[field]);
     if (!first) return;
     if (first[0] === "options") optionsRef.current?.focus();
     else document.getElementById(first[1])?.focus();
@@ -594,10 +632,12 @@ function RegistrationForm({
     const seatsCountError = validateSeatsCount(normalizedValues.seatsCount);
     if (seatsCountError) nextErrors.seatsCount = seatsCountError;
     if (!values.consent) nextErrors.consent = "Подтвердите согласие для продолжения.";
+    const questionnaireResult = validateQuestionnaire(questions, questionnaireValues);
+    setQuestionnaireErrors(questionnaireResult.errors);
     setErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) {
+    if (Object.keys(nextErrors).length > 0 || Object.keys(questionnaireResult.errors).length > 0) {
       setNotice(null);
-      window.requestAnimationFrame(() => focusFirstError(nextErrors));
+      window.requestAnimationFrame(() => focusFirstError(nextErrors, questionnaireResult.errors));
       return;
     }
 
@@ -617,7 +657,8 @@ function RegistrationForm({
           option_id: option.id,
           quantity: selections[option.id]?.quantity ?? option.min_quantity,
         })),
-      answers: [],
+      questionnaire_form_id: questionnaireFormId,
+      answers: questionnaireResult.answers,
       legal_acceptances: [{
         document_id: consentDocument.id,
         content_hash: consentDocument.content_hash,
@@ -954,6 +995,13 @@ function RegistrationForm({
         </div>
       </section>
 
+      <QuestionnaireFields
+        fields={questions}
+        values={questionnaireValues}
+        errors={questionnaireErrors}
+        onChange={onQuestionnaireChange}
+      />
+
       <section className="surface section-card" aria-labelledby="personal-heading">
         <h2 id="personal-heading">Ваши данные</h2>
         <div className="form-grid">
@@ -1104,6 +1152,8 @@ function EventPage({ data, requestedOccurrenceId }: {
               occurrences={data.occurrences}
               selectedOccurrenceId={selectedOccurrenceId}
               options={data.participation_options}
+              questionnaireFormId={data.questionnaire_form_id}
+              questions={data.questions}
               consentDocument={consentDocument}
               privacyDocument={privacyDocument}
             />

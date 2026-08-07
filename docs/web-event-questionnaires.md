@@ -1,8 +1,8 @@
 # Web Event Questionnaires
 
-This document describes the implemented backend contracts and admin
-configuration UI from the first two focused parts of webreg PR 11. Public
-rendering, submission, and answer persistence remain deferred.
+This document describes the completed webreg PR 11 implementation: versioned
+ordinary questionnaire configuration, public rendering, strict submission,
+email-confirmed answer persistence, retention metadata, and privacy coverage.
 
 ## Scope
 
@@ -26,9 +26,12 @@ Single-select and boolean fields accept no validation keys. Unknown request
 properties, unsupported validation keys, control characters, markup-like
 labels, and options on non-select fields are rejected.
 
-No retention value is inferred or defaulted. The preliminary retention concept
-elsewhere in the specification is not an approved universal value. This PR
-stores no answers and therefore calculates no answer purge timestamp.
+No retention value is inferred or defaulted. Each final answer receives
+`purge_at` from the participation date plus that field's configured
+`retention_days`. For occurrence registration the anchor is `ends_at`, falling
+back to `starts_at`; otherwise the event dates are used. Periodic production
+execution of deletion by indexed `purge_at` remains a launch dependency for
+`ops/public-web-production-deploy` if no scheduler is already wired.
 
 ## Versioning and publication
 
@@ -37,12 +40,18 @@ At most one draft and one published version may exist for an event/channel.
 Publishing atomically retires the previous published version. PostgreSQL
 triggers prevent published or retired definitions and their fields from being
 mutated; editing after publication creates or uses the next draft version.
-Deleting the canonical event cascades its questionnaire definitions.
+Deleting the canonical event cascades its questionnaire definitions and answer
+rows without leaving orphans.
 
 `event_registration_form_fields` enforces the five-type allowlist, ordinary
 category, positive retention, non-empty field metadata, unique `field_key`
 inside a form, and type-appropriate option shape. There is deliberately no
-answer table in this PR.
+special-category or dormant future field type.
+
+`event_registration_answers` stores one JSONB value per canonical registration
+and field, with a unique `(registration_id, field_id)`, `created_at`, and
+indexed `purge_at`. Database checks allow only string, boolean, or arrays of
+strings; the server applies the authoritative field-specific validation.
 
 ## API contracts
 
@@ -64,11 +73,31 @@ The existing public contract:
 GET /events/{event_id}/registration-form?channel=web
 ```
 
-now returns `questions`. It is an empty array when no published version exists
-and contains only ordered fields from the active published ordinary version
-otherwise. Draft and retired definitions and actor/database metadata are never
+now returns `questionnaire_form_id` and `questions`. They are respectively
+`null` and an empty array when no published version exists; otherwise the
+response contains only ordered fields from the active published ordinary
+version. Draft and retired definitions and actor/database metadata are never
 public. Existing `disabled`, `unlisted`, and `listed` publication rules remain
 unchanged.
+
+`POST /web/registration-intents` accepts the exact returned form UUID and up to
+100 strict `{field_id, value}` answers. It rejects missing, stale, foreign,
+unknown, duplicate, incorrectly typed, or constraint-violating answers. A stale
+submission returns the safe `questionnaire_changed` code. Values are never
+coerced.
+
+Validated normalized answers exist temporarily only in
+`web_registration_intents.answer_payload`. The intent is bound to the accepted
+immutable `questionnaire_form_id`, so later publication cannot reinterpret an
+in-flight registration. The idempotency fingerprint includes the form and
+answers. Identity-failure flows do not retain answer contents.
+
+Canonical answers are created only after successful email verification, in the
+same transaction as the final registration and legal evidence. Invalid codes,
+capacity changes, unavailable events, identity conflicts, and transaction
+failures create no final answer rows. After successful finalization the
+temporary payload is cleared; confirmed replay returns the existing
+registration without duplicate answer rows.
 
 ## Admin configuration UI
 
@@ -86,6 +115,30 @@ stable technical keys, and reordering writes deterministic sort orders. The UI
 does not expose a data-category selector or sensitive/special-category
 controls.
 
+## Public questionnaire UI
+
+The existing public registration form renders all five allowlisted controls
+under `Дополнительные вопросы`: text input, textarea, accessible radio group,
+checkbox group, and explicit `Да`/`Нет` boolean radios. Label, required state,
+purpose, and retention days are visible. Client validation mirrors required,
+length, allowlist, selection-count, and explicit-boolean rules for UX, links
+errors accessibly, and focuses the first invalid questionnaire control. The
+backend remains authoritative.
+
+Answers live only in React memory and the HTTPS request flow. They are never
+placed in URLs, cookies, analytics, logs, console output, local storage,
+session storage, or IndexedDB, and answer text is never interpreted as HTML.
+
+## Privacy coverage
+
+Own-data summary and JSON export include `questionnaire_answers`. Exported rows
+contain registration and field identifiers, the stable field key, question
+label and purpose, value, `created_at`, and `purge_at`; queries are scoped
+through the verified user's registrations. The shared privacy-erasure deletion
+manifest explicitly deletes answer rows before registrations. The irreversible
+worker and restore replay therefore remove restored answer data as well, while
+prayer content remains outside read/export paths.
+
 Saving a draft is an explicit action; changes are not sent on every keystroke.
 Refreshing a dirty editor requires confirmation before local changes are
 discarded. Publishing is a separate explicitly confirmed action. Published
@@ -95,12 +148,8 @@ definition without changing it.
 
 ## Explicit boundaries
 
-The completed backend and admin-UI parts retain these boundaries:
+The completed end-to-end slice retains these boundaries:
 
-- no public questionnaire rendering;
-- no answer submission;
-- no answer persistence;
-- no activation of the existing registration-intent answer column;
 - no document upload, hidden field, arbitrary markup, executable script, or
   fingerprint mechanism;
 - no special-category fields, including health, allergy or dietary data,
@@ -108,10 +157,10 @@ The completed backend and admin-UI parts retain these boundaries:
   passport/migration data, disability, documents, photos, or biometrics;
 - no relationship to prayer tracking.
 
-`POST /web/registration-intents` continues to reject non-empty `answers` with
-`Questionnaire answers are not available`. Publication changes neither
-capacity nor identity matching and creates no registration.
+Questionnaire publication changes neither capacity nor identity matching and
+creates no registration. Only email-confirmed finalization creates canonical
+answer data.
 
 ## Next PR
 
-`feature/web-event-questionnaires-public-ui`
+`ops/public-web-production-deploy`

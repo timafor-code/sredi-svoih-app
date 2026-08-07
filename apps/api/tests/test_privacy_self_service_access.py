@@ -22,6 +22,9 @@ from app.db.models.core import (
     Event,
     EventCategory,
     EventRegistration,
+    EventRegistrationAnswer,
+    EventRegistrationForm,
+    EventRegistrationFormField,
     EventRegistrationOptionSelection,
     LegalAcceptance,
     LegalDocument,
@@ -51,6 +54,8 @@ class PrivacySelfServiceAccessTests(unittest.IsolatedAsyncioTestCase):
         self.event_id = uuid4()
         self.registration_id = uuid4()
         self.other_registration_id = uuid4()
+        self.questionnaire_form_id = uuid4()
+        self.questionnaire_field_id = uuid4()
         self.legal_document_id = uuid4()
         self.email = f"privacy-{self.marker}@example.invalid"
         self.other_email = f"privacy-other-{self.marker}@example.invalid"
@@ -226,6 +231,55 @@ class PrivacySelfServiceAccessTests(unittest.IsolatedAsyncioTestCase):
                             etag=f"etag-{self.marker}",
                             status="active",
                             confirmed_at=self.now,
+                        ),
+                    ],
+                )
+            async with session.begin():
+                questionnaire = EventRegistrationForm(
+                    id=self.questionnaire_form_id,
+                    event_id=self.event_id,
+                    channel="web",
+                    version=1,
+                    purpose="Ordinary privacy export context",
+                    status="draft",
+                )
+                session.add(questionnaire)
+                await session.flush()
+                session.add(
+                    EventRegistrationFormField(
+                        id=self.questionnaire_field_id,
+                        form_id=self.questionnaire_form_id,
+                        field_key="arrival_note",
+                        field_type="short_text",
+                        label="Arrival note",
+                        required=False,
+                        purpose="Coordinate event arrival",
+                        retention_days=14,
+                        options_payload=[],
+                        validation_payload={},
+                        data_category="ordinary",
+                        sort_order=0,
+                    ),
+                )
+                await session.flush()
+                questionnaire.status = "published"
+                questionnaire.published_at = self.now
+            async with session.begin():
+                session.add_all(
+                    [
+                        EventRegistrationAnswer(
+                            registration_id=self.registration_id,
+                            field_id=self.questionnaire_field_id,
+                            value_payload="Own arrival answer",
+                            created_at=self.now,
+                            purge_at=self.now + timedelta(days=14),
+                        ),
+                        EventRegistrationAnswer(
+                            registration_id=self.other_registration_id,
+                            field_id=self.questionnaire_field_id,
+                            value_payload="Other arrival answer",
+                            created_at=self.now,
+                            purge_at=self.now + timedelta(days=14),
                         ),
                     ],
                 )
@@ -745,6 +799,7 @@ class PrivacySelfServiceAccessTests(unittest.IsolatedAsyncioTestCase):
                 "memberships",
                 "event_registrations",
                 "registration_options",
+                "questionnaire_answers",
                 "legal_acceptances",
                 "privacy_requests",
                 "device_metadata",
@@ -754,6 +809,7 @@ class PrivacySelfServiceAccessTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(categories["event_registrations"], 1)
         self.assertEqual(categories["registration_options"], 1)
+        self.assertEqual(categories["questionnaire_answers"], 1)
         serialized = response.text
         for forbidden in (
             self.email,
@@ -797,6 +853,21 @@ class PrivacySelfServiceAccessTests(unittest.IsolatedAsyncioTestCase):
             [item["registration_id"] for item in data["registration_options"]],
             [str(self.registration_id)],
         )
+        self.assertEqual(
+            data["questionnaire_answers"],
+            [
+                {
+                    "registration_id": str(self.registration_id),
+                    "field_id": str(self.questionnaire_field_id),
+                    "field_key": "arrival_note",
+                    "question_label": "Arrival note",
+                    "field_purpose": "Coordinate event arrival",
+                    "value": "Own arrival answer",
+                    "created_at": self.now.isoformat().replace("+00:00", "Z"),
+                    "purge_at": (self.now + timedelta(days=14)).isoformat().replace("+00:00", "Z"),
+                },
+            ],
+        )
         self.assertEqual(len(data["legal_acceptances"]), 1)
         self.assertEqual(data["synced_contacts_summary"], {"record_count": 1})
         serialized = response.text
@@ -810,6 +881,7 @@ class PrivacySelfServiceAccessTests(unittest.IsolatedAsyncioTestCase):
             "password_hash",
             str(self.other_registration_id),
             "Other option",
+            "Other arrival answer",
         ):
             self.assertNotIn(forbidden, serialized)
         excluded = {item["code"] for item in data["excluded_categories"]}

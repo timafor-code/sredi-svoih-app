@@ -317,6 +317,7 @@ async def get_web_registration_form(
             WebRegistrationLegalDocumentResponse.model_validate(document)
             for document in selected_documents
         ],
+        questionnaire_form_id=published_form_id,
         questions=[
             WebEventQuestionnaireFieldResponse(
                 id=field.id,

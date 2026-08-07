@@ -7,8 +7,11 @@ import {
   OCCURRENCE_ONE_ID,
   OCCURRENCE_TWO_ID,
   OPTION_ID,
+  QUESTIONNAIRE_FORM_ID,
+  QUESTION_IDS,
   eventResponse,
   responseWithOccurrences,
+  responseWithQuestionnaire,
 } from "./test/fixtures";
 
 function response(body: unknown, status = 200, headers: Record<string, string> = {}): Promise<Response> {
@@ -74,6 +77,14 @@ async function fillValidForm(
   await user.type(screen.getByLabelText("Email"), "anna@example.ru");
   await user.click(screen.getByRole("checkbox", { name: /Основное участие/ }));
   if (consent) await user.click(screen.getByLabelText(/Я ознакомился/));
+}
+
+async function fillValidQuestionnaire(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByLabelText(/Код встречи/), " ok ");
+  await user.type(screen.getByLabelText(/Комментарий по прибытию/), "Обычный комментарий");
+  await user.click(screen.getByRole("radio", { name: "Северный" }));
+  await user.click(screen.getByRole("checkbox", { name: "Первая" }));
+  await user.click(screen.getByRole("radio", { name: "Нет" }));
 }
 
 async function createIntent(
@@ -418,6 +429,7 @@ describe("local form shell", () => {
       email: "anna@example.ru",
       seats_count: 1,
       option_selections: [{ option_id: OPTION_ID, quantity: 1 }],
+      questionnaire_form_id: null,
       answers: [],
       legal_acceptances: [{ document_id: "55555555-5555-4555-8555-555555555555", content_hash: "consent-hash" }],
       account_choice: accountChoice,
@@ -444,6 +456,88 @@ describe("local form shell", () => {
     expect(window.location.href).not.toContain("create_account");
     expect(document.title).not.toContain("secret");
     expect(within(document.body).queryByText("secret@example.test")).not.toBeInTheDocument();
+  });
+
+  it("renders all ordinary questionnaire controls with purpose and retention", async () => {
+    await renderEvent(responseWithQuestionnaire());
+    expect(screen.getByRole("heading", { name: "Дополнительные вопросы" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Код встречи/)).toHaveAttribute("type", "text");
+    expect(screen.getByLabelText(/Комментарий по прибытию/).tagName).toBe("TEXTAREA");
+    expect(screen.getByRole("group", { name: /Выберите вход/ })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: /Выберите сессии/ })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: /Нужен бейдж/ })).toBeInTheDocument();
+    expect(screen.getAllByText(/Цель:/)).toHaveLength(5);
+    expect(screen.getByText((_content, element) => Boolean(
+      element?.classList.contains("questionnaire-help")
+      && element.textContent?.includes("Хранение: 7 дн.") === true,
+    ))).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Да" })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "Нет" })).not.toBeChecked();
+  });
+
+  it("focuses the first invalid questionnaire field and enforces multi-select bounds", async () => {
+    const user = userEvent.setup();
+    await renderEvent(responseWithQuestionnaire());
+    await fillValidForm(user);
+    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    expect(screen.getByLabelText(/Код встречи/)).toHaveFocus();
+    expect(document.getElementById(`questionnaire-${QUESTION_IDS.short}-error`)).toHaveTextContent(
+      "Ответьте на обязательный вопрос.",
+    );
+
+    await fillValidQuestionnaire(user);
+    await user.click(screen.getByRole("checkbox", { name: "Вторая" }));
+    await user.click(screen.getByRole("checkbox", { name: "Третья" }));
+    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    expect(screen.getByRole("checkbox", { name: "Первая" })).toHaveFocus();
+    expect(screen.getByText("Выберите не более 2 вариантов.")).toBeInTheDocument();
+  });
+
+  it("submits the exact questionnaire version and only field IDs plus normalized values", async () => {
+    const user = userEvent.setup();
+    await renderEvent(responseWithQuestionnaire());
+    await fillValidForm(user);
+    await fillValidQuestionnaire(user);
+    vi.mocked(fetch).mockImplementationOnce(() => response(intentCreated(), 201));
+    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body));
+    expect(body.questionnaire_form_id).toBe(QUESTIONNAIRE_FORM_ID);
+    expect(body.answers).toEqual([
+      { field_id: QUESTION_IDS.short, value: "ok" },
+      { field_id: QUESTION_IDS.long, value: "Обычный комментарий" },
+      { field_id: QUESTION_IDS.single, value: "north" },
+      { field_id: QUESTION_IDS.multi, value: ["one"] },
+      { field_id: QUESTION_IDS.boolean, value: false },
+    ]);
+    expect(JSON.stringify(body.answers)).not.toMatch(/label|purpose|Код встречи|Цель/);
+  });
+
+  it("shows safe refresh guidance when the questionnaire changed", async () => {
+    const user = userEvent.setup();
+    await renderEvent(responseWithQuestionnaire());
+    await fillValidForm(user);
+    await fillValidQuestionnaire(user);
+    vi.mocked(fetch).mockImplementationOnce(() => response({
+      data: null,
+      error: { code: "questionnaire_changed", message: "internal version details" },
+      meta: {},
+    }, 409));
+    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Анкета регистрации была обновлена. Обновите страницу и заполните дополнительные вопросы ещё раз.",
+    );
+    expect(screen.getByRole("alert")).not.toHaveTextContent("internal version details");
+  });
+
+  it("keeps questionnaire answers only in React memory", async () => {
+    const user = userEvent.setup();
+    const storageSpy = vi.spyOn(Storage.prototype, "setItem");
+    await renderEvent(responseWithQuestionnaire());
+    await user.type(screen.getByLabelText(/Код встречи/), "secret-answer");
+    expect(storageSpy).not.toHaveBeenCalled();
+    expect(window.localStorage).toHaveLength(0);
+    expect(window.sessionStorage).toHaveLength(0);
+    expect(window.location.href).not.toContain("secret-answer");
   });
 });
 

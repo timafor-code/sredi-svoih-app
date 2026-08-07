@@ -267,6 +267,10 @@ class EventQuestionnaireTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(revision)
         assert revision is not None
         self.assertEqual(revision.down_revision, "20260806200000")
+        answer_revision = script.get_revision("20260807160000")
+        self.assertIsNotNone(answer_revision)
+        assert answer_revision is not None
+        self.assertEqual(answer_revision.down_revision, "20260807120000")
         expected_head = script.get_current_head()
         async with AsyncSessionLocal() as session:
             actual_head = await session.scalar(
@@ -286,6 +290,12 @@ class EventQuestionnaireTests(unittest.IsolatedAsyncioTestCase):
                     "form_indexes": inspect(sync_connection).get_indexes(
                         "event_registration_forms",
                     ),
+                    "answer_constraints": inspect(sync_connection).get_check_constraints(
+                        "event_registration_answers",
+                    ),
+                    "answer_indexes": inspect(sync_connection).get_indexes(
+                        "event_registration_answers",
+                    ),
                 },
             )
         self.assertIn(
@@ -299,6 +309,17 @@ class EventQuestionnaireTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             "event_registration_forms_one_published_idx",
             {item["name"] for item in schema["form_indexes"]},
+        )
+        self.assertIn(
+            "event_registration_answers_value_shape_check",
+            {item["name"] for item in schema["answer_constraints"]},
+        )
+        self.assertLessEqual(
+            {
+                "event_registration_answers_registration_id_idx",
+                "event_registration_answers_purge_at_idx",
+            },
+            {item["name"] for item in schema["answer_indexes"]},
         )
 
         form_id = uuid4()
@@ -588,18 +609,28 @@ class EventQuestionnaireTests(unittest.IsolatedAsyncioTestCase):
         try:
             no_form = await self._request("GET", public_path)
             self.assertEqual(no_form.status_code, 200)
+            self.assertIsNone(no_form.json()["data"]["questionnaire_form_id"])
             self.assertEqual(no_form.json()["data"]["questions"], [])
 
             draft = await self._put_draft()
             self.assertEqual(draft.status_code, 200)
             draft_only = await self._request("GET", public_path)
             self.assertEqual(draft_only.status_code, 200)
+            self.assertIsNone(draft_only.json()["data"]["questionnaire_form_id"])
             self.assertEqual(draft_only.json()["data"]["questions"], [])
 
             self.assertEqual((await self._publish()).status_code, 200)
             published = await self._request("GET", public_path)
             self.assertEqual(published.status_code, 200)
             questions = published.json()["data"]["questions"]
+            self.assertEqual(
+                published.json()["data"]["questionnaire_form_id"],
+                (await self._request(
+                    "GET",
+                    f"/admin/events/{self.event_id}/web-questionnaire",
+                    role="admin",
+                )).json()["data"]["published"]["id"],
+            )
             self.assertEqual(
                 [question["field_key"] for question in questions],
                 ["session_choice", "arrival_note"],
@@ -645,6 +676,7 @@ class EventQuestionnaireTests(unittest.IsolatedAsyncioTestCase):
             await session.commit()
         retired = await self._request("GET", public_path)
         self.assertEqual(retired.status_code, 200)
+        self.assertIsNone(retired.json()["data"]["questionnaire_form_id"])
         self.assertEqual(retired.json()["data"]["questions"], [])
 
         await self._put_draft()
@@ -689,6 +721,7 @@ class EventQuestionnaireTests(unittest.IsolatedAsyncioTestCase):
                 "email": f"questionnaire-participant-{self.marker}@example.invalid",
                 "seats_count": 1,
                 "option_selections": [],
+                "questionnaire_form_id": None,
                 "answers": [{"field_key": "arrival_note", "value": "Synthetic"}],
                 "legal_acceptances": [
                     {
@@ -701,7 +734,6 @@ class EventQuestionnaireTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(answer_response.status_code, 422)
-        self.assertIn("Questionnaire answers are not available", answer_response.text)
         async with AsyncSessionLocal() as session:
             after_registrations = int(
                 await session.scalar(

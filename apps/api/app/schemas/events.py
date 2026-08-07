@@ -251,4 +251,5 @@ class WebEventRegistrationFormResponse(BaseModel):
     occurrences: list[WebRegistrationOccurrenceResponse]
     participation_options: list[WebRegistrationParticipationOptionResponse]
     legal_documents: list[WebRegistrationLegalDocumentResponse]
+    questionnaire_form_id: UUID | None
     questions: list[WebEventQuestionnaireFieldResponse]

@@ -6,6 +6,7 @@ import hmac
 import json
 import logging
 import secrets
+import unicodedata
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -20,7 +21,12 @@ from app.core.rate_limits import AuthEmailRateLimitConfig, InMemoryAuthEmailRate
 from app.db.models.auth import WebRegistrationVerificationCode
 from app.db.models.core import (
     AppUser,
+    Event,
+    EventOccurrence,
     EventRegistration,
+    EventRegistrationAnswer,
+    EventRegistrationForm,
+    EventRegistrationFormField,
     LegalAcceptance,
     LegalDocument,
     Profile,
@@ -30,6 +36,7 @@ from app.db.models.core import (
 from app.schemas.registrations import RegisterEventRequest
 from app.schemas.web_registration import (
     WebLegalAcceptance,
+    WebQuestionnaireAnswer,
     WebRegistrationConfirmResult,
     WebRegistrationIntentCreated,
     WebRegistrationIntentRequest,
@@ -195,6 +202,180 @@ def _fingerprint(payload: WebRegistrationIntentRequest) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _questionnaire_changed() -> HTTPException:
+    return _error(
+        status.HTTP_409_CONFLICT,
+        "questionnaire_changed",
+        "Questionnaire changed",
+    )
+
+
+def _questionnaire_validation_error(message: str) -> HTTPException:
+    return _error(
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "validation_error",
+        message,
+    )
+
+
+def _normalize_questionnaire_answers(
+    fields: list[EventRegistrationFormField],
+    answers: list[WebQuestionnaireAnswer],
+) -> list[dict[str, object]]:
+    by_id = {field.id: field for field in fields}
+    answer_ids = [answer.field_id for answer in answers]
+    if len(answer_ids) != len(set(answer_ids)):
+        raise _questionnaire_validation_error("Duplicate questionnaire field")
+    if any(field_id not in by_id for field_id in answer_ids):
+        raise _questionnaire_validation_error("Questionnaire field is not available")
+
+    submitted = {answer.field_id: answer for answer in answers}
+    if any(field.required and field.id not in submitted for field in fields):
+        raise _questionnaire_validation_error("Required questionnaire answer is missing")
+
+    normalized: list[dict[str, object]] = []
+    for answer in answers:
+        field = by_id[answer.field_id]
+        value = answer.value
+        validation = field.validation_payload
+
+        if field.field_type in {"short_text", "long_text"}:
+            if not isinstance(value, str):
+                raise _questionnaire_validation_error("Questionnaire answer type is invalid")
+            if field.field_type == "long_text":
+                normalized_value = value.replace("\r\n", "\n").replace("\r", "\n").strip()
+                if any(
+                    unicodedata.category(character).startswith("C")
+                    and character != "\n"
+                    for character in normalized_value
+                ):
+                    raise _questionnaire_validation_error("Questionnaire text is invalid")
+            else:
+                normalized_value = value.strip()
+                if any(
+                    unicodedata.category(character).startswith("C")
+                    for character in normalized_value
+                ):
+                    raise _questionnaire_validation_error("Questionnaire text is invalid")
+            if field.required and not normalized_value:
+                raise _questionnaire_validation_error("Required questionnaire text is empty")
+            minimum = validation.get("min_length")
+            maximum = validation.get("max_length")
+            if minimum is not None and len(normalized_value) < minimum:
+                raise _questionnaire_validation_error("Questionnaire text is too short")
+            if maximum is not None and len(normalized_value) > maximum:
+                raise _questionnaire_validation_error("Questionnaire text is too long")
+            stored_value: object = normalized_value
+        elif field.field_type == "single_select":
+            if not isinstance(value, str):
+                raise _questionnaire_validation_error("Questionnaire answer type is invalid")
+            allowed = {option["value"] for option in field.options_payload}
+            if value not in allowed:
+                raise _questionnaire_validation_error("Questionnaire option is invalid")
+            stored_value = value
+        elif field.field_type == "multi_select":
+            if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+                raise _questionnaire_validation_error("Questionnaire answer type is invalid")
+            if len(value) != len(set(value)):
+                raise _questionnaire_validation_error("Duplicate questionnaire option")
+            allowed = {option["value"] for option in field.options_payload}
+            if any(item not in allowed for item in value):
+                raise _questionnaire_validation_error("Questionnaire option is invalid")
+            minimum = validation.get("min_selections")
+            maximum = validation.get("max_selections")
+            if field.required and not value:
+                raise _questionnaire_validation_error("Required questionnaire answer is empty")
+            if minimum is not None and len(value) < minimum:
+                raise _questionnaire_validation_error("Too few questionnaire options")
+            if maximum is not None and len(value) > maximum:
+                raise _questionnaire_validation_error("Too many questionnaire options")
+            stored_value = value
+        elif field.field_type == "boolean":
+            if not isinstance(value, bool):
+                raise _questionnaire_validation_error("Questionnaire answer type is invalid")
+            stored_value = value
+        else:  # Database definitions are allowlisted, but fail closed if corrupted.
+            raise _questionnaire_validation_error("Questionnaire field type is invalid")
+
+        normalized.append({"field_id": str(field.id), "value": stored_value})
+    return normalized
+
+
+async def _validate_current_questionnaire(
+    session: AsyncSession,
+    payload: WebRegistrationIntentRequest,
+) -> tuple[UUID | None, list[dict[str, object]] | None]:
+    form = await session.scalar(
+        select(EventRegistrationForm).where(
+            EventRegistrationForm.event_id == payload.event_id,
+            EventRegistrationForm.channel == "web",
+            EventRegistrationForm.status == "published",
+        ),
+    )
+    if form is None:
+        if payload.questionnaire_form_id is not None or payload.answers:
+            raise _questionnaire_changed()
+        return None, None
+    if payload.questionnaire_form_id != form.id:
+        raise _questionnaire_changed()
+
+    fields = list(
+        await session.scalars(
+            select(EventRegistrationFormField)
+            .where(
+                EventRegistrationFormField.form_id == form.id,
+                EventRegistrationFormField.data_category == "ordinary",
+            )
+            .order_by(
+                EventRegistrationFormField.sort_order,
+                EventRegistrationFormField.id,
+            ),
+        ),
+    )
+    return form.id, _normalize_questionnaire_answers(fields, payload.answers)
+
+
+async def _bound_questionnaire_answers(
+    session: AsyncSession,
+    intent: WebRegistrationIntent,
+) -> tuple[list[EventRegistrationFormField], list[dict[str, object]]]:
+    if intent.questionnaire_form_id is None:
+        if intent.answer_payload:
+            raise _flow_unavailable()
+        return [], []
+    form = await session.scalar(
+        select(EventRegistrationForm).where(
+            EventRegistrationForm.id == intent.questionnaire_form_id,
+            EventRegistrationForm.event_id == intent.event_id,
+            EventRegistrationForm.channel == "web",
+            EventRegistrationForm.status.in_(("published", "retired")),
+        ),
+    )
+    if form is None:
+        raise _flow_unavailable()
+    fields = list(
+        await session.scalars(
+            select(EventRegistrationFormField)
+            .where(
+                EventRegistrationFormField.form_id == form.id,
+                EventRegistrationFormField.data_category == "ordinary",
+            )
+            .order_by(
+                EventRegistrationFormField.sort_order,
+                EventRegistrationFormField.id,
+            ),
+        ),
+    )
+    try:
+        answers = [
+            WebQuestionnaireAnswer.model_validate(item)
+            for item in (intent.answer_payload or [])
+        ]
+    except ValueError:
+        raise _flow_unavailable() from None
+    return fields, _normalize_questionnaire_answers(fields, answers)
+
+
 def _new_verification_code() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
@@ -248,13 +429,11 @@ def _code_expiry(now: datetime) -> datetime:
 async def _validate_references(
     session: AsyncSession,
     payload: WebRegistrationIntentRequest,
-) -> int:
-    if payload.answers:
-        raise _error(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            "validation_error",
-            "Questionnaire answers are not available",
-        )
+) -> tuple[int, UUID | None, list[dict[str, object]] | None]:
+    questionnaire_form_id, answers = await _validate_current_questionnaire(
+        session,
+        payload,
+    )
 
     preflight = await registrations_service.preflight_registration(
         session,
@@ -271,7 +450,7 @@ async def _validate_references(
         [item.model_dump(mode="json") for item in payload.legal_acceptances],
         lock=False,
     )
-    return preflight.seats_count
+    return preflight.seats_count, questionnaire_form_id, answers
 
 
 async def _validated_legal_documents(
@@ -488,7 +667,9 @@ async def create_intent(
             for_update=True,
         )
         _apply_submit_rate_limit(payload, ip)
-        seats_count = await _validate_references(session, payload)
+        seats_count, questionnaire_form_id, normalized_answers = (
+            await _validate_references(session, payload)
+        )
         intent_status, matched_user_id, conflict_users = await _identity_state(
             session,
             payload,
@@ -501,6 +682,7 @@ async def create_intent(
             flow_token_hash=hash_token(flow_id),
             event_id=payload.event_id,
             occurrence_id=payload.occurrence_id,
+            questionnaire_form_id=questionnaire_form_id,
             matched_user_id=matched_user_id,
             first_name=payload.first_name,
             last_name=payload.last_name,
@@ -510,7 +692,9 @@ async def create_intent(
             option_payload=[
                 item.model_dump(mode="json") for item in payload.option_selections
             ],
-            answer_payload=None,
+            answer_payload=(
+                normalized_answers if intent_status == EMAIL_REQUIRED else None
+            ),
             legal_acceptance_payload=[
                 item.model_dump(mode="json") for item in payload.legal_acceptances
             ],
@@ -775,6 +959,7 @@ async def _mark_identity_failure(
     now: datetime,
 ) -> None:
     intent.status = FAILED
+    intent.answer_payload = None
     if conflict_users is not None:
         existing = await session.scalar(
             select(WebRegistrationIdentityConflict).where(
@@ -837,6 +1022,39 @@ async def _create_legal_acceptances(
                 acceptance_method="checkbox_plus_email_verification",
                 source_channel="public_web",
                 evidence_version="web-registration-email-code-v1",
+            ),
+        )
+
+
+async def _create_questionnaire_answers(
+    session: AsyncSession,
+    *,
+    intent: WebRegistrationIntent,
+    event: Event,
+    registration: EventRegistration,
+    now: datetime,
+) -> None:
+    fields, answers = await _bound_questionnaire_answers(session, intent)
+    if not answers:
+        return
+    by_id = {field.id: field for field in fields}
+    if registration.occurrence_id is not None:
+        occurrence = await session.get(EventOccurrence, registration.occurrence_id)
+        if occurrence is None:
+            raise _flow_unavailable()
+        retention_anchor = occurrence.ends_at or occurrence.starts_at
+    else:
+        retention_anchor = event.ends_at or event.starts_at
+    for answer in answers:
+        field_id = UUID(str(answer["field_id"]))
+        field = by_id[field_id]
+        session.add(
+            EventRegistrationAnswer(
+                registration_id=registration.id,
+                field_id=field.id,
+                value_payload=answer["value"],
+                created_at=now,
+                purge_at=retention_anchor + timedelta(days=field.retention_days),
             ),
         )
 
@@ -934,7 +1152,7 @@ async def _confirm_once(
         raise _invalid_code()
 
     try:
-        await events_service.require_web_registration_event(
+        event = await events_service.require_web_registration_event(
             session,
             intent.event_id,
             for_update=True,
@@ -990,6 +1208,13 @@ async def _confirm_once(
         registration=registration,
         now=now,
     )
+    await _create_questionnaire_answers(
+        session,
+        intent=intent,
+        event=event,
+        registration=registration,
+        now=now,
+    )
 
     set_password_code: str | None = None
     set_password_expires_at: datetime | None = None
@@ -1006,6 +1231,7 @@ async def _confirm_once(
     intent.status = CONFIRMED
     intent.confirmed_at = now
     intent.matched_user_id = user.id
+    intent.answer_payload = None
     await session.execute(
         update(WebRegistrationVerificationCode)
         .where(

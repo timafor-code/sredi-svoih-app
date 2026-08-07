@@ -81,12 +81,39 @@ export type WebRegistrationLegalDocument = {
   effective_at: string;
 };
 
+export type WebQuestionnaireFieldType =
+  | "short_text"
+  | "long_text"
+  | "single_select"
+  | "multi_select"
+  | "boolean";
+
+export type WebQuestionnaireOption = {
+  value: string;
+  label: string;
+};
+
+export type WebQuestionnaireField = {
+  id: string;
+  field_key: string;
+  field_type: WebQuestionnaireFieldType;
+  label: string;
+  required: boolean;
+  purpose: string;
+  retention_days: number;
+  options: WebQuestionnaireOption[];
+  validation: Record<string, number>;
+  sort_order: number;
+};
+
 export type WebEventRegistrationFormResponse = {
   event: WebRegistrationEvent;
   registration_state: WebRegistrationState;
   occurrences: WebRegistrationOccurrence[];
   participation_options: WebRegistrationParticipationOption[];
   legal_documents: WebRegistrationLegalDocument[];
+  questionnaire_form_id: string | null;
+  questions: WebQuestionnaireField[];
 };
 
 export type AccountChoice = "without_password" | "create_account";
@@ -101,6 +128,13 @@ export type WebLegalAcceptance = {
   content_hash: string;
 };
 
+export type WebQuestionnaireAnswerValue = string | boolean | string[];
+
+export type WebQuestionnaireAnswer = {
+  field_id: string;
+  value: WebQuestionnaireAnswerValue;
+};
+
 export type WebRegistrationIntentRequest = {
   event_id: string;
   occurrence_id: string | null;
@@ -110,7 +144,8 @@ export type WebRegistrationIntentRequest = {
   email: string;
   seats_count: number;
   option_selections: WebOptionSelection[];
-  answers: [];
+  questionnaire_form_id: string | null;
+  answers: WebQuestionnaireAnswer[];
   legal_acceptances: WebLegalAcceptance[];
   account_choice: AccountChoice;
   idempotency_key: string;
