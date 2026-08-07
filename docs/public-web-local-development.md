@@ -87,10 +87,12 @@ The browser performs this sequence:
 
 1. Read and runtime-validate
    `GET /events/{event_id}/registration-form?channel=web`.
-2. Validate the occurrence, selected participation options, seat count,
+2. Render and validate the returned ordinary questionnaire fields, then
+   validate the occurrence, selected participation options, seat count,
    participant fields, and separate event-registration consent.
-3. Submit `POST /web/registration-intents` with `answers: []`, only selected
-   option quantities, and an in-memory Web Crypto idempotency key.
+3. Submit `POST /web/registration-intents` with the questionnaire version and
+   normalized answers, only selected option quantities, and an in-memory Web
+   Crypto idempotency key.
 4. Confirm the six-digit email code through
    `POST /web/registration-intents/{flow_id}/confirm-email`, or explicitly
    request a new code through `POST .../{flow_id}/resend-code`.
@@ -105,11 +107,19 @@ The browser performs this sequence:
    only explains that the existing password can be used later; this flow does
    not create a web login session.
 
+When no published questionnaire exists, the registration-form response and
+intent request use `questionnaire_form_id = null` and `answers = []`. When a
+published questionnaire exists, the browser submits the exact
+`questionnaire_form_id` returned by the registration-form API. Each answer
+contains only `field_id` and its normalized value. If the published version
+changes before submission, the API returns the safe `questionnaire_changed`
+error; the participant must reload and complete the current questionnaire.
+
 The flow credential, idempotency key, email code, set-password code, passwords,
-and participant data stay in React memory only. The application does not write
-them to `localStorage`, `sessionStorage`, cookies, IndexedDB, the URL, or the
-console. Reloading the page may therefore discard an unfinished flow, which is
-expected for this release.
+participant data, and questionnaire answers stay in React memory only. The
+application does not write them to `localStorage`, `sessionStorage`, cookies,
+IndexedDB, the URL, or the console. Reloading the page may therefore discard an
+unfinished flow, which is expected for this release.
 
 ## Manual smoke
 
@@ -124,6 +134,15 @@ owner should manually verify:
 - confirmed, pending, waitlisted, full, closed-window, and unavailable results;
 - double-click and same-payload network retry without duplicate intents or
   registrations;
+- rendering and input behavior for all five ordinary questionnaire field types:
+  short text, long text, single select, multi-select, and explicit yes/no;
+- required questionnaire validation and focus movement to the first invalid
+  questionnaire control;
+- questionnaire version change and safe stale-form handling through
+  `questionnaire_changed`;
+- successful email-confirmed registration with questionnaire answers;
+- absence of questionnaire answers from the URL, `localStorage`,
+  `sessionStorage`, cookies, and console output;
 - absence of participant data and all flow/password credentials from URLs,
   browser storage, and console output;
 - mobile and desktop layouts, visible loading states, keyboard order, and focus
