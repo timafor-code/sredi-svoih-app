@@ -1162,7 +1162,7 @@ the occurrence belongs to the event.
 | --- | --- | --- |
 | GET | `/admin/events/{event_id}/web-registration` | Authenticated community-scoped read of `event_id`, `web_visibility`, the stable event URL, and active occurrence URLs ordered by start time and UUID. The URL is returned while disabled. |
 | PATCH | `/admin/events/{event_id}/web-registration` | Row-locked, audited change accepting only `disabled` or `unlisted`; enabling requires `internal_free`. `listed`, URLs, and unrelated event fields are rejected. |
-| GET | `/events/{event_id}/registration-form?channel=web` | Unauthenticated minimized form read for published/public/`internal_free` events whose web visibility is `unlisted` or `listed`. |
+| GET | `/events/{event_id}/registration-form?channel=web` | Unauthenticated minimized form read for published/public/`internal_free` events whose web visibility is `unlisted` or `listed`; includes `questions` from the active published web questionnaire, or `[]`. |
 
 The public form returns only safe event fields, canonical registration state,
 active occurrences, active free non-donation participation options, exactly one
@@ -1172,6 +1172,38 @@ membership data, audit rows, PII, and internal conflict data. Registration
 states are `open`, `not_yet_open`, `closed`, `full`, or `unavailable`; a closed
 window or full capacity does not hide an otherwise published page, and the read
 never reserves capacity.
+
+The `questions` array exposes only the fields needed for later safe rendering:
+`id`, `field_key`, allowlisted `field_type`, plain-text `label`, `required`,
+explicit `purpose`, positive `retention_days`, allowlisted `options`, supported
+`validation`, and `sort_order`. Draft and retired questionnaire versions,
+actor identifiers, timestamps, database metadata, and internal implementation
+details are not public.
+
+Questionnaire definition administration is authenticated and admin-only:
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| GET | `/admin/events/{event_id}/web-questionnaire` | Community-scoped read of the current draft and published web definitions. |
+| PUT | `/admin/events/{event_id}/web-questionnaire/draft` | Create the next draft version or replace the existing draft after strict field validation. |
+| POST | `/admin/events/{event_id}/web-questionnaire/publish` | Atomically publish the valid draft and retire the previously published version. |
+
+Only active `admin` memberships may use these endpoints. `event_manager` and
+member roles cannot define new collection fields, and an admin from another
+community receives no questionnaire contents. Published versions and their
+fields are immutable; further editing uses a later draft version.
+
+The definition allowlist is deliberately limited to `short_text`, `long_text`,
+`single_select`, `multi_select`, and `boolean`, with `data_category` fixed to
+`ordinary`. Every form and field has an explicit purpose, and every field has a
+positive retention period. Select options and validation keys are type-specific
+allowlists; arbitrary properties or executable configuration are rejected.
+
+This starts the split implementation of webreg PR 11 as backend foundation
+only. Neither admin/public questionnaire UI nor answer submission/persistence
+is enabled. A non-empty `answers` payload still returns
+`Questionnaire answers are not available`, and the existing intent answer
+column remains unused.
 
 `listed` is supported by storage and direct public form reads for forward
 compatibility, but the MVP admin PATCH cannot enable it and no catalog or

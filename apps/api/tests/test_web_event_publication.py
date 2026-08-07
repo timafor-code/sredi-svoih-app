@@ -576,6 +576,7 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()["data"]
         self.assertEqual(data["registration_state"], "open")
+        self.assertEqual(data["questions"], [])
         self.assertEqual(
             [item["id"] for item in data["occurrences"]],
             [str(item) for item in self.active_occurrence_ids],

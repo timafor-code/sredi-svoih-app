@@ -120,8 +120,9 @@ or beliefs, nationality, conversion status, Jewish status, or other
 special-category questionnaire data. It also excludes payments, Apple
 Sign-In, Google OIDC, SMS verification, public participant lists, marketing
 email, and registration by a minor in their own name. Later ordinary event
-questions require an explicit purpose and retention period; high-risk or
-special-category questions require separate legal review and controls.
+questions are now defined by a backend-only versioned questionnaire contract
+and require an explicit purpose and retention period. High-risk or
+special-category questions remain technically unavailable and outside scope.
 
 ## Registration Intent And Capacity Flow
 
@@ -185,7 +186,10 @@ collisions without raw PII in output or logs.
 
 The identity/source/legal, intent, verification-code, publication, and complete
 privacy self-service/access/erasure contracts below are implemented.
-Questionnaires remain a target contract for a later PR.
+Versioned ordinary questionnaire definitions and their admin/public read
+contracts are implemented as the first focused part of webreg PR 11. Admin and
+public questionnaire UI, answer submission, and answer persistence remain
+deferred. See [`docs/web-event-questionnaires.md`](web-event-questionnaires.md).
 
 ### `app_users`
 
@@ -620,14 +624,20 @@ joined or requested; the prayer tracker remains private.
       safe identity-conflict queue;
     - `feature/admin-privacy-due-dates` — read-only privacy due-date detail
       (implemented; completes webreg PR 10).
-11. `feature/web-event-questionnaires-basic` — allowlisted ordinary questions
-    with purpose/retention only.
+11. Web event questionnaires — allowlisted ordinary questions with explicit
+    purpose/retention, split into focused PRs:
+    - `feature/web-event-questionnaires-basic` — versioned backend definition,
+      admin contracts, and published public read foundation (implemented);
+    - `feature/admin-web-event-questionnaires-basic-ui` — admin questionnaire
+      configuration UI (next);
+    - public rendering/submission and answer persistence — separate later PR.
 12. `ops/public-web-production-deploy` — Russian hosting, TLS/CSP/CORS, SMTP,
     restore-erasure drill, and owner launch checklist.
 13. After MVP: `feature/public-web-events-directory` — paginated `listed` event
     cards; never expose `unlisted` events.
 
-The next implementation PR is `feature/web-event-questionnaires-basic`.
+The next implementation PR is
+`feature/admin-web-event-questionnaires-basic-ui`.
 
 ## Open Launch Decisions
 
