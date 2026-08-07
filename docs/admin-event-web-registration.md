@@ -42,6 +42,25 @@ main link in a new tab. It does not send email, Telegram, WhatsApp, SMS, Web
 Share, or any other participant message. While publication is disabled, the
 public page remains unavailable even though its stable URL can still be copied.
 
+## Registration questionnaire
+
+The existing event edit page shows the `Анкета регистрации` card immediately
+after the web-registration card and before the occurrence editor. It is
+admin-only: `event_manager` users do not mount the component and therefore do
+not call the questionnaire endpoints. The create-event page does not show the
+editor because questionnaire configuration requires an existing event ID.
+
+An admin may prepare a versioned draft using only ordinary organizational
+questions. The questionnaire purpose, every question purpose, and every
+positive retention period are mandatory. Draft save is explicit and there is
+no autosave. Publishing is a separate action with confirmation. The current
+published version stays read-only and immutable; when no draft exists, a new
+local editor may be prefilled from it without changing the published version.
+No sensitive or special-category control is available.
+
+Public questionnaire rendering and submission are intentionally deferred to
+`feature/web-event-questionnaires-public-ui`.
+
 ## Manual smoke checklist
 
 Manual smoke is performed by the project owner on the pushed PR branch.

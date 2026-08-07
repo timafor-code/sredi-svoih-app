@@ -120,9 +120,11 @@ or beliefs, nationality, conversion status, Jewish status, or other
 special-category questionnaire data. It also excludes payments, Apple
 Sign-In, Google OIDC, SMS verification, public participant lists, marketing
 email, and registration by a minor in their own name. Later ordinary event
-questions are now defined by a backend-only versioned questionnaire contract
-and require an explicit purpose and retention period. High-risk or
-special-category questions remain technically unavailable and outside scope.
+questions are now defined by a versioned questionnaire contract and configured
+through the admin-only event editor. They require an explicit purpose and
+retention period. High-risk or special-category questions remain technically
+unavailable and outside scope. Public rendering and submission are still
+deferred.
 
 ## Registration Intent And Capacity Flow
 
@@ -186,10 +188,13 @@ collisions without raw PII in output or logs.
 
 The identity/source/legal, intent, verification-code, publication, and complete
 privacy self-service/access/erasure contracts below are implemented.
-Versioned ordinary questionnaire definitions and their admin/public read
-contracts are implemented as the first focused part of webreg PR 11. Admin and
-public questionnaire UI, answer submission, and answer persistence remain
-deferred. See [`docs/web-event-questionnaires.md`](web-event-questionnaires.md).
+Versioned ordinary questionnaire definitions, admin/public read contracts, and
+the admin-only configuration UI are implemented as the first two focused parts
+of webreg PR 11. Event managers neither render the admin questionnaire card nor
+call its endpoints. Draft save is explicit, publishing is explicit and
+confirmed, and published definitions remain immutable. Public questionnaire
+rendering, answer submission, and answer persistence remain deferred. See
+[`docs/web-event-questionnaires.md`](web-event-questionnaires.md).
 
 ### `app_users`
 
@@ -629,15 +634,17 @@ joined or requested; the prayer tracker remains private.
     - `feature/web-event-questionnaires-basic` — versioned backend definition,
       admin contracts, and published public read foundation (implemented);
     - `feature/admin-web-event-questionnaires-basic-ui` — admin questionnaire
-      configuration UI (next);
-    - public rendering/submission and answer persistence — separate later PR.
+      configuration UI (implemented);
+    - `feature/web-event-questionnaires-public-ui` — focused public
+      rendering/submission step (next); answer persistence remains constrained
+      to that focused contract.
 12. `ops/public-web-production-deploy` — Russian hosting, TLS/CSP/CORS, SMTP,
     restore-erasure drill, and owner launch checklist.
 13. After MVP: `feature/public-web-events-directory` — paginated `listed` event
     cards; never expose `unlisted` events.
 
 The next implementation PR is
-`feature/admin-web-event-questionnaires-basic-ui`.
+`feature/web-event-questionnaires-public-ui`.
 
 ## Open Launch Decisions
 
