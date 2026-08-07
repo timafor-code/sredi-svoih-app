@@ -15,10 +15,12 @@ import { RegistrationEventsPanel } from "../components/registrations/Registratio
 import { RegistrationMainActions } from "../components/registrations/RegistrationMainActions";
 import { RegistrationsState } from "../components/registrations/RegistrationsState";
 import { RegistrationsTable } from "../components/registrations/RegistrationsTable";
+import { WebRegistrationOperationsPanel } from "../components/registrations/WebRegistrationOperationsPanel";
 import {
   SeatingLayoutEditor,
   type SeatingLayoutEditorSlot,
 } from "../components/seating/SeatingLayoutEditor";
+import { useAdminAuth } from "../context/AdminAuthContext";
 import { getAdminRegistrationCapacityAnalytics } from "../services/adminRegistrationCapacityService";
 import {
   listAdminEventCapacities,
@@ -139,6 +141,7 @@ const API_REGISTRATION_ACTIONS: RegistrationAction[] = [
 ];
 
 export function RegistrationsPage() {
+  const { isAdmin } = useAdminAuth();
   const [events, setEvents] = useState<AdminRegistrationEventSummary[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
@@ -729,6 +732,8 @@ export function RegistrationsPage() {
         <h1>Регистрации</h1>
         <p>{registrationsHeaderDescription}</p>
       </section>
+
+      {isAdmin ? <WebRegistrationOperationsPanel /> : null}
 
       <div className="registrations-workspace">
         <RegistrationEventsPanel

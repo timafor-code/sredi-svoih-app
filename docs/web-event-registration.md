@@ -550,9 +550,22 @@ Admin privacy list responses include `identity_verified_at`,
 filters. Overdue means a non-terminal (`resolved`, `rejected`, and `closed` are
 terminal) request with a non-null past `due_at`. These admin operations never
 run erasure or restore replay, expose encrypted notification fields, or read
-prayer activity. Identity conflicts are not resolved from the registrations UI.
-The operations-summary, identity-conflict, and privacy operations UI is deferred
-to `feature/admin-web-registration-operations-ui`.
+prayer activity.
+
+The Registrations page now renders an admin-only web-registration operations
+surface. Its summary shows active unexpired email-verification intents, open
+identity conflicts, open privacy requests, and overdue privacy requests.
+Confirmed and expired intents are excluded from the active count. The two
+privacy counts are informational; privacy-request list and lifecycle management
+are deferred to `feature/admin-privacy-requests-ui`.
+
+The conflict queue exposes only allowlisted technical metadata and masks user,
+event, occurrence, and conflict identifiers in the primary UI. It never shows
+submitted names, email addresses, phone numbers, answers/comments, credentials,
+codes, or hashes. Resolve/reopen changes only the conflict operational status;
+it does not merge users or edit profiles, login identities, intents, or
+registrations. Automatic identity merge remains prohibited. `event_manager`
+users do not render or call this admin-only surface.
 
 ## Implementation Sequence
 
@@ -595,16 +608,18 @@ to `feature/admin-web-registration-operations-ui`.
 11. `feature/admin-registration-source-status` — canonical source badges and
     FastAPI-backed source filtering in the existing registrations UI
     (implemented).
-12. `feature/admin-web-registration-operations-ui` — operations summary,
-    identity-conflict, and privacy operations UI.
-13. `feature/web-event-questionnaires-basic` — allowlisted ordinary questions
+12. `feature/admin-web-registration-operations-ui` — admin-only operations
+    summary and safe identity-conflict queue (implemented).
+13. `feature/admin-privacy-requests-ui` — admin privacy-request list and
+    lifecycle management.
+14. `feature/web-event-questionnaires-basic` — allowlisted ordinary questions
     with purpose/retention only.
-14. `ops/public-web-production-deploy` — Russian hosting, TLS/CSP/CORS, SMTP,
+15. `ops/public-web-production-deploy` — Russian hosting, TLS/CSP/CORS, SMTP,
     restore-erasure drill, and owner launch checklist.
-15. After MVP: `feature/public-web-events-directory` — paginated `listed` event
+16. After MVP: `feature/public-web-events-directory` — paginated `listed` event
     cards; never expose `unlisted` events.
 
-The next implementation PR is `feature/admin-web-registration-operations-ui`.
+The next implementation PR is `feature/admin-privacy-requests-ui`.
 
 ## Open Launch Decisions
 

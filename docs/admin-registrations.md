@@ -34,7 +34,12 @@ are documented in `docs/admin-seating.md`.
 
 - `RegistrationsPage.tsx` owns selected event/occurrence state, data loading,
   search/source filters, pagination, toasts, status actions, Excel export, and
-  seating modal state.
+  seating modal state. It renders the web-registration operations panel only
+  when `useAdminAuth()` reports `isAdmin === true`.
+- `WebRegistrationOperationsPanel.tsx` owns the aggregate admin-only summary
+  and coordinates refreshes with the conflict queue.
+- `IdentityConflictsPanel.tsx` owns the paged open/resolved conflict queue and
+  its status-only confirmation flow.
 - `RegistrationEventsPanel.tsx` renders the event list and event search.
 - `RegistrationCapacityBucketsOverview.tsx` renders capacity totals, capacity
   modes, bucket rows, bucket breakdown, donation/non-seat markers, and the
@@ -169,6 +174,37 @@ The seating flow keeps the registration capacity invariant from
 `docs/admin-seating.md`: table geometry does not automatically change
 `event_capacity_units.capacity`.
 
+## Admin-Only Web-Registration Operations
+
+The Registrations page includes an operations panel between the page header
+and the existing event/registration workspace for active admins only.
+`event_manager` users do not render the panel and therefore do not call its
+admin-only endpoints. Their existing registration list, source filtering,
+status, attendance, capacity, seating, and Excel workflows are unchanged.
+
+The summary displays only four aggregate counts: active email-verification
+intents, open identity conflicts, open privacy requests, and overdue privacy
+requests. Active intents have `email_verification_required` status and a future
+expiry; expired and confirmed intents are excluded. Zero is displayed as zero,
+without invented trends or comparisons. Privacy counts are informational in
+this PR, and privacy-request processing UI is deferred to
+`feature/admin-privacy-requests-ui`.
+
+The conflict queue requests 20 rows at a time with an explicit `open` or
+`resolved` filter and an offset. It exposes only allowlisted technical metadata:
+conflict/intent lifecycle state, event and optional occurrence ids, masked
+technical user ids, and timestamps. It does not display names, contact data,
+submitted answers/comments, verification material, flow credentials, or
+request/idempotency fingerprints. Unsupported conflict categories or statuses
+fail as a controlled client error instead of being relabelled.
+
+Resolve and reopen actions change only the conflict's operational status after
+the API confirms the mutation. Resolving does not merge users, and neither
+action edits profiles, login email/phone, intents, or registrations. The queue
+and summary are refreshed after success while preserving the selected filter;
+if the current page becomes empty, pagination returns to the previous page.
+Automatic identity merge remains prohibited.
+
 ## Manual Smoke Checklist
 
 Not run by Codex. Manual smoke is performed by the project owner.
@@ -199,9 +235,9 @@ Not run by Codex. Manual smoke is performed by the project owner.
 - capacity reservation business logic changes;
 - donation business logic changes;
 - registration status transition or attendance logic changes.
-- identity-conflict resolution, operations-summary, or privacy operations UI;
+- privacy-request list or lifecycle operations UI;
 - user/profile/login-identity editing or merging.
 
 ## Next PR
 
-`feature/admin-web-registration-operations-ui`
+`feature/admin-privacy-requests-ui`
