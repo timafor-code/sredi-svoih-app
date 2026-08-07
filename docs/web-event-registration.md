@@ -29,7 +29,10 @@ Current repository behavior:
 - the intent, email verification/finalization, identity/source/legal schema,
   and canonical public-web registration path are implemented;
 - event publication, computed UUID links, and the public registration-form API
-  are implemented; the public web UI remains a separate contract.
+  are implemented;
+- ordinary web-event questionnaires now work end-to-end in the public web UI,
+  including strict validation, version binding, final persistence, retention,
+  and privacy coverage. This completes webreg PR 11.
 
 Mobile, public web, and web-admin must use one FastAPI API and one canonical
 PostgreSQL model. They must not create a second backend, a separate web-user
@@ -123,8 +126,8 @@ email, and registration by a minor in their own name. Later ordinary event
 questions are now defined by a versioned questionnaire contract and configured
 through the admin-only event editor. They require an explicit purpose and
 retention period. High-risk or special-category questions remain technically
-unavailable and outside scope. Public rendering and submission are still
-deferred.
+unavailable and outside scope. Public rendering and strict submission are
+implemented for the five ordinary field types only.
 
 ## Registration Intent And Capacity Flow
 
@@ -142,7 +145,7 @@ The target public flow is:
 6. On confirmation, atomically consume the code, resolve the single safe
    identity, re-check event state and capacity transactionally using the
    canonical registration service, and only then create
-   `event_registrations`.
+   `event_registrations` and any canonical questionnaire answer rows.
 7. Return `confirmed`, `pending`, or `waitlisted` according to the event rules;
    offer the existing set-password path when account creation was selected.
 8. Purge expired intents and their temporary PII on the approved short
@@ -159,7 +162,9 @@ uses the canonical occurrence, window, option, quantity, and seat-count rules;
 capacity is not reserved and is rechecked transactionally at confirmation. Exactly one
 active `event_registration_consent` with its exact content hash is mandatory;
 an active `privacy_policy` may accompany it, while marketing consent is outside
-this MVP. Questionnaire `answers` must remain empty and are stored as null.
+this MVP. When a published questionnaire exists, the request must submit its
+exact `questionnaire_form_id` and strict field-ID answers. Normalized answers
+remain temporary on the intent until email confirmation.
 
 ## Identity Normalization And Conflict Rules
 
@@ -188,12 +193,12 @@ collisions without raw PII in output or logs.
 
 The identity/source/legal, intent, verification-code, publication, and complete
 privacy self-service/access/erasure contracts below are implemented.
-Versioned ordinary questionnaire definitions, admin/public read contracts, and
-the admin-only configuration UI are implemented as the first two focused parts
-of webreg PR 11. Event managers neither render the admin questionnaire card nor
-call its endpoints. Draft save is explicit, publishing is explicit and
-confirmed, and published definitions remain immutable. Public questionnaire
-rendering, answer submission, and answer persistence remain deferred. See
+Versioned ordinary questionnaire definitions, admin/public read contracts,
+admin configuration, public rendering, answer submission, final persistence,
+retention metadata, and privacy handling are implemented. Event managers
+neither render the admin questionnaire card nor call its endpoints. Draft save
+is explicit, publishing is explicit and confirmed, and published definitions
+remain immutable. See
 [`docs/web-event-questionnaires.md`](web-event-questionnaires.md).
 
 ### `app_users`
@@ -228,13 +233,14 @@ id
 flow_token_hash
 event_id
 occurrence_id null
+questionnaire_form_id null
 first_name
 last_name
 email_normalized
 phone_normalized
 seats_count
 option_payload
-answer_payload null
+answer_payload null | normalized temporary [{field_id, value}]
 legal_acceptance_payload
 account_choice
 status                 email_verification_required | confirmed | expired | failed
@@ -245,9 +251,10 @@ created_at
 ```
 
 Intent access uses only an opaque flow token. Flow tokens, intent PII, and
-idempotency values must not appear in logs. Successful completion moves only
-required data into canonical records, then clears or deletes the intent under
-short retention.
+idempotency values and questionnaire answers must not appear in logs. The
+request fingerprint includes the questionnaire form and answers. Successful
+completion creates canonical answers in the registration transaction, clears
+`answer_payload`, and retains only the technical immutable form binding.
 
 Implementation status: the intent table, public create/status endpoints,
 normalization, hash-only flow/idempotency lookup, database-backed idempotency,
@@ -255,8 +262,8 @@ minimal identity-conflict persistence, initial SMTP delivery, resend, and
 transactional confirmation are implemented. The provisional
 24-hour TTL is backend-configurable through
 `API_WEB_REGISTRATION_INTENT_TTL_HOURS`; final retention approval is still a
-launch gate. No capacity is reserved before confirmation and no web UI is
-implemented in this step.
+launch gate. No capacity is reserved before confirmation. Questionnaire answers
+are never stored in browser storage, URLs, cookies, analytics, or logs.
 Phone-only and differing-user identity conflicts return one generic
 support/recovery error. Differing users retain only the minimal technical
 conflict record; deletion-pending matches create neither an intent nor a
@@ -425,11 +432,12 @@ no row. Enabling `unlisted` requires `registration_mode=internal_free`.
 The public registration-form read is available only for events that are
 simultaneously `published`, `public`, `internal_free`, and `unlisted` or
 `listed`. It returns active occurrences, active free non-donation options, one
-current event-registration consent, an optional privacy policy, and a canonical
+current event-registration consent, an optional privacy policy, the published
+`questionnaire_form_id` plus exactly its ordered ordinary questions, and a canonical
 `open`, `not_yet_open`, `closed`, `full`, or `unavailable` state. Closed and
 full pages remain readable and the endpoint never reserves capacity. No event
-catalog, public UI, or `apps/admin` UI change is included here. The next
-implementation PR is `feature/admin-web-registration-operations`.
+catalog is included. Questionnaire administration remains the unchanged
+admin-only UI from PR #355.
 
 ## Privacy Self-Service Contracts
 
@@ -635,16 +643,17 @@ joined or requested; the prayer tracker remains private.
       admin contracts, and published public read foundation (implemented);
     - `feature/admin-web-event-questionnaires-basic-ui` — admin questionnaire
       configuration UI (implemented);
-    - `feature/web-event-questionnaires-public-ui` — focused public
-      rendering/submission step (next); answer persistence remains constrained
-      to that focused contract.
+    - `feature/web-event-questionnaires-public-ui` — public rendering, strict
+      submission, email-confirmed canonical answers, retention metadata, and
+      privacy access/erasure coverage (implemented; completes webreg PR 11).
 12. `ops/public-web-production-deploy` — Russian hosting, TLS/CSP/CORS, SMTP,
     restore-erasure drill, and owner launch checklist.
 13. After MVP: `feature/public-web-events-directory` — paginated `listed` event
     cards; never expose `unlisted` events.
 
-The next implementation PR is
-`feature/web-event-questionnaires-public-ui`.
+The next implementation PR is `ops/public-web-production-deploy`. Periodic
+execution of answer retention purge by indexed `purge_at` is a production
+launch dependency if scheduling is not already wired.
 
 ## Open Launch Decisions
 

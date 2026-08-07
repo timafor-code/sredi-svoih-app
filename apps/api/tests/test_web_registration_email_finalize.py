@@ -20,8 +20,12 @@ from app.db.models.core import (
     CommunityMembership,
     Event,
     EventCategory,
+    EventOccurrence,
     EventRegistration,
+    EventRegistrationAnswer,
     EventRegistrationCapacityReservation,
+    EventRegistrationForm,
+    EventRegistrationFormField,
     LegalAcceptance,
     LegalDocument,
     Profile,
@@ -106,6 +110,7 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                         community_id=self.community_id,
                         title="Synthetic web finalize event",
                         starts_at=self.now + timedelta(days=2),
+                        ends_at=self.now + timedelta(days=2, hours=3),
                         category="community",
                         registration_mode="internal_free",
                         status="published",
@@ -156,6 +161,7 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
             "email": self.email,
             "seats_count": 1,
             "option_selections": [],
+            "questionnaire_form_id": None,
             "answers": [],
             "legal_acceptances": [
                 {
@@ -187,6 +193,47 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                     .order_by(WebRegistrationVerificationCode.created_at.desc()),
                 )
                 latest.created_at = self.now - timedelta(seconds=seconds)
+
+    async def _publish_questionnaire(self, *, version: int, retention_days: int = 7):
+        form = EventRegistrationForm(
+            event_id=self.event_id,
+            channel="web",
+            version=version,
+            purpose="Ordinary logistics",
+            status="draft",
+        )
+        field = EventRegistrationFormField(
+            form_id=form.id,
+            field_key=f"arrival_{version}",
+            field_type="short_text",
+            label="Arrival note",
+            required=True,
+            purpose="Coordinate arrivals",
+            retention_days=retention_days,
+            options_payload=[],
+            validation_payload={"min_length": 1, "max_length": 30},
+            data_category="ordinary",
+            sort_order=0,
+        )
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                current = await session.scalar(
+                    select(EventRegistrationForm).where(
+                        EventRegistrationForm.event_id == self.event_id,
+                        EventRegistrationForm.status == "published",
+                    ),
+                )
+                if current is not None:
+                    current.status = "retired"
+                    await session.flush()
+                session.add(form)
+                await session.flush()
+                field.form_id = form.id
+                session.add(field)
+                await session.flush()
+                form.status = "published"
+                form.published_at = self.now
+            return form.id, field.id
 
     async def test_schema_is_hash_only_constrained_and_cascades(self) -> None:
         created, plaintext = await self.create()
@@ -653,8 +700,96 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                 before_memberships,
             )
 
+    async def test_questionnaire_answers_finalize_atomically_bind_version_and_clear_temporary_payload(self) -> None:
+        form_id, field_id = await self._publish_questionnaire(version=1, retention_days=9)
+        created, code = await self.create(
+            self.payload(
+                questionnaire_form_id=form_id,
+                answers=[{"field_id": field_id, "value": "  north door  "}],
+            ),
+        )
+        await self._publish_questionnaire(version=2, retention_days=30)
+
+        async with AsyncSessionLocal() as session:
+            with self.assertRaises(HTTPException):
+                await service.confirm_email(session, created.flow_id, "000000", "192.0.2.50")
+        async with AsyncSessionLocal() as session:
+            self.assertEqual(
+                await session.scalar(select(func.count()).select_from(EventRegistrationAnswer)),
+                0,
+            )
+
+        async with AsyncSessionLocal() as session:
+            result = await service.confirm_email(session, created.flow_id, code, "192.0.2.50")
+        async with AsyncSessionLocal() as session:
+            answer = await session.scalar(
+                select(EventRegistrationAnswer).where(
+                    EventRegistrationAnswer.registration_id == result.registration.id,
+                ),
+            )
+            intent = await session.scalar(
+                select(WebRegistrationIntent).where(
+                    WebRegistrationIntent.flow_token_hash == service._flow_hash(created.flow_id),
+                ),
+            )
+            self.assertEqual(answer.field_id, field_id)
+            self.assertEqual(answer.value_payload, "north door")
+            self.assertEqual(
+                answer.purge_at,
+                self.now + timedelta(days=11, hours=3),
+            )
+            self.assertEqual(intent.questionnaire_form_id, form_id)
+            self.assertIsNone(intent.answer_payload)
+
+        async with AsyncSessionLocal() as session:
+            replay = await service.confirm_email(session, created.flow_id, code, "192.0.2.50")
+            answer_count = await session.scalar(
+                select(func.count()).select_from(EventRegistrationAnswer).where(
+                    EventRegistrationAnswer.registration_id == result.registration.id,
+                ),
+            )
+        self.assertEqual(replay.registration.id, result.registration.id)
+        self.assertEqual(answer_count, 1)
+
+    async def test_questionnaire_purge_uses_occurrence_end(self) -> None:
+        occurrence = EventOccurrence(
+            event_id=self.event_id,
+            starts_at=self.now + timedelta(days=4),
+            ends_at=self.now + timedelta(days=4, hours=2),
+            timezone="Europe/Moscow",
+            status="active",
+        )
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(occurrence)
+                await session.flush()
+        form_id, field_id = await self._publish_questionnaire(version=1, retention_days=5)
+        created, code = await self.create(
+            self.payload(
+                occurrence_id=occurrence.id,
+                questionnaire_form_id=form_id,
+                answers=[{"field_id": field_id, "value": "yes"}],
+            ),
+        )
+        async with AsyncSessionLocal() as session:
+            result = await service.confirm_email(session, created.flow_id, code, "192.0.2.51")
+        async with AsyncSessionLocal() as session:
+            answer = await session.scalar(
+                select(EventRegistrationAnswer).where(
+                    EventRegistrationAnswer.registration_id == result.registration.id,
+                ),
+            )
+        self.assertEqual(answer.purge_at, self.now + timedelta(days=9, hours=2))
+
     async def test_capacity_recheck_rolls_back_and_allows_retry(self) -> None:
-        created, code = await self.create(self.payload(seats_count=2))
+        form_id, field_id = await self._publish_questionnaire(version=1)
+        created, code = await self.create(
+            self.payload(
+                seats_count=2,
+                questionnaire_form_id=form_id,
+                answers=[{"field_id": field_id, "value": "arrival"}],
+            ),
+        )
         blocker = AppUser(
             email=f"web-finalize-blocker-{self.marker}@example.invalid",
             phone=f"+7902{int(self.marker[:8], 16) % 10**7:07d}",
@@ -703,6 +838,10 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(intent.status, "email_verification_required")
             self.assertIsNone(code_row.consumed_at)
+            self.assertEqual(
+                await session.scalar(select(func.count()).select_from(EventRegistrationAnswer)),
+                0,
+            )
             await session.execute(
                 delete(EventRegistration).where(EventRegistration.user_id == blocker.id),
             )
@@ -714,6 +853,11 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                 "192.0.2.6",
             )
         self.assertEqual(result.registration.seats_count, 2)
+        async with AsyncSessionLocal() as session:
+            self.assertEqual(
+                await session.scalar(select(func.count()).select_from(EventRegistrationAnswer)),
+                1,
+            )
 
     async def test_identity_is_re_resolved_and_claimed_profile_is_not_overwritten(self) -> None:
         claimed = AppUser(

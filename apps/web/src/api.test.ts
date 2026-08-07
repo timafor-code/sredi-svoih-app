@@ -10,7 +10,7 @@ import {
   requestSetPassword,
   resendWebRegistrationCode,
 } from "./api";
-import { EVENT_ID, eventResponse } from "./test/fixtures";
+import { EVENT_ID, eventResponse, responseWithQuestionnaire } from "./test/fixtures";
 
 function fetchResponse(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return Promise.resolve({
@@ -59,6 +59,27 @@ describe("public event API", () => {
     const data = eventResponse();
     data.event.id = "77777777-7777-4777-8777-777777777777";
     vi.mocked(fetch).mockImplementation(() => fetchResponse({ data, error: null, meta: {} }));
+    await expect(getWebEventRegistrationForm(EVENT_ID)).rejects.toBeInstanceOf(PublicApiError);
+  });
+
+  it.each([
+    ["unknown type", (data: ReturnType<typeof responseWithQuestionnaire>) => { data.questions[0].field_type = "date" as never; }],
+    ["duplicate field id", (data: ReturnType<typeof responseWithQuestionnaire>) => { data.questions[1].id = data.questions[0].id; }],
+    ["duplicate field key", (data: ReturnType<typeof responseWithQuestionnaire>) => { data.questions[1].field_key = data.questions[0].field_key; }],
+    ["invalid option", (data: ReturnType<typeof responseWithQuestionnaire>) => { data.questions[2].options[0] = { value: "bad value", label: "Bad" }; }],
+    ["duplicate option", (data: ReturnType<typeof responseWithQuestionnaire>) => { data.questions[2].options[1].value = data.questions[2].options[0].value; }],
+    ["text options", (data: ReturnType<typeof responseWithQuestionnaire>) => { data.questions[0].options = [{ value: "x", label: "X" }]; }],
+    ["missing select options", (data: ReturnType<typeof responseWithQuestionnaire>) => { data.questions[2].options = []; }],
+    ["unsupported validation", (data: ReturnType<typeof responseWithQuestionnaire>) => { data.questions[0].validation = { pattern: 1 }; }],
+    ["inverted validation", (data: ReturnType<typeof responseWithQuestionnaire>) => { data.questions[0].validation = { min_length: 5, max_length: 2 }; }],
+    ["invalid retention", (data: ReturnType<typeof responseWithQuestionnaire>) => { data.questions[0].retention_days = 0; }],
+    ["malformed form id", (data: ReturnType<typeof responseWithQuestionnaire>) => { data.questionnaire_form_id = "not-a-uuid"; }],
+    ["null form with questions", (data: ReturnType<typeof responseWithQuestionnaire>) => { data.questionnaire_form_id = null; }],
+    ["form without questions", (data: ReturnType<typeof responseWithQuestionnaire>) => { data.questions = []; }],
+  ])("rejects malformed questionnaire response: %s", async (_name, mutate) => {
+    const data = responseWithQuestionnaire();
+    mutate(data);
+    vi.mocked(fetch).mockImplementation(() => fetchResponse(envelope(data)));
     await expect(getWebEventRegistrationForm(EVENT_ID)).rejects.toBeInstanceOf(PublicApiError);
   });
 
@@ -146,6 +167,7 @@ describe("public event API", () => {
       email: "anna@example.ru",
       seats_count: 1,
       option_selections: [],
+      questionnaire_form_id: null,
       answers: [],
       legal_acceptances: [],
       account_choice: "without_password",

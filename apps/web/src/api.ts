@@ -10,6 +10,7 @@ import type {
   WebRegistrationLegalDocument,
   WebRegistrationOccurrence,
   WebRegistrationParticipationOption,
+  WebQuestionnaireField,
   WebRegistrationResendResult,
   WebRegistrationResult,
   WebRegistrationState,
@@ -212,6 +213,89 @@ function isLegalDocument(value: unknown): value is WebRegistrationLegalDocument 
     && isDateTime(value.effective_at);
 }
 
+const QUESTIONNAIRE_FIELD_TYPES = new Set([
+  "short_text",
+  "long_text",
+  "single_select",
+  "multi_select",
+  "boolean",
+]);
+const FIELD_KEY_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+const OPTION_VALUE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+
+function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
+  const actual = Object.keys(value).sort();
+  return actual.length === keys.length
+    && keys.slice().sort().every((key, index) => key === actual[index]);
+}
+
+function isBoundedInteger(value: unknown, minimum: number, maximum: number): value is number {
+  return typeof value === "number"
+    && Number.isInteger(value)
+    && value >= minimum
+    && value <= maximum;
+}
+
+function isQuestionnaireField(value: unknown): value is WebQuestionnaireField {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "id",
+    "field_key",
+    "field_type",
+    "label",
+    "required",
+    "purpose",
+    "retention_days",
+    "options",
+    "validation",
+    "sort_order",
+  ])) return false;
+  if (!isUuid(value.id)
+    || typeof value.field_key !== "string"
+    || !FIELD_KEY_PATTERN.test(value.field_key)
+    || typeof value.field_type !== "string"
+    || !QUESTIONNAIRE_FIELD_TYPES.has(value.field_type)
+    || typeof value.label !== "string"
+    || value.label.length === 0
+    || typeof value.required !== "boolean"
+    || typeof value.purpose !== "string"
+    || value.purpose.length === 0
+    || !isBoundedInteger(value.retention_days, 1, 36500)
+    || !isBoundedInteger(value.sort_order, 0, 100000)
+    || !Array.isArray(value.options)
+    || !isRecord(value.validation)) return false;
+
+  const options = value.options;
+  if (!options.every((option) => isRecord(option)
+    && hasExactKeys(option, ["value", "label"])
+    && typeof option.value === "string"
+    && OPTION_VALUE_PATTERN.test(option.value)
+    && typeof option.label === "string"
+    && option.label.length > 0)) return false;
+  const optionValues = options.map((option) => String((option as Record<string, unknown>).value));
+  if (new Set(optionValues).size !== optionValues.length) return false;
+
+  const validation = value.validation;
+  const validationKeys = Object.keys(validation);
+  const isText = value.field_type === "short_text" || value.field_type === "long_text";
+  const isMulti = value.field_type === "multi_select";
+  const allowedKeys = isText
+    ? new Set(["min_length", "max_length"])
+    : isMulti
+      ? new Set(["min_selections", "max_selections"])
+      : new Set<string>();
+  if (validationKeys.some((key) => !allowedKeys.has(key))) return false;
+  if (validationKeys.some((key) => !isBoundedInteger(validation[key], 0, 10000))) return false;
+  const lower = isText ? validation.min_length : validation.min_selections;
+  const upper = isText ? validation.max_length : validation.max_selections;
+  if (typeof lower === "number" && typeof upper === "number" && upper < lower) return false;
+  if (isMulti && (
+    (typeof lower === "number" && lower > options.length)
+    || (typeof upper === "number" && upper > options.length)
+  )) return false;
+  const isSelect = value.field_type === "single_select" || isMulti;
+  return isSelect ? options.length > 0 : options.length === 0;
+}
+
 export function isWebEventRegistrationFormResponse(
   value: unknown,
 ): value is WebEventRegistrationFormResponse {
@@ -239,6 +323,12 @@ export function isWebEventRegistrationFormResponse(
     && value.participation_options.every(isOption)
     && Array.isArray(value.legal_documents)
     && value.legal_documents.every(isLegalDocument)
+    && (value.questionnaire_form_id === null || isUuid(value.questionnaire_form_id))
+    && Array.isArray(value.questions)
+    && value.questions.every(isQuestionnaireField)
+    && (value.questionnaire_form_id === null ? value.questions.length === 0 : value.questions.length > 0)
+    && new Set(value.questions.map((question) => question.id.toLowerCase())).size === value.questions.length
+    && new Set(value.questions.map((question) => question.field_key)).size === value.questions.length
     && value.legal_documents.filter(
       (document) => isRecord(document) && document.document_type === "event_registration_consent",
     ).length === 1

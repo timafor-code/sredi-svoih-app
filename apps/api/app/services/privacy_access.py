@@ -27,6 +27,8 @@ from app.db.models.core import (
     Event,
     EventOccurrence,
     EventRegistration,
+    EventRegistrationAnswer,
+    EventRegistrationFormField,
     EventRegistrationOptionSelection,
     LegalAcceptance,
     LegalDocument,
@@ -460,6 +462,14 @@ async def build_data_summary(
                 .where(EventRegistration.user_id == user_id)
                 .scalar_subquery()
                 .label("registration_options"),
+                select(func.count(EventRegistrationAnswer.id))
+                .join(
+                    EventRegistration,
+                    EventRegistration.id == EventRegistrationAnswer.registration_id,
+                )
+                .where(EventRegistration.user_id == user_id)
+                .scalar_subquery()
+                .label("questionnaire_answers"),
                 select(func.count(LegalAcceptance.id))
                 .where(LegalAcceptance.user_id == user_id)
                 .scalar_subquery()
@@ -493,6 +503,7 @@ async def build_data_summary(
         "memberships": counts.memberships,
         "event_registrations": counts.event_registrations,
         "registration_options": counts.registration_options,
+        "questionnaire_answers": counts.questionnaire_answers,
         "legal_acceptances": counts.legal_acceptances,
         "privacy_requests": counts.privacy_requests,
         "device_metadata": counts.device_metadata,
@@ -564,6 +575,24 @@ async def build_data_export(
                 ),
             ),
         )
+        questionnaire_answer_rows = (
+            await session.execute(
+                select(EventRegistrationAnswer, EventRegistrationFormField)
+                .join(
+                    EventRegistration,
+                    EventRegistration.id == EventRegistrationAnswer.registration_id,
+                )
+                .join(
+                    EventRegistrationFormField,
+                    EventRegistrationFormField.id == EventRegistrationAnswer.field_id,
+                )
+                .where(EventRegistration.user_id == user_id)
+                .order_by(
+                    EventRegistrationAnswer.created_at,
+                    EventRegistrationAnswer.id,
+                ),
+            )
+        ).all()
         acceptance_rows = (
             await session.execute(
                 select(LegalAcceptance, LegalDocument)
@@ -620,6 +649,7 @@ async def build_data_export(
         "memberships",
         "event_registrations",
         "registration_options",
+        "questionnaire_answers",
         "legal_acceptances",
         "privacy_requests",
         "device_metadata",
@@ -724,6 +754,19 @@ async def build_data_export(
                 "created_at": option.created_at,
             }
             for option in option_rows
+        ],
+        questionnaire_answers=[
+            {
+                "registration_id": answer.registration_id,
+                "field_id": answer.field_id,
+                "field_key": field.field_key,
+                "question_label": field.label,
+                "field_purpose": field.purpose,
+                "value": answer.value_payload,
+                "created_at": answer.created_at,
+                "purge_at": answer.purge_at,
+            }
+            for answer, field in questionnaire_answer_rows
         ],
         legal_acceptances=[
             {

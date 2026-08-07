@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 from contextlib import redirect_stderr, redirect_stdout
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from io import StringIO
 import importlib.util
 import json
@@ -18,7 +18,14 @@ from app.core.config import Settings
 from app.db.models.avatar import ProfileAvatar
 from app.db.models.core import (
     AppUser,
+    Community,
     DeviceToken,
+    Event,
+    EventCategory,
+    EventRegistration,
+    EventRegistrationAnswer,
+    EventRegistrationForm,
+    EventRegistrationFormField,
     PrayerActivityLog,
     PrivacyDestructionEvidence,
     PrivacyErasureNotificationOutbox,
@@ -229,6 +236,7 @@ class PrivacyErasureRestoreReplayDatabaseTests(unittest.IsolatedAsyncioTestCase)
         self.user_ids: set[UUID] = set()
         self.request_ids: set[UUID] = set()
         self.evidence_hashes: set[str] = set()
+        self.community_ids: set[UUID] = set()
 
     async def asyncTearDown(self) -> None:
         try:
@@ -252,10 +260,14 @@ class PrivacyErasureRestoreReplayDatabaseTests(unittest.IsolatedAsyncioTestCase)
                         await session.execute(
                             delete(AppUser).where(AppUser.id.in_(self.user_ids)),
                         )
+                    if self.community_ids:
+                        await session.execute(
+                            delete(Community).where(Community.id.in_(self.community_ids)),
+                        )
         finally:
             await engine.dispose()
 
-    async def _ordinary_erasure_then_restore(self) -> tuple[UUID, UUID, UUID, str]:
+    async def _ordinary_erasure_then_restore(self) -> tuple[UUID, UUID, UUID, str, UUID]:
         user_id, other_user_id, request_id = uuid4(), uuid4(), uuid4()
         self.user_ids.update((user_id, other_user_id))
         self.request_ids.add(request_id)
@@ -316,6 +328,10 @@ class PrivacyErasureRestoreReplayDatabaseTests(unittest.IsolatedAsyncioTestCase)
 
         replay_request_id = uuid4()
         avatar_id = uuid4()
+        community_id, event_id = uuid4(), uuid4()
+        questionnaire_form_id, questionnaire_field_id = uuid4(), uuid4()
+        registration_id, answer_id = uuid4(), uuid4()
+        self.community_ids.add(community_id)
         avatar_key = f"synthetic/private/avatar/{uuid4().hex}"
         self.request_ids.add(replay_request_id)
         async with AsyncSessionLocal() as session:
@@ -331,7 +347,88 @@ class PrivacyErasureRestoreReplayDatabaseTests(unittest.IsolatedAsyncioTestCase)
                         status="active",
                     ),
                 )
+                session.add(
+                    Community(
+                        id=community_id,
+                        name="Synthetic restored community",
+                        city="Moscow",
+                        slug=f"restored-{community_id.hex[:16]}",
+                    ),
+                )
                 await session.flush()
+                session.add(
+                    EventCategory(
+                        community_id=community_id,
+                        slug="community",
+                        title="Community",
+                        color="#123456",
+                        icon="*",
+                    ),
+                )
+                await session.flush()
+                session.add(
+                    Event(
+                        id=event_id,
+                        community_id=community_id,
+                        title="Synthetic restored event",
+                        starts_at=self.now + timedelta(days=1),
+                        category="community",
+                        registration_mode="internal_free",
+                        status="published",
+                        visibility="public",
+                    ),
+                )
+                await session.flush()
+                questionnaire = EventRegistrationForm(
+                    id=questionnaire_form_id,
+                    event_id=event_id,
+                    channel="web",
+                    version=1,
+                    purpose="Ordinary restored questionnaire",
+                    status="draft",
+                )
+                session.add(questionnaire)
+                await session.flush()
+                session.add(
+                    EventRegistrationFormField(
+                        id=questionnaire_field_id,
+                        form_id=questionnaire_form_id,
+                        field_key="restored_note",
+                        field_type="short_text",
+                        label="Restored note",
+                        required=False,
+                        purpose="Ordinary restored purpose",
+                        retention_days=7,
+                        options_payload=[],
+                        validation_payload={},
+                        data_category="ordinary",
+                        sort_order=0,
+                    ),
+                )
+                await session.flush()
+                questionnaire.status = "published"
+                questionnaire.published_at = self.now
+                session.add(
+                    EventRegistration(
+                        id=registration_id,
+                        event_id=event_id,
+                        user_id=user_id,
+                        status="confirmed",
+                        source_channel="public_web",
+                        seats_count=1,
+                    ),
+                )
+                await session.flush()
+                session.add(
+                    EventRegistrationAnswer(
+                        id=answer_id,
+                        registration_id=registration_id,
+                        field_id=questionnaire_field_id,
+                        value_payload="Restored answer",
+                        created_at=self.now,
+                        purge_at=self.now + timedelta(days=7),
+                    ),
+                )
                 session.add_all(
                     [
                         Profile(
@@ -371,10 +468,10 @@ class PrivacyErasureRestoreReplayDatabaseTests(unittest.IsolatedAsyncioTestCase)
                         ),
                     ],
                 )
-        return user_id, other_user_id, replay_request_id, avatar_key
+        return user_id, other_user_id, replay_request_id, avatar_key, answer_id
 
     async def test_restore_simulation_dry_run_apply_and_idempotent_absence(self) -> None:
-        user_id, other_user_id, replay_request_id, avatar_key = (
+        user_id, other_user_id, replay_request_id, avatar_key, answer_id = (
             await self._ordinary_erasure_then_restore()
         )
         async with AsyncSessionLocal() as session:
@@ -394,6 +491,7 @@ class PrivacyErasureRestoreReplayDatabaseTests(unittest.IsolatedAsyncioTestCase)
         self.assertEqual(dry_run.deleted_subjects, 0)
         async with AsyncSessionLocal() as session:
             self.assertIsNotNone(await session.get(AppUser, user_id))
+            self.assertIsNotNone(await session.get(EventRegistrationAnswer, answer_id))
             self.assertIsNotNone(await session.get(Profile, await session.scalar(
                 select(Profile.id).where(Profile.user_id == user_id),
             )))
@@ -446,6 +544,7 @@ class PrivacyErasureRestoreReplayDatabaseTests(unittest.IsolatedAsyncioTestCase)
                 select(func.count()).select_from(PrivacyErasureNotificationOutbox),
             )
             self.assertIsNone(await session.get(AppUser, user_id))
+            self.assertIsNone(await session.get(EventRegistrationAnswer, answer_id))
             self.assertIsNotNone(await session.get(AppUser, other_user_id))
         self.assertIsNone(replay_request.user_id)
         self.assertIsNone(replay_request.message)
@@ -454,6 +553,7 @@ class PrivacyErasureRestoreReplayDatabaseTests(unittest.IsolatedAsyncioTestCase)
         self.assertNotIn(str(user_id), json.dumps(evidence.categories_deleted))
         self.assertNotIn(str(user_id), evidence.subject_ref_hash)
         self.assertEqual(evidence.categories_retained, [])
+        self.assertIn("questionnaire_answer", evidence.categories_deleted)
         self.assertEqual(request_count_after, request_count_before)
         self.assertEqual(outbox_count_after, outbox_count_before)
 

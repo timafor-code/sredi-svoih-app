@@ -1162,7 +1162,7 @@ the occurrence belongs to the event.
 | --- | --- | --- |
 | GET | `/admin/events/{event_id}/web-registration` | Authenticated community-scoped read of `event_id`, `web_visibility`, the stable event URL, and active occurrence URLs ordered by start time and UUID. The URL is returned while disabled. |
 | PATCH | `/admin/events/{event_id}/web-registration` | Row-locked, audited change accepting only `disabled` or `unlisted`; enabling requires `internal_free`. `listed`, URLs, and unrelated event fields are rejected. |
-| GET | `/events/{event_id}/registration-form?channel=web` | Unauthenticated minimized form read for published/public/`internal_free` events whose web visibility is `unlisted` or `listed`; includes `questions` from the active published web questionnaire, or `[]`. |
+| GET | `/events/{event_id}/registration-form?channel=web` | Unauthenticated minimized form read for published/public/`internal_free` events whose web visibility is `unlisted` or `listed`; includes the active published `questionnaire_form_id` and exactly its ordered `questions`, or `null` and `[]`. |
 
 The public form returns only safe event fields, canonical registration state,
 active occurrences, active free non-donation participation options, exactly one
@@ -1199,11 +1199,11 @@ The definition allowlist is deliberately limited to `short_text`, `long_text`,
 positive retention period. Select options and validation keys are type-specific
 allowlists; arbitrary properties or executable configuration are rejected.
 
-This starts the split implementation of webreg PR 11 as backend foundation
-only. Neither admin/public questionnaire UI nor answer submission/persistence
-is enabled. A non-empty `answers` payload still returns
-`Questionnaire answers are not available`, and the existing intent answer
-column remains unused.
+Webreg PR 11 is complete. The admin and public questionnaire UIs, strict answer
+submission, immutable intent form binding, email-confirmed canonical answer
+persistence, field-derived retention metadata, and privacy coverage are
+implemented. Only the five ordinary field types are accepted; special-category
+types remain technically unavailable.
 
 `listed` is supported by storage and direct public form reads for forward
 compatibility, but the MVP admin PATCH cannot enable it and no catalog or
@@ -1262,8 +1262,30 @@ preflight validates occurrences, registration windows, option membership and
 quantity rules, and derives `seats_count`; a conflicting client value is
 rejected. Exactly one active, non-retired `event_registration_consent` with an
 exact content hash is required. An active `privacy_policy` may also be supplied,
-but marketing consent is not accepted. `answers` must be an empty list and the
-intent stores no answer payload until the questionnaire PR.
+but marketing consent is not accepted. `questionnaire_form_id` must be `null`
+with empty `answers` when no questionnaire is published. Otherwise it must
+equal the currently published form UUID, and `answers` is a maximum-100 list of
+strict `{field_id, value}` objects. A stale form returns
+`questionnaire_changed`; unknown, duplicate, missing required, incorrectly
+typed, or constraint-violating answers return safe validation errors without
+coercion.
+
+Validated answers are normalized and stored temporarily in
+`web_registration_intents.answer_payload`; the form UUID and answers participate
+in the request fingerprint. After intent creation, confirmation uses the bound
+immutable form even if a later version becomes published. Canonical
+`event_registration_answers` rows are created only after successful email
+verification, in the same transaction as registration and legal evidence, and
+the temporary payload is cleared. Failed code, capacity, publication,
+identity, or transaction checks create no final rows; confirmed replay creates
+no duplicates.
+
+Each canonical answer has a unique registration/field pair and indexed
+`purge_at`. Retention is anchored to occurrence `ends_at` (fallback
+`starts_at`) or, for non-occurrence registration, event `ends_at` (fallback
+`starts_at`), plus that immutable field's `retention_days`. Periodic production
+execution of the retention purge is a dependency of
+`ops/public-web-production-deploy` if no scheduler is already wired.
 
 Create sends a Russian verification-code email through the existing SMTP
 adapter. Six-digit codes are stored only as intent-scoped hashes with intent
@@ -2438,17 +2460,26 @@ endpoints. Stable authorization errors are `privacy_session_required`,
 `GET /privacy/data-summary` returns `generated_at` and only category
 `record_count`/presence plus `available_for_export`. Category codes are
 `account`, `profile`, `memberships`, `event_registrations`,
-`registration_options`, `legal_acceptances`, `privacy_requests`,
+`registration_options`, `questionnaire_answers`, `legal_acceptances`, `privacy_requests`,
 `device_metadata`, `synced_contacts_summary`, and `avatar_metadata`.
 
 `POST /privacy/data-export` accepts only `{"format":"json"}`. Its standard JSON
 response contains `export_version = privacy-self-service-v1`, `generated_at`,
 `included_categories`, `excluded_categories`, and only the verified subject's
-explicitly allowlisted account/profile/membership/registration/option/legal/
+explicitly allowlisted account/profile/membership/registration/option/questionnaire/legal/
 privacy-request/device/synced-contact-count/avatar metadata. `device_id` is
 included because the existing current-user device contract already returns it;
 `expo_push_token` is never included. No ZIP, CSV, PDF, file, S3 object,
 background job, attachment, or download link is created.
+
+`questionnaire_answers` is scoped through the verified subject's own canonical
+registrations. Each exported row includes `registration_id`, `field_id`, stable
+`field_key`, question label, field purpose, value, `created_at`, and `purge_at`.
+The shared privacy-erasure manifest explicitly deletes these rows before the
+registration; irreversible erasure and restore replay therefore cannot leave
+or reintroduce them. Questionnaire answers are never read for another user,
+logged, or placed in browser storage. Prayer contents remain excluded and are
+never selected by these paths.
 
 Excluded markers include `prayer_activity`, `feedback_content`,
 `avatar_binary`, and `synced_contact_hashes`. The implementation does not query,

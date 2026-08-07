@@ -24,6 +24,7 @@ from app.db.models.core import (
     CommunityMembership,
     DeviceToken,
     EventRegistration,
+    EventRegistrationAnswer,
     Invite,
     LegalAcceptance,
     PrivacyRequest,
@@ -151,6 +152,14 @@ async def _delete_registrations_and_memberships(
     user_id: UUID,
     categories: set[str],
 ) -> None:
+    if await _delete_rows(
+        session,
+        EventRegistrationAnswer,
+        EventRegistrationAnswer.registration_id.in_(
+            select(EventRegistration.id).where(EventRegistration.user_id == user_id),
+        ),
+    ):
+        categories.add("questionnaire_answer")
     if await _delete_rows(
         session,
         EventSeatingAssignment,

@@ -3,10 +3,10 @@ from __future__ import annotations
 import re
 import unicodedata
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, field_validator
 
 
 def normalize_email(value: str) -> str:
@@ -61,6 +61,13 @@ class WebLegalAcceptance(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class WebQuestionnaireAnswer(BaseModel):
+    field_id: UUID
+    value: StrictStr | StrictBool | list[StrictStr]
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class WebRegistrationIntentRequest(BaseModel):
     event_id: UUID
     occurrence_id: UUID | None = None
@@ -70,7 +77,8 @@ class WebRegistrationIntentRequest(BaseModel):
     email: str
     seats_count: int = Field(ge=1, le=1000)
     option_selections: list[WebOptionSelection] = Field(default_factory=list, max_length=100)
-    answers: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
+    questionnaire_form_id: UUID | None = None
+    answers: list[WebQuestionnaireAnswer] = Field(default_factory=list, max_length=100)
     legal_acceptances: list[WebLegalAcceptance] = Field(min_length=1, max_length=20)
     account_choice: Literal["without_password", "create_account"]
     idempotency_key: str = Field(min_length=8, max_length=512)

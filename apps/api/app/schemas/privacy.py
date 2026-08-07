@@ -128,6 +128,7 @@ class PrivacyDataExportResponse(BaseModel):
     memberships: list[dict[str, Any]]
     event_registrations: list[dict[str, Any]]
     registration_options: list[dict[str, Any]]
+    questionnaire_answers: list[dict[str, Any]]
     legal_acceptances: list[dict[str, Any]]
     privacy_requests: list[dict[str, Any]]
     device_metadata: list[dict[str, Any]]
