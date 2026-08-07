@@ -631,6 +631,164 @@ class Event(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class EventRegistrationForm(Base):
+    __tablename__ = "event_registration_forms"
+    __table_args__ = (
+        CheckConstraint(
+            "channel = 'web'",
+            name="event_registration_forms_channel_check",
+        ),
+        CheckConstraint(
+            "status IN ('draft', 'published', 'retired')",
+            name="event_registration_forms_status_check",
+        ),
+        CheckConstraint(
+            "version > 0",
+            name="event_registration_forms_version_positive_check",
+        ),
+        CheckConstraint(
+            "btrim(purpose) <> ''",
+            name="event_registration_forms_purpose_not_empty_check",
+        ),
+        CheckConstraint(
+            "((status = 'draft' AND published_at IS NULL) OR "
+            "(status IN ('published', 'retired') AND published_at IS NOT NULL))",
+            name="event_registration_forms_published_at_status_check",
+        ),
+        UniqueConstraint(
+            "event_id",
+            "channel",
+            "version",
+            name="event_registration_forms_event_channel_version_key",
+        ),
+        Index("event_registration_forms_event_id_idx", "event_id"),
+        Index(
+            "event_registration_forms_one_draft_idx",
+            "event_id",
+            "channel",
+            unique=True,
+            postgresql_where=text("status = 'draft'"),
+        ),
+        Index(
+            "event_registration_forms_one_published_idx",
+            "event_id",
+            "channel",
+            unique=True,
+            postgresql_where=text("status = 'published'"),
+        ),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    event_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    channel: Mapped[str] = mapped_column(Text, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="SET NULL"),
+    )
+    updated_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="SET NULL"),
+    )
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()
+
+
+class EventRegistrationFormField(Base):
+    __tablename__ = "event_registration_form_fields"
+    __table_args__ = (
+        CheckConstraint(
+            (
+                "field_type IN ('short_text', 'long_text', 'single_select', "
+                "'multi_select', 'boolean')"
+            ),
+            name="event_registration_form_fields_type_check",
+        ),
+        CheckConstraint(
+            "data_category = 'ordinary'",
+            name="event_registration_form_fields_data_category_check",
+        ),
+        CheckConstraint(
+            "btrim(field_key) <> ''",
+            name="event_registration_form_fields_key_not_empty_check",
+        ),
+        CheckConstraint(
+            "btrim(label) <> ''",
+            name="event_registration_form_fields_label_not_empty_check",
+        ),
+        CheckConstraint(
+            "btrim(purpose) <> ''",
+            name="event_registration_form_fields_purpose_not_empty_check",
+        ),
+        CheckConstraint(
+            "retention_days > 0",
+            name="event_registration_form_fields_retention_positive_check",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(options_payload) = 'array'",
+            name="event_registration_form_fields_options_array_check",
+        ),
+        CheckConstraint(
+            (
+                "((field_type IN ('single_select', 'multi_select') "
+                "AND jsonb_array_length(options_payload) > 0) OR "
+                "(field_type IN ('short_text', 'long_text', 'boolean') "
+                "AND options_payload = '[]'::jsonb))"
+            ),
+            name="event_registration_form_fields_options_by_type_check",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(validation_payload) = 'object'",
+            name="event_registration_form_fields_validation_object_check",
+        ),
+        UniqueConstraint(
+            "form_id",
+            "field_key",
+            name="event_registration_form_fields_form_key_key",
+        ),
+        Index(
+            "event_registration_form_fields_form_sort_idx",
+            "form_id",
+            "sort_order",
+            "id",
+        ),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    form_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("event_registration_forms.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    field_key: Mapped[str] = mapped_column(Text, nullable=False)
+    field_type: Mapped[str] = mapped_column(Text, nullable=False)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    retention_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    options_payload: Mapped[list[Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'::jsonb"),
+    )
+    validation_payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    data_category: Mapped[str] = mapped_column(Text, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = timestamptz_now()
+    updated_at: Mapped[datetime] = timestamptz_now()
+
+
 class EventOccurrence(Base):
     __tablename__ = "event_occurrences"
     __table_args__ = (

@@ -14,6 +14,7 @@ from app.schemas.common import (
     PaginationMeta,
     ResponseMeta,
 )
+from app.schemas.event_questionnaires import WebEventQuestionnaireFieldResponse
 
 __all__ = [
     "ApiResponse",
@@ -250,3 +251,4 @@ class WebEventRegistrationFormResponse(BaseModel):
     occurrences: list[WebRegistrationOccurrenceResponse]
     participation_options: list[WebRegistrationParticipationOptionResponse]
     legal_documents: list[WebRegistrationLegalDocumentResponse]
+    questions: list[WebEventQuestionnaireFieldResponse]

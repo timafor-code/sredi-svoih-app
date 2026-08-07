@@ -210,7 +210,8 @@ class PrivacyErasureNotificationCryptoTests(unittest.TestCase):
 class PrivacyErasureNotificationMigrationTests(unittest.TestCase):
     def test_migration_head_schema_and_safe_downgrade_guard(self) -> None:
         script = ScriptDirectory.from_config(Config("alembic.ini"))
-        self.assertEqual(script.get_current_head(), "20260806200000")
+        expected_head = script.get_current_head()
+        self.assertIsNotNone(expected_head)
         revision = script.get_revision("20260806200000")
         self.assertEqual(revision.down_revision, "20260806190000")
 

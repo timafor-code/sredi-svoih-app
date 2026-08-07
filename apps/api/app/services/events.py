@@ -20,7 +20,13 @@ from app.db.models.core import (
     EventOccurrence,
     EventParticipationOption,
     EventRegistration,
+    EventRegistrationForm,
+    EventRegistrationFormField,
     LegalDocument,
+)
+from app.schemas.event_questionnaires import (
+    QuestionnaireOption,
+    WebEventQuestionnaireFieldResponse,
 )
 from app.schemas.events import (
     WebEventRegistrationFormResponse,
@@ -276,6 +282,29 @@ async def get_web_registration_form(
     if privacy_policy is not None:
         selected_documents.append(privacy_policy)
 
+    published_form_id = await session.scalar(
+        select(EventRegistrationForm.id).where(
+            EventRegistrationForm.event_id == event.id,
+            EventRegistrationForm.channel == "web",
+            EventRegistrationForm.status == "published",
+        ),
+    )
+    question_fields: list[EventRegistrationFormField] = []
+    if published_form_id is not None:
+        question_fields = list(
+            await session.scalars(
+                select(EventRegistrationFormField)
+                .where(
+                    EventRegistrationFormField.form_id == published_form_id,
+                    EventRegistrationFormField.data_category == "ordinary",
+                )
+                .order_by(
+                    EventRegistrationFormField.sort_order,
+                    EventRegistrationFormField.id,
+                ),
+            ),
+        )
+
     return WebEventRegistrationFormResponse(
         event=WebRegistrationEventResponse.model_validate(event),
         registration_state=registration_state,
@@ -287,6 +316,24 @@ async def get_web_registration_form(
         legal_documents=[
             WebRegistrationLegalDocumentResponse.model_validate(document)
             for document in selected_documents
+        ],
+        questions=[
+            WebEventQuestionnaireFieldResponse(
+                id=field.id,
+                field_key=field.field_key,
+                field_type=field.field_type,
+                label=field.label,
+                required=field.required,
+                purpose=field.purpose,
+                retention_days=field.retention_days,
+                options=[
+                    QuestionnaireOption.model_validate(option)
+                    for option in field.options_payload
+                ],
+                validation=field.validation_payload,
+                sort_order=field.sort_order,
+            )
+            for field in question_fields
         ],
     )
 

@@ -13,6 +13,7 @@ from app.api import (
     web_registration,
 )
 from app.api.admin import community as admin_community
+from app.api.admin import event_questionnaires as admin_event_questionnaires
 from app.api.admin import events as admin_events
 from app.api.admin import feedback as admin_feedback
 from app.api.admin import imports as admin_imports
@@ -26,6 +27,7 @@ from app.api.admin import web_registration_operations as admin_web_registration_
 
 api_router = APIRouter()
 api_router.include_router(admin_community.router)
+api_router.include_router(admin_event_questionnaires.router)
 api_router.include_router(admin_events.router)
 api_router.include_router(admin_feedback.router)
 api_router.include_router(admin_imports.router)
