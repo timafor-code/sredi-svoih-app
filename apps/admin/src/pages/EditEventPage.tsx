@@ -3,11 +3,13 @@ import { useCallback, useEffect, useState } from "react";
 import { EventForm } from "../components/events/EventForm";
 import { EventCapacityUnitsConstructor } from "../components/events/EventCapacityUnitsConstructor";
 import { EventOccurrencesConstructor } from "../components/events/EventOccurrencesConstructor";
+import { EventQuestionnaireCard } from "../components/events/EventQuestionnaireCard";
 import { ParticipationOptionsConstructor } from "../components/events/ParticipationOptionsConstructor";
 import { EventWebRegistrationCard } from "../components/events/EventWebRegistrationCard";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
+import { useAdminAuth } from "../context/AdminAuthContext";
 import { updateAdminEvent } from "../services/adminEventsService";
 import { listAdminCommunityLocations } from "../services/communityLocationsService";
 import { listAdminEventCategories } from "../services/eventCategoriesService";
@@ -23,6 +25,7 @@ type EditEventPageProps = {
 };
 
 export function EditEventPage({ event, onBackToList, onSaved }: EditEventPageProps) {
+  const { isAdmin } = useAdminAuth();
   const [currentEvent, setCurrentEvent] = useState(event);
   const [savedEvent, setSavedEvent] = useState<AdminEvent | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -180,6 +183,8 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
       </GlassCard>
 
       <EventWebRegistrationCard eventId={currentEvent.id} />
+
+      {isAdmin === true ? <EventQuestionnaireCard eventId={currentEvent.id} /> : null}
 
       <GlassCard className="event-occurrences-card" elevated>
         <EventOccurrencesConstructor

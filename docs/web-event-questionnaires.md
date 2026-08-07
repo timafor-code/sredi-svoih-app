@@ -1,7 +1,8 @@
 # Web Event Questionnaires
 
-This document describes the backend-only first part of the split webreg PR 11
-implementation on `feature/web-event-questionnaires-basic`.
+This document describes the implemented backend contracts and admin
+configuration UI from the first two focused parts of webreg PR 11. Public
+rendering, submission, and answer persistence remain deferred.
 
 ## Scope
 
@@ -69,11 +70,33 @@ otherwise. Draft and retired definitions and actor/database metadata are never
 public. Existing `disabled`, `unlisted`, and `listed` publication rules remain
 unchanged.
 
+## Admin configuration UI
+
+The existing event edit page shows `Анкета регистрации` immediately after the
+web-registration card and before the occurrence editor. The card is mounted
+only for an `admin`; an `event_manager` neither sees the card nor calls the
+questionnaire endpoints. Backend authorization remains authoritative. The
+create-event page has no questionnaire editor because the API requires an
+existing event ID.
+
+The editor exposes only the five supported ordinary field types. Form purpose,
+question label and purpose, and a positive explicit retention period are
+mandatory. Select options receive stable technical values, fields receive
+stable technical keys, and reordering writes deterministic sort orders. The UI
+does not expose a data-category selector or sensitive/special-category
+controls.
+
+Saving a draft is an explicit action; changes are not sent on every keystroke.
+Refreshing a dirty editor requires confirmation before local changes are
+discarded. Publishing is a separate explicitly confirmed action. Published
+versions are shown read-only and cannot be edited, deleted, unpublished, or
+retired from the UI. Starting a new local version may copy the published
+definition without changing it.
+
 ## Explicit boundaries
 
-This PR adds definition storage and API contracts only:
+The completed backend and admin-UI parts retain these boundaries:
 
-- no admin questionnaire UI;
 - no public questionnaire rendering;
 - no answer submission;
 - no answer persistence;
@@ -91,4 +114,4 @@ capacity nor identity matching and creates no registration.
 
 ## Next PR
 
-`feature/admin-web-event-questionnaires-basic-ui`
+`feature/web-event-questionnaires-public-ui`
