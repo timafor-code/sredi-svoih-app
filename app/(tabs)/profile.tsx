@@ -7,6 +7,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AuthCard } from '@/components/auth/AuthCard';
 import { GlassCard } from '@/components/glass/GlassCard';
+import { GuestSettingsShell } from '@/components/settings/GuestSettingsShell';
 import { Avatar } from '@/components/ui/Avatar';
 import { HeaderButton, Logo } from '@/components/ui/BrandHeader';
 import { FormField } from '@/components/ui/FormField';
@@ -14,6 +15,7 @@ import { IOSGroup } from '@/components/ui/IOSGroup';
 import { ListRow } from '@/components/ui/ListRow';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
+import { appCapabilities } from '@/config/appCapabilities';
 import { isRegistrationUpcomingOrCurrent } from '@/lib/registrationGroups';
 import type { CommunityMembershipRole } from '@/services/inviteService';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -161,6 +163,12 @@ function getInitials(name: string): string {
 }
 
 export default function ProfileScreen() {
+  return appCapabilities.isGuestOnly
+    ? <GuestSettingsShell />
+    : <AccountProfileScreen />;
+}
+
+function AccountProfileScreen() {
   const router = useRouter();
   const [inviteCode, setInviteCode] = useState('');
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);

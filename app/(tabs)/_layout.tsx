@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassTabBarBackground } from '@/components/glass/GlassTabBarBackground';
 import { WebSafeBlurView } from '@/components/glass/WebSafeBlurView';
+import { appCapabilities } from '@/config/appCapabilities';
 
 type TabIconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -30,12 +31,30 @@ type TabConfig = {
   inactiveIcon: TabIconName;
 };
 
+const PROFILE_TAB_METADATA = appCapabilities.isGuestOnly
+  ? {
+      label: 'Настройки',
+      activeIcon: 'settings',
+      inactiveIcon: 'settings-outline',
+      sf: { default: 'gearshape', selected: 'gearshape.fill' },
+    } as const
+  : {
+      label: 'Профиль',
+      activeIcon: 'person',
+      inactiveIcon: 'person-outline',
+      sf: { default: 'person.crop.circle', selected: 'person.crop.circle.fill' },
+    } as const;
+
 const TAB_CONFIG: Record<string, TabConfig> = {
   index: { label: 'Главная', activeIcon: 'home', inactiveIcon: 'home-outline' },
   prayers: { label: 'Молитвы', activeIcon: 'time', inactiveIcon: 'time-outline' },
   events: { label: 'События', activeIcon: 'calendar', inactiveIcon: 'calendar-outline' },
   contacts: { label: 'Контакты', activeIcon: 'people', inactiveIcon: 'people-outline' },
-  profile: { label: 'Профиль', activeIcon: 'person', inactiveIcon: 'person-outline' },
+  profile: {
+    label: PROFILE_TAB_METADATA.label,
+    activeIcon: PROFILE_TAB_METADATA.activeIcon,
+    inactiveIcon: PROFILE_TAB_METADATA.inactiveIcon,
+  },
 };
 
 const NATIVE_TAB_CONFIG = {
@@ -44,8 +63,8 @@ const NATIVE_TAB_CONFIG = {
   events: { label: 'События', sf: { default: 'calendar', selected: 'calendar.circle.fill' } },
   contacts: { label: 'Контакты', sf: { default: 'person.2', selected: 'person.2.fill' } },
   profile: {
-    label: 'Профиль',
-    sf: { default: 'person.crop.circle', selected: 'person.crop.circle.fill' },
+    label: PROFILE_TAB_METADATA.label,
+    sf: PROFILE_TAB_METADATA.sf,
   },
 } as const;
 
@@ -672,7 +691,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="prayers" options={{ title: 'Молитвы' }} />
       <Tabs.Screen name="events" options={{ title: 'События' }} />
       <Tabs.Screen name="contacts" options={{ title: 'Контакты' }} />
-      <Tabs.Screen name="profile" options={{ title: 'Профиль' }} />
+      <Tabs.Screen name="profile" options={{ title: PROFILE_TAB_METADATA.label }} />
     </Tabs>
   );
 }
