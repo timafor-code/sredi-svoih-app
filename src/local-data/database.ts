@@ -11,11 +11,17 @@ import {
 import { localMigrations, runLocalMigrations } from './migrations';
 import {
   decideLocalDatabaseBootstrap,
+  isSqlCipherRuntimeAvailable,
   type LocalDataInitializationResult,
 } from './types';
 
 const LOCAL_DATABASE_NAME = 'sredi-svoih-local.db';
+const VERIFY_SQLCIPHER_RUNTIME_SQL = 'PRAGMA cipher_version';
 const VERIFY_DATABASE_READ_SQL = 'SELECT COUNT(*) AS schema_entries FROM sqlite_schema';
+
+type OpenKeyedDatabaseResult =
+  | { status: 'ready'; database: SQLiteDatabase }
+  | { status: 'sqlcipher_unavailable' | 'database_open_failed' };
 
 let initializationPromise: Promise<LocalDataInitializationResult> | null = null;
 
@@ -69,11 +75,13 @@ async function initializeLocalDatabaseOnce(): Promise<LocalDataInitializationRes
     return { status: 'secure_store_unavailable' };
   }
 
-  const database = await openKeyedDatabase(databaseKey);
+  const openResult = await openKeyedDatabase(databaseKey);
 
-  if (!database) {
-    return { status: 'database_open_failed' };
+  if (openResult.status !== 'ready') {
+    return { status: openResult.status };
   }
+
+  const { database } = openResult;
 
   try {
     await runLocalMigrations(database, localMigrations);
@@ -87,7 +95,7 @@ async function initializeLocalDatabaseOnce(): Promise<LocalDataInitializationRes
 
 async function openKeyedDatabase(
   databaseKey: ValidatedDatabaseKey,
-): Promise<SQLiteDatabase | null> {
+): Promise<OpenKeyedDatabaseResult> {
   let database: SQLiteDatabase | null = null;
 
   try {
@@ -98,6 +106,22 @@ async function openKeyedDatabase(
     );
 
     await database.execAsync(createSqlCipherKeyPragma(databaseKey));
+
+    let cipherVersionResult: Record<string, unknown> | null;
+
+    try {
+      cipherVersionResult = await database.getFirstAsync<Record<string, unknown>>(
+        VERIFY_SQLCIPHER_RUNTIME_SQL,
+      );
+    } catch {
+      await closeDatabaseQuietly(database);
+      return { status: 'sqlcipher_unavailable' };
+    }
+
+    if (!isSqlCipherRuntimeAvailable(cipherVersionResult)) {
+      await closeDatabaseQuietly(database);
+      return { status: 'sqlcipher_unavailable' };
+    }
 
     const readResult = await database.getFirstAsync<{ schema_entries: number }>(
       VERIFY_DATABASE_READ_SQL,
@@ -110,13 +134,13 @@ async function openKeyedDatabase(
       throw new Error('Local database read verification failed');
     }
 
-    return database;
+    return { status: 'ready', database };
   } catch {
     if (database) {
       await closeDatabaseQuietly(database);
     }
 
-    return null;
+    return { status: 'database_open_failed' };
   }
 }
 

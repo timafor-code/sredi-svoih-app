@@ -26,6 +26,7 @@ const {
 } = require(path.join(repoRoot, 'src/local-data/keyStore.ts'));
 const {
   decideLocalDatabaseBootstrap,
+  isSqlCipherRuntimeAvailable,
 } = require(path.join(repoRoot, 'src/local-data/types.ts'));
 const {
   runLocalMigrations,
@@ -34,6 +35,7 @@ const {
 
 await validateKeyMaterial();
 validateRecoveryDecisions();
+validateSqlCipherRuntimeDecision();
 await validateMigrations();
 
 console.log('Local data foundation validation passed');
@@ -111,6 +113,23 @@ function validateRecoveryDecisions() {
       expected,
       description,
     );
+  }
+}
+
+function validateSqlCipherRuntimeDecision() {
+  const cases = [
+    [{ cipher_version: '4.6.1 community' }, true, 'non-empty SQLCipher version'],
+    [{ cipher_version: '' }, false, 'empty SQLCipher version'],
+    [{ cipher_version: '   \t' }, false, 'whitespace-only SQLCipher version'],
+    [{ cipher_version: null }, false, 'null SQLCipher version'],
+    [{ cipher_version: undefined }, false, 'undefined SQLCipher version'],
+    [{}, false, 'missing cipher_version field'],
+    [null, false, 'missing PRAGMA result'],
+    [undefined, false, 'undefined PRAGMA result'],
+  ];
+
+  for (const [result, expected, description] of cases) {
+    assertEqual(isSqlCipherRuntimeAvailable(result), expected, description);
   }
 }
 
