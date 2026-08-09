@@ -94,13 +94,15 @@ const PARSHA_RU: Record<string, string> = {
  */
 export function parshaNameRu(name: string): string {
   if (!name) return name;
+  const exactMatch = PARSHA_RU[name];
+  if (exactMatch !== undefined) return exactMatch;
   if (name.includes('-')) {
     return name
       .split('-')
       .map((p) => PARSHA_RU[p.trim()] ?? p.trim())
       .join('-');
   }
-  return PARSHA_RU[name] ?? name;
+  return name;
 }
 
 const HOLIDAY_RU: Record<string, string> = {
