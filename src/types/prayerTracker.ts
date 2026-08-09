@@ -10,6 +10,37 @@ export type HebrewDatePayload = Record<string, unknown>;
 
 export type PrayerActivityMetadata = Record<string, unknown>;
 
+export type PrayerSyncState = 'local_only' | 'pending' | 'synced' | 'error';
+
+export interface LocalPrayerActivityLog {
+  localId: string;
+  ownerScope: 'guest';
+  activityType: PrayerActivityType;
+  activityDate: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  timezone: string;
+  city: string | null;
+  hebrewDate: HebrewDatePayload;
+  metadata: PrayerActivityMetadata;
+  createdAt: string;
+  updatedAt: string;
+  syncState: PrayerSyncState;
+  syncedUserId: string | null;
+  serverId: string | null;
+  lastSyncErrorCode: string | null;
+}
+
+export interface PrayerActivitySummary {
+  fromDate: string | null;
+  toDate: string | null;
+  totalLogs: number;
+  activeDays: number;
+  countsByActivityType: Record<PrayerActivityType, number>;
+  firstActivityDate: string | null;
+  lastActivityDate: string | null;
+}
+
 export interface PrayerActivityLog {
   id: string;
   userId: string;
