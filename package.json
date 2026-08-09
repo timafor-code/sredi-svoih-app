@@ -11,6 +11,7 @@
     "import:events:dry": "node ./scripts/importWebsiteEvents.mjs --dry-run",
     "import:events": "node ./scripts/importWebsiteEvents.mjs",
     "import:events:review": "node ./scripts/importWebsiteEvents.mjs --review",
+    "validate:app-capabilities": "node ./scripts/validateAppCapabilities.mjs",
     "validate:blessings": "node ./scripts/validateBlessingsCatalog.mjs",
     "validate:parsha-content": "node ./scripts/validateParshaContent.mjs",
     "typecheck": "tsc --noEmit",
