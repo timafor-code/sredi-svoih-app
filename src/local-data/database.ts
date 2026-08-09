@@ -1,3 +1,4 @@
+import type { ExecutionEnvironment } from 'expo-constants';
 import { File } from 'expo-file-system';
 import * as SQLite from 'expo-sqlite';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -25,7 +26,18 @@ type OpenKeyedDatabaseResult =
 
 let initializationPromise: Promise<LocalDataInitializationResult> | null = null;
 
-export function initializeLocalDatabase(): Promise<LocalDataInitializationResult> {
+export async function initializeLocalDatabase(): Promise<LocalDataInitializationResult> {
+  const { default: Constants, ExecutionEnvironment } = await import('expo-constants');
+
+  if (
+    shouldBlockLocalDatabaseBootstrap(
+      Constants.executionEnvironment,
+      ExecutionEnvironment.StoreClient,
+    )
+  ) {
+    return { status: 'sqlcipher_unavailable' };
+  }
+
   if (!initializationPromise) {
     initializationPromise = initializeLocalDatabaseOnce().then((result) => {
       if (result.status !== 'ready') {
@@ -37,6 +49,13 @@ export function initializeLocalDatabase(): Promise<LocalDataInitializationResult
   }
 
   return initializationPromise;
+}
+
+export function shouldBlockLocalDatabaseBootstrap(
+  executionEnvironment: ExecutionEnvironment,
+  expoGoExecutionEnvironment: ExecutionEnvironment,
+): boolean {
+  return executionEnvironment === expoGoExecutionEnvironment;
 }
 
 async function initializeLocalDatabaseOnce(): Promise<LocalDataInitializationResult> {
