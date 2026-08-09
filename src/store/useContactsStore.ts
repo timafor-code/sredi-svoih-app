@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { appCapabilities } from '@/config/appCapabilities';
 import { contactsService } from '@/services/contactsService';
 import type {
   BirthdayOccurrence,
@@ -26,9 +27,24 @@ interface ContactsStoreActions {
   loadCommunityContacts: () => Promise<void>;
   loadLocalContacts: () => Promise<void>;
   refreshAll: () => Promise<void>;
+  resetCommunityContacts: () => void;
 }
 
 type ContactsStore = ContactsStoreState & ContactsStoreActions;
+let communityRequestRevision = 0;
+
+function beginCommunityRequest(): number {
+  communityRequestRevision += 1;
+  return communityRequestRevision;
+}
+
+function invalidateCommunityRequests(): void {
+  communityRequestRevision += 1;
+}
+
+function isCurrentCommunityRequest(revision: number): boolean {
+  return revision === communityRequestRevision;
+}
 
 function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'contacts_error';
@@ -58,10 +74,28 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
   clearError: () => set({ communityError: null, error: null }),
 
   loadCommunityContacts: async () => {
+    if (!appCapabilities.canUseAccountFeatures) {
+      invalidateCommunityRequests();
+      const { localContacts } = get();
+      set({
+        communityContacts: [],
+        communityError: null,
+        loadingCommunity: false,
+        ...getDerivedState([], localContacts),
+      });
+      return;
+    }
+
+    const requestRevision = beginCommunityRequest();
     set({ communityError: null, error: null, loadingCommunity: true });
 
     try {
       const communityContacts = await contactsService.listCommunityContacts();
+
+      if (!isCurrentCommunityRequest(requestRevision)) {
+        return;
+      }
+
       const { localContacts } = get();
       set({
         communityError: null,
@@ -70,6 +104,10 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
         ...getDerivedState(communityContacts, localContacts),
       });
     } catch (error) {
+      if (!isCurrentCommunityRequest(requestRevision)) {
+        return;
+      }
+
       const { localContacts } = get();
       set({
         communityContacts: [],
@@ -85,8 +123,11 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
 
     try {
       const result = await contactsService.listLocalBirthdayContacts();
-      const { communityContacts } = get();
+      const communityContacts = appCapabilities.canUseAccountFeatures
+        ? get().communityContacts
+        : [];
       set({
+        communityContacts,
         error: result.ok ? null : result.error ?? 'local_contacts_error',
         loadingLocal: false,
         localContacts: result.contacts,
@@ -94,12 +135,65 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
         ...getDerivedState(communityContacts, result.contacts),
       });
     } catch (error) {
-      set({ error: toErrorMessage(error), loadingLocal: false, localContactsPermission: 'error' });
+      const communityContacts = appCapabilities.canUseAccountFeatures
+        ? get().communityContacts
+        : [];
+      set({
+        communityContacts,
+        error: toErrorMessage(error),
+        loadingLocal: false,
+        localContactsPermission: 'error',
+        ...getDerivedState(communityContacts, get().localContacts),
+      });
     }
   },
 
   refreshAll: async () => {
     const shouldRefreshLocal = get().localContactsPermission === 'granted';
+
+    if (!appCapabilities.canUseAccountFeatures) {
+      invalidateCommunityRequests();
+      set({
+        communityContacts: [],
+        communityError: null,
+        error: null,
+        loadingCommunity: false,
+        loadingLocal: shouldRefreshLocal,
+        ...getDerivedState([], get().localContacts),
+      });
+
+      if (!shouldRefreshLocal) {
+        return;
+      }
+
+      try {
+        const result = await contactsService.listLocalBirthdayContacts();
+        set({
+          communityContacts: [],
+          communityError: null,
+          error: result.ok ? null : result.error ?? 'local_contacts_error',
+          loadingCommunity: false,
+          loadingLocal: false,
+          localContacts: result.contacts,
+          localContactsPermission: result.permissionStatus,
+          ...getDerivedState([], result.contacts),
+        });
+      } catch (error) {
+        set({
+          communityContacts: [],
+          communityError: null,
+          error: toErrorMessage(error),
+          loadingCommunity: false,
+          loadingLocal: false,
+          localContactsPermission: 'error',
+          ...getDerivedState([], get().localContacts),
+        });
+      }
+
+      return;
+    }
+
+    const requestRevision = beginCommunityRequest();
     set({
       communityError: null,
       error: null,
@@ -112,12 +206,48 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       shouldRefreshLocal ? contactsService.listLocalBirthdayContacts() : Promise.resolve(null),
     ]);
 
+    const communityRequestIsCurrent = isCurrentCommunityRequest(requestRevision);
+
+    if (!communityRequestIsCurrent) {
+      if (!shouldRefreshLocal) {
+        return;
+      }
+
+      const communityContacts = get().communityContacts;
+      const localContacts =
+        localResult.status === 'fulfilled' && localResult.value
+          ? localResult.value.contacts
+          : get().localContacts;
+      const error =
+        localResult.status === 'fulfilled' && localResult.value && !localResult.value.ok
+          ? localResult.value.error ?? 'local_contacts_error'
+          : localResult.status === 'rejected'
+            ? toErrorMessage(localResult.reason)
+            : null;
+
+      set({
+        error,
+        loadingLocal: false,
+        localContacts,
+        localContactsPermission:
+          localResult.status === 'fulfilled' && localResult.value
+            ? localResult.value.permissionStatus
+            : get().localContactsPermission,
+        ...getDerivedState(communityContacts, localContacts),
+      });
+      return;
+    }
+
     const communityContacts =
-      communityResult.status === 'fulfilled' ? communityResult.value : [];
+      communityResult.status === 'fulfilled'
+        ? communityResult.value
+        : [];
     const localContacts =
       localResult.status === 'fulfilled' && localResult.value ? localResult.value.contacts : get().localContacts;
     const communityError =
-      communityResult.status === 'rejected' ? toErrorMessage(communityResult.reason) : null;
+      communityResult.status === 'rejected'
+        ? toErrorMessage(communityResult.reason)
+        : null;
     const error =
       localResult.status === 'fulfilled' && localResult.value && !localResult.value.ok
           ? localResult.value.error ?? 'local_contacts_error'
@@ -137,6 +267,17 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
           ? localResult.value.permissionStatus
           : get().localContactsPermission,
       ...getDerivedState(communityContacts, localContacts),
+    });
+  },
+
+  resetCommunityContacts: () => {
+    invalidateCommunityRequests();
+    const { localContacts } = get();
+    set({
+      communityContacts: [],
+      communityError: null,
+      loadingCommunity: false,
+      ...getDerivedState([], localContacts),
     });
   },
 }));

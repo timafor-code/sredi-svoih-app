@@ -1,0 +1,64 @@
+import {
+  appCapabilities,
+  type AppCapabilityMatrix,
+} from '@/config/appCapabilities';
+
+const GUEST_BLOCKED_PROFILE_ROUTE_NAMES = [
+  'profile/security',
+  'profile/edit',
+  'profile/onboarding',
+  'profile/my-registrations',
+  'profile/notifications',
+  'profile/prayers-settings',
+] as const;
+
+export const GUEST_BLOCKED_ROUTE_NAMES = [
+  ...GUEST_BLOCKED_PROFILE_ROUTE_NAMES,
+  'contacts/community/[id]',
+  'contacts/[id]',
+] as const;
+
+const GUEST_BLOCKED_PROFILE_PATHS = new Set(
+  GUEST_BLOCKED_PROFILE_ROUTE_NAMES.map((routeName) => `/${routeName}`),
+);
+
+export function normalizeAppPathname(pathname: string): string {
+  const withoutQueryOrHash = pathname.split(/[?#]/, 1)[0] ?? '/';
+  const withLeadingSlash = withoutQueryOrHash.startsWith('/')
+    ? withoutQueryOrHash
+    : `/${withoutQueryOrHash}`;
+  const normalizedSlashes = withLeadingSlash.replace(/\/{2,}/g, '/');
+
+  if (normalizedSlashes === '/') {
+    return normalizedSlashes;
+  }
+
+  return normalizedSlashes.replace(/\/+$/, '') || '/';
+}
+
+export function isGuestBlockedPathname(
+  pathname: string,
+  capabilities: AppCapabilityMatrix = appCapabilities,
+): boolean {
+  if (!capabilities.isGuestOnly) {
+    return false;
+  }
+
+  const normalizedPathname = normalizeAppPathname(pathname);
+
+  if (GUEST_BLOCKED_PROFILE_PATHS.has(normalizedPathname)) {
+    return true;
+  }
+
+  if (normalizedPathname.startsWith('/contacts/community/')) {
+    return true;
+  }
+
+  const legacyContactMatch = normalizedPathname.match(/^\/contacts\/([^/]+)$/);
+
+  return Boolean(
+    legacyContactMatch
+    && legacyContactMatch[1] !== 'iphone'
+    && legacyContactMatch[1] !== 'community',
+  );
+}

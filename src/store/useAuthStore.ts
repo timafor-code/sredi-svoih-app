@@ -1,6 +1,8 @@
 import type { AppAuthSession, AppAuthUser } from '@/types/auth';
 import { create } from 'zustand';
 
+import { appCapabilities } from '@/config/appCapabilities';
+import { clearGuestApiAuthTokens } from '@/services/apiAuthTokenStore';
 import {
   APPLE_SIGN_IN_CANCELLED_MESSAGE,
   AUTH_ERROR_MESSAGES,
@@ -35,6 +37,8 @@ import {
 } from '@/services/inviteService';
 import { authOperationGuards } from './authOperationGuards';
 
+export const GUEST_MODE_ACCOUNT_ACTION_BLOCKED = 'guest_mode_account_action_blocked';
+
 type AuthState = {
   session: AppAuthSession | null;
   user: AppAuthUser | null;
@@ -42,6 +46,7 @@ type AuthState = {
   membership: CommunityMembership | null;
   loading: boolean;
   error: string | null;
+  enterGuestMode: () => Promise<void>;
   loadSession: () => Promise<void>;
   loadProfile: () => Promise<void>;
   updateProfile: (input: ProfileUpsert) => Promise<Profile>;
@@ -62,6 +67,12 @@ type OperationIsCurrent = () => boolean;
 
 function friendlyAuthError(error: unknown): string {
   return getAuthErrorMessage(error, AUTH_ERROR_MESSAGES.actionFailed);
+}
+
+function assertAccountFeaturesAvailable(): void {
+  if (!appCapabilities.canUseAccountFeatures) {
+    throw new Error(GUEST_MODE_ACCOUNT_ACTION_BLOCKED);
+  }
 }
 
 async function resetEventPrivateState(isCurrent: OperationIsCurrent): Promise<boolean> {
@@ -92,6 +103,26 @@ async function clearAvatarReadUrlMemoryCacheIfCurrent(
   }
 
   await clearAvatarReadUrlMemoryCache();
+
+  return isCurrent();
+}
+
+async function resetGuestCommunityState(isCurrent: OperationIsCurrent): Promise<boolean> {
+  if (!isCurrent()) {
+    return false;
+  }
+
+  try {
+    const { useContactsStore } = await import('@/store/useContactsStore');
+
+    if (!isCurrent()) {
+      return false;
+    }
+
+    useContactsStore.getState().resetCommunityContacts();
+  } catch {
+    // Guest auth state must still settle if the contacts store is unavailable at startup.
+  }
 
   return isCurrent();
 }
@@ -293,7 +324,54 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   loading: false,
   error: null,
 
+  enterGuestMode: async () => {
+    const requestRevision = beginAuthOperation();
+    const isCurrent = authOperationIsCurrent(requestRevision);
+
+    set({ loading: true, error: null });
+
+    try {
+      await clearGuestApiAuthTokens();
+    } catch {
+      // Token access remains fail-closed even if device credential cleanup fails.
+    }
+
+    if (!await resetEventPrivateState(isCurrent)) {
+      return;
+    }
+
+    if (!await resetGuestCommunityState(isCurrent)) {
+      return;
+    }
+
+    try {
+      if (!await clearAvatarReadUrlMemoryCacheIfCurrent(isCurrent)) {
+        return;
+      }
+    } catch {
+      // Guest auth state must still settle if the avatar memory cache cannot be cleared.
+    }
+
+    if (!isCurrent()) {
+      return;
+    }
+
+    set({
+      session: null,
+      user: null,
+      profile: null,
+      membership: null,
+      loading: false,
+      error: null,
+    });
+  },
+
   loadSession: async () => {
+    if (appCapabilities.isGuestOnly) {
+      await get().enterGuestMode();
+      return;
+    }
+
     const requestRevision = beginAuthOperation();
     const isCurrent = authOperationIsCurrent(requestRevision);
 
@@ -388,6 +466,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   loadProfile: async () => {
+    assertAccountFeaturesAvailable();
+
     const requestRevision = beginAuthOperation();
     const isCurrent = authOperationIsCurrent(requestRevision);
 
@@ -432,6 +512,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   updateProfile: async (input: ProfileUpsert) => {
+    assertAccountFeaturesAvailable();
+
     const requestRevision = beginAuthOperation();
     const isCurrent = authOperationIsCurrent(requestRevision);
 
@@ -475,6 +557,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   refreshProfileAvatar: async () => {
+    assertAccountFeaturesAvailable();
+
     if (!isApiAvatarProviderEnabled()) {
       return;
     }
@@ -520,6 +604,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   loadMembership: async () => {
+    assertAccountFeaturesAvailable();
+
     set({ loading: true, error: null });
 
     try {
@@ -535,6 +621,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   acceptInvite: async (code: string) => {
+    assertAccountFeaturesAvailable();
+
     set({ loading: true, error: null });
 
     try {
@@ -551,6 +639,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signIn: async (email: string, password: string) => {
+    assertAccountFeaturesAvailable();
+
     const requestRevision = beginAuthOperation();
     const isCurrent = authOperationIsCurrent(requestRevision);
 
@@ -609,6 +699,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signInWithApple: async () => {
+    assertAccountFeaturesAvailable();
+
     const requestRevision = beginAuthOperation();
     const isCurrent = authOperationIsCurrent(requestRevision);
 
@@ -679,6 +771,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signInWithGoogle: async () => {
+    assertAccountFeaturesAvailable();
+
     const requestRevision = beginAuthOperation();
     const isCurrent = authOperationIsCurrent(requestRevision);
 
@@ -742,6 +836,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signUpWithEmail: async (email: string, password: string) => {
+    assertAccountFeaturesAvailable();
+
     const requestRevision = beginAuthOperation();
     const isCurrent = authOperationIsCurrent(requestRevision);
 
@@ -836,6 +932,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   resendConfirmationEmail: async (email: string) => {
+    assertAccountFeaturesAvailable();
+
     set({ loading: true, error: null });
 
     try {
@@ -851,6 +949,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   resetPasswordForEmail: async (email: string) => {
+    assertAccountFeaturesAvailable();
+
     set({ loading: true, error: null });
 
     try {
@@ -866,6 +966,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signOut: async () => {
+    if (appCapabilities.isGuestOnly) {
+      await get().enterGuestMode();
+      return;
+    }
+
     const requestRevision = beginAuthOperation();
     const isCurrent = authOperationIsCurrent(requestRevision);
 
