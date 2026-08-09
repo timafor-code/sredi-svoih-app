@@ -17,9 +17,9 @@ import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
 import { colors } from '@/theme/colors';
 import type {
   HebrewDatePayload,
-  PrayerActivityLog,
   PrayerActivityMetadata,
   PrayerActivityType,
+  PrayerTrackerActivity,
 } from '@/types/prayerTracker';
 
 const WEB_MOBILE_FRAME_MAX_WIDTH = 430;
@@ -47,7 +47,7 @@ type PrayerActionModalProps = {
   loading?: boolean;
   metadata?: PrayerActivityMetadata;
   onClose: () => void;
-  onRecorded?: (activity: PrayerActivityLog) => void;
+  onRecorded?: (activity: PrayerTrackerActivity) => void;
   startedAt?: Date | string | null;
   subtitle?: string;
   timezone?: string;

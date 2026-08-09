@@ -1,5 +1,5 @@
 import type { PrayerWindow } from '@/lib/zmanim';
-import type { PrayerActivityLog, PrayerActivityType } from '@/types/prayerTracker';
+import type { PrayerActivityType, PrayerTrackerActivity } from '@/types/prayerTracker';
 
 export const MORNING_SHEMA_ACTIVITY_TYPE = 'shema_morning' satisfies PrayerActivityType;
 export const OMER_COUNT_ACTIVITY_TYPE = 'omer_count' satisfies PrayerActivityType;
@@ -21,7 +21,7 @@ export function formatLocalDateKey(date: Date | string, timeZone: string): strin
 }
 
 export function hasRecordedActivity(
-  items: PrayerActivityLog[],
+  items: PrayerTrackerActivity[],
   activityType: PrayerActivityType,
   activityDate: string,
   userId?: string | null,
@@ -35,7 +35,7 @@ export function hasRecordedActivity(
 }
 
 export function hasRecordedMorningShema(
-  items: PrayerActivityLog[],
+  items: PrayerTrackerActivity[],
   activityDate: string,
   userId?: string | null,
 ): boolean {
@@ -43,7 +43,7 @@ export function hasRecordedMorningShema(
 }
 
 export function hasRecordedOmerCount(
-  items: PrayerActivityLog[],
+  items: PrayerTrackerActivity[],
   activityDate: string,
   userId?: string | null,
 ): boolean {

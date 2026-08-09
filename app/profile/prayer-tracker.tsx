@@ -16,7 +16,7 @@ import { SubHeader } from '@/components/ui/SubHeader';
 import { useAuthStore } from '@/store/useAuthStore';
 import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
 import { colors } from '@/theme/colors';
-import type { PrayerActivityLog, PrayerActivityType } from '@/types/prayerTracker';
+import type { PrayerActivityType, PrayerTrackerActivity } from '@/types/prayerTracker';
 
 const ACTIVITY_LABELS: Record<PrayerActivityType, string> = {
   shacharit: 'Шахарит',
@@ -38,7 +38,7 @@ const ACTIVITY_ICONS: Record<PrayerActivityType, keyof typeof Ionicons.glyphMap>
 
 type ActivityGroup = {
   date: string;
-  items: PrayerActivityLog[];
+  items: PrayerTrackerActivity[];
 };
 
 function parseDateParts(value: string): Date | null {
@@ -94,7 +94,7 @@ function formatTime(value: string, timezone: string): string {
   }
 }
 
-function getActivityTimeLabel(item: PrayerActivityLog): string {
+function getActivityTimeLabel(item: PrayerTrackerActivity): string {
   if (item.startedAt && item.completedAt) {
     return `${formatTime(item.startedAt, item.timezone)} - ${formatTime(item.completedAt, item.timezone)}`;
   }
@@ -110,7 +110,7 @@ function getActivityTimeLabel(item: PrayerActivityLog): string {
   return 'Время не указано';
 }
 
-function getHebrewDateLabel(item: PrayerActivityLog): string | null {
+function getHebrewDateLabel(item: PrayerTrackerActivity): string | null {
   const directLabel = [
     item.hebrewDate.label,
     item.hebrewDate.hebrew,
@@ -134,7 +134,7 @@ function getHebrewDateLabel(item: PrayerActivityLog): string | null {
   return null;
 }
 
-function getPlaceLabel(item: PrayerActivityLog): string | null {
+function getPlaceLabel(item: PrayerTrackerActivity): string | null {
   const parts = [item.city, item.timezone].filter(Boolean);
 
   return parts.length > 0 ? parts.join(', ') : null;
@@ -168,23 +168,23 @@ function getFirstNumberValue(...values: unknown[]): number | null {
   return null;
 }
 
-function getOmerDay(item: PrayerActivityLog): number | null {
+function getOmerDay(item: PrayerTrackerActivity): number | null {
   return getFirstNumberValue(item.metadata.omerDay, item.hebrewDate.omerDay);
 }
 
-function getOmerSefirahRu(item: PrayerActivityLog): string | null {
+function getOmerSefirahRu(item: PrayerTrackerActivity): string | null {
   return getFirstStringValue(item.metadata.sefirahRu, item.hebrewDate.sefirahRu);
 }
 
-function getOmerSefirahHe(item: PrayerActivityLog): string | null {
+function getOmerSefirahHe(item: PrayerTrackerActivity): string | null {
   return getFirstStringValue(item.metadata.sefirahHe, item.hebrewDate.sefirahHe);
 }
 
-function getOmerDayHe(item: PrayerActivityLog): string | null {
+function getOmerDayHe(item: PrayerTrackerActivity): string | null {
   return getFirstStringValue(item.metadata.dayHe, item.hebrewDate.dayHe);
 }
 
-function getActivityTitle(item: PrayerActivityLog): string {
+function getActivityTitle(item: PrayerTrackerActivity): string {
   if (item.activityType !== 'omer_count') {
     return ACTIVITY_LABELS[item.activityType];
   }
@@ -194,7 +194,7 @@ function getActivityTitle(item: PrayerActivityLog): string {
   return omerDay ? `Омер · день ${omerDay}` : ACTIVITY_LABELS.omer_count;
 }
 
-function getActivityDetails(item: PrayerActivityLog): string | null {
+function getActivityDetails(item: PrayerTrackerActivity): string | null {
   if (item.activityType !== 'omer_count') {
     return null;
   }
@@ -209,8 +209,8 @@ function getActivityDetails(item: PrayerActivityLog): string | null {
   return sefirahRu ?? sefirahHe ?? getOmerDayHe(item);
 }
 
-function groupActivities(items: PrayerActivityLog[]): ActivityGroup[] {
-  const groups = new Map<string, PrayerActivityLog[]>();
+function groupActivities(items: PrayerTrackerActivity[]): ActivityGroup[] {
+  const groups = new Map<string, PrayerTrackerActivity[]>();
 
   items.forEach((item) => {
     const group = groups.get(item.activityDate) ?? [];
@@ -225,7 +225,7 @@ function groupActivities(items: PrayerActivityLog[]): ActivityGroup[] {
   }));
 }
 
-function ActivityCard({ item }: { item: PrayerActivityLog }) {
+function ActivityCard({ item }: { item: PrayerTrackerActivity }) {
   const gregorianDateLabel = formatGregorianShortDate(item.activityDate);
   const hebrewDateLabel = getHebrewDateLabel(item);
   const dateLabel = hebrewDateLabel ? `${gregorianDateLabel} · ${hebrewDateLabel}` : gregorianDateLabel;

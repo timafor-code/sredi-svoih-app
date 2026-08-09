@@ -17,6 +17,7 @@
     "validate:local-prayer-repository": "node ./scripts/validateLocalPrayerRepository.mjs",
     "validate:local-preferences": "node ./scripts/validateLocalPreferences.mjs",
     "validate:parsha-content": "node ./scripts/validateParshaContent.mjs",
+    "validate:prayer-provider": "node ./scripts/validatePrayerTrackerProviderSelection.mjs",
     "typecheck": "tsc --noEmit",
     "admin:dev": "npm --prefix apps/admin run dev",
     "admin:build": "npm --prefix apps/admin run build",

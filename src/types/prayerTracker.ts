@@ -41,9 +41,9 @@ export interface PrayerActivitySummary {
   lastActivityDate: string | null;
 }
 
-export interface PrayerActivityLog {
+export interface PrayerTrackerActivity {
   id: string;
-  userId: string;
+  userId: string | null;
   activityType: PrayerActivityType;
   activityDate: string;
   startedAt: string | null;
@@ -54,6 +54,10 @@ export interface PrayerActivityLog {
   metadata: PrayerActivityMetadata;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PrayerActivityLog extends Omit<PrayerTrackerActivity, 'userId'> {
+  userId: string;
 }
 
 export interface RecordPrayerActivityInput {
