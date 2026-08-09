@@ -1,3 +1,4 @@
+import { appCapabilities } from '@/config/appCapabilities';
 import { mockContacts } from '@/data/mockContacts';
 import { parseRuDate } from '@/lib/birthdays';
 import { getHebrewDate, getHebrewDateLabel } from '@/lib/hebcal';
@@ -137,6 +138,10 @@ export function mapCommunityContactRpcRow(row: CommunityContactRpcRow): Communit
 export async function listCommunityContactsFromBackend(
   communityId?: string,
 ): Promise<CommunityContact[]> {
+  if (!appCapabilities.canUseAccountFeatures) {
+    return [];
+  }
+
   const communityContactsApiService = await import('./communityContactsApiService');
   return communityContactsApiService.listCommunityContactsFromApi(communityId);
 }

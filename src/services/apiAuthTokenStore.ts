@@ -1,10 +1,13 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
+import { appCapabilities } from '@/config/appCapabilities';
 import type { ApiAuthTokenResponse, ApiStoredAuthTokens } from '@/types/api';
 
 const API_AUTH_TOKEN_STORAGE_KEY = 'sredi-svoih.apiAuthTokens.v1';
+export const GUEST_MODE_TOKEN_STORAGE_BLOCKED = 'guest_mode_token_storage_blocked';
 const memoryStorage = new Map<string, string>();
+let guestCredentialCleanupPromise: Promise<void> | null = null;
 
 type ApiAuthTokenStorage = {
   getItem: (key: string) => Promise<string | null> | string | null;
@@ -106,6 +109,10 @@ function normalizeStoredTokens(value: unknown): ApiStoredAuthTokens | null {
 }
 
 export async function getApiAuthTokens(): Promise<ApiStoredAuthTokens | null> {
+  if (appCapabilities.isGuestOnly) {
+    return null;
+  }
+
   const rawTokens = await apiAuthTokenStorage.getItem(API_AUTH_TOKEN_STORAGE_KEY);
 
   if (!rawTokens) {
@@ -128,6 +135,10 @@ export async function getApiAccessToken(): Promise<string | null> {
 export async function setApiAuthTokens(
   tokens: ApiStoredAuthTokens | ApiAuthTokenResponse,
 ): Promise<void> {
+  if (appCapabilities.isGuestOnly) {
+    throw new Error(GUEST_MODE_TOKEN_STORAGE_BLOCKED);
+  }
+
   const storedTokens: ApiStoredAuthTokens = {
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token,
@@ -143,4 +154,14 @@ export async function setApiAuthTokens(
 
 export async function clearApiAuthTokens(): Promise<void> {
   await apiAuthTokenStorage.removeItem(API_AUTH_TOKEN_STORAGE_KEY);
+}
+
+export function clearGuestApiAuthTokens(): Promise<void> {
+  if (!guestCredentialCleanupPromise) {
+    guestCredentialCleanupPromise = clearApiAuthTokens().finally(() => {
+      guestCredentialCleanupPromise = null;
+    });
+  }
+
+  return guestCredentialCleanupPromise;
 }
