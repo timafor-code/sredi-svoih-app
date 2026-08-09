@@ -894,7 +894,8 @@ async function executeFirst<T>(
 
   try {
     const result = await statement.executeAsync<T>(parameters);
-    return result.getFirstAsync();
+    const row = await result.getFirstAsync();
+    return row;
   } finally {
     await statement.finalizeAsync();
   }
@@ -909,7 +910,8 @@ async function executeAll<T>(
 
   try {
     const result = await statement.executeAsync<T>(parameters);
-    return result.getAllAsync();
+    const rows = await result.getAllAsync();
+    return rows;
   } finally {
     await statement.finalizeAsync();
   }

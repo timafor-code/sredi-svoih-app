@@ -231,6 +231,7 @@ async function validateInsertAndUpsert() {
     database.finalizedStatementCount,
     'upsert prepared statements finalized',
   );
+  assertReadLifecycleOrder(database, 'first-row', 'first-row result lifecycle');
 
   const allTypesDatabase = createFakePrayerDatabase();
   const allTypesRepository = createLocalPrayerRepository(
@@ -386,6 +387,7 @@ async function validateHistory() {
     'invalid_input',
     'invalid history date range rejected',
   );
+  assertReadLifecycleOrder(database, 'all-rows', 'all-row result lifecycle');
 }
 
 async function validateSummary() {
@@ -596,10 +598,34 @@ function createDatabaseContext(rows, counters) {
     rows,
     preparedStatementCount: 0,
     finalizedStatementCount: 0,
+    resultLifecycleEvents: [],
+    resultLifecycleViolations: 0,
     async prepareAsync(sql) {
       const target = counters ?? context;
       target.preparedStatementCount += 1;
+      const statementId = target.preparedStatementCount;
       let finalized = false;
+      let activeResultReads = 0;
+
+      async function readResult(kind, read) {
+        activeResultReads += 1;
+        target.resultLifecycleEvents.push({ event: 'read-started', kind, statementId });
+
+        try {
+          await Promise.resolve();
+
+          if (finalized) {
+            target.resultLifecycleViolations += 1;
+            throw new Error('synthetic result read after statement finalization');
+          }
+
+          const value = await read();
+          target.resultLifecycleEvents.push({ event: 'read-completed', kind, statementId });
+          return value;
+        } finally {
+          activeResultReads -= 1;
+        }
+      }
 
       return {
         async executeAsync(parameters) {
@@ -607,12 +633,29 @@ function createDatabaseContext(rows, counters) {
             throw new Error('synthetic statement already finalized');
           }
 
-          return executeSyntheticSql(rows, sql, parameters);
+          const result = executeSyntheticSql(rows, sql, parameters);
+          target.resultLifecycleEvents.push({ event: 'executed', statementId });
+
+          return {
+            changes: result.changes,
+            getFirstAsync() {
+              return readResult('first-row', () => result.getFirstAsync());
+            },
+            getAllAsync() {
+              return readResult('all-rows', () => result.getAllAsync());
+            },
+          };
         },
         async finalizeAsync() {
+          if (activeResultReads > 0) {
+            target.resultLifecycleViolations += 1;
+            throw new Error('synthetic statement finalized before result read completed');
+          }
+
           if (!finalized) {
             finalized = true;
             target.finalizedStatementCount += 1;
+            target.resultLifecycleEvents.push({ event: 'finalized', statementId });
           }
         },
       };
@@ -769,6 +812,31 @@ function filterRows(rows, sql, parameters) {
 
 function cloneRowMap(rows) {
   return new Map([...rows].map(([id, row]) => [id, { ...row }]));
+}
+
+function assertReadLifecycleOrder(database, kind, description) {
+  const completedReads = database.resultLifecycleEvents.filter((event) => (
+    event.event === 'read-completed' && event.kind === kind
+  ));
+
+  assertEqual(completedReads.length > 0, true, `${description} exercised`);
+  assertEqual(database.resultLifecycleViolations, 0, `${description} has no ordering violation`);
+
+  for (const completedRead of completedReads) {
+    const executeIndex = database.resultLifecycleEvents.findIndex((event) => (
+      event.event === 'executed' && event.statementId === completedRead.statementId
+    ));
+    const completedIndex = database.resultLifecycleEvents.indexOf(completedRead);
+    const finalizeIndex = database.resultLifecycleEvents.findIndex((event) => (
+      event.event === 'finalized' && event.statementId === completedRead.statementId
+    ));
+
+    assertEqual(
+      executeIndex < completedIndex && completedIndex < finalizeIndex,
+      true,
+      `${description} execute-read-finalize order`,
+    );
+  }
 }
 
 async function assertRepositoryError(action, expectedCode, description) {
