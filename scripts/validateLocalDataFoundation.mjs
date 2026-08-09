@@ -12,6 +12,11 @@ const ts = require('typescript');
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
 const nativeStubState = {
+  databaseFileChecks: 0,
+  databaseOpenCalls: 0,
+  databaseKeyReads: 0,
+  migrationCalls: 0,
+  randomByteRequests: 0,
   requestedRandomByteCount: null,
   secureStoreWrites: [],
 };
@@ -37,6 +42,7 @@ await validateKeyMaterial();
 validateRecoveryDecisions();
 validateSqlCipherRuntimeDecision();
 await validateMigrations();
+await validateExpoGoBootstrapBoundary();
 
 console.log('Local data foundation validation passed');
 
@@ -187,6 +193,66 @@ async function validateMigrations() {
   assertEqual(failingDatabase.appliedVersions.has(4), false, 'failed migration not recorded');
 }
 
+async function validateExpoGoBootstrapBoundary() {
+  const migrationRunner = require(path.join(
+    repoRoot,
+    'src/local-data/migrations/runner.ts',
+  ));
+  const originalRunLocalMigrations = migrationRunner.runLocalMigrations;
+
+  migrationRunner.runLocalMigrations = async (...args) => {
+    nativeStubState.migrationCalls += 1;
+    return originalRunLocalMigrations(...args);
+  };
+
+  const {
+    initializeLocalDatabase,
+    shouldBlockLocalDatabaseBootstrap,
+  } = require(path.join(repoRoot, 'src/local-data/database.ts'));
+  const { ExecutionEnvironment } = require('expo-constants');
+  const before = getPersistentBootstrapCounters();
+  const result = await initializeLocalDatabase();
+  const after = getPersistentBootstrapCounters();
+
+  assertEqual(
+    shouldBlockLocalDatabaseBootstrap(
+      ExecutionEnvironment.StoreClient,
+      ExecutionEnvironment.StoreClient,
+    ),
+    true,
+    'Expo Go runtime detected',
+  );
+  assertEqual(
+    shouldBlockLocalDatabaseBootstrap(
+      ExecutionEnvironment.Standalone,
+      ExecutionEnvironment.StoreClient,
+    ),
+    false,
+    'standalone runtime retains encrypted bootstrap',
+  );
+  assertEqual(
+    shouldBlockLocalDatabaseBootstrap(
+      ExecutionEnvironment.Bare,
+      ExecutionEnvironment.StoreClient,
+    ),
+    false,
+    'development build runtime retains encrypted bootstrap',
+  );
+  assertEqual(result.status, 'sqlcipher_unavailable', 'Expo Go fails closed');
+  assertDeepEqual(after, before, 'Expo Go has no persistent bootstrap side effects');
+}
+
+function getPersistentBootstrapCounters() {
+  return {
+    databaseFileChecks: nativeStubState.databaseFileChecks,
+    databaseKeyReads: nativeStubState.databaseKeyReads,
+    databaseOpenCalls: nativeStubState.databaseOpenCalls,
+    migrationCalls: nativeStubState.migrationCalls,
+    randomByteRequests: nativeStubState.randomByteRequests,
+    secureStoreWrites: nativeStubState.secureStoreWrites.length,
+  };
+}
+
 function createFakeMigrationDatabase(initialVersions = []) {
   const appliedVersions = new Set(initialVersions);
   const database = {
@@ -267,6 +333,7 @@ function registerNativeModuleStubs() {
     if (request === 'expo-crypto') {
       return {
         async getRandomBytesAsync(byteCount) {
+          nativeStubState.randomByteRequests += 1;
           nativeStubState.requestedRandomByteCount = byteCount;
           return Uint8Array.from({ length: byteCount }, (_, index) => index);
         },
@@ -279,8 +346,49 @@ function registerNativeModuleStubs() {
         async isAvailableAsync() {
           return true;
         },
+        async getItemAsync() {
+          nativeStubState.databaseKeyReads += 1;
+          return null;
+        },
         async setItemAsync(key, value, options) {
           nativeStubState.secureStoreWrites.push({ key, value, options });
+        },
+      };
+    }
+
+    if (request === 'expo-constants') {
+      const ExecutionEnvironment = {
+        Bare: 'bare',
+        Standalone: 'standalone',
+        StoreClient: 'storeClient',
+      };
+
+      return {
+        __esModule: true,
+        default: {
+          executionEnvironment: ExecutionEnvironment.StoreClient,
+        },
+        ExecutionEnvironment,
+      };
+    }
+
+    if (request === 'expo-file-system') {
+      return {
+        File: class FakeFile {
+          get exists() {
+            nativeStubState.databaseFileChecks += 1;
+            return false;
+          }
+        },
+      };
+    }
+
+    if (request === 'expo-sqlite') {
+      return {
+        defaultDatabaseDirectory: 'validation-database-directory',
+        async openDatabaseAsync() {
+          nativeStubState.databaseOpenCalls += 1;
+          throw new Error('persistent database must not open in Expo Go validation');
         },
       };
     }

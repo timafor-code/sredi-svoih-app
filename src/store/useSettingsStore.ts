@@ -1,28 +1,32 @@
-import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { create } from 'zustand';
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware';
 
-import { normalizeBlessingTextDisplayMode } from '@/lib/blessingTextDisplayMode';
 import {
-  FALLBACK_ZMANIM_CITY,
   isSupportedZmanimCity,
   normalizeZmanimCityName,
 } from '@/lib/zmanim';
 import type { CustomZmanimLocation } from '@/lib/zmanim';
+import {
+  createDefaultLocalPreferences,
+  enqueueNativePreferencesClear,
+  enqueueNativePreferencesStorageWrite,
+  LEGACY_SETTINGS_STORAGE_KEY,
+  loadNativePreferencesStorageValue,
+  normalizePreferenceValue,
+  type LastAccountSyncDecision,
+  type LocalPreferences,
+  type LocationPermissionStatus,
+  type PrayerStorageMode,
+  type ZmanimSource,
+} from '@/local-data/preferencesRepository';
 import type { BlessingTextDisplayMode } from '@/types/blessing';
+import type {
+  ProfileNotificationPreferences,
+  ProfileNusach,
+} from '@/types/profile';
 
-type ZmanimSource = 'gps' | 'manual';
-type LocationPermissionStatus = 'unknown' | 'granted' | 'denied';
-
-type PersistedSettings = {
-  blessingDefaultDisplayMode: BlessingTextDisplayMode;
-  city: string;
-  customGpsLocation: CustomZmanimLocation | null;
-  gpsCity: string | null;
-  locationPermissionStatus: LocationPermissionStatus;
-  zmanimSource: ZmanimSource;
-};
+type PersistedSettings = LocalPreferences;
 
 type SettingsState = PersistedSettings & {
   hasHydrated: boolean;
@@ -33,11 +37,14 @@ type SettingsState = PersistedSettings & {
   setCustomGpsLocation: (location: CustomZmanimLocation | null) => void;
   setGpsCity: (city: string) => void;
   setHasHydrated: (hasHydrated: boolean) => void;
+  setLastAccountSyncDecision: (decision: LastAccountSyncDecision) => void;
   setLocationPermissionStatus: (status: LocationPermissionStatus) => void;
+  setNotificationPreferences: (preferences: ProfileNotificationPreferences) => void;
+  setNusach: (nusach: ProfileNusach) => void;
+  setPrayerStorageMode: (mode: PrayerStorageMode) => void;
   useGpsCity: () => void;
 };
 
-const SETTINGS_STORAGE_KEY = 'sredi-svoih.settings.v1';
 const memoryStorage = new Map<string, string>();
 
 function getWebStorage(): Storage | null {
@@ -48,117 +55,61 @@ function getWebStorage(): Storage | null {
   return 'localStorage' in globalThis ? globalThis.localStorage : null;
 }
 
-async function isSecureStoreAvailable(): Promise<boolean> {
-  try {
-    return await SecureStore.isAvailableAsync();
-  } catch {
-    return false;
-  }
-}
-
 const settingsStorage: StateStorage = {
   async getItem(key) {
-    const webStorage = Platform.OS === 'web' ? getWebStorage() : null;
-
-    if (webStorage) {
-      return webStorage.getItem(key);
+    if (Platform.OS === 'web') {
+      return getWebStorage()?.getItem(key) ?? memoryStorage.get(key) ?? null;
     }
 
-    if (await isSecureStoreAvailable()) {
-      return SecureStore.getItemAsync(key);
-    }
-
-    return memoryStorage.get(key) ?? null;
+    return key === LEGACY_SETTINGS_STORAGE_KEY
+      ? loadNativePreferencesStorageValue()
+      : null;
   },
 
   async setItem(key, value) {
-    const webStorage = Platform.OS === 'web' ? getWebStorage() : null;
+    if (Platform.OS === 'web') {
+      const webStorage = getWebStorage();
 
-    if (webStorage) {
-      webStorage.setItem(key, value);
+      if (webStorage) {
+        webStorage.setItem(key, value);
+      } else {
+        memoryStorage.set(key, value);
+      }
       return;
     }
 
-    if (await isSecureStoreAvailable()) {
-      await SecureStore.setItemAsync(key, value);
-      return;
+    if (key === LEGACY_SETTINGS_STORAGE_KEY) {
+      await enqueueNativePreferencesStorageWrite(value);
     }
-
-    memoryStorage.set(key, value);
   },
 
   async removeItem(key) {
-    const webStorage = Platform.OS === 'web' ? getWebStorage() : null;
-
-    if (webStorage) {
-      webStorage.removeItem(key);
+    if (Platform.OS === 'web') {
+      getWebStorage()?.removeItem(key);
+      memoryStorage.delete(key);
       return;
     }
 
-    if (await isSecureStoreAvailable()) {
-      await SecureStore.deleteItemAsync(key);
-      return;
+    if (key === LEGACY_SETTINGS_STORAGE_KEY) {
+      await enqueueNativePreferencesClear();
     }
-
-    memoryStorage.delete(key);
   },
 };
 
 function normalizePermissionStatus(value: unknown): LocationPermissionStatus {
-  return value === 'granted' || value === 'denied' ? value : 'unknown';
+  return normalizePreferenceValue('locationPermissionStatus', value);
 }
 
 function normalizeZmanimSource(value: unknown): ZmanimSource {
-  return value === 'manual' ? 'manual' : 'gps';
+  return normalizePreferenceValue('zmanimSource', value);
 }
 
 function normalizePersistedCity(value: unknown) {
-  return typeof value === 'string' && value.trim()
-    ? normalizeZmanimCityName(value)
-    : FALLBACK_ZMANIM_CITY;
-}
-
-function numberFromUnknown(value: unknown) {
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string' && value.trim()) return Number(value);
-
-  return NaN;
+  return normalizePreferenceValue('city', value);
 }
 
 function normalizeCustomGpsLocation(value: unknown): CustomZmanimLocation | null {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-
-  const location = value as Partial<CustomZmanimLocation>;
-  const city = typeof location.city === 'string' && location.city.trim()
-    ? normalizeZmanimCityName(location.city)
-    : null;
-  const latitude = numberFromUnknown(location.latitude);
-  const longitude = numberFromUnknown(location.longitude);
-
-  if (
-    !city
-    || !Number.isFinite(latitude)
-    || latitude < -90
-    || latitude > 90
-    || !Number.isFinite(longitude)
-    || longitude < -180
-    || longitude > 180
-  ) {
-    return null;
-  }
-
-  const timezone = typeof location.timezone === 'string' && location.timezone.trim()
-    ? location.timezone.trim()
-    : undefined;
-
-  return {
-    city,
-    latitude,
-    longitude,
-    ...(timezone ? { timezone } : {}),
-  };
+  return normalizePreferenceValue('customGpsLocation', value);
 }
 
 function getPersistedCustomGpsLocation(settings: Partial<PersistedSettings> | undefined) {
@@ -171,16 +122,46 @@ function getPersistedCustomGpsLocation(settings: Partial<PersistedSettings> | un
   );
 }
 
+function normalizePersistedSettings(
+  settings: Partial<PersistedSettings> | undefined,
+): PersistedSettings {
+  const defaults = createDefaultLocalPreferences();
+  const customGpsLocation = getPersistedCustomGpsLocation(settings);
+  const gpsCity = typeof settings?.gpsCity === 'string' && settings.gpsCity.trim()
+    ? normalizePreferenceValue('gpsCity', settings.gpsCity)
+    : customGpsLocation?.city ?? null;
+
+  return {
+    blessingDefaultDisplayMode: normalizePreferenceValue(
+      'blessingDefaultDisplayMode',
+      settings?.blessingDefaultDisplayMode,
+    ),
+    city: normalizePersistedCity(settings?.city),
+    customGpsLocation,
+    gpsCity,
+    lastAccountSyncDecision: normalizePreferenceValue(
+      'lastAccountSyncDecision',
+      settings?.lastAccountSyncDecision ?? defaults.lastAccountSyncDecision,
+    ),
+    locationPermissionStatus: normalizePermissionStatus(settings?.locationPermissionStatus),
+    notificationPreferences: normalizePreferenceValue(
+      'notificationPreferences',
+      settings?.notificationPreferences ?? defaults.notificationPreferences,
+    ),
+    nusach: normalizePreferenceValue('nusach', settings?.nusach ?? defaults.nusach),
+    prayerStorageMode: normalizePreferenceValue(
+      'prayerStorageMode',
+      settings?.prayerStorageMode ?? defaults.prayerStorageMode,
+    ),
+    zmanimSource: normalizeZmanimSource(settings?.zmanimSource),
+  };
+}
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set, get) => ({
-      blessingDefaultDisplayMode: 'ru',
-      city: FALLBACK_ZMANIM_CITY,
-      customGpsLocation: null,
-      gpsCity: null,
+      ...createDefaultLocalPreferences(),
       hasHydrated: false,
-      locationPermissionStatus: 'unknown',
-      zmanimSource: 'gps',
 
       hydrateSettings: async () => {
         useSettingsStore.setState({ hasHydrated: false });
@@ -212,7 +193,8 @@ export const useSettingsStore = create<SettingsState>()(
 
       setBlessingDefaultDisplayMode: (blessingDefaultDisplayMode) => {
         set({
-          blessingDefaultDisplayMode: normalizeBlessingTextDisplayMode(
+          blessingDefaultDisplayMode: normalizePreferenceValue(
+            'blessingDefaultDisplayMode',
             blessingDefaultDisplayMode,
           ),
         });
@@ -271,62 +253,59 @@ export const useSettingsStore = create<SettingsState>()(
       },
 
       setHasHydrated: (hasHydrated) => set({ hasHydrated }),
-      setLocationPermissionStatus: (locationPermissionStatus) => set({ locationPermissionStatus }),
+      setLastAccountSyncDecision: (lastAccountSyncDecision) => set({
+        lastAccountSyncDecision: normalizePreferenceValue(
+          'lastAccountSyncDecision',
+          lastAccountSyncDecision,
+        ),
+      }),
+      setLocationPermissionStatus: (locationPermissionStatus) => set({
+        locationPermissionStatus: normalizePermissionStatus(locationPermissionStatus),
+      }),
+      setNotificationPreferences: (notificationPreferences) => set({
+        notificationPreferences: normalizePreferenceValue(
+          'notificationPreferences',
+          notificationPreferences,
+        ),
+      }),
+      setNusach: (nusach) => set({
+        nusach: normalizePreferenceValue('nusach', nusach),
+      }),
+      setPrayerStorageMode: (prayerStorageMode) => set({
+        prayerStorageMode: normalizePreferenceValue('prayerStorageMode', prayerStorageMode),
+      }),
       useGpsCity: () => get().resetToGpsCity(),
     }),
     {
-      name: SETTINGS_STORAGE_KEY,
+      name: LEGACY_SETTINGS_STORAGE_KEY,
       storage: createJSONStorage(() => settingsStorage),
       partialize: (state): PersistedSettings => ({
         blessingDefaultDisplayMode: state.blessingDefaultDisplayMode,
         city: state.city,
         customGpsLocation: state.customGpsLocation,
         gpsCity: state.gpsCity,
+        lastAccountSyncDecision: state.lastAccountSyncDecision,
         locationPermissionStatus: state.locationPermissionStatus,
+        notificationPreferences: state.notificationPreferences,
+        nusach: state.nusach,
+        prayerStorageMode: state.prayerStorageMode,
         zmanimSource: state.zmanimSource,
       }),
-      migrate: (persisted): PersistedSettings => {
-        const settings = persisted as Partial<PersistedSettings> | undefined;
-        const customGpsLocation = getPersistedCustomGpsLocation(settings);
-        const gpsCity = typeof settings?.gpsCity === 'string' && settings.gpsCity.trim()
-          ? normalizeZmanimCityName(settings.gpsCity)
-          : customGpsLocation?.city ?? null;
-
-        return {
-          blessingDefaultDisplayMode: normalizeBlessingTextDisplayMode(
-            settings?.blessingDefaultDisplayMode,
-          ),
-          city: normalizePersistedCity(settings?.city),
-          customGpsLocation,
-          gpsCity,
-          locationPermissionStatus: normalizePermissionStatus(settings?.locationPermissionStatus),
-          zmanimSource: normalizeZmanimSource(settings?.zmanimSource),
-        };
-      },
+      migrate: (persisted): PersistedSettings => normalizePersistedSettings(
+        persisted as Partial<PersistedSettings> | undefined,
+      ),
       merge: (persisted, current) => {
         const settings = persisted as Partial<PersistedSettings> | undefined;
-        const city = normalizePersistedCity(settings?.city);
-        const customGpsLocation = getPersistedCustomGpsLocation(settings);
-        const gpsCity = typeof settings?.gpsCity === 'string' && settings.gpsCity.trim()
-          ? normalizeZmanimCityName(settings.gpsCity)
-          : customGpsLocation?.city ?? null;
 
         return {
           ...current,
-          blessingDefaultDisplayMode: normalizeBlessingTextDisplayMode(
-            settings?.blessingDefaultDisplayMode,
-          ),
-          city,
-          customGpsLocation,
-          gpsCity,
-          locationPermissionStatus: normalizePermissionStatus(settings?.locationPermissionStatus),
-          zmanimSource: normalizeZmanimSource(settings?.zmanimSource),
+          ...normalizePersistedSettings(settings),
         };
       },
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
       },
-      version: 3,
+      version: 4,
     },
   ),
 );
