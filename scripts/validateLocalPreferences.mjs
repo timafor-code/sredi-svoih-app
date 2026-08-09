@@ -53,7 +53,7 @@ function validateSchemaAndAllowlist() {
   assertEqual(preferencesMigration.version, 2, 'preferences migration version');
   assertDeepEqual(
     localMigrations.map(({ version }) => version),
-    [1, 2],
+    [1, 2, 3],
     'historical migration order',
   );
 
