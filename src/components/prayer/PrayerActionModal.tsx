@@ -12,7 +12,6 @@ import {
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
-import { useAuthStore } from '@/store/useAuthStore';
 import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
 import { colors } from '@/theme/colors';
 import type {
@@ -24,8 +23,8 @@ import type {
 
 const WEB_MOBILE_FRAME_MAX_WIDTH = 430;
 
-const AUTH_ALERT_TITLE = 'Нужен вход';
-const AUTH_ALERT_MESSAGE = 'Чтобы вести молитвенный трекер, войдите в приложение.';
+const ACCOUNT_AUTH_ALERT_TITLE = 'Нужен вход';
+const ACCOUNT_AUTH_ALERT_MESSAGE = 'Войдите в аккаунт и попробуйте ещё раз.';
 
 export type PrayerActionDetail = {
   label: string;
@@ -33,6 +32,7 @@ export type PrayerActionDetail = {
 };
 
 type PrayerActionModalProps = {
+  activityDate: string;
   activityType: PrayerActivityType;
   alreadyRecorded?: boolean;
   alreadyRecordedLabel?: string;
@@ -94,28 +94,28 @@ function isPrayerTrackerAuthError(error: unknown): boolean {
   return (
     lowerMessage.includes('auth required')
     || lowerMessage.includes('auth session missing')
-    || message.includes(AUTH_ALERT_TITLE)
-    || message.includes(AUTH_ALERT_MESSAGE)
+    || lowerMessage.includes('нужен вход')
   );
 }
 
-function showAuthAlert() {
-  Alert.alert(AUTH_ALERT_TITLE, AUTH_ALERT_MESSAGE);
+function showAccountAuthAlert() {
+  Alert.alert(ACCOUNT_AUTH_ALERT_TITLE, ACCOUNT_AUTH_ALERT_MESSAGE);
 }
 
 function showRecordError(error: unknown) {
   if (isPrayerTrackerAuthError(error)) {
-    showAuthAlert();
+    showAccountAuthAlert();
     return;
   }
 
   Alert.alert(
     'Не удалось записать',
-    'Проверьте подключение и попробуйте ещё раз.',
+    'Не удалось сохранить запись. Попробуйте ещё раз.',
   );
 }
 
 export function PrayerActionModal({
+  activityDate,
   activityType,
   alreadyRecorded = false,
   alreadyRecordedLabel,
@@ -139,7 +139,6 @@ export function PrayerActionModal({
   unavailableTitle = 'Сейчас недоступно',
   visible,
 }: PrayerActionModalProps) {
-  const authUser = useAuthStore((state) => state.user);
   const recordActivity = usePrayerTrackerStore((state) => state.recordActivity);
   const recording = usePrayerTrackerStore((state) => state.recording);
   const busy = loading || recording;
@@ -164,13 +163,9 @@ export function PrayerActionModal({
       return;
     }
 
-    if (!authUser) {
-      showAuthAlert();
-      return;
-    }
-
     try {
       const activity = await recordActivity({
+        activityDate,
         activityType,
         city,
         completedAt,

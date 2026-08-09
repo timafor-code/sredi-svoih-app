@@ -66,9 +66,9 @@ export default function PrayersScreen() {
   const [selectedPrayerId, setSelectedPrayerId] = useState<PrayerWindow['id'] | null>(null);
   const [cityPickerVisible, setCityPickerVisible] = useState(false);
   const [zmanimModalVisible, setZmanimModalVisible] = useState(false);
-  const requestedPrayerActivityForUserRef = useRef<string | null>(null);
+  const requestedPrayerActivityRef = useRef(false);
   useAutoDetectZmanimCity();
-  const authUser = useAuthStore((state) => state.user);
+  const authSessionLoading = useAuthStore((state) => state.loading);
   const prayerActivityItems = usePrayerTrackerStore((state) => state.items);
   const prayerActivityLoading = usePrayerTrackerStore((state) => state.loading);
   const loadMyActivity = usePrayerTrackerStore((state) => state.loadMyActivity);
@@ -127,13 +127,11 @@ export default function PrayersScreen() {
     };
   }, [now, prayers]);
   const selectedPrayerAlreadyRecorded = Boolean(
-    authUser
-    && selectedPrayer
+    selectedPrayer
     && hasRecordedActivity(
       prayerActivityItems,
       prayerActivityTypeFromPrayerId(selectedPrayer.id),
       activityDate,
-      authUser.id,
     ),
   );
   const nextZmanId = daily.items.find((item) => now.getTime() < item.at.getTime())?.id;
@@ -207,23 +205,18 @@ export default function PrayersScreen() {
   }, [overview, overviewWidth]);
 
   useEffect(() => {
-    if (!authUser) {
-      requestedPrayerActivityForUserRef.current = null;
+    if (authSessionLoading) {
+      requestedPrayerActivityRef.current = false;
       return;
     }
 
-    if (prayerActivityItems.some((item) => item.userId === authUser.id)) {
-      requestedPrayerActivityForUserRef.current = authUser.id;
+    if (requestedPrayerActivityRef.current || prayerActivityLoading) {
       return;
     }
 
-    if (requestedPrayerActivityForUserRef.current === authUser.id || prayerActivityLoading) {
-      return;
-    }
-
-    requestedPrayerActivityForUserRef.current = authUser.id;
+    requestedPrayerActivityRef.current = true;
     void loadMyActivity({ limit: 100 }).catch(() => undefined);
-  }, [authUser, loadMyActivity, prayerActivityItems, prayerActivityLoading]);
+  }, [authSessionLoading, loadMyActivity, prayerActivityLoading]);
 
   useEffect(() => {
     if (selectedPrayer && !selectedPrayer.active) {
@@ -321,14 +314,10 @@ export default function PrayersScreen() {
           && prayer.id === upcomingPrayerPreview.id
           && !prayer.active,
         );
-        const alreadyRecorded = Boolean(
-          authUser
-          && hasRecordedActivity(
-            prayerActivityItems,
-            prayerActivityTypeFromPrayerId(prayer.id),
-            activityDate,
-            authUser.id,
-          ),
+        const alreadyRecorded = hasRecordedActivity(
+          prayerActivityItems,
+          prayerActivityTypeFromPrayerId(prayer.id),
+          activityDate,
         );
 
         return (
@@ -378,6 +367,7 @@ export default function PrayersScreen() {
 
       {selectedPrayer?.active ? (
         <PrayerActionModal
+          activityDate={activityDate}
           activityType={prayerActivityTypeFromPrayerId(selectedPrayer.id)}
           alreadyRecorded={selectedPrayerAlreadyRecorded}
           canRecord={() => {
