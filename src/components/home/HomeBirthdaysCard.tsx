@@ -23,6 +23,7 @@ type HomeBirthdaysCardProps = {
   items: HomeBirthdayCardItem[];
   loading: boolean;
   onBirthdayPress: (item: HomeBirthdayCardItem) => void;
+  onViewAllPress?: () => void;
 };
 
 function BirthdayRow({
@@ -61,10 +62,15 @@ export function HomeBirthdaysCard({
   items,
   loading,
   onBirthdayPress,
+  onViewAllPress,
 }: HomeBirthdaysCardProps) {
   return (
     <View style={styles.section}>
-      <HomeSectionTitle title="ДНИ РОЖДЕНИЯ · КОНТАКТЫ" action="Все контакты →" />
+      <HomeSectionTitle
+        title="ДНИ РОЖДЕНИЯ · КОНТАКТЫ"
+        action="Все контакты →"
+        onActionPress={onViewAllPress}
+      />
       <GlassCard padded={false}>
         {loading ? (
           <View style={styles.birthdayState}>

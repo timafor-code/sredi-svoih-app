@@ -219,6 +219,14 @@ export default function HomeScreen() {
     router.push({ pathname: '/events/[id]', params: { id: eventId } });
   }, [router]);
 
+  const handleLocationPress = useCallback(() => {
+    router.push('/modals/city-picker');
+  }, [router]);
+
+  const handleViewAllContactsPress = useCallback(() => {
+    router.push('/contacts');
+  }, [router]);
+
   const handleShabbatRegistrationPress = useCallback(() => {
     if (!homeShabbatEvent) {
       Alert.alert('Регистрация на ближайший Шабат пока не опубликована.');
@@ -249,7 +257,7 @@ export default function HomeScreen() {
         <Text style={styles.dateSubtitle}>{formatRuDate(now, location.getTzid())}</Text>
       </View>
 
-      <HomeLocationPill city={city} />
+      <HomeLocationPill city={city} onPress={handleLocationPress} />
 
       <MorningShemaCard
         city={city}
@@ -292,6 +300,7 @@ export default function HomeScreen() {
         time={candle?.time ?? daily.times.sunset.time}
         subtitle={candle ? formatRuWeekdayDayMonth(candle.date, daily.timeZone) : 'перед Шабатом и праздниками'}
         onRegistrationPress={handleShabbatRegistrationPress}
+        registrationAvailable={Boolean(homeShabbatEvent)}
       />
 
       <HomeJewishCalendarCard
@@ -311,6 +320,7 @@ export default function HomeScreen() {
         items={birthdays}
         loading={birthdaysLoading}
         onBirthdayPress={handleBirthdayPress}
+        onViewAllPress={handleViewAllContactsPress}
       />
 
       {selectedPrayer?.active ? (

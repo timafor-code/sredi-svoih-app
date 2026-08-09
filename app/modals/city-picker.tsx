@@ -5,12 +5,19 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { IOSGroup } from '@/components/ui/IOSGroup';
 import { ListRow } from '@/components/ui/ListRow';
 import { Screen } from '@/components/ui/Screen';
+import { SUPPORTED_ZMANIM_CITIES, type SupportedZmanimCity } from '@/lib/zmanim';
+import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
-
-const cities = ['Москва', 'Санкт-Петербург', 'Иерусалим', 'Тель-Авив', 'Нью-Йорк'];
 
 export default function CityPicker() {
   const router = useRouter();
+  const city = useSettingsStore((state) => state.city);
+  const setCity = useSettingsStore((state) => state.setCity);
+
+  const handleCityPress = (nextCity: SupportedZmanimCity) => {
+    setCity(nextCity);
+    router.back();
+  };
 
   return (
     <>
@@ -21,20 +28,25 @@ export default function CityPicker() {
             <Text style={styles.title}>Город для зманим</Text>
             <Text style={styles.subtitle}>Расчёт идёт по выбранному городу, не по GPS</Text>
           </View>
-          <Pressable onPress={() => router.back()} style={styles.close}>
+          <Pressable
+            accessibilityLabel="Закрыть выбор города"
+            accessibilityRole="button"
+            onPress={() => router.back()}
+            style={styles.close}
+          >
             <Ionicons name="close" size={20} color={colors.text} />
           </Pressable>
         </View>
 
         <IOSGroup>
-          {cities.map((city, index) => (
+          {SUPPORTED_ZMANIM_CITIES.map((item, index) => (
             <ListRow
-              key={city}
+              key={item}
               icon="📍"
-              title={city}
-              rightText={city === 'Москва' ? '✓' : undefined}
-              onPress={() => router.back()}
-              isLast={index === cities.length - 1}
+              title={item}
+              rightText={item === city ? '✓' : undefined}
+              onPress={() => handleCityPress(item)}
+              isLast={index === SUPPORTED_ZMANIM_CITIES.length - 1}
             />
           ))}
         </IOSGroup>

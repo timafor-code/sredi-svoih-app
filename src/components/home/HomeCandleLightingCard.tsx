@@ -6,12 +6,14 @@ import { colors } from '@/theme/colors';
 
 type HomeCandleLightingCardProps = {
   onRegistrationPress: () => void;
+  registrationAvailable: boolean;
   subtitle: string;
   time: string;
 };
 
 export function HomeCandleLightingCard({
   onRegistrationPress,
+  registrationAvailable,
   subtitle,
   time,
 }: HomeCandleLightingCardProps) {
@@ -28,7 +30,8 @@ export function HomeCandleLightingCard({
         </View>
         <PrimaryButton
           accessibilityRole="button"
-          title="Записаться на Шабат"
+          disabled={!registrationAvailable}
+          title={registrationAvailable ? 'Записаться на Шабат' : 'Шабат пока не опубликован'}
           buttonStyle={styles.candleButton}
           onPress={onRegistrationPress}
           textNumberOfLines={2}
