@@ -15,6 +15,7 @@
     "validate:blessings": "node ./scripts/validateBlessingsCatalog.mjs",
     "validate:local-data-foundation": "node ./scripts/validateLocalDataFoundation.mjs",
     "validate:guest-prayer-actions": "node ./scripts/validateGuestPrayerActions.mjs",
+    "validate:guest-prayer-history": "node ./scripts/validateGuestPrayerHistoryControls.mjs",
     "validate:local-prayer-repository": "node ./scripts/validateLocalPrayerRepository.mjs",
     "validate:local-preferences": "node ./scripts/validateLocalPreferences.mjs",
     "validate:parsha-content": "node ./scripts/validateParshaContent.mjs",
