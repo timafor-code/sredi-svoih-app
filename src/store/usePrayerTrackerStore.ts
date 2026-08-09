@@ -1,25 +1,39 @@
 import { create } from 'zustand';
 
 import {
+  deleteAllLocalPrayerActivityHistory,
+  deleteOneLocalPrayerActivity,
+  loadLocalPrayerActivitySummary,
   loadMyPrayerActivity,
   recordPrayerActivity,
 } from '@/services/prayerTrackerService';
 import type {
   LoadPrayerActivityParams,
+  PrayerActivitySummary,
   PrayerTrackerActivity,
   RecordPrayerActivityInput,
 } from '@/types/prayerTracker';
 
 type PrayerTrackerState = {
   items: PrayerTrackerActivity[];
+  summary: PrayerActivitySummary | null;
   loading: boolean;
+  summaryLoading: boolean;
   recording: boolean;
+  deleting: boolean;
   error: string | null;
   loadMyActivity: (params?: LoadPrayerActivityParams) => Promise<void>;
+  loadSummary: (
+    params?: Pick<LoadPrayerActivityParams, 'fromDate' | 'toDate'>,
+  ) => Promise<void>;
   recordActivity: (input: RecordPrayerActivityInput) => Promise<PrayerTrackerActivity>;
+  deleteActivity: (localId: string) => Promise<void>;
+  deleteAllLocalHistory: () => Promise<void>;
   clearError: () => void;
   reset: () => void;
 };
+
+let activityLoadRevision = 0;
 
 function friendlyError(error: unknown): string {
   return error instanceof Error ? error.message : 'Не удалось обновить молитвенный трекер.';
@@ -49,15 +63,23 @@ function upsertActivityItem(
 
 export const usePrayerTrackerStore = create<PrayerTrackerState>((set) => ({
   items: [],
+  summary: null,
   loading: false,
+  summaryLoading: false,
   recording: false,
+  deleting: false,
   error: null,
 
   loadMyActivity: async (params) => {
+    const requestRevision = ++activityLoadRevision;
     set({ loading: true, error: null });
 
     try {
       const items = await loadMyPrayerActivity(params);
+
+      if (requestRevision !== activityLoadRevision) {
+        return;
+      }
 
       set({
         items,
@@ -65,10 +87,35 @@ export const usePrayerTrackerStore = create<PrayerTrackerState>((set) => ({
         error: null,
       });
     } catch (error) {
+      if (requestRevision !== activityLoadRevision) {
+        return;
+      }
+
       const message = friendlyError(error);
 
       set({
         loading: false,
+        error: message,
+      });
+      throw new Error(message);
+    }
+  },
+
+  loadSummary: async (params) => {
+    set({ summaryLoading: true });
+
+    try {
+      const summary = await loadLocalPrayerActivitySummary(params);
+
+      set({
+        summary,
+        summaryLoading: false,
+      });
+    } catch (error) {
+      const message = friendlyError(error);
+
+      set({
+        summaryLoading: false,
         error: message,
       });
       throw new Error(message);
@@ -96,12 +143,67 @@ export const usePrayerTrackerStore = create<PrayerTrackerState>((set) => ({
     }
   },
 
+  deleteActivity: async (localId) => {
+    set({ deleting: true, error: null });
+
+    try {
+      const deleted = await deleteOneLocalPrayerActivity(localId);
+
+      if (deleted) {
+        set((state) => ({
+          items: state.items.filter((item) => item.id !== localId),
+        }));
+      }
+
+      const summary = await loadLocalPrayerActivitySummary();
+
+      set({
+        summary,
+        deleting: false,
+        error: null,
+      });
+    } catch (error) {
+      const message = friendlyError(error);
+
+      set({ deleting: false, error: message });
+      throw new Error(message);
+    }
+  },
+
+  deleteAllLocalHistory: async () => {
+    set({ deleting: true, error: null });
+
+    try {
+      await deleteAllLocalPrayerActivityHistory();
+      set({ items: [] });
+
+      const summary = await loadLocalPrayerActivitySummary();
+
+      set({
+        summary,
+        deleting: false,
+        error: null,
+      });
+    } catch (error) {
+      const message = friendlyError(error);
+
+      set({ deleting: false, error: message });
+      throw new Error(message);
+    }
+  },
+
   clearError: () => set({ error: null }),
 
-  reset: () => set({
-    items: [],
-    loading: false,
-    recording: false,
-    error: null,
-  }),
+  reset: () => {
+    activityLoadRevision += 1;
+    set({
+      items: [],
+      summary: null,
+      loading: false,
+      summaryLoading: false,
+      recording: false,
+      deleting: false,
+      error: null,
+    });
+  },
 }));
