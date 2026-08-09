@@ -220,6 +220,8 @@ function validateGuestShellDependenciesAndCopy() {
 function validateGuestSafeRoutes() {
   for (const allowedRoute of [
     '/profile/prayer-tracker',
+    '/profile/notifications',
+    '/profile/prayers-settings',
     '/profile/about',
     '/profile/support',
   ]) {
@@ -231,8 +233,6 @@ function validateGuestSafeRoutes() {
     '/profile/edit',
     '/profile/onboarding',
     '/profile/my-registrations',
-    '/profile/notifications',
-    '/profile/prayers-settings',
   ]) {
     assertExcludes(guestShellSource, forbiddenRoute, `guest shell route ${forbiddenRoute}`);
   }
@@ -262,16 +262,25 @@ function validateLocalCityBoundary() {
 }
 
 function validateRouteGuardPreservation() {
-  assertIncludes(
+  assertExcludes(
     routeGuardSource,
     "'profile/notifications'",
-    'guest notifications route remains blocked',
+    'guest notifications route is no longer blocked',
   );
-  assertIncludes(
+  assertExcludes(
     routeGuardSource,
     "'profile/prayers-settings'",
-    'guest prayer settings route remains blocked',
+    'guest prayer settings route is no longer blocked',
   );
+
+  for (const blockedRoute of [
+    'profile/security',
+    'profile/edit',
+    'profile/onboarding',
+    'profile/my-registrations',
+  ]) {
+    assertIncludes(routeGuardSource, `'${blockedRoute}'`, `guest route remains blocked: ${blockedRoute}`);
+  }
 }
 
 function validateAccountProfilePreservation() {

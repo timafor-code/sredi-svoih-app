@@ -11,6 +11,8 @@ import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
 
 const cityPickerHref = '/modals/city-picker' as Href;
+const notificationsHref = '/profile/notifications' as Href;
+const prayersSettingsHref = '/profile/prayers-settings' as Href;
 const prayerTrackerHref = '/profile/prayer-tracker' as Href;
 const aboutHref = '/profile/about' as Href;
 const supportHref = '/profile/support' as Href;
@@ -46,6 +48,14 @@ export function GuestSettingsShell() {
               subtitle="Для расчёта времени молитв"
               rightText={effectiveCity}
               onPress={() => undefined}
+            />
+          </Link>
+          <Link href={notificationsHref} asChild>
+            <ListRow
+              icon="🔔"
+              title="Уведомления"
+              subtitle="Локальные напоминания на этом устройстве"
+              onPress={() => undefined}
               isLast
             />
           </Link>
@@ -55,6 +65,14 @@ export function GuestSettingsShell() {
       <View style={styles.section}>
         <SectionTitle title="Практика" />
         <IOSGroup>
+          <Link href={prayersSettingsHref} asChild>
+            <ListRow
+              icon="🕍"
+              title="Молитвы и календарь"
+              subtitle="Город, нусах и отображение благословений"
+              onPress={() => undefined}
+            />
+          </Link>
           <Link href={prayerTrackerHref} asChild>
             <ListRow
               icon="🙏"

@@ -1,6 +1,7 @@
 import { Stack, useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
@@ -9,6 +10,7 @@ import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { SubHeader } from '@/components/ui/SubHeader';
 import { ToggleRow } from '@/components/ui/ToggleRow';
+import { appCapabilities } from '@/config/appCapabilities';
 import {
   cancelAllLocalNotifications,
   getNotificationPermissionStatus,
@@ -26,11 +28,12 @@ import { useContactsStore } from '@/store/useContactsStore';
 import { useEventsStore } from '@/store/useEventsStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
-import {
-  DEFAULT_NOTIFICATION_PREFERENCES,
-  type ProfileNotificationPreferences,
-} from '@/types/profile';
-import type { NotificationScheduleItem, NotificationScheduleStatus } from '@/types/notification';
+import type { ProfileNotificationPreferences } from '@/types/profile';
+import type {
+  NotificationScheduleBuildInput,
+  NotificationScheduleItem,
+  NotificationScheduleStatus,
+} from '@/types/notification';
 import type { PushTokenRegistrationResult, PushTokenRegistrationStatus } from '@/types/pushToken';
 
 const profileHref = '/profile' as Href;
@@ -87,6 +90,8 @@ const notificationRows: readonly NotificationPreferenceRow[] = [
   { key: 'weekly', icon: '📖', label: 'Недельная глава', subtitle: 'Каждую пятницу утром' },
   { key: 'news', icon: '📰', label: 'Новости общины', subtitle: 'Объявления и новости' },
 ];
+
+const localNotificationRows = notificationRows.filter((row) => row.key !== 'news');
 
 const permissionStatusLabels: Record<NotificationPermissionStatus, string> = {
   granted: 'Разрешены',
@@ -303,7 +308,65 @@ function getPushTokenResultMessage(result: PushTokenRegistrationResult): string 
   }
 }
 
+type NotificationPreviewInput = Omit<NotificationScheduleBuildInput, 'preferences'>;
+
+type NotificationSettingsEditorProps = {
+  infoCopy: string;
+  notificationRows: readonly NotificationPreferenceRow[];
+  onSave: (preferences: ProfileNotificationPreferences) => Promise<void> | void;
+  previewInput: NotificationPreviewInput;
+  pushRegistrationCard?: ReactNode;
+  saveDisabled?: boolean;
+  savedPreferences: ProfileNotificationPreferences;
+};
+
+export function saveLocalNotificationPreferences(
+  preferences: ProfileNotificationPreferences,
+  setNotificationPreferences: (preferences: ProfileNotificationPreferences) => void,
+) {
+  const normalized = normalizeNotificationPreferencesForSchedule(preferences);
+  setNotificationPreferences(normalized);
+  return normalized;
+}
+
 export default function NotificationsScreen() {
+  return appCapabilities.isGuestOnly
+    ? <LocalNotificationsScreen />
+    : <AccountNotificationsScreen />;
+}
+
+function LocalNotificationsScreen() {
+  const savedPreferences = useSettingsStore((state) => state.notificationPreferences);
+  const setNotificationPreferences = useSettingsStore(
+    (state) => state.setNotificationPreferences,
+  );
+  const city = useSettingsStore((state) => state.city);
+  const localContacts = useContactsStore((state) => state.localContacts);
+  const events = useEventsStore((state) => state.events);
+  const previewInput = useMemo<NotificationPreviewInput>(() => ({
+    city,
+    communityContacts: [],
+    events,
+    localContacts,
+    myRegistrations: [],
+  }), [city, events, localContacts]);
+
+  const saveLocalPreferences = useCallback((nextPreferences: ProfileNotificationPreferences) => {
+    saveLocalNotificationPreferences(nextPreferences, setNotificationPreferences);
+  }, [setNotificationPreferences]);
+
+  return (
+    <NotificationSettingsEditor
+      infoCopy="Настройки и локальные напоминания сохраняются на этом устройстве."
+      notificationRows={localNotificationRows}
+      onSave={saveLocalPreferences}
+      previewInput={previewInput}
+      savedPreferences={savedPreferences}
+    />
+  );
+}
+
+function AccountNotificationsScreen() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const profile = useAuthStore((state) => state.profile);
@@ -316,48 +379,24 @@ export default function NotificationsScreen() {
   const loadedMyRegistrations = useEventsStore((state) => state.myRegistrations);
   const myRegistrationsUserId = useEventsStore((state) => state.myRegistrationsUserId);
   const city = useSettingsStore((state) => state.city);
-
-  const [preferences, setPreferences] = useState<ProfileNotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
   const [sessionRequested, setSessionRequested] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-  const [permissionStatus, setPermissionStatus] = useState<NotificationPermissionStatus>('unknown');
-  const [notificationActionMessage, setNotificationActionMessage] = useState<string | null>(null);
-  const [isPermissionStatusLoading, setIsPermissionStatusLoading] = useState(true);
-  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
-  const [isSendingTestNotification, setIsSendingTestNotification] = useState(false);
-  const [isCancellingLocalNotifications, setIsCancellingLocalNotifications] = useState(false);
-  const [pushTokenStatus, setPushTokenStatus] = useState<PushTokenRegistrationStatus>('idle');
-  const [pushTokenMessage, setPushTokenMessage] = useState<string | null>(null);
-  const [isRegisteringPushToken, setIsRegisteringPushToken] = useState(false);
-
+  const accountPreferences = profile ? profile.notification_preferences : null;
   const savedPreferences = useMemo(
-    () => normalizeNotificationPreferencesForSchedule(profile?.notification_preferences),
-    [profile?.notification_preferences],
+    () => normalizeNotificationPreferencesForSchedule(accountPreferences),
+    [accountPreferences],
   );
-  const isDirty = useMemo(
-    () => !areNotificationPreferencesEqual(preferences, savedPreferences),
-    [preferences, savedPreferences],
-  );
-  const permissionStatusLabel = isPermissionStatusLoading
-    ? 'Проверяем...'
-    : permissionStatusLabels[permissionStatus];
   const myRegistrations = useMemo(
     () => (user?.id && myRegistrationsUserId === user.id ? loadedMyRegistrations : []),
     [loadedMyRegistrations, myRegistrationsUserId, user?.id],
   );
-  const schedulePreview = useMemo(
-    () => buildNotificationSchedulePreview({
-      city,
-      communityContacts,
-      events,
-      localContacts,
-      myRegistrations,
-      preferences,
-    }),
-    [city, communityContacts, events, localContacts, myRegistrations, preferences],
-  );
+  const previewInput = useMemo<NotificationPreviewInput>(() => ({
+    city,
+    communityContacts,
+    events,
+    localContacts,
+    myRegistrations,
+  }), [city, communityContacts, events, localContacts, myRegistrations]);
 
   useEffect(() => {
     if (user || loading || sessionRequested) {
@@ -370,14 +409,208 @@ export default function NotificationsScreen() {
     });
   }, [loadSession, loading, sessionRequested, user]);
 
-  useEffect(() => {
-    if (!profile) {
-      return;
+  const handleGoProfile = useCallback(() => {
+    router.replace(profileHref);
+  }, [router]);
+
+  const saveAccountPreferences = useCallback(async (
+    nextPreferences: ProfileNotificationPreferences,
+  ) => {
+    if (!user || !profile) {
+      throw new Error('Профиль не загружен.');
     }
 
-    setPreferences(savedPreferences);
+    await updateProfile({ notification_preferences: nextPreferences });
+  }, [profile, updateProfile, user]);
+
+  if (loading && !user && !profile) {
+    return <NotificationsLoadingState title="Загружаем профиль..." />;
+  }
+
+  if (!user) {
+    return (
+      <NotificationsUnavailableState
+        error={localError}
+        onGoProfile={handleGoProfile}
+        text="Войдите в профиль, чтобы сохранять настройки уведомлений."
+        title="Нужен вход"
+      />
+    );
+  }
+
+  if (loading && !profile) {
+    return <NotificationsLoadingState title="Загружаем настройки..." />;
+  }
+
+  if (!profile) {
+    return (
+      <NotificationsUnavailableState
+        error={localError}
+        onGoProfile={handleGoProfile}
+        text="Откройте профиль ещё раз, чтобы подтянуть настройки уведомлений."
+        title="Профиль не загружен"
+      />
+    );
+  }
+
+  return (
+    <NotificationSettingsEditor
+      infoCopy="Сейчас подключается локальный слой уведомлений на устройстве. Серверные push-уведомления будут подключены отдельным этапом через EAS development build/TestFlight."
+      notificationRows={notificationRows}
+      onSave={saveAccountPreferences}
+      previewInput={previewInput}
+      pushRegistrationCard={<AccountPushRegistrationCard hasUser={Boolean(user)} />}
+      saveDisabled={loading}
+      savedPreferences={savedPreferences}
+    />
+  );
+}
+
+function NotificationsLoadingState({ title }: { title: string }) {
+  return (
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <Screen contentContainerStyle={styles.content}>
+        <SubHeader title="Уведомления" />
+        <GlassCard>
+          <View style={styles.stateCard}>
+            <ActivityIndicator color={colors.orange} />
+            <Text style={styles.stateTitle}>{title}</Text>
+          </View>
+        </GlassCard>
+      </Screen>
+    </>
+  );
+}
+
+function NotificationsUnavailableState({
+  error,
+  onGoProfile,
+  text,
+  title,
+}: {
+  error: string | null;
+  onGoProfile: () => void;
+  text: string;
+  title: string;
+}) {
+  return (
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <Screen contentContainerStyle={styles.content}>
+        <SubHeader title="Уведомления" />
+        <GlassCard>
+          <View style={styles.stateCard}>
+            <Text style={styles.stateTitle}>{title}</Text>
+            <Text style={styles.stateText}>{text}</Text>
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            <PrimaryButton title="К профилю" onPress={onGoProfile} />
+          </View>
+        </GlassCard>
+      </Screen>
+    </>
+  );
+}
+
+function AccountPushRegistrationCard({ hasUser }: { hasUser: boolean }) {
+  const [pushTokenStatus, setPushTokenStatus] = useState<PushTokenRegistrationStatus>('idle');
+  const [pushTokenMessage, setPushTokenMessage] = useState<string | null>(null);
+  const [isRegisteringPushToken, setIsRegisteringPushToken] = useState(false);
+
+  const handleRegisterCurrentDeviceForPush = useCallback(async () => {
+    setPushTokenMessage(null);
+    setIsRegisteringPushToken(true);
+
+    try {
+      const result = await registerCurrentDeviceForPush();
+
+      setPushTokenStatus(result.status);
+      setPushTokenMessage(getPushTokenResultMessage(result));
+    } finally {
+      setIsRegisteringPushToken(false);
+    }
+  }, []);
+
+  return (
+    <GlassCard>
+      <View style={styles.pushHeader}>
+        <View style={styles.permissionTextBlock}>
+          <Text style={styles.permissionTitle}>Push-уведомления</Text>
+          <Text style={styles.permissionSubtitle}>Устройство · foundation для будущей серверной отправки</Text>
+        </View>
+        <View style={[styles.pushStatusPill, getPushTokenStatusPillStyle(pushTokenStatus)]}>
+          <Text
+            numberOfLines={2}
+            style={[styles.pushStatusPillText, getPushTokenStatusTextStyle(pushTokenStatus)]}
+          >
+            {pushTokenStatusLabels[pushTokenStatus]}
+          </Text>
+        </View>
+      </View>
+
+      <Text style={styles.pushHelpText}>
+        Доступно для EAS development build/TestFlight. В Expo Go токен может быть недоступен, это ожидаемо.
+      </Text>
+
+      <PrimaryButton
+        disabled={!hasUser || isRegisteringPushToken}
+        title={isRegisteringPushToken ? 'Регистрируем...' : 'Зарегистрировать это устройство'}
+        textNumberOfLines={2}
+        buttonStyle={styles.permissionButton}
+        onPress={handleRegisterCurrentDeviceForPush}
+      />
+
+      {pushTokenMessage ? (
+        <Text style={styles.notificationActionText}>{pushTokenMessage}</Text>
+      ) : null}
+    </GlassCard>
+  );
+}
+
+function NotificationSettingsEditor({
+  infoCopy,
+  notificationRows: visibleNotificationRows,
+  onSave,
+  previewInput,
+  pushRegistrationCard,
+  saveDisabled = false,
+  savedPreferences,
+}: NotificationSettingsEditorProps) {
+  const [preferences, setPreferences] = useState<ProfileNotificationPreferences>(() => (
+    normalizeNotificationPreferencesForSchedule(savedPreferences)
+  ));
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [permissionStatus, setPermissionStatus] = useState<NotificationPermissionStatus>('unknown');
+  const [notificationActionMessage, setNotificationActionMessage] = useState<string | null>(null);
+  const [isPermissionStatusLoading, setIsPermissionStatusLoading] = useState(true);
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
+  const [isSendingTestNotification, setIsSendingTestNotification] = useState(false);
+  const [isCancellingLocalNotifications, setIsCancellingLocalNotifications] = useState(false);
+  const normalizedSavedPreferences = useMemo(
+    () => normalizeNotificationPreferencesForSchedule(savedPreferences),
+    [savedPreferences],
+  );
+  const isDirty = useMemo(
+    () => !areNotificationPreferencesEqual(preferences, normalizedSavedPreferences),
+    [normalizedSavedPreferences, preferences],
+  );
+  const permissionStatusLabel = isPermissionStatusLoading
+    ? 'Проверяем...'
+    : permissionStatusLabels[permissionStatus];
+  const schedulePreview = useMemo(
+    () => buildNotificationSchedulePreview({ ...previewInput, preferences }),
+    [preferences, previewInput],
+  );
+  const visibleEnabledCategoryCount = visibleNotificationRows.filter(
+    (row) => preferences[row.key],
+  ).length;
+
+  useEffect(() => {
+    setPreferences(normalizedSavedPreferences);
     setLocalError(null);
-  }, [profile, savedPreferences]);
+  }, [normalizedSavedPreferences]);
 
   useEffect(() => {
     let isMounted = true;
@@ -401,18 +634,11 @@ export default function NotificationsScreen() {
     };
   }, []);
 
-  const handleGoProfile = useCallback(() => {
-    router.replace(profileHref);
-  }, [router]);
-
   const handleToggle = useCallback((key: NotificationPreferenceKey, value: boolean) => {
     setIsSaved(false);
     setLocalError(null);
     setNotificationActionMessage(null);
-    setPreferences((current) => ({
-      ...current,
-      [key]: value,
-    }));
+    setPreferences((current) => ({ ...current, [key]: value }));
   }, []);
 
   const handleAdvancedPreferenceChange = useCallback((
@@ -422,38 +648,27 @@ export default function NotificationsScreen() {
     setIsSaved(false);
     setLocalError(null);
     setNotificationActionMessage(null);
-    setPreferences((current) => ({
-      ...current,
-      [key]: value,
-    }));
+    setPreferences((current) => ({ ...current, [key]: value }));
   }, []);
 
   const handleSave = useCallback(async () => {
     setLocalError(null);
-
-    if (!user || !profile) {
-      setLocalError('Профиль не загружен.');
-      return;
-    }
-
     const nextPreferences = normalizeNotificationPreferencesForSchedule(preferences);
-
     setIsSaving(true);
 
     try {
-      await updateProfile({ notification_preferences: nextPreferences });
+      await onSave(nextPreferences);
       setPreferences(nextPreferences);
       setIsSaved(true);
       Alert.alert('Сохранено', 'Настройки уведомлений сохранены.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не удалось сохранить настройки.';
-
       setLocalError(message);
       Alert.alert('Не удалось сохранить', message);
     } finally {
       setIsSaving(false);
     }
-  }, [preferences, profile, updateProfile, user]);
+  }, [onSave, preferences]);
 
   const handleRequestPermission = useCallback(async () => {
     setLocalError(null);
@@ -528,93 +743,6 @@ export default function NotificationsScreen() {
     }
   }, []);
 
-  const handleRegisterCurrentDeviceForPush = useCallback(async () => {
-    setLocalError(null);
-    setPushTokenMessage(null);
-    setIsRegisteringPushToken(true);
-
-    try {
-      const result = await registerCurrentDeviceForPush();
-
-      setPushTokenStatus(result.status);
-      setPushTokenMessage(getPushTokenResultMessage(result));
-    } finally {
-      setIsRegisteringPushToken(false);
-    }
-  }, []);
-
-  if (loading && !user && !profile) {
-    return (
-      <>
-        <Stack.Screen options={{ headerShown: false }} />
-        <Screen contentContainerStyle={styles.content}>
-          <SubHeader title="Уведомления" />
-          <GlassCard>
-            <View style={styles.stateCard}>
-              <ActivityIndicator color={colors.orange} />
-              <Text style={styles.stateTitle}>Загружаем профиль...</Text>
-            </View>
-          </GlassCard>
-        </Screen>
-      </>
-    );
-  }
-
-  if (!user) {
-    return (
-      <>
-        <Stack.Screen options={{ headerShown: false }} />
-        <Screen contentContainerStyle={styles.content}>
-          <SubHeader title="Уведомления" />
-          <GlassCard>
-            <View style={styles.stateCard}>
-              <Text style={styles.stateTitle}>Нужен вход</Text>
-              <Text style={styles.stateText}>Войдите в профиль, чтобы сохранять настройки уведомлений.</Text>
-              {localError ? <Text style={styles.errorText}>{localError}</Text> : null}
-              <PrimaryButton title="К профилю" onPress={handleGoProfile} />
-            </View>
-          </GlassCard>
-        </Screen>
-      </>
-    );
-  }
-
-  if (loading && !profile) {
-    return (
-      <>
-        <Stack.Screen options={{ headerShown: false }} />
-        <Screen contentContainerStyle={styles.content}>
-          <SubHeader title="Уведомления" />
-          <GlassCard>
-            <View style={styles.stateCard}>
-              <ActivityIndicator color={colors.orange} />
-              <Text style={styles.stateTitle}>Загружаем настройки...</Text>
-            </View>
-          </GlassCard>
-        </Screen>
-      </>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <>
-        <Stack.Screen options={{ headerShown: false }} />
-        <Screen contentContainerStyle={styles.content}>
-          <SubHeader title="Уведомления" />
-          <GlassCard>
-            <View style={styles.stateCard}>
-              <Text style={styles.stateTitle}>Профиль не загружен</Text>
-              <Text style={styles.stateText}>Откройте профиль ещё раз, чтобы подтянуть настройки уведомлений.</Text>
-              {localError ? <Text style={styles.errorText}>{localError}</Text> : null}
-              <PrimaryButton title="К профилю" onPress={handleGoProfile} />
-            </View>
-          </GlassCard>
-        </Screen>
-      </>
-    );
-  }
-
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
@@ -622,18 +750,14 @@ export default function NotificationsScreen() {
         <SubHeader title="Уведомления" subtitle="Настройте, что и когда вам напоминать" />
 
         <GlassCard>
-          <Text style={styles.infoText}>
-            Сейчас подключается локальный слой уведомлений на устройстве. Серверные push-уведомления будут подключены отдельным этапом через EAS development build/TestFlight.
-          </Text>
+          <Text style={styles.infoText}>{infoCopy}</Text>
         </GlassCard>
 
         <GlassCard>
           <View style={styles.permissionHeader}>
             <View style={styles.permissionTextBlock}>
               <Text style={styles.permissionTitle}>Статус уведомлений</Text>
-              <Text style={styles.permissionSubtitle}>
-                {permissionStatusLabel}
-              </Text>
+              <Text style={styles.permissionSubtitle}>{permissionStatusLabel}</Text>
             </View>
             <View style={[styles.permissionPill, styles[`permissionPill_${permissionStatus}`]]}>
               <Text style={[styles.permissionPillText, styles[`permissionPillText_${permissionStatus}`]]}>
@@ -673,49 +797,18 @@ export default function NotificationsScreen() {
           ) : null}
         </GlassCard>
 
-        <GlassCard>
-          <View style={styles.pushHeader}>
-            <View style={styles.permissionTextBlock}>
-              <Text style={styles.permissionTitle}>Push-уведомления</Text>
-              <Text style={styles.permissionSubtitle}>Устройство · foundation для будущей серверной отправки</Text>
-            </View>
-            <View style={[styles.pushStatusPill, getPushTokenStatusPillStyle(pushTokenStatus)]}>
-              <Text
-                numberOfLines={2}
-                style={[styles.pushStatusPillText, getPushTokenStatusTextStyle(pushTokenStatus)]}
-              >
-                {pushTokenStatusLabels[pushTokenStatus]}
-              </Text>
-            </View>
-          </View>
-
-          <Text style={styles.pushHelpText}>
-            Доступно для EAS development build/TestFlight. В Expo Go токен может быть недоступен, это ожидаемо.
-          </Text>
-
-          <PrimaryButton
-            disabled={!user || isRegisteringPushToken}
-            title={isRegisteringPushToken ? 'Регистрируем...' : 'Зарегистрировать это устройство'}
-            textNumberOfLines={2}
-            buttonStyle={styles.permissionButton}
-            onPress={handleRegisterCurrentDeviceForPush}
-          />
-
-          {pushTokenMessage ? (
-            <Text style={styles.notificationActionText}>{pushTokenMessage}</Text>
-          ) : null}
-        </GlassCard>
+        {pushRegistrationCard}
 
         <GlassCard>
           <View style={styles.scheduleHeader}>
             <Text style={styles.scheduleTitle}>План уведомлений</Text>
             <Text style={styles.scheduleSummary}>
-              {schedulePreview.enabledCategoryCount} из {notificationRows.length} включено
+              {visibleEnabledCategoryCount} из {visibleNotificationRows.length} включено
             </Text>
           </View>
 
           <View style={styles.scheduleList}>
-            {notificationRows.map((row) => {
+            {visibleNotificationRows.map((row) => {
               const scheduleItems = schedulePreview.items.filter((item) => item.category === row.key);
               const scheduleItem = scheduleItems[0];
               const scheduleStatus = scheduleItem?.status ?? 'unsupported_in_this_pr';
@@ -745,7 +838,7 @@ export default function NotificationsScreen() {
         </GlassCard>
 
         <IOSGroup>
-          {notificationRows.map((item, index) => (
+          {visibleNotificationRows.map((item, index) => (
             <ToggleRow
               key={item.key}
               icon={item.icon}
@@ -753,7 +846,7 @@ export default function NotificationsScreen() {
               subtitle={item.subtitle}
               value={preferences[item.key]}
               onValueChange={(value) => handleToggle(item.key, value)}
-              isLast={index === notificationRows.length - 1}
+              isLast={index === visibleNotificationRows.length - 1}
             />
           ))}
         </IOSGroup>
@@ -810,7 +903,7 @@ export default function NotificationsScreen() {
         {localError ? <Text style={styles.errorText}>{localError}</Text> : null}
 
         <PrimaryButton
-          disabled={!isDirty || isSaving || loading}
+          disabled={!isDirty || isSaving || saveDisabled}
           title={isSaving ? 'Сохраняем...' : 'Сохранить настройки'}
           buttonStyle={styles.saveButton}
           onPress={handleSave}

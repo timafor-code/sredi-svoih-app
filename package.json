@@ -18,6 +18,7 @@
     "validate:guest-prayer-history": "node ./scripts/validateGuestPrayerHistoryControls.mjs",
     "validate:guest-runtime-boundaries": "node ./scripts/validateGuestRuntimeBoundaries.mjs",
     "validate:guest-settings-shell": "node ./scripts/validateGuestSettingsShell.mjs",
+    "validate:local-prayer-notification-settings": "node ./scripts/validateLocalPrayerNotificationSettings.mjs",
     "validate:local-prayer-repository": "node ./scripts/validateLocalPrayerRepository.mjs",
     "validate:local-preferences": "node ./scripts/validateLocalPreferences.mjs",
     "validate:parsha-content": "node ./scripts/validateParshaContent.mjs",
