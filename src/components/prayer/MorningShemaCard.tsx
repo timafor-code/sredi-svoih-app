@@ -7,7 +7,6 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { formatDurationRu, progressBetween } from '@/lib/dates';
 import { formatLocalDateKey, hasRecordedMorningShema } from '@/lib/prayerTracker';
 import type { DailyZmanim } from '@/lib/zmanim';
-import { useAuthStore } from '@/store/useAuthStore';
 import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
 import { colors } from '@/theme/colors';
 import type { HebrewDatePayload } from '@/types/prayerTracker';
@@ -64,21 +63,13 @@ export function MorningShemaCard({
 }: MorningShemaCardProps) {
   const [showAction, setShowAction] = useState(false);
   const pulse = useRef(new Animated.Value(0)).current;
-  const authUser = useAuthStore((state) => state.user);
   const prayerActivityItems = usePrayerTrackerStore((state) => state.items);
   const isAvailable = now.getTime() < daily.times.shemaGra.at.getTime();
   const activityDate = useMemo(() => formatLocalDateKey(now, daily.timeZone), [daily.timeZone, now]);
   const progress = progressBetween(daily.times.sunrise.at, daily.times.shemaGra.at, now);
   const urgency = getMorningShemaUrgency(progress);
   const isBeforeSunrise = now.getTime() < daily.times.sunrise.at.getTime();
-  const alreadyRecorded = Boolean(
-    authUser
-    && hasRecordedMorningShema(
-      prayerActivityItems,
-      activityDate,
-      authUser.id,
-    ),
-  );
+  const alreadyRecorded = hasRecordedMorningShema(prayerActivityItems, activityDate);
   const displayUrgency = alreadyRecorded ? 'calm' : urgency;
   const urgencyColor = getUrgencyColor(displayUrgency);
   const showDangerPulse = displayUrgency === 'danger' && isAvailable;
@@ -201,6 +192,7 @@ export function MorningShemaCard({
       </View>
 
       <PrayerActionModal
+        activityDate={activityDate}
         activityType="shema_morning"
         alreadyRecorded={alreadyRecorded}
         alreadyRecordedLabel="Прочитал"

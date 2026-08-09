@@ -18,8 +18,8 @@ import { usePrayerTrackerStore } from '@/store/usePrayerTrackerStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { colors } from '@/theme/colors';
 
-const AUTH_ALERT_TITLE = 'Нужен вход';
-const AUTH_ALERT_MESSAGE = 'Чтобы вести молитвенный трекер, войдите в приложение.';
+const ACCOUNT_AUTH_ALERT_TITLE = 'Нужен вход';
+const ACCOUNT_AUTH_ALERT_MESSAGE = 'Войдите в аккаунт и попробуйте ещё раз.';
 
 function isPrayerTrackerAuthError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? '');
@@ -28,8 +28,7 @@ function isPrayerTrackerAuthError(error: unknown): boolean {
   return (
     lowerMessage.includes('auth required')
     || lowerMessage.includes('auth session missing')
-    || message.includes(AUTH_ALERT_TITLE)
-    || message.includes(AUTH_ALERT_MESSAGE)
+    || lowerMessage.includes('нужен вход')
   );
 }
 
@@ -38,8 +37,7 @@ export default function OmerModal() {
   const now = useNow();
   const [loadingTodayActivity, setLoadingTodayActivity] = useState(false);
   const city = useSettingsStore((state) => state.city);
-  const authUser = useAuthStore((state) => state.user);
-  const authUserId = authUser?.id ?? null;
+  const authSessionLoading = useAuthStore((state) => state.loading);
   const prayerActivityItems = usePrayerTrackerStore((state) => state.items);
   const loadMyActivity = usePrayerTrackerStore((state) => state.loadMyActivity);
   const recordActivity = usePrayerTrackerStore((state) => state.recordActivity);
@@ -50,10 +48,7 @@ export default function OmerModal() {
   const hebrewDateLabel = useMemo(() => getHebrewDateLabel(hdate), [hdate]);
   const omer = useMemo(() => getOmerInfo(now, location), [location, now]);
   const activityDate = useMemo(() => formatLocalDateKey(now, daily.timeZone), [daily.timeZone, now]);
-  const alreadyRecorded = Boolean(
-    authUserId
-    && hasRecordedOmerCount(prayerActivityItems, activityDate, authUserId),
-  );
+  const alreadyRecorded = hasRecordedOmerCount(prayerActivityItems, activityDate);
   const countButtonDisabled = Boolean(omer) && (recording || loadingTodayActivity || alreadyRecorded);
   const countButtonTitle = recording
     ? 'Записываем...'
@@ -64,7 +59,7 @@ export default function OmerModal() {
         : 'Закрыть';
 
   useEffect(() => {
-    if (!authUserId) {
+    if (authSessionLoading) {
       setLoadingTodayActivity(false);
       return undefined;
     }
@@ -83,7 +78,7 @@ export default function OmerModal() {
     return () => {
       isMounted = false;
     };
-  }, [activityDate, authUserId, loadMyActivity]);
+  }, [activityDate, authSessionLoading, loadMyActivity]);
 
   const handleCountToday = async () => {
     if (!omer) {
@@ -92,11 +87,6 @@ export default function OmerModal() {
     }
 
     if (recording || loadingTodayActivity || alreadyRecorded) {
-      return;
-    }
-
-    if (!authUser) {
-      Alert.alert(AUTH_ALERT_TITLE, AUTH_ALERT_MESSAGE);
       return;
     }
 
@@ -135,13 +125,13 @@ export default function OmerModal() {
       ]);
     } catch (error) {
       if (isPrayerTrackerAuthError(error)) {
-        Alert.alert(AUTH_ALERT_TITLE, AUTH_ALERT_MESSAGE);
+        Alert.alert(ACCOUNT_AUTH_ALERT_TITLE, ACCOUNT_AUTH_ALERT_MESSAGE);
         return;
       }
 
       Alert.alert(
         'Не удалось записать',
-        'Проверьте подключение и попробуйте ещё раз.',
+        'Не удалось сохранить запись. Попробуйте ещё раз.',
       );
     }
   };
