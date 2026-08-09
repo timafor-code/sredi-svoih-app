@@ -6,17 +6,17 @@ import {
 } from '@/services/prayerTrackerService';
 import type {
   LoadPrayerActivityParams,
-  PrayerActivityLog,
+  PrayerTrackerActivity,
   RecordPrayerActivityInput,
 } from '@/types/prayerTracker';
 
 type PrayerTrackerState = {
-  items: PrayerActivityLog[];
+  items: PrayerTrackerActivity[];
   loading: boolean;
   recording: boolean;
   error: string | null;
   loadMyActivity: (params?: LoadPrayerActivityParams) => Promise<void>;
-  recordActivity: (input: RecordPrayerActivityInput) => Promise<PrayerActivityLog>;
+  recordActivity: (input: RecordPrayerActivityInput) => Promise<PrayerTrackerActivity>;
   clearError: () => void;
   reset: () => void;
 };
@@ -25,7 +25,7 @@ function friendlyError(error: unknown): string {
   return error instanceof Error ? error.message : 'Не удалось обновить молитвенный трекер.';
 }
 
-function sortActivityItems(items: PrayerActivityLog[]): PrayerActivityLog[] {
+function sortActivityItems(items: PrayerTrackerActivity[]): PrayerTrackerActivity[] {
   return [...items].sort((first, second) => {
     const dateCompare = second.activityDate.localeCompare(first.activityDate);
 
@@ -38,9 +38,9 @@ function sortActivityItems(items: PrayerActivityLog[]): PrayerActivityLog[] {
 }
 
 function upsertActivityItem(
-  items: PrayerActivityLog[],
-  activity: PrayerActivityLog,
-): PrayerActivityLog[] {
+  items: PrayerTrackerActivity[],
+  activity: PrayerTrackerActivity,
+): PrayerTrackerActivity[] {
   return sortActivityItems([
     activity,
     ...items.filter((item) => item.id !== activity.id),
