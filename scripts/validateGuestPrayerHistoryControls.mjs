@@ -103,7 +103,7 @@ async function validateServiceHistoryControls() {
 }
 
 async function validateStoreHistoryControls() {
-  const rows = createTrackerRows(3);
+  let rows = createTrackerRows(3);
 
   activeStoreService = {
     async loadMyPrayerActivity({ limit = 100 } = {}) {
@@ -160,6 +160,119 @@ async function validateStoreHistoryControls() {
     'store keeps a zero summary after delete all',
   );
 
+  rows = createTrackerRows(3);
+  usePrayerTrackerStore.getState().reset();
+  activeStoreService.loadMyPrayerActivity = async ({ limit = 100 } = {}) => (
+    rows.slice(0, limit).map((row) => ({ ...row }))
+  );
+  await usePrayerTrackerStore.getState().loadMyActivity({ limit: 100 });
+
+  const oldSingleDeleteRows = rows.map((row) => ({ ...row }));
+  const staleSingleDeleteLoad = createDeferred();
+  activeStoreService.loadMyPrayerActivity = () => staleSingleDeleteLoad.promise;
+  const singleDeleteLoadPromise = usePrayerTrackerStore.getState().loadMyActivity({ limit: 100 });
+  const singleDeleteTargetId = rows[0].id;
+  const singleDeleteRetainedId = rows[1].id;
+
+  await usePrayerTrackerStore.getState().deleteActivity(singleDeleteTargetId);
+  staleSingleDeleteLoad.resolve(oldSingleDeleteRows);
+  await singleDeleteLoadPromise;
+
+  assertEqual(
+    usePrayerTrackerStore.getState().items.some((item) => item.id === singleDeleteTargetId),
+    false,
+    'stale history load cannot resurrect a single deleted row',
+  );
+  assertEqual(
+    usePrayerTrackerStore.getState().items.some((item) => item.id === singleDeleteRetainedId),
+    true,
+    'single-delete race retains unrelated rows',
+  );
+  assertStoreLoadingSettled(usePrayerTrackerStore, 'single-delete race');
+
+  rows = createTrackerRows(3);
+  usePrayerTrackerStore.getState().reset();
+  activeStoreService.loadMyPrayerActivity = async ({ limit = 100 } = {}) => (
+    rows.slice(0, limit).map((row) => ({ ...row }))
+  );
+  await usePrayerTrackerStore.getState().loadMyActivity({ limit: 100 });
+  await usePrayerTrackerStore.getState().loadSummary();
+
+  const oldDeleteAllRows = rows.map((row) => ({ ...row }));
+  const staleBeforeDeleteAll = createDeferred();
+  const staleDuringDeleteAll = createDeferred();
+  const deleteAllGate = createDeferred();
+  let deleteAllLoadCall = 0;
+  activeStoreService.loadMyPrayerActivity = () => {
+    deleteAllLoadCall += 1;
+    return deleteAllLoadCall === 1
+      ? staleBeforeDeleteAll.promise
+      : staleDuringDeleteAll.promise;
+  };
+  activeStoreService.deleteAllLocalPrayerActivityHistory = async () => {
+    await deleteAllGate.promise;
+    const deleted = rows.length;
+    rows.splice(0, rows.length);
+    return deleted;
+  };
+
+  const beforeDeleteAllLoadPromise = usePrayerTrackerStore.getState().loadMyActivity({ limit: 100 });
+  const deleteAllPromise = usePrayerTrackerStore.getState().deleteAllLocalHistory();
+  const duringDeleteAllLoadPromise = usePrayerTrackerStore.getState().loadMyActivity({ limit: 100 });
+  deleteAllGate.resolve();
+  await deleteAllPromise;
+  staleBeforeDeleteAll.resolve(oldDeleteAllRows);
+  staleDuringDeleteAll.resolve(oldDeleteAllRows);
+  await Promise.all([beforeDeleteAllLoadPromise, duringDeleteAllLoadPromise]);
+
+  assertEqual(usePrayerTrackerStore.getState().items.length, 0, 'stale loads cannot repopulate delete-all');
+  assertEqual(usePrayerTrackerStore.getState().summary.totalLogs, 0, 'delete-all race keeps zero summary');
+  assertStoreLoadingSettled(usePrayerTrackerStore, 'delete-all race');
+
+  rows = createTrackerRows(3);
+  usePrayerTrackerStore.getState().reset();
+  activeStoreService.loadMyPrayerActivity = async ({ limit = 100 } = {}) => (
+    rows.slice(0, limit).map((row) => ({ ...row }))
+  );
+  const oldSummary = summarizeTrackerRows(rows);
+  const staleSummaryBeforeDelete = createDeferred();
+  const staleSummaryDuringDelete = createDeferred();
+  const summaryDeleteGate = createDeferred();
+  let summaryLoadCall = 0;
+  activeStoreService.deleteOneLocalPrayerActivity = async (localId) => {
+    await summaryDeleteGate.promise;
+    const index = rows.findIndex((row) => row.id === localId);
+
+    if (index < 0) return false;
+    rows.splice(index, 1);
+    return true;
+  };
+  activeStoreService.loadLocalPrayerActivitySummary = () => {
+    summaryLoadCall += 1;
+
+    if (summaryLoadCall === 1) return staleSummaryBeforeDelete.promise;
+    if (summaryLoadCall === 2) return staleSummaryDuringDelete.promise;
+    return Promise.resolve(summarizeTrackerRows(rows));
+  };
+  await usePrayerTrackerStore.getState().loadMyActivity({ limit: 100 });
+
+  const summaryBeforeDeletePromise = usePrayerTrackerStore.getState().loadSummary();
+  const summaryDeleteTargetId = rows[0].id;
+  const summaryDeletePromise = usePrayerTrackerStore.getState().deleteActivity(summaryDeleteTargetId);
+  const summaryDuringDeletePromise = usePrayerTrackerStore.getState().loadSummary();
+  summaryDeleteGate.resolve();
+  await summaryDeletePromise;
+  staleSummaryBeforeDelete.resolve(oldSummary);
+  staleSummaryDuringDelete.resolve(oldSummary);
+  await Promise.all([summaryBeforeDeletePromise, summaryDuringDeletePromise]);
+
+  assertEqual(
+    usePrayerTrackerStore.getState().summary.totalLogs,
+    2,
+    'stale summary loads cannot replace post-delete summary',
+  );
+  assertStoreLoadingSettled(usePrayerTrackerStore, 'summary race');
+
   let resolvePreviousAccountLoad;
   activeStoreService.loadMyPrayerActivity = () => new Promise((resolve) => {
     resolvePreviousAccountLoad = resolve;
@@ -177,6 +290,7 @@ async function validateStoreHistoryControls() {
     'account-b',
     'stale account load cannot replace active account history',
   );
+  assertStoreLoadingSettled(usePrayerTrackerStore, 'account reset race');
 
   activeStoreService = null;
 }
@@ -242,6 +356,9 @@ function validateScreenAndSourceBoundaries() {
   assertIncludes(storeSource, 'state.items.filter((item) => item.id !== localId)', 'target-only state removal');
   assertIncludes(storeSource, 'const summary = await loadLocalPrayerActivitySummary()', 'authoritative summary reload');
   assertIncludes(storeSource, 'requestRevision !== activityLoadRevision', 'stale account load guard');
+  assertIncludes(storeSource, 'let summaryLoadRevision = 0;', 'summary load revision');
+  assertIncludes(storeSource, 'requestRevision !== summaryLoadRevision', 'stale summary load guard');
+  assertIncludes(storeSource, 'invalidateHistoryReads();', 'deletion and reset read invalidation');
 
   assertIncludes(serviceSource, 'getLocalPrayerActivitySummary', 'service local summary adapter');
   assertIncludes(serviceSource, 'deleteLocalPrayerActivity', 'service local single-delete adapter');
@@ -371,6 +488,25 @@ function emptyPrayerSummary() {
     firstActivityDate: null,
     lastActivityDate: null,
   };
+}
+
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, reject, resolve };
+}
+
+function assertStoreLoadingSettled(usePrayerTrackerStore, description) {
+  const state = usePrayerTrackerStore.getState();
+
+  assertEqual(state.loading, false, `${description} activity loading settled`);
+  assertEqual(state.summaryLoading, false, `${description} summary loading settled`);
+  assertEqual(state.deleting, false, `${description} deletion settled`);
 }
 
 function loadServiceForMode(appAccessMode, spies) {

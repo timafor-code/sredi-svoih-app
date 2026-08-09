@@ -34,6 +34,12 @@ type PrayerTrackerState = {
 };
 
 let activityLoadRevision = 0;
+let summaryLoadRevision = 0;
+
+function invalidateHistoryReads(): void {
+  activityLoadRevision += 1;
+  summaryLoadRevision += 1;
+}
 
 function friendlyError(error: unknown): string {
   return error instanceof Error ? error.message : 'Не удалось обновить молитвенный трекер.';
@@ -102,16 +108,25 @@ export const usePrayerTrackerStore = create<PrayerTrackerState>((set) => ({
   },
 
   loadSummary: async (params) => {
+    const requestRevision = ++summaryLoadRevision;
     set({ summaryLoading: true });
 
     try {
       const summary = await loadLocalPrayerActivitySummary(params);
+
+      if (requestRevision !== summaryLoadRevision) {
+        return;
+      }
 
       set({
         summary,
         summaryLoading: false,
       });
     } catch (error) {
+      if (requestRevision !== summaryLoadRevision) {
+        return;
+      }
+
       const message = friendlyError(error);
 
       set({
@@ -144,50 +159,103 @@ export const usePrayerTrackerStore = create<PrayerTrackerState>((set) => ({
   },
 
   deleteActivity: async (localId) => {
-    set({ deleting: true, error: null });
+    let deleted = false;
+
+    invalidateHistoryReads();
+    set({
+      deleting: true,
+      loading: false,
+      summaryLoading: false,
+      error: null,
+    });
 
     try {
-      const deleted = await deleteOneLocalPrayerActivity(localId);
+      deleted = await deleteOneLocalPrayerActivity(localId);
+
+      invalidateHistoryReads();
 
       if (deleted) {
         set((state) => ({
           items: state.items.filter((item) => item.id !== localId),
+          loading: false,
+          summaryLoading: false,
         }));
       }
 
       const summary = await loadLocalPrayerActivitySummary();
 
-      set({
+      invalidateHistoryReads();
+      set((state) => ({
+        items: deleted
+          ? state.items.filter((item) => item.id !== localId)
+          : state.items,
         summary,
         deleting: false,
+        loading: false,
+        summaryLoading: false,
         error: null,
-      });
+      }));
     } catch (error) {
+      invalidateHistoryReads();
       const message = friendlyError(error);
 
-      set({ deleting: false, error: message });
+      set((state) => ({
+        items: deleted
+          ? state.items.filter((item) => item.id !== localId)
+          : state.items,
+        deleting: false,
+        loading: false,
+        summaryLoading: false,
+        error: message,
+      }));
       throw new Error(message);
     }
   },
 
   deleteAllLocalHistory: async () => {
-    set({ deleting: true, error: null });
+    let deletionCommitted = false;
+
+    invalidateHistoryReads();
+    set({
+      deleting: true,
+      loading: false,
+      summaryLoading: false,
+      error: null,
+    });
 
     try {
       await deleteAllLocalPrayerActivityHistory();
-      set({ items: [] });
+      deletionCommitted = true;
+
+      invalidateHistoryReads();
+      set({
+        items: [],
+        loading: false,
+        summaryLoading: false,
+      });
 
       const summary = await loadLocalPrayerActivitySummary();
 
+      invalidateHistoryReads();
       set({
+        items: [],
         summary,
         deleting: false,
+        loading: false,
+        summaryLoading: false,
         error: null,
       });
     } catch (error) {
+      invalidateHistoryReads();
       const message = friendlyError(error);
 
-      set({ deleting: false, error: message });
+      set((state) => ({
+        items: deletionCommitted ? [] : state.items,
+        deleting: false,
+        loading: false,
+        summaryLoading: false,
+        error: message,
+      }));
       throw new Error(message);
     }
   },
@@ -195,7 +263,7 @@ export const usePrayerTrackerStore = create<PrayerTrackerState>((set) => ({
   clearError: () => set({ error: null }),
 
   reset: () => {
-    activityLoadRevision += 1;
+    invalidateHistoryReads();
     set({
       items: [],
       summary: null,
