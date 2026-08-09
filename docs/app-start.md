@@ -214,6 +214,8 @@ Account boot после будущего обновления:
 - БД исключается из cloud backup/device transfer, насколько это допускает platform configuration;
 - значения молитвенной истории, metadata и настройки не пишутся в logs.
 
+Текущая Expo-managed конфигурация этого foundation PR включает SQLCipher, но сама по себе не гарантирует исключение SQLite-файла из cloud backup или device transfer. Device-only keychain accessibility не переносит ключ на новое iOS-устройство; отдельная platform backup policy остаётся release gate и не считается выполненной этим PR.
+
 SQLCipher не поддерживается в Expo Go. Поэтому:
 
 - Expo Go остаётся допустимым для UI smoke только на синтетических данных;
