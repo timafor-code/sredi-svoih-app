@@ -283,6 +283,7 @@ export default function HomeScreen() {
       />
 
       <HomeParshaCard
+        kind={parsha ? 'parsha' : 'holiday_reading'}
         title={parsha?.ru ?? holiday?.nameRu ?? 'Особое чтение'}
         hebrew={parsha?.he ?? holiday?.nameHe ?? ''}
       />

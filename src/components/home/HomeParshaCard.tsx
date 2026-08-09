@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
@@ -6,21 +5,20 @@ import { colors } from '@/theme/colors';
 
 type HomeParshaCardProps = {
   hebrew: string;
+  kind: 'parsha' | 'holiday_reading';
   title: string;
 };
 
-export function HomeParshaCard({ hebrew, title }: HomeParshaCardProps) {
+export function HomeParshaCard({ hebrew, kind, title }: HomeParshaCardProps) {
   return (
     <GlassCard>
       <View style={styles.rowBetween}>
         <View style={styles.textBlock}>
-          <Text style={styles.overline}>НЕДЕЛЬНАЯ ГЛАВА</Text>
+          <Text style={styles.overline}>
+            {kind === 'parsha' ? 'НЕДЕЛЬНАЯ ГЛАВА' : 'ПРАЗДНИЧНОЕ ЧТЕНИЕ'}
+          </Text>
           <Text numberOfLines={2} style={styles.cardTitle}>{title}</Text>
           <Text numberOfLines={1} style={styles.hebrew}>{hebrew}</Text>
-          <View style={[styles.dateRow, styles.teacherRow]}>
-            <Ionicons name="person-outline" size={11} color={colors.textDim} />
-            <Text numberOfLines={1} style={styles.mutedSmall}>Урок раввина Рувена Колина</Text>
-          </View>
         </View>
         <View style={[styles.roundIcon, styles.blueBox]}>
           <Text style={styles.roundIconText}>📖</Text>
@@ -37,11 +35,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.8,
     includeFontPadding: false,
-  },
-  dateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
   },
   rowBetween: {
     flexDirection: 'row',
@@ -66,16 +59,6 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     lineHeight: 16,
     marginTop: 2,
-  },
-  teacherRow: {
-    marginTop: 6,
-  },
-  mutedSmall: {
-    flex: 1,
-    minWidth: 0,
-    color: colors.textDim,
-    fontSize: 12,
-    lineHeight: 16,
   },
   roundIcon: {
     width: 52,
