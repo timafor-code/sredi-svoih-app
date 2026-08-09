@@ -387,8 +387,6 @@ function validateRouteGuard() {
     '/profile/edit',
     '/profile/onboarding',
     '/profile/my-registrations',
-    '/profile/notifications',
-    '/profile/prayers-settings',
     '/contacts/community/abc',
     '/contacts/abc',
   ];
@@ -397,6 +395,8 @@ function validateRouteGuard() {
     '/contacts',
     '/contacts/iphone/abc',
     '/profile/prayer-tracker',
+    '/profile/notifications',
+    '/profile/prayers-settings',
     '/profile/support',
     '/profile/about',
     '/events/abc',

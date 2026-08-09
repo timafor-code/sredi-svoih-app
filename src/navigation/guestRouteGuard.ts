@@ -8,8 +8,6 @@ const GUEST_BLOCKED_PROFILE_ROUTE_NAMES = [
   'profile/edit',
   'profile/onboarding',
   'profile/my-registrations',
-  'profile/notifications',
-  'profile/prayers-settings',
 ] as const;
 
 export const GUEST_BLOCKED_ROUTE_NAMES = [
