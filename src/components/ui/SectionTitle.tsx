@@ -1,17 +1,32 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '@/theme/colors';
 
 type SectionTitleProps = {
   action?: string;
+  onActionPress?: () => void;
   title: string;
 };
 
-export function SectionTitle({ action, title }: SectionTitleProps) {
+export function SectionTitle({ action, onActionPress, title }: SectionTitleProps) {
   return (
     <View style={styles.row}>
       <Text style={styles.title}>{title}</Text>
-      {action ? <Text style={styles.action}>{action}</Text> : null}
+      {action ? (
+        onActionPress ? (
+          <Pressable
+            accessibilityLabel={action}
+            accessibilityRole="button"
+            hitSlop={6}
+            onPress={onActionPress}
+            style={({ pressed }) => pressed && styles.actionPressed}
+          >
+            <Text style={styles.action}>{action}</Text>
+          </Pressable>
+        ) : (
+          <Text style={styles.action}>{action}</Text>
+        )
+      ) : null}
     </View>
   );
 }
@@ -38,5 +53,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     includeFontPadding: false,
+  },
+  actionPressed: {
+    opacity: 0.7,
   },
 });

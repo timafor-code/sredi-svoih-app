@@ -1,19 +1,26 @@
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
 
 import { colors } from '@/theme/colors';
 
 type HomeLocationPillProps = {
   city: string;
+  onPress: () => void;
 };
 
-export function HomeLocationPill({ city }: HomeLocationPillProps) {
+export function HomeLocationPill({ city, onPress }: HomeLocationPillProps) {
   return (
-    <View style={styles.locationPill}>
+    <Pressable
+      accessibilityLabel={`Выбрать город для зманим. Текущий город: ${city}`}
+      accessibilityRole="button"
+      hitSlop={4}
+      onPress={onPress}
+      style={({ pressed }) => [styles.locationPill, pressed && styles.pressed]}
+    >
       <Ionicons name="location" size={13} color="rgba(255,255,255,0.62)" />
       <Text numberOfLines={1} style={styles.locationText}>{city} · зманим</Text>
       <Ionicons name="chevron-forward" size={13} color="rgba(255,255,255,0.4)" />
-    </View>
+    </Pressable>
   );
 }
 
@@ -30,6 +37,9 @@ const styles = StyleSheet.create({
     borderColor: colors.glass.w10,
     backgroundColor: colors.glass.w07,
     paddingHorizontal: 14,
+  },
+  pressed: {
+    opacity: 0.85,
   },
   locationText: {
     flexShrink: 1,
