@@ -207,14 +207,45 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     ]);
 
     const communityRequestIsCurrent = isCurrentCommunityRequest(requestRevision);
+
+    if (!communityRequestIsCurrent) {
+      if (!shouldRefreshLocal) {
+        return;
+      }
+
+      const communityContacts = get().communityContacts;
+      const localContacts =
+        localResult.status === 'fulfilled' && localResult.value
+          ? localResult.value.contacts
+          : get().localContacts;
+      const error =
+        localResult.status === 'fulfilled' && localResult.value && !localResult.value.ok
+          ? localResult.value.error ?? 'local_contacts_error'
+          : localResult.status === 'rejected'
+            ? toErrorMessage(localResult.reason)
+            : null;
+
+      set({
+        error,
+        loadingLocal: false,
+        localContacts,
+        localContactsPermission:
+          localResult.status === 'fulfilled' && localResult.value
+            ? localResult.value.permissionStatus
+            : get().localContactsPermission,
+        ...getDerivedState(communityContacts, localContacts),
+      });
+      return;
+    }
+
     const communityContacts =
-      communityRequestIsCurrent && communityResult.status === 'fulfilled'
+      communityResult.status === 'fulfilled'
         ? communityResult.value
         : [];
     const localContacts =
       localResult.status === 'fulfilled' && localResult.value ? localResult.value.contacts : get().localContacts;
     const communityError =
-      communityRequestIsCurrent && communityResult.status === 'rejected'
+      communityResult.status === 'rejected'
         ? toErrorMessage(communityResult.reason)
         : null;
     const error =

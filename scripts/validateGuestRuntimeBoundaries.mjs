@@ -299,6 +299,80 @@ async function validateCommunityBoundaries() {
     [],
     'stale community response cannot repopulate reset state',
   );
+
+  await validateStaleRefreshAfterNewerCommunityCommit();
+  await validateStaleRefreshPreservesNewerCommunityLoading();
+}
+
+async function validateStaleRefreshAfterNewerCommunityCommit() {
+  const spies = createContactsSpies();
+  const store = loadContactsStore('account', spies);
+  const oldRefreshResponse = deferred();
+  const newLoadResponse = deferred();
+  const oldContacts = [{ id: 'old-refresh-contact' }];
+  const newContacts = [{ id: 'new-load-contact' }];
+  spies.communityDeferredQueue.push(oldRefreshResponse, newLoadResponse);
+
+  const staleRefresh = store.getState().refreshAll();
+  await Promise.resolve();
+  const newerLoad = store.getState().loadCommunityContacts();
+  await Promise.resolve();
+
+  newLoadResponse.resolve(newContacts);
+  await newerLoad;
+  assertDeepEqual(
+    store.getState().communityContacts,
+    newContacts,
+    'newer community load commits before stale refresh',
+  );
+
+  oldRefreshResponse.resolve(oldContacts);
+  await staleRefresh;
+  assertDeepEqual(
+    store.getState().communityContacts,
+    newContacts,
+    'stale refresh preserves newer committed community contacts',
+  );
+  assertEqual(
+    store.getState().loadingCommunity,
+    false,
+    'newer completed request controls settled community loading state',
+  );
+}
+
+async function validateStaleRefreshPreservesNewerCommunityLoading() {
+  const spies = createContactsSpies();
+  const store = loadContactsStore('account', spies);
+  const oldRefreshResponse = deferred();
+  const newLoadResponse = deferred();
+  const newContacts = [{ id: 'new-in-flight-contact' }];
+  spies.communityDeferredQueue.push(oldRefreshResponse, newLoadResponse);
+
+  const staleRefresh = store.getState().refreshAll();
+  await Promise.resolve();
+  const newerLoad = store.getState().loadCommunityContacts();
+  await Promise.resolve();
+
+  oldRefreshResponse.resolve([{ id: 'old-in-flight-contact' }]);
+  await staleRefresh;
+  assertEqual(
+    store.getState().loadingCommunity,
+    true,
+    'stale refresh does not settle newer community loading state',
+  );
+
+  newLoadResponse.resolve(newContacts);
+  await newerLoad;
+  assertEqual(
+    store.getState().loadingCommunity,
+    false,
+    'newer community request settles its loading state',
+  );
+  assertDeepEqual(
+    store.getState().communityContacts,
+    newContacts,
+    'newer in-flight community request remains authoritative',
+  );
 }
 
 function validateRouteGuard() {
@@ -493,6 +567,7 @@ function createContactsSpies() {
   const spies = {
     calls: { community: 0, local: 0 },
     communityDeferred: null,
+    communityDeferredQueue: [],
     modules: null,
   };
   const communityContact = { id: 'community-contact', source: 'community' };
@@ -506,9 +581,14 @@ function createContactsSpies() {
         ],
         async listCommunityContacts() {
           spies.calls.community += 1;
-          return spies.communityDeferred
-            ? spies.communityDeferred.promise
-            : [communityContact];
+          const queuedDeferred = spies.communityDeferredQueue.shift();
+          if (queuedDeferred) {
+            return queuedDeferred.promise;
+          }
+          if (spies.communityDeferred) {
+            return spies.communityDeferred.promise;
+          }
+          return [communityContact];
         },
         async listLocalBirthdayContacts() {
           spies.calls.local += 1;
