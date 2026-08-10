@@ -1,8 +1,5 @@
 import { apiClient } from "./apiClient";
-import type {
-  AdminApiEventPublicSlugCheckResponse,
-  AdminApiEventWebRegistrationResponse,
-} from "../types/api";
+import type { AdminApiEventPublicSlugCheckResponse } from "../types/api";
 import type {
   AdminEventPublicSlugCheckResult,
   AdminEventWebRegistration,
@@ -18,9 +15,34 @@ type AdminEventPublicSlugCheckPayload = {
   public_slug: string;
 };
 
+const WEB_REGISTRATION_CONTRACT_ERROR =
+  "Ответ API веб-регистрации несовместим с текущей версией web-admin. Пересоберите и перезапустите API.";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
 function normalizeAdminEventWebRegistration(
-  response: AdminApiEventWebRegistrationResponse,
+  response: unknown,
 ): AdminEventWebRegistration {
+  if (
+    !isRecord(response)
+    || !isNonEmptyString(response.event_id)
+    || !isNonEmptyString(response.public_slug)
+    || !isNonEmptyString(response.public_registration_url)
+    || (
+      response.web_visibility !== "disabled"
+      && response.web_visibility !== "unlisted"
+      && response.web_visibility !== "listed"
+    )
+  ) {
+    throw new Error(WEB_REGISTRATION_CONTRACT_ERROR);
+  }
+
   return {
     eventId: response.event_id,
     webVisibility: response.web_visibility,
@@ -32,7 +54,7 @@ function normalizeAdminEventWebRegistration(
 export async function getAdminEventWebRegistration(
   eventId: string,
 ): Promise<AdminEventWebRegistration> {
-  const response = await apiClient.get<AdminApiEventWebRegistrationResponse>(
+  const response = await apiClient.get<unknown>(
     `/admin/events/${encodeURIComponent(eventId)}/web-registration`,
   );
 
@@ -54,10 +76,10 @@ export async function updateAdminEventWebRegistration(
     throw new Error("At least one web-registration field is required.");
   }
 
-  const response = await apiClient.patch<
-    AdminApiEventWebRegistrationResponse,
-    AdminEventWebRegistrationUpdatePayload
-  >(`/admin/events/${encodeURIComponent(eventId)}/web-registration`, payload);
+  const response = await apiClient.patch<unknown, AdminEventWebRegistrationUpdatePayload>(
+    `/admin/events/${encodeURIComponent(eventId)}/web-registration`,
+    payload,
+  );
 
   return normalizeAdminEventWebRegistration(response);
 }

@@ -472,7 +472,18 @@ export function EventWebRegistrationCard({
               id={slugInputId}
               inputMode="url"
               onBlur={() => {
-                if (publicUrl) void performSlugCheck(slugSuffix, eventTitle);
+                const key = slugCheckKey(slugSuffix, eventTitle);
+                const hasCurrentTerminalResult = slugCheck.kind !== "idle"
+                  && slugCheck.key === key
+                  && (
+                    slugCheck.kind === "available"
+                    || slugCheck.kind === "taken"
+                    || slugCheck.kind === "invalid"
+                  );
+
+                if (publicUrl && !hasCurrentTerminalResult) {
+                  void performSlugCheck(slugSuffix, eventTitle);
+                }
               }}
               onChange={(event) => {
                 const nextSuffix = event.target.value;
