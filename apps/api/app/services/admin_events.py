@@ -29,7 +29,6 @@ from app.schemas.admin_events import (
     AdminEventCategoryUpdateRequest,
     AdminEventCreateRequest,
     AdminEventOccurrenceResponse,
-    AdminEventOccurrenceUrlResponse,
     AdminEventOccurrencesReplaceRequest,
     AdminEventParticipationOptionUpsertRequest,
     AdminEventParticipationOptionResponse,
@@ -514,33 +513,11 @@ async def _build_admin_event_web_registration_response(
     public_slug = await get_canonical_public_slug(session, event.id)
     if public_slug is None:
         raise RuntimeError("Event has no canonical public slug")
-    occurrences = list(
-        await session.scalars(
-            select(EventOccurrence)
-            .where(
-                EventOccurrence.event_id == event.id,
-                EventOccurrence.status == "active",
-            )
-            .order_by(EventOccurrence.starts_at, EventOccurrence.id),
-        ),
-    )
     return AdminEventWebRegistrationResponse(
         event_id=event.id,
         web_visibility=event.web_visibility,
         public_slug=public_slug.slug,
         public_registration_url=build_public_event_url(base_url, public_slug.slug),
-        occurrence_urls=[
-            AdminEventOccurrenceUrlResponse(
-                occurrence_id=occurrence.id,
-                starts_at=occurrence.starts_at,
-                url=build_public_event_url(
-                    base_url,
-                    public_slug.slug,
-                    occurrence.id,
-                ),
-            )
-            for occurrence in occurrences
-        ],
     )
 
 

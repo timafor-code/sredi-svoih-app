@@ -5,9 +5,9 @@
 - Статус: утверждаемая техническая спецификация для серии PR
 - Репозиторий: `timafor-code/sredi-svoih-app`
 - Базовая ветка: `main`
-- Проверенный commit `main`: `2adb81253ac3fe7c3f4b78f536a6597375699e45`
-- Последний объединённый PR: #373 `feature/api-web-event-slug-foundation`
-- Предыдущие связанные PR: #372, #371, #370, #356, #354, #342, #341, #340
+- Проверенный commit `main`: `0970d495e1f276409974e6b3a5d7d6a7bf046534`
+- Последний объединённый PR: #374 `feature/public-web-event-slug-routing`
+- Предыдущие связанные PR: #373, #372, #371, #370, #356, #354, #342, #341, #340
 
 ## 1. Назначение документа
 
@@ -22,8 +22,8 @@
 - каноническая ссылка имеет вид `/events/{public_slug}`;
 - абсолютный адрес вычисляет FastAPI из backend-only `PUBLIC_WEB_BASE_URL`;
 - полный URL не хранится в PostgreSQL и не вводится в браузере;
-- web-admin показывает read-only `public_registration_url`;
-- deprecated `occurrence_urls` пока возвращаются как `/events/{public_slug}?occurrence={occurrence_uuid}` и остаются видимыми в неизменённом web-admin;
+- web-admin редактирует только slug suffix, получает preview из backend normalization и использует сохранённый `public_registration_url` для copy/open;
+- deprecated список occurrence-ссылок удалён из web-admin, а `occurrence_urls` удалено из admin GET/PATCH response; public occurrence query и выбор даты сохранены;
 - `apps/web/src/route.ts` различает canonical/alias slug и legacy UUID;
 - публичная форма загружается через `GET /web/events/{public_slug}/registration-form`, а legacy UUID endpoint сохранён;
 - canonical slug, alias и legacy UUID после успешного ответа используют backend-поле `canonical_public_path`; browser применяет `replaceState` без повторного fetch;
@@ -184,7 +184,7 @@ event_public_slugs
 }
 ```
 
-`occurrence_urls` после согласованного frontend-перехода удаляется из нового контракта. На промежуточном этапе поле можно временно оставить deprecated, но web-admin не должен показывать список отдельных ссылок.
+`occurrence_urls` удалено из admin GET/PATCH response вместе с операторским списком отдельных ссылок. Это не удаляет `?occurrence={uuid}`, legacy UUID route, public occurrence routing или выбор даты в публичной форме.
 
 ### 6.2. Availability
 
@@ -393,13 +393,15 @@ Mobile:
 
 ### PR 2 — `feature/public-web-event-slug-routing`
 
-Статус: текущий PR; public slug/alias lookup, UUID compatibility, browser canonicalization и slug-based backend URL реализованы.
+Статус: завершён и объединён как PR #374; public slug/alias lookup, UUID compatibility, browser canonicalization и slug-based backend URL реализованы.
 
 Цель: public lookup по canonical/alias slug, legacy UUID compatibility, `apps/web` slug route и атомарное переключение backend-generated `public_registration_url` на slug.
 
 Не делать: admin slug editor, occurrence UX redesign, mobile activation.
 
 ### PR 3 — `feature/admin-web-event-slug-editor`
+
+Статус: текущий PR; suffix editor, backend preview, availability debounce/blur, final PATCH и удаление deprecated occurrence-link list реализованы.
 
 Цель: поле suffix, preview/transliteration, debounce availability, final PATCH, copy/open canonical URL и удаление occurrence-link list.
 

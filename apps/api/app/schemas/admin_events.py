@@ -378,25 +378,11 @@ class AdminEventPublicSlugCheckResponse(BaseModel):
     reason: Literal["public_slug_taken"] | None
 
 
-class AdminEventOccurrenceUrlResponse(BaseModel):
-    occurrence_id: UUID
-    starts_at: datetime
-    url: str
-
-    @field_validator("starts_at")
-    @classmethod
-    def require_timezone_field(cls, value: datetime) -> datetime:
-        validated = _require_timezone(value)
-        assert validated is not None
-        return validated
-
-
 class AdminEventWebRegistrationResponse(BaseModel):
     event_id: UUID
     web_visibility: AdminEventWebVisibility
     public_slug: str
     public_registration_url: str
-    occurrence_urls: list[AdminEventOccurrenceUrlResponse]
 
 
 class AdminEventCategoryCreateRequest(BaseModel):

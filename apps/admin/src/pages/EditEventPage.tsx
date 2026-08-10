@@ -182,7 +182,10 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
         />
       </GlassCard>
 
-      <EventWebRegistrationCard eventId={currentEvent.id} />
+      <EventWebRegistrationCard
+        eventId={currentEvent.id}
+        eventTitle={currentEvent.title}
+      />
 
       {isAdmin === true ? <EventQuestionnaireCard eventId={currentEvent.id} /> : null}
 
