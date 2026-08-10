@@ -14,6 +14,8 @@ import {
 import { GlassCard } from '@/components/glass/GlassCard';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
+import { appCapabilities } from '@/config/appCapabilities';
+import { INTERNAL_EVENT_REGISTRATION_UNAVAILABLE_TEXT } from '@/hooks/useEventRegistrationAction';
 import { selectNextFutureOccurrence } from '@/lib/eventTime';
 import {
   getNearestOccurrence,
@@ -437,6 +439,17 @@ export default function EventRegistrationScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
+    if (!appCapabilities.canUseInternalAccountEventRegistration) {
+      setEvent(null);
+      setOccurrences([]);
+      setOptions([]);
+      setSelectedIds([]);
+      setSelectedOccurrenceId(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
     if (!eventId) {
       setEvent(null);
       setOccurrences([]);
@@ -500,7 +513,7 @@ export default function EventRegistrationScreen() {
   }, [loadData]);
 
   useEffect(() => {
-    if (!authUser) {
+    if (!appCapabilities.canUseInternalAccountEventRegistration || !authUser) {
       return;
     }
 
@@ -677,6 +690,11 @@ export default function EventRegistrationScreen() {
   }, []);
 
   const submitRegistration = useCallback(async () => {
+    if (!appCapabilities.canUseInternalAccountEventRegistration) {
+      Alert.alert('Регистрация недоступна', INTERNAL_EVENT_REGISTRATION_UNAVAILABLE_TEXT);
+      return;
+    }
+
     if (!eventId) {
       return;
     }
@@ -735,6 +753,11 @@ export default function EventRegistrationScreen() {
   ]);
 
   const handleContinue = useCallback(() => {
+    if (!appCapabilities.canUseInternalAccountEventRegistration) {
+      Alert.alert('Регистрация недоступна', INTERNAL_EVENT_REGISTRATION_UNAVAILABLE_TEXT);
+      return;
+    }
+
     if (occurrenceChoiceBlocked) {
       Alert.alert('Выберите дату', 'Сначала выберите дату события.');
       return;
@@ -780,6 +803,26 @@ export default function EventRegistrationScreen() {
     submitRegistration,
     totals.seats,
   ]);
+
+  if (!appCapabilities.canUseInternalAccountEventRegistration) {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <Screen contentContainerStyle={styles.content}>
+          <Pressable onPress={handleBack} style={styles.backButton}>
+            <Ionicons name="chevron-back" size={22} color={colors.orange} />
+            <Text style={styles.backText}>Назад</Text>
+          </Pressable>
+          <GlassCard>
+            <View style={styles.stateCard}>
+              <Ionicons name="information-circle-outline" size={24} color={colors.textDim} />
+              <Text style={styles.stateText}>{INTERNAL_EVENT_REGISTRATION_UNAVAILABLE_TEXT}</Text>
+            </View>
+          </GlassCard>
+        </Screen>
+      </>
+    );
+  }
 
   return (
     <>

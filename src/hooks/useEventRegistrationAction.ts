@@ -2,10 +2,12 @@ import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Linking } from 'react-native';
 
+import { appCapabilities } from '@/config/appCapabilities';
 import {
   getRegistrationWindowInfo,
   type RegistrationWindowInfo,
 } from '@/lib/registrationWindow';
+import { getPublicWebEventRegistrationTarget } from '@/services/publicWebEventRegistrationService';
 import { useAuthStore } from '@/store/useAuthStore';
 import { isActiveEventRegistration, useEventsStore } from '@/store/useEventsStore';
 import type { EventItem, EventRegistration, EventRegistrationStatus } from '@/types/event';
@@ -14,6 +16,13 @@ type EventActionTarget = Pick<
   EventItem,
   'id' | 'registrationMode' | 'registrationUrl' | 'nextOccurrence' | 'hasOccurrences'
 >;
+
+export const INTERNAL_EVENT_REGISTRATION_UNAVAILABLE_TEXT =
+  'Регистрация через приложение сейчас недоступна.';
+
+function isInternalRegistrationMode(mode: EventItem['registrationMode']): boolean {
+  return mode === 'internal_free' || mode === 'internal_paid';
+}
 
 export function getRegistrationStatusTitle(status: EventRegistrationStatus): string {
   switch (status) {
@@ -45,6 +54,13 @@ export function getEventRegistrationActionTitle(
     return 'Записываем...';
   }
 
+  if (
+    isInternalRegistrationMode(event.registrationMode)
+    && !appCapabilities.canUseInternalAccountEventRegistration
+  ) {
+    return 'Регистрация недоступна';
+  }
+
   switch (event.registrationMode) {
     case 'none':
       return 'Регистрация не нужна';
@@ -66,7 +82,7 @@ function usesOccurrenceRegistrationWindow(event: EventActionTarget): boolean {
 }
 
 function canGuardRegistrationMode(mode: EventItem['registrationMode']): boolean {
-  return mode === 'internal_free' || mode === 'internal_paid';
+  return isInternalRegistrationMode(mode);
 }
 
 export function getEventRegistrationWindowGuardInfo(
@@ -179,6 +195,28 @@ export function useEventRegistrationAction() {
     event: EventActionTarget,
     registration: EventRegistration | null,
   ) => {
+    if (
+      isInternalRegistrationMode(event.registrationMode)
+      && !appCapabilities.canUseInternalAccountEventRegistration
+    ) {
+      if (appCapabilities.canUsePublicWebEventRegistration) {
+        const trustedTarget = await getPublicWebEventRegistrationTarget(event.id);
+
+        if (trustedTarget) {
+          try {
+            await Linking.openURL(trustedTarget);
+            return;
+          } catch {
+            Alert.alert('Регистрация недоступна', INTERNAL_EVENT_REGISTRATION_UNAVAILABLE_TEXT);
+            return;
+          }
+        }
+      }
+
+      Alert.alert('Регистрация недоступна', INTERNAL_EVENT_REGISTRATION_UNAVAILABLE_TEXT);
+      return;
+    }
+
     switch (event.registrationMode) {
       case 'none':
         Alert.alert('Регистрация не требуется');
@@ -253,6 +291,11 @@ export function useEventRegistrationAction() {
   }, [authUser, loadMyRegistrations, registerForEvent, router]);
 
   const handleCancelRegistration = useCallback((registration: EventRegistration) => {
+    if (!appCapabilities.canUseInternalAccountEventRegistration) {
+      Alert.alert('Регистрация недоступна', INTERNAL_EVENT_REGISTRATION_UNAVAILABLE_TEXT);
+      return;
+    }
+
     Alert.alert(
       'Отменить запись?',
       'Вы сможете записаться заново, если места еще будут доступны.',

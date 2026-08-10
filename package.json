@@ -16,6 +16,7 @@
     "validate:local-data-foundation": "node ./scripts/validateLocalDataFoundation.mjs",
     "validate:guest-prayer-actions": "node ./scripts/validateGuestPrayerActions.mjs",
     "validate:guest-prayer-history": "node ./scripts/validateGuestPrayerHistoryControls.mjs",
+    "validate:guest-event-registration-boundary": "node ./scripts/validateGuestEventRegistrationBoundary.mjs",
     "validate:guest-runtime-boundaries": "node ./scripts/validateGuestRuntimeBoundaries.mjs",
     "validate:guest-settings-shell": "node ./scripts/validateGuestSettingsShell.mjs",
     "validate:local-prayer-notification-settings": "node ./scripts/validateLocalPrayerNotificationSettings.mjs",

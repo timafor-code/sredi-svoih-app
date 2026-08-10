@@ -16,6 +16,13 @@ export const GUEST_BLOCKED_ROUTE_NAMES = [
   'contacts/[id]',
 ] as const;
 
+export const INTERNAL_EVENT_REGISTRATION_ROUTE_NAMES = [
+  'events/register/[id]',
+  'events/paid-occurrences',
+  'events/paid-options',
+  'modals/event-registration',
+] as const;
+
 const GUEST_BLOCKED_PROFILE_PATHS = new Set(
   GUEST_BLOCKED_PROFILE_ROUTE_NAMES.map((routeName) => `/${routeName}`),
 );
@@ -59,4 +66,20 @@ export function isGuestBlockedPathname(
     && legacyContactMatch[1] !== 'iphone'
     && legacyContactMatch[1] !== 'community',
   );
+}
+
+export function isInternalEventRegistrationBlockedPathname(
+  pathname: string,
+  capabilities: AppCapabilityMatrix = appCapabilities,
+): boolean {
+  if (capabilities.canUseInternalAccountEventRegistration) {
+    return false;
+  }
+
+  const normalizedPathname = normalizeAppPathname(pathname);
+
+  return normalizedPathname === '/events/paid-occurrences'
+    || normalizedPathname === '/events/paid-options'
+    || normalizedPathname === '/modals/event-registration'
+    || /^\/events\/register\/[^/]+$/.test(normalizedPathname);
 }
