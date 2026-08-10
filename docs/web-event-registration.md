@@ -39,10 +39,8 @@ PostgreSQL model. They must not create a second backend, a separate web-user
 database, or direct frontend access to PostgreSQL. Supabase is not restored as
 the production data or authentication runtime.
 
-The next public frontend must be a separate Vite + React application at
-`apps/web`. It must not be implemented inside the closed administrative
-application at `apps/admin`. `apps/web` does not exist yet and is outside this
-documentation PR.
+The public frontend is the separate Vite + React application at `apps/web`.
+It remains separate from the closed administrative application at `apps/admin`.
 
 ## Product And Identity Contract
 
@@ -360,6 +358,7 @@ standard JSON envelope and generic, enumeration-safe errors.
 | Method | Path | Contract |
 | --- | --- | --- |
 | GET | `/events/{event_id}/registration-form?channel=web` | Return the form only for an otherwise publishable `unlisted`/`listed` event; `disabled` remains inaccessible by UUID. |
+| GET | `/web/events/{public_slug}/registration-form` | Resolve a strict lowercase canonical or alias slug and return the same minimized form; unknown, invalid, and unavailable targets share `404 registration_unavailable`. |
 | POST | `/web/registration-intents` | Create/reuse a short-lived, non-capacity-holding flow after validation. |
 | POST | `/web/registration-intents/{flow_id}/resend-code` | Rate-limited generic resend; do not reveal identity state. |
 | POST | `/web/registration-intents/{flow_id}/confirm-email` | Consume the code, resolve identity, re-check capacity transactionally, and create the final registration. |
@@ -370,6 +369,12 @@ Form reads and new intents require the event to be simultaneously `published`,
 before submitted names/contact data are persisted, before conflict or user
 creation, and before email delivery. Unsupported states share one generic
 `registration_unavailable` response.
+
+Both reads return `canonical_public_path` from the current stored canonical slug
+and a strict boolean `resolved_from_alias`. `apps/web` uses that relative path
+with `history.replaceState` for aliases and legacy UUID links, without a reload
+or second form request. UUIDs remain the identifiers in form and registration
+payloads.
 
 Intent creation accepts the event/occurrence, the four MVP identity fields,
 free seat and option selections, an empty `answers` list, and versioned legal acceptances including exactly one event-registration consent,
@@ -419,10 +424,11 @@ GET   /admin/events/{event_id}/web-registration
 PATCH /admin/events/{event_id}/web-registration
 ```
 
-The read response contains `event_id`, `web_visibility`, computed
-`public_registration_url`, and computed occurrence URLs. `PATCH` accepts only
-managed settings such as `web_visibility`; it never accepts a caller-provided
-URL. In the MVP it accepts only `disabled` and `unlisted`. Existing admin
+The read response contains `event_id`, `web_visibility`, `public_slug`, computed
+canonical-slug `public_registration_url`, and deprecated occurrence URLs using
+the same slug plus an occurrence UUID query. `PATCH` accepts managed settings
+such as `web_visibility` and `public_slug`; it never accepts a caller-provided
+URL. Existing admin
 authorization guards scope access to the event's community, and publication
 changes produce a PII-free audit record. PATCH locks the event and commits the
 event change plus `admin_event_audit_entries` row atomically. The row contains

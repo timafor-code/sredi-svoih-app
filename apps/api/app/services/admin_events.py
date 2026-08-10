@@ -528,12 +528,16 @@ async def _build_admin_event_web_registration_response(
         event_id=event.id,
         web_visibility=event.web_visibility,
         public_slug=public_slug.slug,
-        public_registration_url=build_public_event_url(base_url, event.id),
+        public_registration_url=build_public_event_url(base_url, public_slug.slug),
         occurrence_urls=[
             AdminEventOccurrenceUrlResponse(
                 occurrence_id=occurrence.id,
                 starts_at=occurrence.starts_at,
-                url=build_public_event_url(base_url, event.id, occurrence.id),
+                url=build_public_event_url(
+                    base_url,
+                    public_slug.slug,
+                    occurrence.id,
+                ),
             )
             for occurrence in occurrences
         ],

@@ -121,6 +121,12 @@ def validate_public_slug(value: str) -> str:
     return normalized_slug
 
 
+def validate_public_path_slug(value: str) -> str:
+    """Validate an already-stored slug without normalizing public input."""
+    _validate_normalized_public_slug(value)
+    return value
+
+
 def fallback_public_slug(event_id: UUID) -> str:
     return f"event-{str(event_id)[:8]}"
 

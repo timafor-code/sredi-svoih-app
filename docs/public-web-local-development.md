@@ -26,15 +26,18 @@ npm run web:dev
 Open a fixture event at:
 
 ```text
-http://localhost:5174/events/<event-uuid>
+http://localhost:5174/events/<public-slug>
 ```
 
 An occurrence may be preselected without adding any participant data to the
 URL:
 
 ```text
-http://localhost:5174/events/<event-uuid>?occurrence=<occurrence-uuid>
+http://localhost:5174/events/<public-slug>?occurrence=<occurrence-uuid>
 ```
+
+Legacy `/events/<event-uuid>` links remain supported and are replaced in-place
+with the backend-returned canonical slug path after a successful form read.
 
 The default `VITE_WEB_API_BASE_URL=/api` uses the local Vite proxy. The proxy
 forwards to `http://127.0.0.1:8000` and removes the `/api` prefix. A developer
@@ -85,8 +88,11 @@ pretend that a code was sent.
 
 The browser performs this sequence:
 
-1. Read and runtime-validate
-   `GET /events/{event_id}/registration-form?channel=web`.
+1. Read and runtime-validate `GET /web/events/{public_slug}/registration-form`
+   for a slug route, or the legacy
+   `GET /events/{event_id}/registration-form?channel=web` for a UUID route. The
+   browser accepts only a safe relative `canonical_public_path` from the API and
+   replaces alias/UUID paths without reloading.
 2. Render and validate the returned ordinary questionnaire fields, then
    validate the occurrence, selected participation options, seat count,
    participant fields, and separate event-registration consent.

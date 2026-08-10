@@ -1143,7 +1143,8 @@ Audit rows contain no PII, request body, URL, IP address, or user agent.
 `events.web_visibility` is `NOT NULL`, defaults to `disabled` for existing and
 new rows, and is constrained to `disabled`, `unlisted`, or `listed`. It is
 independent from event `status`, `visibility`, and `registration_mode`.
-Neither a full public URL nor a slug is stored in PostgreSQL.
+Canonical and alias slugs are stored in `event_public_slugs`; a full public URL
+is never stored in PostgreSQL.
 
 `PUBLIC_WEB_BASE_URL` is backend-only trusted configuration. It is normalized
 without a trailing slash and rejects query strings, fragments, URL credentials,
@@ -1151,8 +1152,8 @@ and non-loopback HTTP. Canonical URLs never use `Host`, `Origin`, `Referer`, or
 forwarded request headers:
 
 ```text
-{PUBLIC_WEB_BASE_URL}/events/{event_id}
-{PUBLIC_WEB_BASE_URL}/events/{event_id}?occurrence={occurrence_id}
+{PUBLIC_WEB_BASE_URL}/events/{canonical_public_slug}
+{PUBLIC_WEB_BASE_URL}/events/{canonical_public_slug}?occurrence={occurrence_id}
 ```
 
 The occurrence query preselects a date only; API operations still validate that
@@ -1160,9 +1161,10 @@ the occurrence belongs to the event.
 
 | Method | Path | Behavior |
 | --- | --- | --- |
-| GET | `/admin/events/{event_id}/web-registration` | Authenticated community-scoped read of `event_id`, `web_visibility`, the stable event URL, and active occurrence URLs ordered by start time and UUID. The URL is returned while disabled. |
-| PATCH | `/admin/events/{event_id}/web-registration` | Row-locked, audited change accepting only `disabled` or `unlisted`; enabling requires `internal_free`. `listed`, URLs, and unrelated event fields are rejected. |
-| GET | `/events/{event_id}/registration-form?channel=web` | Unauthenticated minimized form read for published/public/`internal_free` events whose web visibility is `unlisted` or `listed`; includes the active published `questionnaire_form_id` and exactly its ordered `questions`, or `null` and `[]`. |
+| GET | `/admin/events/{event_id}/web-registration` | Authenticated community-scoped read of `event_id`, `web_visibility`, `public_slug`, the canonical slug URL, and deprecated active occurrence URLs ordered by start time and UUID. The URL is returned while disabled. |
+| PATCH | `/admin/events/{event_id}/web-registration` | Row-locked, audited change accepting managed publication fields and canonical `public_slug`; enabling requires `internal_free`. Full URLs and unrelated event fields are rejected. |
+| GET | `/web/events/{public_slug}/registration-form` | Unauthenticated canonical-or-alias lookup with strict lowercase ASCII path validation and the same minimized publication guards as the UUID endpoint. |
+| GET | `/events/{event_id}/registration-form?channel=web` | Legacy unauthenticated UUID form read for published/public/`internal_free` events whose web visibility is `unlisted` or `listed`. |
 
 The public form returns only safe event fields, canonical registration state,
 active occurrences, active free non-donation participation options, exactly one
@@ -1172,6 +1174,13 @@ membership data, audit rows, PII, and internal conflict data. Registration
 states are `open`, `not_yet_open`, `closed`, `full`, or `unavailable`; a closed
 window or full capacity does not hide an otherwise published page, and the read
 never reserves capacity.
+
+Both public form endpoints return backend-built
+`canonical_public_path=/events/{current_canonical_slug}` and boolean
+`resolved_from_alias`. The legacy UUID endpoint always reports `false`; an alias
+reports `true`. Event, occurrence, intent, and registration identifiers remain
+UUIDs. Invalid, unknown, or unavailable slug targets share the same
+`404 registration_unavailable` response.
 
 The `questions` array exposes only the fields needed for later safe rendering:
 `id`, `field_key`, allowlisted `field_type`, plain-text `label`, `required`,
@@ -1228,6 +1237,7 @@ Public flow:
 | Method | Path | Behavior |
 | --- | --- | --- |
 | GET | `/events/{event_id}/registration-form?channel=web` | Return only a publishable `unlisted`/`listed` web form; `disabled` is unavailable even by UUID. |
+| GET | `/web/events/{public_slug}/registration-form` | Resolve a strict canonical or alias slug and return the same publishable form contract. |
 | POST | `/web/registration-intents` | Create/reuse a short-lived intent after validation; do not create a registration or reserve capacity. |
 | POST | `/web/registration-intents/{flow_id}/resend-code` | Rate-limited, enumeration-safe email-code resend. |
 | POST | `/web/registration-intents/{flow_id}/confirm-email` | Consume a hash-only code, resolve identity safely, re-check capacity transactionally, then create the registration. |

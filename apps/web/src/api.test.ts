@@ -24,6 +24,8 @@ function fetchResponse(body: unknown, status = 200, headers: Record<string, stri
 const FLOW_ID = "opaque-flow-credential";
 const REGISTRATION_ID = "77777777-7777-4777-8777-777777777777";
 const EXPIRES_AT = "2026-09-12T18:00:00+03:00";
+const UUID_REFERENCE = { kind: "uuid", value: EVENT_ID } as const;
+const SLUG_REFERENCE = { kind: "slug", value: "shabbat-dlya-druzey" } as const;
 
 function envelope<T>(data: T) {
   return { data, error: null, meta: {} };
@@ -34,7 +36,7 @@ describe("public event API", () => {
 
   it("uses the public GET contract without credentials", async () => {
     vi.mocked(fetch).mockImplementation(() => fetchResponse({ data: eventResponse(), error: null, meta: {} }));
-    await getWebEventRegistrationForm(EVENT_ID);
+    await getWebEventRegistrationForm(UUID_REFERENCE);
     expect(fetch).toHaveBeenCalledWith(
       `/api/events/${EVENT_ID}/registration-form?channel=web`,
       expect.objectContaining({
@@ -45,21 +47,30 @@ describe("public event API", () => {
     );
   });
 
+  it("uses the slug endpoint without credentials", async () => {
+    vi.mocked(fetch).mockImplementation(() => fetchResponse(envelope(eventResponse())));
+    await getWebEventRegistrationForm(SLUG_REFERENCE);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/web/events/shabbat-dlya-druzey/registration-form",
+      expect.objectContaining({ method: "GET", credentials: "omit" }),
+    );
+  });
+
   it("rejects incomplete response JSON", async () => {
     vi.mocked(fetch).mockImplementation(() => fetchResponse({ data: { event: { id: EVENT_ID } } }));
-    await expect(getWebEventRegistrationForm(EVENT_ID)).rejects.toBeInstanceOf(PublicApiError);
+    await expect(getWebEventRegistrationForm(UUID_REFERENCE)).rejects.toBeInstanceOf(PublicApiError);
   });
 
   it("rejects a valid data object without the complete API envelope", async () => {
     vi.mocked(fetch).mockImplementation(() => fetchResponse({ data: eventResponse() }));
-    await expect(getWebEventRegistrationForm(EVENT_ID)).rejects.toBeInstanceOf(PublicApiError);
+    await expect(getWebEventRegistrationForm(UUID_REFERENCE)).rejects.toBeInstanceOf(PublicApiError);
   });
 
   it("rejects response data belonging to a different event", async () => {
     const data = eventResponse();
     data.event.id = "77777777-7777-4777-8777-777777777777";
     vi.mocked(fetch).mockImplementation(() => fetchResponse({ data, error: null, meta: {} }));
-    await expect(getWebEventRegistrationForm(EVENT_ID)).rejects.toBeInstanceOf(PublicApiError);
+    await expect(getWebEventRegistrationForm(UUID_REFERENCE)).rejects.toBeInstanceOf(PublicApiError);
   });
 
   it.each([
@@ -80,7 +91,7 @@ describe("public event API", () => {
     const data = responseWithQuestionnaire();
     mutate(data);
     vi.mocked(fetch).mockImplementation(() => fetchResponse(envelope(data)));
-    await expect(getWebEventRegistrationForm(EVENT_ID)).rejects.toBeInstanceOf(PublicApiError);
+    await expect(getWebEventRegistrationForm(UUID_REFERENCE)).rejects.toBeInstanceOf(PublicApiError);
   });
 
   it.each([
@@ -115,7 +126,7 @@ describe("public event API", () => {
     if (!consent) throw new Error("Missing consent fixture");
     consent.published_url = publishedUrl;
     vi.mocked(fetch).mockImplementation(() => fetchResponse({ data, error: null, meta: {} }));
-    await expect(getWebEventRegistrationForm(EVENT_ID)).resolves.toEqual(data);
+    await expect(getWebEventRegistrationForm(UUID_REFERENCE)).resolves.toEqual(data);
   });
 
   it("rejects a response with an unsafe consent URL", async () => {
@@ -124,7 +135,7 @@ describe("public event API", () => {
     if (!consent) throw new Error("Missing consent fixture");
     consent.published_url = "javascript:alert(1)";
     vi.mocked(fetch).mockImplementation(() => fetchResponse({ data, error: null, meta: {} }));
-    await expect(getWebEventRegistrationForm(EVENT_ID)).rejects.toBeInstanceOf(PublicApiError);
+    await expect(getWebEventRegistrationForm(UUID_REFERENCE)).rejects.toBeInstanceOf(PublicApiError);
   });
 
   it("rejects a response with an unsafe privacy URL", async () => {
@@ -133,16 +144,38 @@ describe("public event API", () => {
     if (!privacy) throw new Error("Missing privacy fixture");
     privacy.published_url = "data:text/html,unsafe";
     vi.mocked(fetch).mockImplementation(() => fetchResponse({ data, error: null, meta: {} }));
-    await expect(getWebEventRegistrationForm(EVENT_ID)).rejects.toBeInstanceOf(PublicApiError);
+    await expect(getWebEventRegistrationForm(UUID_REFERENCE)).rejects.toBeInstanceOf(PublicApiError);
   });
 
   it("normalizes an unsafe optional image URL to null", async () => {
     const data = eventResponse();
     data.event.image_url = "file:///tmp/event.jpg";
     vi.mocked(fetch).mockImplementation(() => fetchResponse({ data, error: null, meta: {} }));
-    await expect(getWebEventRegistrationForm(EVENT_ID)).resolves.toMatchObject({
+    await expect(getWebEventRegistrationForm(UUID_REFERENCE)).resolves.toMatchObject({
       event: { image_url: null },
     });
+  });
+
+  it.each([
+    "https://example.invalid/events/shabbat",
+    "//example.invalid/events/shabbat",
+    "/events/shabbat?source=invite",
+    "/events/shabbat#details",
+    "/events/shabbat/extra",
+    "/events/Shabbat",
+    "/events/shabbat\\extra",
+  ])("rejects malformed canonical_public_path %s", async (canonicalPath) => {
+    const data = eventResponse();
+    data.canonical_public_path = canonicalPath;
+    vi.mocked(fetch).mockImplementation(() => fetchResponse(envelope(data)));
+    await expect(getWebEventRegistrationForm(SLUG_REFERENCE)).rejects.toBeInstanceOf(PublicApiError);
+  });
+
+  it.each([null, "false", 0, {}])("strictly rejects resolved_from_alias=%o", async (resolvedFromAlias) => {
+    const data = eventResponse() as unknown as Record<string, unknown>;
+    data.resolved_from_alias = resolvedFromAlias;
+    vi.mocked(fetch).mockImplementation(() => fetchResponse(envelope(data)));
+    await expect(getWebEventRegistrationForm(SLUG_REFERENCE)).rejects.toBeInstanceOf(PublicApiError);
   });
 
   it("validates intent, resend, status, and confirm response envelopes at runtime", async () => {

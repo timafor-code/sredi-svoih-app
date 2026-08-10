@@ -246,6 +246,8 @@ class WebRegistrationLegalDocumentResponse(BaseModel):
 
 
 class WebEventRegistrationFormResponse(BaseModel):
+    canonical_public_path: str
+    resolved_from_alias: bool
     event: WebRegistrationEventResponse
     registration_state: WebRegistrationState
     occurrences: list[WebRegistrationOccurrenceResponse]

@@ -107,6 +107,8 @@ export type WebQuestionnaireField = {
 };
 
 export type WebEventRegistrationFormResponse = {
+  canonical_public_path: string;
+  resolved_from_alias: boolean;
   event: WebRegistrationEvent;
   registration_state: WebRegistrationState;
   occurrences: WebRegistrationOccurrence[];

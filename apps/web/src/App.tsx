@@ -25,7 +25,11 @@ import {
   type QuestionnaireValues,
   validateQuestionnaire,
 } from "./questionnaire";
-import { parseRoute, replaceOccurrenceQuery } from "./route";
+import {
+  parseRoute,
+  replaceCanonicalEventPath,
+  replaceOccurrenceQuery,
+} from "./route";
 import type {
   AccountChoice,
   AccountNextStep,
@@ -116,11 +120,11 @@ const STATUS_LABELS: Record<WebRegistrationState, string> = {
 };
 
 type PageState =
-  | { kind: "loading"; eventId: string | null }
-  | { kind: "available"; eventId: string; data: WebEventRegistrationFormResponse }
-  | { kind: "registration_unavailable"; eventId: string }
-  | { kind: "network_error"; eventId: string }
-  | { kind: "server_error"; eventId: string };
+  | { kind: "loading"; routeKey: string | null }
+  | { kind: "available"; routeKey: string; data: WebEventRegistrationFormResponse }
+  | { kind: "registration_unavailable"; routeKey: string }
+  | { kind: "network_error"; routeKey: string }
+  | { kind: "server_error"; routeKey: string };
 
 function BrandHeader(): ReactNode {
   return (
@@ -1165,13 +1169,18 @@ function EventPage({ data, requestedOccurrenceId }: {
 }
 
 export default function App(): ReactNode {
-  const [, setLocationVersion] = useState(0);
-  const route = parseRoute(window.location.pathname, window.location.search);
+  const [locationVersion, setLocationVersion] = useState(0);
+  const route = useMemo(
+    () => parseRoute(window.location.pathname, window.location.search),
+    [locationVersion],
+  );
+  const routeKey = route.kind === "invalid" ? null : `${route.kind}:${route.value}`;
   const [page, setPage] = useState<PageState>({
     kind: "loading",
-    eventId: route.kind === "event" ? route.eventId : null,
+    routeKey,
   });
   const [attempt, setAttempt] = useState(0);
+  const skipCanonicalRouteFetch = useRef<string | null>(null);
 
   useEffect(() => {
     const handlePopState = () => setLocationVersion((value) => value + 1);
@@ -1180,32 +1189,52 @@ export default function App(): ReactNode {
   }, []);
 
   useEffect(() => {
+    if (route.kind === "invalid") {
+      document.title = DEFAULT_TITLE;
+      return;
+    }
+    if (skipCanonicalRouteFetch.current === routeKey) {
+      skipCanonicalRouteFetch.current = null;
+      return;
+    }
     document.title = DEFAULT_TITLE;
-    if (route.kind === "invalid") return;
     const controller = new AbortController();
-    setPage({ kind: "loading", eventId: route.eventId });
-    getWebEventRegistrationForm(route.eventId, controller.signal)
+    const requestRouteKey = `${route.kind}:${route.value}`;
+    setPage({ kind: "loading", routeKey: requestRouteKey });
+    getWebEventRegistrationForm(route, controller.signal)
       .then((data) => {
+        const canonicalRouteKey = `slug:${data.canonical_public_path.slice("/events/".length)}`;
+        const replaced = replaceCanonicalEventPath(
+          data.canonical_public_path,
+          route.requestedOccurrenceId,
+          data.occurrences.map((occurrence) => occurrence.id),
+        );
+        if (replaced) {
+          if (canonicalRouteKey !== requestRouteKey) {
+            skipCanonicalRouteFetch.current = canonicalRouteKey;
+          }
+          setLocationVersion((value) => value + 1);
+        }
         document.title = `${data.event.title} — Среди Своих`;
-        setPage({ kind: "available", eventId: route.eventId, data });
+        setPage({ kind: "available", routeKey: canonicalRouteKey, data });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         if (error instanceof RegistrationUnavailableError) {
-          setPage({ kind: "registration_unavailable", eventId: route.eventId });
+          setPage({ kind: "registration_unavailable", routeKey: requestRouteKey });
         } else if (error instanceof PublicApiError) {
-          setPage({ kind: "server_error", eventId: route.eventId });
+          setPage({ kind: "server_error", routeKey: requestRouteKey });
         } else {
-          setPage({ kind: "network_error", eventId: route.eventId });
+          setPage({ kind: "network_error", routeKey: requestRouteKey });
         }
       });
     return () => controller.abort();
-  }, [route.kind === "event" ? route.eventId : null, attempt]);
+  }, [routeKey, attempt]);
 
   if (route.kind === "invalid") {
     return <StaticStatePage title="Страница не найдена" />;
   }
-  if (page.eventId !== route.eventId) return <LoadingPage />;
+  if (page.routeKey !== routeKey) return <LoadingPage />;
   if (page.kind === "loading") return <LoadingPage />;
   if (page.kind === "registration_unavailable") {
     return (
