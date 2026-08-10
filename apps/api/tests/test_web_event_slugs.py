@@ -594,6 +594,25 @@ class EventPublicSlugIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     },
                 )
 
+        for value in (
+            "admin",
+            "123e4567-e89b-12d3-a456-426614174000",
+            "https://example.invalid/events/slug",
+            "a" * 81,
+        ):
+            with self.subTest(invalid_value=value):
+                response = await self._request(
+                    "POST",
+                    path,
+                    token=self.actor_token,
+                    json={"public_slug": value},
+                )
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(
+                    response.json()["error"]["code"],
+                    "invalid_public_slug",
+                )
+
     async def test_patch_changes_aliases_audits_and_preserves_event_state(self) -> None:
         path = f"/admin/events/{self.event_id}/web-registration"
         new_slug = f"novyy-adres-{self.marker}"
@@ -607,6 +626,7 @@ class EventPublicSlugIntegrationTests(unittest.IsolatedAsyncioTestCase):
         data = changed.json()["data"]
         self.assertEqual(data["public_slug"], new_slug)
         self.assertEqual(data["web_visibility"], "disabled")
+        self.assertNotIn("occurrence_urls", data)
         self.assertEqual(
             data["public_registration_url"],
             f"http://localhost:5174/events/{new_slug}",

@@ -1,12 +1,21 @@
 import { apiClient } from "./apiClient";
-import type { AdminApiEventWebRegistrationResponse } from "../types/api";
 import type {
+  AdminApiEventPublicSlugCheckResponse,
+  AdminApiEventWebRegistrationResponse,
+} from "../types/api";
+import type {
+  AdminEventPublicSlugCheckResult,
   AdminEventWebRegistration,
   UpdateAdminEventWebRegistrationInput,
 } from "../types/events";
 
 type AdminEventWebRegistrationUpdatePayload = {
-  web_visibility: UpdateAdminEventWebRegistrationInput["webVisibility"];
+  web_visibility?: UpdateAdminEventWebRegistrationInput["webVisibility"];
+  public_slug?: string;
+};
+
+type AdminEventPublicSlugCheckPayload = {
+  public_slug: string;
 };
 
 function normalizeAdminEventWebRegistration(
@@ -15,12 +24,8 @@ function normalizeAdminEventWebRegistration(
   return {
     eventId: response.event_id,
     webVisibility: response.web_visibility,
+    publicSlug: response.public_slug,
     publicRegistrationUrl: response.public_registration_url,
-    occurrenceUrls: response.occurrence_urls.map((occurrence) => ({
-      occurrenceId: occurrence.occurrence_id,
-      startsAt: occurrence.starts_at,
-      url: occurrence.url,
-    })),
   };
 }
 
@@ -38,12 +43,42 @@ export async function updateAdminEventWebRegistration(
   eventId: string,
   input: UpdateAdminEventWebRegistrationInput,
 ): Promise<AdminEventWebRegistration> {
+  const payload: AdminEventWebRegistrationUpdatePayload = {};
+  if (input.webVisibility !== undefined) {
+    payload.web_visibility = input.webVisibility;
+  }
+  if (input.publicSlug !== undefined) {
+    payload.public_slug = input.publicSlug;
+  }
+  if (Object.keys(payload).length === 0) {
+    throw new Error("At least one web-registration field is required.");
+  }
+
   const response = await apiClient.patch<
     AdminApiEventWebRegistrationResponse,
     AdminEventWebRegistrationUpdatePayload
-  >(`/admin/events/${encodeURIComponent(eventId)}/web-registration`, {
-    web_visibility: input.webVisibility,
-  });
+  >(`/admin/events/${encodeURIComponent(eventId)}/web-registration`, payload);
 
   return normalizeAdminEventWebRegistration(response);
+}
+
+export async function checkAdminEventPublicSlug(
+  eventId: string,
+  publicSlug: string,
+  signal?: AbortSignal,
+): Promise<AdminEventPublicSlugCheckResult> {
+  const response = await apiClient.post<
+    AdminApiEventPublicSlugCheckResponse,
+    AdminEventPublicSlugCheckPayload
+  >(
+    `/admin/events/${encodeURIComponent(eventId)}/web-registration/check-slug`,
+    { public_slug: publicSlug },
+    { signal },
+  );
+
+  return {
+    normalizedSlug: response.normalized_slug,
+    available: response.available,
+    reason: response.reason,
+  };
 }

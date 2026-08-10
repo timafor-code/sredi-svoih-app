@@ -47,6 +47,7 @@ export {
 } from "./adminRegistrationApiService";
 export { listAdminEventOccurrences as listRegistrationEventOccurrences } from "./adminEventOccurrencesApiService";
 export {
+  checkAdminEventPublicSlug,
   getAdminEventWebRegistration,
   updateAdminEventWebRegistration,
 } from "./adminEventWebRegistrationService";

@@ -417,17 +417,7 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
             body["public_registration_url"],
             f"http://localhost:5174/events/publication-{self.marker}",
         )
-        self.assertEqual(
-            [item["occurrence_id"] for item in body["occurrence_urls"]],
-            [str(item) for item in self.active_occurrence_ids],
-        )
-        self.assertEqual(
-            [item["url"] for item in body["occurrence_urls"]],
-            [
-                f"http://localhost:5174/events/publication-{self.marker}?occurrence={item}"
-                for item in self.active_occurrence_ids
-            ],
-        )
+        self.assertNotIn("occurrence_urls", body)
         serialized = response.text.lower()
         for forbidden in ("registration", "participant", "email", "phone", "profile"):
             if forbidden == "registration":
@@ -450,6 +440,10 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(enabled.status_code, 200)
         self.assertEqual(enabled.json()["data"]["web_visibility"], "unlisted")
+        self.assertEqual(
+            enabled.json()["data"]["public_slug"],
+            f"publication-{self.marker}",
+        )
         repeated = await self._request(
             "PATCH",
             path,

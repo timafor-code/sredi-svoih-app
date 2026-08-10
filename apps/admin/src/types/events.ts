@@ -201,19 +201,20 @@ export type CreateAdminEventInput = AdminEventMutationInput & {
 
 export type UpdateAdminEventInput = Partial<AdminEventMutationInput>;
 
-export type AdminEventOccurrenceUrl = {
-  occurrenceId: string;
-  startsAt: string;
-  url: string;
-};
-
 export type AdminEventWebRegistration = {
   eventId: string;
   webVisibility: AdminEventWebVisibility;
+  publicSlug: string;
   publicRegistrationUrl: string;
-  occurrenceUrls: AdminEventOccurrenceUrl[];
 };
 
 export type UpdateAdminEventWebRegistrationInput = {
-  webVisibility: AdminEventWebVisibilityUpdate;
+  webVisibility?: AdminEventWebVisibilityUpdate;
+  publicSlug?: string;
+};
+
+export type AdminEventPublicSlugCheckResult = {
+  normalizedSlug: string;
+  available: boolean;
+  reason: "public_slug_taken" | null;
 };

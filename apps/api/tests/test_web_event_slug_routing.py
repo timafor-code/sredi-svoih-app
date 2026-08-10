@@ -359,10 +359,7 @@ class WebEventSlugRoutingTests(unittest.IsolatedAsyncioTestCase):
             data["public_registration_url"],
             f"http://localhost:5174/events/{new_slug}",
         )
-        self.assertEqual(
-            data["occurrence_urls"][0]["url"],
-            f"http://localhost:5174/events/{new_slug}?occurrence={self.occurrence_id}",
-        )
+        self.assertNotIn("occurrence_urls", data)
 
         old_canonical = await self._request(
             "GET",
@@ -387,6 +384,11 @@ class WebEventSlugRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(new_canonical.json()["data"]["resolved_from_alias"])
 
         await self._set_event(title="Renamed without changing the public address")
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                occurrence = await session.get(EventOccurrence, self.occurrence_id)
+                assert occurrence is not None
+                occurrence.starts_at += timedelta(days=7)
         current = await self._request(
             "GET",
             f"/admin/events/{self.event_id}/web-registration",

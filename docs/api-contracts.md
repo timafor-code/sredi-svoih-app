@@ -1161,10 +1161,17 @@ the occurrence belongs to the event.
 
 | Method | Path | Behavior |
 | --- | --- | --- |
-| GET | `/admin/events/{event_id}/web-registration` | Authenticated community-scoped read of `event_id`, `web_visibility`, `public_slug`, the canonical slug URL, and deprecated active occurrence URLs ordered by start time and UUID. The URL is returned while disabled. |
-| PATCH | `/admin/events/{event_id}/web-registration` | Row-locked, audited change accepting managed publication fields and canonical `public_slug`; enabling requires `internal_free`. Full URLs and unrelated event fields are rejected. |
+| GET | `/admin/events/{event_id}/web-registration` | Authenticated community-scoped read of `event_id`, `web_visibility`, `public_slug`, and authoritative canonical `public_registration_url`. The URL is returned while disabled; deprecated `occurrence_urls` is no longer returned. |
+| POST | `/admin/events/{event_id}/web-registration/check-slug` | Authenticated community-scoped normalization and exact canonical/alias availability check. Returns `normalized_slug`, `available`, and nullable `public_slug_taken`; invalid, reserved, UUID-like, and full-URL values return typed `422 invalid_public_slug`. |
+| PATCH | `/admin/events/{event_id}/web-registration` | Row-locked, audited change accepting independent optional `web_visibility` and canonical `public_slug` fields; an empty payload is rejected and enabling requires `internal_free`. The PATCH is final authority for normalization/collisions, returns the new authoritative URL, keeps the old slug as an alias, and rejects full URLs and unrelated event fields. |
 | GET | `/web/events/{public_slug}/registration-form` | Unauthenticated canonical-or-alias lookup with strict lowercase ASCII path validation and the same minimized publication guards as the UUID endpoint. |
 | GET | `/events/{event_id}/registration-form?channel=web` | Legacy unauthenticated UUID form read for published/public/`internal_free` events whose web visibility is `unlisted` or `listed`. |
+
+The admin suffix editor debounces availability checks by about 400 ms and also
+checks on blur. Preview uses only backend `normalized_slug`. Copy/open use only
+the saved `public_registration_url` from the latest GET/PATCH. Removing
+`occurrence_urls` changes only the admin response and operator UI; public
+`?occurrence={uuid}` routing and occurrence selection remain unchanged.
 
 The public form returns only safe event fields, canonical registration state,
 active occurrences, active free non-donation participation options, exactly one
