@@ -631,6 +631,56 @@ class Event(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class EventPublicSlug(Base):
+    __tablename__ = "event_public_slugs"
+    __table_args__ = (
+        CheckConstraint(
+            (
+                "slug = lower(slug) AND length(slug) BETWEEN 2 AND 80 AND "
+                "slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'"
+            ),
+            name="event_public_slugs_format_check",
+        ),
+        CheckConstraint(
+            (
+                "slug !~ "
+                "'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'"
+            ),
+            name="event_public_slugs_not_uuid_check",
+        ),
+        CheckConstraint(
+            (
+                "slug NOT IN ('new', 'admin', 'api', 'auth', 'privacy', "
+                "'support', 'assets', 'static', 'null', 'undefined')"
+            ),
+            name="event_public_slugs_reserved_check",
+        ),
+        Index(
+            "event_public_slugs_lower_slug_key",
+            text("lower(slug)"),
+            unique=True,
+        ),
+        Index(
+            "event_public_slugs_one_canonical_per_event_idx",
+            "event_id",
+            unique=True,
+            postgresql_where=text("is_canonical"),
+        ),
+        Index("event_public_slugs_event_id_idx", "event_id"),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    event_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    slug: Mapped[str] = mapped_column(Text, nullable=False)
+    is_canonical: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = timestamptz_now()
+    created_by: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True))
+
+
 class EventRegistrationForm(Base):
     __tablename__ = "event_registration_forms"
     __table_args__ = (

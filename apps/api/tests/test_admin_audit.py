@@ -203,6 +203,13 @@ class AdminEventAuditTests(unittest.IsolatedAsyncioTestCase):
                             old_state="listed",
                             new_state="disabled",
                         ),
+                        AdminEventAuditEntry(
+                            actor_user_id=self.actor_user_id,
+                            event_id=self.event_id,
+                            action=service.EVENT_PUBLIC_SLUG_CHANGED,
+                            old_state="old-event-slug",
+                            new_state="new-event-slug",
+                        ),
                     ],
                 )
                 await session.flush()
@@ -235,6 +242,20 @@ class AdminEventAuditTests(unittest.IsolatedAsyncioTestCase):
                 action=service.EVENT_WEB_VISIBILITY_CHANGED,
                 old_state="unlisted",
                 new_state="unlisted",
+            ),
+            AdminEventAuditEntry(
+                actor_user_id=self.actor_user_id,
+                event_id=self.event_id,
+                action=service.EVENT_PUBLIC_SLUG_CHANGED,
+                old_state="invalid slug",
+                new_state="valid-slug",
+            ),
+            AdminEventAuditEntry(
+                actor_user_id=self.actor_user_id,
+                event_id=self.event_id,
+                action=service.EVENT_PUBLIC_SLUG_CHANGED,
+                old_state="same-slug",
+                new_state="same-slug",
             ),
         ]
         for entry in invalid_entries:
@@ -283,6 +304,31 @@ class AdminEventAuditTests(unittest.IsolatedAsyncioTestCase):
                 )
         self.assertIsNone(entry)
         self.assertEqual(await self._count_rows(), 0)
+
+    async def test_slug_change_is_pii_free_and_idempotent(self) -> None:
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                entry = await service.record_event_public_slug_change(
+                    session,
+                    actor_user_id=self.actor_user_id,
+                    event_id=self.event_id,
+                    old_slug="old-public-slug",
+                    new_slug="new-public-slug",
+                )
+                repeated = await service.record_event_public_slug_change(
+                    session,
+                    actor_user_id=self.actor_user_id,
+                    event_id=self.event_id,
+                    old_slug="new-public-slug",
+                    new_slug="new-public-slug",
+                )
+
+        assert entry is not None
+        self.assertEqual(entry.action, service.EVENT_PUBLIC_SLUG_CHANGED)
+        self.assertEqual(entry.old_state, "old-public-slug")
+        self.assertEqual(entry.new_state, "new-public-slug")
+        self.assertIsNone(repeated)
+        self.assertEqual(await self._count_rows(), 1)
 
     async def test_caller_rollback_removes_flushed_row(self) -> None:
         async with AsyncSessionLocal() as session:

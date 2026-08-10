@@ -15,15 +15,27 @@ class AdminEventAuditEntry(Base):
     __tablename__ = "admin_event_audit_entries"
     __table_args__ = (
         CheckConstraint(
-            "action = 'event_web_visibility_changed'",
+            "action IN ('event_web_visibility_changed', 'event_public_slug_changed')",
             name="admin_event_audit_entries_action_check",
         ),
         CheckConstraint(
-            "old_state IN ('disabled', 'unlisted', 'listed')",
+            (
+                "(action = 'event_web_visibility_changed' AND "
+                "old_state IN ('disabled', 'unlisted', 'listed')) OR "
+                "(action = 'event_public_slug_changed' AND "
+                "length(old_state) BETWEEN 2 AND 80 AND "
+                "old_state ~ '^[a-z0-9]+(-[a-z0-9]+)*$')"
+            ),
             name="admin_event_audit_entries_old_state_check",
         ),
         CheckConstraint(
-            "new_state IN ('disabled', 'unlisted', 'listed')",
+            (
+                "(action = 'event_web_visibility_changed' AND "
+                "new_state IN ('disabled', 'unlisted', 'listed')) OR "
+                "(action = 'event_public_slug_changed' AND "
+                "length(new_state) BETWEEN 2 AND 80 AND "
+                "new_state ~ '^[a-z0-9]+(-[a-z0-9]+)*$')"
+            ),
             name="admin_event_audit_entries_new_state_check",
         ),
         CheckConstraint(

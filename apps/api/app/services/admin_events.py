@@ -36,11 +36,23 @@ from app.schemas.admin_events import (
     AdminEventParticipationOptionsReplaceRequest,
     AdminOptionCapacityUnitMappingResponse,
     AdminEventUpdateRequest,
+    AdminEventPublicSlugCheckResponse,
     AdminEventWebRegistrationResponse,
     AdminEventWebRegistrationUpdateRequest,
 )
-from app.services.admin_audit import record_event_web_visibility_change
+from app.services.admin_audit import (
+    record_event_public_slug_change,
+    record_event_web_visibility_change,
+)
 from app.services.authorization import ACTIVE_STATUS, EVENT_MANAGER_ROLES
+from app.services.event_public_slugs import (
+    InvalidPublicSlugError,
+    PublicSlugTakenError,
+    assign_automatic_public_slug,
+    change_canonical_public_slug,
+    check_public_slug_availability,
+    get_canonical_public_slug,
+)
 from app.services.events import (
     build_public_event_url,
     decode_events_cursor,
@@ -112,6 +124,25 @@ def _validation_error(message: str) -> HTTPException:
 
 def _conflict(message: str) -> HTTPException:
     return _error(http_status.HTTP_409_CONFLICT, "conflict", message)
+
+
+def _invalid_public_slug(error: InvalidPublicSlugError) -> HTTPException:
+    return HTTPException(
+        status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail={
+            "code": "invalid_public_slug",
+            "message": "Public slug is invalid",
+            "normalized_slug": error.normalized_slug,
+        },
+    )
+
+
+def _public_slug_taken() -> HTTPException:
+    return _error(
+        http_status.HTTP_409_CONFLICT,
+        "public_slug_taken",
+        "Public slug is already taken",
+    )
 
 
 async def resolve_manageable_community_ids(
@@ -348,6 +379,12 @@ async def create_admin_event(
         )
         session.add(event)
         await session.flush()
+        await assign_automatic_public_slug(
+            session,
+            event_id=event.id,
+            title=event.title,
+            created_by=current_user.id,
+        )
         await session.refresh(event)
         return event
 
@@ -474,6 +511,9 @@ async def _build_admin_event_web_registration_response(
     event: Event,
 ) -> AdminEventWebRegistrationResponse:
     base_url = get_settings().public_web_base_url
+    public_slug = await get_canonical_public_slug(session, event.id)
+    if public_slug is None:
+        raise RuntimeError("Event has no canonical public slug")
     occurrences = list(
         await session.scalars(
             select(EventOccurrence)
@@ -487,6 +527,7 @@ async def _build_admin_event_web_registration_response(
     return AdminEventWebRegistrationResponse(
         event_id=event.id,
         web_visibility=event.web_visibility,
+        public_slug=public_slug.slug,
         public_registration_url=build_public_event_url(base_url, event.id),
         occurrence_urls=[
             AdminEventOccurrenceUrlResponse(
@@ -508,6 +549,29 @@ async def get_admin_event_web_registration(
     return await _build_admin_event_web_registration_response(session, event)
 
 
+async def check_admin_event_public_slug(
+    session: AsyncSession,
+    current_user: AppUser,
+    event_id: UUID,
+    value: str,
+) -> AdminEventPublicSlugCheckResponse:
+    await get_admin_event(session, current_user, event_id)
+    try:
+        normalized_slug, available = await check_public_slug_availability(
+            session,
+            event_id=event_id,
+            value=value,
+        )
+    except InvalidPublicSlugError as error:
+        raise _invalid_public_slug(error) from error
+
+    return AdminEventPublicSlugCheckResponse(
+        normalized_slug=normalized_slug,
+        available=available,
+        reason=None if available else "public_slug_taken",
+    )
+
+
 async def update_admin_event_web_registration(
     session: AsyncSession,
     current_user: AppUser,
@@ -526,25 +590,63 @@ async def update_admin_event_web_registration(
             event_id=event_id,
             manageable_community_ids=manageable_community_ids,
         )
-        old_visibility = event.web_visibility
-        new_visibility = payload.web_visibility
-        if new_visibility == "unlisted" and event.registration_mode != "internal_free":
-            raise _validation_error(
-                "Web registration requires registration_mode=internal_free",
-            )
+        if "web_visibility" in payload.model_fields_set:
+            if payload.web_visibility is None:
+                raise _validation_error("web_visibility must not be null")
+            old_visibility = event.web_visibility
+            new_visibility = payload.web_visibility
+            if (
+                new_visibility == "unlisted"
+                and event.registration_mode != "internal_free"
+            ):
+                raise _validation_error(
+                    "Web registration requires registration_mode=internal_free",
+                )
 
-        if old_visibility != new_visibility:
+            if old_visibility != new_visibility:
+                now = _now()
+                event.web_visibility = new_visibility
+                event.updated_by = current_user.id
+                event.updated_at = now
+                await record_event_web_visibility_change(
+                    session,
+                    actor_user_id=current_user.id,
+                    event_id=event.id,
+                    old_visibility=old_visibility,
+                    new_visibility=new_visibility,
+                )
+
+        if "public_slug" in payload.model_fields_set:
+            if payload.public_slug is None:
+                raise _invalid_public_slug(
+                    InvalidPublicSlugError("null", normalized_slug=None),
+                )
+            try:
+                new_slug_row, old_slug, changed = await change_canonical_public_slug(
+                    session,
+                    event_id=event.id,
+                    value=payload.public_slug,
+                    created_by=current_user.id,
+                )
+            except InvalidPublicSlugError as error:
+                raise _invalid_public_slug(error) from error
+            except PublicSlugTakenError as error:
+                raise _public_slug_taken() from error
+
+            if changed:
+                event.updated_by = current_user.id
+                event.updated_at = _now()
+                await record_event_public_slug_change(
+                    session,
+                    actor_user_id=current_user.id,
+                    event_id=event.id,
+                    old_slug=old_slug,
+                    new_slug=new_slug_row.slug,
+                )
+
+        if event in session.dirty:
             now = _now()
-            event.web_visibility = new_visibility
-            event.updated_by = current_user.id
             event.updated_at = now
-            await record_event_web_visibility_change(
-                session,
-                actor_user_id=current_user.id,
-                event_id=event.id,
-                old_visibility=old_visibility,
-                new_visibility=new_visibility,
-            )
             await session.flush()
 
     return await _build_admin_event_web_registration_response(session, event)

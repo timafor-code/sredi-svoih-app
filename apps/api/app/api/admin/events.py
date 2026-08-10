@@ -20,6 +20,8 @@ from app.schemas.admin_events import (
     AdminEventOccurrencesReplaceRequest,
     AdminEventParticipationOptionResponse,
     AdminEventParticipationOptionsReplaceRequest,
+    AdminEventPublicSlugCheckRequest,
+    AdminEventPublicSlugCheckResponse,
     AdminEventResponse,
     AdminEventUpdateRequest,
     AdminEventWebRegistrationResponse,
@@ -189,6 +191,25 @@ async def get_admin_event_web_registration(
         event_id,
     )
     return ApiResponse[AdminEventWebRegistrationResponse](data=result)
+
+
+@router.post(
+    "/events/{event_id}/web-registration/check-slug",
+    response_model=ApiResponse[AdminEventPublicSlugCheckResponse],
+)
+async def check_admin_event_public_slug(
+    event_id: UUID,
+    payload: AdminEventPublicSlugCheckRequest,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[AdminEventPublicSlugCheckResponse]:
+    result = await admin_events_service.check_admin_event_public_slug(
+        session,
+        current_user,
+        event_id,
+        payload.public_slug,
+    )
+    return ApiResponse[AdminEventPublicSlugCheckResponse](data=result)
 
 
 @router.patch(
