@@ -7,6 +7,7 @@ import {
   OCCURRENCE_ONE_ID,
   OCCURRENCE_TWO_ID,
   OPTION_ID,
+  PUBLIC_SLUG,
   QUESTIONNAIRE_FORM_ID,
   QUESTION_IDS,
   eventResponse,
@@ -60,9 +61,9 @@ function successfulFetch(data = eventResponse()) {
   vi.mocked(fetch).mockImplementation(() => response({ data, error: null, meta: {} }));
 }
 
-async function renderEvent(data = eventResponse(), search = "") {
+async function renderEvent(data = eventResponse(), search = "", pathValue = EVENT_ID) {
   successfulFetch(data);
-  window.history.replaceState(null, "", `/events/${EVENT_ID}${search}`);
+  window.history.replaceState(null, "", `/events/${pathValue}${search}`);
   render(<App />);
   await screen.findByRole("heading", { level: 1, name: data.event.title });
 }
@@ -111,7 +112,7 @@ describe("public event page", () => {
   });
 
   it("renders not found and makes no request for malformed and unknown routes", () => {
-    for (const path of ["/events/not-a-uuid", "/events", "/login"]) {
+    for (const path of ["/events/Shabbat", "/events/Шабат", "/events/bad--slug", "/events/shabbat/extra", "/events", "/login"]) {
       window.history.replaceState(null, "", path);
       const { unmount } = render(<App />);
       expect(screen.getByRole("heading", { level: 1, name: "Страница не найдена" })).toBeInTheDocument();
@@ -134,6 +135,38 @@ describe("public event page", () => {
     expect(screen.getByText("Общинный центр, Москва")).toBeInTheDocument();
     expect(screen.getByText(/Полное описание/)).toHaveClass("description");
     expect(document.title).toBe("Шаббат для друзей — Среди Своих");
+    expect(window.location.pathname).toBe(`/events/${PUBLIC_SLUG}`);
+  });
+
+  it("keeps an already canonical slug path without replaceState", async () => {
+    const replaceSpy = vi.spyOn(window.history, "replaceState");
+    await renderEvent(eventResponse(), "", PUBLIC_SLUG);
+    expect(replaceSpy).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("replaces an alias with the canonical path without a second fetch", async () => {
+    const data = eventResponse();
+    data.resolved_from_alias = true;
+    await renderEvent(data, "", "staryy-adres");
+    expect(window.location.pathname).toBe(`/events/${PUBLIC_SLUG}`);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("replaces a legacy UUID with the canonical path without a second fetch", async () => {
+    await renderEvent();
+    expect(window.location.pathname).toBe(`/events/${PUBLIC_SLUG}`);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain(`/events/${EVENT_ID}/registration-form?channel=web`);
+  });
+
+  it("uses the slug endpoint and keeps the same neutral unavailable state", async () => {
+    vi.mocked(fetch).mockImplementation(() => response({ detail: "hidden" }, 404));
+    window.history.replaceState(null, "", "/events/unknown-event");
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Страница мероприятия недоступна" })).toBeInTheDocument();
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toBe("/api/web/events/unknown-event/registration-form");
+    expect(document.body).not.toHaveTextContent("hidden");
   });
 
   it("uses a branded image fallback when an event image is missing or broken", async () => {
@@ -231,20 +264,29 @@ describe("registration state and occurrences", () => {
     await renderEvent(responseWithOccurrences(), `?occurrence=${OCCURRENCE_TWO_ID}`);
     expect(screen.getByRole("radio", { name: /Суббота/ })).toBeChecked();
     expect(screen.getByLabelText("Имя")).toBeInTheDocument();
+    expect(window.location.pathname).toBe(`/events/${PUBLIC_SLUG}`);
+    expect(window.location.search).toBe(`?occurrence=${OCCURRENCE_TWO_ID}`);
   });
 
   it("ignores an occurrence outside the returned list", async () => {
     await renderEvent(responseWithOccurrences(), "?occurrence=77777777-7777-4777-8777-777777777777");
     expect(screen.getByRole("radio", { name: /Пятница/ })).toBeChecked();
     expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+    expect(window.location.search).toBe("");
+  });
+
+  it("removes an invalid occurrence query from the canonical URL", async () => {
+    await renderEvent(responseWithOccurrences(), "?occurrence=not-a-uuid&source=invite");
+    expect(window.location.pathname).toBe(`/events/${PUBLIC_SLUG}`);
+    expect(window.location.search).toBe("");
   });
 
   it("updates only occurrence in the query without reloading", async () => {
     const user = userEvent.setup();
     await renderEvent(responseWithOccurrences(), "?source=invite");
     await user.click(screen.getByRole("radio", { name: /Суббота/ }));
-    expect(window.location.pathname).toBe(`/events/${EVENT_ID}`);
-    expect(new URLSearchParams(window.location.search).get("source")).toBe("invite");
+    expect(window.location.pathname).toBe(`/events/${PUBLIC_SLUG}`);
+    expect(new URLSearchParams(window.location.search).get("source")).toBeNull();
     expect(new URLSearchParams(window.location.search).get("occurrence")).toBe(OCCURRENCE_TWO_ID);
     expect(fetch).toHaveBeenCalledTimes(1);
   });

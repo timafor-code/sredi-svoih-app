@@ -17,6 +17,7 @@ from app.db.models.core import (
     CommunityMembership,
     Event,
     EventCategory,
+    EventPublicSlug,
     EventRegistration,
     EventRegistrationForm,
     EventRegistrationFormField,
@@ -160,6 +161,23 @@ class EventQuestionnaireTests(unittest.IsolatedAsyncioTestCase):
                             content_hash=f"sha256:questionnaire-{self.marker}",
                             published_url="https://example.invalid/questionnaire-consent",
                             effective_at=self.now - timedelta(hours=1),
+                        ),
+                    ],
+                )
+                await session.flush()
+                session.add_all(
+                    [
+                        EventPublicSlug(
+                            event_id=self.event_id,
+                            slug=f"questionnaire-{self.marker}",
+                            is_canonical=True,
+                            created_by=self.admin_id,
+                        ),
+                        EventPublicSlug(
+                            event_id=self.foreign_event_id,
+                            slug=f"questionnaire-foreign-{self.marker}",
+                            is_canonical=True,
+                            created_by=self.foreign_admin_id,
                         ),
                     ],
                 )

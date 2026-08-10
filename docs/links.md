@@ -5,9 +5,9 @@
 - Статус: утверждаемая техническая спецификация для серии PR
 - Репозиторий: `timafor-code/sredi-svoih-app`
 - Базовая ветка: `main`
-- Проверенный commit `main`: `7194c924aad377d7c729eaf12ffe9b7f3bdadb0b`
-- Последний объединённый PR: #372 `test/mobile-guest-release-guards`
-- Предыдущие связанные PR: #371, #370, #354, #342, #340
+- Проверенный commit `main`: `2adb81253ac3fe7c3f4b78f536a6597375699e45`
+- Последний объединённый PR: #373 `feature/api-web-event-slug-foundation`
+- Предыдущие связанные PR: #372, #371, #370, #356, #354, #342, #341, #340
 
 ## 1. Назначение документа
 
@@ -19,13 +19,14 @@
 
 Сейчас реализовано:
 
-- каноническая ссылка имеет вид `/events/{event_uuid}`;
+- каноническая ссылка имеет вид `/events/{public_slug}`;
 - абсолютный адрес вычисляет FastAPI из backend-only `PUBLIC_WEB_BASE_URL`;
 - полный URL не хранится в PostgreSQL и не вводится в браузере;
 - web-admin показывает read-only `public_registration_url`;
-- web-admin отдельно показывает ссылки `/events/{event_uuid}?occurrence={occurrence_uuid}` для каждой даты;
-- `apps/web/src/route.ts` принимает после `/events/` только UUID;
-- публичная форма загружается через `GET /events/{event_id}/registration-form?channel=web`;
+- deprecated `occurrence_urls` пока возвращаются как `/events/{public_slug}?occurrence={occurrence_uuid}` и остаются видимыми в неизменённом web-admin;
+- `apps/web/src/route.ts` различает canonical/alias slug и legacy UUID;
+- публичная форма загружается через `GET /web/events/{public_slug}/registration-form`, а legacy UUID endpoint сохранён;
+- canonical slug, alias и legacy UUID после успешного ответа используют backend-поле `canonical_public_path`; browser применяет `replaceState` без повторного fetch;
 - `apps/web` уже выводит выбор даты, если occurrences больше одного, но основная страница автоматически выбирает первую дату;
 - модель уже различает `event_kind`, `is_permanent`, parent event и `event_occurrences`;
 - mobile уже различает два продуктовых сценария: выбор даты для многоразового цикла и ближайший occurrence по окну регистрации для Шабата;
@@ -251,11 +252,11 @@ GET /events/{event_id}/registration-form?channel=web
 ```json
 {
   "canonical_public_path": "/events/tsikl-lektsiy-po-istorii",
-  "resolved_from_alias": false,
-  "occurrence_selection_mode": "user_select",
-  "default_occurrence_id": null
+  "resolved_from_alias": false
 }
 ```
+
+`occurrence_selection_mode` и `default_occurrence_id` намеренно относятся к PR 4 и в текущем контракте отсутствуют.
 
 Значения `occurrence_selection_mode`:
 
@@ -382,6 +383,8 @@ Mobile:
 
 ### PR 1 — `feature/api-web-event-slug-foundation`
 
+Статус: завершён, объединён как PR #373.
+
 Цель: каноническая slug/alias модель, backfill, нормализация, автогенерация, admin availability/update contracts и focused backend tests.
 
 На этом этапе UUID URL остаётся текущим `public_registration_url`, чтобы не выдать ссылку на ещё не поддерживаемый frontend route.
@@ -389,6 +392,8 @@ Mobile:
 Не делать: `apps/admin`, `apps/web`, mobile, occurrence UX, production deploy.
 
 ### PR 2 — `feature/public-web-event-slug-routing`
+
+Статус: текущий PR; public slug/alias lookup, UUID compatibility, browser canonicalization и slug-based backend URL реализованы.
 
 Цель: public lookup по canonical/alias slug, legacy UUID compatibility, `apps/web` slug route и атомарное переключение backend-generated `public_registration_url` на slug.
 

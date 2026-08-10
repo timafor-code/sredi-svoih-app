@@ -609,7 +609,7 @@ class EventPublicSlugIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["web_visibility"], "disabled")
         self.assertEqual(
             data["public_registration_url"],
-            f"http://localhost:5174/events/{self.event_id}",
+            f"http://localhost:5174/events/{new_slug}",
         )
 
         async with AsyncSessionLocal() as session:

@@ -15,7 +15,11 @@ import type {
   WebRegistrationResult,
   WebRegistrationState,
 } from "./types";
-import { UUID_PATTERN } from "./route";
+import {
+  isCanonicalPublicPath,
+  type EventRoute,
+  UUID_PATTERN,
+} from "./route";
 
 const REGISTRATION_STATES = new Set<WebRegistrationState>([
   "open",
@@ -301,7 +305,9 @@ export function isWebEventRegistrationFormResponse(
 ): value is WebEventRegistrationFormResponse {
   if (!isRecord(value) || !isRecord(value.event)) return false;
   const event = value.event;
-  return isUuid(event.id)
+  return isCanonicalPublicPath(value.canonical_public_path)
+    && typeof value.resolved_from_alias === "boolean"
+    && isUuid(event.id)
     && typeof event.title === "string"
     && isNullableString(event.subtitle)
     && isNullableString(event.description)
@@ -348,11 +354,14 @@ function normalizedBaseUrl(): string {
 }
 
 export async function getWebEventRegistrationForm(
-  eventId: string,
+  reference: Pick<EventRoute, "kind" | "value">,
   signal?: AbortSignal,
 ): Promise<WebEventRegistrationFormResponse> {
+  const path = reference.kind === "uuid"
+    ? `/events/${encodeURIComponent(reference.value)}/registration-form?channel=web`
+    : `/web/events/${encodeURIComponent(reference.value)}/registration-form`;
   const response = await fetch(
-    `${normalizedBaseUrl()}/events/${encodeURIComponent(eventId)}/registration-form?channel=web`,
+    `${normalizedBaseUrl()}${path}`,
     {
       method: "GET",
       headers: { Accept: "application/json" },
@@ -380,7 +389,8 @@ export async function getWebEventRegistrationForm(
     || body.error !== null
     || !isRecord(body.meta)
     || !isWebEventRegistrationFormResponse(body.data)
-    || body.data.event.id.toLowerCase() !== eventId.toLowerCase()
+    || (reference.kind === "uuid"
+      && body.data.event.id.toLowerCase() !== reference.value.toLowerCase())
   ) {
     throw new PublicApiError();
   }

@@ -19,6 +19,7 @@ from app.db.models.core import (
     EventCategory,
     EventOccurrence,
     EventParticipationOption,
+    EventPublicSlug,
     EventRegistration,
     EventRegistrationForm,
     EventRegistrationFormField,
@@ -36,6 +37,11 @@ from app.schemas.events import (
     WebRegistrationParticipationOptionResponse,
 )
 from app.services.authorization import ACTIVE_STATUS
+from app.services.event_public_slugs import (
+    InvalidPublicSlugError,
+    get_canonical_public_slug,
+    validate_public_path_slug,
+)
 
 PUBLISHED_STATUS = "published"
 PUBLIC_VISIBILITY = "public"
@@ -75,11 +81,11 @@ class WebRegistrationUnavailableError(HTTPException):
 
 def build_public_event_url(
     base_url: str,
-    event_id: UUID,
+    public_slug: str,
     occurrence_id: UUID | None = None,
 ) -> str:
     parsed = urlsplit(base_url)
-    path = f"{parsed.path.rstrip('/')}/events/{event_id}"
+    path = f"{parsed.path.rstrip('/')}/events/{public_slug}"
     query = urlencode({"occurrence": str(occurrence_id)}) if occurrence_id else ""
     return urlunsplit((parsed.scheme, parsed.netloc, path, query, ""))
 
@@ -169,6 +175,51 @@ async def get_web_registration_form(
     event_id: UUID,
 ) -> WebEventRegistrationFormResponse:
     event = await require_web_registration_event(session, event_id)
+    canonical_slug = await get_canonical_public_slug(session, event.id)
+    if canonical_slug is None:
+        raise WebRegistrationUnavailableError()
+    return await _build_web_registration_form(
+        session,
+        event,
+        canonical_slug=canonical_slug.slug,
+        resolved_from_alias=False,
+    )
+
+
+async def get_web_registration_form_by_slug(
+    session: AsyncSession,
+    public_slug: str,
+) -> WebEventRegistrationFormResponse:
+    try:
+        validate_public_path_slug(public_slug)
+    except InvalidPublicSlugError as error:
+        raise WebRegistrationUnavailableError() from error
+
+    resolved_slug = await session.scalar(
+        select(EventPublicSlug).where(EventPublicSlug.slug == public_slug),
+    )
+    if resolved_slug is None:
+        raise WebRegistrationUnavailableError()
+
+    event = await require_web_registration_event(session, resolved_slug.event_id)
+    canonical_slug = await get_canonical_public_slug(session, event.id)
+    if canonical_slug is None:
+        raise WebRegistrationUnavailableError()
+    return await _build_web_registration_form(
+        session,
+        event,
+        canonical_slug=canonical_slug.slug,
+        resolved_from_alias=not resolved_slug.is_canonical,
+    )
+
+
+async def _build_web_registration_form(
+    session: AsyncSession,
+    event: Event,
+    *,
+    canonical_slug: str,
+    resolved_from_alias: bool,
+) -> WebEventRegistrationFormResponse:
     now = datetime.now(UTC)
     occurrences = list(
         await session.scalars(
@@ -306,6 +357,8 @@ async def get_web_registration_form(
         )
 
     return WebEventRegistrationFormResponse(
+        canonical_public_path=f"/events/{canonical_slug}",
+        resolved_from_alias=resolved_from_alias,
         event=WebRegistrationEventResponse.model_validate(event),
         registration_state=registration_state,
         occurrences=occurrence_responses,

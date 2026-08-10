@@ -1,34 +1,104 @@
 import { describe, expect, it, vi } from "vitest";
-import { parseRoute, replaceOccurrenceQuery } from "./route";
-import { EVENT_ID, OCCURRENCE_ONE_ID } from "./test/fixtures";
+import {
+  isCanonicalPublicPath,
+  parseRoute,
+  replaceCanonicalEventPath,
+  replaceOccurrenceQuery,
+} from "./route";
+import {
+  EVENT_ID,
+  OCCURRENCE_ONE_ID,
+  OCCURRENCE_TWO_ID,
+} from "./test/fixtures";
 
 describe("public event route", () => {
-  it("accepts only an exact UUID event route", () => {
-    expect(parseRoute(`/events/${EVENT_ID}`, "")).toEqual({
-      kind: "event",
-      eventId: EVENT_ID,
+  it("distinguishes canonical, alias-format, and legacy UUID routes", () => {
+    expect(parseRoute("/events/shabbat-dlya-druzey", "")).toEqual({
+      kind: "slug",
+      value: "shabbat-dlya-druzey",
       requestedOccurrenceId: null,
     });
-    expect(parseRoute(`/events/${EVENT_ID}/register`, "")).toEqual({ kind: "invalid" });
-    expect(parseRoute("/events", "")).toEqual({ kind: "invalid" });
+    expect(parseRoute("/events/staryy-adres", "")).toMatchObject({
+      kind: "slug",
+      value: "staryy-adres",
+    });
+    expect(parseRoute(`/events/${EVENT_ID}`, "")).toEqual({
+      kind: "uuid",
+      value: EVENT_ID,
+      requestedOccurrenceId: null,
+    });
   });
 
-  it("accepts only a UUID occurrence query", () => {
+  it.each([
+    "/events/Shabbat",
+    "/events/Шабат",
+    "/events/bad--slug",
+    "/events/a",
+    `/events/${"a".repeat(81)}`,
+    "/events/shabbat/register",
+    "/events",
+  ])("rejects an unsupported route: %s", (path) => {
+    expect(parseRoute(path, "")).toEqual({ kind: "invalid" });
+  });
+
+  it("preserves only a valid UUID occurrence candidate", () => {
     expect(parseRoute(`/events/${EVENT_ID}`, `?occurrence=${OCCURRENCE_ONE_ID}`)).toMatchObject({
       requestedOccurrenceId: OCCURRENCE_ONE_ID,
     });
-    expect(parseRoute(`/events/${EVENT_ID}`, "?occurrence=not-a-uuid")).toMatchObject({
+    expect(parseRoute("/events/shabbat", "?occurrence=not-a-uuid")).toMatchObject({
       requestedOccurrenceId: null,
     });
   });
 
-  it("changes only the occurrence query parameter", () => {
-    window.history.replaceState(null, "", `/events/${EVENT_ID}?source=invite&occurrence=old#details`);
+  it.each([
+    "/events/shabbat",
+    "/events/tsikl-lektsiy-po-istorii",
+  ])("accepts a safe canonical response path: %s", (path) => {
+    expect(isCanonicalPublicPath(path)).toBe(true);
+  });
+
+  it.each([
+    "https://example.invalid/events/shabbat",
+    "//example.invalid/events/shabbat",
+    "/events/shabbat?occurrence=x",
+    "/events/shabbat#details",
+    "/events/shabbat/extra",
+    "/events/Shabbat",
+    "/events/admin",
+    "/events/123e4567-e89b-12d3-a456-426614174000",
+    "/events/shabbat\\extra",
+  ])("rejects an unsafe canonical response path: %s", (path) => {
+    expect(isCanonicalPublicPath(path)).toBe(false);
+  });
+
+  it("canonicalizes once, keeps a returned occurrence, drops unknown query, and preserves hash", () => {
+    window.history.replaceState(null, "", `/events/old-alias?source=invite&occurrence=${OCCURRENCE_ONE_ID}#details`);
     const replaceSpy = vi.spyOn(window.history, "replaceState");
-    replaceOccurrenceQuery(OCCURRENCE_ONE_ID);
-    expect(window.location.pathname).toBe(`/events/${EVENT_ID}`);
-    expect(window.location.search).toBe(`?source=invite&occurrence=${OCCURRENCE_ONE_ID}`);
-    expect(window.location.hash).toBe("#details");
+    replaceCanonicalEventPath(
+      "/events/shabbat",
+      OCCURRENCE_ONE_ID,
+      [OCCURRENCE_ONE_ID, OCCURRENCE_TWO_ID],
+    );
+    expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
+      `/events/shabbat?occurrence=${OCCURRENCE_ONE_ID}#details`,
+    );
     expect(replaceSpy).toHaveBeenCalledOnce();
+    replaceCanonicalEventPath("/events/shabbat", OCCURRENCE_ONE_ID, [OCCURRENCE_ONE_ID]);
+    expect(replaceSpy).toHaveBeenCalledOnce();
+  });
+
+  it("removes a missing or foreign occurrence during canonicalization", () => {
+    window.history.replaceState(null, "", `/events/old?occurrence=${OCCURRENCE_TWO_ID}`);
+    replaceCanonicalEventPath("/events/shabbat", OCCURRENCE_TWO_ID, [OCCURRENCE_ONE_ID]);
+    expect(window.location.pathname).toBe("/events/shabbat");
+    expect(window.location.search).toBe("");
+  });
+
+  it("changes only to the selected occurrence query and keeps the fragment", () => {
+    window.history.replaceState(null, "", "/events/shabbat?source=invite#details");
+    replaceOccurrenceQuery(OCCURRENCE_ONE_ID);
+    expect(window.location.pathname).toBe("/events/shabbat");
+    expect(window.location.search).toBe(`?occurrence=${OCCURRENCE_ONE_ID}`);
+    expect(window.location.hash).toBe("#details");
   });
 });

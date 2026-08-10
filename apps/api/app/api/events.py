@@ -109,6 +109,21 @@ async def get_event_registration_form(
 
 
 @router.get(
+    "/web/events/{public_slug:path}/registration-form",
+    response_model=ApiResponse[WebEventRegistrationFormResponse],
+)
+async def get_event_registration_form_by_slug(
+    public_slug: str,
+    session: DbSession,
+) -> ApiResponse[WebEventRegistrationFormResponse]:
+    result = await events_service.get_web_registration_form_by_slug(
+        session,
+        public_slug,
+    )
+    return ApiResponse[WebEventRegistrationFormResponse](data=result)
+
+
+@router.get(
     "/events/{event_id}/occurrences",
     response_model=ApiResponse[list[EventOccurrenceResponse]],
 )

@@ -358,27 +358,27 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
                 await session.flush()
             await session.rollback()
 
-    def test_trusted_base_url_and_single_uuid_builder(self) -> None:
-        event_id = uuid4()
+    def test_trusted_base_url_and_single_slug_builder(self) -> None:
+        public_slug = "trusted-public-slug"
         occurrence_id = uuid4()
         settings = Settings(public_web_base_url="https://example.invalid/base/")
         self.assertEqual(settings.public_web_base_url, "https://example.invalid/base")
         self.assertEqual(
-            events.build_public_event_url(settings.public_web_base_url, event_id),
-            f"https://example.invalid/base/events/{event_id}",
+            events.build_public_event_url(settings.public_web_base_url, public_slug),
+            "https://example.invalid/base/events/trusted-public-slug",
         )
         self.assertEqual(
             events.build_public_event_url(
                 settings.public_web_base_url,
-                event_id,
+                public_slug,
                 occurrence_id,
             ),
-            f"https://example.invalid/base/events/{event_id}?occurrence={occurrence_id}",
+            f"https://example.invalid/base/events/trusted-public-slug?occurrence={occurrence_id}",
         )
-        stable = events.build_public_event_url(settings.public_web_base_url, event_id)
+        stable = events.build_public_event_url(settings.public_web_base_url, public_slug)
         self.assertEqual(
             stable,
-            events.build_public_event_url(settings.public_web_base_url, event_id),
+            events.build_public_event_url(settings.public_web_base_url, public_slug),
         )
         self.assertNotIn("Synthetic", stable)
         self.assertNotIn("@", stable)
@@ -415,11 +415,18 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["public_slug"], f"publication-{self.marker}")
         self.assertEqual(
             body["public_registration_url"],
-            f"http://localhost:5174/events/{self.event_id}",
+            f"http://localhost:5174/events/publication-{self.marker}",
         )
         self.assertEqual(
             [item["occurrence_id"] for item in body["occurrence_urls"]],
             [str(item) for item in self.active_occurrence_ids],
+        )
+        self.assertEqual(
+            [item["url"] for item in body["occurrence_urls"]],
+            [
+                f"http://localhost:5174/events/publication-{self.marker}?occurrence={item}"
+                for item in self.active_occurrence_ids
+            ],
         )
         serialized = response.text.lower()
         for forbidden in ("registration", "participant", "email", "phone", "profile"):
@@ -583,6 +590,11 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
         response = await self._request("GET", path)
         self.assertEqual(response.status_code, 200)
         data = response.json()["data"]
+        self.assertEqual(
+            data["canonical_public_path"],
+            f"/events/publication-{self.marker}",
+        )
+        self.assertFalse(data["resolved_from_alias"])
         self.assertEqual(data["registration_state"], "open")
         self.assertEqual(data["questions"], [])
         self.assertEqual(
