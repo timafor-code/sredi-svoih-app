@@ -18,6 +18,7 @@ import { Logo, OmerPill } from '@/components/ui/BrandHeader';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { SegmentControl } from '@/components/ui/SegmentControl';
+import { appCapabilities } from '@/config/appCapabilities';
 import {
   getEventRegistrationActionTitle,
   isEventRegistrationWindowBlocked,
@@ -39,18 +40,22 @@ import {
 import { colors } from '@/theme/colors';
 import type { EventItem, EventRegistration } from '@/types/event';
 
-const SPECIAL_FILTERS = [
+const ACCOUNT_EVENT_FILTERS = [
   { id: 'all', title: 'Все' },
   { id: 'members_only', title: 'Для участников' },
   { id: 'paid', title: 'Платные' },
   { id: 'free', title: 'Бесплатные' },
 ] as const;
 
+const GUEST_EVENT_FILTERS = ACCOUNT_EVENT_FILTERS.filter(
+  (option) => option.id !== 'members_only',
+);
+
 const CATEGORY_FILTER_PREFIX = 'category:';
 
 const timeFilters = ['Ближайшие', 'Прошедшие'] as const;
 
-type SpecialFilterId = (typeof SPECIAL_FILTERS)[number]['id'];
+type SpecialFilterId = (typeof ACCOUNT_EVENT_FILTERS)[number]['id'];
 type EventFilterId = SpecialFilterId | `${typeof CATEGORY_FILTER_PREFIX}${string}`;
 type EventTimeFilter = (typeof timeFilters)[number];
 
@@ -377,18 +382,36 @@ export default function EventsScreen() {
   const authUser = useAuthStore((state) => state.user);
   const membership = useAuthStore((state) => state.membership);
   const loadSession = useAuthStore((state) => state.loadSession);
+  const effectiveFilter = appCapabilities.isGuestOnly && filter === 'members_only'
+    ? 'all'
+    : filter;
 
   useEffect(() => {
     void loadEvents();
   }, [authUser?.id, loadEvents, membership?.id, membership?.status]);
 
   useEffect(() => {
+    if (!appCapabilities.isAccountMode) {
+      return;
+    }
+
     void loadSession().catch(() => undefined);
   }, [loadSession]);
 
   const eventFilters = useMemo<EventFilterOption[]>(() => {
+    const publicCategorySlugs = new Set(
+      events
+        .filter((event) => event.visibility !== 'members_only')
+        .map((event) => normalizeFilterValue(event.rawCategory)),
+    );
     const categoryChips: EventFilterOption[] = [...categories]
-      .filter((category) => category.isActive)
+      .filter((category) => (
+        category.isActive
+        && (
+          appCapabilities.isAccountMode
+          || publicCategorySlugs.has(normalizeFilterValue(category.slug))
+        )
+      ))
       .sort((first, second) => {
         if (first.sortOrder !== second.sortOrder) {
           return first.sortOrder - second.sortOrder;
@@ -400,17 +423,21 @@ export default function EventsScreen() {
         title: category.title,
       }));
 
+    const specialFilters = appCapabilities.isAccountMode
+      ? ACCOUNT_EVENT_FILTERS
+      : GUEST_EVENT_FILTERS;
+
     return [
-      ...SPECIAL_FILTERS.map((option) => ({ id: option.id as EventFilterId, title: option.title })),
+      ...specialFilters.map((option) => ({ id: option.id as EventFilterId, title: option.title })),
       ...categoryChips,
     ];
-  }, [categories]);
+  }, [categories, events]);
 
   useEffect(() => {
-    if (!eventFilters.some((option) => option.id === filter)) {
+    if (effectiveFilter !== filter || !eventFilters.some((option) => option.id === filter)) {
       setFilter('all');
     }
-  }, [eventFilters, filter]);
+  }, [effectiveFilter, eventFilters, filter]);
 
   const normalizedSearch = useMemo(() => normalizeSearchQuery(searchQuery), [searchQuery]);
   const items = useMemo(() => {
@@ -420,13 +447,13 @@ export default function EventsScreen() {
       sortEventsByTime(
         events.filter((event) => (
           eventMatchesTimeFilter(event, timeFilter, now)
-          && eventMatchesFilter(event, filter)
+          && eventMatchesFilter(event, effectiveFilter)
           && eventMatchesSearch(event, normalizedSearch)
         )),
         timeFilter,
       ),
     );
-  }, [events, filter, normalizedSearch, timeFilter]);
+  }, [effectiveFilter, events, normalizedSearch, timeFilter]);
 
   const registrationByEventTarget = useMemo(() => {
     const registrationMap = new Map<string, EventRegistration | null>();
@@ -446,7 +473,9 @@ export default function EventsScreen() {
     setRefreshing(true);
 
     try {
-      await loadSession();
+      if (appCapabilities.isAccountMode) {
+        await loadSession();
+      }
       await loadEvents();
     } catch {
       // The store keeps the visible error state.
@@ -456,7 +485,11 @@ export default function EventsScreen() {
   }, [loadEvents, loadSession]);
 
   const emptyStateText = useMemo(() => {
-    if (filter === 'members_only' && (!authUser || membership?.status !== 'active')) {
+    if (
+      appCapabilities.isAccountMode
+      && effectiveFilter === 'members_only'
+      && (!authUser || membership?.status !== 'active')
+    ) {
       return 'Войдите и примите приглашение, чтобы видеть события для участников общины.';
     }
 
@@ -468,14 +501,14 @@ export default function EventsScreen() {
       return 'По вашему запросу ничего не найдено.';
     }
 
-    if (filter === 'all') {
+    if (effectiveFilter === 'all') {
       return timeFilter === 'Ближайшие'
         ? 'Ближайших событий пока нет.'
         : 'Прошедших событий пока нет.';
     }
 
     return 'Для выбранного фильтра пока нет событий.';
-  }, [authUser, events.length, filter, membership?.status, normalizedSearch, timeFilter]);
+  }, [authUser, effectiveFilter, events.length, membership?.status, normalizedSearch, timeFilter]);
 
   return (
     <Screen
@@ -534,7 +567,7 @@ export default function EventsScreen() {
           <EventFilterChip
             key={item.id}
             title={item.title}
-            active={filter === item.id}
+            active={effectiveFilter === item.id}
             onPress={() => setFilter(item.id)}
           />
         ))}

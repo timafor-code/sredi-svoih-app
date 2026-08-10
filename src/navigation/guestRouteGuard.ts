@@ -8,6 +8,9 @@ const GUEST_BLOCKED_PROFILE_ROUTE_NAMES = [
   'profile/edit',
   'profile/onboarding',
   'profile/my-registrations',
+  'profile/my-events',
+  'profile/past-registrations',
+  'profile/registration-groups/[eventId]',
 ] as const;
 
 export const GUEST_BLOCKED_ROUTE_NAMES = [
@@ -52,6 +55,10 @@ export function isGuestBlockedPathname(
   const normalizedPathname = normalizeAppPathname(pathname);
 
   if (GUEST_BLOCKED_PROFILE_PATHS.has(normalizedPathname)) {
+    return true;
+  }
+
+  if (/^\/profile\/registration-groups\/[^/]+$/.test(normalizedPathname)) {
     return true;
   }
 
