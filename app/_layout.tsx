@@ -4,7 +4,10 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
 import { appCapabilities } from '@/config/appCapabilities';
-import { GUEST_BLOCKED_ROUTE_NAMES } from '@/navigation/guestRouteGuard';
+import {
+  GUEST_BLOCKED_ROUTE_NAMES,
+  INTERNAL_EVENT_REGISTRATION_ROUTE_NAMES,
+} from '@/navigation/guestRouteGuard';
 import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
 
@@ -46,10 +49,18 @@ export default function RootLayout() {
             />
           ))}
         </Stack.Protected>
+        <Stack.Protected guard={appCapabilities.canUseInternalAccountEventRegistration}>
+          {INTERNAL_EVENT_REGISTRATION_ROUTE_NAMES.map((routeName) => (
+            <Stack.Screen
+              key={routeName}
+              name={routeName}
+              options={routeName.startsWith('modals/') ? { presentation: 'modal' } : undefined}
+            />
+          ))}
+        </Stack.Protected>
         <Stack.Screen name="contacts/iphone/[id]" options={{ presentation: 'card' }} />
         <Stack.Screen name="events/[id]" options={{ presentation: 'card' }} />
         <Stack.Screen name="modals/omer" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="modals/event-registration" options={{ presentation: 'modal' }} />
         <Stack.Screen name="modals/city-picker" options={{ presentation: 'modal' }} />
       </Stack>
     </>

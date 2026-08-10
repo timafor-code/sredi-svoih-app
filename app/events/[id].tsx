@@ -14,11 +14,13 @@ import {
 import { GlassCard } from '@/components/glass/GlassCard';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
+import { appCapabilities } from '@/config/appCapabilities';
 import {
   getEventRegistrationActionTitle,
   getEventRegistrationWindowGuardInfo,
   getRegistrationStatusTitle,
   getRegistrationWindowUnavailableText,
+  INTERNAL_EVENT_REGISTRATION_UNAVAILABLE_TEXT,
   isEventRegistrationWindowBlocked,
   useEventRegistrationAction,
 } from '@/hooks/useEventRegistrationAction';
@@ -198,7 +200,6 @@ type RegistrationBlockProps = {
   event: EventItem;
   hasSession: boolean;
   onCancel: (registration: EventRegistration) => void;
-  onOpenPaidRegistration: (event: EventItem) => void;
   onRegister: (event: EventItem, registration: EventRegistration | null) => void;
   registration: EventRegistration | null;
   registering: boolean;
@@ -210,7 +211,6 @@ function RegistrationBlock({
   event,
   hasSession,
   onCancel,
-  onOpenPaidRegistration,
   onRegister,
   registration,
   registering,
@@ -224,6 +224,18 @@ function RegistrationBlock({
     ? getRegistrationWindowUnavailableText(registrationWindowInfo)
     : null;
   const registrationActionTitle = getEventRegistrationActionTitle(event, registration, registering);
+
+  if (
+    (event.registrationMode === 'internal_free' || event.registrationMode === 'internal_paid')
+    && !appCapabilities.canUseInternalAccountEventRegistration
+  ) {
+    return (
+      <GlassCard>
+        <Text style={styles.sectionTitle}>Регистрация</Text>
+        <Text style={styles.sectionText}>{INTERNAL_EVENT_REGISTRATION_UNAVAILABLE_TEXT}</Text>
+      </GlassCard>
+    );
+  }
 
   if (event.registrationMode === 'external_link') {
     return (
@@ -262,7 +274,7 @@ function RegistrationBlock({
         <PrimaryButton
           title={registrationActionTitle}
           disabled={registrationWindowBlocked}
-          onPress={() => onOpenPaidRegistration(event)}
+          onPress={() => onRegister(event, registration)}
           buttonStyle={styles.registrationButton}
         />
       </GlassCard>
@@ -362,7 +374,6 @@ export default function EventDetailScreen() {
   const session = useAuthStore((state) => state.session);
   const authUser = useAuthStore((state) => state.user);
   const membership = useAuthStore((state) => state.membership);
-  const loadSession = useAuthStore((state) => state.loadSession);
   const {
     events,
     loadEventById,
@@ -380,10 +391,6 @@ export default function EventDetailScreen() {
   } = useEventRegistrationAction();
 
   useEffect(() => {
-    void loadSession().catch(() => undefined);
-  }, [loadSession]);
-
-  useEffect(() => {
     if (!eventId) {
       return;
     }
@@ -392,7 +399,7 @@ export default function EventDetailScreen() {
   }, [authUser?.id, eventId, loadEventById, membership?.id, membership?.status]);
 
   useEffect(() => {
-    if (!authUser) {
+    if (!appCapabilities.canUseInternalAccountEventRegistration || !authUser) {
       return;
     }
 
@@ -466,13 +473,6 @@ export default function EventDetailScreen() {
     void loadEventById(eventId, { forceRefresh: true }).catch(() => undefined);
   }, [eventId, loadEventById]);
 
-  const handleOpenPaidRegistration = useCallback((targetEvent: EventItem) => {
-    router.push({
-      pathname: '/events/register/[id]',
-      params: { id: targetEvent.id },
-    });
-  }, [router]);
-
   const conditionRows = useMemo(() => {
     if (!event) {
       return [];
@@ -503,7 +503,9 @@ export default function EventDetailScreen() {
   const description = event?.description ?? event?.shortDescription ?? null;
   const statusTitle = event?.status ? eventStatusTitles[event.status] : undefined;
   const showHeroImage = Boolean(event?.imageUrl && !heroImageFailed);
-  const unavailableHint = !session
+  const unavailableHint = appCapabilities.isGuestOnly
+    ? 'Событие недоступно или больше не опубликовано.'
+    : !session
     ? 'Войдите и примите приглашение, чтобы увидеть это событие.'
     : membership?.status !== 'active'
       ? 'Примите приглашение, чтобы увидеть события для участников общины.'
@@ -619,7 +621,6 @@ export default function EventDetailScreen() {
               cancelling={cancellingRegistrationId === registration?.id}
               onRegister={handleRegistrationAction}
               onCancel={handleCancelRegistration}
-              onOpenPaidRegistration={handleOpenPaidRegistration}
             />
           </>
         ) : null}

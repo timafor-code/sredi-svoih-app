@@ -17,6 +17,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassCard } from '@/components/glass/GlassCard';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
+import { appCapabilities } from '@/config/appCapabilities';
+import { INTERNAL_EVENT_REGISTRATION_UNAVAILABLE_TEXT } from '@/hooks/useEventRegistrationAction';
 import {
   getNearestOccurrence,
   getOpenOccurrences,
@@ -327,6 +329,17 @@ export default function PaidOptionsScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
+    if (!appCapabilities.canUseInternalAccountEventRegistration) {
+      setEvent(null);
+      setOptions([]);
+      setOccurrences([]);
+      setSelectedOccurrenceId(null);
+      setOccurrenceUnavailableReason(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
     if (!eventId) {
       setEvent(null);
       setOptions([]);
@@ -396,7 +409,7 @@ export default function PaidOptionsScreen() {
   }, [loadData]);
 
   useEffect(() => {
-    if (!authUser) {
+    if (!appCapabilities.canUseInternalAccountEventRegistration || !authUser) {
       return;
     }
 
@@ -536,6 +549,11 @@ export default function PaidOptionsScreen() {
   }, []);
 
   const submitRegistration = useCallback(async () => {
+    if (!appCapabilities.canUseInternalAccountEventRegistration) {
+      Alert.alert('Регистрация недоступна', INTERNAL_EVENT_REGISTRATION_UNAVAILABLE_TEXT);
+      return;
+    }
+
     if (!eventId) {
       return;
     }
@@ -591,6 +609,11 @@ export default function PaidOptionsScreen() {
   ]);
 
   const handleContinue = useCallback(() => {
+    if (!appCapabilities.canUseInternalAccountEventRegistration) {
+      Alert.alert('Регистрация недоступна', INTERNAL_EVENT_REGISTRATION_UNAVAILABLE_TEXT);
+      return;
+    }
+
     if (!selectedOccurrence || !isRegistrationWindowOpen(selectedOccurrence)) {
       Alert.alert(
         'Регистрация сейчас недоступна',
@@ -625,6 +648,26 @@ export default function PaidOptionsScreen() {
   const showHeroImage = Boolean(event?.imageUrl && !heroImageFailed);
   const bottomOffset = Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 12);
   const summaryCurrency = registrationFlowBlocked ? 'RUB' : selectedOptions[0]?.priceCurrency ?? 'RUB';
+
+  if (!appCapabilities.canUseInternalAccountEventRegistration) {
+    return (
+      <View style={styles.root}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <Screen contentContainerStyle={styles.content}>
+          <Pressable onPress={handleBack} style={styles.backButton}>
+            <Ionicons name="chevron-back" size={22} color={colors.orange} />
+            <Text style={styles.backText}>Назад</Text>
+          </Pressable>
+          <GlassCard>
+            <View style={styles.stateCard}>
+              <Ionicons name="information-circle-outline" size={24} color={colors.textDim} />
+              <Text style={styles.stateText}>{INTERNAL_EVENT_REGISTRATION_UNAVAILABLE_TEXT}</Text>
+            </View>
+          </GlassCard>
+        </Screen>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
