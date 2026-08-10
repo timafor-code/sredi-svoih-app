@@ -387,6 +387,9 @@ function validateRouteGuard() {
     '/profile/edit',
     '/profile/onboarding',
     '/profile/my-registrations',
+    '/profile/my-events',
+    '/profile/past-registrations',
+    '/profile/registration-groups/event-id',
     '/contacts/community/abc',
     '/contacts/abc',
   ];
@@ -433,6 +436,50 @@ function validateRuntimeSourceBoundaries() {
   assertIncludes(tokenSource, 'if (appCapabilities.isGuestOnly)', 'token provider fail-closed branch');
   assertIncludes(apiClientSource, 'await fetch(url', 'public API client remains enabled');
   assertIncludes(communitySource, 'if (!appCapabilities.canUseAccountFeatures)', 'community capability boundary');
+
+  const eventsSource = readSource('app/(tabs)/events.tsx');
+  assertIncludes(eventsSource, "option.id !== 'members_only'", 'guest Events filters exclude members-only');
+  assertMatches(
+    eventsSource,
+    /const ACCOUNT_EVENT_FILTERS = \[[\s\S]*?\{ id: 'members_only', title: 'Для участников' \}[\s\S]*?\] as const;/,
+    'account Events filters define members-only',
+  );
+  assertMatches(
+    eventsSource,
+    /appCapabilities\.isAccountMode\s*\? ACCOUNT_EVENT_FILTERS\s*: GUEST_EVENT_FILTERS/,
+    'account Events filters retain members-only',
+  );
+  assertMatches(
+    eventsSource,
+    /events\s*\.filter\(\(event\) => event\.visibility !== 'members_only'\)[\s\S]*?appCapabilities\.isAccountMode\s*\|\| publicCategorySlugs\.has/,
+    'guest Events category filters stay public-event relevant',
+  );
+  assertMatches(
+    eventsSource,
+    /const seenCategorySlugs = new Set<string>\(\);[\s\S]*?\.sort\([\s\S]*?\.flatMap\(\(category\) => \{\s*const slug = normalizeFilterValue\(category\.slug\);\s*if \(seenCategorySlugs\.has\(slug\)\) \{\s*return \[\];\s*\}\s*seenCategorySlugs\.add\(slug\);[\s\S]*?id: `\$\{CATEGORY_FILTER_PREFIX\}\$\{slug\}`/,
+    'Events category filters deduplicate normalized slugs after sorting',
+  );
+  assertMatches(
+    eventsSource,
+    /appCapabilities\.isGuestOnly && filter === 'members_only'\s*\? 'all'\s*: filter/,
+    'guest Events normalizes stale members-only state',
+  );
+  assertMatches(
+    eventsSource,
+    /if \(!appCapabilities\.isAccountMode\) \{\s*return;\s*\}\s*void loadSession\(\)/,
+    'guest Events skips session bootstrap while account mode retains it',
+  );
+  assertMatches(
+    eventsSource,
+    /if \(appCapabilities\.isAccountMode\) \{\s*await loadSession\(\);\s*\}\s*await loadEvents\(\);/,
+    'guest Events refresh skips session while account refresh retains it',
+  );
+  assertMatches(
+    eventsSource,
+    /if \(\s*appCapabilities\.isAccountMode\s*&& effectiveFilter === 'members_only'[\s\S]*?return 'Войдите и примите приглашение/,
+    'members-only login and invite copy remains account-only',
+  );
+  assertExcludes(eventsSource, 'EXPO_PUBLIC_APP_ACCESS_MODE', 'Events excludes direct environment parsing');
 
   const runtimeFiles = [
     'app/_layout.tsx',
@@ -744,6 +791,10 @@ function assertIncludes(source, expected, description) {
 
 function assertExcludes(source, forbidden, description) {
   assertEqual(source.includes(forbidden), false, description);
+}
+
+function assertMatches(source, expected, description) {
+  assertEqual(expected.test(source), true, description);
 }
 
 function assertDeepEqual(actual, expected, description) {
