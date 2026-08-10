@@ -904,10 +904,11 @@ src/services/<public web registration link adapter if needed>
 
 Do:
 
-- добавить tests для capability, route, token, local persistence и provider selection;
-- добавить static scan на account copy/routes в guest surface;
-- добавить upgrade test текущих local settings;
-- обновить release checklist.
+- объединить существующие focused validators capability, guest runtime/routes/Events,
+  Settings, prayer, local preferences/migration, encrypted local data и Home content
+  в каноническую команду `npm run check:mobile-guest-release`;
+- добавить канонический manual release checklist
+  `docs/mobile-guest-release-checklist.md` для fresh install, upgrade и encrypted-storage smoke.
 
 Do not:
 
@@ -917,7 +918,6 @@ Do not:
 Expected scope:
 
 ```text
-src/**/<focused guest tests>
 scripts/checkMobileGuestRelease.mjs
 package.json
 docs/mobile-guest-release-checklist.md
