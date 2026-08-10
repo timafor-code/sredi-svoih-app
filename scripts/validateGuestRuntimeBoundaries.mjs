@@ -456,6 +456,11 @@ function validateRuntimeSourceBoundaries() {
   );
   assertMatches(
     eventsSource,
+    /const seenCategorySlugs = new Set<string>\(\);[\s\S]*?\.sort\([\s\S]*?\.flatMap\(\(category\) => \{\s*const slug = normalizeFilterValue\(category\.slug\);\s*if \(seenCategorySlugs\.has\(slug\)\) \{\s*return \[\];\s*\}\s*seenCategorySlugs\.add\(slug\);[\s\S]*?id: `\$\{CATEGORY_FILTER_PREFIX\}\$\{slug\}`/,
+    'Events category filters deduplicate normalized slugs after sorting',
+  );
+  assertMatches(
+    eventsSource,
     /appCapabilities\.isGuestOnly && filter === 'members_only'\s*\? 'all'\s*: filter/,
     'guest Events normalizes stale members-only state',
   );

@@ -404,6 +404,7 @@ export default function EventsScreen() {
         .filter((event) => event.visibility !== 'members_only')
         .map((event) => normalizeFilterValue(event.rawCategory)),
     );
+    const seenCategorySlugs = new Set<string>();
     const categoryChips: EventFilterOption[] = [...categories]
       .filter((category) => (
         category.isActive
@@ -418,10 +419,20 @@ export default function EventsScreen() {
         }
         return first.title.localeCompare(second.title, 'ru');
       })
-      .map((category) => ({
-        id: `${CATEGORY_FILTER_PREFIX}${category.slug}` as EventFilterId,
-        title: category.title,
-      }));
+      .flatMap((category) => {
+        const slug = normalizeFilterValue(category.slug);
+
+        if (seenCategorySlugs.has(slug)) {
+          return [];
+        }
+
+        seenCategorySlugs.add(slug);
+
+        return [{
+          id: `${CATEGORY_FILTER_PREFIX}${slug}` as EventFilterId,
+          title: category.title,
+        }];
+      });
 
     const specialFilters = appCapabilities.isAccountMode
       ? ACCOUNT_EVENT_FILTERS
