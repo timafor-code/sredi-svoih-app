@@ -35,6 +35,7 @@ from app.schemas.admin_import import (
     AdminImportRunResponse,
 )
 from app.services.admin_events import resolve_manageable_community_ids
+from app.services.event_public_slugs import assign_automatic_public_slug
 
 DEFAULT_PAGE_LIMIT = 50
 MAX_PAGE_LIMIT = 100
@@ -1001,6 +1002,13 @@ async def publish_admin_import_item(
             created=created,
         )
         await session.flush()
+        if created:
+            await assign_automatic_public_slug(
+                session,
+                event_id=event.id,
+                title=event.title,
+                created_by=current_user.id,
+            )
         await session.refresh(event)
 
         _update_item_after_publish(item, event=event, created=created)

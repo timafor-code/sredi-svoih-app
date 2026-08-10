@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.audit import AdminEventAuditEntry
 
 EVENT_WEB_VISIBILITY_CHANGED = "event_web_visibility_changed"
+EVENT_PUBLIC_SLUG_CHANGED = "event_public_slug_changed"
 WEB_VISIBILITY_VALUES = frozenset({"disabled", "unlisted", "listed"})
 
 
@@ -31,6 +32,29 @@ async def record_event_web_visibility_change(
         action=EVENT_WEB_VISIBILITY_CHANGED,
         old_state=old_visibility,
         new_state=new_visibility,
+    )
+    session.add(entry)
+    await session.flush()
+    return entry
+
+
+async def record_event_public_slug_change(
+    session: AsyncSession,
+    *,
+    actor_user_id: UUID,
+    event_id: UUID,
+    old_slug: str,
+    new_slug: str,
+) -> AdminEventAuditEntry | None:
+    if old_slug == new_slug:
+        return None
+
+    entry = AdminEventAuditEntry(
+        actor_user_id=actor_user_id,
+        event_id=event_id,
+        action=EVENT_PUBLIC_SLUG_CHANGED,
+        old_state=old_slug,
+        new_state=new_slug,
     )
     session.add(entry)
     await session.flush()

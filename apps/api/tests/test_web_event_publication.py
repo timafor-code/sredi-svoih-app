@@ -24,6 +24,7 @@ from app.db.models.core import (
     EventCategory,
     EventOccurrence,
     EventParticipationOption,
+    EventPublicSlug,
     EventRegistration,
     LegalAcceptance,
     LegalDocument,
@@ -124,6 +125,12 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(event.web_visibility, "disabled")
                 session.add_all(
                     [
+                        EventPublicSlug(
+                            event_id=self.event_id,
+                            slug=f"publication-{self.marker}",
+                            is_canonical=True,
+                            created_by=self.actor_id,
+                        ),
                         EventOccurrence(
                             id=self.active_occurrence_ids[1],
                             event_id=self.event_id,
@@ -405,6 +412,7 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
         body = response.json()["data"]
         self.assertEqual(body["event_id"], str(self.event_id))
         self.assertEqual(body["web_visibility"], "disabled")
+        self.assertEqual(body["public_slug"], f"publication-{self.marker}")
         self.assertEqual(
             body["public_registration_url"],
             f"http://localhost:5174/events/{self.event_id}",

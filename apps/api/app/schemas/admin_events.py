@@ -354,9 +354,28 @@ class AdminEventResponse(BaseModel):
 
 
 class AdminEventWebRegistrationUpdateRequest(BaseModel):
-    web_visibility: AdminEventWebVisibilityUpdate
+    web_visibility: AdminEventWebVisibilityUpdate | None = None
+    public_slug: str | None = None
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def reject_empty_patch(self) -> AdminEventWebRegistrationUpdateRequest:
+        if not self.model_fields_set:
+            raise ValueError("at least one field is required")
+        return self
+
+
+class AdminEventPublicSlugCheckRequest(BaseModel):
+    public_slug: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AdminEventPublicSlugCheckResponse(BaseModel):
+    normalized_slug: str
+    available: bool
+    reason: Literal["public_slug_taken"] | None
 
 
 class AdminEventOccurrenceUrlResponse(BaseModel):
@@ -375,6 +394,7 @@ class AdminEventOccurrenceUrlResponse(BaseModel):
 class AdminEventWebRegistrationResponse(BaseModel):
     event_id: UUID
     web_visibility: AdminEventWebVisibility
+    public_slug: str
     public_registration_url: str
     occurrence_urls: list[AdminEventOccurrenceUrlResponse]
 
