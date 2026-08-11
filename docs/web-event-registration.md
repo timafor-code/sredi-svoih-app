@@ -32,7 +32,10 @@ Current repository behavior:
   are implemented;
 - ordinary web-event questionnaires now work end-to-end in the public web UI,
   including strict validation, version binding, final persistence, retention,
-  and privacy coverage. This completes webreg PR 11.
+  and privacy coverage. This completes webreg PR 11;
+- public web registration supports `internal_free` and feature-gated
+  `internal_paid` contracts. The backend paid-registration gate defaults to
+  `false`.
 
 Mobile, public web, and web-admin must use one FastAPI API and one canonical
 PostgreSQL model. They must not create a second backend, a separate web-user
@@ -118,9 +121,10 @@ not be bundled with personal-data consent.
 
 The MVP does not collect passport data, health information, religious status
 or beliefs, nationality, conversion status, Jewish status, or other
-special-category questionnaire data. It also excludes payments, Apple
-Sign-In, Google OIDC, SMS verification, public participant lists, marketing
-email, and registration by a minor in their own name. Later ordinary event
+special-category questionnaire data. It also excludes real payment collection
+or payment-provider integration, Apple Sign-In, Google OIDC, SMS verification,
+public participant lists, marketing email, and registration by a minor in
+their own name. Later ordinary event
 questions are now defined by a versioned questionnaire contract and configured
 through the admin-only event editor. They require an explicit purpose and
 retention period. High-risk or special-category questions remain technically
@@ -145,7 +149,9 @@ The target public flow is:
    canonical registration service, and only then create
    `event_registrations` and any canonical questionnaire answer rows.
 7. Return `confirmed`, `pending`, or `waitlisted` according to the event rules;
-   offer the existing set-password path when account creation was selected.
+   an `internal_paid` confirmation returns registration `pending` with
+   `payment_status=pending`, and the existing set-password path remains
+   available when account creation was selected.
 8. Purge expired intents and their temporary PII on the approved short
    retention schedule.
 
@@ -154,11 +160,24 @@ state and never an occupied place. The result may change between submit and
 confirmation because capacity is checked again. Retries must be idempotent and
 must not create duplicate flows, users, registrations, or capacity usage.
 
-For the current implementation, only `internal_free` events are
-processable. Paid and donation selections are rejected. Registration preflight
-uses the canonical occurrence, window, option, quantity, and seat-count rules;
-capacity is not reserved and is rechecked transactionally at confirmation. Exactly one
-active `event_registration_consent` with its exact content hash is mandatory;
+For the current implementation, `internal_free` events remain processable with
+free, non-donation options only. `internal_paid` events are processable only
+when the backend `API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED` feature gate is
+enabled; its default is `false`, and a disabled gate returns the same
+enumeration-safe unavailable result as other unsupported states. Email
+verification is mandatory for both modes.
+
+For gated `internal_paid`, the canonical backend owns option validity,
+quantity, `is_donation`, `counts_toward_capacity`, seat calculation, current
+price and currency, mixed-currency rejection, final capacity, and option
+snapshots. Client `seats_count` is revalidated. Donation and non-capacity
+options do not consume seats, intents do not reserve capacity, and confirmation
+rechecks capacity transactionally. The browser calculates display totals only
+and must not claim that payment completed. No real payment provider is part of
+this implementation.
+
+Exactly one active `event_registration_consent` with its exact content hash is
+mandatory;
 an active `privacy_policy` may accompany it, while marketing consent is outside
 this MVP. When a published questionnaire exists, the request must submit its
 exact `questionnaire_form_id` and strict field-ID answers. Normalized answers
@@ -365,10 +384,11 @@ standard JSON envelope and generic, enumeration-safe errors.
 | GET | `/web/registration-intents/{flow_id}/status` | Return only the state authorized by the opaque flow credential. |
 
 Form reads and new intents require the event to be simultaneously `published`,
-`public`, `internal_free`, and `unlisted` or `listed`. The intent gate runs
-before submitted names/contact data are persisted, before conflict or user
-creation, and before email delivery. Unsupported states share one generic
-`registration_unavailable` response.
+`public`, and `unlisted` or `listed`. `internal_free` is supported normally;
+`internal_paid` additionally requires the backend paid-registration feature
+gate. The gate defaults to `false` and runs before submitted names/contact data
+are persisted, before conflict or user creation, and before email delivery.
+Unsupported states share one generic `registration_unavailable` response.
 
 Both reads return `canonical_public_path` from the current stored canonical slug
 and a strict boolean `resolved_from_alias`. `apps/web` uses that relative path
@@ -377,7 +397,8 @@ or second form request. UUIDs remain the identifiers in form and registration
 payloads.
 
 Intent creation accepts the event/occurrence, the four MVP identity fields,
-free seat and option selections, an empty `answers` list, and versioned legal acceptances including exactly one event-registration consent,
+seat and option selections, questionnaire answers when applicable, and
+versioned legal acceptances including exactly one event-registration consent,
 `account_choice` (`without_password` or `create_account`), and an opaque
 idempotency value. A processable response returns an opaque `flow_id`,
 `next_step = confirm_email`, and `expires_at`; sensitive identity conflicts
@@ -433,12 +454,16 @@ authorization guards scope access to the event's community, and publication
 changes produce a PII-free audit record. PATCH locks the event and commits the
 event change plus `admin_event_audit_entries` row atomically. The row contains
 only technical IDs/action/old/new/timestamp; repeated same-state PATCH creates
-no row. Enabling `unlisted` requires `registration_mode=internal_free`.
+no row. Enabling `unlisted` through this conservative admin PATCH still
+requires `registration_mode=internal_free`; it does not activate paid events.
 
 The public registration-form read is available only for events that are
-simultaneously `published`, `public`, `internal_free`, and `unlisted` or
-`listed`. It returns active occurrences, active free non-donation options, one
-current event-registration consent, an optional privacy policy, the published
+simultaneously `published`, `public`, and `unlisted` or `listed`, with
+`internal_paid` additionally protected by the default-off backend feature gate.
+For `internal_free` it returns active free non-donation options; for gated
+`internal_paid` it returns canonical active free, paid, and donation options.
+It also returns one current event-registration consent, an optional privacy
+policy, the published
 `questionnaire_form_id` plus exactly its ordered ordinary questions, and a canonical
 `open`, `not_yet_open`, `closed`, `full`, or `unavailable` state. Closed and
 full pages remain readable and the endpoint never reserves capacity. No event
