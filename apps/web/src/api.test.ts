@@ -268,7 +268,16 @@ describe("public event API", () => {
       .mockImplementationOnce(() => fetchResponse(envelope({ state: "email_verification_required", expires_at: EXPIRES_AT, registration: null, account_next_step: null })))
       .mockImplementationOnce(() => fetchResponse(envelope({
         intent_status: "confirmed",
-        registration: { id: REGISTRATION_ID, event_id: EVENT_ID, occurrence_id: null, status: "confirmed", seats_count: 1 },
+        registration: {
+          id: REGISTRATION_ID,
+          event_id: EVENT_ID,
+          occurrence_id: null,
+          status: "confirmed",
+          seats_count: 1,
+          payment_status: "not_required",
+          total_amount: 0,
+          total_currency: "RUB",
+        },
         account_next_step: "none",
         set_password_code: null,
         set_password_expires_at: null,
@@ -292,6 +301,37 @@ describe("public event API", () => {
     await expect(resendWebRegistrationCode(FLOW_ID)).resolves.toMatchObject({ next_step: "confirm_email" });
     await expect(getWebRegistrationIntentStatus(FLOW_ID)).resolves.toMatchObject({ state: "email_verification_required" });
     await expect(confirmWebRegistrationEmail(FLOW_ID, "123456")).resolves.toMatchObject({ account_next_step: "none" });
+  });
+
+  it.each([
+    ["missing payment status", (registration: Record<string, unknown>) => { delete registration.payment_status; }],
+    ["unknown payment status", (registration: Record<string, unknown>) => { registration.payment_status = "awaiting_payment"; }],
+    ["fractional total", (registration: Record<string, unknown>) => { registration.total_amount = 10.5; }],
+    ["negative total", (registration: Record<string, unknown>) => { registration.total_amount = -1; }],
+    ["amount without currency", (registration: Record<string, unknown>) => { registration.total_currency = null; }],
+    ["currency without amount", (registration: Record<string, unknown>) => { registration.total_amount = null; }],
+  ])("rejects malformed registration payment result: %s", async (_name, mutate) => {
+    const registration: Record<string, unknown> = {
+      id: REGISTRATION_ID,
+      event_id: EVENT_ID,
+      occurrence_id: null,
+      status: "pending",
+      seats_count: 1,
+      payment_status: "pending",
+      total_amount: 3000,
+      total_currency: "RUB",
+    };
+    mutate(registration);
+    vi.mocked(fetch).mockImplementation(() => fetchResponse(envelope({
+      intent_status: "confirmed",
+      registration,
+      account_next_step: "none",
+      set_password_code: null,
+      set_password_expires_at: null,
+    })));
+
+    await expect(confirmWebRegistrationEmail(FLOW_ID, "123456"))
+      .rejects.toMatchObject({ code: "invalid_response" });
   });
 
   it.each([

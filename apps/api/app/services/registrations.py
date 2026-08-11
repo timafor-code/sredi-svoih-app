@@ -314,6 +314,7 @@ async def _prepare_options(
     capacity_option_ids: list[UUID] = []
     registration_seats_count = 0
     has_non_donation_selection = False
+    selected_currencies: set[str] = set()
 
     for selection in requested:
         option = options_by_id.get(selection.option_id)
@@ -341,6 +342,7 @@ async def _prepare_options(
                 "Paid participation options require paid registration",
             )
 
+        selected_currencies.add(option.price_currency)
         seats_count = (
             selection.quantity
             if option.counts_toward_capacity and not option.is_donation
@@ -360,6 +362,11 @@ async def _prepare_options(
                 quantity=selection.quantity,
                 seats_count=seats_count,
             ),
+        )
+
+    if len(selected_currencies) > 1:
+        raise _validation_error(
+            "Selected participation options must use one currency",
         )
 
     if event.registration_mode == PAID_REGISTRATION_MODE:

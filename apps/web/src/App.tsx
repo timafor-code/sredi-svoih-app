@@ -681,6 +681,16 @@ function RegistrationForm({
     if (result.event_id.toLowerCase() !== eventId.toLowerCase()) {
       throw new PublicApiError("invalid_response");
     }
+    if (
+      (registrationMode === "internal_paid"
+        && (result.status !== "pending"
+          || result.payment_status !== "pending"
+          || result.total_amount === null
+          || result.total_currency === null))
+      || (registrationMode === "internal_free" && result.payment_status !== "not_required")
+    ) {
+      throw new PublicApiError("invalid_response");
+    }
     setRegistration(result);
     setAccountNextStep(nextStep === "set_password" && !passwordCode ? "request_set_password" : nextStep);
     setSetPasswordCode(passwordCode);
@@ -1013,20 +1023,33 @@ function RegistrationForm({
 
   if (stage === "success" && registration) {
     const resultOccurrence = occurrences.find((item) => item.id === registration.occurrence_id);
+    const isPaidResult = registrationMode === "internal_paid";
     const showPasswordForm = accountNextStep === "set_password"
       || (accountNextStep === "request_set_password" && passwordRequestSent);
     return (
       <section className="surface section-card flow-card success-card" aria-labelledby="success-heading" aria-live="polite">
         <p className="eyebrow">Готово</p>
-        <h2 id="success-heading">Регистрация успешно сохранена</h2>
-        <p className={`registration-result result-${registration.status}`}>{SUCCESS_COPY[registration.status]}</p>
+        <h2 id="success-heading">{isPaidResult ? "Заявка создана" : "Регистрация успешно сохранена"}</h2>
+        <p className={`registration-result result-${registration.status}`}>
+          {isPaidResult ? "Заявка создана." : SUCCESS_COPY[registration.status]}
+        </p>
         <dl className="result-details">
           <div><dt>Мероприятие</dt><dd>{eventTitle}</dd></div>
           <div><dt>Количество мест</dt><dd>{registration.seats_count}</dd></div>
+          {isPaidResult && registration.total_amount !== null && registration.total_currency ? (
+            <div><dt>Сумма</dt><dd>{formatRegistrationTotal(registration.total_amount, registration.total_currency)}</dd></div>
+          ) : null}
           {resultOccurrence ? (
             <div><dt>Выбранная дата</dt><dd>{formatDateTimeRange(resultOccurrence.starts_at, resultOccurrence.ends_at, resultOccurrence.timezone)}</dd></div>
           ) : null}
         </dl>
+
+        {isPaidResult ? (
+          <div className="account-followup">
+            <p className="muted-copy">Оплата на сайте пока не выполнена.</p>
+            <p className="muted-copy">Статус оплаты: <strong>ожидается</strong>.</p>
+          </div>
+        ) : null}
 
         {accountNextStep === "none" ? <p className="muted-copy">Регистрация сохранена. Код подтверждения был отправлен на указанный email. Пароль и web-сессия не создавались.</p> : null}
         {accountNextStep === "sign_in" ? <p className="muted-copy">Регистрация сохранена. Для управления аккаунтом можно войти с существующим паролем.</p> : null}

@@ -70,6 +70,7 @@ class Settings(BaseSettings):
         ge=1,
         le=3600,
     )
+    api_public_web_paid_registration_enabled: bool = False
     public_web_base_url: str = "http://localhost:5174"
     api_public_app_base_url: str = "http://localhost:8081"
     api_cors_allowed_origins: str = ",".join(_LOCAL_CORS_ALLOWED_ORIGINS)

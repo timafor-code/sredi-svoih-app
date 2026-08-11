@@ -170,12 +170,24 @@ export type WebRegistrationIntentCreated = {
 
 export type WebRegistrationStatus = "confirmed" | "pending" | "waitlisted" | "attended";
 
+export type WebRegistrationPaymentStatus =
+  | "not_required"
+  | "pending"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "refunded"
+  | "paid";
+
 export type WebRegistrationResult = {
   id: string;
   event_id: string;
   occurrence_id: string | null;
   status: WebRegistrationStatus;
   seats_count: number;
+  payment_status: WebRegistrationPaymentStatus;
+  total_amount: number | null;
+  total_currency: string | null;
 };
 
 export type AccountNextStep = "none" | "set_password" | "sign_in" | "request_set_password";
