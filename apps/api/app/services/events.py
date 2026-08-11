@@ -199,10 +199,10 @@ def _select_occurrence(
     occurrences: Sequence[EventOccurrence],
     now: datetime,
 ) -> tuple[OccurrenceSelectionMode, EventOccurrence | None]:
-    if not occurrences:
-        return "none", None
     if event.event_kind == "shabbat":
         return "nearest", select_nearest_public_occurrence(occurrences, now)
+    if not occurrences:
+        return "none", None
     if len(occurrences) == 1:
         return "none", occurrences[0]
     return "user_select", None

@@ -438,7 +438,7 @@ class WebEventRecurringFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         await self._replace_occurrences(finished)
         data = await self._form()
-        self.assertEqual(data["occurrence_selection_mode"], "none")
+        self.assertEqual(data["occurrence_selection_mode"], "nearest")
         self.assertIsNone(data["default_occurrence_id"])
         self.assertEqual(data["registration_state"], "unavailable")
         self.assertIsNone(data["next_registration_state_check_at"])

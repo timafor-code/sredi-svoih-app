@@ -226,7 +226,9 @@ function hasValidOccurrenceSelectionContract(
     case "user_select":
       return occurrenceIds.length > 1 && defaultOccurrenceId === null;
     case "nearest":
-      return occurrenceIds.length > 0;
+      return occurrenceIds.length > 0
+        ? defaultOccurrenceId !== null
+        : defaultOccurrenceId === null && value.registration_state === "unavailable";
   }
 }
 
