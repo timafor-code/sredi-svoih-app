@@ -62,6 +62,49 @@ describe("public event API", () => {
     );
   });
 
+  it("parses the current internal_free registration contract", async () => {
+    const data = eventResponse();
+    vi.mocked(fetch).mockImplementation(() => fetchResponse(envelope(data)));
+    await expect(getWebEventRegistrationForm(SLUG_REFERENCE)).resolves.toEqual(data);
+  });
+
+  it("recognizes internal_paid as a contract value without activating the route", async () => {
+    const data = eventResponse();
+    data.event.registration_mode = "internal_paid";
+    vi.mocked(fetch).mockImplementation(() => fetchResponse(envelope(data)));
+    await expect(getWebEventRegistrationForm(SLUG_REFERENCE)).resolves.toEqual(data);
+  });
+
+  it.each([undefined, "external_link", "internal_FREE", null])(
+    "rejects unsupported registration_mode=%o",
+    async (registrationMode) => {
+      const data = eventResponse() as unknown as { event: Record<string, unknown> };
+      if (registrationMode === undefined) {
+        delete data.event.registration_mode;
+      } else {
+        data.event.registration_mode = registrationMode;
+      }
+      vi.mocked(fetch).mockImplementation(() => fetchResponse(envelope(data)));
+      await expect(getWebEventRegistrationForm(SLUG_REFERENCE)).rejects.toBeInstanceOf(PublicApiError);
+    },
+  );
+
+  it.each([undefined, null, 0, "false"])(
+    "rejects malformed option is_donation=%o",
+    async (isDonation) => {
+      const data = eventResponse() as unknown as {
+        participation_options: Array<Record<string, unknown>>;
+      };
+      if (isDonation === undefined) {
+        delete data.participation_options[0].is_donation;
+      } else {
+        data.participation_options[0].is_donation = isDonation;
+      }
+      vi.mocked(fetch).mockImplementation(() => fetchResponse(envelope(data)));
+      await expect(getWebEventRegistrationForm(SLUG_REFERENCE)).rejects.toBeInstanceOf(PublicApiError);
+    },
+  );
+
   it("rejects incomplete response JSON", async () => {
     vi.mocked(fetch).mockImplementation(() => fetchResponse({ data: { event: { id: EVENT_ID } } }));
     await expect(getWebEventRegistrationForm(UUID_REFERENCE)).rejects.toBeInstanceOf(PublicApiError);

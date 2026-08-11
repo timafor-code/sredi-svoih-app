@@ -14,6 +14,7 @@ import type {
   WebQuestionnaireField,
   WebRegistrationResendResult,
   WebRegistrationResult,
+  WebRegistrationMode,
   WebRegistrationState,
 } from "./types";
 import {
@@ -34,6 +35,11 @@ const OCCURRENCE_SELECTION_MODES = new Set<OccurrenceSelectionMode>([
   "none",
   "user_select",
   "nearest",
+]);
+
+const REGISTRATION_MODES = new Set<WebRegistrationMode>([
+  "internal_free",
+  "internal_paid",
 ]);
 
 export class RegistrationUnavailableError extends Error {}
@@ -111,6 +117,11 @@ function isState(value: unknown): value is WebRegistrationState {
 function isOccurrenceSelectionMode(value: unknown): value is OccurrenceSelectionMode {
   return typeof value === "string"
     && OCCURRENCE_SELECTION_MODES.has(value as OccurrenceSelectionMode);
+}
+
+function isRegistrationMode(value: unknown): value is WebRegistrationMode {
+  return typeof value === "string"
+    && REGISTRATION_MODES.has(value as WebRegistrationMode);
 }
 
 const ACCOUNT_NEXT_STEPS = new Set<AccountNextStep>([
@@ -249,6 +260,7 @@ function isOption(value: unknown): value is WebRegistrationParticipationOption {
     && Number.isInteger(value.max_quantity)
     && value.min_quantity >= 1
     && value.max_quantity >= value.min_quantity
+    && typeof value.is_donation === "boolean"
     && typeof value.counts_toward_capacity === "boolean"
     && isNullableString(value.group_key)
     && Number.isInteger(value.sort_order);
@@ -368,6 +380,7 @@ export function isWebEventRegistrationFormResponse(
     && isNullableString(event.address)
     && isNullableString(event.image_url)
     && typeof event.category === "string"
+    && isRegistrationMode(event.registration_mode)
     && isNullableNumber(event.capacity)
     && typeof event.waitlist_enabled === "boolean"
     && typeof event.requires_approval === "boolean"

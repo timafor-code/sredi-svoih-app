@@ -7,6 +7,8 @@ export type WebRegistrationState =
 
 export type OccurrenceSelectionMode = "none" | "user_select" | "nearest";
 
+export type WebRegistrationMode = "internal_free" | "internal_paid";
+
 export type ApiResponse<T> = {
   data: T;
   error: null;
@@ -36,6 +38,7 @@ export type WebRegistrationEvent = {
   address: string | null;
   image_url: string | null;
   category: string;
+  registration_mode: WebRegistrationMode;
   capacity: number | null;
   waitlist_enabled: boolean;
   requires_approval: boolean;
@@ -68,6 +71,7 @@ export type WebRegistrationParticipationOption = {
   allow_quantity: boolean;
   min_quantity: number;
   max_quantity: number;
+  is_donation: boolean;
   counts_toward_capacity: boolean;
   group_key: string | null;
   sort_order: number;

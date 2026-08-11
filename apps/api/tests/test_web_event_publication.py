@@ -169,6 +169,7 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
                             title="Free option",
                             price_amount=0,
                             option_type="participation",
+                            is_donation=False,
                             sort_order=1,
                             is_active=True,
                         ),
@@ -589,6 +590,7 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
             f"/events/publication-{self.marker}",
         )
         self.assertFalse(data["resolved_from_alias"])
+        self.assertEqual(data["event"]["registration_mode"], "internal_free")
         self.assertEqual(data["registration_state"], "open")
         self.assertEqual(data["occurrence_selection_mode"], "user_select")
         self.assertIsNone(data["default_occurrence_id"])
@@ -602,6 +604,7 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
             [item["id"] for item in data["participation_options"]],
             [str(self.free_option_id)],
         )
+        self.assertFalse(data["participation_options"][0]["is_donation"])
         self.assertEqual(
             [item["document_type"] for item in data["legal_documents"]],
             ["event_registration_consent", "privacy_policy"],
