@@ -12,6 +12,7 @@ import {
   QUESTION_IDS,
   eventResponse,
   responseWithOccurrences,
+  responseWithPaidOptions,
   responseWithQuestionnaire,
 } from "./test/fixtures";
 
@@ -68,6 +69,12 @@ async function renderEvent(data = eventResponse(), search = "", pathValue = EVEN
   window.history.replaceState(null, "", `/events/${pathValue}${search}`);
   render(<App />);
   await screen.findByRole("heading", { level: 1, name: data.event.title });
+}
+
+function optionCard(title: string): HTMLElement {
+  const card = screen.getByText(title, { selector: "strong" }).closest(".option-card");
+  expect(card).not.toBeNull();
+  return card as HTMLElement;
 }
 
 async function fillValidForm(
@@ -404,6 +411,139 @@ describe("registration state and occurrences", () => {
   });
 });
 
+describe("participation option presentation", () => {
+  beforeEach(() => vi.stubGlobal("fetch", vi.fn()));
+
+  it("shows the canonical participation type chip without emphasizing a zero price", async () => {
+    await renderEvent();
+    const card = optionCard("Основное участие");
+    expect(within(card).getByText("Участие", { selector: ".option-type-chip" })).toBeInTheDocument();
+    expect(card).not.toHaveTextContent(/0\s*₽/);
+  });
+
+  it.each([
+    ["Общая трапеза", "Трапеза"],
+    ["Пакет выходного дня", "Пакет"],
+    ["Детское участие", "Детский"],
+    ["Семейное участие", "Семейный"],
+    ["Онлайн-подключение", "Другое"],
+    ["Пожертвование общине", "Пожертвование"],
+  ])("maps %s to the %s type chip", async (title, label) => {
+    await renderEvent(responseWithPaidOptions());
+    expect(within(optionCard(title)).getByText(label, { selector: ".option-type-chip" })).toBeInTheDocument();
+  });
+
+  it("renders a positive backend-provided price with locale-aware currency formatting", async () => {
+    await renderEvent(responseWithPaidOptions());
+    expect(optionCard("Платное участие").querySelector(".option-price"))
+      .toHaveTextContent(/1.?500,00.?₽/);
+  });
+
+  it("places donation options in their own section and lets is_donation override option_type", async () => {
+    await renderEvent(responseWithPaidOptions());
+    const donationSection = screen.getByRole("region", { name: "Дополнительно / Пожертвование" });
+    expect(within(donationSection).getByText("Пожертвование общине")).toBeInTheDocument();
+    const overrideCard = within(donationSection).getByText("Поддержать детскую программу").closest(".option-card");
+    expect(overrideCard).not.toBeNull();
+    expect(within(overrideCard as HTMLElement).getByText("Участие", { selector: ".option-type-chip" })).toBeInTheDocument();
+    expect(within(donationSection).queryByText("Платное участие")).not.toBeInTheDocument();
+  });
+
+  it("shows non-capacity semantics for a non-donation option", async () => {
+    await renderEvent(responseWithPaidOptions());
+    expect(within(optionCard("Онлайн-подключение")).getByText("Не занимает место")).toBeInTheDocument();
+  });
+
+  it("requires a capacity-counting main option even when a non-donation non-capacity option is selected", async () => {
+    const user = userEvent.setup();
+    await renderEvent(responseWithPaidOptions());
+    const onlineOption = screen.getByRole("checkbox", { name: /Онлайн-подключение/ });
+    await user.click(onlineOption);
+    expect(onlineOption).toBeChecked();
+    expect(within(optionCard("Онлайн-подключение")).getByText("Не занимает место")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Имя"), "Анна");
+    await user.type(screen.getByLabelText("Фамилия"), "Иванова");
+    await user.type(screen.getByLabelText("Телефон"), "+7 (999) 123-45-67");
+    await user.type(screen.getByLabelText("Email"), "anna@example.ru");
+    await user.click(screen.getByLabelText(/Я ознакомился/));
+    const continueButton = screen.getByRole("button", { name: "Продолжить без пароля" });
+    await user.click(continueButton);
+
+    expect(screen.getByRole("group", { name: "Варианты участия" })).toHaveFocus();
+    expect(screen.getByText("Выберите вариант участия.")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    vi.mocked(fetch).mockImplementationOnce(() => response(intentCreated(), 201));
+    await user.click(continueButton);
+    expect(await screen.findByLabelText("Код подтверждения")).toHaveFocus();
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("increments and decrements quantity through accessible stepper buttons", async () => {
+    const user = userEvent.setup();
+    await renderEvent(responseWithPaidOptions());
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    const quantity = screen.getByLabelText("Количество: Платное участие");
+    await user.click(screen.getByRole("button", { name: "Увеличить количество: Платное участие" }));
+    expect(quantity).toHaveTextContent("3");
+    await user.click(screen.getByRole("button", { name: "Уменьшить количество: Платное участие" }));
+    expect(quantity).toHaveTextContent("2");
+  });
+
+  it("cannot increment beyond max_quantity", async () => {
+    const user = userEvent.setup();
+    await renderEvent(responseWithPaidOptions());
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    const increment = screen.getByRole("button", { name: "Увеличить количество: Платное участие" });
+    await user.click(increment);
+    await user.click(increment);
+    expect(screen.getByLabelText("Количество: Платное участие")).toHaveTextContent("4");
+    expect(increment).toBeDisabled();
+    await user.click(increment);
+    expect(screen.getByLabelText("Количество: Платное участие")).toHaveTextContent("4");
+  });
+
+  it("cannot decrement below min_quantity", async () => {
+    const user = userEvent.setup();
+    await renderEvent(responseWithPaidOptions());
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    const decrement = screen.getByRole("button", { name: "Уменьшить количество: Платное участие" });
+    expect(decrement).toBeDisabled();
+    await user.click(decrement);
+    expect(screen.getByLabelText("Количество: Платное участие")).toHaveTextContent("2");
+  });
+
+  it("does not expose quantity controls when allow_quantity is false", async () => {
+    await renderEvent();
+    expect(screen.queryByRole("button", { name: /количество: Основное участие/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Количество: Основное участие")).not.toBeInTheDocument();
+  });
+
+  it("preserves radio behavior for options sharing a group_key", async () => {
+    const user = userEvent.setup();
+    await renderEvent(responseWithPaidOptions());
+    const paid = screen.getByRole("radio", { name: /Платное участие/ });
+    const family = screen.getByRole("radio", { name: /Семейное участие/ });
+    await user.click(paid);
+    expect(paid).toBeChecked();
+    await user.click(family);
+    expect(family).toBeChecked();
+    expect(paid).not.toBeChecked();
+  });
+
+  it("keeps the ordinary free option as a simple selectable option", async () => {
+    const user = userEvent.setup();
+    await renderEvent();
+    const option = screen.getByRole("checkbox", { name: /Основное участие/ });
+    expect(screen.queryByRole("region", { name: "Дополнительно / Пожертвование" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Оплатить|Оплачено|Оплата прошла/)).not.toBeInTheDocument();
+    await user.click(option);
+    expect(option).toBeChecked();
+  });
+});
+
 describe("local form shell", () => {
   beforeEach(() => vi.stubGlobal("fetch", vi.fn()));
 
@@ -448,13 +588,15 @@ describe("local form shell", () => {
     await renderEvent(data);
     const seatsCount = screen.getByRole("spinbutton", { name: "Количество мест" });
     const optionQuantity = screen.getByLabelText("Количество: Основное участие");
-    await userEvent.click(screen.getByRole("checkbox", { name: /Основное участие/ }));
-    fireEvent.change(optionQuantity, { target: { value: "3" } });
-    expect(optionQuantity).toHaveValue(3);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("checkbox", { name: /Основное участие/ }));
+    await user.click(screen.getByRole("button", { name: "Увеличить количество: Основное участие" }));
+    await user.click(screen.getByRole("button", { name: "Увеличить количество: Основное участие" }));
+    expect(optionQuantity).toHaveTextContent("3");
     expect(seatsCount).toHaveValue(1);
     fireEvent.change(seatsCount, { target: { value: "1000" } });
     expect(seatsCount).toHaveValue(1000);
-    expect(optionQuantity).toHaveValue(3);
+    expect(optionQuantity).toHaveTextContent("3");
     expect(screen.queryByText(/остал|свободн/i)).not.toBeInTheDocument();
   });
 
@@ -533,14 +675,20 @@ describe("local form shell", () => {
     await renderEvent(data);
 
     const quantity = screen.getByLabelText("Количество: Основное участие");
-    expect(quantity).toHaveAttribute("min", "2");
-    expect(quantity).toHaveAttribute("max", "4");
-    expect(quantity).toBeDisabled();
+    const decrement = screen.getByRole("button", { name: "Уменьшить количество: Основное участие" });
+    const increment = screen.getByRole("button", { name: "Увеличить количество: Основное участие" });
+    expect(quantity).toHaveTextContent("2");
+    expect(decrement).toBeDisabled();
+    expect(increment).toBeDisabled();
 
-    await userEvent.click(screen.getByRole("checkbox", { name: /Основное участие/ }));
-    expect(quantity).toBeEnabled();
-    fireEvent.change(quantity, { target: { value: "9" } });
-    expect(quantity).toHaveValue(4);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("checkbox", { name: /Основное участие/ }));
+    expect(decrement).toBeDisabled();
+    expect(increment).toBeEnabled();
+    await user.click(increment);
+    await user.click(increment);
+    expect(quantity).toHaveTextContent("4");
+    expect(increment).toBeDisabled();
   });
 
   it("shows a neutral notice for the existing-account action", async () => {
@@ -765,7 +913,8 @@ describe("registration intent and account claim flow", () => {
     data.participation_options[0].max_quantity = 4;
     const user = await setupValidForm(data, `?occurrence=${OCCURRENCE_TWO_ID}`);
     fireEvent.change(screen.getByRole("spinbutton", { name: "Количество мест" }), { target: { value: "3" } });
-    fireEvent.change(screen.getByLabelText("Количество: Основное участие"), { target: { value: "3" } });
+    await user.click(screen.getByRole("button", { name: "Увеличить количество: Основное участие" }));
+    await user.click(screen.getByRole("button", { name: "Увеличить количество: Основное участие" }));
     vi.mocked(fetch).mockImplementationOnce(() => response(intentCreated(), 201));
     await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
     const body = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body));

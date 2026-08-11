@@ -287,7 +287,7 @@ legend,
 }
 
 .radio-card span,
-.option-select span {
+.option-copy {
   min-width: 0;
   display: grid;
   gap: 5px;
@@ -295,10 +295,62 @@ legend,
 }
 
 .radio-card small,
-.option-select small {
+.option-description {
   color: var(--text-muted);
   font-size: 0.9rem;
   line-height: 1.5;
+}
+
+.option-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 16px;
+  align-items: baseline;
+}
+
+.option-price {
+  color: var(--gold);
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.option-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.option-type-chip,
+.option-secondary-chip {
+  width: fit-content;
+  border: 1px solid rgba(240, 122, 42, 0.34);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(240, 122, 42, 0.1);
+  color: #ffd1ad;
+  font-size: 0.75rem;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.option-secondary-chip {
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text-muted);
+}
+
+.donation-options {
+  margin-top: 24px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+}
+
+.donation-options h3 {
+  margin: 0;
+  font-size: 1.02rem;
+  line-height: 1.35;
 }
 
 .registration-status {
@@ -350,8 +402,7 @@ legend,
   margin-top: 22px;
 }
 
-.form-field label,
-.quantity-label {
+.form-field label {
   display: block;
   margin-bottom: 8px;
   color: var(--text-secondary);
@@ -360,7 +411,6 @@ legend,
 }
 
 .form-field input,
-.quantity-label input,
 select {
   width: 100%;
   min-height: 48px;
@@ -445,22 +495,53 @@ select {
   overflow: hidden;
 }
 
-.quantity-label {
+.quantity-control {
   display: grid;
-  grid-template-columns: 1fr 100px;
+  grid-template-columns: 1fr auto;
   align-items: center;
   gap: 14px;
-  margin: 0;
   padding: 0 16px 16px 48px;
 }
 
-.quantity-label input {
+.quantity-label {
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.quantity-stepper {
+  display: grid;
+  grid-template-columns: 42px minmax(46px, auto) 42px;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.17);
+  border-radius: 12px;
+  background: var(--shell);
+}
+
+.quantity-stepper button {
+  min-width: 42px;
+  min-height: 42px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.quantity-stepper output {
+  min-width: 46px;
+  padding: 0 8px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
   text-align: center;
 }
 
-.quantity-label input:disabled {
+.quantity-stepper button:disabled {
   cursor: not-allowed;
-  opacity: 0.58;
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0.42;
 }
 
 .text-button {
@@ -787,7 +868,7 @@ select {
     gap: 4px;
   }
 
-  .quantity-label {
+  .quantity-control {
     padding-left: 16px;
   }
 
