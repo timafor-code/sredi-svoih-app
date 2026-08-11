@@ -1093,6 +1093,9 @@ async def _registration_result(
             ),
         ),
     )
+    selected_currencies = {option.currency for option in selected_options}
+    if len(selected_currencies) > 1:
+        raise _flow_unavailable()
     total_amount = (
         sum(option.total_amount for option in selected_options)
         if selected_options

@@ -389,6 +389,81 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
                 before_reservations,
             )
 
+    async def test_gated_paid_intent_rejects_mixed_currency_direct_api_request(self) -> None:
+        paid = await self._add_option(
+            price_amount=1200,
+            price_currency="RUB",
+            allow_quantity=True,
+            min_quantity=1,
+            max_quantity=3,
+            counts_toward_capacity=True,
+        )
+        donation = await self._add_option(
+            price_amount=500,
+            price_currency="USD",
+            option_type="donation",
+            is_donation=True,
+            counts_toward_capacity=False,
+        )
+        async with AsyncSessionLocal() as session:
+            event = await session.get(Event, self.event_id)
+            assert event is not None
+            event.registration_mode = "internal_paid"
+            await session.commit()
+            before_registrations = await session.scalar(
+                select(func.count())
+                .select_from(EventRegistration)
+                .where(EventRegistration.event_id == self.event_id),
+            )
+            before_reservations = await session.scalar(
+                select(func.count())
+                .select_from(EventRegistrationCapacityReservation)
+                .where(EventRegistrationCapacityReservation.event_id == self.event_id),
+            )
+
+        idempotency_key = "paid-mixed-currency-direct-api"
+        payload = self.payload(
+            seats_count=2,
+            option_selections=[
+                {"option_id": paid.id, "quantity": 2},
+                {"option_id": donation.id, "quantity": 1},
+            ],
+            idempotency_key=idempotency_key,
+        )
+        settings = Settings(api_public_web_paid_registration_enabled=True)
+        with patch("app.services.events.get_settings", return_value=settings):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://testserver",
+            ) as client:
+                response = await client.post(
+                    "/web/registration-intents",
+                    json=payload.model_dump(mode="json"),
+                )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["error"]["code"], "validation_error")
+        async with AsyncSessionLocal() as session:
+            intent = await session.scalar(
+                select(WebRegistrationIntent).where(
+                    WebRegistrationIntent.idempotency_key_hash
+                    == service._idempotency_hash(idempotency_key),
+                ),
+            )
+            registration_count = await session.scalar(
+                select(func.count())
+                .select_from(EventRegistration)
+                .where(EventRegistration.event_id == self.event_id),
+            )
+            reservation_count = await session.scalar(
+                select(func.count())
+                .select_from(EventRegistrationCapacityReservation)
+                .where(EventRegistrationCapacityReservation.event_id == self.event_id),
+            )
+        self.assertIsNone(intent)
+        self.assertEqual(registration_count, before_registrations)
+        self.assertEqual(reservation_count, before_reservations)
+
     async def test_occurrence_requirement_and_windows_use_canonical_validation(self) -> None:
         occurrence_id = uuid4()
         async with AsyncSessionLocal() as session:
