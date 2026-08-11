@@ -64,6 +64,12 @@ function successfulFetch(data = eventResponse()) {
   vi.mocked(fetch).mockImplementation(() => response({ data, error: null, meta: {} }));
 }
 
+function paidEventResponse() {
+  const data = responseWithPaidOptions();
+  data.event.registration_mode = "internal_paid";
+  return data;
+}
+
 async function renderEvent(data = eventResponse(), search = "", pathValue = EVENT_ID) {
   successfulFetch(data);
   window.history.replaceState(null, "", `/events/${pathValue}${search}`);
@@ -541,6 +547,136 @@ describe("participation option presentation", () => {
     expect(screen.queryByText(/Оплатить|Оплачено|Оплата прошла/)).not.toBeInTheDocument();
     await user.click(option);
     expect(option).toBeChecked();
+  });
+});
+
+describe("paid registration display totals", () => {
+  beforeEach(() => vi.stubGlobal("fetch", vi.fn()));
+
+  it("shows a neutral paid summary and recomputes amount and seats with quantity", async () => {
+    const user = userEvent.setup();
+    await renderEvent(paidEventResponse());
+    expect(screen.queryByRole("region", { name: "Итог регистрации" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    const summary = screen.getByRole("region", { name: "Итог регистрации" });
+    expect(summary).toHaveTextContent(/Итого:\s*3.?000.?₽/);
+    expect(summary).toHaveTextContent(/Мест:\s*2/);
+
+    await user.click(screen.getByRole("button", { name: "Увеличить количество: Платное участие" }));
+    expect(summary).toHaveTextContent(/Итого:\s*4.?500.?₽/);
+    expect(summary).toHaveTextContent(/Мест:\s*3/);
+    expect(screen.queryByText(/К оплате|Оплатить|Оплачено|Оплата прошла/)).not.toBeInTheDocument();
+  });
+
+  it("changes only amount for donations and priced non-capacity options, including deselection", async () => {
+    const data = paidEventResponse();
+    const online = data.participation_options.find((option) => option.title === "Онлайн-подключение");
+    expect(online).toBeDefined();
+    if (online) online.price_amount = 500;
+    const user = userEvent.setup();
+    await renderEvent(data);
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    const summary = screen.getByRole("region", { name: "Итог регистрации" });
+
+    const donation = screen.getByRole("checkbox", { name: /Пожертвование общине/ });
+    await user.click(donation);
+    expect(summary).toHaveTextContent(/Итого:\s*4.?000.?₽/);
+    expect(summary).toHaveTextContent(/Мест:\s*2/);
+
+    const nonCapacity = screen.getByRole("checkbox", { name: /Онлайн-подключение/ });
+    await user.click(nonCapacity);
+    expect(summary).toHaveTextContent(/Итого:\s*4.?500.?₽/);
+    expect(summary).toHaveTextContent(/Мест:\s*2/);
+
+    await user.click(nonCapacity);
+    expect(summary).toHaveTextContent(/Итого:\s*4.?000.?₽/);
+    expect(summary).toHaveTextContent(/Мест:\s*2/);
+    await user.click(donation);
+    expect(summary).toHaveTextContent(/Итого:\s*3.?000.?₽/);
+  });
+
+  it("recomputes totals when a radio group changes", async () => {
+    const user = userEvent.setup();
+    await renderEvent(paidEventResponse());
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    const summary = screen.getByRole("region", { name: "Итог регистрации" });
+    expect(summary).toHaveTextContent(/Итого:\s*3.?000.?₽/);
+    expect(summary).toHaveTextContent(/Мест:\s*2/);
+
+    await user.click(screen.getByRole("radio", { name: /Семейное участие/ }));
+    expect(summary).toHaveTextContent(/Итого:\s*3.?500.?₽/);
+    expect(summary).toHaveTextContent(/Мест:\s*1/);
+  });
+
+  it("shows a mixed-currency error, blocks submit, and recovers without discarding selection", async () => {
+    const data = paidEventResponse();
+    const donation = data.participation_options.find((option) => option.title === "Пожертвование общине");
+    expect(donation).toBeDefined();
+    if (donation) donation.price_currency = "USD";
+    const user = userEvent.setup();
+    await renderEvent(data);
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    const donationInput = screen.getByRole("checkbox", { name: /Пожертвование общине/ });
+    await user.click(donationInput);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Выбранные варианты используют разные валюты. Измените выбор вариантов участия.",
+    );
+    expect(screen.queryByRole("region", { name: "Итог регистрации" })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Имя"), "Анна");
+    await user.type(screen.getByLabelText("Фамилия"), "Иванова");
+    await user.type(screen.getByLabelText("Телефон"), "+7 (999) 123-45-67");
+    await user.type(screen.getByLabelText("Email"), "anna@example.ru");
+    await user.click(screen.getByLabelText(/Я ознакомился/));
+    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    expect(screen.getByRole("group", { name: "Варианты участия" })).toHaveFocus();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(donationInput).toBeChecked();
+
+    await user.click(donationInput);
+    expect(screen.queryByText("Выбранные варианты используют разные валюты. Измените выбор вариантов участия."))
+      .not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Итог регистрации" })).toHaveTextContent(/Итого:\s*3.?000.?₽/);
+  });
+
+  it("sends calculated paid-option seats and canonical selection identity only", async () => {
+    const user = userEvent.setup();
+    await renderEvent(paidEventResponse());
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    await user.click(screen.getByRole("button", { name: "Увеличить количество: Платное участие" }));
+    expect(screen.queryByRole("spinbutton", { name: "Количество мест" })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Имя"), "Анна");
+    await user.type(screen.getByLabelText("Фамилия"), "Иванова");
+    await user.type(screen.getByLabelText("Телефон"), "+7 (999) 123-45-67");
+    await user.type(screen.getByLabelText("Email"), "anna@example.ru");
+    await user.click(screen.getByLabelText(/Я ознакомился/));
+    vi.mocked(fetch).mockImplementationOnce(() => response(intentCreated(), 201));
+    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body));
+    expect(body.seats_count).toBe(3);
+    expect(body.option_selections).toEqual([{
+      option_id: "44444444-4444-4444-8444-444444444401",
+      quantity: 3,
+    }]);
+    for (const field of [
+      "unit_price_amount",
+      "total_amount",
+      "currency",
+      "is_donation",
+      "counts_toward_capacity",
+    ]) {
+      expect(body).not.toHaveProperty(field);
+      expect(body.option_selections[0]).not.toHaveProperty(field);
+    }
+  });
+
+  it("keeps the free registration seats flow without a checkout-looking summary", async () => {
+    await renderEvent(eventResponse());
+    expect(screen.getByRole("spinbutton", { name: "Количество мест" })).toHaveValue(1);
+    expect(screen.queryByRole("region", { name: "Итог регистрации" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Итого:|К оплате|Оплатить|Оплачено|Оплата прошла/)).not.toBeInTheDocument();
   });
 });
 
