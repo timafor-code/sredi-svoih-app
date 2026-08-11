@@ -733,8 +733,6 @@ export function RegistrationsPage() {
         <p>{registrationsHeaderDescription}</p>
       </section>
 
-      {isAdmin ? <WebRegistrationOperationsPanel /> : null}
-
       <div className="registrations-workspace">
         <RegistrationEventsPanel
           eventQuery={eventQuery}
@@ -949,6 +947,8 @@ export function RegistrationsPage() {
           )}
         </GlassCard>
       </div>
+
+      {isAdmin ? <WebRegistrationOperationsPanel /> : null}
 
       <RegistrationDetailModal
         actionInFlight={actionInFlight}

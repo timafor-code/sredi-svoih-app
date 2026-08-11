@@ -34,9 +34,107 @@
 /* Admin-only web-registration operations surface. */
 .glass-card.web-registration-operations {
   display: grid;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.web-registration-operations__disclosure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+  min-height: 64px;
+  border: 0;
+  padding: 14px 18px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.web-registration-operations__disclosure:hover {
+  background: var(--glass);
+}
+
+.web-registration-operations__disclosure:focus-visible {
+  outline: 2px solid rgba(242, 184, 75, 0.72);
+  outline-offset: -3px;
+}
+
+.web-registration-operations__disclosure-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.web-registration-operations__title {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.web-registration-operations__status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 24px;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: var(--glass);
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.web-registration-operations__status--attention {
+  border-color: rgba(242, 184, 75, 0.38);
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
+.web-registration-operations__status--loading {
+  color: var(--text-muted);
+}
+
+.web-registration-operations__status--error {
+  border-color: rgba(229, 44, 54, 0.3);
+  background: var(--red-soft);
+  color: #ffabb0;
+}
+
+.web-registration-operations__chevron {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 11px;
+  transition: transform 140ms ease;
+}
+
+.web-registration-operations__disclosure[aria-expanded="true"]
+  .web-registration-operations__chevron {
+  transform: rotate(180deg);
+}
+
+.web-registration-operations__content {
+  display: grid;
   gap: 18px;
   min-width: 0;
+  border-top: 1px solid var(--glass-border);
   padding: 18px;
+}
+
+.web-registration-operations__content[hidden] {
+  display: none;
 }
 
 .web-registration-operations__head,
@@ -52,15 +150,10 @@
   gap: 16px;
 }
 
-.web-registration-operations__head h2,
 .identity-conflicts-panel__head h3,
 .privacy-due-dates-panel__head h3 {
   margin: 4px 0 6px;
   color: var(--text);
-}
-
-.web-registration-operations__head h2 {
-  font-size: 22px;
 }
 
 .identity-conflicts-panel__head h3,
@@ -419,6 +512,22 @@
 }
 
 @media (max-width: 720px) {
+  .web-registration-operations__disclosure {
+    align-items: flex-start;
+    min-height: 72px;
+    padding: 14px;
+  }
+
+  .web-registration-operations__disclosure-main {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .web-registration-operations__content {
+    padding: 14px;
+  }
+
   .web-registration-operations__head,
   .identity-conflicts-panel__head,
   .identity-conflict-row__actions,
