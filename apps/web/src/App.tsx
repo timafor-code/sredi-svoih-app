@@ -28,7 +28,6 @@ import {
 import {
   parseRoute,
   replaceCanonicalEventPath,
-  replaceOccurrenceQuery,
 } from "./route";
 import type {
   AccountChoice,
@@ -229,6 +228,7 @@ function OccurrenceSelector({
       <section className="surface section-card">
         <label className="section-label" htmlFor="occurrence-select">Выберите дату</label>
         <select id="occurrence-select" value={selectedId ?? ""} onChange={(event) => onChange(event.target.value)}>
+          <option value="" disabled>Выберите дату участия</option>
           {occurrences.map((occurrence) => (
             <option key={occurrence.id} value={occurrence.id}>
               {occurrence.title ? `${occurrence.title} — ` : ""}
@@ -1098,12 +1098,49 @@ function EventPage({ data, requestedOccurrenceId }: {
   requestedOccurrenceId: string | null;
 }): ReactNode {
   const initialOccurrenceId = useMemo(() => {
-    const requested = data.occurrences.find((item) => item.id.toLowerCase() === requestedOccurrenceId)?.id;
-    return requested ?? data.occurrences[0]?.id ?? null;
-  }, [data.occurrences, requestedOccurrenceId]);
+    if (data.occurrence_selection_mode !== "user_select") {
+      return data.default_occurrence_id;
+    }
+    return data.occurrences.find(
+      (item) => item.id.toLowerCase() === requestedOccurrenceId,
+    )?.id ?? null;
+  }, [
+    data.default_occurrence_id,
+    data.occurrence_selection_mode,
+    data.occurrences,
+    requestedOccurrenceId,
+  ]);
   const [selectedOccurrenceId, setSelectedOccurrenceId] = useState(initialOccurrenceId);
-  const selectedOccurrence = data.occurrences.find((item) => item.id === selectedOccurrenceId) ?? null;
-  const effectiveState = selectedOccurrence?.registration_state ?? data.registration_state;
+  useEffect(() => {
+    setSelectedOccurrenceId((current) => {
+      if (data.occurrence_selection_mode !== "user_select") {
+        return data.default_occurrence_id;
+      }
+      const requested = data.occurrences.find(
+        (item) => item.id.toLowerCase() === requestedOccurrenceId,
+      )?.id;
+      if (requested) return requested;
+      return current && data.occurrences.some((item) => item.id === current)
+        ? current
+        : null;
+    });
+  }, [
+    data.default_occurrence_id,
+    data.occurrence_selection_mode,
+    data.occurrences,
+    requestedOccurrenceId,
+  ]);
+  const effectiveOccurrenceId = data.occurrence_selection_mode === "user_select"
+    ? selectedOccurrenceId
+    : data.default_occurrence_id;
+  const selectedOccurrence = data.occurrences.find(
+    (item) => item.id === effectiveOccurrenceId,
+  ) ?? null;
+  const needsOccurrenceSelection = data.occurrence_selection_mode === "user_select"
+    && selectedOccurrence === null;
+  const effectiveState = needsOccurrenceSelection
+    ? null
+    : selectedOccurrence?.registration_state ?? data.registration_state;
   const timeZone = selectedOccurrence?.timezone ?? data.event.timezone;
   const startsAt = selectedOccurrence?.starts_at ?? data.event.starts_at;
   const endsAt = selectedOccurrence?.ends_at ?? data.event.ends_at;
@@ -1112,7 +1149,6 @@ function EventPage({ data, requestedOccurrenceId }: {
 
   const changeOccurrence = (id: string) => {
     setSelectedOccurrenceId(id);
-    replaceOccurrenceQuery(id);
   };
 
   return (
@@ -1136,25 +1172,34 @@ function EventPage({ data, requestedOccurrenceId }: {
             </div>
           </article>
 
-          <OccurrenceSelector
-            occurrences={data.occurrences}
-            selectedId={selectedOccurrenceId}
-            onChange={changeOccurrence}
-          />
+          {data.occurrence_selection_mode === "user_select" ? (
+            <OccurrenceSelector
+              occurrences={data.occurrences}
+              selectedId={selectedOccurrenceId}
+              onChange={changeOccurrence}
+            />
+          ) : null}
         </div>
 
         <div className="form-column">
-          <section className={`registration-status status-${effectiveState}`} aria-live="polite">
-            <span aria-hidden="true" className="status-dot" />
-            <strong>{STATUS_LABELS[effectiveState]}</strong>
-          </section>
+          {needsOccurrenceSelection ? (
+            <section className="registration-status status-unavailable" aria-live="polite">
+              <span aria-hidden="true" className="status-dot" />
+              <strong>Сначала выберите дату участия</strong>
+            </section>
+          ) : effectiveState ? (
+            <section className={`registration-status status-${effectiveState}`} aria-live="polite">
+              <span aria-hidden="true" className="status-dot" />
+              <strong>{STATUS_LABELS[effectiveState]}</strong>
+            </section>
+          ) : null}
           {effectiveState === "open" && consentDocument ? (
             <RegistrationForm
               key={data.event.id}
               eventId={data.event.id}
               eventTitle={data.event.title}
               occurrences={data.occurrences}
-              selectedOccurrenceId={selectedOccurrenceId}
+              selectedOccurrenceId={effectiveOccurrenceId}
               options={data.participation_options}
               questionnaireFormId={data.questionnaire_form_id}
               questions={data.questions}
@@ -1181,11 +1226,22 @@ export default function App(): ReactNode {
   });
   const [attempt, setAttempt] = useState(0);
   const skipCanonicalRouteFetch = useRef<string | null>(null);
+  const lastTriggeredStateCheck = useRef<string | null>(null);
 
   useEffect(() => {
     const handlePopState = () => setLocationVersion((value) => value + 1);
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        setAttempt((value) => value + 1);
+      }
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => document.removeEventListener("visibilitychange", refreshWhenVisible);
   }, []);
 
   useEffect(() => {
@@ -1200,13 +1256,18 @@ export default function App(): ReactNode {
     document.title = DEFAULT_TITLE;
     const controller = new AbortController();
     const requestRouteKey = `${route.kind}:${route.value}`;
-    setPage({ kind: "loading", routeKey: requestRouteKey });
+    setPage((current) => (
+      current.kind === "available" && current.routeKey === requestRouteKey
+        ? current
+        : { kind: "loading", routeKey: requestRouteKey }
+    ));
     getWebEventRegistrationForm(route, controller.signal)
       .then((data) => {
         const canonicalRouteKey = `slug:${data.canonical_public_path.slice("/events/".length)}`;
         const replaced = replaceCanonicalEventPath(
           data.canonical_public_path,
           route.requestedOccurrenceId,
+          data.occurrence_selection_mode,
           data.occurrences.map((occurrence) => occurrence.id),
         );
         if (replaced) {
@@ -1230,6 +1291,40 @@ export default function App(): ReactNode {
       });
     return () => controller.abort();
   }, [routeKey, attempt]);
+
+  const nextRegistrationStateCheck = page.kind === "available"
+    ? page.data.next_registration_state_check_at
+    : null;
+  const scheduledStateCheckKey = page.kind === "available"
+    && nextRegistrationStateCheck !== null
+    ? `${page.routeKey}:${nextRegistrationStateCheck}`
+    : null;
+
+  useEffect(() => {
+    if (scheduledStateCheckKey === null
+      || nextRegistrationStateCheck === null
+      || lastTriggeredStateCheck.current === scheduledStateCheckKey) return;
+    const targetTime = Date.parse(nextRegistrationStateCheck);
+    if (!Number.isFinite(targetTime)) return;
+
+    let timer: number | null = null;
+    let cancelled = false;
+    const schedule = () => {
+      if (cancelled) return;
+      const remaining = targetTime - Date.now();
+      if (remaining <= 0) {
+        lastTriggeredStateCheck.current = scheduledStateCheckKey;
+        setAttempt((value) => value + 1);
+        return;
+      }
+      timer = window.setTimeout(schedule, Math.min(remaining, 2_147_483_647));
+    };
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [nextRegistrationStateCheck, scheduledStateCheckKey]);
 
   if (route.kind === "invalid") {
     return <StaticStatePage title="Страница не найдена" />;

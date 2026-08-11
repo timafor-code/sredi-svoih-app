@@ -5,6 +5,8 @@ export type WebRegistrationState =
   | "full"
   | "unavailable";
 
+export type OccurrenceSelectionMode = "none" | "user_select" | "nearest";
+
 export type ApiResponse<T> = {
   data: T;
   error: null;
@@ -111,6 +113,9 @@ export type WebEventRegistrationFormResponse = {
   resolved_from_alias: boolean;
   event: WebRegistrationEvent;
   registration_state: WebRegistrationState;
+  occurrence_selection_mode: OccurrenceSelectionMode;
+  default_occurrence_id: string | null;
+  next_registration_state_check_at: string | null;
   occurrences: WebRegistrationOccurrence[];
   participation_options: WebRegistrationParticipationOption[];
   legal_documents: WebRegistrationLegalDocument[];

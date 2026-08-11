@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
   EVENT_ID,
@@ -28,6 +28,8 @@ const FLOW_ID = "opaque-flow-credential";
 const REGISTRATION_ID = "77777777-7777-4777-8777-777777777777";
 const EXPIRES_AT = "2026-09-12T18:00:00+03:00";
 const SET_PASSWORD_CODE = "opaque-set-password-code-with-sufficient-length";
+
+afterEach(() => vi.useRealTimers());
 
 function envelope<T>(data: T) {
   return { data, error: null, meta: {} };
@@ -260,6 +262,27 @@ describe("registration state and occurrences", () => {
     expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
   });
 
+  it("requires a date first and hides the participation and personal flow", async () => {
+    const data = responseWithQuestionnaire();
+    const occurrenceData = responseWithOccurrences();
+    data.registration_state = occurrenceData.registration_state;
+    data.occurrence_selection_mode = "user_select";
+    data.default_occurrence_id = null;
+    data.occurrences = occurrenceData.occurrences;
+    await renderEvent(data);
+
+    expect(
+      screen.getAllByRole<HTMLInputElement>("radio", { name: /Пятница|Суббота/ })
+        .every((radio) => !radio.checked),
+    ).toBe(true);
+    expect(screen.getByText("Сначала выберите дату участия")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Варианты участия" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("spinbutton", { name: "Количество мест" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Дополнительные вопросы" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Я ознакомился/)).not.toBeInTheDocument();
+  });
+
   it("preselects a returned occurrence from the query and uses its state", async () => {
     await renderEvent(responseWithOccurrences(), `?occurrence=${OCCURRENCE_TWO_ID}`);
     expect(screen.getByRole("radio", { name: /Суббота/ })).toBeChecked();
@@ -270,7 +293,9 @@ describe("registration state and occurrences", () => {
 
   it("ignores an occurrence outside the returned list", async () => {
     await renderEvent(responseWithOccurrences(), "?occurrence=77777777-7777-4777-8777-777777777777");
-    expect(screen.getByRole("radio", { name: /Пятница/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /Пятница/ })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: /Суббота/ })).not.toBeChecked();
+    expect(screen.getByText("Сначала выберите дату участия")).toBeInTheDocument();
     expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
     expect(window.location.search).toBe("");
   });
@@ -281,13 +306,12 @@ describe("registration state and occurrences", () => {
     expect(window.location.search).toBe("");
   });
 
-  it("updates only occurrence in the query without reloading", async () => {
+  it("keeps manual date selection out of the canonical URL", async () => {
     const user = userEvent.setup();
     await renderEvent(responseWithOccurrences(), "?source=invite");
     await user.click(screen.getByRole("radio", { name: /Суббота/ }));
     expect(window.location.pathname).toBe(`/events/${PUBLIC_SLUG}`);
-    expect(new URLSearchParams(window.location.search).get("source")).toBeNull();
-    expect(new URLSearchParams(window.location.search).get("occurrence")).toBe(OCCURRENCE_TWO_ID);
+    expect(window.location.search).toBe("");
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
@@ -299,6 +323,84 @@ describe("registration state and occurrences", () => {
     expect(screen.getByLabelText("Имя")).toBeInTheDocument();
     await user.click(screen.getByRole("radio", { name: /Пятница/ }));
     expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+  });
+
+  it("uses the backend nearest occurrence without rendering a selector or honoring query", async () => {
+    const data = responseWithOccurrences();
+    data.occurrence_selection_mode = "nearest";
+    data.default_occurrence_id = OCCURRENCE_TWO_ID;
+    data.registration_state = "open";
+    await renderEvent(data, `?occurrence=${OCCURRENCE_ONE_ID}`);
+
+    expect(screen.queryByRole("radio", { name: /Пятница|Суббота/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Выберите дату")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Имя")).toBeInTheDocument();
+    expect(window.location.search).toBe("");
+  });
+
+  it("automatically uses one occurrence without rendering a selector", async () => {
+    const data = responseWithOccurrences();
+    data.occurrences = [data.occurrences[1]];
+    data.occurrence_selection_mode = "none";
+    data.default_occurrence_id = OCCURRENCE_TWO_ID;
+    data.registration_state = "open";
+    await renderEvent(data);
+
+    expect(screen.queryByRole("radio", { name: /Суббота/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Выберите дату")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Имя")).toBeInTheDocument();
+  });
+
+  it("refetches at the backend timestamp without changing state before the response", async () => {
+    vi.useFakeTimers();
+    const browserNow = new Date("2026-08-11T10:00:00Z");
+    vi.setSystemTime(browserNow);
+    const beforeOpening = eventResponse("not_yet_open");
+    beforeOpening.next_registration_state_check_at = new Date(
+      browserNow.getTime() + 1_000,
+    ).toISOString();
+    const opened = eventResponse("open");
+    let resolveRefresh!: (value: Response) => void;
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response(envelope(beforeOpening)))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve; }));
+    window.history.replaceState(null, "", `/events/${PUBLIC_SLUG}`);
+    render(<App />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText("Регистрация ещё не открыта")).toBeInTheDocument();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Регистрация ещё не открыта")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+
+    const refreshedResponse = await response(envelope(opened));
+    await act(async () => {
+      resolveRefresh(refreshedResponse);
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Регистрация открыта")).toBeInTheDocument();
+    expect(screen.getByLabelText("Имя")).toBeInTheDocument();
+  });
+
+  it("refetches server state when the document becomes visible", async () => {
+    const beforeOpening = eventResponse("not_yet_open");
+    const opened = eventResponse("open");
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response(envelope(beforeOpening)))
+      .mockImplementationOnce(() => response(envelope(opened)));
+    window.history.replaceState(null, "", `/events/${PUBLIC_SLUG}`);
+    render(<App />);
+    expect(await screen.findByText("Регистрация ещё не открыта")).toBeInTheDocument();
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+    fireEvent(document, new Event("visibilitychange"));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Регистрация открыта")).toBeInTheDocument();
   });
 });
 

@@ -38,6 +38,9 @@ export function eventResponse(
       requires_approval: false,
     },
     registration_state: registrationState,
+    occurrence_selection_mode: "none",
+    default_occurrence_id: null,
+    next_registration_state_check_at: null,
     occurrences: [],
     participation_options: [
       {
@@ -84,6 +87,8 @@ export function eventResponse(
 
 export function responseWithOccurrences(): WebEventRegistrationFormResponse {
   const data = eventResponse("closed");
+  data.occurrence_selection_mode = "user_select";
+  data.default_occurrence_id = null;
   data.occurrences = [
     {
       id: OCCURRENCE_ONE_ID,

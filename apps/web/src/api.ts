@@ -2,6 +2,7 @@ import type {
   AccountNextStep,
   ApiResponse,
   AuthCodeResult,
+  OccurrenceSelectionMode,
   WebEventRegistrationFormResponse,
   WebRegistrationConfirmResult,
   WebRegistrationIntentCreated,
@@ -27,6 +28,12 @@ const REGISTRATION_STATES = new Set<WebRegistrationState>([
   "closed",
   "full",
   "unavailable",
+]);
+
+const OCCURRENCE_SELECTION_MODES = new Set<OccurrenceSelectionMode>([
+  "none",
+  "user_select",
+  "nearest",
 ]);
 
 export class RegistrationUnavailableError extends Error {}
@@ -87,8 +94,23 @@ function isNullableDateTime(value: unknown): value is string | null {
   return value === null || isDateTime(value);
 }
 
+const ZONED_DATE_TIME_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+function isNullableZonedDateTime(value: unknown): value is string | null {
+  return value === null
+    || (typeof value === "string"
+      && ZONED_DATE_TIME_PATTERN.test(value)
+      && Number.isFinite(Date.parse(value)));
+}
+
 function isState(value: unknown): value is WebRegistrationState {
   return typeof value === "string" && REGISTRATION_STATES.has(value as WebRegistrationState);
+}
+
+function isOccurrenceSelectionMode(value: unknown): value is OccurrenceSelectionMode {
+  return typeof value === "string"
+    && OCCURRENCE_SELECTION_MODES.has(value as OccurrenceSelectionMode);
 }
 
 const ACCOUNT_NEXT_STEPS = new Set<AccountNextStep>([
@@ -181,6 +203,31 @@ function isOccurrence(value: unknown): value is WebRegistrationOccurrence {
     && isNullableBoolean(value.waitlist_enabled)
     && isNullableBoolean(value.requires_approval)
     && isState(value.registration_state);
+}
+
+function hasValidOccurrenceSelectionContract(
+  value: Record<string, unknown>,
+): boolean {
+  if (!isOccurrenceSelectionMode(value.occurrence_selection_mode)
+    || !(value.default_occurrence_id === null || isUuid(value.default_occurrence_id))
+    || !isNullableZonedDateTime(value.next_registration_state_check_at)
+    || !Array.isArray(value.occurrences)
+    || !value.occurrences.every(isOccurrence)) return false;
+
+  const occurrenceIds = value.occurrences.map((occurrence) => occurrence.id.toLowerCase());
+  const defaultOccurrenceId = value.default_occurrence_id?.toLowerCase() ?? null;
+  if (defaultOccurrenceId !== null && !occurrenceIds.includes(defaultOccurrenceId)) return false;
+
+  switch (value.occurrence_selection_mode) {
+    case "none":
+      return occurrenceIds.length === 0
+        ? defaultOccurrenceId === null
+        : occurrenceIds.length === 1 && defaultOccurrenceId === occurrenceIds[0];
+    case "user_select":
+      return occurrenceIds.length > 1 && defaultOccurrenceId === null;
+    case "nearest":
+      return occurrenceIds.length > 0;
+  }
 }
 
 function isOption(value: unknown): value is WebRegistrationParticipationOption {
@@ -323,6 +370,7 @@ export function isWebEventRegistrationFormResponse(
     && typeof event.waitlist_enabled === "boolean"
     && typeof event.requires_approval === "boolean"
     && isState(value.registration_state)
+    && hasValidOccurrenceSelectionContract(value)
     && Array.isArray(value.occurrences)
     && value.occurrences.every(isOccurrence)
     && Array.isArray(value.participation_options)

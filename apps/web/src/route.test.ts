@@ -3,7 +3,6 @@ import {
   isCanonicalPublicPath,
   parseRoute,
   replaceCanonicalEventPath,
-  replaceOccurrenceQuery,
 } from "./route";
 import {
   EVENT_ID,
@@ -77,28 +76,51 @@ describe("public event route", () => {
     replaceCanonicalEventPath(
       "/events/shabbat",
       OCCURRENCE_ONE_ID,
+      "user_select",
       [OCCURRENCE_ONE_ID, OCCURRENCE_TWO_ID],
     );
     expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
       `/events/shabbat?occurrence=${OCCURRENCE_ONE_ID}#details`,
     );
     expect(replaceSpy).toHaveBeenCalledOnce();
-    replaceCanonicalEventPath("/events/shabbat", OCCURRENCE_ONE_ID, [OCCURRENCE_ONE_ID]);
+    replaceCanonicalEventPath(
+      "/events/shabbat",
+      OCCURRENCE_ONE_ID,
+      "user_select",
+      [OCCURRENCE_ONE_ID],
+    );
     expect(replaceSpy).toHaveBeenCalledOnce();
   });
 
   it("removes a missing or foreign occurrence during canonicalization", () => {
     window.history.replaceState(null, "", `/events/old?occurrence=${OCCURRENCE_TWO_ID}`);
-    replaceCanonicalEventPath("/events/shabbat", OCCURRENCE_TWO_ID, [OCCURRENCE_ONE_ID]);
+    replaceCanonicalEventPath(
+      "/events/shabbat",
+      OCCURRENCE_TWO_ID,
+      "user_select",
+      [OCCURRENCE_ONE_ID],
+    );
     expect(window.location.pathname).toBe("/events/shabbat");
     expect(window.location.search).toBe("");
   });
 
-  it("changes only to the selected occurrence query and keeps the fragment", () => {
-    window.history.replaceState(null, "", "/events/shabbat?source=invite#details");
-    replaceOccurrenceQuery(OCCURRENCE_ONE_ID);
-    expect(window.location.pathname).toBe("/events/shabbat");
-    expect(window.location.search).toBe(`?occurrence=${OCCURRENCE_ONE_ID}`);
-    expect(window.location.hash).toBe("#details");
-  });
+  it.each(["nearest", "none"] as const)(
+    "removes an occurrence query for %s canonicalization and keeps the fragment",
+    (mode) => {
+      window.history.replaceState(
+        null,
+        "",
+        `/events/old?occurrence=${OCCURRENCE_ONE_ID}#details`,
+      );
+      replaceCanonicalEventPath(
+        "/events/shabbat",
+        OCCURRENCE_ONE_ID,
+        mode,
+        [OCCURRENCE_ONE_ID],
+      );
+      expect(window.location.pathname).toBe("/events/shabbat");
+      expect(window.location.search).toBe("");
+      expect(window.location.hash).toBe("#details");
+    },
+  );
 });

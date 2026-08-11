@@ -67,9 +67,10 @@ export function parseRoute(pathname: string, search: string): EventRoute | Inval
 export function replaceCanonicalEventPath(
   canonicalPublicPath: string,
   requestedOccurrenceId: string | null,
+  occurrenceSelectionMode: "none" | "user_select" | "nearest",
   occurrenceIds: readonly string[],
 ): boolean {
-  const occurrenceId = requestedOccurrenceId
+  const occurrenceId = occurrenceSelectionMode === "user_select" && requestedOccurrenceId
     && occurrenceIds.some((value) => value.toLowerCase() === requestedOccurrenceId)
     ? requestedOccurrenceId
     : null;
@@ -81,9 +82,4 @@ export function replaceCanonicalEventPath(
     return true;
   }
   return false;
-}
-
-export function replaceOccurrenceQuery(occurrenceId: string): void {
-  const nextUrl = `${window.location.pathname}?occurrence=${encodeURIComponent(occurrenceId)}${window.location.hash}`;
-  window.history.replaceState(window.history.state, "", nextUrl);
 }
