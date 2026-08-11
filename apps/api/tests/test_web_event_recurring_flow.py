@@ -293,6 +293,91 @@ class WebEventRecurringFlowTests(unittest.IsolatedAsyncioTestCase):
             first_opening,
         )
 
+    async def test_course_excludes_past_active_and_automatically_uses_future(self) -> None:
+        past = _occurrence(
+            starts_at=self.now - timedelta(hours=3),
+            ends_at=self.now - timedelta(hours=1),
+            registration_closes_at=self.now + timedelta(minutes=30),
+        )
+        future = _occurrence(
+            starts_at=self.now + timedelta(days=1),
+            ends_at=self.now + timedelta(days=1, hours=2),
+        )
+        await self._replace_occurrences(past, future)
+
+        data = await self._form()
+
+        self.assertEqual(data["occurrence_selection_mode"], "none")
+        self.assertEqual(data["default_occurrence_id"], str(future.id))
+        self.assertEqual(
+            [item["id"] for item in data["occurrences"]],
+            [str(future.id)],
+        )
+        self.assertIsNone(data["next_registration_state_check_at"])
+
+    async def test_course_excludes_past_active_from_user_select_list(self) -> None:
+        past = _occurrence(
+            starts_at=self.now - timedelta(days=1),
+            ends_at=self.now - timedelta(hours=20),
+        )
+        first_future = _occurrence(
+            starts_at=self.now + timedelta(days=1),
+            ends_at=self.now + timedelta(days=1, hours=2),
+        )
+        second_future = _occurrence(
+            starts_at=self.now + timedelta(days=2),
+            ends_at=self.now + timedelta(days=2, hours=2),
+        )
+        await self._replace_occurrences(second_future, past, first_future)
+
+        data = await self._form()
+
+        self.assertEqual(data["occurrence_selection_mode"], "user_select")
+        self.assertIsNone(data["default_occurrence_id"])
+        self.assertEqual(
+            [item["id"] for item in data["occurrences"]],
+            [str(first_future.id), str(second_future.id)],
+        )
+
+    async def test_only_past_active_occurrences_fail_closed(self) -> None:
+        past = _occurrence(
+            starts_at=self.now - timedelta(days=2),
+            ends_at=self.now - timedelta(hours=46),
+            registration_closes_at=self.now + timedelta(hours=1),
+        )
+        later_past = _occurrence(
+            starts_at=self.now - timedelta(days=1),
+            ends_at=self.now - timedelta(hours=20),
+        )
+        await self._replace_occurrences(past, later_past)
+
+        data = await self._form()
+
+        self.assertEqual(data["occurrence_selection_mode"], "none")
+        self.assertIsNone(data["default_occurrence_id"])
+        self.assertEqual(data["registration_state"], "unavailable")
+        self.assertEqual(data["occurrences"], [])
+        self.assertIsNone(data["next_registration_state_check_at"])
+
+    async def test_closed_window_remains_visible_until_occurrence_finishes(self) -> None:
+        current = _occurrence(
+            starts_at=self.now - timedelta(hours=2),
+            ends_at=self.now + timedelta(hours=1),
+            registration_opens_at=self.now - timedelta(days=1),
+            registration_closes_at=self.now - timedelta(minutes=30),
+        )
+        await self._replace_occurrences(current)
+
+        data = await self._form()
+
+        self.assertEqual(data["occurrence_selection_mode"], "none")
+        self.assertEqual(data["default_occurrence_id"], str(current.id))
+        self.assertEqual(data["registration_state"], "closed")
+        self.assertEqual(
+            [item["registration_state"] for item in data["occurrences"]],
+            ["closed"],
+        )
+
     async def test_shabbat_uses_nearest_and_query_cannot_override_it(self) -> None:
         await self._set_event_kind("shabbat")
         current = _occurrence(
@@ -353,17 +438,10 @@ class WebEventRecurringFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         await self._replace_occurrences(finished)
         data = await self._form()
-        self.assertEqual(data["occurrence_selection_mode"], "nearest")
+        self.assertEqual(data["occurrence_selection_mode"], "none")
         self.assertIsNone(data["default_occurrence_id"])
         self.assertEqual(data["registration_state"], "unavailable")
         self.assertIsNone(data["next_registration_state_check_at"])
-
-        occurrence_ids = {item["id"] for item in data["occurrences"]}
-        self.assertEqual(occurrence_ids, {str(finished.id)})
-        self.assertNotIn(str(self.foreign_occurrence_id), occurrence_ids)
-        self.assertTrue(
-            all(
-                item["event_id"] == str(self.event_id)
-                for item in data["occurrences"]
-            ),
-        )
+        self.assertEqual(data["occurrences"], [])
+        self.assertNotIn(str(finished.id), str(data))
+        self.assertNotIn(str(self.foreign_occurrence_id), str(data))

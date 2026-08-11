@@ -288,7 +288,7 @@ async def _build_web_registration_form(
     resolved_from_alias: bool,
 ) -> WebEventRegistrationFormResponse:
     now = datetime.now(UTC)
-    occurrences = list(
+    active_occurrences = list(
         await session.scalars(
             select(EventOccurrence)
             .where(
@@ -298,6 +298,11 @@ async def _build_web_registration_form(
             .order_by(EventOccurrence.starts_at, EventOccurrence.id),
         ),
     )
+    occurrences = [
+        occurrence
+        for occurrence in active_occurrences
+        if _occurrence_relevance_boundary(occurrence) > now
+    ]
 
     occurrence_responses: list[WebRegistrationOccurrenceResponse] = []
     occurrence_states: list[str] = []
@@ -347,13 +352,13 @@ async def _build_web_registration_form(
     elif occurrence_states:
         registration_state = _aggregate_registration_state(occurrence_states)
     else:
-        has_inactive_occurrences = await session.scalar(
+        has_occurrences = await session.scalar(
             select(EventOccurrence.id)
             .where(EventOccurrence.event_id == event.id)
             .limit(1),
         )
         registration_state = (
-            "unavailable" if has_inactive_occurrences is not None else "open"
+            "unavailable" if has_occurrences is not None else "open"
         )
         if registration_state == "open" and event.capacity is not None:
             taken = await _taken_registration_seats(
