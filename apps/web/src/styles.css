@@ -353,6 +353,34 @@ legend,
   line-height: 1.35;
 }
 
+.registration-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 28px;
+  padding: clamp(20px, 3.5vw, 30px);
+  border-color: rgba(255, 200, 50, 0.28);
+  background:
+    linear-gradient(135deg, rgba(255, 200, 50, 0.09), rgba(240, 122, 42, 0.05)),
+    rgba(20, 22, 32, 0.92);
+}
+
+.registration-summary p {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+
+.registration-summary strong {
+  color: var(--text);
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .registration-status {
   min-height: 58px;
   display: flex;
@@ -870,6 +898,10 @@ select {
 
   .quantity-control {
     padding-left: 16px;
+  }
+
+  .registration-summary {
+    grid-template-columns: 1fr;
   }
 
   .site-footer {

@@ -25,6 +25,11 @@ import {
   validateQuestionnaire,
 } from "./questionnaire";
 import {
+  calculateRegistrationDisplayTotals,
+  clampOptionQuantity,
+  getSelectedOptionQuantity,
+} from "./participation";
+import {
   parseRoute,
   replaceCanonicalEventPath,
 } from "./route";
@@ -35,6 +40,7 @@ import type {
   WebRegistrationConfirmResult,
   WebRegistrationIntentRequest,
   WebRegistrationLegalDocument,
+  WebRegistrationMode,
   WebRegistrationOccurrence,
   WebRegistrationParticipationOption,
   WebQuestionnaireAnswerValue,
@@ -55,6 +61,7 @@ import {
 } from "./validation";
 
 const DEFAULT_TITLE = "Регистрация на мероприятие — Среди Своих";
+const MIXED_CURRENCY_ERROR = "Выбранные варианты используют разные валюты. Измените выбор вариантов участия.";
 
 function createIdempotencyKey(): string {
   if (!globalThis.crypto?.getRandomValues) throw new Error("Web Crypto is unavailable");
@@ -296,6 +303,20 @@ function formatOptionPrice(amount: number, currency: string): string | null {
   }
 }
 
+function formatRegistrationTotal(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("ru-RU", {
+      style: "currency",
+      currency,
+      currencyDisplay: "symbol",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  } catch {
+    return `${new Intl.NumberFormat("ru-RU").format(amount)} ${currency}`.trim();
+  }
+}
+
 function ParticipationOptionCard({
   option,
   selection,
@@ -442,6 +463,7 @@ const SUCCESS_COPY: Record<WebRegistrationResult["status"], string> = {
 function RegistrationForm({
   eventId,
   eventTitle,
+  registrationMode,
   occurrences,
   selectedOccurrenceId,
   options,
@@ -452,6 +474,7 @@ function RegistrationForm({
 }: {
   eventId: string;
   eventTitle: string;
+  registrationMode: WebRegistrationMode;
   occurrences: WebRegistrationOccurrence[];
   selectedOccurrenceId: string | null;
   options: WebRegistrationParticipationOption[];
@@ -501,6 +524,14 @@ function RegistrationForm({
   const repeatPasswordRef = useRef<HTMLInputElement>(null);
   const submittingRef = useRef(false);
   const idempotencyRef = useRef<{ signature: string; key: string } | null>(null);
+  const displayTotals = useMemo(
+    () => calculateRegistrationDisplayTotals(options, selections),
+    [options, selections],
+  );
+  const usesCalculatedSeats = registrationMode === "internal_paid" && options.length > 0;
+  const participationError = displayTotals.hasMixedCurrencies
+    ? MIXED_CURRENCY_ERROR
+    : errors.options;
 
   useEffect(() => {
     setValues(emptyValues);
@@ -581,7 +612,7 @@ function RegistrationForm({
       }
       next[option.id] = {
         selected,
-        quantity: Math.min(option.max_quantity, Math.max(option.min_quantity, option.min_quantity)),
+        quantity: clampOptionQuantity(option, option.min_quantity),
       };
       return next;
     });
@@ -598,7 +629,7 @@ function RegistrationForm({
       ...current,
       [option.id]: {
         selected: true,
-        quantity: Math.min(option.max_quantity, Math.max(option.min_quantity, quantity)),
+        quantity: clampOptionQuantity(option, quantity),
       },
     }));
     setNotice(null);
@@ -713,8 +744,11 @@ function RegistrationForm({
     ))) {
       nextErrors.options = "Выберите вариант участия.";
     }
-    const seatsCountError = validateSeatsCount(normalizedValues.seatsCount);
-    if (seatsCountError) nextErrors.seatsCount = seatsCountError;
+    if (displayTotals.hasMixedCurrencies) nextErrors.options = MIXED_CURRENCY_ERROR;
+    if (!usesCalculatedSeats) {
+      const seatsCountError = validateSeatsCount(normalizedValues.seatsCount);
+      if (seatsCountError) nextErrors.seatsCount = seatsCountError;
+    }
     if (!values.consent) nextErrors.consent = "Подтвердите согласие для продолжения.";
     const questionnaireResult = validateQuestionnaire(questions, questionnaireValues);
     setQuestionnaireErrors(questionnaireResult.errors);
@@ -734,13 +768,13 @@ function RegistrationForm({
       last_name: normalizedValues.lastName,
       phone,
       email: normalizedValues.email,
-      seats_count: Number(normalizedValues.seatsCount),
-      option_selections: options
-        .filter((option) => selections[option.id]?.selected)
-        .map((option) => ({
-          option_id: option.id,
-          quantity: selections[option.id]?.quantity ?? option.min_quantity,
-        })),
+      seats_count: usesCalculatedSeats
+        ? displayTotals.seats
+        : Number(normalizedValues.seatsCount),
+      option_selections: options.flatMap((option) => {
+        const quantity = getSelectedOptionQuantity(option, selections[option.id]);
+        return quantity === null ? [] : [{ option_id: option.id, quantity }];
+      }),
       questionnaire_form_id: questionnaireFormId,
       answers: questionnaireResult.answers,
       legal_acceptances: [{
@@ -1049,35 +1083,49 @@ function RegistrationForm({
         selections={selections}
         onSelectionChange={onOptionSelectionChange}
         onQuantityChange={onOptionQuantityChange}
-        error={errors.options}
+        error={participationError}
         focusRef={optionsRef}
       />
 
-      <section className="surface section-card" aria-labelledby="seats-heading">
-        <h2 id="seats-heading">Количество мест</h2>
-        <div className="form-field seats-field">
-          <label htmlFor="seats-count">Количество мест</label>
-          <input
-            id="seats-count"
-            type="number"
-            min={1}
-            max={1000}
-            step={1}
-            inputMode="numeric"
-            value={values.seatsCount}
-            aria-invalid={Boolean(errors.seatsCount)}
-            aria-describedby={errors.seatsCount ? "seats-count-error" : undefined}
-            onChange={(event) => updateSeatsCount(event.target.value)}
-            onBlur={() => {
-              const error = validateSeatsCount(values.seatsCount);
-              setErrors((current) => ({ ...current, seatsCount: error ?? undefined }));
-            }}
-          />
-          {errors.seatsCount ? (
-            <p className="field-error" id="seats-count-error" role="alert">{errors.seatsCount}</p>
-          ) : null}
-        </div>
-      </section>
+      {registrationMode === "internal_paid"
+        && displayTotals.hasSelection
+        && displayTotals.seats > 0
+        && !displayTotals.hasMixedCurrencies
+        && displayTotals.amount !== null
+        && displayTotals.currency ? (
+          <section className="surface registration-summary" aria-label="Итог регистрации" aria-live="polite">
+            <p><span>Итого:</span> <strong>{formatRegistrationTotal(displayTotals.amount, displayTotals.currency)}</strong></p>
+            <p><span>Мест:</span> <strong>{displayTotals.seats}</strong></p>
+          </section>
+        ) : null}
+
+      {!usesCalculatedSeats ? (
+        <section className="surface section-card" aria-labelledby="seats-heading">
+          <h2 id="seats-heading">Количество мест</h2>
+          <div className="form-field seats-field">
+            <label htmlFor="seats-count">Количество мест</label>
+            <input
+              id="seats-count"
+              type="number"
+              min={1}
+              max={1000}
+              step={1}
+              inputMode="numeric"
+              value={values.seatsCount}
+              aria-invalid={Boolean(errors.seatsCount)}
+              aria-describedby={errors.seatsCount ? "seats-count-error" : undefined}
+              onChange={(event) => updateSeatsCount(event.target.value)}
+              onBlur={() => {
+                const error = validateSeatsCount(values.seatsCount);
+                setErrors((current) => ({ ...current, seatsCount: error ?? undefined }));
+              }}
+            />
+            {errors.seatsCount ? (
+              <p className="field-error" id="seats-count-error" role="alert">{errors.seatsCount}</p>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       <QuestionnaireFields
         fields={questions}
@@ -1278,6 +1326,7 @@ function EventPage({ data, requestedOccurrenceId }: {
               key={data.event.id}
               eventId={data.event.id}
               eventTitle={data.event.title}
+              registrationMode={data.event.registration_mode}
               occurrences={data.occurrences}
               selectedOccurrenceId={effectiveOccurrenceId}
               options={data.participation_options}
