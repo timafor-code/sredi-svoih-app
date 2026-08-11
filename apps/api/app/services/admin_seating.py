@@ -32,6 +32,7 @@ from app.db.models.seating import (
 )
 from app.schemas.admin_seating import (
     AdminSeatingAssignmentEntryPayload,
+    AdminSeatingAssignmentResponse,
     AdminSeatingAssignmentsPatchRequest,
     AdminSeatingAssignmentsSaveResponse,
     AdminSeatingConnectionPayload,
