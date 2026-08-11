@@ -129,6 +129,17 @@ class WebRegistrationResult(BaseModel):
     occurrence_id: UUID | None
     status: Literal["confirmed", "pending", "waitlisted", "attended"]
     seats_count: int
+    payment_status: Literal[
+        "not_required",
+        "pending",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "refunded",
+        "paid",
+    ]
+    total_amount: int | None = Field(default=None, ge=0)
+    total_currency: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

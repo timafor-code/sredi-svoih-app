@@ -44,6 +44,9 @@ function registrationResult(
   status: "confirmed" | "pending" | "waitlisted" = "confirmed",
   accountNextStep: "none" | "set_password" | "sign_in" | "request_set_password" = "none",
   occurrenceId: string | null = null,
+  paymentStatus: "not_required" | "pending" = "not_required",
+  totalAmount: number | null = 0,
+  totalCurrency: string | null = "RUB",
 ) {
   return envelope({
     intent_status: "confirmed",
@@ -53,6 +56,9 @@ function registrationResult(
       occurrence_id: occurrenceId,
       status,
       seats_count: 1,
+      payment_status: paymentStatus,
+      total_amount: totalAmount,
+      total_currency: totalCurrency,
     },
     account_next_step: accountNextStep,
     set_password_code: accountNextStep === "set_password" ? SET_PASSWORD_CODE : null,
@@ -1135,7 +1141,16 @@ describe("registration intent and account claim flow", () => {
       .mockImplementationOnce(() => response(envelope({
         state: "confirmed",
         expires_at: null,
-        registration: { id: REGISTRATION_ID, event_id: EVENT_ID, occurrence_id: null, status: "confirmed", seats_count: 1 },
+        registration: {
+          id: REGISTRATION_ID,
+          event_id: EVENT_ID,
+          occurrence_id: null,
+          status: "confirmed",
+          seats_count: 1,
+          payment_status: "not_required",
+          total_amount: 0,
+          total_currency: "RUB",
+        },
         account_next_step: "none",
       })));
     await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
@@ -1153,7 +1168,16 @@ describe("registration intent and account claim flow", () => {
     vi.mocked(fetch).mockImplementationOnce(() => response(envelope({
       state: "confirmed",
       expires_at: null,
-      registration: { id: REGISTRATION_ID, event_id: EVENT_ID, occurrence_id: null, status: "pending", seats_count: 1 },
+      registration: {
+        id: REGISTRATION_ID,
+        event_id: EVENT_ID,
+        occurrence_id: null,
+        status: "pending",
+        seats_count: 1,
+        payment_status: "not_required",
+        total_amount: 0,
+        total_currency: "RUB",
+      },
       account_next_step: "none",
     })));
     await user.click(screen.getByRole("button", { name: "Проверить статус" }));
@@ -1179,6 +1203,30 @@ describe("registration intent and account claim flow", () => {
     await createIntent(user);
     await confirmIntent(user, registrationResult(status));
     expect(await screen.findByText(new RegExp(copy))).toBeInTheDocument();
+  });
+
+  it("shows the server-authoritative pending paid result without payment claims or CTA", async () => {
+    const user = userEvent.setup();
+    await renderEvent(paidEventResponse());
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    await user.type(screen.getByLabelText("Имя"), "Анна");
+    await user.type(screen.getByLabelText("Фамилия"), "Иванова");
+    await user.type(screen.getByLabelText("Телефон"), "+7 (999) 123-45-67");
+    await user.type(screen.getByLabelText("Email"), "anna@example.ru");
+    await user.click(screen.getByLabelText(/Я ознакомился/));
+    await createIntent(user);
+    await confirmIntent(
+      user,
+      registrationResult("pending", "none", null, "pending", 4321, "RUB"),
+    );
+
+    expect(await screen.findByRole("heading", { name: "Заявка создана" })).toBeInTheDocument();
+    expect(screen.getByText("Заявка создана.")).toBeInTheDocument();
+    expect(screen.getByText("Сумма").closest("div")).toHaveTextContent(/4.?321.?₽/);
+    expect(screen.getByText("Оплата на сайте пока не выполнена.")).toBeInTheDocument();
+    expect(screen.getByText(/Статус оплаты:/)).toHaveTextContent("ожидается");
+    expect(screen.queryByRole("button", { name: /Оплатить/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Оплата прошла|Оплачено|Платёж выполнен|Тестовая оплата/)).not.toBeInTheDocument();
   });
 
   it.each([

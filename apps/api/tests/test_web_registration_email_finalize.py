@@ -21,11 +21,13 @@ from app.db.models.core import (
     Event,
     EventCategory,
     EventOccurrence,
+    EventParticipationOption,
     EventRegistration,
     EventRegistrationAnswer,
     EventRegistrationCapacityReservation,
     EventRegistrationForm,
     EventRegistrationFormField,
+    EventRegistrationOptionSelection,
     LegalAcceptance,
     LegalDocument,
     Profile,
@@ -657,6 +659,9 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(result.account_next_step, "none")
         self.assertEqual(result.registration.status, "confirmed")
+        self.assertEqual(result.registration.payment_status, "not_required")
+        self.assertIsNone(result.registration.total_amount)
+        self.assertIsNone(result.registration.total_currency)
         self.assertEqual(len(self.result_deliveries), 1)
         async with AsyncSessionLocal() as session:
             user = await session.scalar(
@@ -699,6 +704,117 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                 await session.scalar(select(func.count()).select_from(CommunityMembership)),
                 before_memberships,
             )
+
+    async def test_paid_confirmation_uses_current_server_price_and_replays_one_pending_result(self) -> None:
+        option = EventParticipationOption(
+            event_id=self.event_id,
+            title="Canonical paid option",
+            price_amount=1200,
+            price_currency="RUB",
+            option_type="participation",
+            allow_quantity=True,
+            min_quantity=1,
+            max_quantity=4,
+            counts_toward_capacity=True,
+            is_active=True,
+        )
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                event = await session.get(Event, self.event_id)
+                assert event is not None
+                event.registration_mode = "internal_paid"
+                session.add(option)
+                await session.flush()
+
+        settings = Settings(api_public_web_paid_registration_enabled=True)
+        with patch("app.services.events.get_settings", return_value=settings):
+            created, code = await self.create(
+                self.payload(
+                    seats_count=2,
+                    option_selections=[{"option_id": option.id, "quantity": 2}],
+                    idempotency_key="web-finalize-paid-server-snapshot",
+                ),
+            )
+            async with AsyncSessionLocal() as session:
+                self.assertEqual(
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(EventRegistration)
+                        .where(EventRegistration.event_id == self.event_id),
+                    ),
+                    0,
+                )
+                self.assertEqual(
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(EventRegistrationCapacityReservation)
+                        .where(
+                            EventRegistrationCapacityReservation.event_id
+                            == self.event_id,
+                        ),
+                    ),
+                    0,
+                )
+                stored_option = await session.get(EventParticipationOption, option.id)
+                assert stored_option is not None
+                stored_option.price_amount = 1750
+                await session.commit()
+
+            async with AsyncSessionLocal() as session:
+                result = await service.confirm_email(
+                    session,
+                    created.flow_id,
+                    code,
+                    "192.0.2.52",
+                )
+
+        self.assertEqual(result.registration.status, "pending")
+        self.assertEqual(result.registration.payment_status, "pending")
+        self.assertEqual(result.registration.seats_count, 2)
+        self.assertEqual(result.registration.total_amount, 3500)
+        self.assertEqual(result.registration.total_currency, "RUB")
+        async with AsyncSessionLocal() as session:
+            snapshot = await session.scalar(
+                select(EventRegistrationOptionSelection).where(
+                    EventRegistrationOptionSelection.registration_id
+                    == result.registration.id,
+                ),
+            )
+            assert snapshot is not None
+            self.assertEqual(snapshot.option_id, option.id)
+            self.assertEqual(snapshot.quantity, 2)
+            self.assertEqual(snapshot.unit_price_amount, 1750)
+            self.assertEqual(snapshot.total_amount, 3500)
+            self.assertEqual(snapshot.currency, "RUB")
+            self.assertEqual(snapshot.seats_count, 2)
+            self.assertTrue(snapshot.counts_toward_capacity)
+            self.assertFalse(snapshot.is_donation)
+            stored_option = await session.get(EventParticipationOption, option.id)
+            assert stored_option is not None
+            stored_option.price_amount = 9999
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            replay = await service.confirm_email(
+                session,
+                created.flow_id,
+                code,
+                "192.0.2.52",
+            )
+            status_result = await service.get_intent_status(session, created.flow_id)
+            registration_count = await session.scalar(
+                select(func.count())
+                .select_from(EventRegistration)
+                .where(EventRegistration.event_id == self.event_id),
+            )
+        self.assertEqual(replay.registration.id, result.registration.id)
+        self.assertEqual(replay.registration.total_amount, 3500)
+        assert status_result.registration is not None
+        self.assertEqual(status_result.registration.id, result.registration.id)
+        self.assertEqual(status_result.registration.payment_status, "pending")
+        self.assertEqual(status_result.registration.total_amount, 3500)
+        self.assertEqual(status_result.registration.total_currency, "RUB")
+        self.assertEqual(registration_count, 1)
 
     async def test_questionnaire_answers_finalize_atomically_bind_version_and_clear_temporary_payload(self) -> None:
         form_id, field_id = await self._publish_questionnaire(version=1, retention_days=9)

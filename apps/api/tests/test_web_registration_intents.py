@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import delete, func, select, text
 
+from app.core.config import Settings
 from app.db.models.core import (
     AppUser,
     Community,
@@ -277,6 +278,116 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
         async with AsyncSessionLocal() as session:
             intent = await session.scalar(select(WebRegistrationIntent).where(WebRegistrationIntent.idempotency_key_hash == service._idempotency_hash("canonical-seat-key")))
             self.assertEqual(intent.seats_count, 2)
+
+    async def test_gated_paid_intent_reuses_canonical_tampering_validation_without_reserving(self) -> None:
+        paid = await self._add_option(
+            price_amount=1200,
+            price_currency="RUB",
+            allow_quantity=True,
+            min_quantity=2,
+            max_quantity=3,
+            counts_toward_capacity=True,
+        )
+        donation = await self._add_option(
+            price_amount=500,
+            price_currency="RUB",
+            option_type="donation",
+            is_donation=True,
+            counts_toward_capacity=False,
+        )
+        inactive = await self._add_option(
+            price_amount=900,
+            price_currency="RUB",
+            is_active=False,
+        )
+        foreign_event_id = uuid4()
+        foreign_option = EventParticipationOption(
+            event_id=foreign_event_id,
+            title="Foreign paid option",
+            price_amount=700,
+            price_currency="RUB",
+        )
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                event = await session.get(Event, self.event_id)
+                assert event is not None
+                event.registration_mode = "internal_paid"
+                session.add(
+                    Event(
+                        id=foreign_event_id,
+                        community_id=self.community_id,
+                        title="Foreign intent event",
+                        starts_at=self.now + timedelta(days=3),
+                        category="community",
+                        registration_mode="internal_paid",
+                        status="published",
+                        visibility="public",
+                        web_visibility="unlisted",
+                    ),
+                )
+                await session.flush()
+                session.add(foreign_option)
+                await session.flush()
+
+        settings = Settings(api_public_web_paid_registration_enabled=True)
+        with patch("app.services.events.get_settings", return_value=settings):
+            invalid_cases = [
+                {"option_selections": [{"option_id": uuid4(), "quantity": 1}]},
+                {"option_selections": [{"option_id": foreign_option.id, "quantity": 1}]},
+                {"option_selections": [{"option_id": inactive.id, "quantity": 1}]},
+                {"option_selections": [{"option_id": paid.id, "quantity": 1}]},
+                {
+                    "seats_count": 4,
+                    "option_selections": [
+                        {"option_id": paid.id, "quantity": 2},
+                        {"option_id": paid.id, "quantity": 2},
+                    ],
+                },
+                {
+                    "seats_count": 1,
+                    "option_selections": [{"option_id": paid.id, "quantity": 2}],
+                },
+                {
+                    "option_selections": [{"option_id": donation.id, "quantity": 1}],
+                },
+            ]
+            for updates in invalid_cases:
+                await self._assert_http_error(422, "validation_error", **updates)
+
+            async with AsyncSessionLocal() as session:
+                before_registrations = await session.scalar(
+                    select(func.count()).select_from(EventRegistration),
+                )
+                before_reservations = await session.scalar(
+                    select(func.count()).select_from(EventRegistrationCapacityReservation),
+                )
+            created = await self._create(
+                seats_count=2,
+                option_selections=[
+                    {"option_id": paid.id, "quantity": 2},
+                    {"option_id": donation.id, "quantity": 1},
+                ],
+                idempotency_key="paid-canonical-intent",
+            )
+        self.assertEqual(created.next_step, "confirm_email")
+        async with AsyncSessionLocal() as session:
+            intent = await session.scalar(
+                select(WebRegistrationIntent).where(
+                    WebRegistrationIntent.idempotency_key_hash
+                    == service._idempotency_hash("paid-canonical-intent"),
+                ),
+            )
+            self.assertEqual(intent.seats_count, 2)
+            self.assertEqual(
+                await session.scalar(select(func.count()).select_from(EventRegistration)),
+                before_registrations,
+            )
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count()).select_from(EventRegistrationCapacityReservation),
+                ),
+                before_reservations,
+            )
 
     async def test_occurrence_requirement_and_windows_use_canonical_validation(self) -> None:
         occurrence_id = uuid4()

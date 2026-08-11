@@ -11,6 +11,7 @@ import type {
   WebRegistrationLegalDocument,
   WebRegistrationOccurrence,
   WebRegistrationParticipationOption,
+  WebRegistrationPaymentStatus,
   WebQuestionnaireField,
   WebRegistrationResendResult,
   WebRegistrationResult,
@@ -40,6 +41,16 @@ const OCCURRENCE_SELECTION_MODES = new Set<OccurrenceSelectionMode>([
 const REGISTRATION_MODES = new Set<WebRegistrationMode>([
   "internal_free",
   "internal_paid",
+]);
+
+const PAYMENT_STATUSES = new Set<WebRegistrationPaymentStatus>([
+  "not_required",
+  "pending",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "refunded",
+  "paid",
 ]);
 
 export class RegistrationUnavailableError extends Error {}
@@ -141,13 +152,22 @@ function isOpaqueCredential(value: unknown): value is string {
 
 function isRegistrationResult(value: unknown): value is WebRegistrationResult {
   if (!isRecord(value)) return false;
+  const hasAmount = typeof value.total_amount === "number"
+    && Number.isInteger(value.total_amount)
+    && value.total_amount >= 0;
+  const hasCurrency = typeof value.total_currency === "string"
+    && value.total_currency.trim().length > 0;
   return isUuid(value.id)
     && isUuid(value.event_id)
     && (value.occurrence_id === null || isUuid(value.occurrence_id))
     && ["confirmed", "pending", "waitlisted", "attended"].includes(String(value.status))
     && Number.isInteger(value.seats_count)
     && typeof value.seats_count === "number"
-    && value.seats_count >= 1;
+    && value.seats_count >= 1
+    && typeof value.payment_status === "string"
+    && PAYMENT_STATUSES.has(value.payment_status as WebRegistrationPaymentStatus)
+    && ((value.total_amount === null && value.total_currency === null)
+      || (hasAmount && hasCurrency));
 }
 
 function isIntentCreated(value: unknown): value is WebRegistrationIntentCreated {

@@ -27,6 +27,7 @@ from app.db.models.core import (
     EventRegistrationAnswer,
     EventRegistrationForm,
     EventRegistrationFormField,
+    EventRegistrationOptionSelection,
     LegalAcceptance,
     LegalDocument,
     Profile,
@@ -429,6 +430,8 @@ def _code_expiry(now: datetime) -> datetime:
 async def _validate_references(
     session: AsyncSession,
     payload: WebRegistrationIntentRequest,
+    *,
+    free_only: bool,
 ) -> tuple[int, UUID | None, list[dict[str, object]] | None]:
     questionnaire_form_id, answers = await _validate_current_questionnaire(
         session,
@@ -443,7 +446,7 @@ async def _validate_references(
             seats_count=payload.seats_count,
             option_selections=[item.model_dump() for item in payload.option_selections],
         ),
-        free_only=True,
+        free_only=free_only,
     )
     await _validated_legal_documents(
         session,
@@ -661,14 +664,21 @@ async def create_intent(
         intent_expires_at = existing.expires_at
         await session.rollback()
     else:
-        await events_service.require_web_registration_event(
+        event = await events_service.require_web_registration_event(
             session,
             payload.event_id,
             for_update=True,
         )
         _apply_submit_rate_limit(payload, ip)
         seats_count, questionnaire_form_id, normalized_answers = (
-            await _validate_references(session, payload)
+            await _validate_references(
+                session,
+                payload,
+                free_only=(
+                    event.registration_mode
+                    == events_service.FREE_WEB_REGISTRATION_MODE
+                ),
+            )
         )
         intent_status, matched_user_id, conflict_users = await _identity_state(
             session,
@@ -1067,8 +1077,38 @@ def _registration_payload(intent: WebRegistrationIntent) -> RegisterEventRequest
     )
 
 
-def _registration_result(registration: EventRegistration) -> WebRegistrationResult:
-    return WebRegistrationResult.model_validate(registration)
+async def _registration_result(
+    session: AsyncSession,
+    registration: EventRegistration,
+) -> WebRegistrationResult:
+    selected_options = list(
+        await session.scalars(
+            select(EventRegistrationOptionSelection)
+            .where(
+                EventRegistrationOptionSelection.registration_id == registration.id,
+            )
+            .order_by(
+                EventRegistrationOptionSelection.created_at,
+                EventRegistrationOptionSelection.id,
+            ),
+        ),
+    )
+    total_amount = (
+        sum(option.total_amount for option in selected_options)
+        if selected_options
+        else None
+    )
+    total_currency = selected_options[0].currency if selected_options else None
+    return WebRegistrationResult(
+        id=registration.id,
+        event_id=registration.event_id,
+        occurrence_id=registration.occurrence_id,
+        status=registration.status,
+        seats_count=registration.seats_count,
+        payment_status=registration.payment_status,
+        total_amount=total_amount,
+        total_currency=total_currency,
+    )
 
 
 def _replay_account_next_step(intent: WebRegistrationIntent, user: AppUser) -> str:
@@ -1120,7 +1160,7 @@ async def _confirmed_replay(
         await session.rollback()
         raise _flow_unavailable()
     result = WebRegistrationConfirmResult(
-        registration=_registration_result(registration),
+        registration=await _registration_result(session, registration),
         account_next_step=_replay_account_next_step(intent, user),
     )
     await session.rollback()
@@ -1243,7 +1283,7 @@ async def _confirm_once(
     )
     await session.flush()
     result = WebRegistrationConfirmResult(
-        registration=_registration_result(registration),
+        registration=await _registration_result(session, registration),
         account_next_step=account_next_step,
         set_password_code=set_password_code,
         set_password_expires_at=set_password_expires_at,
@@ -1323,6 +1363,6 @@ async def get_intent_status(
         return WebRegistrationIntentStatus(state="not_available")
     return WebRegistrationIntentStatus(
         state=CONFIRMED,
-        registration=_registration_result(registration),
+        registration=await _registration_result(session, registration),
         account_next_step=_replay_account_next_step(intent, user),
     )

@@ -12,6 +12,7 @@ from sqlalchemy import and_, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.core.config import get_settings
 from app.db.models.core import (
     AppUser,
     CommunityMembership,
@@ -49,7 +50,8 @@ PUBLIC_VISIBILITY = "public"
 MEMBERS_ONLY_VISIBILITY = "members_only"
 OCCURRENCE_VISIBLE_STATUS = "active"
 WEB_REGISTRATION_VISIBILITIES = ("unlisted", "listed")
-WEB_REGISTRATION_MODE = "internal_free"
+FREE_WEB_REGISTRATION_MODE = "internal_free"
+PAID_WEB_REGISTRATION_MODE = "internal_paid"
 CAPACITY_REGISTRATION_STATUSES = ("confirmed", "pending", "waitlisted")
 
 DEFAULT_PAGE_LIMIT = 50
@@ -95,9 +97,15 @@ def is_web_registration_available(event: Event) -> bool:
     return (
         event.status == PUBLISHED_STATUS
         and event.visibility == PUBLIC_VISIBILITY
-        and event.registration_mode == WEB_REGISTRATION_MODE
+        and event.registration_mode in _available_web_registration_modes()
         and event.web_visibility in WEB_REGISTRATION_VISIBILITIES
     )
+
+
+def _available_web_registration_modes() -> tuple[str, ...]:
+    if get_settings().api_public_web_paid_registration_enabled:
+        return (FREE_WEB_REGISTRATION_MODE, PAID_WEB_REGISTRATION_MODE)
+    return (FREE_WEB_REGISTRATION_MODE,)
 
 
 async def require_web_registration_event(
@@ -110,7 +118,7 @@ async def require_web_registration_event(
         Event.id == event_id,
         Event.status == PUBLISHED_STATUS,
         Event.visibility == PUBLIC_VISIBILITY,
-        Event.registration_mode == WEB_REGISTRATION_MODE,
+        Event.registration_mode.in_(_available_web_registration_modes()),
         Event.web_visibility.in_(WEB_REGISTRATION_VISIBILITIES),
     )
     if for_update:
@@ -369,16 +377,22 @@ async def _build_web_registration_form(
             if taken >= event.capacity:
                 registration_state = "full"
 
-    options = list(
-        await session.scalars(
-            select(EventParticipationOption)
-            .where(
-                EventParticipationOption.event_id == event.id,
-                EventParticipationOption.is_active.is_(True),
+    option_filters = [
+        EventParticipationOption.event_id == event.id,
+        EventParticipationOption.is_active.is_(True),
+    ]
+    if event.registration_mode == FREE_WEB_REGISTRATION_MODE:
+        option_filters.extend(
+            (
                 EventParticipationOption.price_amount == 0,
                 EventParticipationOption.is_donation.is_(False),
                 EventParticipationOption.option_type != "donation",
-            )
+            ),
+        )
+    options = list(
+        await session.scalars(
+            select(EventParticipationOption)
+            .where(*option_filters)
             .order_by(
                 EventParticipationOption.sort_order,
                 EventParticipationOption.created_at,
