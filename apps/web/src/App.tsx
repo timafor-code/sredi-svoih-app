@@ -707,7 +707,9 @@ function RegistrationForm({
     const nextErrors: FormErrors = validatePersonalFields(normalizedValues);
     if (occurrences.length > 0 && !selectedOccurrenceId) nextErrors.occurrence = "Выберите дату мероприятия.";
     if (options.length > 0 && !options.some((option) => (
-      !option.is_donation && selections[option.id]?.selected
+      !option.is_donation
+      && option.counts_toward_capacity
+      && selections[option.id]?.selected
     ))) {
       nextErrors.options = "Выберите вариант участия.";
     }

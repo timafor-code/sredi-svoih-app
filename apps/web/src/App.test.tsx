@@ -454,6 +454,33 @@ describe("participation option presentation", () => {
     expect(within(optionCard("Онлайн-подключение")).getByText("Не занимает место")).toBeInTheDocument();
   });
 
+  it("requires a capacity-counting main option even when a non-donation non-capacity option is selected", async () => {
+    const user = userEvent.setup();
+    await renderEvent(responseWithPaidOptions());
+    const onlineOption = screen.getByRole("checkbox", { name: /Онлайн-подключение/ });
+    await user.click(onlineOption);
+    expect(onlineOption).toBeChecked();
+    expect(within(optionCard("Онлайн-подключение")).getByText("Не занимает место")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Имя"), "Анна");
+    await user.type(screen.getByLabelText("Фамилия"), "Иванова");
+    await user.type(screen.getByLabelText("Телефон"), "+7 (999) 123-45-67");
+    await user.type(screen.getByLabelText("Email"), "anna@example.ru");
+    await user.click(screen.getByLabelText(/Я ознакомился/));
+    const continueButton = screen.getByRole("button", { name: "Продолжить без пароля" });
+    await user.click(continueButton);
+
+    expect(screen.getByRole("group", { name: "Варианты участия" })).toHaveFocus();
+    expect(screen.getByText("Выберите вариант участия.")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    vi.mocked(fetch).mockImplementationOnce(() => response(intentCreated(), 201));
+    await user.click(continueButton);
+    expect(await screen.findByLabelText("Код подтверждения")).toHaveFocus();
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it("increments and decrements quantity through accessible stepper buttons", async () => {
     const user = userEvent.setup();
     await renderEvent(responseWithPaidOptions());
