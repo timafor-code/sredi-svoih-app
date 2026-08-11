@@ -39,6 +39,7 @@ WebRegistrationState = Literal[
     "unavailable",
 ]
 OccurrenceSelectionMode = Literal["none", "user_select", "nearest"]
+WebRegistrationMode = Literal["internal_free", "internal_paid"]
 
 
 def _require_timezone(value: datetime | None) -> datetime | None:
@@ -171,6 +172,7 @@ class WebRegistrationEventResponse(BaseModel):
     address: str | None
     image_url: str | None
     category: str
+    registration_mode: WebRegistrationMode
     capacity: int | None
     waitlist_enabled: bool
     requires_approval: bool
@@ -220,6 +222,7 @@ class WebRegistrationParticipationOptionResponse(BaseModel):
     allow_quantity: bool
     min_quantity: int
     max_quantity: int
+    is_donation: bool
     counts_toward_capacity: bool
     group_key: str | None
     sort_order: int
