@@ -1,5 +1,4 @@
 import {
-  type ChangeEvent,
   type ReactNode,
   useEffect,
   useMemo,
@@ -270,6 +269,102 @@ function OccurrenceSelector({
 
 type OptionSelection = { selected: boolean; quantity: number };
 
+const OPTION_TYPE_LABELS: Readonly<Record<string, string>> = {
+  participation: "Участие",
+  meal: "Трапеза",
+  package: "Пакет",
+  child: "Детский",
+  family: "Семейный",
+  other: "Другое",
+  donation: "Пожертвование",
+};
+
+function optionTypeLabel(optionType: string): string {
+  return OPTION_TYPE_LABELS[optionType] ?? "Вариант";
+}
+
+function formatOptionPrice(amount: number, currency: string): string | null {
+  if (amount <= 0) return null;
+  try {
+    return new Intl.NumberFormat("ru-RU", {
+      style: "currency",
+      currency,
+      currencyDisplay: "symbol",
+    }).format(amount);
+  } catch {
+    return `${new Intl.NumberFormat("ru-RU").format(amount)} ${currency}`.trim();
+  }
+}
+
+function ParticipationOptionCard({
+  option,
+  selection,
+  onSelectionChange,
+  onQuantityChange,
+}: {
+  option: WebRegistrationParticipationOption;
+  selection: OptionSelection;
+  onSelectionChange: (option: WebRegistrationParticipationOption, selected: boolean) => void;
+  onQuantityChange: (option: WebRegistrationParticipationOption, quantity: number) => void;
+}): ReactNode {
+  const inputType = option.group_key ? "radio" : "checkbox";
+  const formattedPrice = formatOptionPrice(option.price_amount, option.price_currency);
+  const decrementDisabled = !selection.selected || selection.quantity <= option.min_quantity;
+  const incrementDisabled = !selection.selected || selection.quantity >= option.max_quantity;
+
+  return (
+    <div className="option-card">
+      <label className="option-select">
+        <input
+          type={inputType}
+          name={option.group_key ? `option-group-${option.group_key}` : `option-${option.id}`}
+          checked={selection.selected}
+          onChange={(event) => onSelectionChange(option, event.target.checked)}
+        />
+        <span className="option-copy">
+          <span className="option-heading">
+            <strong>{option.title}</strong>
+            {formattedPrice ? <span className="option-price">{formattedPrice}</span> : null}
+          </span>
+          <span className="option-meta">
+            <span className="option-type-chip">{optionTypeLabel(option.option_type)}</span>
+            {!option.counts_toward_capacity ? (
+              <span className="option-secondary-chip">Не занимает место</span>
+            ) : null}
+          </span>
+          {option.description ? <small className="option-description">{option.description}</small> : null}
+        </span>
+      </label>
+      {option.allow_quantity ? (
+        <div className="quantity-control">
+          <span className="quantity-label" id={`quantity-label-${option.id}`}>Количество</span>
+          <div className="quantity-stepper" aria-labelledby={`quantity-label-${option.id}`}>
+            <button
+              type="button"
+              aria-label={`Уменьшить количество: ${option.title}`}
+              disabled={decrementDisabled}
+              onClick={() => onQuantityChange(option, selection.quantity - 1)}
+            >
+              −
+            </button>
+            <output aria-live="polite" aria-label={`Количество: ${option.title}`}>
+              {selection.quantity}
+            </output>
+            <button
+              type="button"
+              aria-label={`Увеличить количество: ${option.title}`}
+              disabled={incrementDisabled}
+              onClick={() => onQuantityChange(option, selection.quantity + 1)}
+            >
+              +
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ParticipationOptions({
   options,
   selections,
@@ -286,6 +381,22 @@ function ParticipationOptions({
   focusRef: React.RefObject<HTMLFieldSetElement | null>;
 }): ReactNode {
   if (options.length === 0) return null;
+  const mainOptions = options.filter((option) => !option.is_donation);
+  const donationOptions = options.filter((option) => option.is_donation);
+  const renderOptions = (sectionOptions: WebRegistrationParticipationOption[]) => (
+    <div className="option-list">
+      {sectionOptions.map((option) => (
+        <ParticipationOptionCard
+          key={option.id}
+          option={option}
+          selection={selections[option.id] ?? { selected: false, quantity: option.min_quantity }}
+          onSelectionChange={onSelectionChange}
+          onQuantityChange={onQuantityChange}
+        />
+      ))}
+    </div>
+  );
+
   return (
     <fieldset
       className="surface section-card choice-fieldset"
@@ -294,48 +405,13 @@ function ParticipationOptions({
       tabIndex={-1}
     >
       <legend>Варианты участия</legend>
-      <div className="option-list">
-        {options.map((option) => {
-          const selection = selections[option.id] ?? { selected: false, quantity: option.min_quantity };
-          const inputType = option.group_key ? "radio" : "checkbox";
-          return (
-            <div className="option-card" key={option.id}>
-              <label className="option-select">
-                <input
-                  type={inputType}
-                  name={option.group_key ? `option-group-${option.group_key}` : `option-${option.id}`}
-                  checked={selection.selected}
-                  onChange={(event) => onSelectionChange(option, event.target.checked)}
-                />
-                <span>
-                  <strong>{option.title}</strong>
-                  {option.description ? <small>{option.description}</small> : null}
-                </span>
-              </label>
-              {option.allow_quantity ? (
-                <label className="quantity-label">
-                  Количество
-                  <input
-                    type="number"
-                    min={option.min_quantity}
-                    max={option.max_quantity}
-                    value={selection.quantity}
-                    disabled={!selection.selected}
-                    aria-label={`Количество: ${option.title}`}
-                    onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                      const parsed = Number(event.target.value);
-                      const quantity = Number.isFinite(parsed)
-                        ? Math.min(option.max_quantity, Math.max(option.min_quantity, parsed))
-                        : option.min_quantity;
-                      onQuantityChange(option, quantity);
-                    }}
-                  />
-                </label>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
+      {renderOptions(mainOptions)}
+      {donationOptions.length > 0 ? (
+        <section className="donation-options" aria-labelledby="donation-options-heading">
+          <h3 id="donation-options-heading">Дополнительно / Пожертвование</h3>
+          {renderOptions(donationOptions)}
+        </section>
+      ) : null}
       {error ? <p className="field-error" id="options-error" role="alert">{error}</p> : null}
     </fieldset>
   );
@@ -630,7 +706,9 @@ function RegistrationForm({
     setValues(normalizedValues);
     const nextErrors: FormErrors = validatePersonalFields(normalizedValues);
     if (occurrences.length > 0 && !selectedOccurrenceId) nextErrors.occurrence = "Выберите дату мероприятия.";
-    if (options.length > 0 && !Object.values(selections).some((selection) => selection.selected)) {
+    if (options.length > 0 && !options.some((option) => (
+      !option.is_donation && selections[option.id]?.selected
+    ))) {
       nextErrors.options = "Выберите вариант участия.";
     }
     const seatsCountError = validateSeatsCount(normalizedValues.seatsCount);

@@ -87,6 +87,90 @@ export function eventResponse(
   };
 }
 
+export function responseWithPaidOptions(): WebEventRegistrationFormResponse {
+  const data = eventResponse();
+  const baseOption = data.participation_options[0];
+  data.participation_options = [
+    {
+      ...baseOption,
+      id: "44444444-4444-4444-8444-444444444401",
+      title: "Платное участие",
+      description: "Основной билет на мероприятие",
+      price_amount: 1500,
+      option_type: "participation",
+      allow_quantity: true,
+      min_quantity: 2,
+      max_quantity: 4,
+      group_key: "attendance",
+    },
+    {
+      ...baseOption,
+      id: "44444444-4444-4444-8444-444444444402",
+      title: "Семейное участие",
+      description: "Единый вариант для семьи",
+      price_amount: 3500,
+      option_type: "family",
+      group_key: "attendance",
+      sort_order: 1,
+    },
+    {
+      ...baseOption,
+      id: "44444444-4444-4444-8444-444444444403",
+      title: "Общая трапеза",
+      price_amount: 600,
+      option_type: "meal",
+      sort_order: 2,
+    },
+    {
+      ...baseOption,
+      id: "44444444-4444-4444-8444-444444444404",
+      title: "Пакет выходного дня",
+      price_amount: 2500,
+      option_type: "package",
+      sort_order: 3,
+    },
+    {
+      ...baseOption,
+      id: "44444444-4444-4444-8444-444444444405",
+      title: "Детское участие",
+      price_amount: 500,
+      option_type: "child",
+      sort_order: 4,
+    },
+    {
+      ...baseOption,
+      id: "44444444-4444-4444-8444-444444444406",
+      title: "Онлайн-подключение",
+      description: "Не требует места в зале",
+      option_type: "other",
+      counts_toward_capacity: false,
+      sort_order: 5,
+    },
+    {
+      ...baseOption,
+      id: "44444444-4444-4444-8444-444444444407",
+      title: "Поддержать детскую программу",
+      description: "Дополнительный добровольный взнос",
+      price_amount: 750,
+      option_type: "participation",
+      is_donation: true,
+      counts_toward_capacity: false,
+      sort_order: 6,
+    },
+    {
+      ...baseOption,
+      id: "44444444-4444-4444-8444-444444444408",
+      title: "Пожертвование общине",
+      price_amount: 1000,
+      option_type: "donation",
+      is_donation: true,
+      counts_toward_capacity: false,
+      sort_order: 7,
+    },
+  ];
+  return data;
+}
+
 export function responseWithOccurrences(): WebEventRegistrationFormResponse {
   const data = eventResponse("closed");
   data.occurrence_selection_mode = "user_select";
