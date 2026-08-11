@@ -590,6 +590,9 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse(data["resolved_from_alias"])
         self.assertEqual(data["registration_state"], "open")
+        self.assertEqual(data["occurrence_selection_mode"], "user_select")
+        self.assertIsNone(data["default_occurrence_id"])
+        self.assertIsNone(data["next_registration_state_check_at"])
         self.assertEqual(data["questions"], [])
         self.assertEqual(
             [item["id"] for item in data["occurrences"]],

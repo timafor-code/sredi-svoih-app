@@ -38,6 +38,7 @@ WebRegistrationState = Literal[
     "full",
     "unavailable",
 ]
+OccurrenceSelectionMode = Literal["none", "user_select", "nearest"]
 
 
 def _require_timezone(value: datetime | None) -> datetime | None:
@@ -250,8 +251,16 @@ class WebEventRegistrationFormResponse(BaseModel):
     resolved_from_alias: bool
     event: WebRegistrationEventResponse
     registration_state: WebRegistrationState
+    occurrence_selection_mode: OccurrenceSelectionMode
+    default_occurrence_id: UUID | None
+    next_registration_state_check_at: datetime | None
     occurrences: list[WebRegistrationOccurrenceResponse]
     participation_options: list[WebRegistrationParticipationOptionResponse]
     legal_documents: list[WebRegistrationLegalDocumentResponse]
     questionnaire_form_id: UUID | None
     questions: list[WebEventQuestionnaireFieldResponse]
+
+    @field_validator("next_registration_state_check_at")
+    @classmethod
+    def require_timezone_field(cls, value: datetime | None) -> datetime | None:
+        return _require_timezone(value)

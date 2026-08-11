@@ -10,7 +10,13 @@ import {
   requestSetPassword,
   resendWebRegistrationCode,
 } from "./api";
-import { EVENT_ID, eventResponse, responseWithQuestionnaire } from "./test/fixtures";
+import {
+  EVENT_ID,
+  OCCURRENCE_ONE_ID,
+  eventResponse,
+  responseWithOccurrences,
+  responseWithQuestionnaire,
+} from "./test/fixtures";
 
 function fetchResponse(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return Promise.resolve({
@@ -174,6 +180,40 @@ describe("public event API", () => {
   it.each([null, "false", 0, {}])("strictly rejects resolved_from_alias=%o", async (resolvedFromAlias) => {
     const data = eventResponse() as unknown as Record<string, unknown>;
     data.resolved_from_alias = resolvedFromAlias;
+    vi.mocked(fetch).mockImplementation(() => fetchResponse(envelope(data)));
+    await expect(getWebEventRegistrationForm(SLUG_REFERENCE)).rejects.toBeInstanceOf(PublicApiError);
+  });
+
+  it.each([
+    ["missing mode", (data: Record<string, unknown>) => { delete data.occurrence_selection_mode; }],
+    ["unknown mode", (data: Record<string, unknown>) => { data.occurrence_selection_mode = "browser_guess"; }],
+    ["missing default", (data: Record<string, unknown>) => { delete data.default_occurrence_id; }],
+    ["foreign default", (data: Record<string, unknown>) => { data.default_occurrence_id = REGISTRATION_ID; }],
+    ["missing state hint", (data: Record<string, unknown>) => { delete data.next_registration_state_check_at; }],
+    ["invalid state hint", (data: Record<string, unknown>) => { data.next_registration_state_check_at = "tomorrow"; }],
+    ["timezone-less state hint", (data: Record<string, unknown>) => { data.next_registration_state_check_at = "2026-08-11T10:00:00"; }],
+    ["none with multiple occurrences", (data: Record<string, unknown>) => { data.occurrence_selection_mode = "none"; }],
+    ["user selection with a default", (data: Record<string, unknown>) => { data.default_occurrence_id = OCCURRENCE_ONE_ID; }],
+    ["nearest occurrences without a default", (data: Record<string, unknown>) => { data.occurrence_selection_mode = "nearest"; }],
+  ])("rejects an invalid occurrence selection contract: %s", async (_name, mutate) => {
+    const data = responseWithOccurrences();
+    mutate(data as unknown as Record<string, unknown>);
+    vi.mocked(fetch).mockImplementation(() => fetchResponse(envelope(data)));
+    await expect(getWebEventRegistrationForm(SLUG_REFERENCE)).rejects.toBeInstanceOf(PublicApiError);
+  });
+
+  it("accepts fail-closed nearest when no suitable occurrence remains", async () => {
+    const data = eventResponse("unavailable");
+    data.occurrence_selection_mode = "nearest";
+    data.default_occurrence_id = null;
+    vi.mocked(fetch).mockImplementation(() => fetchResponse(envelope(data)));
+    await expect(getWebEventRegistrationForm(SLUG_REFERENCE)).resolves.toEqual(data);
+  });
+
+  it("rejects empty nearest unless registration is unavailable", async () => {
+    const data = eventResponse("open");
+    data.occurrence_selection_mode = "nearest";
+    data.default_occurrence_id = null;
     vi.mocked(fetch).mockImplementation(() => fetchResponse(envelope(data)));
     await expect(getWebEventRegistrationForm(SLUG_REFERENCE)).rejects.toBeInstanceOf(PublicApiError);
   });

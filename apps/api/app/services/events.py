@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 from datetime import UTC, datetime
+from typing import Literal, Sequence
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
@@ -149,7 +150,7 @@ async def _public_occurrence_state(
 ) -> str:
     if occurrence.registration_opens_at is not None and now < occurrence.registration_opens_at:
         return "not_yet_open"
-    if occurrence.registration_closes_at is not None and now > occurrence.registration_closes_at:
+    if occurrence.registration_closes_at is not None and now >= occurrence.registration_closes_at:
         return "closed"
     capacity = occurrence.capacity if occurrence.capacity is not None else event.capacity
     if capacity is not None:
@@ -168,6 +169,72 @@ def _aggregate_registration_state(states: list[str]) -> str:
         if candidate in states:
             return candidate
     return "unavailable"
+
+
+OccurrenceSelectionMode = Literal["none", "user_select", "nearest"]
+
+
+def _occurrence_relevance_boundary(occurrence: EventOccurrence) -> datetime:
+    return occurrence.ends_at or occurrence.starts_at
+
+
+def select_nearest_public_occurrence(
+    occurrences: Sequence[EventOccurrence],
+    now: datetime,
+) -> EventOccurrence | None:
+    """Select the first occurrence that has not reached its terminal boundary."""
+    return min(
+        (
+            occurrence
+            for occurrence in occurrences
+            if _occurrence_relevance_boundary(occurrence) > now
+        ),
+        key=lambda occurrence: (occurrence.starts_at, occurrence.id),
+        default=None,
+    )
+
+
+def _select_occurrence(
+    event: Event,
+    occurrences: Sequence[EventOccurrence],
+    now: datetime,
+) -> tuple[OccurrenceSelectionMode, EventOccurrence | None]:
+    if event.event_kind == "shabbat":
+        return "nearest", select_nearest_public_occurrence(occurrences, now)
+    if not occurrences:
+        return "none", None
+    if len(occurrences) == 1:
+        return "none", occurrences[0]
+    return "user_select", None
+
+
+def _next_registration_state_check_at(
+    selection_mode: OccurrenceSelectionMode,
+    occurrences: Sequence[EventOccurrence],
+    selected_occurrence: EventOccurrence | None,
+    now: datetime,
+) -> datetime | None:
+    state_occurrences = (
+        [selected_occurrence]
+        if selection_mode == "nearest" and selected_occurrence is not None
+        else occurrences
+        if selection_mode != "nearest"
+        else []
+    )
+    candidates = [
+        boundary
+        for occurrence in state_occurrences
+        for boundary in (
+            occurrence.registration_opens_at,
+            occurrence.registration_closes_at,
+        )
+        if boundary is not None and boundary > now
+    ]
+    if selection_mode == "nearest" and selected_occurrence is not None:
+        transition_at = _occurrence_relevance_boundary(selected_occurrence)
+        if transition_at > now:
+            candidates.append(transition_at)
+    return min(candidates, default=None)
 
 
 async def get_web_registration_form(
@@ -221,7 +288,7 @@ async def _build_web_registration_form(
     resolved_from_alias: bool,
 ) -> WebEventRegistrationFormResponse:
     now = datetime.now(UTC)
-    occurrences = list(
+    active_occurrences = list(
         await session.scalars(
             select(EventOccurrence)
             .where(
@@ -231,9 +298,15 @@ async def _build_web_registration_form(
             .order_by(EventOccurrence.starts_at, EventOccurrence.id),
         ),
     )
+    occurrences = [
+        occurrence
+        for occurrence in active_occurrences
+        if _occurrence_relevance_boundary(occurrence) > now
+    ]
 
     occurrence_responses: list[WebRegistrationOccurrenceResponse] = []
     occurrence_states: list[str] = []
+    occurrence_states_by_id: dict[UUID, str] = {}
     for occurrence in occurrences:
         occurrence_state = await _public_occurrence_state(
             session,
@@ -242,6 +315,7 @@ async def _build_web_registration_form(
             now,
         )
         occurrence_states.append(occurrence_state)
+        occurrence_states_by_id[occurrence.id] = occurrence_state
         occurrence_responses.append(
             WebRegistrationOccurrenceResponse.model_validate(
                 {
@@ -266,16 +340,25 @@ async def _build_web_registration_form(
             ),
         )
 
-    if occurrence_states:
+    occurrence_selection_mode, selected_occurrence = _select_occurrence(
+        event,
+        occurrences,
+        now,
+    )
+    if selected_occurrence is not None:
+        registration_state = occurrence_states_by_id[selected_occurrence.id]
+    elif occurrence_selection_mode == "nearest":
+        registration_state = "unavailable"
+    elif occurrence_states:
         registration_state = _aggregate_registration_state(occurrence_states)
     else:
-        has_inactive_occurrences = await session.scalar(
+        has_occurrences = await session.scalar(
             select(EventOccurrence.id)
             .where(EventOccurrence.event_id == event.id)
             .limit(1),
         )
         registration_state = (
-            "unavailable" if has_inactive_occurrences is not None else "open"
+            "unavailable" if has_occurrences is not None else "open"
         )
         if registration_state == "open" and event.capacity is not None:
             taken = await _taken_registration_seats(
@@ -361,6 +444,16 @@ async def _build_web_registration_form(
         resolved_from_alias=resolved_from_alias,
         event=WebRegistrationEventResponse.model_validate(event),
         registration_state=registration_state,
+        occurrence_selection_mode=occurrence_selection_mode,
+        default_occurrence_id=(
+            selected_occurrence.id if selected_occurrence is not None else None
+        ),
+        next_registration_state_check_at=_next_registration_state_check_at(
+            occurrence_selection_mode,
+            occurrences,
+            selected_occurrence,
+            now,
+        ),
         occurrences=occurrence_responses,
         participation_options=[
             WebRegistrationParticipationOptionResponse.model_validate(option)
