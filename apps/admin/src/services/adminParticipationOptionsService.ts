@@ -5,6 +5,8 @@ function string(value: unknown, fallback = ""): string {
 }
 
 function number(value: unknown, fallback: number | null = null): number | null {
+  if (value == null) return fallback;
+
   const result = typeof value === "number" ? value : Number(value);
   return Number.isFinite(result) ? result : fallback;
 }
