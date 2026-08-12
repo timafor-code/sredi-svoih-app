@@ -256,13 +256,24 @@ export function useEventRegistrationAction() {
           return;
         }
 
+        const occurrenceId = event.nextOccurrence?.id ?? null;
+
+        if (event.hasOccurrences === true && !occurrenceId) {
+          Alert.alert(
+            'Регистрация сейчас недоступна',
+            'Регистрация сейчас недоступна.',
+          );
+          return;
+        }
+
         setRegisteringEventId(event.id);
 
         try {
-          // TODO(feature/registration-with-occurrence-free-rpc): recurring internal_free
-          // registration must move to an occurrence-aware RPC with occurrence_id.
-          // This UI guard is not a backend security boundary.
-          await registerForEvent(event.id);
+          if (occurrenceId) {
+            await registerForEvent(event.id, occurrenceId);
+          } else {
+            await registerForEvent(event.id);
+          }
           void loadMyRegistrations().catch(() => undefined);
           Alert.alert('Вы записаны', 'Регистрация на событие создана.');
         } catch (error) {
