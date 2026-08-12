@@ -2,7 +2,7 @@ import type { AppAuthSession, AppAuthUser } from '@/types/auth';
 import { create } from 'zustand';
 
 import { appCapabilities } from '@/config/appCapabilities';
-import { clearGuestApiAuthTokens } from '@/services/apiAuthTokenStore';
+import { clearApiAuthTokens, clearGuestApiAuthTokens } from '@/services/apiAuthTokenStore';
 import {
   APPLE_SIGN_IN_CANCELLED_MESSAGE,
   AUTH_ERROR_MESSAGES,
@@ -60,6 +60,7 @@ type AuthState = {
   signUpWithEmail: (email: string, password: string) => Promise<EmailSignUpResult>;
   resendConfirmationEmail: (email: string) => Promise<void>;
   resetPasswordForEmail: (email: string) => Promise<void>;
+  clearLocalSessionAfterAccountDeletion: () => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -962,6 +963,48 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       set({ loading: false, error: message });
       throw new Error(message);
+    }
+  },
+
+  clearLocalSessionAfterAccountDeletion: async () => {
+    assertAccountFeaturesAvailable();
+
+    const requestRevision = beginAuthOperation();
+    const isCurrent = authOperationIsCurrent(requestRevision);
+
+    set({ loading: true, error: null });
+
+    let cleanupError: unknown = null;
+
+    try {
+      await clearApiAuthTokens();
+
+      if (!await resetEventPrivateState(isCurrent)) {
+        return;
+      }
+
+      if (!await clearAvatarReadUrlMemoryCacheIfCurrent(isCurrent)) {
+        return;
+      }
+    } catch (error) {
+      cleanupError = error;
+    }
+
+    if (!isCurrent()) {
+      return;
+    }
+
+    set({
+      session: null,
+      user: null,
+      profile: null,
+      membership: null,
+      loading: false,
+      error: null,
+    });
+
+    if (cleanupError) {
+      throw cleanupError;
     }
   },
 
