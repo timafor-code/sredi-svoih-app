@@ -38,10 +38,12 @@ EXPO_PUBLIC_API_URL                         VITE_API_URL
                                |
               private upstream, port 8000
                                |
-             apps/api FastAPI container/image
-                   |                    |
+      apps/api FastAPI process     privacy-erasure worker process
+                   \                    /
+            backend-only service dependencies
+              |                              |
      private PostgreSQL in Russia   private S3-compatible storage in Russia
-                                     |
+                                                |
                          public HTTPS endpoint only for short-lived
                          presigned avatar upload/read URLs
 ```
@@ -49,6 +51,7 @@ EXPO_PUBLIC_API_URL                         VITE_API_URL
 | Component | Verified repository fact | Production requirement / owner decision |
 | --- | --- | --- |
 | API | `apps/api` is FastAPI. `apps/api/Dockerfile.local` starts `uvicorn app.main:app --host 0.0.0.0 --port 8000`. | Choose Russia-hosted compute, runner, registry, private network, supervision, and resource limits. No production Compose file, systemd unit, proxy configuration, or provider is checked in. |
+| Privacy erasure worker | `python -m app.workers.privacy_erasure` is a separate process using the same backend image and PostgreSQL/storage/email dependencies. It is not a FastAPI background task and exposes no HTTP trigger. | Supervise it independently from FastAPI. Run one or more instances only after migrations and dependencies are ready, with the backend-only enable flag and mandatory erasure/retention configuration reviewed. |
 | PostgreSQL | The local contour uses `postgres:16-alpine` as `api_postgres`, locally bound at `127.0.0.1:55432:5432`. Alembic is under `apps/api/alembic`. | Run PostgreSQL in Russia on a private network. Do not expose 5432 to the public, mobile, or web-admin. Choose managed/self-managed operation, availability, and backups. |
 | Object storage | Local MinIO service `api_object_storage` exposes port 9000 internally and creates the private `avatars` bucket with anonymous access disabled. | Use Russia-hosted S3-compatible storage and a private bucket. Choose public signed-URL hostname, TLS, CORS, versioning, lifecycle, and recovery. Local MinIO is not the production provider. |
 | Web-admin | `apps/admin/src/services/apiClient.ts` reads `VITE_API_URL`. | Build the static artifact with the production API URL and allow that exact browser origin through API CORS. |
@@ -64,7 +67,8 @@ production secret integration. Do not copy it or its values to production.
 
 It is useful only as a verified reference for local services: `api_backend`,
 `api_postgres`, `api_object_storage`, `api_object_storage_init`, and the
-optional `api_push_worker` profile.
+optional `api_push_worker` profile, and the separate
+`api_privacy_erasure_worker` service.
 
 ## Prerequisites and owner decisions
 
@@ -94,6 +98,10 @@ to this repository.
 - **Push:** whether push delivery is enabled. It remains disabled unless the
   owner explicitly signs off on production behavior and external delivery
   transit.
+- **Privacy erasure:** whether the automatic worker is enabled, its poll
+  interval and batch size, notification encryption/delivery configuration,
+  restore-register storage, and the owner/legal-approved financial retention
+  duration where finalized financial evidence exists.
 
 ## Server preparation
 
@@ -167,6 +175,8 @@ production secret stores.
 | Object storage | `API_OBJECT_STORAGE_ENABLED`, `API_OBJECT_STORAGE_ENDPOINT_URL`, `API_OBJECT_STORAGE_PUBLIC_ENDPOINT_URL`, `API_OBJECT_STORAGE_REGION`, `API_OBJECT_STORAGE_BUCKET`, `API_OBJECT_STORAGE_ACCESS_KEY_ID`, `API_OBJECT_STORAGE_SECRET_ACCESS_KEY`, `API_OBJECT_STORAGE_PATH_STYLE` | Key ID and secret are **Secrets**. Endpoints/bucket/region are owner decisions. Internal endpoint is API-to-storage; public endpoint is only for client-reachable presigned URLs. |
 | Avatar limits | `API_AVATAR_UPLOAD_URL_TTL_SECONDS`, `API_AVATAR_READ_URL_TTL_SECONDS`, `API_AVATAR_MAX_SIZE_BYTES` | Owner decisions within code limits. Current defaults are 300 seconds and 5 MiB. |
 | Push worker | `API_PUSH_ENABLED`, `API_PUSH_PRODUCTION_SIGNOFF`, `API_PUSH_TOKEN_ENVIRONMENT`, `API_EXPO_PUSH_ACCESS_TOKEN`, `API_EXPO_PUSH_SEND_URL`, `API_EXPO_PUSH_RECEIPTS_URL`, `API_PUSH_POLL_INTERVAL_SECONDS`, `API_PUSH_RECEIPT_DELAY_MINUTES`, `API_PUSH_REQUEST_TIMEOUT_SECONDS` | Keep disabled unless separately approved. The access token is a **Secret**. Production sends require both enabled and explicit signoff. |
+| Privacy erasure worker | `API_PRIVACY_ERASURE_WORKER_ENABLED`, `API_PRIVACY_ERASURE_POLL_INTERVAL_SECONDS`, `API_PRIVACY_ERASURE_BATCH_SIZE` | Backend-only. Defaults are disabled, 30 seconds, and 10 requests; code bounds are 1-3600 seconds and 1-100 requests. Enable only on the dedicated worker process after all prerequisites below are present. Do not expose these values to clients. |
+| Privacy erasure prerequisites | `API_PRIVACY_ERASURE_FINANCIAL_RETENTION_DAYS`, `API_PRIVACY_ERASURE_NOTIFICATION_KEY_B64`, `API_PRIVACY_ERASURE_NOTIFICATION_KEY_ID`, `API_PRIVACY_ERASURE_NOTIFICATION_DELIVERY_WINDOW_HOURS`, `API_PRIVACY_ERASURE_REGISTER_PREFIX`, email and object-storage settings | Encryption/storage credentials are **Secrets**. A positive owner/legal-approved retention duration is mandatory when finalized financial evidence is found; no production duration is defined by the repository. Missing mandatory configuration fails closed and leaves the account `deletion_pending`. |
 
 Never include production values in image layers, labels, shell history, process
 listings, committed env files, admin static assets, or mobile configuration.
@@ -272,18 +282,59 @@ infrastructure. Run them only after owner approval and secret injection.
    The file is a **Placeholder** for an owner-controlled non-repository secret
    delivery method. Do not run concurrent migration jobs, automatic downgrades,
    or production migrations from a developer workstation.
-6. **Deploy private API instance(s).** Start the approved image with injected
-   settings; expose port 8000 only to proxy/private network; configure TLS and
-   proxy rules before public traffic.
+6. **Deploy private API instance(s), with the erasure worker disabled.** Start
+   the approved image with injected settings; expose port 8000 only to
+   proxy/private network; configure TLS and proxy rules before public traffic.
 7. **Confirm migration state.** Run `alembic current` from the same approved
    image/configuration and compare it to the approved Alembic head. `/health`
    alone is not a DB check.
-8. **Publish configured clients.** Build/publish admin only after
+8. **Start the separate privacy-erasure worker.** From the same immutable image
+   and backend configuration, run:
+
+   ```powershell
+   python -m app.workers.privacy_erasure
+   ```
+
+   Set `API_PRIVACY_ERASURE_WORKER_ENABLED=true` only after PostgreSQL,
+   object storage, email delivery, notification encryption, restore-register
+   storage, and the conditional retention prerequisite have been reviewed.
+   The process logs startup, shutdown, claim counts, request UUIDs, result
+   statuses, failure codes, and retry classification only. It must never log
+   request content, identity/contact data, tokens, codes, notification
+   recipients, or prayer data.
+9. **Publish configured clients.** Build/publish admin only after
    `VITE_API_URL` is approved. Build mobile only after `EXPO_PUBLIC_API_URL`
    is approved. Neither client receives server secrets.
-9. **Verify before expansion.** Check TLS, health, version, Alembic state,
+10. **Verify before expansion.** Check TLS, health, version, Alembic state,
    exact CORS preflight, least-privilege staging flow, and signed avatar flow
    without storing signed URLs. Review redacted logs and correlation IDs only.
+
+### Privacy-erasure worker operations
+
+The worker polls only confirmed, uncancelled, incomplete deletion requests whose
+account remains `deletion_pending`. It claims a small ordered batch with
+`FOR UPDATE SKIP LOCKED`, releases row locks, and keeps a PostgreSQL advisory
+lock per request while calling the canonical idempotent
+`execute_privacy_erasure_request(...)`. Concurrent worker instances therefore
+skip an already claimed request. A crashed process loses its database session,
+which releases the advisory lock so a later poll can recover the request.
+
+Only canonical `retryable_failure` failure codes remain in the automatic queue.
+Completed, cancelled, manual-review, and other non-eligible requests are not
+reprocessed as new work. Restarts do not recreate destruction or retained
+financial evidence. Poll waits are bounded and interruptible during graceful
+shutdown.
+
+To pause automatic erasure, stop the dedicated process or set
+`API_PRIVACY_ERASURE_WORKER_ENABLED=false` and restart it. Confirmed requests
+remain access-revoked and queued as `deletion_pending`; disabling the worker
+does not cancel them or restore access. Re-enable the dedicated process after
+the dependency/configuration issue is resolved.
+
+`apps/api/scripts/run_privacy_erasure.py --request-id <uuid>` remains an
+owner-only debug/recovery tool for one explicit request. It is not required for
+normal automatic processing and is not a substitute for supervising the
+dedicated worker.
 
 ## Staged rollout checklist
 
@@ -319,15 +370,18 @@ merely because an application artifact is being rolled back.
 1. Stop expansion; record release SHA, time, symptoms, request IDs, and owner
    decision. Start [incident response](incident-response.md) for user impact
    or data risk.
-2. Use owner-selected limited traffic/maintenance if writes could worsen the
+2. Stop or disable the privacy-erasure worker before rolling back its runtime.
+   Queued `deletion_pending` requests remain queued and access-revoked. Do not
+   cancel requests, clear failure state, remove evidence, or restore accounts.
+3. Use owner-selected limited traffic/maintenance if writes could worsen the
    incident; preserve redacted evidence.
-3. Verify previous API artifact compatibility with the current Alembic schema.
+4. Verify previous API artifact compatibility with the current Alembic schema.
    If compatible, route traffic to that immutable artifact and retain data.
-4. If uncertain, restrict writes and escalate. Take a fresh backup before any
+5. If uncertain, restrict writes and escalate. Take a fresh backup before any
    recovery. A database restore is a separate owner-approved procedure in
    [backup and restore](postgres-backup-restore.md), not a deploy command.
-5. Preserve storage objects/backups. Rotate only credentials suspected exposed.
-6. Verify TLS, health, version, migration compatibility, CORS, and safe client
+6. Preserve storage objects/backups. Rotate only credentials suspected exposed.
+7. Verify TLS, health, version, migration compatibility, CORS, and safe client
    flows before lifting restrictions; record follow-up work.
 
 ## Owner-only staging exercise checklist

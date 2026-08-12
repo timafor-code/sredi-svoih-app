@@ -85,6 +85,26 @@ unsupported, unknown, or inconsistent finalized financial data that cannot be
 classified safely. Configuration failure is retryable after an approved value
 is supplied. Neither path changes `deletion_pending` or restores credentials.
 
+## Automatic runtime operations
+
+Production automation runs as the separate
+`python -m app.workers.privacy_erasure` process, never inside FastAPI. Its
+backend-only enable flag, bounded poll interval, and bounded batch size are
+documented in the production deploy runbook. PostgreSQL queue claiming prevents
+concurrent execution and releases recoverably if a worker crashes; the runtime
+still delegates all classification, deletion, retention, evidence, and
+notification behavior to the canonical idempotent single-request worker.
+
+Only canonical retryable failures are polled again. Completed, cancelled, and
+manual-review requests do not hot-loop. When the runtime is disabled, eligible
+requests stay queued as `deletion_pending` with access revoked. The existing
+single-request CLI remains available only for owner/debug/recovery use.
+
+Automatic execution does not relax the retention prerequisite above. If a
+request contains finalized financial evidence and
+`API_PRIVACY_ERASURE_FINANCIAL_RETENTION_DAYS` is unavailable, it fails closed
+and remains retryable after an approved duration is configured.
+
 ## Prayer privacy boundary
 
 Prayer tracker data is never selected, read, serialized, logged, retained, or
