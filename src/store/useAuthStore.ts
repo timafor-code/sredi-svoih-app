@@ -2,7 +2,7 @@ import type { AppAuthSession, AppAuthUser } from '@/types/auth';
 import { create } from 'zustand';
 
 import { appCapabilities } from '@/config/appCapabilities';
-import { clearGuestApiAuthTokens } from '@/services/apiAuthTokenStore';
+import { clearApiAuthTokens, clearGuestApiAuthTokens } from '@/services/apiAuthTokenStore';
 import {
   APPLE_SIGN_IN_CANCELLED_MESSAGE,
   AUTH_ERROR_MESSAGES,
@@ -60,6 +60,7 @@ type AuthState = {
   signUpWithEmail: (email: string, password: string) => Promise<EmailSignUpResult>;
   resendConfirmationEmail: (email: string) => Promise<void>;
   resetPasswordForEmail: (email: string) => Promise<void>;
+  clearLocalSessionAfterAccountDeletion: () => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -125,6 +126,24 @@ async function resetGuestCommunityState(isCurrent: OperationIsCurrent): Promise<
   }
 
   return isCurrent();
+}
+
+async function resetEventPrivateStateAfterAccountDeletion(): Promise<void> {
+  const { useEventsStore } = await import('@/store/useEventsStore');
+
+  useEventsStore.getState().resetPrivateState();
+}
+
+async function resetCommunityContactsAfterAccountDeletion(): Promise<void> {
+  const { useContactsStore } = await import('@/store/useContactsStore');
+
+  useContactsStore.getState().resetCommunityContacts();
+}
+
+async function resetPrayerTrackerMemoryAfterAccountDeletion(): Promise<void> {
+  const { usePrayerTrackerStore } = await import('@/store/usePrayerTrackerStore');
+
+  usePrayerTrackerStore.getState().reset();
 }
 
 async function loadProfileOrCreate(): Promise<Profile | null> {
@@ -962,6 +981,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       set({ loading: false, error: message });
       throw new Error(message);
+    }
+  },
+
+  clearLocalSessionAfterAccountDeletion: async () => {
+    assertAccountFeaturesAvailable();
+
+    beginAuthOperation();
+
+    set({ loading: true, error: null });
+
+    const cleanupResults = await Promise.allSettled([
+      clearApiAuthTokens(),
+      resetEventPrivateStateAfterAccountDeletion(),
+      resetCommunityContactsAfterAccountDeletion(),
+      resetPrayerTrackerMemoryAfterAccountDeletion(),
+      clearAvatarReadUrlMemoryCache(),
+    ]);
+
+    authOperationGuards.invalidateAuthOperations();
+
+    set({
+      session: null,
+      user: null,
+      profile: null,
+      membership: null,
+      loading: false,
+      error: null,
+    });
+
+    if (cleanupResults.some((result) => result.status === 'rejected')) {
+      throw new Error('Local account cleanup was only partially completed.');
     }
   },
 

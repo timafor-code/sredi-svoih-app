@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
+import { DeleteAccountFlow } from '@/components/profile/DeleteAccountFlow';
 import { Avatar } from '@/components/ui/Avatar';
 import { IOSGroup } from '@/components/ui/IOSGroup';
 import { ListRow } from '@/components/ui/ListRow';
@@ -110,6 +111,7 @@ export default function ProfileSecurityScreen() {
   const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isPasswordResetSending, setIsPasswordResetSending] = useState(false);
+  const [isDeleteFlowOpen, setIsDeleteFlowOpen] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [passwordResetStatus, setPasswordResetStatus] = useState<string | null>(null);
 
@@ -119,17 +121,20 @@ export default function ProfileSecurityScreen() {
   const loading = useAuthStore((state) => state.loading);
   const loadSession = useAuthStore((state) => state.loadSession);
   const resetPasswordForEmail = useAuthStore((state) => state.resetPasswordForEmail);
+  const clearLocalSessionAfterAccountDeletion = useAuthStore(
+    (state) => state.clearLocalSessionAfterAccountDeletion,
+  );
   const signOut = useAuthStore((state) => state.signOut);
   const loadEvents = useEventsStore((state) => state.loadEvents);
   const resetEventPrivateState = useEventsStore((state) => state.resetPrivateState);
 
   useEffect(() => {
-    if (user || loading || isSigningOut) {
+    if (user || loading || isSigningOut || isDeleteFlowOpen) {
       return;
     }
 
     void loadSession().catch(() => undefined);
-  }, [isSigningOut, loadSession, loading, user]);
+  }, [isDeleteFlowOpen, isSigningOut, loadSession, loading, user]);
 
   const profileName = useMemo(() => {
     const firstLastName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ');
@@ -140,7 +145,7 @@ export default function ProfileSecurityScreen() {
       ?? null;
   }, [profile?.display_name, profile?.first_name, profile?.full_name, profile?.last_name]);
 
-  const accountEmail = profile?.email || user?.email || '';
+  const accountEmail = user?.email || profile?.email || '';
   const displayName = profileName || (accountEmail ? accountEmail.split('@')[0] : 'Аккаунт');
   const authProvider = getAuthProvider(user);
   const authProviderLabel = providerLabels[authProvider];
@@ -180,12 +185,23 @@ export default function ProfileSecurityScreen() {
     Alert.alert('Выйти со всех устройств', 'Будет добавлено позже.');
   }, []);
 
-  const handleDeleteAccount = useCallback(() => {
-    Alert.alert(
-      'Удалить аккаунт',
-      'Удаление аккаунта будет добавлено позже через безопасную серверную функцию.',
-    );
+  const handleOpenDeleteAccount = useCallback(() => {
+    setLocalError(null);
+    setPasswordResetStatus(null);
+    setIsDeleteFlowOpen(true);
   }, []);
+
+  const handleCancelDeleteAccount = useCallback(() => {
+    setIsDeleteFlowOpen(false);
+  }, []);
+
+  const handleDeletionPending = useCallback(async () => {
+    try {
+      await clearLocalSessionAfterAccountDeletion();
+    } finally {
+      router.replace(profileHref);
+    }
+  }, [clearLocalSessionAfterAccountDeletion, router]);
 
   const handleSignOut = useCallback(async () => {
     setLocalError(null);
@@ -252,6 +268,22 @@ export default function ProfileSecurityScreen() {
               <Text style={styles.stateTitle}>Загружаем профиль...</Text>
             </View>
           </GlassCard>
+        </Screen>
+      </>
+    );
+  }
+
+  if (isDeleteFlowOpen) {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <Screen contentContainerStyle={styles.content}>
+          <SubHeader title="Удаление аккаунта" />
+          <DeleteAccountFlow
+            accountEmail={accountEmail}
+            onCancel={handleCancelDeleteAccount}
+            onDeletionPending={handleDeletionPending}
+          />
         </Screen>
       </>
     );
@@ -327,10 +359,9 @@ export default function ProfileSecurityScreen() {
               danger
               icon="🗑️"
               title="Удалить аккаунт"
-              subtitle="Только через безопасную серверную функцию"
-              rightText="Позже"
+              subtitle="Удаление аккаунта и персональных данных"
               isLast
-              onPress={handleDeleteAccount}
+              onPress={handleOpenDeleteAccount}
             />
           </IOSGroup>
           {passwordResetStatus ? <Text style={styles.infoText}>{passwordResetStatus}</Text> : null}
