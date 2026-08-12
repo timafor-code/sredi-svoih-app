@@ -105,14 +105,6 @@ def _already_started() -> HTTPException:
     )
 
 
-def _manual_review_required() -> HTTPException:
-    return _error(
-        status.HTTP_409_CONFLICT,
-        "privacy_erasure_manual_review_required",
-        "Privacy erasure requires manual review",
-    )
-
-
 def _response(
     privacy_request: PrivacyRequest,
     *,
@@ -252,8 +244,6 @@ async def _confirm_in_transaction(
 
     if user.status == DELETION_PENDING_STATUS:
         raise _not_available()
-    if await has_retention_sensitive_registration_data(session, user.id):
-        raise _manual_review_required()
 
     now = _now()
     privacy_request.pre_deletion_user_status = user.status

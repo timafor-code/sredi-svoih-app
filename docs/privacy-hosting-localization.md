@@ -211,11 +211,12 @@ deleting the app user, profile, registrations, avatar metadata/object, or other
 personal stores. Active credentials are revoked and new ordinary account or
 registration processing is blocked while the user is `deletion_pending`.
 
-Automatic lifecycle confirmation is restricted to the free registration
-contour. Any payment identifier, financial payment state, non-free registration
-mode, priced option, or donation marker returns a generic manual-review
-conflict. No claim is made that financial records can be removed until an
-approved retention matrix exists.
+Lifecycle confirmation enters `deletion_pending` and revokes account access
+even when a payment identifier, financial payment state, non-free registration
+mode, priced option, or donation marker exists. The worker may still require
+manual review before physical erasure of that retained data. No claim is made
+that financial records can be removed until an approved retention matrix
+exists.
 
 Cancellation is allowed only before irreversible worker execution. It restores
 the saved user status but does not restore credentials or registrations. The
