@@ -2,6 +2,9 @@ import type {
   AccountNextStep,
   ApiResponse,
   AuthCodeResult,
+  MyRegistration,
+  MyRegistrationPaymentStatus,
+  MyRegistrationStatus,
   OccurrenceSelectionMode,
   WebEventRegistrationFormResponse,
   WebRegistrationConfirmResult,
@@ -45,6 +48,26 @@ const REGISTRATION_MODES = new Set<WebRegistrationMode>([
 ]);
 
 const PAYMENT_STATUSES = new Set<WebRegistrationPaymentStatus>([
+  "not_required",
+  "pending",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "refunded",
+  "paid",
+]);
+
+const MY_REGISTRATION_STATUSES = new Set<MyRegistrationStatus>([
+  "pending",
+  "confirmed",
+  "waitlisted",
+  "cancelled",
+  "rejected",
+  "attended",
+  "no_show",
+]);
+
+const MY_REGISTRATION_PAYMENT_STATUSES = new Set<MyRegistrationPaymentStatus>([
   "not_required",
   "pending",
   "succeeded",
@@ -580,6 +603,122 @@ function isExistingAccountMe(value: unknown): value is {
     && (value.profile.phone === null || typeof value.profile.phone === "string");
 }
 
+function isMyRegistrationEvent(value: unknown): value is MyRegistration["event"] {
+  return isRecord(value)
+    && isUuid(value.id)
+    && isUuid(value.community_id)
+    && typeof value.event_kind === "string"
+    && typeof value.title === "string"
+    && isNullableString(value.subtitle)
+    && isNullableString(value.description)
+    && isNullableString(value.short_description)
+    && isDateTime(value.starts_at)
+    && isNullableDateTime(value.ends_at)
+    && typeof value.is_permanent === "boolean"
+    && isNullableString(value.timezone)
+    && isNullableString(value.location_name)
+    && isNullableString(value.address)
+    && isNullableNumber(value.latitude)
+    && isNullableNumber(value.longitude)
+    && isNullableString(value.image_url)
+    && typeof value.category === "string"
+    && isNullableString(value.audience)
+    && typeof value.visibility === "string"
+    && typeof value.status === "string"
+    && isNullableString(value.source_url)
+    && typeof value.registration_mode === "string"
+    && isNullableString(value.registration_url)
+    && isNullableNumber(value.capacity)
+    && typeof value.waitlist_enabled === "boolean"
+    && typeof value.requires_approval === "boolean"
+    && isNullableNumber(value.price_amount)
+    && isNullableString(value.price_currency)
+    && isNullableDateTime(value.published_at)
+    && isDateTime(value.created_at)
+    && isDateTime(value.updated_at);
+}
+
+function isMyRegistrationOccurrence(value: unknown): value is NonNullable<MyRegistration["occurrence"]> {
+  return isRecord(value)
+    && isUuid(value.id)
+    && isUuid(value.event_id)
+    && isNullableString(value.title)
+    && isDateTime(value.starts_at)
+    && isNullableDateTime(value.ends_at)
+    && typeof value.timezone === "string"
+    && isNullableDateTime(value.registration_opens_at)
+    && isNullableDateTime(value.registration_closes_at)
+    && isNullableNumber(value.capacity)
+    && isNullableBoolean(value.waitlist_enabled)
+    && isNullableBoolean(value.requires_approval)
+    && typeof value.status === "string"
+    && Number.isInteger(value.sort_order)
+    && isDateTime(value.created_at)
+    && isDateTime(value.updated_at);
+}
+
+function isMyRegistrationSelectedOption(value: unknown): value is MyRegistration["selected_options"][number] {
+  return isRecord(value)
+    && isUuid(value.id)
+    && (value.option_id === null || isUuid(value.option_id))
+    && typeof value.title_snapshot === "string"
+    && isNullableString(value.description_snapshot)
+    && typeof value.option_type_snapshot === "string"
+    && Number.isInteger(value.quantity)
+    && Number.isInteger(value.unit_price_amount)
+    && Number.isInteger(value.total_amount)
+    && typeof value.currency === "string"
+    && typeof value.counts_toward_capacity === "boolean"
+    && Number.isInteger(value.seats_count)
+    && typeof value.is_donation === "boolean"
+    && isDateTime(value.created_at);
+}
+
+function isMyRegistrationCapacityReservation(
+  value: unknown,
+): value is MyRegistration["capacity_reservations"][number] {
+  return isRecord(value)
+    && isUuid(value.id)
+    && isUuid(value.capacity_unit_id)
+    && (value.option_id === null || isUuid(value.option_id))
+    && typeof value.capacity_unit_key_snapshot === "string"
+    && typeof value.capacity_unit_title_snapshot === "string"
+    && isNullableString(value.option_title_snapshot)
+    && Number.isInteger(value.quantity)
+    && Number.isInteger(value.seats_per_quantity)
+    && Number.isInteger(value.seats_count)
+    && isDateTime(value.created_at);
+}
+
+function isMyRegistration(value: unknown): value is MyRegistration {
+  return isRecord(value)
+    && isUuid(value.id)
+    && isUuid(value.event_id)
+    && (value.occurrence_id === null || isUuid(value.occurrence_id))
+    && isUuid(value.user_id)
+    && typeof value.status === "string"
+    && MY_REGISTRATION_STATUSES.has(value.status as MyRegistrationStatus)
+    && Number.isInteger(value.seats_count)
+    && Array.isArray(value.guest_names)
+    && isNullableString(value.comment)
+    && isDateTime(value.registered_at)
+    && isNullableDateTime(value.confirmed_at)
+    && isNullableDateTime(value.cancelled_at)
+    && typeof value.payment_status === "string"
+    && MY_REGISTRATION_PAYMENT_STATUSES.has(value.payment_status as MyRegistrationPaymentStatus)
+    && isNullableString(value.payment_id)
+    && isDateTime(value.created_at)
+    && isDateTime(value.updated_at)
+    && isMyRegistrationEvent(value.event)
+    && (value.occurrence === null || isMyRegistrationOccurrence(value.occurrence))
+    && Array.isArray(value.selected_options)
+    && value.selected_options.every(isMyRegistrationSelectedOption)
+    && Array.isArray(value.capacity_reservations)
+    && value.capacity_reservations.every(isMyRegistrationCapacityReservation)
+    && isNullableNumber(value.total_amount)
+    && isNullableString(value.total_currency);
+}
+
 async function authCodeRequest(path: string, body: Record<string, string>): Promise<AuthCodeResult> {
   const response = await fetch(`${normalizedBaseUrl()}${path}`, {
     method: "POST",
@@ -635,6 +774,21 @@ export async function getExistingAccount(accessToken: string): Promise<ExistingA
     last_name: result.profile?.last_name ?? "",
     phone: result.profile?.phone ?? "",
   };
+}
+
+export function getMyRegistrations(
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<MyRegistration[]> {
+  return publicJsonRequest(
+    "/me/registrations",
+    {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal,
+    },
+    (value): value is MyRegistration[] => Array.isArray(value) && value.every(isMyRegistration),
+  );
 }
 
 export async function logoutExistingAccount(refreshToken: string): Promise<void> {
