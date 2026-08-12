@@ -870,7 +870,7 @@ describe("local form shell", () => {
     expect(createAccount).toHaveAttribute("aria-pressed", "false");
     expect(withoutPassword).toHaveClass("primary-button");
     expect(createAccount).toHaveClass("secondary-button");
-    expect(screen.getByRole("button", { name: "У меня уже есть аккаунт" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" })).toBeInTheDocument();
     expect(screen.getByText(/^Подтвердите email и запишитесь/)).toBeInTheDocument();
     expect(screen.getByText(/^Задайте пароль один раз/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Согласие на регистрацию/ })).toHaveAttribute("target", "_blank");
@@ -927,14 +927,121 @@ describe("local form shell", () => {
     expect(increment).toBeDisabled();
   });
 
-  it("shows a neutral notice for the existing-account action", async () => {
+  it("opens a real inline existing-account login form and cancel restores choices", async () => {
     await renderEvent();
     const initialUrl = window.location.href;
-    await userEvent.click(screen.getByRole("button", { name: "У меня уже есть аккаунт" }));
-    expect(screen.getByRole("status")).toHaveTextContent("Можно продолжить регистрацию через подтверждение email");
-    expect(screen.getByRole("status")).toHaveTextContent("не будут молча перезаписаны");
+    await userEvent.click(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" }));
+    expect(screen.getByRole("heading", { name: "Войти в аккаунт" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Email", { selector: "#login-email" })).toHaveAttribute("autocomplete", "email");
+    expect(screen.getByLabelText("Пароль")).toHaveAttribute("autocomplete", "current-password");
+    expect(screen.getByLabelText("Пароль")).toHaveAttribute("type", "password");
+    expect(screen.queryByText(/Можно продолжить регистрацию через подтверждение email/)).not.toBeInTheDocument();
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(window.location.href).toBe(initialUrl);
+    await userEvent.click(screen.getByRole("button", { name: "Отмена" }));
+    expect(screen.getByRole("button", { name: "Продолжить без пароля" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Создать аккаунт" })).toBeInTheDocument();
+  });
+
+  it("uses temporary in-memory login and canonical account data for completed registration", async () => {
+    const user = userEvent.setup();
+    const storageSpy = vi.spyOn(Storage.prototype, "setItem");
+    await renderEvent();
+    await fillValidForm(user);
+    const initialUrl = window.location.href;
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response({
+        access_token: "temporary-access-token",
+        refresh_token: "temporary-refresh-token",
+        token_type: "bearer",
+        expires_at: EXPIRES_AT,
+        user: {},
+      }))
+      .mockImplementationOnce(() => response({
+        user: { email: "ivan@example.ru", email_verified_at: EXPIRES_AT },
+        profile: { first_name: "Иван", last_name: "Иванов", phone: "+79000000001" },
+        memberships: [],
+      }));
+    await user.click(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" }));
+    const loginEmail = screen.getByLabelText("Email", { selector: "#login-email" });
+    await user.clear(loginEmail);
+    await user.type(loginEmail, "ivan@example.ru");
+    await user.type(screen.getByLabelText("Пароль"), "secret-password");
+    await user.click(screen.getByRole("button", { name: "Войти" }));
+    expect(await screen.findByText("Иван Иванов")).toBeInTheDocument();
+    expect(screen.getAllByText("ivan@example.ru")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Продолжить без пароля" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Создать аккаунт" })).not.toBeInTheDocument();
+    expect(storageSpy).not.toHaveBeenCalled();
+    expect(window.location.href).toBe(initialUrl);
+
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response(intentCreated("completed"), 201))
+      .mockImplementationOnce(() => response(envelope({
+        state: "confirmed",
+        expires_at: null,
+        registration: registrationResult().data.registration,
+        account_next_step: "sign_in",
+      })))
+      .mockImplementationOnce(() => response({ ok: true }));
+    await user.click(screen.getByRole("button", { name: "Продолжить регистрацию" }));
+    expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
+    const request = JSON.parse(String(vi.mocked(fetch).mock.calls[3][1]?.body));
+    expect(request).toMatchObject({
+      first_name: "Иван",
+      last_name: "Иванов",
+      phone: "+79000000001",
+      email: "ivan@example.ru",
+    });
+    expect(vi.mocked(fetch).mock.calls[3][1]?.headers).toMatchObject({ Authorization: "Bearer temporary-access-token" });
+    expect(window.location.href).not.toContain("temporary-access-token");
+    expect(window.location.href).not.toContain("secret-password");
+  });
+
+  it("shows safe generic login errors", async () => {
+    const user = userEvent.setup();
+    await renderEvent();
+    vi.mocked(fetch).mockImplementationOnce(() => response({
+      data: null,
+      error: { code: "authentication_required", message: "email exists but password mismatch" },
+      meta: {},
+    }, 401));
+    await user.click(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" }));
+    await user.type(screen.getByLabelText("Email", { selector: "#login-email" }), "ivan@example.ru");
+    await user.type(screen.getByLabelText("Пароль"), "wrong-password");
+    await user.click(screen.getByRole("button", { name: "Войти" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Неверный email или пароль.");
+    expect(alert).not.toHaveTextContent("email exists");
+  });
+
+  it("shows the incomplete-account path when /auth/me has no profile", async () => {
+    const user = userEvent.setup();
+    await renderEvent();
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response({
+        access_token: "temporary-access-token",
+        refresh_token: "temporary-refresh-token",
+        token_type: "bearer",
+        expires_at: EXPIRES_AT,
+        user: {},
+      }))
+      .mockImplementationOnce(() => response({
+        user: { email: "ivan@example.ru", email_verified_at: EXPIRES_AT },
+        profile: null,
+        memberships: [],
+      }))
+      .mockImplementationOnce(() => response({ ok: true }));
+    await user.click(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" }));
+    await user.type(screen.getByLabelText("Email", { selector: "#login-email" }), "ivan@example.ru");
+    await user.type(screen.getByLabelText("Пароль"), "secret-password");
+    await user.click(screen.getByRole("button", { name: "Войти" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("В аккаунте не заполнены данные, необходимые для регистрации. Вы можете продолжить регистрацию без входа.");
+    expect(alert).not.toHaveTextContent("Не удалось войти");
+    expect(screen.getByRole("button", { name: "Отмена" })).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(4);
   });
 
   it.each([

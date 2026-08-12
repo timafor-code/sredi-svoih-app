@@ -55,6 +55,12 @@ coerced:
 2. **Create or claim an account.** After the same email verification, set a
    password on that same `app_users` record. If an unclaimed record already
    exists, do not create a replacement; preserve its user id and registrations.
+3. **Sign in to an existing account.** The public page uses the canonical
+   `POST /auth/login` and `GET /auth/me` endpoints in an inline flow. Access and
+   refresh credentials stay only in React memory and are never written to
+   browser storage, cookies, or URLs. The canonical account email and profile
+   name/phone are shown read-only and replace browser-supplied identity fields
+   for the registration request.
 
 A technical `app_users` record is not the same as a password-based account.
 The UI must say “continue without a password,” not “without creating an
@@ -161,8 +167,20 @@ must not create duplicate flows, users, registrations, or capacity usage.
 
 For the current implementation, `internal_free` events remain processable with
 free, non-donation options only. `internal_paid` events are processable at the
-same time and support canonical active free, paid, and donation options. Email
-verification is mandatory for both modes.
+same time and support canonical active free, paid, and donation options.
+Anonymous and create-account requests require email verification in both
+modes. A bearer-authenticated account with an already verified canonical email
+completes through the same intent/status contract without another six-digit
+code; an unverified authenticated email keeps the verification boundary.
+
+`POST /web/registration-intents` accepts optional bearer authentication. When
+present, the backend binds the intent and final registration to the active
+current user, requires a complete canonical profile, ignores submitted identity
+values, and does not mutate that profile. All event publication, occurrence,
+options, questionnaire, legal, capacity, free-duplicate, paid-repeat, and
+idempotency rules remain in the existing services. An invalid supplied bearer
+credential fails as an expired temporary session rather than falling back to
+anonymous identity resolution.
 
 For `internal_paid`, the canonical backend owns option validity,
 quantity, `is_donation`, `counts_toward_capacity`, seat calculation, current

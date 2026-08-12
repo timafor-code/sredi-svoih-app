@@ -25,10 +25,13 @@ from app.db.models.core import (
     EventRegistrationCapacityReservation,
     EventRegistrationForm,
     EventRegistrationFormField,
+    LegalAcceptance,
     LegalDocument,
+    Profile,
     WebRegistrationIdentityConflict,
     WebRegistrationIntent,
 )
+from app.core.tokens import create_access_token
 from app.db.session import AsyncSessionLocal, engine
 from app.main import app
 from app.schemas.web_registration import WebRegistrationIntentRequest
@@ -87,6 +90,39 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
             async with session.begin():
                 session.add(user)
                 await session.flush()
+        return user
+
+    async def _add_authenticated_user(
+        self,
+        *,
+        email: str = "intent-existing@example.invalid",
+        phone: str = "+79000000031",
+        verified: bool = True,
+        first_name: str | None = "Каноническое",
+        last_name: str | None = "Имя",
+    ) -> AppUser:
+        user = AppUser(
+            email=email,
+            phone=phone,
+            password_hash="unchanged",
+            account_origin="password_signup",
+            claim_state="claimed",
+            status="active",
+            email_verified_at=self.now if verified else None,
+        )
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(user)
+                await session.flush()
+                session.add(Profile(
+                    user_id=user.id,
+                    first_name=first_name,
+                    last_name=last_name,
+                    full_name=(f"{first_name} {last_name}" if first_name and last_name else None),
+                    display_name=(f"{first_name} {last_name}" if first_name and last_name else None),
+                    email=email,
+                    phone=phone,
+                ))
         return user
 
     async def _add_document(self, document_type: str, *, retired: bool = False) -> LegalDocument:
@@ -179,6 +215,85 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await session.scalar(select(func.count()).select_from(EventRegistration)), before_regs)
             self.assertEqual(await session.scalar(select(func.count()).select_from(EventRegistrationCapacityReservation)), before_reservations)
 
+    async def test_authenticated_verified_user_completes_with_canonical_identity(self) -> None:
+        user = await self._add_authenticated_user()
+        payload = self.payload(
+            first_name="Подмена",
+            last_name="Профиля",
+            email="intent-spoofed@example.invalid",
+            phone="+79000000099",
+            idempotency_key="authenticated-canonical-user",
+        )
+        async with AsyncSessionLocal() as session:
+            created = await service.create_intent(
+                session,
+                payload,
+                None,
+                current_user=user,
+            )
+        self.assertEqual(created.next_step, "completed")
+        async with AsyncSessionLocal() as session:
+            intent = await session.scalar(select(WebRegistrationIntent).where(WebRegistrationIntent.event_id == self.event_id))
+            registration = await session.scalar(select(EventRegistration).where(EventRegistration.event_id == self.event_id))
+            profile = await session.scalar(select(Profile).where(Profile.user_id == user.id))
+            legal = await session.scalar(select(LegalAcceptance).where(LegalAcceptance.registration_id == registration.id))
+        self.assertEqual(intent.matched_user_id, user.id)
+        self.assertEqual((intent.email_normalized, intent.phone_normalized), (user.email, user.phone))
+        self.assertEqual((intent.first_name, intent.last_name), ("Каноническое", "Имя"))
+        self.assertEqual(registration.user_id, user.id)
+        self.assertEqual((profile.first_name, profile.last_name, profile.phone), ("Каноническое", "Имя", user.phone))
+        self.assertEqual((legal.acceptance_method, legal.evidence_version), ("authenticated_action", "web-registration-authenticated-v1"))
+
+    async def test_authenticated_incomplete_profile_fails_without_intent(self) -> None:
+        user = await self._add_authenticated_user(
+            email="intent-incomplete@example.invalid",
+            phone="+79000000032",
+            last_name=None,
+        )
+        with self.assertRaises(HTTPException) as raised:
+            async with AsyncSessionLocal() as session:
+                await service.create_intent(session, self.payload(), None, current_user=user)
+        self.assertEqual(raised.exception.status_code, 422)
+        self.assertEqual(raised.exception.detail["code"], "incomplete_account_profile")
+        async with AsyncSessionLocal() as session:
+            count = await session.scalar(select(func.count()).select_from(WebRegistrationIntent).where(WebRegistrationIntent.event_id == self.event_id))
+        self.assertEqual(count, 0)
+
+    async def test_authenticated_unverified_user_still_requires_email_code(self) -> None:
+        user = await self._add_authenticated_user(
+            email="intent-unverified@example.invalid",
+            phone="+79000000033",
+            verified=False,
+        )
+        async with AsyncSessionLocal() as session:
+            created = await service.create_intent(session, self.payload(), None, current_user=user)
+        self.assertEqual(created.next_step, "confirm_email")
+        async with AsyncSessionLocal() as session:
+            registration_count = await session.scalar(select(func.count()).select_from(EventRegistration).where(EventRegistration.event_id == self.event_id))
+        self.assertEqual(registration_count, 0)
+
+    async def test_authenticated_router_rejects_invalid_token_and_accepts_valid_token(self) -> None:
+        user = await self._add_authenticated_user(
+            email="intent-router-auth@example.invalid",
+            phone="+79000000034",
+        )
+        payload = self.payload(idempotency_key="authenticated-router").model_dump(mode="json")
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            invalid = await client.post(
+                "/web/registration-intents",
+                json=payload,
+                headers={"Authorization": "Bearer invalid"},
+            )
+            valid = await client.post(
+                "/web/registration-intents",
+                json=payload,
+                headers={"Authorization": f"Bearer {create_access_token(user.id)}"},
+            )
+        self.assertEqual(invalid.status_code, 401)
+        self.assertEqual(valid.status_code, 201)
+        self.assertEqual(valid.json()["data"]["next_step"], "completed")
+
     def test_input_rejects_malformed_contacts_names_and_account_choice(self) -> None:
         for update in ({"phone": "+123"}, {"first_name": "Bad\u0000Name"}, {"account_choice": "invalid"}, {"email": "broken"}):
             with self.assertRaises(ValidationError):
@@ -245,6 +360,32 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(failed), 2)
             conflict = await session.scalar(select(WebRegistrationIdentityConflict).where(WebRegistrationIdentityConflict.email_user_id == email_user.id))
             self.assertEqual((conflict.email_user_id, conflict.phone_user_id), (email_user.id, phone_user.id))
+
+    async def test_failed_identity_conflict_does_not_retain_questionnaire_answers(self) -> None:
+        phone_user = await self._add_user(
+            "intent-questionnaire-conflict@example.invalid",
+            "+79000000013",
+        )
+        form_id, field_ids = await self._add_questionnaire()
+        await self._assert_http_error(
+            409,
+            "identity_confirmation_unavailable",
+            email="intent-questionnaire-submitted@example.invalid",
+            phone=phone_user.phone,
+            questionnaire_form_id=form_id,
+            answers=self._valid_answers(field_ids),
+            idempotency_key="questionnaire-conflict-key",
+        )
+        async with AsyncSessionLocal() as session:
+            intent = await session.scalar(
+                select(WebRegistrationIntent).where(
+                    WebRegistrationIntent.idempotency_key_hash
+                    == service._idempotency_hash("questionnaire-conflict-key"),
+                ),
+            )
+        self.assertIsNotNone(intent)
+        self.assertEqual(intent.status, "failed")
+        self.assertIsNone(intent.answer_payload)
 
     async def test_deletion_pending_stores_no_intent_conflict_or_submitted_pii(self) -> None:
         deleting = await self._add_user("intent-deleting@example.invalid", "+79000000022", status="deletion_pending", deletion_requested_at=self.now)

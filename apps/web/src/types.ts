@@ -129,6 +129,20 @@ export type WebEventRegistrationFormResponse = {
 
 export type AccountChoice = "without_password" | "create_account";
 
+export type TemporaryAuthTokens = {
+  access_token: string;
+  refresh_token: string;
+  expires_at: string;
+};
+
+export type ExistingAccountIdentity = {
+  email: string;
+  email_verified_at: string | null;
+  first_name: string;
+  last_name: string;
+  phone: string;
+};
+
 export type WebOptionSelection = {
   option_id: string;
   quantity: number;
