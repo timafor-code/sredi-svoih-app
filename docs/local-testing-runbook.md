@@ -13,7 +13,7 @@ cd F:\2026\SS-App\code\sredi-svoih-app
 | Python API, PostgreSQL, MinIO и Mailpit | Docker Compose | `http://127.0.0.1:8000` |
 | Web-admin | `npm run admin:dev` | `http://localhost:5173` |
 | Публичная web-регистрация | `npm run web:dev` | `http://localhost:5174` |
-| Мобильное приложение | `npx expo start --clear` | Expo Go / `http://localhost:8081` |
+| Мобильное приложение на физическом iPhone | `npm run mobile:iphone` | Expo Go / `http://localhost:8081` |
 
 Supabase для текущего API-only runtime запускать не требуется. Исторические Supabase migrations остаются архивом и не являются рабочим локальным контуром приложения.
 
@@ -71,17 +71,17 @@ http://localhost:5174/events/<public-slug>?occurrence=<occurrence-uuid>
 
 ### Окно 4 — мобильное приложение с аккаунтами и внутренней регистрацией
 
-Сначала укажите локальный IP компьютера вместо `<LAN-IP>`:
+Сначала сохраните локальный IP компьютера и account-режимы в корневом
+`.env.local`, как описано в разделе 3. Затем выполните одну каноническую команду:
 
 ```powershell
 cd F:\2026\SS-App\code\sredi-svoih-app
-$env:EXPO_PUBLIC_API_URL="http://<LAN-IP>:8000"
-$env:EXPO_PUBLIC_APP_ACCESS_MODE="account"
-$env:EXPO_PUBLIC_EVENT_REGISTRATION_MODE="account"
-npx expo start --clear
+npm run mobile:iphone
 ```
 
-На iPhone откройте QR-код через Expo Go. iPhone и компьютер должны находиться в одной локальной сети.
+Команда сама запускает или актуализирует локальный Docker-контур и затем запускает
+Expo с очищенным Metro cache. На iPhone откройте QR-код через Expo Go. iPhone и
+компьютер должны находиться в одной локальной сети.
 
 ## 2. Первый запуск на компьютере
 
@@ -123,14 +123,38 @@ EXPO_PUBLIC_APP_ACCESS_MODE=account
 EXPO_PUBLIC_EVENT_REGISTRATION_MODE=account
 ```
 
-После сохранения запускайте приложение короче:
+После сохранения запускайте локальный runtime физического iPhone одной командой:
 
 ```powershell
 cd F:\2026\SS-App\code\sredi-svoih-app
-npx expo start --clear
+npm run mobile:iphone
 ```
 
-Если в текущем окне PowerShell ранее задавались `$env:EXPO_PUBLIC_*`, они имеют приоритет над `.env.local`. Очистить их можно так:
+Launcher явно читает только эти три разрешённые mobile-переменные из корневого
+`.env.local`. Для `npm run mobile:iphone` файл является источником истины: старые
+одноимённые `$env:EXPO_PUBLIC_*` из PowerShell не переопределяют его значения.
+Произвольные backend-переменные из файла не копируются в Expo.
+
+Из `EXPO_PUBLIC_API_URL` launcher получает LAN hostname/IP и перед запуском Expo:
+
+- выполняет `docker compose -f infra/docker-compose.api.yml up -d` без удаления
+  PostgreSQL или MinIO volumes;
+- передаёт только процессу Docker Compose
+  `API_OBJECT_STORAGE_HOST_BIND=0.0.0.0`;
+- передаёт backend public endpoint для presigned avatar URLs как
+  `API_OBJECT_STORAGE_PUBLIC_ENDPOINT_URL=http://<LAN-IP>:59000`;
+- запускает Expo с тремя значениями из `.env.local` и `--clear`.
+
+Launcher отклонит невалидный API URL, а также `localhost` и `127.0.0.1`. Проверить
+конфигурацию без запуска Docker и Expo можно так:
+
+```powershell
+npm run mobile:iphone -- --check
+```
+
+Обычный `npx expo start` не изменён. Если он нужен как ручной troubleshooting
+fallback и в текущем окне PowerShell ранее задавались `$env:EXPO_PUBLIC_*`, очистить
+их можно так:
 
 ```powershell
 Remove-Item Env:EXPO_PUBLIC_API_URL -ErrorAction SilentlyContinue
@@ -140,7 +164,12 @@ Remove-Item Env:EXPO_PUBLIC_EVENT_REGISTRATION_MODE -ErrorAction SilentlyContinu
 
 ## 4. Режимы мобильного приложения
 
-Переменные задаются до запуска Expo.
+Для канонического запуска укажите нужные значения в корневом `.env.local`, затем
+выполните `npm run mobile:iphone`. Launcher передаёт значения без скрытой замены на
+другой режим.
+
+Ниже оставлены ручные команды только как troubleshooting fallback для обычного
+`npx expo start`.
 
 ### Приложение с аккаунтами и внутренней регистрацией на события
 
@@ -200,7 +229,27 @@ EXPO_PUBLIC_API_URL=http://192.168.1.25:8000
 http://192.168.1.25:8000/health
 ```
 
-Если адрес не открывается, проверьте общую Wi-Fi сеть и разрешение Windows Firewall для Docker/порта `8000`. На физическом iPhone нельзя использовать `127.0.0.1` или `localhost`: они указывают на сам телефон.
+Затем проверьте доступность MinIO для прямой загрузки аватара:
+
+```text
+http://192.168.1.25:59000
+```
+
+XML/S3 error или `AccessDenied` допустимы: они подтверждают, что iPhone видит
+object storage. Ошибка сетевого подключения означает, что LAN-доступ всё ещё
+заблокирован.
+
+Если Windows Firewall блокирует порт `59000`, администратор компьютера может вручную
+добавить правило:
+
+```powershell
+New-NetFirewallRule -DisplayName "Sredi Svoih MinIO 59000" -Direction Inbound -Protocol TCP -LocalPort 59000 -Action Allow
+```
+
+Launcher не меняет Windows Firewall и не требует запуска с повышенными правами.
+Если API-адрес не открывается, проверьте общую Wi-Fi сеть и разрешение Windows
+Firewall для Docker/порта `8000`. На физическом iPhone нельзя использовать
+`127.0.0.1` или `localhost`: они указывают на сам телефон.
 
 ## 6. API, база, почта и object storage
 
@@ -426,7 +475,7 @@ docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade 
 | Только public web React/CSS | Обычно ничего: Vite HMR обновит страницу |
 | `apps/web/package*.json` | `Ctrl+C`, `npm ci --prefix apps/web`, `npm run web:dev` |
 | Mobile JS/TS | Expo обычно обновит приложение автоматически |
-| Mobile env или странный Metro cache | `Ctrl+C`, затем `npx expo start --clear` |
+| Mobile env или странный Metro cache | `Ctrl+C`, затем `npm run mobile:iphone` |
 | Python API | `docker compose ... up -d --build --force-recreate api_backend` |
 | Alembic migration | Пересобрать API и выполнить `alembic upgrade head` |
 | Docker Compose или backend env | Пересоздать затронутые сервисы, при сомнении — весь API-контур |
@@ -484,6 +533,13 @@ Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike "127
 ```
 
 Проверьте `http://<LAN-IP>:8000/health` сначала в браузере компьютера, затем в Safari на iPhone.
+
+### Avatar upload на iPhone завершается `Network request failed`
+
+Запустите приложение через `npm run mobile:iphone`, затем откройте в Safari на
+iPhone `http://<LAN-IP>:59000`. XML/S3 error или `AccessDenied` допустимы. Если
+соединения нет, проверьте Windows Firewall и при необходимости добавьте описанное в
+разделе 5 ручное inbound-правило для TCP `59000`.
 
 ## 14. Команды проверок перед merge
 
