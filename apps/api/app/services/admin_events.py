@@ -578,10 +578,10 @@ async def update_admin_event_web_registration(
             new_visibility = payload.web_visibility
             if (
                 new_visibility == "unlisted"
-                and event.registration_mode != "internal_free"
+                and event.registration_mode not in ("internal_free", "internal_paid")
             ):
                 raise _validation_error(
-                    "Web registration requires registration_mode=internal_free",
+                    "Web registration requires registration_mode=internal_free or internal_paid",
                 )
 
             if old_visibility != new_visibility:

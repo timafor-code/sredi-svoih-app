@@ -13,8 +13,8 @@ npm install --prefix apps/web
 ## Start the canonical API contour
 
 ```powershell
-docker compose -f infra/docker-compose.api.yml up -d --build api_postgres api_object_storage api_object_storage_init api_backend
-docker compose -f infra/docker-compose.api.yml run --rm api_backend alembic upgrade head
+docker compose -f infra/docker-compose.api.yml up -d
+docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
 ```
 
 ## Start public web
@@ -50,9 +50,15 @@ The event fixture must have all of these values and related data:
 
 - `status = published`;
 - `visibility = public`;
-- `registration_mode = internal_free`;
+- `registration_mode = internal_free` or `internal_paid`;
 - `web_visibility = unlisted` or `listed`;
 - one active `event_registration_consent` legal document.
+
+Both registration modes are available simultaneously after this ordinary API
+start. `internal_free` accepts only free non-donation options. `internal_paid`
+supports the existing free, paid, and donation option contract; confirmation
+finishes with registration and payment statuses `pending/pending` because no
+real payment gateway is implemented.
 
 The consent must be a current, non-retired document returned by the registration-form
 endpoint. The browser submits that document's exact `id` and `content_hash`.

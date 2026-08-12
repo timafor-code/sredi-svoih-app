@@ -71,7 +71,6 @@ services:
       - ./env/api.env.example
     environment:
       API_OBJECT_STORAGE_PUBLIC_ENDPOINT_URL: "${API_OBJECT_STORAGE_PUBLIC_ENDPOINT_URL:-http://127.0.0.1:59000}"
-      API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED: "${API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED:-false}"
     ports:
       - "8000:8000"
     depends_on:

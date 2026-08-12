@@ -1163,9 +1163,9 @@ the occurrence belongs to the event.
 | --- | --- | --- |
 | GET | `/admin/events/{event_id}/web-registration` | Authenticated community-scoped read of `event_id`, `web_visibility`, `public_slug`, and authoritative canonical `public_registration_url`. The URL is returned while disabled; deprecated `occurrence_urls` is no longer returned. |
 | POST | `/admin/events/{event_id}/web-registration/check-slug` | Authenticated community-scoped normalization and exact canonical/alias availability check. Returns `normalized_slug`, `available`, and nullable `public_slug_taken`; invalid, reserved, UUID-like, and full-URL values return typed `422 invalid_public_slug`. |
-| PATCH | `/admin/events/{event_id}/web-registration` | Row-locked, audited change accepting independent optional `web_visibility` and canonical `public_slug` fields; an empty payload is rejected and enabling requires `internal_free`. The PATCH is final authority for normalization/collisions, returns the new authoritative URL, keeps the old slug as an alias, and rejects full URLs and unrelated event fields. |
+| PATCH | `/admin/events/{event_id}/web-registration` | Row-locked, audited change accepting independent optional `web_visibility` and canonical `public_slug` fields; an empty payload is rejected and enabling requires `internal_free` or `internal_paid`. The PATCH is final authority for normalization/collisions, returns the new authoritative URL, keeps the old slug as an alias, and rejects full URLs and unrelated event fields. |
 | GET | `/web/events/{public_slug}/registration-form` | Unauthenticated canonical-or-alias lookup with strict lowercase ASCII path validation and the same minimized publication guards as the UUID endpoint. |
-| GET | `/events/{event_id}/registration-form?channel=web` | Legacy unauthenticated UUID form read for published/public/`internal_free` events whose web visibility is `unlisted` or `listed`. |
+| GET | `/events/{event_id}/registration-form?channel=web` | Legacy unauthenticated UUID form read for published/public `internal_free` or `internal_paid` events whose web visibility is `unlisted` or `listed`. |
 
 The admin suffix editor debounces availability checks by about 400 ms and also
 checks on blur. Preview uses only backend `normalized_slug`. Copy/open use only
@@ -1268,13 +1268,12 @@ same `flow_id` with `next_step=completed`; it sends no email, creates no code,
 registration, or legal acceptance, and never replays a plaintext set-password
 credential.
 
-The current intent release is free-only: the event must be published/public,
-use `internal_free`, and have `web_visibility` set to `unlisted` or `listed`.
-This gate runs before intent PII persistence, conflict creation, user or
-registration creation, and verification email delivery. Disabled and other
-unsupported states use one generic `registration_unavailable` outcome. The
-event must use `internal_free`,
-and paid or donation option selections are rejected. Canonical registration
+The current intent release accepts published/public events using
+`internal_free` or `internal_paid` with `web_visibility` set to `unlisted` or
+`listed`. Disabled, `none`, `external_link`, and other unsupported states use
+one generic `registration_unavailable` outcome. For `internal_free`, paid or
+donation option selections are rejected. For `internal_paid`, canonical active
+free, paid, and donation selections are supported. Canonical registration
 preflight validates occurrences, registration windows, option membership and
 quantity rules, and derives `seats_count`; a conflicting client value is
 rejected. Exactly one active, non-retired `event_registration_consent` with an

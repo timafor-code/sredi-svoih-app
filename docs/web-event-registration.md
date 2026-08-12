@@ -33,9 +33,8 @@ Current repository behavior:
 - ordinary web-event questionnaires now work end-to-end in the public web UI,
   including strict validation, version binding, final persistence, retention,
   and privacy coverage. This completes webreg PR 11;
-- public web registration supports `internal_free` and feature-gated
-  `internal_paid` contracts. The backend paid-registration gate defaults to
-  `false`.
+- public web registration supports `internal_free` and `internal_paid`
+  contracts simultaneously after an ordinary API start.
 
 Mobile, public web, and web-admin must use one FastAPI API and one canonical
 PostgreSQL model. They must not create a second backend, a separate web-user
@@ -161,13 +160,11 @@ confirmation because capacity is checked again. Retries must be idempotent and
 must not create duplicate flows, users, registrations, or capacity usage.
 
 For the current implementation, `internal_free` events remain processable with
-free, non-donation options only. `internal_paid` events are processable only
-when the backend `API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED` feature gate is
-enabled; its default is `false`, and a disabled gate returns the same
-enumeration-safe unavailable result as other unsupported states. Email
+free, non-donation options only. `internal_paid` events are processable at the
+same time and support canonical active free, paid, and donation options. Email
 verification is mandatory for both modes.
 
-For gated `internal_paid`, the canonical backend owns option validity,
+For `internal_paid`, the canonical backend owns option validity,
 quantity, `is_donation`, `counts_toward_capacity`, seat calculation, current
 price and currency, mixed-currency rejection, final capacity, and option
 snapshots. Client `seats_count` is revalidated. Donation and non-capacity
@@ -384,11 +381,10 @@ standard JSON envelope and generic, enumeration-safe errors.
 | GET | `/web/registration-intents/{flow_id}/status` | Return only the state authorized by the opaque flow credential. |
 
 Form reads and new intents require the event to be simultaneously `published`,
-`public`, and `unlisted` or `listed`. `internal_free` is supported normally;
-`internal_paid` additionally requires the backend paid-registration feature
-gate. The gate defaults to `false` and runs before submitted names/contact data
-are persisted, before conflict or user creation, and before email delivery.
-Unsupported states share one generic `registration_unavailable` response.
+`public`, and `unlisted` or `listed`, with registration mode `internal_free` or
+`internal_paid`. Both modes are supported simultaneously after an ordinary API
+start. Unsupported states share one generic `registration_unavailable`
+response.
 
 Both reads return `canonical_public_path` from the current stored canonical slug
 and a strict boolean `resolved_from_alias`. `apps/web` uses that relative path
@@ -454,14 +450,15 @@ authorization guards scope access to the event's community, and publication
 changes produce a PII-free audit record. PATCH locks the event and commits the
 event change plus `admin_event_audit_entries` row atomically. The row contains
 only technical IDs/action/old/new/timestamp; repeated same-state PATCH creates
-no row. Enabling `unlisted` through this conservative admin PATCH still
-requires `registration_mode=internal_free`; it does not activate paid events.
+no row. Enabling `unlisted` through this conservative admin PATCH requires
+`registration_mode=internal_free` or `registration_mode=internal_paid`;
+`none` and `external_link` remain unsupported.
 
 The public registration-form read is available only for events that are
 simultaneously `published`, `public`, and `unlisted` or `listed`, with
-`internal_paid` additionally protected by the default-off backend feature gate.
-For `internal_free` it returns active free non-donation options; for gated
-`internal_paid` it returns canonical active free, paid, and donation options.
+registration mode `internal_free` or `internal_paid`. For `internal_free` it
+returns active free non-donation options; for `internal_paid` it returns
+canonical active free, paid, and donation options.
 It also returns one current event-registration consent, an optional privacy
 policy, the published
 `questionnaire_form_id` plus exactly its ordered ordinary questions, and a canonical

@@ -405,15 +405,6 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
             Settings(public_web_base_url="http://127.0.0.1:5174/").public_web_base_url,
             "http://127.0.0.1:5174",
         )
-        self.assertFalse(Settings().api_public_web_paid_registration_enabled)
-        self.assertTrue(
-            Settings(
-                api_public_web_paid_registration_enabled=True,
-            ).api_public_web_paid_registration_enabled,
-        )
-        with self.assertRaises(ValidationError):
-            Settings(api_public_web_paid_registration_enabled="enabled")
-
     async def test_admin_get_is_authorized_stable_filtered_and_pii_free(self) -> None:
         path = f"/admin/events/{self.event_id}/web-registration"
         self.assertEqual((await self._request("GET", path)).status_code, 401)
@@ -513,9 +504,19 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(disabled.status_code, 200)
         self.assertEqual(disabled.json()["data"]["web_visibility"], "disabled")
 
-    async def test_admin_patch_rejects_unsupported_registration_modes(self) -> None:
+    async def test_admin_patch_allows_paid_and_rejects_unsupported_registration_modes(self) -> None:
         path = f"/admin/events/{self.event_id}/web-registration"
-        for mode in ("none", "external_link", "internal_paid"):
+        await self._set_event(registration_mode="internal_paid")
+        paid = await self._request(
+            "PATCH",
+            path,
+            token=self.actor_token,
+            json={"web_visibility": "unlisted"},
+        )
+        self.assertEqual(paid.status_code, 200)
+        self.assertEqual(paid.json()["data"]["web_visibility"], "unlisted")
+
+        for mode in ("none", "external_link"):
             await self._set_event(registration_mode=mode)
             response = await self._request(
                 "PATCH",
@@ -524,6 +525,7 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
                 json={"web_visibility": "unlisted"},
             )
             self.assertEqual(response.status_code, 422)
+            self.assertIn("internal_free or internal_paid", response.text)
         self.assertNotIn("web_visibility", AdminEventCreateRequest.model_fields)
         self.assertNotIn("web_visibility", AdminEventUpdateRequest.model_fields)
         with self.assertRaises(ValidationError):
@@ -681,59 +683,40 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(full.json()["data"]["registration_state"], "full")
         self.assertEqual(await self._registration_count(), before)
 
-    async def test_paid_form_is_fail_closed_by_default_and_mode_filters_options(self) -> None:
+    async def test_free_and_paid_forms_are_available_together_and_filter_options(self) -> None:
         path = f"/events/{self.event_id}/registration-form?channel=web"
         await self._set_event(
             web_visibility="unlisted",
             registration_mode="internal_paid",
         )
-        with patch(
-            "app.services.events.get_settings",
-            return_value=Settings(api_public_web_paid_registration_enabled=False),
-        ):
-            paid_unavailable = await self._request("GET", path)
-        await self._set_event(visibility="hidden")
-        hidden_unavailable = await self._request("GET", path)
-        self.assertEqual(paid_unavailable.status_code, 404)
-        self.assertEqual(hidden_unavailable.status_code, 404)
+        paid_response = await self._request("GET", path)
+        self.assertEqual(paid_response.status_code, 200)
+        paid_data = paid_response.json()["data"]
+        self.assertEqual(paid_data["event"]["registration_mode"], "internal_paid")
+        options = {
+            item["id"]: item for item in paid_data["participation_options"]
+        }
         self.assertEqual(
-            paid_unavailable.json()["error"],
-            hidden_unavailable.json()["error"],
+            set(options),
+            {
+                str(self.free_option_id),
+                str(self.paid_option_id),
+                str(self.donation_option_id),
+            },
         )
+        paid = options[str(self.paid_option_id)]
+        self.assertEqual((paid["price_amount"], paid["price_currency"]), (100, "RUB"))
+        self.assertTrue(paid["allow_quantity"])
+        self.assertEqual((paid["min_quantity"], paid["max_quantity"]), (1, 4))
+        self.assertTrue(paid["counts_toward_capacity"])
+        self.assertFalse(paid["is_donation"])
+        donation = options[str(self.donation_option_id)]
+        self.assertEqual((donation["price_amount"], donation["price_currency"]), (500, "RUB"))
+        self.assertTrue(donation["is_donation"])
+        self.assertFalse(donation["counts_toward_capacity"])
 
-        await self._set_event(visibility="public")
-        with patch(
-            "app.services.events.get_settings",
-            return_value=Settings(api_public_web_paid_registration_enabled=True),
-        ):
-            paid_response = await self._request("GET", path)
-            self.assertEqual(paid_response.status_code, 200)
-            paid_data = paid_response.json()["data"]
-            self.assertEqual(paid_data["event"]["registration_mode"], "internal_paid")
-            options = {
-                item["id"]: item for item in paid_data["participation_options"]
-            }
-            self.assertEqual(
-                set(options),
-                {
-                    str(self.free_option_id),
-                    str(self.paid_option_id),
-                    str(self.donation_option_id),
-                },
-            )
-            paid = options[str(self.paid_option_id)]
-            self.assertEqual((paid["price_amount"], paid["price_currency"]), (100, "RUB"))
-            self.assertTrue(paid["allow_quantity"])
-            self.assertEqual((paid["min_quantity"], paid["max_quantity"]), (1, 4))
-            self.assertTrue(paid["counts_toward_capacity"])
-            self.assertFalse(paid["is_donation"])
-            donation = options[str(self.donation_option_id)]
-            self.assertEqual((donation["price_amount"], donation["price_currency"]), (500, "RUB"))
-            self.assertTrue(donation["is_donation"])
-            self.assertFalse(donation["counts_toward_capacity"])
-
-            await self._set_event(registration_mode="internal_free")
-            free_response = await self._request("GET", path)
+        await self._set_event(registration_mode="internal_free")
+        free_response = await self._request("GET", path)
         self.assertEqual(free_response.status_code, 200)
         self.assertEqual(
             [item["id"] for item in free_response.json()["data"]["participation_options"]],
@@ -758,7 +741,6 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
             {"web_visibility": "unlisted", "status": "archived"},
             {"web_visibility": "unlisted", "status": "published", "visibility": "hidden"},
             {"web_visibility": "unlisted", "visibility": "members_only"},
-            {"web_visibility": "unlisted", "visibility": "public", "registration_mode": "internal_paid"},
             {"web_visibility": "unlisted", "registration_mode": "external_link"},
             {"web_visibility": "unlisted", "registration_mode": "none"},
         ]
