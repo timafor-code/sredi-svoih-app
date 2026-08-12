@@ -752,6 +752,61 @@ select {
   margin-top: 18px;
 }
 
+.account-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: center;
+  padding: 20px 22px;
+}
+
+.account-panel-copy {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.account-panel-heading-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.account-panel-heading-row h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.account-status {
+  padding: 4px 9px;
+  border: 1px solid rgba(122, 211, 155, 0.36);
+  border-radius: 999px;
+  background: rgba(122, 211, 155, 0.1);
+  color: #a8e6bc;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.account-panel-name,
+.account-panel-email {
+  overflow-wrap: anywhere;
+}
+
+.account-panel-name {
+  color: var(--text-secondary);
+  font-size: 1.05rem;
+}
+
+.account-panel-email {
+  color: var(--text-muted);
+}
+
+.account-sign-out {
+  width: auto;
+  min-width: 116px;
+}
+
 .account-identity {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1053,6 +1108,16 @@ select {
 
   .account-action-grid {
     grid-template-columns: 1fr;
+  }
+
+  .account-panel {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 18px;
+  }
+
+  .account-sign-out {
+    width: 100%;
   }
 
   .account-identity {
