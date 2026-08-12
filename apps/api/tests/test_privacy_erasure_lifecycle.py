@@ -823,13 +823,23 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(replayed_request.pre_deletion_user_status, "active")
         self.assertEqual(replayed_user.auth_token_version, 1)
 
-    async def test_financial_indicators_fail_closed_without_partial_mutation(self) -> None:
+    async def test_financial_indicators_enter_deletion_pending_and_revoke_access(
+        self,
+    ) -> None:
         cases = ("paid", "donation", "payment_id", "priced_option")
         for case in cases:
             with self.subTest(case=case):
-                user_id, _, _ = await self._add_user()
+                user_id, email, _ = await self._add_user()
                 request_id = await self._add_request(user_id)
+                credentials = await self._add_credentials(user_id)
                 token = await self._add_privacy_session(user_id)
+                login = await self.client.post(
+                    "/auth/login",
+                    json={"email": email, "password": "Synthetic-password-1"},
+                )
+                self.assertEqual(login.status_code, 200)
+                old_access_token = login.json()["access_token"]
+                old_refresh_token = login.json()["refresh_token"]
                 event_id = await self._add_event(
                     starts_at=self.now + timedelta(days=2),
                     registration_mode="internal_paid"
@@ -867,13 +877,14 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
                                 ),
                             )
 
-                blocked = await self._confirm(request_id, token)
-                self.assertEqual(blocked.status_code, 409)
-                self.assertEqual(
-                    blocked.json()["error"]["code"],
+                confirmed = await self._confirm(request_id, token)
+                self.assertEqual(confirmed.status_code, 200)
+                self.assertEqual(confirmed.json()["data"]["state"], "deletion_pending")
+                self.assertNotIn(
                     "privacy_erasure_manual_review_required",
+                    confirmed.text,
                 )
-                self.assertNotIn("synthetic-payment", blocked.text)
+                self.assertNotIn("synthetic-payment", confirmed.text)
                 async with AsyncSessionLocal() as session:
                     user = await session.get(AppUser, user_id)
                     request = await session.get(PrivacyRequest, request_id)
@@ -881,21 +892,76 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
                         EventRegistration,
                         registration_id,
                     )
-                    privacy_session = await session.scalar(
-                        select(PrivacyAccessSession).where(
-                            PrivacyAccessSession.user_id == user_id,
-                            PrivacyAccessSession.token_hash
-                            == privacy_access._privacy_session_hash(token),
-                        ),
+                    auth_sessions = (
+                        await session.scalars(
+                            select(AuthSession).where(AuthSession.user_id == user_id),
+                        )
+                    ).all()
+                    privacy_sessions = (
+                        await session.scalars(
+                            select(PrivacyAccessSession).where(
+                                PrivacyAccessSession.user_id == user_id,
+                            ),
+                        )
+                    ).all()
+                    reset_code = await session.get(
+                        PasswordResetCode,
+                        credentials["reset_code"],
                     )
-                self.assertEqual(user.status, "active")
-                self.assertEqual(user.auth_token_version, 0)
-                self.assertIsNone(user.deletion_requested_at)
-                self.assertIsNone(request.processing_stopped_at)
-                self.assertIsNone(request.pre_deletion_user_status)
-                self.assertEqual(registration.status, "confirmed")
-                self.assertIsNone(privacy_session.revoked_at)
-        self.email_mock.assert_not_called()
+                self.assertEqual(user.status, "deletion_pending")
+                self.assertEqual(user.auth_token_version, 1)
+                self.assertIsNotNone(user.deletion_requested_at)
+                self.assertIsNotNone(request.processing_stopped_at)
+                self.assertEqual(request.pre_deletion_user_status, "active")
+                self.assertIsNotNone(registration)
+                self.assertTrue(auth_sessions)
+                self.assertTrue(all(row.revoked_at is not None for row in auth_sessions))
+                self.assertTrue(privacy_sessions)
+                self.assertTrue(
+                    all(row.revoked_at is not None for row in privacy_sessions),
+                )
+                self.assertIsNotNone(reset_code.consumed_at)
+
+                revoked_access = await self.client.get(
+                    "/auth/me",
+                    headers={"Authorization": f"Bearer {old_access_token}"},
+                )
+                revoked_refresh = await self.client.post(
+                    "/auth/refresh",
+                    json={"refresh_token": old_refresh_token},
+                )
+                new_login = await self.client.post(
+                    "/auth/login",
+                    json={"email": email, "password": "Synthetic-password-1"},
+                )
+                self.assertEqual(revoked_access.status_code, 401)
+                self.assertEqual(revoked_refresh.status_code, 401)
+                self.assertEqual(new_login.status_code, 401)
+
+                first_processing_stopped_at = request.processing_stopped_at
+                first_deletion_requested_at = user.deletion_requested_at
+                replay_token = await self._new_privacy_token_via_email(email)
+                replay = await self._confirm(request_id, replay_token)
+                self.assertEqual(replay.status_code, 200)
+                self.assertEqual(replay.json()["data"]["state"], "deletion_pending")
+                self.assertNotIn(
+                    "privacy_erasure_manual_review_required",
+                    replay.text,
+                )
+                async with AsyncSessionLocal() as session:
+                    replayed_user = await session.get(AppUser, user_id)
+                    replayed_request = await session.get(PrivacyRequest, request_id)
+                self.assertEqual(replayed_user.status, "deletion_pending")
+                self.assertEqual(replayed_user.auth_token_version, 1)
+                self.assertEqual(
+                    replayed_user.deletion_requested_at,
+                    first_deletion_requested_at,
+                )
+                self.assertEqual(
+                    replayed_request.processing_stopped_at,
+                    first_processing_stopped_at,
+                )
+        self.assertEqual(self.email_mock.call_count, len(cases))
 
     async def test_processing_stop_keeps_public_auth_generic_and_blocks_new_work(self) -> None:
         user_id, email, phone = await self._add_user()

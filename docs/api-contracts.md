@@ -2655,9 +2655,11 @@ matched by canonical email and cancels future free registrations. It does not
 set `execution_started_at`, `completed_at`, `due_at`, or destruction evidence,
 and it does not delete the user or stored personal data.
 
-If payment, donation, priced-option, or non-free registration evidence exists,
-the route returns `409 privacy_erasure_manual_review_required` without any
-partial state change. Foreign request ids use the safe `404 not_found` shape.
+Payment, donation, priced-option, or non-free registration evidence does not
+delay this processing stop: confirmation still enters `deletion_pending` and
+revokes account access immediately. The worker may continue to require manual
+review for that retained data before physical erasure. Foreign request ids use
+the safe `404 not_found` shape.
 
 ### `POST /privacy/requests/{request_id}/cancel-erasure`
 
