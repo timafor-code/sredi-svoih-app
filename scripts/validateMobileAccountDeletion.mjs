@@ -12,7 +12,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
 
 const files = {
-  security: source('app/profile/security.tsx'),
+  edit: source('app/profile/edit.tsx'),
   flow: source('src/components/profile/DeleteAccountFlow.tsx'),
   privacyApi: source('src/services/privacyApiService.ts'),
   privacyService: source('src/services/privacyService.ts'),
@@ -30,12 +30,17 @@ await validateServiceRequests();
 process.stdout.write('Mobile account deletion validation passed\n');
 
 function validateScreenAndFlow() {
-  assertIncludes(files.security, "import { DeleteAccountFlow }", 'Security screen imports deletion flow');
-  assertIncludes(files.security, 'setIsDeleteFlowOpen(true)', 'delete row opens real flow');
-  assertIncludes(files.security, 'accountEmail={accountEmail}', 'canonical account email is passed to flow');
-  assertIncludes(files.security, "const accountEmail = user?.email || profile?.email || ''", 'auth account email is canonical');
-  assertIncludes(files.security, 'Удаление аккаунта и персональных данных', 'delete row has final subtitle');
-  assertExcludes(files.security, 'Удаление аккаунта будет добавлено позже', 'account deletion placeholder removed');
+  assertEqual(
+    fs.existsSync(path.join(repoRoot, 'app/profile/security.tsx')),
+    false,
+    'obsolete Security screen is removed',
+  );
+  assertIncludes(files.edit, "import { DeleteAccountFlow }", 'Edit screen imports deletion flow');
+  assertIncludes(files.edit, 'setIsDeleteFlowOpen(true)', 'delete row opens real flow');
+  assertIncludes(files.edit, 'accountEmail={accountEmail}', 'canonical account email is passed to flow');
+  assertIncludes(files.edit, "const accountEmail = user?.email ?? ''", 'auth account email is canonical');
+  assertIncludes(files.edit, 'Удаление аккаунта и персональных данных', 'delete row has final subtitle');
+  assertExcludes(files.edit, 'Удаление аккаунта будет добавлено позже', 'account deletion placeholder removed');
   assertIncludes(files.flow, 'Email используется только для подтверждения и не редактируется.', 'email is displayed read-only');
   assertExcludes(files.flow, 'onChangeText={setAccountEmail}', 'account email cannot be edited');
   assertIncludes(files.flow, "maxLength={6}", 'verification code max length');
@@ -58,7 +63,7 @@ function validateScreenAndFlow() {
 }
 
 function validateCredentialBoundaries() {
-  const runtimeCredentialSources = [files.security, files.flow, files.privacyApi, files.privacyService];
+  const runtimeCredentialSources = [files.edit, files.flow, files.privacyApi, files.privacyService];
   const forbiddenPersistenceOrLogging = [
     'SecureStore',
     ['Async', 'Storage'].join(''),
@@ -85,7 +90,7 @@ function validateLocalCleanup() {
   const cleanupAction = extractBetween(
     files.authStore,
     'clearLocalSessionAfterAccountDeletion: async () => {',
-    '\n\n  signOut: async () => {',
+    '  signOut: async () => {',
   );
   const signOutAction = extractBetween(files.authStore, 'signOut: async () => {', '}));');
   const contactCleanupHelper = extractBetween(
@@ -132,8 +137,8 @@ function validateLocalCleanup() {
   assertIncludes(signOutAction, 'await signOutService()', 'ordinary sign-out still uses remote sign-out');
   assertExcludes(signOutAction, 'resetCommunityContactsAfterAccountDeletion', 'ordinary sign-out behavior is unchanged');
   assertExcludes(signOutAction, 'resetPrayerTrackerMemoryAfterAccountDeletion', 'ordinary sign-out does not gain deletion-only cleanup');
-  assertIncludes(files.security, 'await clearLocalSessionAfterAccountDeletion()', 'deletion_pending triggers local cleanup');
-  assertIncludes(files.security, 'finally {\n      router.replace(profileHref);', 'signed-out Profile routing survives local cleanup failure');
+  assertIncludes(files.edit, 'await clearLocalSessionAfterAccountDeletion()', 'deletion_pending triggers local cleanup');
+  assertIncludes(files.edit, 'finally {\n      router.replace(profileHref);', 'signed-out Profile routing survives local cleanup failure');
 
   const submitDeletion = extractBetween(
     files.flow,
@@ -167,7 +172,7 @@ function validateGuestAndPrayerBoundaries() {
 
   const privatePrayerTable = ['prayer', 'activity', 'logs'].join('_');
   for (const [name, runtimeSource] of Object.entries({
-    security: files.security,
+    edit: files.edit,
     flow: files.flow,
     privacyApi: files.privacyApi,
     privacyService: files.privacyService,

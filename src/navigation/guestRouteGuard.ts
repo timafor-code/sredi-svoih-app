@@ -4,7 +4,6 @@ import {
 } from '@/config/appCapabilities';
 
 const GUEST_BLOCKED_PROFILE_ROUTE_NAMES = [
-  'profile/security',
   'profile/edit',
   'profile/onboarding',
   'profile/my-registrations',

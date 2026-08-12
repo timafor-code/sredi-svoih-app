@@ -9,10 +9,8 @@ import { AuthCard } from '@/components/auth/AuthCard';
 import { GlassCard } from '@/components/glass/GlassCard';
 import { GuestSettingsShell } from '@/components/settings/GuestSettingsShell';
 import { Avatar } from '@/components/ui/Avatar';
-import { HeaderButton, Logo } from '@/components/ui/BrandHeader';
+import { Logo } from '@/components/ui/BrandHeader';
 import { FormField } from '@/components/ui/FormField';
-import { IOSGroup } from '@/components/ui/IOSGroup';
-import { ListRow } from '@/components/ui/ListRow';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { appCapabilities } from '@/config/appCapabilities';
@@ -28,7 +26,8 @@ const notificationsHref = '/profile/notifications' as Href;
 const prayersSettingsHref = '/profile/prayers-settings' as Href;
 const editProfileHref = '/profile/edit' as Href;
 const onboardingHref = '/profile/onboarding' as Href;
-const securityHref = '/profile/security' as Href;
+const supportHref = '/profile/support' as Href;
+const aboutHref = '/profile/about' as Href;
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -38,13 +37,6 @@ type QuickActionItem = {
   lockedSubtitle: string;
   subtitle: string;
   title: string;
-};
-
-type MenuItem = {
-  href: Href;
-  icon: string;
-  label: string;
-  sub: string;
 };
 
 const quickActions: QuickActionItem[] = [
@@ -75,72 +67,6 @@ const quickActions: QuickActionItem[] = [
     title: 'Молитвы и календарь',
     subtitle: 'Город, нусах, благословения',
     lockedSubtitle: 'Войдите для настроек',
-  },
-];
-
-const menuSections: { title: string; items: MenuItem[] }[] = [
-  {
-    title: 'Личное',
-    items: [
-      {
-        href: editProfileHref,
-        icon: '👤',
-        label: 'Редактировать профиль',
-        sub: 'Имя, город, аватар и публичные данные',
-      },
-      {
-        href: securityHref,
-        icon: '🔐',
-        label: 'Аккаунт и безопасность',
-        sub: 'Email, сессия и будущие настройки входа',
-      },
-      {
-        href: notificationsHref,
-        icon: '🔔',
-        label: 'Уведомления',
-        sub: 'Настройте, что и когда вам напоминать',
-      },
-    ],
-  },
-  {
-    title: 'Практика',
-    items: [
-      {
-        href: prayersSettingsHref,
-        icon: '📍',
-        label: 'Молитвы и календарь',
-        sub: 'Город, нусах и отображение благословений',
-      },
-      {
-        href: prayerTrackerHref,
-        icon: '🙏',
-        label: 'Молитвенный трекер',
-        sub: 'Личная история молитв, Шма и Омера',
-      },
-    ],
-  },
-  {
-    title: 'Община',
-    items: [
-      {
-        href: myRegistrationsHref,
-        icon: '📅',
-        label: 'Мои записи',
-        sub: 'Ваши регистрации на события',
-      },
-      {
-        href: '/profile/support' as Href,
-        icon: '❤️',
-        label: 'Поддержать общину',
-        sub: 'Ваш вклад в развитие общины',
-      },
-      {
-        href: '/profile/about' as Href,
-        icon: 'ℹ️',
-        label: 'О приложении',
-        sub: 'Версия, поддержка, политика конфиденциальности',
-      },
-    ],
   },
 ];
 
@@ -219,7 +145,7 @@ function AccountProfileScreen() {
       ?? null;
   }, [profile?.display_name, profile?.first_name, profile?.full_name, profile?.last_name]);
 
-  const accountEmail = profile?.email ?? authUser?.email ?? '';
+  const accountEmail = authUser?.email ?? '';
   const displayName = profileName ?? (accountEmail ? accountEmail.split('@')[0] : 'Гость');
   const isActiveMember = membership?.status === 'active';
   const membershipStatusLabel = isActiveMember ? 'Участник общины' : 'Доступ не активирован';
@@ -294,10 +220,6 @@ function AccountProfileScreen() {
     router.push(onboardingHref);
   }, [authUser, profile, router]);
 
-  const handleOpenSecurity = useCallback(() => {
-    router.push(securityHref);
-  }, [router]);
-
   const handleOpenQuickAction = useCallback((href: Href) => {
     if (!authUser) {
       return;
@@ -310,11 +232,6 @@ function AccountProfileScreen() {
     <Screen contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Logo />
-        <HeaderButton
-          accessibilityLabel="Аккаунт и безопасность"
-          icon="settings-outline"
-          onPress={handleOpenSecurity}
-        />
       </View>
 
       <View style={styles.titleBlock}>
@@ -342,13 +259,6 @@ function AccountProfileScreen() {
                 </View>
               ) : null}
             </View>
-            <Pressable
-              accessibilityLabel="Аккаунт и безопасность"
-              onPress={handleOpenSecurity}
-              style={({ pressed }) => [styles.securityIconButton, pressed && styles.pressed]}
-            >
-              <Ionicons name="settings-outline" size={18} color={colors.textSecondary} />
-            </Pressable>
           </View>
 
           <View style={styles.heroStatusRow}>
@@ -505,26 +415,19 @@ function AccountProfileScreen() {
         </GlassCard>
       ) : null}
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Все разделы</Text>
-        {menuSections.map((section) => (
-          <View key={section.title} style={styles.menuSection}>
-            <Text style={styles.menuSectionTitle}>{section.title}</Text>
-            <IOSGroup>
-              {section.items.map((item, index) => (
-                <Link key={item.label} href={item.href} asChild>
-                  <ListRow
-                    icon={item.icon}
-                    title={item.label}
-                    subtitle={item.sub}
-                    isLast={index === section.items.length - 1}
-                    onPress={() => undefined}
-                  />
-                </Link>
-              ))}
-            </IOSGroup>
-          </View>
-        ))}
+      <View style={styles.footerLinks}>
+        <Link href={supportHref} asChild>
+          <Pressable style={({ pressed }) => [styles.footerLink, pressed && styles.pressed]}>
+            <Ionicons name="heart-outline" size={15} color={colors.textGhost} />
+            <Text style={styles.footerLinkText}>Поддержать общину</Text>
+          </Pressable>
+        </Link>
+        <Link href={aboutHref} asChild>
+          <Pressable style={({ pressed }) => [styles.footerLink, pressed && styles.pressed]}>
+            <Ionicons name="information-circle-outline" size={15} color={colors.textGhost} />
+            <Text style={styles.footerLinkText}>О приложении</Text>
+          </Pressable>
+        </Link>
       </View>
     </Screen>
   );
@@ -621,16 +524,6 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     fontSize: 12,
     lineHeight: 16,
-  },
-  securityIconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.glass.w10,
-    backgroundColor: colors.glass.w07,
   },
   flex: {
     flex: 1,
@@ -847,14 +740,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
   },
-  menuSection: {
-    gap: 8,
+  footerLinks: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 6,
+    paddingTop: 2,
   },
-  menuSectionTitle: {
-    color: colors.textMuted,
-    fontSize: 13,
-    fontWeight: '800',
-    marginLeft: 4,
+  footerLink: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  footerLinkText: {
+    color: colors.textGhost,
+    fontSize: 12,
+    fontWeight: '600',
   },
   pressed: {
     opacity: 0.78,

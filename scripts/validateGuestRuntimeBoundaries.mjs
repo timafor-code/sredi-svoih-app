@@ -383,7 +383,6 @@ function validateRouteGuard() {
     sourcePath('src/navigation/guestRouteGuard.ts'),
   );
   const blocked = [
-    '/profile/security',
     '/profile/edit',
     '/profile/onboarding',
     '/profile/my-registrations',

@@ -1,3 +1,4 @@
+import type { AppAuthUser } from '@/types/auth';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -5,8 +6,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
+import { DeleteAccountFlow } from '@/components/profile/DeleteAccountFlow';
 import { Avatar } from '@/components/ui/Avatar';
 import { FormField } from '@/components/ui/FormField';
+import { IOSGroup } from '@/components/ui/IOSGroup';
+import { ListRow } from '@/components/ui/ListRow';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
@@ -22,6 +26,7 @@ import {
   isApiAvatarProviderEnabled,
   uploadProfileAvatar,
 } from '@/services/avatarService';
+import { getAuthErrorMessage } from '@/services/authErrorMessages';
 import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
 import {
@@ -41,6 +46,15 @@ import {
 
 const profileHref = '/profile' as Href;
 const ABOUT_MAX_LENGTH = 200;
+
+type AuthProvider = 'email' | 'google' | 'apple' | 'unknown';
+
+const providerLabels: Record<AuthProvider, string> = {
+  email: 'Email и пароль',
+  google: 'Google',
+  apple: 'Apple ID',
+  unknown: 'Неизвестный способ входа',
+};
 
 type SelectOption<T extends string> = {
   label: string;
@@ -127,6 +141,50 @@ function getInitials(name: string): string {
     .join('') || 'СС';
 }
 
+function normalizeAuthProvider(provider: unknown): AuthProvider {
+  const normalizedProvider = typeof provider === 'string' ? provider.trim().toLowerCase() : '';
+
+  if (normalizedProvider === 'email' || normalizedProvider === 'google' || normalizedProvider === 'apple') {
+    return normalizedProvider;
+  }
+
+  return 'unknown';
+}
+
+function getAuthProvider(user: AppAuthUser | null): AuthProvider {
+  return normalizeAuthProvider(user?.authMethod);
+}
+
+function getEmailConfirmationLabel(
+  user: AppAuthUser | null,
+  provider: AuthProvider,
+  accountEmail: string,
+): string | null {
+  if (!accountEmail) {
+    return null;
+  }
+
+  if (user?.emailVerifiedAt) {
+    return 'Email подтверждён';
+  }
+
+  return provider === 'email' && user !== null ? 'Email не подтверждён' : null;
+}
+
+function getPasswordRowSubtitle(provider: AuthProvider, hasEmail: boolean): string {
+  if (provider === 'email') {
+    return hasEmail
+      ? 'Отправим письмо для смены пароля'
+      : 'Email не указан, отправить письмо нельзя';
+  }
+
+  if (provider === 'google' || provider === 'apple') {
+    return `Пароль управляется через ${providerLabels[provider]}`;
+  }
+
+  return 'Смена пароля доступна только для email и пароля';
+}
+
 function SelectPill<T extends string>({
   disabled = false,
   onChange,
@@ -178,6 +236,10 @@ export default function EditProfileScreen() {
   const refreshProfileAvatar = useAuthStore((state) => state.refreshProfileAvatar);
   const setProfileAvatarUrl = useAuthStore((state) => state.setProfileAvatarUrl);
   const updateProfile = useAuthStore((state) => state.updateProfile);
+  const resetPasswordForEmail = useAuthStore((state) => state.resetPasswordForEmail);
+  const clearLocalSessionAfterAccountDeletion = useAuthStore(
+    (state) => state.clearLocalSessionAfterAccountDeletion,
+  );
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -187,7 +249,7 @@ export default function EditProfileScreen() {
   const [tribe, setTribe] = useState<ProfileTribeStatus | null>(null);
   const [marital, setMarital] = useState<ProfileMaritalStatus | null>(null);
   const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
   const [city, setCity] = useState('');
   const [about, setAbout] = useState('');
   const [privacyBirthday, setPrivacyBirthday] = useState<ProfileVisibility>(DEFAULT_BIRTHDAY_VISIBILITY);
@@ -198,11 +260,19 @@ export default function EditProfileScreen() {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isDeletingAvatar, setIsDeletingAvatar] = useState(false);
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string | null>(null);
+  const [isPasswordResetSending, setIsPasswordResetSending] = useState(false);
+  const [isDeleteFlowOpen, setIsDeleteFlowOpen] = useState(false);
+  const [passwordResetStatus, setPasswordResetStatus] = useState<string | null>(null);
 
   const isApiAvatarProvider = isApiAvatarProviderEnabled();
   const isAvatarActionRunning = isUploadingAvatar || isDeletingAvatar;
   const fullName = useMemo(() => buildFullName(firstName, lastName), [firstName, lastName]);
-  const avatarName = fullName ?? email.trim() ?? user?.email ?? 'СС';
+  const accountEmail = user?.email ?? '';
+  const avatarName = fullName ?? (contactEmail.trim() || accountEmail || 'СС');
+  const authProvider = getAuthProvider(user);
+  const authProviderLabel = providerLabels[authProvider];
+  const emailConfirmationLabel = getEmailConfirmationLabel(user, authProvider, accountEmail);
+  const canRequestPasswordReset = authProvider === 'email' && Boolean(accountEmail);
   const birthDateResult = useMemo(() => parseBirthDateInput(dob), [dob]);
   const birthDateHelper = dob.trim() && !birthDateResult.isComplete ? birthDateResult.error : null;
   const birthDateError = dob.trim() && birthDateResult.isComplete ? birthDateResult.error : null;
@@ -235,14 +305,14 @@ export default function EditProfileScreen() {
   const displayAvatarUrl = localAvatarUrl ?? profile?.avatar_url ?? null;
 
   useEffect(() => {
-    if (user) {
+    if (user || loading || isDeleteFlowOpen) {
       return;
     }
 
     void loadSession().catch((error) => {
       setLocalError(error instanceof Error ? error.message : 'Не удалось загрузить профиль.');
     });
-  }, [loadSession, user]);
+  }, [isDeleteFlowOpen, loadSession, loading, user]);
 
   useEffect(() => {
     setFirstName(profile?.first_name ?? '');
@@ -253,7 +323,7 @@ export default function EditProfileScreen() {
       isProfileBirthTimeContext(profile?.birth_time_context) ? profile.birth_time_context : 'unknown',
     );
     setPhone(profile?.phone ?? '');
-    setEmail(profile?.email ?? user?.email ?? '');
+    setContactEmail(profile?.email ?? '');
     setCity(profile?.city ?? '');
     setTribe(isProfileTribeStatus(profile?.tribe_status) ? profile.tribe_status : null);
     setMarital(isProfileMaritalStatus(profile?.marital_status) ? profile.marital_status : null);
@@ -276,7 +346,6 @@ export default function EditProfileScreen() {
     profile?.phone_visibility,
     profile?.profile_visibility,
     profile?.tribe_status,
-    user?.email,
   ]);
 
   useEffect(() => {
@@ -416,9 +485,45 @@ export default function EditProfileScreen() {
     );
   }, [performDeleteAvatar]);
 
-  const handleDeletePlaceholder = useCallback(() => {
-    Alert.alert('Удаление аккаунта', 'Удаление аккаунта будет добавлено следующим этапом.');
+  const handleChangePassword = useCallback(async () => {
+    if (!canRequestPasswordReset) {
+      return;
+    }
+
+    setLocalError(null);
+    setPasswordResetStatus(null);
+    setIsPasswordResetSending(true);
+
+    try {
+      await resetPasswordForEmail(accountEmail);
+      setPasswordResetStatus('Письмо для смены пароля отправлено, если этот email зарегистрирован.');
+    } catch (error) {
+      setLocalError(getAuthErrorMessage(
+        error,
+        'Не удалось отправить письмо для смены пароля. Попробуйте позже.',
+      ));
+    } finally {
+      setIsPasswordResetSending(false);
+    }
+  }, [accountEmail, canRequestPasswordReset, resetPasswordForEmail]);
+
+  const handleOpenDeleteAccount = useCallback(() => {
+    setLocalError(null);
+    setPasswordResetStatus(null);
+    setIsDeleteFlowOpen(true);
   }, []);
+
+  const handleCancelDeleteAccount = useCallback(() => {
+    setIsDeleteFlowOpen(false);
+  }, []);
+
+  const handleDeletionPending = useCallback(async () => {
+    try {
+      await clearLocalSessionAfterAccountDeletion();
+    } finally {
+      router.replace(profileHref);
+    }
+  }, [clearLocalSessionAfterAccountDeletion, router]);
 
   const handleSave = useCallback(async () => {
     setLocalError(null);
@@ -454,7 +559,7 @@ export default function EditProfileScreen() {
         birthday_visibility: privacyBirthday,
         city: trimOrNull(city),
         display_name: nextFullName,
-        email: trimOrNull(email),
+        email: trimOrNull(contactEmail),
         first_name: trimOrNull(firstName),
         full_name: nextFullName,
         hebrew_birth_date: hebrewBirthDate,
@@ -483,7 +588,7 @@ export default function EditProfileScreen() {
     birthDateResult.iso,
     birthTimeContext,
     city,
-    email,
+    contactEmail,
     firstName,
     hebrewBirthDate,
     hebrewName,
@@ -499,6 +604,22 @@ export default function EditProfileScreen() {
     user,
   ]);
 
+  if (isDeleteFlowOpen && user) {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <Screen contentContainerStyle={{ gap: 20 }}>
+          <SubHeader title="Удаление аккаунта" />
+          <DeleteAccountFlow
+            accountEmail={accountEmail}
+            onCancel={handleCancelDeleteAccount}
+            onDeletionPending={handleDeletionPending}
+          />
+        </Screen>
+      </>
+    );
+  }
+
   if (!user || !profile) {
     const title = loading ? 'Загружаем профиль' : user ? 'Профиль не загружен' : 'Нужен вход';
     const text = user
@@ -509,7 +630,7 @@ export default function EditProfileScreen() {
       <>
         <Stack.Screen options={{ headerShown: false }} />
         <Screen contentContainerStyle={{ gap: 20 }}>
-          <SubHeader title="Редактировать профиль" />
+          <SubHeader title="Профиль и аккаунт" />
           <GlassCard>
             <View style={styles.stateCard}>
               <Text style={styles.cardTitle}>{title}</Text>
@@ -535,45 +656,48 @@ export default function EditProfileScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <Screen contentContainerStyle={{ gap: 20 }}>
-        <SubHeader title="Редактировать профиль" />
+        <SubHeader title="Профиль и аккаунт" />
 
-        <View style={styles.avatarRow}>
-          <View style={styles.avatarWrap}>
-            <Avatar initials={getInitials(avatarName)} size={80} uri={displayAvatarUrl} />
-            <Pressable
-              disabled={isSaving || isAvatarActionRunning}
-              onPress={handlePickAvatar}
-              style={[
-                styles.cameraBadge,
-                (isSaving || isAvatarActionRunning) && styles.cameraBadgeDisabled,
-              ]}
-            >
-              {isUploadingAvatar ? (
-                <ActivityIndicator color={colors.text} size="small" />
-              ) : (
-                <Text style={styles.cameraText}>📷</Text>
-              )}
-            </Pressable>
-          </View>
-          <View style={styles.flex}>
-            <Text style={styles.photoTitle}>Фото профиля</Text>
-            <Text style={styles.photoText}>
-              {isUploadingAvatar
-                ? 'Загружаем фото...'
-                : isDeletingAvatar
-                  ? 'Удаляем фото...'
-                  : 'Видно участникам общины\nРекомендуем 400×400 px'}
-            </Text>
-            <Pressable
-              disabled={isSaving || isAvatarActionRunning}
-              onPress={handleDeleteAvatar}
-              style={[
-                styles.photoDeleteButton,
-                (isSaving || isAvatarActionRunning) && styles.photoDeleteButtonDisabled,
-              ]}
-            >
-              <Text style={styles.photoDeleteText}>Удалить фото</Text>
-            </Pressable>
+        <View style={styles.section}>
+          <SectionTitle title="ПРОФИЛЬ" />
+          <View style={styles.avatarRow}>
+            <View style={styles.avatarWrap}>
+              <Avatar initials={getInitials(avatarName)} size={80} uri={displayAvatarUrl} />
+              <Pressable
+                disabled={isSaving || isAvatarActionRunning}
+                onPress={handlePickAvatar}
+                style={[
+                  styles.cameraBadge,
+                  (isSaving || isAvatarActionRunning) && styles.cameraBadgeDisabled,
+                ]}
+              >
+                {isUploadingAvatar ? (
+                  <ActivityIndicator color={colors.text} size="small" />
+                ) : (
+                  <Text style={styles.cameraText}>📷</Text>
+                )}
+              </Pressable>
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.photoTitle}>Фото профиля</Text>
+              <Text style={styles.photoText}>
+                {isUploadingAvatar
+                  ? 'Загружаем фото...'
+                  : isDeletingAvatar
+                    ? 'Удаляем фото...'
+                    : 'Видно участникам общины\nРекомендуем 400×400 px'}
+              </Text>
+              <Pressable
+                disabled={isSaving || isAvatarActionRunning}
+                onPress={handleDeleteAvatar}
+                style={[
+                  styles.photoDeleteButton,
+                  (isSaving || isAvatarActionRunning) && styles.photoDeleteButtonDisabled,
+                ]}
+              >
+                <Text style={styles.photoDeleteText}>Удалить фото</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
 
@@ -648,7 +772,12 @@ export default function EditProfileScreen() {
         <View style={styles.section}>
           <SectionTitle title="КОНТАКТЫ" />
           <FormField label="Телефон" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-          <FormField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" />
+          <FormField
+            label="Email для связи"
+            value={contactEmail}
+            onChangeText={setContactEmail}
+            keyboardType="email-address"
+          />
           <FormField label="Город проживания" value={city} onChangeText={setCity} />
         </View>
 
@@ -693,9 +822,49 @@ export default function EditProfileScreen() {
           onPress={handleSave}
         />
 
-        <Pressable onPress={handleDeletePlaceholder} style={styles.deleteButton}>
-          <Text style={styles.deleteText}>Удалить аккаунт</Text>
-        </Pressable>
+        <View style={styles.section}>
+          <SectionTitle title="АККАУНТ" />
+          <FormField
+            editable={false}
+            keyboardType="email-address"
+            label="Email аккаунта"
+            onChangeText={() => undefined}
+            value={accountEmail}
+          />
+          <Text style={styles.accountHint}>Email для входа доступен только для чтения.</Text>
+          <IOSGroup>
+            <ListRow
+              icon="🧭"
+              title="Способ входа"
+              rightText={authProviderLabel}
+            />
+            {emailConfirmationLabel ? (
+              <ListRow
+                icon="✅"
+                title="Подтверждение email"
+                rightText={emailConfirmationLabel}
+              />
+            ) : null}
+            <ListRow
+              icon="🔑"
+              title="Сменить пароль"
+              subtitle={getPasswordRowSubtitle(authProvider, Boolean(accountEmail))}
+              rightText={canRequestPasswordReset
+                ? (isPasswordResetSending ? 'Отправляем' : 'Отправить')
+                : 'Недоступно'}
+              onPress={canRequestPasswordReset && !isPasswordResetSending ? handleChangePassword : undefined}
+            />
+            <ListRow
+              danger
+              icon="🗑️"
+              title="Удалить аккаунт"
+              subtitle="Удаление аккаунта и персональных данных"
+              isLast
+              onPress={handleOpenDeleteAccount}
+            />
+          </IOSGroup>
+          {passwordResetStatus ? <Text style={styles.infoText}>{passwordResetStatus}</Text> : null}
+        </View>
       </Screen>
     </>
   );
@@ -902,14 +1071,15 @@ const styles = StyleSheet.create({
     minHeight: 48,
     borderRadius: 14,
   },
-  deleteButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 42,
+  accountHint: {
+    color: colors.textGhost,
+    fontSize: 11,
+    lineHeight: 16,
   },
-  deleteText: {
-    color: colors.danger,
-    fontSize: 13,
-    fontWeight: '600',
+  infoText: {
+    color: colors.textDim,
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
   },
 });
