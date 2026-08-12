@@ -23,21 +23,34 @@ Supabase для текущего API-only runtime запускать не тре
 
 ### Окно 1 — API и все Docker-сервисы
 
-Обычный ежедневный запуск без пересборки:
+Полный ежедневный запуск, включая платную web-регистрацию. Флаг нужно задать
+**до** команды Docker Compose в том же окне PowerShell:
 
 ```powershell
 cd F:\2026\SS-App\code\sredi-svoih-app
+$env:API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED="true"
 docker compose -f infra/docker-compose.api.yml up -d
 docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
+docker compose -f infra/docker-compose.api.yml exec api_backend printenv API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED
 docker compose -f infra/docker-compose.api.yml ps
 ```
+
+Команда `printenv` должна вывести `true`. Если она выводит `false` или пустую
+строку, платное событие с `internal_paid` намеренно возвращает `404`, а public
+web показывает экран «Регистрация недоступна».
+
+Переменная `$env:...` действует только в текущем окне PowerShell. Чтобы не
+вводить её после каждого нового запуска, сохраните gate в корневом `.env` по
+инструкции раздела 3.
 
 Если вы переключили ветку, получили новый backend-код или изменился `apps/api`:
 
 ```powershell
 cd F:\2026\SS-App\code\sredi-svoih-app
-docker compose -f infra/docker-compose.api.yml up -d --build
+$env:API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED="true"
+docker compose -f infra/docker-compose.api.yml up -d --build --force-recreate api_backend
 docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
+docker compose -f infra/docker-compose.api.yml exec api_backend printenv API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED
 docker compose -f infra/docker-compose.api.yml ps
 ```
 
@@ -95,17 +108,55 @@ git status --short
 npm ci
 npm ci --prefix apps/admin
 npm ci --prefix apps/web
+$env:API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED="true"
 docker compose -f infra/docker-compose.api.yml up -d --build
 docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
+docker compose -f infra/docker-compose.api.yml exec api_backend printenv API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED
 ```
+
+Последняя команда должна вывести `true`, если вы собираетесь проверять
+`internal_paid`.
 
 Первый Docker-запуск скачивает образы и собирает Python API, поэтому занимает больше времени. Последующие `docker compose ... up -d` используют уже скачанные образы и сохранённые build layers.
 
 ## 3. Постоянная локальная конфигурация без повторного ввода переменных
 
-Локальные `.env.local` игнорируются Git и не должны коммититься.
+Локальные `.env` и `.env.local` игнорируются Git и не должны
+коммититься. Это два разных файла:
 
-Создайте файлы один раз, не перезаписывая существующие:
+- корневой `.env` автоматически читает Docker Compose — здесь хранится локальный
+  backend-gate платной web-регистрации;
+- корневой `.env.local` читает launcher мобильного приложения — здесь хранятся
+  только разрешённые `EXPO_PUBLIC_*` значения.
+
+Чтобы платная web-регистрация не отключалась после закрытия PowerShell, один раз
+создайте корневой `.env`:
+
+```powershell
+cd F:\2026\SS-App\code\sredi-svoih-app
+if (-not (Test-Path .env)) { New-Item -ItemType File .env | Out-Null }
+notepad .env
+```
+
+Добавьте и сохраните строку:
+
+```dotenv
+API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED=true
+```
+
+Примените постоянное значение к уже созданному контейнеру и проверьте его:
+
+```powershell
+Remove-Item Env:API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED -ErrorAction SilentlyContinue
+docker compose -f infra/docker-compose.api.yml up -d --force-recreate api_backend
+docker compose -f infra/docker-compose.api.yml exec api_backend printenv API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED
+```
+
+Последняя команда должна вывести `true`. Docker Compose читает корневой `.env`
+при каждом запуске из корня репозитория, поэтому значение сохранится и для новых
+окон PowerShell.
+
+Остальные локальные файлы создайте один раз, не перезаписывая существующие:
 
 ```powershell
 cd F:\2026\SS-App\code\sredi-svoih-app
@@ -350,13 +401,23 @@ http://127.0.0.1:8025
 
 ### Платная web-регистрация в локальном тесте
 
-Платный backend-gate по умолчанию выключен. Включить его только для текущего окна PowerShell:
+Платный backend-gate по умолчанию выключен. Если вы выполнили полный запуск из
+раздела 1 или сохранили `true` в корневом `.env` по разделу 3, он уже включён.
+Всегда проверяйте фактическое значение внутри контейнера:
+
+```powershell
+docker compose -f infra/docker-compose.api.yml exec api_backend printenv API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED
+```
+
+Ожидаемый результат — `true`. Для одноразового включения только в текущем окне
+PowerShell:
 
 ```powershell
 cd F:\2026\SS-App\code\sredi-svoih-app
 $env:API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED="true"
 docker compose -f infra/docker-compose.api.yml up -d --build --force-recreate api_backend
 docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
+docker compose -f infra/docker-compose.api.yml exec api_backend printenv API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED
 npm run web:dev
 ```
 
@@ -367,14 +428,24 @@ cd F:\2026\SS-App\code\sredi-svoih-app
 npm run admin:dev
 ```
 
-Для платного события нужен `registration_mode=internal_paid`. Текущая реализация создаёт регистрацию со статусами `pending/pending`, но не проводит реальную оплату и не должна показывать, что платёж завершён.
+Для платного события нужен `registration_mode=internal_paid`. Текущая реализация
+создаёт регистрацию со статусами `pending/pending`, но не проводит реальную оплату
+и не должна показывать, что платёж завершён.
 
 Вернуть безопасное значение gate `false`:
+
+1. В корневом `.env` удалите строку
+   `API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED=true` или замените `true` на
+   `false`.
+2. Выполните:
 
 ```powershell
 Remove-Item Env:API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED -ErrorAction SilentlyContinue
 docker compose -f infra/docker-compose.api.yml up -d --force-recreate api_backend
+docker compose -f infra/docker-compose.api.yml exec api_backend printenv API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED
 ```
+
+Последняя команда должна вывести `false`.
 
 ## 8. Админка
 
@@ -523,7 +594,26 @@ docker compose -f infra/docker-compose.api.yml logs --tail=100 api_mailpit api_b
 
 ### Публичная страница события недоступна
 
-Проверьте в админке статус, public visibility, `internal_free`/разрешённый `internal_paid`, web-публикацию, slug и действующее согласие. Для `internal_paid` дополнительно включите локальный backend-gate.
+Сначала проверьте фактический платный gate:
+
+```powershell
+docker compose -f infra/docker-compose.api.yml exec api_backend printenv API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED
+```
+
+Если платное событие `internal_paid`, а команда выводит `false` или пустую строку:
+
+```powershell
+$env:API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED="true"
+docker compose -f infra/docker-compose.api.yml up -d --force-recreate api_backend
+docker compose -f infra/docker-compose.api.yml exec api_backend printenv API_PUBLIC_WEB_PAID_REGISTRATION_ENABLED
+```
+
+Ожидаемый результат — `true`. Затем обновите страницу; `npm run web:dev`
+перезапускать не требуется.
+
+Если gate уже `true`, проверьте в админке статус `published`, видимость
+`public`, режим `internal_free` или `internal_paid`, web-публикацию, slug и
+действующее согласие.
 
 ### iPhone не видит API
 
