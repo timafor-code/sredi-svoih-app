@@ -59,6 +59,11 @@ class Settings(BaseSettings):
         ge=1,
         le=8760,
     )
+    api_privacy_erasure_financial_retention_days: int | None = Field(
+        default=None,
+        ge=1,
+        le=36500,
+    )
     api_privacy_erasure_register_prefix: str = "privacy-erasure-register/v1"
     api_web_registration_intent_ttl_hours: int = Field(default=24, gt=0, le=168)
     api_web_registration_rate_limit_window_seconds: int = Field(default=900, gt=0)

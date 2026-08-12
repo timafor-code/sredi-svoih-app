@@ -8,7 +8,7 @@ import logging
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -22,9 +22,6 @@ from app.db.models.auth import (
 )
 from app.db.models.core import (
     AppUser,
-    Event,
-    EventRegistration,
-    EventRegistrationOptionSelection,
     PrivacyRequest,
     WebRegistrationIntent,
 )
@@ -38,14 +35,6 @@ from app.services.privacy_erasure_email_service import (
 logger = logging.getLogger(__name__)
 
 DELETION_PENDING_STATUS = "deletion_pending"
-_FINANCIAL_PAYMENT_STATUSES = (
-    "pending",
-    "succeeded",
-    "failed",
-    "cancelled",
-    "refunded",
-    "paid",
-)
 _PENDING_WEB_INTENT_STATUS = "email_verification_required"
 
 
@@ -118,37 +107,6 @@ def _response(
         processing_stopped_at=privacy_request.processing_stopped_at,
         cancelled_at=privacy_request.cancelled_at,
     )
-
-
-async def has_retention_sensitive_registration_data(
-    session: AsyncSession,
-    user_id: UUID,
-) -> bool:
-    registration_id = await session.scalar(
-        select(EventRegistration.id)
-        .join(Event, Event.id == EventRegistration.event_id)
-        .outerjoin(
-            EventRegistrationOptionSelection,
-            EventRegistrationOptionSelection.registration_id
-            == EventRegistration.id,
-        )
-        .where(
-            EventRegistration.user_id == user_id,
-            or_(
-                Event.registration_mode
-                != registrations_service.FREE_REGISTRATION_MODE,
-                Event.price_amount > 0,
-                EventRegistration.payment_id.is_not(None),
-                EventRegistration.payment_status.in_(_FINANCIAL_PAYMENT_STATUSES),
-                EventRegistrationOptionSelection.unit_price_amount > 0,
-                EventRegistrationOptionSelection.total_amount > 0,
-                EventRegistrationOptionSelection.is_donation.is_(True),
-                EventRegistrationOptionSelection.option_type_snapshot == "donation",
-            ),
-        )
-        .limit(1),
-    )
-    return registration_id is not None
 
 
 async def _revoke_credentials(

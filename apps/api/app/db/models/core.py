@@ -1814,7 +1814,8 @@ class PrivacyDestructionEvidence(Base):
             "\"registration\", \"credential\", \"session\", \"device\", "
             "\"synced_contact\", \"avatar\", \"privacy_request_content\", "
             "\"prayer_activity\", \"legal_acceptance\", \"feedback\", "
-            "\"web_registration_intent\", \"questionnaire_answer\"]'::jsonb",
+            "\"web_registration_intent\", \"questionnaire_answer\", "
+            "\"financial_evidence\"]'::jsonb",
             name="privacy_destruction_evidence_categories_retained_check",
         ),
         CheckConstraint(
@@ -1847,6 +1848,68 @@ class PrivacyDestructionEvidence(Base):
         server_default=text("'[]'::jsonb"),
     )
     retention_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = timestamptz_now()
+
+
+class PrivacyRetainedFinancialEvidence(Base):
+    __tablename__ = "privacy_retained_financial_evidence"
+    __table_args__ = (
+        CheckConstraint(
+            "btrim(subject_ref_hash) <> ''",
+            name="privacy_retained_financial_evidence_subject_hash_not_empty",
+        ),
+        CheckConstraint(
+            "financial_state IN ('succeeded', 'paid', 'refunded')",
+            name="privacy_retained_financial_evidence_state_check",
+        ),
+        CheckConstraint(
+            "amount > 0",
+            name="privacy_retained_financial_evidence_amount_positive",
+        ),
+        CheckConstraint(
+            "btrim(currency) <> ''",
+            name="privacy_retained_financial_evidence_currency_not_empty",
+        ),
+        CheckConstraint(
+            "retention_basis_code = 'finalized_event_registration_financial'",
+            name="privacy_retained_financial_evidence_basis_check",
+        ),
+        CheckConstraint(
+            "retention_until >= created_at",
+            name="privacy_retained_financial_evidence_retention_after_created",
+        ),
+        UniqueConstraint(
+            "source_registration_id",
+            name="privacy_retained_financial_evidence_source_registration_key",
+        ),
+        Index(
+            "privacy_retained_financial_evidence_subject_ref_hash_idx",
+            "subject_ref_hash",
+        ),
+        Index(
+            "privacy_retained_financial_evidence_retention_until_idx",
+            "retention_until",
+        ),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    subject_ref_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    source_registration_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        nullable=False,
+    )
+    source_event_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        nullable=False,
+    )
+    financial_state: Mapped[str] = mapped_column(Text, nullable=False)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(Text, nullable=False)
+    retention_basis_code: Mapped[str] = mapped_column(Text, nullable=False)
+    retention_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
     created_at: Mapped[datetime] = timestamptz_now()
 
 

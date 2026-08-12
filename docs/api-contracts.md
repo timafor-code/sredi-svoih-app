@@ -2657,9 +2657,10 @@ and it does not delete the user or stored personal data.
 
 Payment, donation, priced-option, or non-free registration evidence does not
 delay this processing stop: confirmation still enters `deletion_pending` and
-revokes account access immediately. The worker may continue to require manual
-review for that retained data before physical erasure. Foreign request ids use
-the safe `404 not_found` shape.
+revokes account access immediately. During physical erasure the worker bases
+selective retention only on canonical finalized payment states, snapshots the
+minimum approved financial evidence when required, and still deletes the live
+account graph. Foreign request ids use the safe `404 not_found` shape.
 
 ### `POST /privacy/requests/{request_id}/cancel-erasure`
 
@@ -2692,6 +2693,7 @@ erasure result: `completed`, `already_completed`, `retryable_failure`, or
 only stable erasure/notification failure codes:
 
 - `privacy_erasure_manual_review_required`;
+- `privacy_erasure_retention_configuration_unavailable`;
 - `privacy_erasure_avatar_storage_failed`;
 - `privacy_erasure_database_failed`;
 - `privacy_erasure_subject_missing`;
@@ -2719,6 +2721,26 @@ delivery is post-commit and at-least-once. PostgreSQL row locking prevents a
 duplicate from normal concurrent retries, but a crash after SMTP acceptance
 and before outbox commit can cause another delivery. There is no HTTP/admin/
 public outbox endpoint, scheduler, batch, or polling contract.
+
+Canonical payment states `succeeded`, `paid`, and `refunded` qualify as
+finalized financial candidates only when their option snapshots provide a
+positive, single-currency amount. `not_required`, `pending`, `failed`, and
+`cancelled` do not qualify. Registration mode, event price, payment id, priced
+option, or donation marker alone never qualifies. A qualifying row requires a
+positive backend-only `API_PRIVACY_ERASURE_FINANCIAL_RETENTION_DAYS`; absence
+returns retryable
+`privacy_erasure_retention_configuration_unavailable` before execution begins.
+The period is not defaulted or inferred.
+
+Qualifying registrations create one idempotent
+`privacy_retained_financial_evidence` row containing only a pseudonymous
+subject reference, source registration/event references, finalized state,
+amount, currency, basis code, deadline, and creation timestamp. The original
+registration, answers, profile, and `app_users` row are deleted. Destruction
+evidence is `completed` with no retained categories/deadline when no row is
+created, or `completed_with_retention` with category `financial_evidence` and
+the actual deadline when a row exists. See
+`docs/privacy-erasure-retention.md` for the canonical matrix.
 
 ### Owner-run privacy-erasure restore replay
 
