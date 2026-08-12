@@ -872,14 +872,15 @@ async def register_user_for_event(
         raise _validation_error("occurrence_id is required for this event")
 
     occurrence = await _lock_occurrence(session, event, payload.occurrence_id)
-    existing_registration = await _lock_existing_active_registration(
-        session,
-        event_id=event.id,
-        user_id=user.id,
-        occurrence_id=occurrence.id if occurrence is not None else None,
-    )
-    if existing_registration is not None:
-        return existing_registration
+    if event.registration_mode == FREE_REGISTRATION_MODE:
+        existing_registration = await _lock_existing_active_registration(
+            session,
+            event_id=event.id,
+            user_id=user.id,
+            occurrence_id=occurrence.id if occurrence is not None else None,
+        )
+        if existing_registration is not None:
+            return existing_registration
 
     prepared_selections, reservation_drafts, seats_count, legacy_seats_count = (
         await _prepare_options(session, event, payload)
