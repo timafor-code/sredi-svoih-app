@@ -1,5 +1,15 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import { polyfillCountryFlagEmojis } from "country-flag-emoji-polyfill";
+import flagFontUrl from "country-flag-emoji-polyfill/dist/TwemojiCountryFlags.woff2?url";
 import { formatPhoneInput } from "./phone";
+
+let flagEmojiPolyfillReady = false;
+
+function ensureWindowsFlagEmojiSupport(): void {
+  if (flagEmojiPolyfillReady || !/Windows/i.test(navigator.userAgent)) return;
+  flagEmojiPolyfillReady = true;
+  polyfillCountryFlagEmojis("Twemoji Country Flags", flagFontUrl);
+}
 
 export function PhoneInput({
   value,
@@ -12,6 +22,7 @@ export function PhoneInput({
   onChange: (value: string) => void;
   onBlur: () => void;
 }): ReactNode {
+  useEffect(ensureWindowsFlagEmojiSupport, []);
   const phone = formatPhoneInput(value);
   const describedBy = ["phone-helper", error ? "phone-error" : null].filter(Boolean).join(" ");
 

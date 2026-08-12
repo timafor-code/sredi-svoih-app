@@ -258,6 +258,11 @@ legend,
   margin-top: 20px;
 }
 
+.date-selection-step .choice-fieldset {
+  padding: 0;
+  border: 0;
+}
+
 .date-selection-step .radio-card-grid {
   margin-top: 0;
 }
@@ -548,6 +553,7 @@ select {
 
 .phone-flag {
   flex: 0 0 auto;
+  font-family: "Twemoji Country Flags", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
   font-size: 1.35rem;
   line-height: 1;
 }

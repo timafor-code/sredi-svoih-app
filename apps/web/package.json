@@ -11,6 +11,7 @@
     "preview": "vite preview --host 0.0.0.0 --port 5174"
   },
   "dependencies": {
+    "country-flag-emoji-polyfill": "^0.1.10",
     "libphonenumber-js": "^1.13.10",
     "react": "19.1.0",
     "react-dom": "19.1.0"
