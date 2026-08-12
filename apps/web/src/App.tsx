@@ -19,6 +19,7 @@ import {
   requestSetPassword,
   resendWebRegistrationCode,
 } from "./api";
+import { AccountPanel } from "./components/AccountPanel";
 import { formatDate, formatDateTimeRange, formatTime } from "./format";
 import { PhoneInput } from "./PhoneInput";
 import { normalizeInternationalPhone } from "./phone";
@@ -504,6 +505,11 @@ type FormErrors = PersonalErrors & {
 
 type FlowStage = "form" | "verification" | "success";
 
+type AuthenticatedAccountState = {
+  tokens: TemporaryAuthTokens;
+  identity: ExistingAccountIdentity;
+};
+
 const SUCCESS_COPY: Record<WebRegistrationResult["status"], string> = {
   confirmed: "Регистрация подтверждена.",
   pending: "Заявка отправлена и ожидает подтверждения организатора.",
@@ -522,6 +528,8 @@ function RegistrationForm({
   questions,
   consentDocument,
   privacyDocument,
+  authenticatedAccount,
+  onAuthenticatedAccountChange,
 }: {
   eventId: string;
   eventTitle: string;
@@ -533,6 +541,8 @@ function RegistrationForm({
   questions: WebQuestionnaireField[];
   consentDocument: WebRegistrationLegalDocument;
   privacyDocument?: WebRegistrationLegalDocument;
+  authenticatedAccount: AuthenticatedAccountState | null;
+  onAuthenticatedAccountChange: (account: AuthenticatedAccountState | null) => void;
 }): ReactNode {
   const emptyValues: FormValues = {
     firstName: "",
@@ -553,8 +563,6 @@ function RegistrationForm({
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [temporaryAuth, setTemporaryAuth] = useState<TemporaryAuthTokens | null>(null);
-  const [existingAccount, setExistingAccount] = useState<ExistingAccountIdentity | null>(null);
   const [flowError, setFlowError] = useState<string | null>(null);
   const [stage, setStage] = useState<FlowStage>("form");
   const [flowId, setFlowId] = useState<string | null>(null);
@@ -577,6 +585,8 @@ function RegistrationForm({
   const optionsRef = useRef<HTMLFieldSetElement>(null);
   const emailCodeRef = useRef<HTMLInputElement>(null);
   const loginEmailRef = useRef<HTMLInputElement>(null);
+  const loginEntryRef = useRef<HTMLButtonElement>(null);
+  const wasAuthenticatedRef = useRef(authenticatedAccount !== null);
   const passwordCodeRef = useRef<HTMLInputElement>(null);
   const newPasswordRef = useRef<HTMLInputElement>(null);
   const repeatPasswordRef = useRef<HTMLInputElement>(null);
@@ -587,6 +597,8 @@ function RegistrationForm({
     [options, selections],
   );
   const usesCalculatedSeats = registrationMode === "internal_paid" && options.length > 0;
+  const temporaryAuth = authenticatedAccount?.tokens ?? null;
+  const existingAccount = authenticatedAccount?.identity ?? null;
   const participationError = displayTotals.hasMixedCurrencies
     ? MIXED_CURRENCY_ERROR
     : errors.options;
@@ -602,8 +614,6 @@ function RegistrationForm({
     setLoginEmail("");
     setLoginPassword("");
     setLoginError(null);
-    setTemporaryAuth(null);
-    setExistingAccount(null);
     setFlowError(null);
     setStage("form");
     setFlowId(null);
@@ -621,6 +631,14 @@ function RegistrationForm({
   useEffect(() => {
     if (loginPanelOpen) loginEmailRef.current?.focus();
   }, [loginPanelOpen]);
+
+  useEffect(() => {
+    const wasAuthenticated = wasAuthenticatedRef.current;
+    wasAuthenticatedRef.current = existingAccount !== null;
+    if (wasAuthenticated && !existingAccount) {
+      window.requestAnimationFrame(() => loginEntryRef.current?.focus());
+    }
+  }, [existingAccount]);
 
   useEffect(() => {
     if (passwordRequestSent) passwordCodeRef.current?.focus();
@@ -803,24 +821,14 @@ function RegistrationForm({
     }
   };
 
-  const cancelExistingAccount = async () => {
-    const refreshToken = temporaryAuth?.refresh_token;
+  const cancelExistingAccountLogin = () => {
     setLoginPanelOpen(false);
     setLoginEmail("");
     setLoginPassword("");
     setLoginError(null);
-    setTemporaryAuth(null);
-    setExistingAccount(null);
     setNotice(null);
     setFlowError(null);
     idempotencyRef.current = null;
-    if (refreshToken) {
-      try {
-        await logoutExistingAccount(refreshToken);
-      } catch {
-        // Best-effort cleanup; local temporary credentials are already discarded.
-      }
-    }
   };
 
   const submitExistingAccountLogin = async () => {
@@ -846,8 +854,7 @@ function RegistrationForm({
         setLoginError("В аккаунте не заполнены данные, необходимые для регистрации. Вы можете продолжить регистрацию без входа.");
         return;
       }
-      setTemporaryAuth(tokens);
-      setExistingAccount(identity);
+      onAuthenticatedAccountChange({ tokens, identity });
       setLoginPassword("");
       setLoginPanelOpen(false);
       setNotice("Вход выполнен. Для регистрации будут использованы данные вашего аккаунта.");
@@ -952,10 +959,6 @@ function RegistrationForm({
       if (created.next_step === "completed") {
         const status = await getWebRegistrationIntentStatus(created.flow_id);
         applyStatus(status);
-        if (temporaryAuth) {
-          void logoutExistingAccount(temporaryAuth.refresh_token).catch(() => undefined);
-          setTemporaryAuth(null);
-        }
       } else {
         setEmailCode("");
         setStage("verification");
@@ -965,8 +968,7 @@ function RegistrationForm({
       setFlowError(safeApiError(error, "create"));
       setNotice(null);
       if (temporaryAuth && error instanceof PublicApiError && error.status === 401) {
-        setTemporaryAuth(null);
-        setExistingAccount(null);
+        onAuthenticatedAccountChange(null);
       }
     } finally {
       submittingRef.current = false;
@@ -1358,9 +1360,7 @@ function RegistrationForm({
         <h2 id="account-actions-heading">Как продолжить</h2>
         {existingAccount ? (
           <div className="signed-in-card" aria-live="polite" aria-atomic="true">
-            <p>Вы вошли как</p>
-            <strong>{existingAccount.first_name} {existingAccount.last_name}</strong>
-            <span>{existingAccount.email}</span>
+            <p>Регистрация будет оформлена на данные аккаунта.</p>
             <button
               className="primary-button"
               type="button"
@@ -1368,9 +1368,6 @@ function RegistrationForm({
               onClick={() => void continueWithAccountChoice("without_password")}
             >
               {busyAction === "create" ? "Отправляем…" : "Продолжить регистрацию"}
-            </button>
-            <button className="text-button" type="button" disabled={busyAction !== null} onClick={() => void cancelExistingAccount()}>
-              Выйти / Использовать регистрацию без входа
             </button>
           </div>
         ) : loginPanelOpen ? (
@@ -1389,7 +1386,7 @@ function RegistrationForm({
               <button className="primary-button" type="button" disabled={busyAction !== null || !loginEmail.trim() || !loginPassword} onClick={() => void submitExistingAccountLogin()}>
                 {busyAction === "login" ? "Входим…" : "Войти"}
               </button>
-              <button className="text-button" type="button" disabled={busyAction !== null} onClick={() => void cancelExistingAccount()}>Отмена</button>
+              <button className="text-button" type="button" disabled={busyAction !== null} onClick={cancelExistingAccountLogin}>Отмена</button>
             </div>
           </div>
         ) : (
@@ -1421,6 +1418,7 @@ function RegistrationForm({
           </div>
           </div>
           <button
+            ref={loginEntryRef}
             className="text-button existing-account-button"
             type="button"
             disabled={busyAction !== null}
@@ -1445,9 +1443,18 @@ function RegistrationForm({
   );
 }
 
-function EventPage({ data, requestedOccurrenceId }: {
+function EventPage({
+  data,
+  requestedOccurrenceId,
+  authenticatedAccount,
+  onAuthenticatedAccountChange,
+  onSignOut,
+}: {
   data: WebEventRegistrationFormResponse;
   requestedOccurrenceId: string | null;
+  authenticatedAccount: AuthenticatedAccountState | null;
+  onAuthenticatedAccountChange: (account: AuthenticatedAccountState | null) => void;
+  onSignOut: () => void;
 }): ReactNode {
   const availableOccurrences = useMemo(
     () => data.occurrences.filter((item) => item.registration_state === "open"),
@@ -1539,6 +1546,9 @@ function EventPage({ data, requestedOccurrenceId }: {
         </div>
 
         <div className="form-column">
+          {authenticatedAccount ? (
+            <AccountPanel identity={authenticatedAccount.identity} onSignOut={onSignOut} />
+          ) : null}
           {dateSelectionPending ? (
             <OccurrenceSelector
               occurrences={availableOccurrences}
@@ -1573,6 +1583,8 @@ function EventPage({ data, requestedOccurrenceId }: {
                   questions={data.questions}
                   consentDocument={consentDocument}
                   privacyDocument={privacyDocument}
+                  authenticatedAccount={authenticatedAccount}
+                  onAuthenticatedAccountChange={onAuthenticatedAccountChange}
                 />
               ) : null}
             </>
@@ -1595,8 +1607,17 @@ export default function App(): ReactNode {
     routeKey,
   });
   const [attempt, setAttempt] = useState(0);
+  const [authenticatedAccount, setAuthenticatedAccount] = useState<AuthenticatedAccountState | null>(null);
   const skipCanonicalRouteFetch = useRef<string | null>(null);
   const lastTriggeredStateCheck = useRef<string | null>(null);
+
+  const signOut = () => {
+    const refreshToken = authenticatedAccount?.tokens.refresh_token;
+    setAuthenticatedAccount(null);
+    if (refreshToken) {
+      void logoutExistingAccount(refreshToken).catch(() => undefined);
+    }
+  };
 
   useEffect(() => {
     const handlePopState = () => setLocationVersion((value) => value + 1);
@@ -1717,5 +1738,14 @@ export default function App(): ReactNode {
       />
     );
   }
-  return <EventPage key={page.data.event.id} data={page.data} requestedOccurrenceId={route.requestedOccurrenceId} />;
+  return (
+    <EventPage
+      key={page.data.event.id}
+      data={page.data}
+      requestedOccurrenceId={route.requestedOccurrenceId}
+      authenticatedAccount={authenticatedAccount}
+      onAuthenticatedAccountChange={setAuthenticatedAccount}
+      onSignOut={signOut}
+    />
+  );
 }

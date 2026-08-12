@@ -943,6 +943,20 @@ describe("local form shell", () => {
     expect(screen.getByRole("button", { name: "Создать аккаунт" })).toBeInTheDocument();
   });
 
+  it("does not restore an authenticated account from persistent browser storage", async () => {
+    window.localStorage.setItem("access_token", "stored-access-token");
+    window.sessionStorage.setItem("refresh_token", "stored-refresh-token");
+    window.localStorage.setItem("password", "stored-password");
+    const storageReadSpy = vi.spyOn(Storage.prototype, "getItem");
+
+    await renderEvent();
+
+    expect(screen.queryByRole("region", { name: "Аккаунт" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" })).toBeInTheDocument();
+    expect(storageReadSpy).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("uses temporary in-memory login and canonical account data for completed registration", async () => {
     const user = userEvent.setup();
     const storageSpy = vi.spyOn(Storage.prototype, "setItem");
@@ -968,11 +982,17 @@ describe("local form shell", () => {
     await user.type(loginEmail, "ivan@example.ru");
     await user.type(screen.getByLabelText("Пароль"), "secret-password");
     await user.click(screen.getByRole("button", { name: "Войти" }));
-    expect(await screen.findByText("Иван Иванов")).toBeInTheDocument();
+    const accountPanel = await screen.findByRole("region", { name: "Аккаунт" });
+    expect(within(accountPanel).getByText("Вы вошли")).toBeInTheDocument();
+    expect(within(accountPanel).getByText("Иван Иванов")).toBeInTheDocument();
+    expect(within(accountPanel).getByText("ivan@example.ru")).toBeInTheDocument();
+    expect(accountPanel).toHaveFocus();
     expect(screen.getAllByText("ivan@example.ru")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Продолжить без пароля" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Создать аккаунт" })).not.toBeInTheDocument();
     expect(storageSpy).not.toHaveBeenCalled();
+    expect(window.localStorage).toHaveLength(0);
+    expect(window.sessionStorage).toHaveLength(0);
     expect(window.location.href).toBe(initialUrl);
 
     vi.mocked(fetch)
@@ -982,10 +1002,10 @@ describe("local form shell", () => {
         expires_at: null,
         registration: registrationResult().data.registration,
         account_next_step: "sign_in",
-      })))
-      .mockImplementationOnce(() => response({ ok: true }));
+      })));
     await user.click(screen.getByRole("button", { name: "Продолжить регистрацию" }));
     expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Аккаунт" })).toBeInTheDocument();
     const request = JSON.parse(String(vi.mocked(fetch).mock.calls[3][1]?.body));
     expect(request).toMatchObject({
       first_name: "Иван",
@@ -994,8 +1014,49 @@ describe("local form shell", () => {
       email: "ivan@example.ru",
     });
     expect(vi.mocked(fetch).mock.calls[3][1]?.headers).toMatchObject({ Authorization: "Bearer temporary-access-token" });
+    expect(fetch).toHaveBeenCalledTimes(5);
     expect(window.location.href).not.toContain("temporary-access-token");
     expect(window.location.href).not.toContain("secret-password");
+  });
+
+  it("signs out through the shared session and returns registration to anonymous mode", async () => {
+    const user = userEvent.setup();
+    await renderEvent();
+    await fillValidForm(user);
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response({
+        access_token: "temporary-access-token",
+        refresh_token: "temporary-refresh-token",
+        token_type: "bearer",
+        expires_at: EXPIRES_AT,
+        user: {},
+      }))
+      .mockImplementationOnce(() => response({
+        user: { email: "ivan@example.ru", email_verified_at: EXPIRES_AT },
+        profile: { first_name: "Иван", last_name: "Иванов", phone: "+79000000001" },
+        memberships: [],
+      }));
+    await user.click(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" }));
+    const loginEmail = screen.getByLabelText("Email", { selector: "#login-email" });
+    await user.clear(loginEmail);
+    await user.type(loginEmail, "ivan@example.ru");
+    await user.type(screen.getByLabelText("Пароль"), "secret-password");
+    await user.click(screen.getByRole("button", { name: "Войти" }));
+
+    const accountPanel = await screen.findByRole("region", { name: "Аккаунт" });
+    vi.mocked(fetch).mockImplementationOnce(() => response({ ok: true }));
+    await user.click(within(accountPanel).getByRole("button", { name: "Выйти" }));
+
+    expect(screen.queryByRole("region", { name: "Аккаунт" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Продолжить без пароля" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Создать аккаунт" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" })).toHaveFocus();
+    expect(screen.getByLabelText("Имя")).toHaveValue("Анна Мария");
+    expect(screen.getByLabelText("Email", { selector: "#email" })).toHaveValue("anna@example.ru");
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/auth/logout", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ refresh_token: "temporary-refresh-token" }),
+    })));
   });
 
   it("shows safe generic login errors", async () => {
