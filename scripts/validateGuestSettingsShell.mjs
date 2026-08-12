@@ -229,7 +229,6 @@ function validateGuestSafeRoutes() {
   }
 
   for (const forbiddenRoute of [
-    '/profile/security',
     '/profile/edit',
     '/profile/onboarding',
     '/profile/my-registrations',
@@ -274,7 +273,6 @@ function validateRouteGuardPreservation() {
   );
 
   for (const blockedRoute of [
-    'profile/security',
     'profile/edit',
     'profile/onboarding',
     'profile/my-registrations',

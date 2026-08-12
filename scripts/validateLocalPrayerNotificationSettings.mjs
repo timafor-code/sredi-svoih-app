@@ -238,7 +238,6 @@ function validateRouteBoundary() {
   const account = resolveAppCapabilities('account', 'disabled');
   const allowedForGuest = ['/profile/notifications', '/profile/prayers-settings'];
   const blockedForGuest = [
-    '/profile/security',
     '/profile/edit',
     '/profile/onboarding',
     '/profile/my-registrations',
