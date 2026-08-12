@@ -76,6 +76,16 @@ function paidEventResponse() {
   return data;
 }
 
+function recurringOpenEvent() {
+  const data = responseWithOccurrences();
+  data.registration_state = "open";
+  data.occurrences = data.occurrences.map((occurrence) => ({
+    ...occurrence,
+    registration_state: "open",
+  }));
+  return data;
+}
+
 async function renderEvent(data = eventResponse(), search = "", pathValue = EVENT_ID) {
   successfulFetch(data);
   window.history.replaceState(null, "", `/events/${pathValue}${search}`);
@@ -281,40 +291,57 @@ describe("registration state and occurrences", () => {
     expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
   });
 
-  it("requires a date first and hides the participation and personal flow", async () => {
+  it("requires Continue after date selection and hides the complete free flow until then", async () => {
+    const user = userEvent.setup();
     const data = responseWithQuestionnaire();
-    const occurrenceData = responseWithOccurrences();
+    const occurrenceData = recurringOpenEvent();
     data.registration_state = occurrenceData.registration_state;
     data.occurrence_selection_mode = "user_select";
     data.default_occurrence_id = null;
     data.occurrences = occurrenceData.occurrences;
+    data.participation_options = [];
     await renderEvent(data);
 
     expect(
       screen.getAllByRole<HTMLInputElement>("radio", { name: /Пятница|Суббота/ })
         .every((radio) => !radio.checked),
     ).toBe(true);
-    expect(screen.getByText("Сначала выберите дату участия")).toBeInTheDocument();
+    expect(screen.getByText("Шаг 1")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Выберите дату" })).toBeInTheDocument();
+    expect(screen.getByText("Сначала выберите дату участия, затем перейдите к регистрации.")).toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Варианты участия" })).not.toBeInTheDocument();
     expect(screen.queryByRole("spinbutton", { name: "Количество мест" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Дополнительные вопросы" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Я ознакомился/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /Пятница/ }));
+    expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+    expect(screen.queryByRole("spinbutton", { name: "Количество мест" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Продолжить" }));
+    expect(screen.getByRole("heading", { name: "Регистрация" })).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "Количество мест" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Дополнительные вопросы" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Имя")).toBeInTheDocument();
   });
 
-  it("preselects a returned occurrence from the query and uses its state", async () => {
-    await renderEvent(responseWithOccurrences(), `?occurrence=${OCCURRENCE_TWO_ID}`);
+  it("preselects a valid query occurrence but still requires explicit Continue", async () => {
+    const user = userEvent.setup();
+    await renderEvent(recurringOpenEvent(), `?occurrence=${OCCURRENCE_TWO_ID}`);
     expect(screen.getByRole("radio", { name: /Суббота/ })).toBeChecked();
+    expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Продолжить" }));
     expect(screen.getByLabelText("Имя")).toBeInTheDocument();
     expect(window.location.pathname).toBe(`/events/${PUBLIC_SLUG}`);
     expect(window.location.search).toBe(`?occurrence=${OCCURRENCE_TWO_ID}`);
   });
 
   it("ignores an occurrence outside the returned list", async () => {
-    await renderEvent(responseWithOccurrences(), "?occurrence=77777777-7777-4777-8777-777777777777");
+    await renderEvent(recurringOpenEvent(), "?occurrence=77777777-7777-4777-8777-777777777777");
     expect(screen.getByRole("radio", { name: /Пятница/ })).not.toBeChecked();
     expect(screen.getByRole("radio", { name: /Суббота/ })).not.toBeChecked();
-    expect(screen.getByText("Сначала выберите дату участия")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Продолжить" })).toBeDisabled();
     expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
     expect(window.location.search).toBe("");
   });
@@ -327,21 +354,66 @@ describe("registration state and occurrences", () => {
 
   it("keeps manual date selection out of the canonical URL", async () => {
     const user = userEvent.setup();
-    await renderEvent(responseWithOccurrences(), "?source=invite");
+    await renderEvent(recurringOpenEvent(), "?source=invite");
     await user.click(screen.getByRole("radio", { name: /Суббота/ }));
     expect(window.location.pathname).toBe(`/events/${PUBLIC_SLUG}`);
     expect(window.location.search).toBe("");
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("lets a selected occurrence override the aggregate state", async () => {
+  it("returns to date selection, clears in-progress form state, and submits the new occurrence", async () => {
     const user = userEvent.setup();
-    await renderEvent(responseWithOccurrences());
+    const data = recurringOpenEvent();
+    data.participation_options = [];
+    await renderEvent(data);
+    expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /Пятница/ }));
+    await user.click(screen.getByRole("button", { name: "Продолжить" }));
+    expect(screen.getByLabelText("Имя")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Имя"), "Старое значение");
+    await user.click(screen.getByRole("button", { name: "Изменить дату" }));
     expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
     await user.click(screen.getByRole("radio", { name: /Суббота/ }));
-    expect(screen.getByLabelText("Имя")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Продолжить" }));
+    expect(screen.getByLabelText("Имя")).toHaveValue("");
+
+    await user.type(screen.getByLabelText("Имя"), "Анна");
+    await user.type(screen.getByLabelText("Фамилия"), "Иванова");
+    await user.type(screen.getByLabelText("Телефон"), "+44 7400 123456");
+    await user.type(screen.getByLabelText("Email"), "anna@example.ru");
+    await user.click(screen.getByLabelText(/Я ознакомился/));
+    vi.mocked(fetch).mockImplementationOnce(() => response(intentCreated(), 201));
+    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body));
+    expect(body.occurrence_id).toBe(OCCURRENCE_TWO_ID);
+    expect(body.phone).toBe("+447400123456");
+  });
+
+  it("hides paid participation options until the date step is complete", async () => {
+    const user = userEvent.setup();
+    const data = recurringOpenEvent();
+    const paid = paidEventResponse();
+    data.event.registration_mode = "internal_paid";
+    data.participation_options = paid.participation_options;
+    await renderEvent(data);
+
+    expect(screen.queryByRole("group", { name: "Варианты участия" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("radio", { name: /Пятница/ }));
+    expect(screen.queryByRole("group", { name: "Варианты участия" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Продолжить" }));
+    expect(screen.getByRole("group", { name: "Варианты участия" })).toBeInTheDocument();
+  });
+
+  it("does not preselect or continue to a closed query occurrence", async () => {
+    const data = recurringOpenEvent();
+    const closedId = "99999999-9999-4999-8999-999999999999";
+    data.occurrences.push({ ...data.occurrences[0], id: closedId, title: "Закрытая дата", registration_state: "closed" });
+    await renderEvent(data, `?occurrence=${closedId}`);
+
+    expect(screen.getByRole("button", { name: "Продолжить" })).toBeDisabled();
     expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /Закрытая дата/ })).not.toBeInTheDocument();
   });
 
   it("uses the backend nearest occurrence without rendering a selector or honoring query", async () => {
@@ -367,6 +439,15 @@ describe("registration state and occurrences", () => {
 
     expect(screen.queryByRole("radio", { name: /Суббота/ })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Выберите дату")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Имя")).toBeInTheDocument();
+  });
+
+  it("uses the only open user-select occurrence without a redundant date step", async () => {
+    const data = responseWithOccurrences();
+    await renderEvent(data);
+
+    expect(screen.queryByRole("heading", { name: "Выберите дату" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Продолжить" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Имя")).toBeInTheDocument();
   });
 
@@ -695,6 +776,19 @@ describe("local form shell", () => {
     expect(screen.getByRole("group", { name: "Варианты участия" })).toHaveFocus();
     expect(screen.getByLabelText("Имя")).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByText("Введите телефон.")).toHaveAttribute("id", "phone-error");
+  });
+
+  it("formats an international phone in one tel input and shows its detected flag", async () => {
+    await renderEvent();
+    const phone = screen.getByLabelText("Телефон");
+    expect(phone).toHaveAttribute("type", "tel");
+    expect(phone).toHaveAttribute("inputmode", "tel");
+    expect(phone).toHaveAttribute("autocomplete", "tel");
+    expect(screen.getByText("Можно указать номер любой страны")).toBeInTheDocument();
+
+    fireEvent.change(phone, { target: { value: "79950955545" } });
+    expect(phone).toHaveValue("+7 995 095-55-45");
+    expect(screen.getByText("🇷🇺")).toBeInTheDocument();
   });
 
   it("renders a separate seats count with backend-contract boundaries", async () => {

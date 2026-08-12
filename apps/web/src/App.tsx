@@ -17,6 +17,8 @@ import {
   resendWebRegistrationCode,
 } from "./api";
 import { formatDate, formatDateTimeRange, formatTime } from "./format";
+import { PhoneInput } from "./PhoneInput";
+import { normalizeInternationalPhone } from "./phone";
 import { QuestionnaireFields } from "./QuestionnaireFields";
 import {
   focusFirstQuestionnaireError,
@@ -50,7 +52,6 @@ import type {
 } from "./types";
 import {
   normalizeName,
-  normalizeRussianPhone,
   type PersonalErrors,
   type PersonalField,
   validateEmail,
@@ -223,16 +224,17 @@ function OccurrenceSelector({
   occurrences,
   selectedId,
   onChange,
+  onContinue,
 }: {
   occurrences: WebRegistrationOccurrence[];
   selectedId: string | null;
   onChange: (id: string) => void;
+  onContinue: () => void;
 }): ReactNode {
-  if (occurrences.length <= 1) return null;
-  if (occurrences.length > 6) {
-    return (
-      <section className="surface section-card">
-        <label className="section-label" htmlFor="occurrence-select">Выберите дату</label>
+  const selectionControl = occurrences.length > 6
+    ? (
+      <div className="date-select-control">
+        <label className="visually-hidden" htmlFor="occurrence-select">Выберите дату</label>
         <select id="occurrence-select" value={selectedId ?? ""} onChange={(event) => onChange(event.target.value)}>
           <option value="" disabled>Выберите дату участия</option>
           {occurrences.map((occurrence) => (
@@ -242,14 +244,11 @@ function OccurrenceSelector({
             </option>
           ))}
         </select>
-      </section>
-    );
-  }
-
-  return (
-    <section className="surface section-card">
+      </div>
+    )
+    : (
       <fieldset className="choice-fieldset">
-        <legend>Выберите дату</legend>
+        <legend className="visually-hidden">Выберите дату</legend>
         <div className="radio-card-grid">
           {occurrences.map((occurrence) => (
             <label className="radio-card" key={occurrence.id}>
@@ -270,6 +269,43 @@ function OccurrenceSelector({
           ))}
         </div>
       </fieldset>
+    );
+
+  return (
+    <section className="surface section-card date-selection-step" aria-labelledby="date-selection-heading">
+      <p className="eyebrow">Шаг 1</p>
+      <h2 id="date-selection-heading">Выберите дату</h2>
+      <p className="muted-copy">Сначала выберите дату участия, затем перейдите к регистрации.</p>
+      {selectionControl}
+      <button
+        className="primary-button date-continue-button"
+        type="button"
+        disabled={!selectedId}
+        onClick={onContinue}
+      >
+        Продолжить
+      </button>
+    </section>
+  );
+}
+
+function SelectedOccurrenceSummary({
+  occurrence,
+  onChange,
+}: {
+  occurrence: WebRegistrationOccurrence;
+  onChange: () => void;
+}): ReactNode {
+  return (
+    <section className="surface selected-date-summary" aria-label="Выбранная дата">
+      <div>
+        <p className="eyebrow">Шаг 2</p>
+        <h2>Регистрация</h2>
+        <p className="selected-date-label">Выбранная дата</p>
+        <strong>{formatDateTimeRange(occurrence.starts_at, occurrence.ends_at, occurrence.timezone)}</strong>
+        {occurrence.title ? <span>{occurrence.title}</span> : null}
+      </div>
+      <button className="text-button" type="button" onClick={onChange}>Изменить дату</button>
     </section>
   );
 }
@@ -769,7 +805,7 @@ function RegistrationForm({
       return;
     }
 
-    const phone = normalizeRussianPhone(normalizedValues.phone);
+    const phone = normalizeInternationalPhone(normalizedValues.phone);
     if (!phone) return;
     const requestWithoutKey: Omit<WebRegistrationIntentRequest, "idempotency_key"> = {
       event_id: eventId,
@@ -1162,7 +1198,12 @@ function RegistrationForm({
         <div className="form-grid">
           {field("first-name", "firstName", "Имя", { autoComplete: "given-name", maxLength: 100 })}
           {field("last-name", "lastName", "Фамилия", { autoComplete: "family-name", maxLength: 100 })}
-          {field("phone", "phone", "Телефон", { type: "tel", autoComplete: "tel", inputMode: "tel" })}
+          <PhoneInput
+            value={values.phone}
+            error={errors.phone}
+            onChange={(value) => updateField("phone", value)}
+            onBlur={() => validateField("phone")}
+          />
           {field("email", "email", "Email", { type: "email", autoComplete: "email", inputMode: "email", maxLength: 254 })}
         </div>
       </section>
@@ -1248,50 +1289,59 @@ function EventPage({ data, requestedOccurrenceId }: {
   data: WebEventRegistrationFormResponse;
   requestedOccurrenceId: string | null;
 }): ReactNode {
+  const availableOccurrences = useMemo(
+    () => data.occurrences.filter((item) => item.registration_state === "open"),
+    [data.occurrences],
+  );
+  const dateStepRequired = data.occurrence_selection_mode === "user_select"
+    && availableOccurrences.length > 1;
   const initialOccurrenceId = useMemo(() => {
     if (data.occurrence_selection_mode !== "user_select") {
       return data.default_occurrence_id;
     }
-    return data.occurrences.find(
+    return availableOccurrences.find(
       (item) => item.id.toLowerCase() === requestedOccurrenceId,
-    )?.id ?? null;
+    )?.id ?? (availableOccurrences.length === 1 ? availableOccurrences[0].id : null);
   }, [
+    availableOccurrences,
     data.default_occurrence_id,
     data.occurrence_selection_mode,
-    data.occurrences,
     requestedOccurrenceId,
   ]);
   const [selectedOccurrenceId, setSelectedOccurrenceId] = useState(initialOccurrenceId);
+  const [dateStepComplete, setDateStepComplete] = useState(!dateStepRequired);
+  const occurrenceContractKey = availableOccurrences.map((item) => item.id).join(":");
   useEffect(() => {
     setSelectedOccurrenceId((current) => {
       if (data.occurrence_selection_mode !== "user_select") {
         return data.default_occurrence_id;
       }
-      const requested = data.occurrences.find(
+      const requested = availableOccurrences.find(
         (item) => item.id.toLowerCase() === requestedOccurrenceId,
       )?.id;
       if (requested) return requested;
-      return current && data.occurrences.some((item) => item.id === current)
+      if (availableOccurrences.length === 1) return availableOccurrences[0].id;
+      return current && availableOccurrences.some((item) => item.id === current)
         ? current
         : null;
     });
   }, [
+    availableOccurrences,
     data.default_occurrence_id,
     data.occurrence_selection_mode,
-    data.occurrences,
     requestedOccurrenceId,
   ]);
+  useEffect(() => {
+    setDateStepComplete(!dateStepRequired);
+  }, [data.event.id, dateStepRequired, occurrenceContractKey, requestedOccurrenceId]);
   const effectiveOccurrenceId = data.occurrence_selection_mode === "user_select"
     ? selectedOccurrenceId
     : data.default_occurrence_id;
   const selectedOccurrence = data.occurrences.find(
     (item) => item.id === effectiveOccurrenceId,
   ) ?? null;
-  const needsOccurrenceSelection = data.occurrence_selection_mode === "user_select"
-    && selectedOccurrence === null;
-  const effectiveState = needsOccurrenceSelection
-    ? null
-    : selectedOccurrence?.registration_state ?? data.registration_state;
+  const dateSelectionPending = dateStepRequired && !dateStepComplete;
+  const effectiveState = selectedOccurrence?.registration_state ?? data.registration_state;
   const timeZone = selectedOccurrence?.timezone ?? data.event.timezone;
   const startsAt = selectedOccurrence?.starts_at ?? data.event.starts_at;
   const endsAt = selectedOccurrence?.ends_at ?? data.event.ends_at;
@@ -1300,6 +1350,10 @@ function EventPage({ data, requestedOccurrenceId }: {
 
   const changeOccurrence = (id: string) => {
     setSelectedOccurrenceId(id);
+  };
+
+  const continueDateSelection = () => {
+    if (selectedOccurrence?.registration_state === "open") setDateStepComplete(true);
   };
 
   return (
@@ -1322,43 +1376,47 @@ function EventPage({ data, requestedOccurrenceId }: {
               {data.event.description ? <p className="description full-description">{data.event.description}</p> : null}
             </div>
           </article>
-
-          {data.occurrence_selection_mode === "user_select" ? (
-            <OccurrenceSelector
-              occurrences={data.occurrences}
-              selectedId={selectedOccurrenceId}
-              onChange={changeOccurrence}
-            />
-          ) : null}
         </div>
 
         <div className="form-column">
-          {needsOccurrenceSelection ? (
-            <section className="registration-status status-unavailable" aria-live="polite">
-              <span aria-hidden="true" className="status-dot" />
-              <strong>Сначала выберите дату участия</strong>
-            </section>
-          ) : effectiveState ? (
-            <section className={`registration-status status-${effectiveState}`} aria-live="polite">
-              <span aria-hidden="true" className="status-dot" />
-              <strong>{STATUS_LABELS[effectiveState]}</strong>
-            </section>
-          ) : null}
-          {effectiveState === "open" && consentDocument ? (
-            <RegistrationForm
-              key={data.event.id}
-              eventId={data.event.id}
-              eventTitle={data.event.title}
-              registrationMode={data.event.registration_mode}
-              occurrences={data.occurrences}
-              selectedOccurrenceId={effectiveOccurrenceId}
-              options={data.participation_options}
-              questionnaireFormId={data.questionnaire_form_id}
-              questions={data.questions}
-              consentDocument={consentDocument}
-              privacyDocument={privacyDocument}
+          {dateSelectionPending ? (
+            <OccurrenceSelector
+              occurrences={availableOccurrences}
+              selectedId={selectedOccurrenceId}
+              onChange={changeOccurrence}
+              onContinue={continueDateSelection}
             />
-          ) : null}
+          ) : (
+            <>
+              {dateStepRequired && selectedOccurrence ? (
+                <SelectedOccurrenceSummary
+                  occurrence={selectedOccurrence}
+                  onChange={() => setDateStepComplete(false)}
+                />
+              ) : null}
+              {effectiveState ? (
+                <section className={`registration-status status-${effectiveState}`} aria-live="polite">
+                  <span aria-hidden="true" className="status-dot" />
+                  <strong>{STATUS_LABELS[effectiveState]}</strong>
+                </section>
+              ) : null}
+              {effectiveState === "open" && consentDocument ? (
+                <RegistrationForm
+                  key={`${data.event.id}:${effectiveOccurrenceId ?? "event"}`}
+                  eventId={data.event.id}
+                  eventTitle={data.event.title}
+                  registrationMode={data.event.registration_mode}
+                  occurrences={data.occurrences}
+                  selectedOccurrenceId={effectiveOccurrenceId}
+                  options={data.participation_options}
+                  questionnaireFormId={data.questionnaire_form_id}
+                  questions={data.questions}
+                  consentDocument={consentDocument}
+                  privacyDocument={privacyDocument}
+                />
+              ) : null}
+            </>
+          )}
         </div>
       </main>
     </PageFrame>
