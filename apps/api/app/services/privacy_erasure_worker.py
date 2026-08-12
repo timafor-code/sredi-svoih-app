@@ -19,10 +19,7 @@ from app.db.models.core import (
     PrivacyRequest,
 )
 from app.db.session import AsyncSessionLocal
-from app.services.privacy_erasure import (
-    DELETION_PENDING_STATUS,
-    has_retention_sensitive_registration_data,
-)
+from app.services.privacy_erasure import DELETION_PENDING_STATUS
 from app.services.privacy_erasure_deletion_manifest import (
     apply_privacy_erasure_deletion_manifest,
     collect_private_avatar_keys,
@@ -39,6 +36,14 @@ from app.services.privacy_erasure_notification_crypto import (
     encrypt_notification_recipient,
     load_notification_encryption_config,
 )
+from app.services.privacy_erasure_retention import (
+    RETAINED_FINANCIAL_CATEGORY,
+    PrivacyErasureRetentionClassificationError,
+    PrivacyErasureRetentionConfigurationError,
+    PrivacyErasureRetentionPlan,
+    create_retained_financial_evidence,
+    plan_privacy_erasure_retention,
+)
 from app.services.privacy_erasure_restore_register import (
     REGISTER_UNAVAILABLE,
     ensure_restore_register_marker,
@@ -51,8 +56,11 @@ from app.storage.s3 import get_avatar_storage
 
 logger = logging.getLogger(__name__)
 
-PRIVACY_ERASURE_EXECUTION_VERSION = "privacy-erasure-worker-v3"
+PRIVACY_ERASURE_EXECUTION_VERSION = "privacy-erasure-worker-v4"
 MANUAL_REVIEW_FAILURE_CODE = "privacy_erasure_manual_review_required"
+RETENTION_CONFIGURATION_FAILURE_CODE = (
+    "privacy_erasure_retention_configuration_unavailable"
+)
 AVATAR_STORAGE_FAILURE_CODE = "privacy_erasure_avatar_storage_failed"
 DATABASE_FAILURE_CODE = "privacy_erasure_database_failed"
 SUBJECT_MISSING_FAILURE_CODE = "privacy_erasure_subject_missing"
@@ -228,7 +236,21 @@ async def _claim(
                     "not_eligible",
                     failure_code=SUBJECT_STATE_FAILURE_CODE,
                 )
-            if await has_retention_sensitive_registration_data(session, user.id):
+            try:
+                await plan_privacy_erasure_retention(
+                    session,
+                    user.id,
+                    settings=settings,
+                )
+            except PrivacyErasureRetentionConfigurationError:
+                privacy_request.failure_code = RETENTION_CONFIGURATION_FAILURE_CODE
+                privacy_request.updated_at = now
+                return _result(
+                    request_id,
+                    "retryable_failure",
+                    failure_code=RETENTION_CONFIGURATION_FAILURE_CODE,
+                )
+            except PrivacyErasureRetentionClassificationError:
                 privacy_request.failure_code = MANUAL_REVIEW_FAILURE_CODE
                 privacy_request.updated_at = now
                 return _result(
@@ -305,20 +327,31 @@ async def _delete_content_graph(
     subject_ref_hash: str,
     recipient: str,
     notification_config: PrivacyErasureNotificationEncryptionConfig,
+    retention_plan: PrivacyErasureRetentionPlan,
 ) -> UUID:
     manifest = await apply_privacy_erasure_deletion_manifest(
         session,
         user=user,
         avatar_keys=avatar_keys,
     )
+    retention_until = await create_retained_financial_evidence(
+        session,
+        plan=retention_plan,
+        subject_ref_hash=subject_ref_hash,
+        completed_at=now,
+    )
+    categories_retained = (
+        [RETAINED_FINANCIAL_CATEGORY] if retention_plan.has_retention else []
+    )
+    result_status = "completed_with_retention" if categories_retained else "completed"
     evidence = PrivacyDestructionEvidence(
         subject_ref_hash=subject_ref_hash,
         execution_version=PRIVACY_ERASURE_EXECUTION_VERSION,
-        result_status="completed",
+        result_status=result_status,
         completed_at=now,
         categories_deleted=manifest.categories_deleted,
-        categories_retained=[],
-        retention_until=None,
+        categories_retained=categories_retained,
+        retention_until=retention_until,
         created_at=now,
     )
     session.add(evidence)
@@ -429,7 +462,21 @@ async def _execute(
                     "not_eligible",
                     failure_code=SUBJECT_STATE_FAILURE_CODE,
                 )
-            if await has_retention_sensitive_registration_data(session, user.id):
+            try:
+                retention_plan = await plan_privacy_erasure_retention(
+                    session,
+                    user.id,
+                    settings=settings,
+                )
+            except PrivacyErasureRetentionConfigurationError:
+                privacy_request.failure_code = RETENTION_CONFIGURATION_FAILURE_CODE
+                privacy_request.updated_at = now_provider()
+                return _result(
+                    request_id,
+                    "retryable_failure",
+                    failure_code=RETENTION_CONFIGURATION_FAILURE_CODE,
+                )
+            except PrivacyErasureRetentionClassificationError:
                 privacy_request.failure_code = MANUAL_REVIEW_FAILURE_CODE
                 privacy_request.updated_at = now_provider()
                 return _result(
@@ -471,6 +518,7 @@ async def _execute(
                 subject_ref_hash=subject_ref_hash,
                 recipient=claimed.recipient,
                 notification_config=claimed.notification_config,
+                retention_plan=retention_plan,
             )
             if before_commit is not None:
                 await before_commit(session)

@@ -12,7 +12,7 @@ from io import StringIO
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, event, func, select
+from sqlalchemy import delete, event, func, select, update
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import Settings
@@ -45,6 +45,7 @@ from app.db.models.core import (
     PrayerActivityLog,
     PrivacyDestructionEvidence,
     PrivacyErasureNotificationOutbox,
+    PrivacyRetainedFinancialEvidence,
     PrivacyRequest,
     Profile,
     ProfileContactVisibility,
@@ -59,6 +60,7 @@ from app.services.privacy_erasure_worker import (
     DATABASE_FAILURE_CODE,
     MANUAL_REVIEW_FAILURE_CODE,
     PRIVACY_ERASURE_EXECUTION_VERSION,
+    RETENTION_CONFIGURATION_FAILURE_CODE,
     RESTORE_REGISTER_FAILURE_CODE,
     SUBJECT_MISSING_FAILURE_CODE,
     PrivacyErasureWorkerResult,
@@ -142,6 +144,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
             ).decode("ascii"),
             api_privacy_erasure_notification_key_id="synthetic-worker-key-v1",
             api_privacy_erasure_notification_delivery_window_hours=24,
+            api_privacy_erasure_financial_retention_days=365,
         )
         self.register_storage = _FakeRegisterStorage()
 
@@ -251,6 +254,12 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                                 PrivacyDestructionEvidence.id.in_(self.evidence_ids),
                             ),
                         )
+                    await session.execute(
+                        delete(PrivacyRetainedFinancialEvidence).where(
+                            PrivacyRetainedFinancialEvidence.source_event_id
+                            == self.event_id,
+                        ),
+                    )
                     await session.execute(
                         delete(LegalAcceptance).where(
                             LegalAcceptance.legal_document_id == self.legal_document_id,
@@ -588,6 +597,46 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
         ids["avatar_key"] = avatar_key
         return ids
 
+    async def _add_financial_registration(
+        self,
+        user_id: UUID,
+        *,
+        payment_status: str,
+        amount: int = 12500,
+        currency: str = "RUB",
+    ) -> UUID:
+        registration_id = uuid4()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(
+                    EventRegistration(
+                        id=registration_id,
+                        event_id=self.event_id,
+                        user_id=user_id,
+                        status="confirmed",
+                        source_channel="public_web",
+                        seats_count=1,
+                        payment_status=payment_status,
+                        payment_id=f"synthetic-provider-{registration_id.hex}",
+                    ),
+                )
+                await session.flush()
+                session.add(
+                    EventRegistrationOptionSelection(
+                        registration_id=registration_id,
+                        title_snapshot="Synthetic paid participation",
+                        option_type_snapshot="participation",
+                        quantity=1,
+                        unit_price_amount=amount,
+                        total_amount=amount,
+                        currency=currency,
+                        counts_toward_capacity=True,
+                        seats_count=1,
+                        is_donation=False,
+                    ),
+                )
+        return registration_id
+
     async def test_complete_graph_is_private_idempotent_and_preserves_audit(self) -> None:
         user_id, request_id, email, phone = await self._add_subject()
         ids = await self._add_complete_graph(user_id, request_id, email, phone)
@@ -630,6 +679,14 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                 select(PrivacyErasureNotificationOutbox).where(
                     PrivacyErasureNotificationOutbox.privacy_request_id
                     == request_id,
+                ),
+            )
+            retained_count = await session.scalar(
+                select(func.count())
+                .select_from(PrivacyRetainedFinancialEvidence)
+                .where(
+                    PrivacyRetainedFinancialEvidence.subject_ref_hash
+                    == evidence.subject_ref_hash,
                 ),
             )
             checks = {
@@ -689,6 +746,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(evidence.result_status, "completed")
         self.assertEqual(evidence.categories_retained, [])
         self.assertIsNone(evidence.retention_until)
+        self.assertEqual(retained_count, 0)
         self.assertNotIn(str(user_id), evidence.subject_ref_hash)
         self.assertNotIn(str(user_id), json.dumps(evidence.categories_deleted))
         self.assertEqual(
@@ -947,6 +1005,224 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                 .where(PrivacyDestructionEvidence.id == completed.destruction_evidence_id),
             )
         self.assertEqual(count, 1)
+
+    async def test_attempted_financial_states_do_not_retain_live_graph(self) -> None:
+        await self._set_event_internal_paid()
+        for payment_status in ("pending", "failed", "cancelled"):
+            with self.subTest(payment_status=payment_status):
+                user_id, request_id, _, _ = await self._add_subject()
+                registration_id = await self._add_financial_registration(
+                    user_id,
+                    payment_status=payment_status,
+                )
+                result = await self._execute_worker(request_id)
+                self.assertEqual(result.result, "completed")
+                self.evidence_ids.add(result.destruction_evidence_id)
+                async with AsyncSessionLocal() as session:
+                    evidence = await session.get(
+                        PrivacyDestructionEvidence,
+                        result.destruction_evidence_id,
+                    )
+                    retained_count = await session.scalar(
+                        select(func.count())
+                        .select_from(PrivacyRetainedFinancialEvidence)
+                        .where(
+                            PrivacyRetainedFinancialEvidence.source_registration_id
+                            == registration_id,
+                        ),
+                    )
+                    self.assertIsNone(await session.get(AppUser, user_id))
+                    self.assertIsNone(
+                        await session.get(EventRegistration, registration_id),
+                    )
+                self.assertEqual(retained_count, 0)
+                self.assertEqual(evidence.result_status, "completed")
+                self.assertEqual(evidence.categories_retained, [])
+                self.assertIsNone(evidence.retention_until)
+
+    async def test_finalized_financial_states_retain_only_minimal_evidence(self) -> None:
+        retained_columns = {
+            column.name
+            for column in PrivacyRetainedFinancialEvidence.__table__.columns
+        }
+        self.assertEqual(
+            retained_columns,
+            {
+                "id",
+                "subject_ref_hash",
+                "source_registration_id",
+                "source_event_id",
+                "financial_state",
+                "amount",
+                "currency",
+                "retention_basis_code",
+                "retention_until",
+                "created_at",
+            },
+        )
+        for payment_status in ("succeeded", "paid", "refunded"):
+            with self.subTest(payment_status=payment_status):
+                user_id, request_id, email, phone = await self._add_subject()
+                if payment_status == "paid":
+                    ids = await self._add_complete_graph(
+                        user_id,
+                        request_id,
+                        email,
+                        phone,
+                    )
+                    registration_id = ids["registration"]
+                    async with AsyncSessionLocal() as session:
+                        async with session.begin():
+                            registration = await session.get(
+                                EventRegistration,
+                                registration_id,
+                            )
+                            registration.payment_status = payment_status
+                            selection = await session.get(
+                                EventRegistrationOptionSelection,
+                                ids["selection"],
+                            )
+                            selection.unit_price_amount = 12500
+                            selection.total_amount = 12500
+                            selection.currency = "RUB"
+                else:
+                    ids = None
+                    registration_id = await self._add_financial_registration(
+                        user_id,
+                        payment_status=payment_status,
+                    )
+
+                first = await self._execute_worker(request_id)
+                self.assertEqual(first.result, "completed")
+                self.evidence_ids.add(first.destruction_evidence_id)
+                async with AsyncSessionLocal() as session:
+                    evidence = await session.get(
+                        PrivacyDestructionEvidence,
+                        first.destruction_evidence_id,
+                    )
+                    retained = await session.scalar(
+                        select(PrivacyRetainedFinancialEvidence).where(
+                            PrivacyRetainedFinancialEvidence.source_registration_id
+                            == registration_id,
+                        ),
+                    )
+                    retained_count = await session.scalar(
+                        select(func.count())
+                        .select_from(PrivacyRetainedFinancialEvidence)
+                        .where(
+                            PrivacyRetainedFinancialEvidence.source_registration_id
+                            == registration_id,
+                        ),
+                    )
+                    evidence_count = await session.scalar(
+                        select(func.count())
+                        .select_from(PrivacyDestructionEvidence)
+                        .where(PrivacyDestructionEvidence.id == evidence.id),
+                    )
+                    outbox = await session.scalar(
+                        select(PrivacyErasureNotificationOutbox).where(
+                            PrivacyErasureNotificationOutbox.privacy_request_id
+                            == request_id,
+                        ),
+                    )
+                    self.assertIsNone(await session.get(AppUser, user_id))
+                    self.assertIsNone(
+                        await session.get(EventRegistration, registration_id),
+                    )
+                    if ids is not None:
+                        self.assertIsNone(await session.get(Profile, ids["profile"]))
+                        self.assertIsNone(
+                            await session.get(EventRegistrationAnswer, ids["answer"]),
+                        )
+                        self.assertIsNone(
+                            await session.get(ProfileAvatar, ids["avatar"]),
+                        )
+                    prayer_count = await session.scalar(
+                        select(func.count())
+                        .select_from(PrayerActivityLog)
+                        .where(PrayerActivityLog.user_id == user_id),
+                    )
+                self.assertEqual(evidence.result_status, "completed_with_retention")
+                self.assertEqual(evidence.categories_retained, ["financial_evidence"])
+                self.assertEqual(outbox.notification_kind, "completed_with_retention")
+                expected_until = evidence.completed_at + timedelta(days=365)
+                self.assertEqual(evidence.retention_until, expected_until)
+                self.assertEqual(retained.financial_state, payment_status)
+                self.assertEqual(retained.amount, 12500)
+                self.assertEqual(retained.currency, "RUB")
+                self.assertEqual(
+                    retained.retention_basis_code,
+                    "finalized_event_registration_financial",
+                )
+                self.assertEqual(retained.retention_until, expected_until)
+                self.assertNotIn(str(user_id), retained.subject_ref_hash)
+                self.assertEqual(retained_count, 1)
+                self.assertEqual(evidence_count, 1)
+                self.assertEqual(prayer_count, 0)
+
+                second = await self._execute_worker(request_id)
+                self.assertEqual(second.result, "already_completed")
+                self.assertEqual(
+                    second.destruction_evidence_id,
+                    first.destruction_evidence_id,
+                )
+                async with AsyncSessionLocal() as session:
+                    retry_retained_count = await session.scalar(
+                        select(func.count())
+                        .select_from(PrivacyRetainedFinancialEvidence)
+                        .where(
+                            PrivacyRetainedFinancialEvidence.source_registration_id
+                            == registration_id,
+                        ),
+                    )
+                self.assertEqual(retry_retained_count, 1)
+
+    async def test_finalized_financial_state_requires_configured_duration(self) -> None:
+        user_id, request_id, _, _ = await self._add_subject()
+        registration_id = await self._add_financial_registration(
+            user_id,
+            payment_status="paid",
+        )
+        settings_without_duration = self.notification_settings.model_copy(
+            update={"api_privacy_erasure_financial_retention_days": None},
+        )
+        result = await self._execute_worker(
+            request_id,
+            settings=settings_without_duration,
+            storage_factory=lambda: (_ for _ in ()).throw(
+                AssertionError("storage must not be used"),
+            ),
+        )
+        self.assertEqual(result.result, "retryable_failure")
+        self.assertEqual(
+            result.failure_code,
+            RETENTION_CONFIGURATION_FAILURE_CODE,
+        )
+        async with AsyncSessionLocal() as session:
+            request = await session.get(PrivacyRequest, request_id)
+            retained_count = await session.scalar(
+                select(func.count())
+                .select_from(PrivacyRetainedFinancialEvidence)
+                .where(
+                    PrivacyRetainedFinancialEvidence.source_registration_id
+                    == registration_id,
+                ),
+            )
+            user = await session.get(AppUser, user_id)
+            self.assertIsNotNone(user)
+        self.assertEqual(request.failure_code, RETENTION_CONFIGURATION_FAILURE_CODE)
+        self.assertIsNone(request.execution_started_at)
+        self.assertEqual(user.status, "deletion_pending")
+        self.assertEqual(retained_count, 0)
+
+    async def _set_event_internal_paid(self) -> None:
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                await session.execute(
+                    update(Event)
+                    .where(Event.id == self.event_id)
+                    .values(registration_mode="internal_paid", price_amount=12500),
+                )
 
     async def test_manual_review_and_invalid_lifecycle_do_not_claim_or_delete(self) -> None:
         paid_user, paid_request, _, _ = await self._add_subject()
