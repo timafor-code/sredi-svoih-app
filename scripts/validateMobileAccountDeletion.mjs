@@ -88,18 +88,77 @@ function validateLocalCleanup() {
     '\n\n  signOut: async () => {',
   );
   const signOutAction = extractBetween(files.authStore, 'signOut: async () => {', '}));');
+  const contactCleanupHelper = extractBetween(
+    files.authStore,
+    'async function resetCommunityContactsAfterAccountDeletion()',
+    'async function resetPrayerTrackerMemoryAfterAccountDeletion()',
+  );
+  const prayerCleanupHelper = extractBetween(
+    files.authStore,
+    'async function resetPrayerTrackerMemoryAfterAccountDeletion()',
+    'async function loadProfileOrCreate()',
+  );
 
   assertIncludes(cleanupAction, 'beginAuthOperation()', 'deletion cleanup invalidates stale auth operations');
+  assertIncludes(cleanupAction, 'Promise.allSettled([', 'deletion cleanup attempts all steps independently');
   assertIncludes(cleanupAction, 'clearApiAuthTokens()', 'deletion cleanup clears stored API credentials');
-  assertIncludes(cleanupAction, 'resetEventPrivateState(isCurrent)', 'deletion cleanup clears private event state');
-  assertIncludes(cleanupAction, 'clearAvatarReadUrlMemoryCacheIfCurrent(isCurrent)', 'deletion cleanup clears avatar cache');
+  assertIncludes(cleanupAction, 'resetEventPrivateStateAfterAccountDeletion()', 'deletion cleanup clears private event state');
+  assertIncludes(cleanupAction, 'resetCommunityContactsAfterAccountDeletion()', 'deletion cleanup clears community contacts');
+  assertIncludes(cleanupAction, 'resetPrayerTrackerMemoryAfterAccountDeletion()', 'deletion cleanup clears prayer tracker memory');
+  assertIncludes(cleanupAction, 'clearAvatarReadUrlMemoryCache()', 'deletion cleanup clears avatar cache');
+  assertIncludes(cleanupAction, 'authOperationGuards.invalidateAuthOperations()', 'late auth operations are invalidated after cleanup attempts');
   assertIncludes(cleanupAction, 'session: null', 'deletion cleanup clears auth session');
   assertIncludes(cleanupAction, 'user: null', 'deletion cleanup clears auth user');
   assertIncludes(cleanupAction, 'profile: null', 'deletion cleanup clears profile');
   assertIncludes(cleanupAction, 'membership: null', 'deletion cleanup clears membership');
+  assertIncludes(cleanupAction, 'loading: false', 'deletion cleanup clears loading state');
+  assertIncludes(cleanupAction, 'error: null', 'deletion cleanup clears auth error state');
+  assertExcludes(cleanupAction, 'return;', 'deletion cleanup cannot return before clearing auth state');
   assertExcludes(cleanupAction, 'signOutService', 'deletion cleanup makes no remote sign-out request');
+  assertBefore(cleanupAction, 'Promise.allSettled([', 'session: null', 'auth state clears after all cleanup attempts settle');
+  assertBefore(cleanupAction, 'session: null', "throw new Error('Local account cleanup", 'aggregate failure is reported only after auth state clears');
+
+  assertIncludes(contactCleanupHelper, "import('@/store/useContactsStore')", 'contact cleanup dynamically imports the account contact store');
+  assertIncludes(contactCleanupHelper, 'resetCommunityContacts()', 'contact cleanup uses the existing community-only reset');
+  assertExcludes(contactCleanupHelper, 'delete', 'contact cleanup does not delete local iPhone contacts');
+  assertExcludes(contactCleanupHelper, 'remove', 'contact cleanup does not remove local iPhone contacts');
+
+  assertIncludes(prayerCleanupHelper, "import('@/store/usePrayerTrackerStore')", 'prayer cleanup dynamically imports the tracker store');
+  assertIncludes(prayerCleanupHelper, 'getState().reset()', 'prayer cleanup uses the existing in-memory reset');
+  assertExcludes(prayerCleanupHelper, 'Service', 'prayer cleanup does not call a prayer service');
+  assertExcludes(prayerCleanupHelper, 'apiClient', 'prayer cleanup does not call an API');
+  assertExcludes(prayerCleanupHelper, '.load', 'prayer cleanup does not read prayer data');
+
   assertIncludes(signOutAction, 'await signOutService()', 'ordinary sign-out still uses remote sign-out');
+  assertExcludes(signOutAction, 'resetCommunityContactsAfterAccountDeletion', 'ordinary sign-out behavior is unchanged');
+  assertExcludes(signOutAction, 'resetPrayerTrackerMemoryAfterAccountDeletion', 'ordinary sign-out does not gain deletion-only cleanup');
   assertIncludes(files.security, 'await clearLocalSessionAfterAccountDeletion()', 'deletion_pending triggers local cleanup');
+  assertIncludes(files.security, 'finally {\n      router.replace(profileHref);', 'signed-out Profile routing survives local cleanup failure');
+
+  const submitDeletion = extractBetween(
+    files.flow,
+    'const submitDeletion = useCallback(async () => {',
+    '\n  const showDestructiveConfirmation',
+  );
+  const serverPhase = extractBetween(
+    submitDeletion,
+    'let deletionPendingConfirmed = false;',
+    'if (!deletionPendingConfirmed)',
+  );
+  const postSuccessPhase = extractBetween(
+    submitDeletion,
+    'if (!deletionPendingConfirmed)',
+    '}, [onDeletionPending, returnToVerificationAfterExpiredSession]);',
+  );
+
+  assertExcludes(serverPhase, 'onDeletionPending', 'local cleanup failure cannot enter server erasure error handling');
+  assertIncludes(postSuccessPhase, 'privacySessionTokenRef.current = null', 'server success clears the privacy token');
+  assertIncludes(postSuccessPhase, "setStep('success')", 'server success remains a success state');
+  assertIncludes(postSuccessPhase, 'await onDeletionPending()', 'local cleanup runs after server success handling');
+  assertIncludes(postSuccessPhase, '} catch {', 'post-success cleanup failure is contained separately');
+  assertExcludes(postSuccessPhase, 'returnToVerificationAfterExpiredSession', 'cleanup failure cannot restore verification state');
+  assertExcludes(postSuccessPhase, "setStep('manual_review')", 'cleanup failure cannot become manual review');
+  assertExcludes(postSuccessPhase, 'Не удалось подтвердить удаление аккаунта', 'cleanup failure cannot claim server erasure failed');
 }
 
 function validateGuestAndPrayerBoundaries() {
@@ -276,6 +335,15 @@ function assertCountAtLeast(value, needle, expected, description) {
   const actual = value.split(needle).length - 1;
   if (actual < expected) {
     fail(`${description}: expected at least ${expected}, got ${actual}`);
+  }
+}
+
+function assertBefore(value, first, second, description) {
+  const firstIndex = value.indexOf(first);
+  const secondIndex = value.indexOf(second);
+
+  if (firstIndex < 0 || secondIndex < 0 || firstIndex >= secondIndex) {
+    fail(`${description}: expected ${JSON.stringify(first)} before ${JSON.stringify(second)}`);
   }
 }
 

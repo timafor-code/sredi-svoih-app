@@ -201,6 +201,8 @@ export function DeleteAccountFlow({
     setIsConfirmingDeletion(true);
     setError(null);
 
+    let deletionPendingConfirmed = false;
+
     try {
       let requestId = requestIdRef.current;
 
@@ -216,13 +218,7 @@ export function DeleteAccountFlow({
         throw new Error('Unexpected privacy erasure lifecycle state.');
       }
 
-      privacySessionTokenRef.current = null;
-      setStep('success');
-      Alert.alert(
-        'Запрос на удаление подтверждён',
-        'Доступ к аккаунту остановлен. Удаление данных будет завершено в соответствии с правилами хранения данных. После завершения вы получите уведомление на email.',
-      );
-      await onDeletionPending();
+      deletionPendingConfirmed = true;
     } catch (deletionError) {
       const codeValue = errorCode(deletionError);
 
@@ -239,6 +235,23 @@ export function DeleteAccountFlow({
     } finally {
       deletionConfirmationActiveRef.current = false;
       setIsConfirmingDeletion(false);
+    }
+
+    if (!deletionPendingConfirmed) {
+      return;
+    }
+
+    privacySessionTokenRef.current = null;
+    setStep('success');
+    Alert.alert(
+      'Запрос на удаление подтверждён',
+      'Доступ к аккаунту остановлен. Удаление данных будет завершено в соответствии с правилами хранения данных. После завершения вы получите уведомление на email.',
+    );
+
+    try {
+      await onDeletionPending();
+    } catch {
+      // The server transition is final; local cleanup/navigation remains best-effort and signed-out.
     }
   }, [onDeletionPending, returnToVerificationAfterExpiredSession]);
 

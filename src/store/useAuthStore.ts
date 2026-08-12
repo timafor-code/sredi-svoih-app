@@ -128,6 +128,24 @@ async function resetGuestCommunityState(isCurrent: OperationIsCurrent): Promise<
   return isCurrent();
 }
 
+async function resetEventPrivateStateAfterAccountDeletion(): Promise<void> {
+  const { useEventsStore } = await import('@/store/useEventsStore');
+
+  useEventsStore.getState().resetPrivateState();
+}
+
+async function resetCommunityContactsAfterAccountDeletion(): Promise<void> {
+  const { useContactsStore } = await import('@/store/useContactsStore');
+
+  useContactsStore.getState().resetCommunityContacts();
+}
+
+async function resetPrayerTrackerMemoryAfterAccountDeletion(): Promise<void> {
+  const { usePrayerTrackerStore } = await import('@/store/usePrayerTrackerStore');
+
+  usePrayerTrackerStore.getState().reset();
+}
+
 async function loadProfileOrCreate(): Promise<Profile | null> {
   const profile = await loadProfileService();
 
@@ -969,30 +987,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   clearLocalSessionAfterAccountDeletion: async () => {
     assertAccountFeaturesAvailable();
 
-    const requestRevision = beginAuthOperation();
-    const isCurrent = authOperationIsCurrent(requestRevision);
+    beginAuthOperation();
 
     set({ loading: true, error: null });
 
-    let cleanupError: unknown = null;
+    const cleanupResults = await Promise.allSettled([
+      clearApiAuthTokens(),
+      resetEventPrivateStateAfterAccountDeletion(),
+      resetCommunityContactsAfterAccountDeletion(),
+      resetPrayerTrackerMemoryAfterAccountDeletion(),
+      clearAvatarReadUrlMemoryCache(),
+    ]);
 
-    try {
-      await clearApiAuthTokens();
-
-      if (!await resetEventPrivateState(isCurrent)) {
-        return;
-      }
-
-      if (!await clearAvatarReadUrlMemoryCacheIfCurrent(isCurrent)) {
-        return;
-      }
-    } catch (error) {
-      cleanupError = error;
-    }
-
-    if (!isCurrent()) {
-      return;
-    }
+    authOperationGuards.invalidateAuthOperations();
 
     set({
       session: null,
@@ -1003,8 +1010,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       error: null,
     });
 
-    if (cleanupError) {
-      throw cleanupError;
+    if (cleanupResults.some((result) => result.status === 'rejected')) {
+      throw new Error('Local account cleanup was only partially completed.');
     }
   },
 
