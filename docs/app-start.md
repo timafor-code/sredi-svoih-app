@@ -1,8 +1,8 @@
-# «Среди Своих» — гостевой старт приложения и последующее включение аккаунтов
+# «Среди Своих» — режимы мобильного доступа и account release
 
-- Версия: 1.1
-- Дата: 9 августа 2026 года
-- Статус: план реализации для согласования
+- Версия: 1.2
+- Дата: 12 августа 2026 года
+- Статус: актуальное release-решение владельца
 - Репозиторий: `timafor-code/sredi-svoih-app`
 - Локальный путь на компьютере владельца: `F:\2026\SS-App\md\app-start.md`
 - Рекомендуемый путь в репозитории: `docs/app-start.md`
@@ -20,15 +20,18 @@
 - Текущий mobile prayer tracker — только API-контур `/me/prayer-logs` и требует пользователя.
 - Город, источник зманим и режим отображения благословений уже сохраняются локально.
 - Нусах и настройки уведомлений сейчас являются частью профиля в БД и без входа полноценно не работают.
-- В текущем `app.json` включён `ios.usesAppleSignIn`; в guest binary этот entitlement нужно убрать. `eas.json` в репозитории сейчас отсутствует.
+- В `app.json` включены `ios.usesAppleSignIn` и plugin `expo-apple-authentication`; для account build эта capability-конфигурация сохраняется, но сама по себе не означает, что Apple Sign-In реализован.
+- Account release получает явные preview/production build-time значения через минимальный `eas.json`; API hostname и secrets в нём не задаются.
 
 Документ продолжает принципы `plan.md` и `webreg.md`: единый источник истины, маленькие сфокусированные PR, строгая privacy boundary, обязательный expected scope, автоматические проверки до commit, ручной smoke владельцем и commit/push агентом без merge.
 
 ## 2. Продуктовое решение
 
-### 2.1. Первый публичный релиз
+Решение владельца от 12 августа 2026 года заменяет ранее запланированный финальный guest-only switch: первый intended mobile release теперь выпускается с существующими email/password аккаунтами и внутренней регистрацией на события. Ветка `release/mobile-guest-only-mode` не была выполнена и не была объединена как финальный release switch.
 
-Первый релиз приложения выпускается в режиме `guest_only`:
+### 2.1. Ранее запланированный guest-only релиз — не выполнен
+
+Изначально первый релиз приложения планировался в режиме `guest_only` со следующими границами:
 
 - на экранах нет логина, пароля, регистрации аккаунта, восстановления пароля и social sign-in;
 - приложение не загружает auth session и не отправляет bearer token;
@@ -40,18 +43,28 @@
 - каталог общины, профиль, invite-коды, «Мои записи», remote push и другие account-only функции скрыты;
 - internal mobile registration на события не предлагает войти в приложение.
 
-Это не «анонимный аккаунт». В guest release вообще не создаётся пользовательская запись и не выполняется скрытая авторизация.
+Этот финальный release switch не был выполнен. При этом `guest_only` остаётся технически поддерживаемым fail-closed режимом capability matrix: отсутствие или неизвестное значение build-time флага по-прежнему не должно включать аккаунт.
 
-### 2.2. Следующий релиз с аккаунтами
+### 2.2. Первый intended release с аккаунтами
 
-В следующей версии после отдельного решения владельца и прохождения legal/hosting gates включается режим `account`:
+Текущий release configuration switch включает уже существующий режим `account`:
 
-- возвращается существующий вход и регистрация;
-- пользователь после входа отдельно выбирает, переносить ли локальные настройки;
-- перед передачей молитвенной истории показывается отдельное информированное подтверждение;
-- отказ от синхронизации не блокирует аккаунт: молитвенный трекер может продолжить работать локально;
-- успешная синхронизация объединяет локальные и серверные записи без дублей;
-- включение аккаунтов требует новой версии приложения и нового binary, а не удалённого переключателя.
+- показываются существующие email/password вход и регистрация;
+- загружается и восстанавливается существующая API session;
+- доступны существующие Profile/onboarding, membership/invite и «Мои записи»;
+- существующая внутренняя account-регистрация на события включается без изменения capacity/payment business logic;
+- публичные события продолжают читаться анонимно;
+- локальные настройки и локальная молитвенная история сохраняются без изменений;
+- вход не запускает автоматическую передачу локальной молитвенной истории.
+
+Account activation задаётся только явной build-time конфигурацией:
+
+```text
+EXPO_PUBLIC_APP_ACCESS_MODE=account
+EXPO_PUBLIC_EVENT_REGISTRATION_MODE=account
+```
+
+Parser не получает account default: при отсутствии или неизвестном значении остаются `guest_only` и `disabled`. Это переключение не реализует guest→account синхронизацию. Account PR 1–3 из ранее описанной upgrade-серии не выполнялись и не должны считаться выполненными; local→server prayer/settings synchronization остаётся отдельной будущей функцией с явным согласием пользователя.
 
 ### 2.3. Регистрация на события — отдельная возможность
 
@@ -60,13 +73,15 @@
 1. создание аккаунта приложения;
 2. регистрация на мероприятие через public web.
 
-Для первого guest release безопасное значение — `disabled`: приложение показывает публичное событие, но не начинает сбор персональных данных и не пишет «нужен вход».
+Для `guest_only` безопасное значение остаётся `disabled`: приложение показывает публичное событие, но не начинает сбор персональных данных и не пишет «нужен вход».
+
+Для текущего account release используется `EXPO_PUBLIC_EVENT_REGISTRATION_MODE=account`: существующий internal mobile registration доступен авторизованному пользователю, а anonymous public event reads сохраняются.
 
 После отдельного подтверждения готовности production public web можно включить `public_web`: кнопка события открывает каноническую веб-страницу, работающую без пароля по правилам `webreg.md`. Это не включает mobile account UI.
 
 ## 3. Матрица возможностей
 
-| Возможность | `guest_only` | `account` после обновления |
+| Возможность | `guest_only` | `account` release |
 | --- | --- | --- |
 | Главная, дата, зманим, календарь | Да, локально | Да |
 | Недельная глава | Да, из Hebcal | Да |
@@ -140,7 +155,7 @@ weekly_content
 
 Карточка показывает преподавателя только при наличии опубликованной записи, соответствующей вычисленной главе. До появления такого источника карточка содержит только название главы.
 
-## 5. Целевая архитектура guest release
+## 5. Целевая архитектура capability modes
 
 ```mermaid
 flowchart TD
@@ -166,7 +181,7 @@ EXPO_PUBLIC_EVENT_REGISTRATION_MODE=disabled | public_web | account
 Правила:
 
 - неизвестное значение в production означает `guest_only` / `disabled`;
-- development может явно использовать `account` для поддержки существующего контура;
+- development и release builds могут явно использовать `account` для существующего контура;
 - production profile обязан задавать значения явно;
 - remote config не используется;
 - UI, routes, API token provider и stores читают одну capability matrix, а не собственные env-проверки;
@@ -186,13 +201,13 @@ Guest boot:
 8. Работать с local prayer provider.
 9. Community contacts не запрашивать; iPhone contacts читать только после системного разрешения.
 
-Account boot после будущего обновления:
+Account boot в текущем release:
 
 1. Инициализировать ту же локальную БД.
 2. Загрузить auth session.
-3. До синхронизации продолжать показывать локальные данные.
-4. После входа выполнить sync discovery и показать выбор пользователю.
-5. Переключить provider только после завершения либо явного отказа.
+3. Продолжать использовать и показывать существующие локальные настройки и молитвенную историю.
+4. Открыть существующие account routes и API-backed account features после авторизации.
+5. Не запускать sync discovery и не загружать локальную молитвенную историю: этот workflow ещё не реализован.
 
 ## 6. Локальное хранение
 
@@ -509,7 +524,16 @@ POST /me/prayer-logs/import
 - [ ] Public web registration остаётся выключенной до отдельного legal/hosting разрешения.
 - [ ] Privacy notice точно объясняет: что хранится только на устройстве, что исчезает при удалении приложения и что может остаться после будущей синхронизации.
 
-До account release:
+До текущего account release:
+
+- [ ] Account mode и internal registration заданы явными build-time значениями.
+- [ ] Existing email/password signup, login и session restoration проверены владельцем.
+- [ ] Profile/onboarding, membership/invite и My registrations проверены владельцем.
+- [ ] Public events продолжают загружаться без входа.
+- [ ] В UI нет встроенного development invite-кода.
+- [ ] Вход и выход не удаляют и не загружают local prayer history.
+
+До будущего local→server prayer/settings sync, который не входит в текущий account release:
 
 - [ ] Выполнены актуальные legal и hosting gates по ПД РФ.
 - [ ] Sync требует явного подтверждения prayer upload.
@@ -928,6 +952,8 @@ docs/app-start.md
 
 Цель: финально включить `guest_only` и `disabled` для первой production build.
 
+Статус: не выполнен как финальный release switch; решение заменено текущим account-enabled release.
+
 Do:
 
 - изменить только release configuration/version/privacy copy/checklist;
@@ -954,6 +980,8 @@ docs/app-start.md
 ## 11. Серия PR для следующей версии с аккаунтами
 
 Эта серия начинается только после отдельного решения владельца.
+
+Историческая последовательность ниже не описывает фактически выполненную работу: Account PR 1–3 не были реализованы. Текущий `release/mobile-account-mode` является только configuration switch для уже существующих account возможностей и не включает local-data sync. Будущая синхронизация должна получить отдельную новую серию PR и явное согласие пользователя.
 
 ### Account PR 1 — `feature/api-prayer-local-import-contract`
 
@@ -1206,7 +1234,7 @@ git diff --cached --name-only | ForEach-Object { Select-String -Path $_ -Pattern
 - [ ] Key отсутствует в JS bundle, env output и logs.
 - [ ] При симуляции потери key данные не стираются без подтверждения.
 
-## 15. Критерии готовности
+## 15. Критерии готовности исторического guest-only плана
 
 Guest release готов, когда одновременно выполнено:
 
@@ -1225,14 +1253,14 @@ Owner manual smoke пройден на fresh install и upgrade.
 Rollback зафиксирован.
 ```
 
-Account release готов только после отдельной серии PR, явного решения владельца и проверки upgrade/sync/erasure сценариев.
+Текущий account release готов после автоматических configuration checks и ручной проверки владельцем по `docs/mobile-account-release-checklist.md`. Готовность account mode не означает готовность guest local-data sync; sync/consent/merge/erasure сценарии остаются отдельной будущей функцией.
 
 ## 16. Решения, принятые этим документом
 
-1. Первый App Store release — `guest_only`.
-2. Account UI сохраняется в codebase, но исключается из production surface.
-3. Remote toggle для включения аккаунтов запрещён; нужна новая версия приложения.
-4. Internal event registration выключена независимо от просмотра событий.
+1. Первый intended mobile release — `account`, а ранее запланированный финальный `guest_only` switch не выполнен.
+2. `guest_only` сохраняется как технически поддерживаемый fail-closed capability mode.
+3. Account UI включается явными build-time значениями, а не remote toggle или parser default.
+4. В account release включена существующая internal event registration; anonymous public event reads сохраняются.
 5. Все preferences в guest mode являются device-local.
 6. Prayer tracker хранится в local encrypted database.
 7. SQLCipher production smoke требует EAS development build/TestFlight.

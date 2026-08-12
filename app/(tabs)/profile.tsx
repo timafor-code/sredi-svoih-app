@@ -470,14 +470,13 @@ function AccountProfileScreen() {
                 label="Invite-код"
                 value={inviteCode}
                 onChangeText={setInviteCode}
-                placeholder="DEV-SREDI-2026"
+                placeholder="Введите код приглашения"
               />
               <PrimaryButton
                 title={isAcceptingInvite ? 'Проверяем...' : 'Принять приглашение'}
                 disabled={isAcceptingInvite}
                 onPress={handleAcceptInvite}
               />
-              <Text style={styles.helperText}>Тестовый код: DEV-SREDI-2026</Text>
               {inviteError ? <Text style={styles.errorText}>{inviteError}</Text> : null}
             </View>
           ) : (
@@ -842,11 +841,6 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     fontSize: 13,
     lineHeight: 18,
-  },
-  helperText: {
-    color: colors.textGhost,
-    fontSize: 12,
-    lineHeight: 17,
   },
   errorText: {
     color: colors.danger,

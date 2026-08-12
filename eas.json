@@ -1,0 +1,16 @@
+{
+  "build": {
+    "preview": {
+      "env": {
+        "EXPO_PUBLIC_APP_ACCESS_MODE": "account",
+        "EXPO_PUBLIC_EVENT_REGISTRATION_MODE": "account"
+      }
+    },
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_APP_ACCESS_MODE": "account",
+        "EXPO_PUBLIC_EVENT_REGISTRATION_MODE": "account"
+      }
+    }
+  }
+}
