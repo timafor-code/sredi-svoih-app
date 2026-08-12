@@ -29,15 +29,18 @@ def normalize_email(value: str) -> str:
     return f"{local.lower()}@{ascii_domain}"
 
 
-def normalize_russian_phone(value: str) -> str:
+def normalize_international_phone(value: str) -> str:
     compact = re.sub(r"[\s()\-]", "", value.strip())
-    if compact.startswith("+7") and re.fullmatch(r"\+7\d{10}", compact):
-        return compact
-    if compact.startswith("8") and re.fullmatch(r"8\d{10}", compact):
-        return "+7" + compact[1:]
-    if compact.startswith("7") and re.fullmatch(r"7\d{10}", compact):
-        return "+" + compact
-    raise ValueError("invalid Russian phone")
+    if compact.startswith("00"):
+        compact = "+" + compact[2:]
+    elif re.fullmatch(r"8\d{10}", compact):
+        compact = "+7" + compact[1:]
+    elif re.fullmatch(r"7\d{10}", compact):
+        compact = "+" + compact
+
+    if not re.fullmatch(r"\+[1-9]\d{6,14}", compact):
+        raise ValueError("invalid international phone")
+    return compact
 
 
 def normalize_name(value: str) -> str:
@@ -92,7 +95,7 @@ class WebRegistrationIntentRequest(BaseModel):
     @field_validator("phone")
     @classmethod
     def validate_phone(cls, value: str) -> str:
-        return normalize_russian_phone(value)
+        return normalize_international_phone(value)
 
     @field_validator("first_name", "last_name")
     @classmethod

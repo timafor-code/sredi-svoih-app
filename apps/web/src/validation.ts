@@ -1,3 +1,5 @@
+import { normalizeInternationalPhone } from "./phone";
+
 export type PersonalField = "firstName" | "lastName" | "phone" | "email";
 export type PersonalErrors = Partial<Record<PersonalField, string>>;
 
@@ -25,20 +27,17 @@ export function validateName(value: string): string | null {
   return null;
 }
 
-export function normalizeRussianPhone(value: string): string | null {
-  const compact = value.trim().replace(/[\s()\-]/g, "");
-  if (/^\+7\d{10}$/.test(compact)) return compact;
-  if (/^8\d{10}$/.test(compact)) return `+7${compact.slice(1)}`;
-  if (/^7\d{10}$/.test(compact)) return `+${compact}`;
+export function validatePhone(value: string): string | null {
+  if (!value.trim()) return "Введите телефон.";
+  if (!normalizeInternationalPhone(value)) {
+    return "Введите корректный номер телефона с кодом страны";
+  }
   return null;
 }
 
-export function validatePhone(value: string): string | null {
-  if (!value.trim()) return "Введите телефон.";
-  if (!normalizeRussianPhone(value)) {
-    return "Введите российский номер в формате +7XXXXXXXXXX или 8XXXXXXXXXX.";
-  }
-  return null;
+export function normalizeRussianPhone(value: string): string | null {
+  const normalized = normalizeInternationalPhone(value);
+  return normalized?.startsWith("+7") ? normalized : null;
 }
 
 export function validateEmail(value: string): string | null {

@@ -184,6 +184,32 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValidationError):
                 self.payload(**update)
 
+    def test_phone_boundary_normalizes_international_and_legacy_values(self) -> None:
+        cases = (
+            ("+7 900 000-00-01", "+79000000001"),
+            ("8 (900) 000-00-01", "+79000000001"),
+            ("7 900 000 00 01", "+79000000001"),
+            ("+44 7400 123456", "+447400123456"),
+            ("0044 (7400) 123-456", "+447400123456"),
+            ("+972 50 123 4567", "+972501234567"),
+        )
+        for value, expected in cases:
+            with self.subTest(value=value):
+                self.assertEqual(self.payload(phone=value).phone, expected)
+
+    def test_phone_boundary_rejects_malformed_e164_values(self) -> None:
+        for value in (
+            "+",
+            "+0123456789",
+            "+123",
+            "+1234567890123456",
+            "+44CALLME",
+            "0044",
+            "447400123456",
+        ):
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                self.payload(phone=value)
+
     async def test_idempotency_and_failed_retry_outcomes(self) -> None:
         payload = self.payload(idempotency_key="stable-test-key")
         async with AsyncSessionLocal() as session:
