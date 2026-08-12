@@ -38,7 +38,10 @@ type EventsState = {
   loadEvents: () => Promise<void>;
   loadEventById: (eventId: string, options?: LoadEventOptions) => Promise<EventItem | null>;
   loadMyRegistrations: () => Promise<void>;
-  registerForEvent: (eventId: string) => Promise<EventRegistration>;
+  registerForEvent: (
+    eventId: string,
+    occurrenceId?: string | null,
+  ) => Promise<EventRegistration>;
   registerForPaidEventSimulated: (
     input: RegisterForPaidEventSimulatedInput,
   ) => Promise<EventRegistration>;
@@ -561,7 +564,7 @@ export const useEventsStore = create<EventsState>((set, get) => ({
     }
   },
 
-  registerForEvent: async (eventId: string) => {
+  registerForEvent: async (eventId: string, occurrenceId?: string | null) => {
     const requestedUser = getCurrentAuthUser();
 
     if (!requestedUser) {
@@ -570,12 +573,13 @@ export const useEventsStore = create<EventsState>((set, get) => ({
 
     const requestedUserId = requestedUser.id;
     const currentState = get();
-    const existingRegistration = findRegistrationForEvent(
+    const existingRegistration = findActiveRegistrationForTarget(
       currentState.myRegistrationsUserId === requestedUserId ? currentState.myRegistrations : [],
       eventId,
+      occurrenceId,
     );
 
-    if (isActiveEventRegistration(existingRegistration)) {
+    if (existingRegistration) {
       return existingRegistration;
     }
 
@@ -586,7 +590,10 @@ export const useEventsStore = create<EventsState>((set, get) => ({
     }));
 
     try {
-      const registration = await registerForEventService(eventId, 1, null);
+      const registration = await registerForEventService({
+        eventId,
+        occurrenceId,
+      });
       const currentUser = getCurrentAuthUser();
 
       if (!currentUser || currentUser.id !== requestedUserId) {

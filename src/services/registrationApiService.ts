@@ -26,6 +26,13 @@ type RegisterForPaidEventSimulatedInput = {
   comment?: string | null;
 };
 
+type RegisterForFreeEventInput = {
+  eventId: string;
+  occurrenceId?: string | null;
+  seatsCount?: number;
+  comment?: string | null;
+};
+
 type RegistrationApiAction = 'register' | 'cancel' | 'list';
 
 const REGISTRATION_STATUSES: EventRegistrationStatus[] = [
@@ -265,13 +272,12 @@ async function postRegistration(
 }
 
 export async function registerForEvent(
-  eventId: string,
-  seatsCount = 1,
-  comment?: string | null,
+  input: RegisterForFreeEventInput,
 ): Promise<EventRegistration> {
-  return withRegistrationApiErrors('register', () => postRegistration(eventId, {
-    seats_count: seatsCount,
-    comment: comment ?? null,
+  return withRegistrationApiErrors('register', () => postRegistration(input.eventId, {
+    occurrence_id: input.occurrenceId ?? null,
+    seats_count: input.seatsCount ?? 1,
+    comment: input.comment ?? null,
   }));
 }
 
