@@ -1015,6 +1015,35 @@ describe("local form shell", () => {
     expect(alert).not.toHaveTextContent("email exists");
   });
 
+  it("shows the incomplete-account path when /auth/me has no profile", async () => {
+    const user = userEvent.setup();
+    await renderEvent();
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response({
+        access_token: "temporary-access-token",
+        refresh_token: "temporary-refresh-token",
+        token_type: "bearer",
+        expires_at: EXPIRES_AT,
+        user: {},
+      }))
+      .mockImplementationOnce(() => response({
+        user: { email: "ivan@example.ru", email_verified_at: EXPIRES_AT },
+        profile: null,
+        memberships: [],
+      }))
+      .mockImplementationOnce(() => response({ ok: true }));
+    await user.click(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" }));
+    await user.type(screen.getByLabelText("Email", { selector: "#login-email" }), "ivan@example.ru");
+    await user.type(screen.getByLabelText("Пароль"), "secret-password");
+    await user.click(screen.getByRole("button", { name: "Войти" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("В аккаунте не заполнены данные, необходимые для регистрации. Вы можете продолжить регистрацию без входа.");
+    expect(alert).not.toHaveTextContent("Не удалось войти");
+    expect(screen.getByRole("button", { name: "Отмена" })).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(4);
+  });
+
   it.each([
     ["Продолжить без пароля", "without_password"],
     ["Создать аккаунт", "create_account"],

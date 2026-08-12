@@ -568,11 +568,13 @@ function isTemporaryAuthTokens(value: unknown): value is TemporaryAuthTokens {
 
 function isExistingAccountMe(value: unknown): value is {
   user: { email: string | null; email_verified_at: string | null };
-  profile: { first_name: string | null; last_name: string | null; phone: string | null };
+  profile: { first_name: string | null; last_name: string | null; phone: string | null } | null;
 } {
-  if (!isRecord(value) || !isRecord(value.user) || !isRecord(value.profile)) return false;
-  return (value.user.email === null || typeof value.user.email === "string")
-    && (value.user.email_verified_at === null || typeof value.user.email_verified_at === "string")
+  if (!isRecord(value) || !isRecord(value.user)) return false;
+  const validUser = (value.user.email === null || typeof value.user.email === "string")
+    && (value.user.email_verified_at === null || typeof value.user.email_verified_at === "string");
+  if (!validUser || value.profile === null) return validUser && value.profile === null;
+  return isRecord(value.profile)
     && (value.profile.first_name === null || typeof value.profile.first_name === "string")
     && (value.profile.last_name === null || typeof value.profile.last_name === "string")
     && (value.profile.phone === null || typeof value.profile.phone === "string");
@@ -629,9 +631,9 @@ export async function getExistingAccount(accessToken: string): Promise<ExistingA
   return {
     email: result.user.email ?? "",
     email_verified_at: result.user.email_verified_at,
-    first_name: result.profile.first_name ?? "",
-    last_name: result.profile.last_name ?? "",
-    phone: result.profile.phone ?? "",
+    first_name: result.profile?.first_name ?? "",
+    last_name: result.profile?.last_name ?? "",
+    phone: result.profile?.phone ?? "",
   };
 }
 

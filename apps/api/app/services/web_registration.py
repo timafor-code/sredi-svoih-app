@@ -754,7 +754,11 @@ async def create_intent(
             option_payload=[
                 item.model_dump(mode="json") for item in payload.option_selections
             ],
-            answer_payload=normalized_answers,
+            answer_payload=(
+                normalized_answers
+                if intent_status in {EMAIL_REQUIRED, CONFIRMED}
+                else None
+            ),
             legal_acceptance_payload=[
                 item.model_dump(mode="json") for item in payload.legal_acceptances
             ],

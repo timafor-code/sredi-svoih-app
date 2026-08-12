@@ -94,6 +94,25 @@ describe("public event API", () => {
     }));
   });
 
+  it("accepts a canonical /auth/me response with no profile as incomplete identity", async () => {
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse({
+      user: { email: "ivan@example.invalid", email_verified_at: EXPIRES_AT },
+      profile: null,
+      memberships: [],
+    }));
+
+    await expect(getExistingAccount("temporary-access")).resolves.toEqual({
+      email: "ivan@example.invalid",
+      email_verified_at: EXPIRES_AT,
+      first_name: "",
+      last_name: "",
+      phone: "",
+    });
+    expect(fetch).toHaveBeenCalledWith("/api/auth/me", expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: "Bearer temporary-access" }),
+    }));
+  });
+
   it("uses the slug endpoint without credentials", async () => {
     vi.mocked(fetch).mockImplementation(() => fetchResponse(envelope(eventResponse())));
     await getWebEventRegistrationForm(SLUG_REFERENCE);

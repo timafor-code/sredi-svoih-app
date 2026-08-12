@@ -361,6 +361,32 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
             conflict = await session.scalar(select(WebRegistrationIdentityConflict).where(WebRegistrationIdentityConflict.email_user_id == email_user.id))
             self.assertEqual((conflict.email_user_id, conflict.phone_user_id), (email_user.id, phone_user.id))
 
+    async def test_failed_identity_conflict_does_not_retain_questionnaire_answers(self) -> None:
+        phone_user = await self._add_user(
+            "intent-questionnaire-conflict@example.invalid",
+            "+79000000013",
+        )
+        form_id, field_ids = await self._add_questionnaire()
+        await self._assert_http_error(
+            409,
+            "identity_confirmation_unavailable",
+            email="intent-questionnaire-submitted@example.invalid",
+            phone=phone_user.phone,
+            questionnaire_form_id=form_id,
+            answers=self._valid_answers(field_ids),
+            idempotency_key="questionnaire-conflict-key",
+        )
+        async with AsyncSessionLocal() as session:
+            intent = await session.scalar(
+                select(WebRegistrationIntent).where(
+                    WebRegistrationIntent.idempotency_key_hash
+                    == service._idempotency_hash("questionnaire-conflict-key"),
+                ),
+            )
+        self.assertIsNotNone(intent)
+        self.assertEqual(intent.status, "failed")
+        self.assertIsNone(intent.answer_payload)
+
     async def test_deletion_pending_stores_no_intent_conflict_or_submitted_pii(self) -> None:
         deleting = await self._add_user("intent-deleting@example.invalid", "+79000000022", status="deletion_pending", deletion_requested_at=self.now)
         submitted_email = "intent-not-stored@example.invalid"
