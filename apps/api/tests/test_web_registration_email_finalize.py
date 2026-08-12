@@ -726,47 +726,45 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                 session.add(option)
                 await session.flush()
 
-        settings = Settings(api_public_web_paid_registration_enabled=True)
-        with patch("app.services.events.get_settings", return_value=settings):
-            created, code = await self.create(
-                self.payload(
-                    seats_count=2,
-                    option_selections=[{"option_id": option.id, "quantity": 2}],
-                    idempotency_key="web-finalize-paid-server-snapshot",
+        created, code = await self.create(
+            self.payload(
+                seats_count=2,
+                option_selections=[{"option_id": option.id, "quantity": 2}],
+                idempotency_key="web-finalize-paid-server-snapshot",
+            ),
+        )
+        async with AsyncSessionLocal() as session:
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(EventRegistration)
+                    .where(EventRegistration.event_id == self.event_id),
                 ),
+                0,
             )
-            async with AsyncSessionLocal() as session:
-                self.assertEqual(
-                    await session.scalar(
-                        select(func.count())
-                        .select_from(EventRegistration)
-                        .where(EventRegistration.event_id == self.event_id),
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(EventRegistrationCapacityReservation)
+                    .where(
+                        EventRegistrationCapacityReservation.event_id
+                        == self.event_id,
                     ),
-                    0,
-                )
-                self.assertEqual(
-                    await session.scalar(
-                        select(func.count())
-                        .select_from(EventRegistrationCapacityReservation)
-                        .where(
-                            EventRegistrationCapacityReservation.event_id
-                            == self.event_id,
-                        ),
-                    ),
-                    0,
-                )
-                stored_option = await session.get(EventParticipationOption, option.id)
-                assert stored_option is not None
-                stored_option.price_amount = 1750
-                await session.commit()
+                ),
+                0,
+            )
+            stored_option = await session.get(EventParticipationOption, option.id)
+            assert stored_option is not None
+            stored_option.price_amount = 1750
+            await session.commit()
 
-            async with AsyncSessionLocal() as session:
-                result = await service.confirm_email(
-                    session,
-                    created.flow_id,
-                    code,
-                    "192.0.2.52",
-                )
+        async with AsyncSessionLocal() as session:
+            result = await service.confirm_email(
+                session,
+                created.flow_id,
+                code,
+                "192.0.2.52",
+            )
 
         self.assertEqual(result.registration.status, "pending")
         self.assertEqual(result.registration.payment_status, "pending")

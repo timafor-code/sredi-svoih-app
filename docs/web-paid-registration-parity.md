@@ -14,9 +14,9 @@ payment or claim that payment has completed.
   capacity-display semantics.
 - PR #379, totals (PR 3): completed browser display totals, seat totals, and
   mixed-currency fail-closed behavior.
-- PR #380, gated backend activation (PR 4): completed enumeration-safe,
-  default-off `internal_paid` publication, intent, email confirmation, and
-  canonical `pending/pending` finalization.
+- PR #380, initial backend activation (PR 4): completed enumeration-safe
+  `internal_paid` publication, intent, email confirmation, and canonical
+  `pending/pending` finalization.
 - `test/web-mobile-registration-parity` (PR 5): adds the aggregate automated
   parity guard and final documentation and owner checklist, completing the
   series without new product behavior.
@@ -30,9 +30,7 @@ admin registration operations layout.
 | Contract | Availability and options | Quantity, capacity, and money | Confirmation result |
 | --- | --- | --- | --- |
 | `internal_free` | Public form supported; free option supported; paid and donation options excluded by the free-only contract | Existing free option and seat behavior remains unchanged | Existing email-confirmed success behavior remains unchanged |
-| `internal_paid` | Public form supported only behind the backend gate; paid options, canonically allowed free participation, and donation are supported | Quantity and `group_key` are supported; donation and `counts_toward_capacity=false` options do not occupy seats; price/currency and snapshots are server-calculated | `registration.status=pending` and `payment_status=pending` |
-| gate `false` | Paid public form is enumeration-safe unavailable | Production default; free events are unaffected | No paid public flow begins |
-| gate `true` | Paid public form is available in an allowed environment | Canonical paid validation and confirmation apply | Email verification remains mandatory before `pending/pending` registration creation |
+| `internal_paid` | Public form is supported simultaneously with `internal_free`; paid options, canonically allowed free participation, and donation are supported | Quantity and `group_key` are supported; donation and `counts_toward_capacity=false` options do not occupy seats; price/currency and snapshots are server-calculated | `registration.status=pending` and `payment_status=pending` |
 
 Mixed selected currencies fail closed: the browser blocks submission, the
 backend rejects canonical validation, and aggregation never combines different
@@ -60,9 +58,9 @@ duplicate registrations.
 ## Local E2E support
 
 PR #381 provides Mailpit for local development while retaining the real SMTP
-delivery path. Verification is not bypassed. Local/test environments may enable
-the paid gate with an environment override; the production default remains
-`false`. This parity closure makes no infrastructure changes.
+delivery path. Verification is not bypassed. An ordinary Docker Compose API
+start supports `internal_free` and `internal_paid` at the same time, without an
+environment override.
 
 ## Automated parity guard
 
@@ -72,7 +70,8 @@ The canonical regression command is:
 npm run check:web-registration-parity
 ```
 
-It verifies the default-off backend gate, runs the focused public-web Vitest
+It verifies permanent backend support for both registration modes and the full
+removal of the obsolete startup identifiers, runs the focused public-web Vitest
 suites, and runs the focused backend publication, intent, and email-finalization
 pytest suites through the repository-local Docker stack. It does not open a
 browser or run browser, Expo, iPhone, or manual smoke.
@@ -90,13 +89,7 @@ the pushed PR branch.
 - [ ] email verification works;
 - [ ] registration confirms as before.
 
-### Paid event, gate=false
-
-- [ ] paid public form remains unavailable;
-- [ ] behavior remains enumeration-safe;
-- [ ] free events are unaffected.
-
-### Paid event, gate=true in local/test
+### Paid event after the same ordinary API start
 
 - [ ] paid options visible;
 - [ ] type chips correct;
@@ -112,6 +105,7 @@ the pushed PR branch.
 - [ ] server result is `pending/pending`;
 - [ ] retry/replay does not create duplicate registration;
 - [ ] capacity race is rejected by backend.
+- [ ] free and paid public links remain available simultaneously.
 
 ## Future payment-provider boundary
 

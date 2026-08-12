@@ -12,7 +12,6 @@ from sqlalchemy import and_, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.core.config import get_settings
 from app.db.models.core import (
     AppUser,
     CommunityMembership,
@@ -52,6 +51,10 @@ OCCURRENCE_VISIBLE_STATUS = "active"
 WEB_REGISTRATION_VISIBILITIES = ("unlisted", "listed")
 FREE_WEB_REGISTRATION_MODE = "internal_free"
 PAID_WEB_REGISTRATION_MODE = "internal_paid"
+WEB_REGISTRATION_MODES = (
+    FREE_WEB_REGISTRATION_MODE,
+    PAID_WEB_REGISTRATION_MODE,
+)
 CAPACITY_REGISTRATION_STATUSES = ("confirmed", "pending", "waitlisted")
 
 DEFAULT_PAGE_LIMIT = 50
@@ -97,15 +100,9 @@ def is_web_registration_available(event: Event) -> bool:
     return (
         event.status == PUBLISHED_STATUS
         and event.visibility == PUBLIC_VISIBILITY
-        and event.registration_mode in _available_web_registration_modes()
+        and event.registration_mode in WEB_REGISTRATION_MODES
         and event.web_visibility in WEB_REGISTRATION_VISIBILITIES
     )
-
-
-def _available_web_registration_modes() -> tuple[str, ...]:
-    if get_settings().api_public_web_paid_registration_enabled:
-        return (FREE_WEB_REGISTRATION_MODE, PAID_WEB_REGISTRATION_MODE)
-    return (FREE_WEB_REGISTRATION_MODE,)
 
 
 async def require_web_registration_event(
@@ -118,7 +115,7 @@ async def require_web_registration_event(
         Event.id == event_id,
         Event.status == PUBLISHED_STATUS,
         Event.visibility == PUBLIC_VISIBILITY,
-        Event.registration_mode.in_(_available_web_registration_modes()),
+        Event.registration_mode.in_(WEB_REGISTRATION_MODES),
         Event.web_visibility.in_(WEB_REGISTRATION_VISIBILITIES),
     )
     if for_update:

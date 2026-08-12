@@ -43,24 +43,60 @@ function runStep(name, command, args) {
   console.log(`[web-registration-parity] Passed: ${name}`);
 }
 
-console.log('\n[web-registration-parity] Running production paid-gate default');
-const configSource = readFileSync(
-  path.join(repositoryRoot, 'apps', 'api', 'app', 'core', 'config.py'),
+console.log('\n[web-registration-parity] Running permanent backend mode support');
+const eventsSource = readFileSync(
+  path.join(repositoryRoot, 'apps', 'api', 'app', 'services', 'events.py'),
   'utf8',
 );
-if (
-  !/api_public_web_paid_registration_enabled\s*:\s*bool\s*=\s*False\b/.test(
-    configSource,
-  )
-) {
+
+const removedIdentifiers = [
+  ['API_PUBLIC_WEB_PAID_', 'REGISTRATION_ENABLED'].join(''),
+  ['api_public_web_paid_', 'registration_enabled'].join(''),
+];
+for (const identifier of removedIdentifiers) {
+  const result = spawnSync(
+    'git',
+    ['grep', '-n', '--fixed-strings', identifier, '--', '.'],
+    {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+    },
+  );
+  if (result.error || (result.status !== 0 && result.status !== 1)) {
+    console.error(
+      `[web-registration-parity] Failed to scan for removed identifier: ${identifier}`,
+    );
+    process.exit(result.status ?? 1);
+  }
+  if (result.status === 0) {
+    console.error(result.stdout.trim());
+    console.error(
+      `[web-registration-parity] Failed: removed identifier is still present: ${identifier}`,
+    );
+    process.exit(1);
+  }
+}
+
+const permanentModes =
+  /WEB_REGISTRATION_MODES\s*=\s*\(\s*FREE_WEB_REGISTRATION_MODE,\s*PAID_WEB_REGISTRATION_MODE,\s*\)/s;
+const dynamicModeHelper = ['_available_web_', 'registration_modes'].join('');
+if (!permanentModes.test(eventsSource)) {
   console.error(
-    '[web-registration-parity] Failed: production paid-gate default is not false.',
+    '[web-registration-parity] Failed: backend modes do not permanently include internal_free and internal_paid.',
   );
   process.exit(1);
 }
-console.log(
-  '[web-registration-parity] Passed: production paid-gate default remains false',
-);
+if (
+  eventsSource.includes(dynamicModeHelper) ||
+  !/event\.registration_mode in WEB_REGISTRATION_MODES/.test(eventsSource) ||
+  !/Event\.registration_mode\.in_\(WEB_REGISTRATION_MODES\)/.test(eventsSource)
+) {
+  console.error(
+    '[web-registration-parity] Failed: public availability checks do not share the permanent mode list.',
+  );
+  process.exit(1);
+}
+console.log('[web-registration-parity] Passed: both backend modes are always enabled');
 
 runStep(
   'public web option, totals, currency, request, and result regressions',
