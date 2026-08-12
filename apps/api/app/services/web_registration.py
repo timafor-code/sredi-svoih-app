@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from pydantic import ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -625,7 +626,43 @@ async def create_intent(
     session: AsyncSession,
     payload: WebRegistrationIntentRequest,
     ip: str | None,
+    *,
+    current_user: AppUser | None = None,
 ) -> WebRegistrationIntentCreated:
+    if current_user is not None:
+        profile = await session.scalar(
+            select(Profile).where(Profile.user_id == current_user.id),
+        )
+        if (
+            profile is None
+            or not current_user.email
+            or not profile.first_name
+            or not profile.last_name
+            or not profile.phone
+        ):
+            raise _error(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "incomplete_account_profile",
+                "Account profile is incomplete",
+            )
+        try:
+            payload = WebRegistrationIntentRequest.model_validate(
+                {
+                    **payload.model_dump(mode="json"),
+                    "first_name": profile.first_name,
+                    "last_name": profile.last_name,
+                    "phone": profile.phone,
+                    "email": current_user.email,
+                    "account_choice": "without_password",
+                },
+            )
+        except ValidationError:
+            raise _error(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "incomplete_account_profile",
+                "Account profile is incomplete",
+            ) from None
+
     key_hash = _idempotency_hash(payload.idempotency_key)
     fingerprint = _fingerprint(payload)
     flow_id = _flow_id(key_hash)
@@ -635,6 +672,12 @@ async def create_intent(
         ),
     )
     if existing is not None:
+        if current_user is not None and existing.matched_user_id != current_user.id:
+            raise _error(
+                status.HTTP_409_CONFLICT,
+                "idempotency_conflict",
+                "Idempotency key cannot be reused",
+            )
         if existing.request_fingerprint_hash != fingerprint:
             raise _error(
                 status.HTTP_409_CONFLICT,
@@ -680,10 +723,19 @@ async def create_intent(
                 ),
             )
         )
-        intent_status, matched_user_id, conflict_users = await _identity_state(
-            session,
-            payload,
-        )
+        if current_user is not None:
+            intent_status = (
+                CONFIRMED
+                if current_user.email_verified_at is not None
+                else EMAIL_REQUIRED
+            )
+            matched_user_id = current_user.id
+            conflict_users = None
+        else:
+            intent_status, matched_user_id, conflict_users = await _identity_state(
+                session,
+                payload,
+            )
         if intent_status == "deletion_pending":
             await session.rollback()
             raise _identity_unavailable()
@@ -702,9 +754,7 @@ async def create_intent(
             option_payload=[
                 item.model_dump(mode="json") for item in payload.option_selections
             ],
-            answer_payload=(
-                normalized_answers if intent_status == EMAIL_REQUIRED else None
-            ),
+            answer_payload=normalized_answers,
             legal_acceptance_payload=[
                 item.model_dump(mode="json") for item in payload.legal_acceptances
             ],
@@ -719,6 +769,31 @@ async def create_intent(
         session.add(intent)
         try:
             await session.flush()
+            if current_user is not None and intent_status == CONFIRMED:
+                registration = await registrations_service.register_user_for_event(
+                    session,
+                    user=current_user,
+                    event_id=intent.event_id,
+                    payload=_registration_payload(intent),
+                    source_channel="public_web",
+                    member_community_ids=(),
+                )
+                await _create_legal_acceptances(
+                    session,
+                    intent=intent,
+                    user=current_user,
+                    registration=registration,
+                    now=now,
+                )
+                await _create_questionnaire_answers(
+                    session,
+                    intent=intent,
+                    event=event,
+                    registration=registration,
+                    now=now,
+                )
+                intent.confirmed_at = now
+                intent.answer_payload = None
             if conflict_users:
                 session.add(
                     WebRegistrationIdentityConflict(
@@ -1029,9 +1104,17 @@ async def _create_legal_acceptances(
                 registration_id=registration.id,
                 legal_document_id=document.id,
                 accepted_at=now,
-                acceptance_method="checkbox_plus_email_verification",
+                acceptance_method=(
+                    "authenticated_action"
+                    if intent.status == CONFIRMED
+                    else "checkbox_plus_email_verification"
+                ),
                 source_channel="public_web",
-                evidence_version="web-registration-email-code-v1",
+                evidence_version=(
+                    "web-registration-authenticated-v1"
+                    if intent.status == CONFIRMED
+                    else "web-registration-email-code-v1"
+                ),
             ),
         )
 

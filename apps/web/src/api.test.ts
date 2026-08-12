@@ -3,10 +3,13 @@ import {
   confirmSetPassword,
   confirmWebRegistrationEmail,
   createWebRegistrationIntent,
+  getExistingAccount,
   getWebEventRegistrationForm,
   getWebRegistrationIntentStatus,
   isSafePublicUrl,
   PublicApiError,
+  loginExistingAccount,
+  logoutExistingAccount,
   requestSetPassword,
   resendWebRegistrationCode,
 } from "./api";
@@ -51,6 +54,44 @@ describe("public event API", () => {
         headers: { Accept: "application/json" },
       }),
     );
+  });
+
+  it("uses canonical temporary auth endpoints without browser credentials", async () => {
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => fetchResponse({
+        access_token: "temporary-access",
+        refresh_token: "temporary-refresh",
+        token_type: "bearer",
+        expires_at: EXPIRES_AT,
+        user: {},
+      }))
+      .mockImplementationOnce(() => fetchResponse({
+        user: { email: "ivan@example.invalid", email_verified_at: EXPIRES_AT },
+        profile: { first_name: "Иван", last_name: "Иванов", phone: "+79000000001" },
+        memberships: [],
+      }))
+      .mockImplementationOnce(() => fetchResponse({ ok: true }));
+
+    const tokens = await loginExistingAccount("ivan@example.invalid", "secret-password");
+    await expect(getExistingAccount(tokens.access_token)).resolves.toMatchObject({
+      email: "ivan@example.invalid",
+      first_name: "Иван",
+    });
+    await logoutExistingAccount(tokens.refresh_token);
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "/api/auth/login", expect.objectContaining({
+      method: "POST",
+      credentials: "omit",
+      body: JSON.stringify({ email: "ivan@example.invalid", password: "secret-password", device_name: "Public web registration" }),
+    }));
+    expect(fetch).toHaveBeenNthCalledWith(2, "/api/auth/me", expect.objectContaining({
+      method: "GET",
+      credentials: "omit",
+      headers: expect.objectContaining({ Authorization: "Bearer temporary-access" }),
+    }));
+    expect(fetch).toHaveBeenNthCalledWith(3, "/api/auth/logout", expect.objectContaining({
+      body: JSON.stringify({ refresh_token: "temporary-refresh" }),
+    }));
   });
 
   it("uses the slug endpoint without credentials", async () => {

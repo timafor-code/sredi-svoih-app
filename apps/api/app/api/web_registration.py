@@ -5,6 +5,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.authorization import get_optional_current_user
+from app.db.models.core import AppUser
 from app.db.session import get_db_session
 from app.schemas.common import ApiResponse
 from app.schemas.web_registration import (
@@ -16,9 +18,11 @@ from app.schemas.web_registration import (
     WebRegistrationResendResult,
 )
 from app.services import web_registration as service
+from app.services.authorization import AuthenticationRequiredError
 
 router = APIRouter(prefix="/web/registration-intents", tags=["web-registration"])
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
+OptionalCurrentUser = Annotated[AppUser | None, Depends(get_optional_current_user)]
 
 
 @router.post("", response_model=ApiResponse[WebRegistrationIntentCreated], status_code=status.HTTP_201_CREATED)
@@ -26,8 +30,16 @@ async def create_registration_intent(
     payload: WebRegistrationIntentRequest,
     session: DbSession,
     request: Request,
+    current_user: OptionalCurrentUser,
 ) -> ApiResponse[WebRegistrationIntentCreated]:
-    result = await service.create_intent(session, payload, request.client.host if request.client else None)
+    if request.headers.get("authorization") and current_user is None:
+        raise AuthenticationRequiredError("Invalid access token")
+    result = await service.create_intent(
+        session,
+        payload,
+        request.client.host if request.client else None,
+        current_user=current_user,
+    )
     return ApiResponse[WebRegistrationIntentCreated](data=result)
 
 

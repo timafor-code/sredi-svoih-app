@@ -18,6 +18,7 @@ import type {
   WebRegistrationMode,
   WebRegistrationState,
 } from "./types";
+import type { ExistingAccountIdentity, TemporaryAuthTokens } from "./types";
 import {
   isCanonicalPublicPath,
   type EventRoute,
@@ -533,6 +534,50 @@ async function publicJsonRequest<T>(
   return body.data;
 }
 
+async function authJsonRequest<T>(
+  path: string,
+  init: RequestInit,
+  validator: (value: unknown) => value is T,
+): Promise<T> {
+  const response = await fetch(`${normalizedBaseUrl()}${path}`, {
+    ...init,
+    headers: {
+      Accept: "application/json",
+      ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
+      ...init.headers,
+    },
+    credentials: "omit",
+  });
+  const body = await readJson(response);
+  if (!response.ok) {
+    if (!isErrorEnvelope(body)) throw new PublicApiError("invalid_response", response.status);
+    throw new PublicApiError(body.error.code, response.status, retryAfterSeconds(response));
+  }
+  if (!validator(body)) throw new PublicApiError("invalid_response", response.status);
+  return body;
+}
+
+function isTemporaryAuthTokens(value: unknown): value is TemporaryAuthTokens {
+  return isRecord(value)
+    && typeof value.access_token === "string"
+    && value.access_token.length > 0
+    && typeof value.refresh_token === "string"
+    && value.refresh_token.length > 0
+    && typeof value.expires_at === "string";
+}
+
+function isExistingAccountMe(value: unknown): value is {
+  user: { email: string | null; email_verified_at: string | null };
+  profile: { first_name: string | null; last_name: string | null; phone: string | null };
+} {
+  if (!isRecord(value) || !isRecord(value.user) || !isRecord(value.profile)) return false;
+  return (value.user.email === null || typeof value.user.email === "string")
+    && (value.user.email_verified_at === null || typeof value.user.email_verified_at === "string")
+    && (value.profile.first_name === null || typeof value.profile.first_name === "string")
+    && (value.profile.last_name === null || typeof value.profile.last_name === "string")
+    && (value.profile.phone === null || typeof value.profile.phone === "string");
+}
+
 async function authCodeRequest(path: string, body: Record<string, string>): Promise<AuthCodeResult> {
   const response = await fetch(`${normalizedBaseUrl()}${path}`, {
     method: "POST",
@@ -551,11 +596,50 @@ async function authCodeRequest(path: string, body: Record<string, string>): Prom
 
 export function createWebRegistrationIntent(
   payload: WebRegistrationIntentRequest,
+  accessToken?: string,
 ): Promise<WebRegistrationIntentCreated> {
   return publicJsonRequest(
     "/web/registration-intents",
-    { method: "POST", body: JSON.stringify(payload) },
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+    },
     isIntentCreated,
+  );
+}
+
+export function loginExistingAccount(email: string, password: string): Promise<TemporaryAuthTokens> {
+  return authJsonRequest(
+    "/auth/login",
+    {
+      method: "POST",
+      body: JSON.stringify({ email, password, device_name: "Public web registration" }),
+    },
+    isTemporaryAuthTokens,
+  );
+}
+
+export async function getExistingAccount(accessToken: string): Promise<ExistingAccountIdentity> {
+  const result = await authJsonRequest(
+    "/auth/me",
+    { method: "GET", headers: { Authorization: `Bearer ${accessToken}` } },
+    isExistingAccountMe,
+  );
+  return {
+    email: result.user.email ?? "",
+    email_verified_at: result.user.email_verified_at,
+    first_name: result.profile.first_name ?? "",
+    last_name: result.profile.last_name ?? "",
+    phone: result.profile.phone ?? "",
+  };
+}
+
+export async function logoutExistingAccount(refreshToken: string): Promise<void> {
+  await authJsonRequest(
+    "/auth/logout",
+    { method: "POST", body: JSON.stringify({ refresh_token: refreshToken }) },
+    (value): value is { ok: boolean } => isRecord(value) && value.ok === true,
   );
 }
 

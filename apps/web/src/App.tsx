@@ -9,8 +9,11 @@ import {
   confirmSetPassword,
   confirmWebRegistrationEmail,
   createWebRegistrationIntent,
+  getExistingAccount,
   getWebRegistrationIntentStatus,
   getWebEventRegistrationForm,
+  loginExistingAccount,
+  logoutExistingAccount,
   PublicApiError,
   RegistrationUnavailableError,
   requestSetPassword,
@@ -38,6 +41,8 @@ import {
 import type {
   AccountChoice,
   AccountNextStep,
+  ExistingAccountIdentity,
+  TemporaryAuthTokens,
   WebEventRegistrationFormResponse,
   WebRegistrationConfirmResult,
   WebRegistrationIntentRequest,
@@ -84,6 +89,9 @@ function safeApiError(error: unknown, context: "create" | "confirm" | "resend" |
       ? "Не удалось получить ответ после подтверждения. Проверьте статус перед повторной попыткой."
       : "Не удалось связаться с сервером. Проверьте соединение и попробуйте снова.";
   }
+  if (context === "create" && error.status === 401) {
+    return "Сеанс входа истёк. Войдите снова.";
+  }
   switch (error.code) {
     case "registration_unavailable":
       return "Регистрация на мероприятие стала недоступна.";
@@ -115,6 +123,13 @@ function safeApiError(error: unknown, context: "create" | "confirm" | "resend" |
     default:
       return "Произошла неизвестная ошибка сервера. Попробуйте позже.";
   }
+}
+
+function safeLoginError(error: unknown): string {
+  if (error instanceof PublicApiError && error.status === 401) {
+    return "Неверный email или пароль.";
+  }
+  return "Не удалось войти. Проверьте соединение и попробуйте снова.";
 }
 
 const STATUS_LABELS: Record<WebRegistrationState, string> = {
@@ -534,12 +549,18 @@ function RegistrationForm({
   const [questionnaireValues, setQuestionnaireValues] = useState<QuestionnaireValues>({});
   const [questionnaireErrors, setQuestionnaireErrors] = useState<QuestionnaireErrors>({});
   const [notice, setNotice] = useState<string | null>(null);
+  const [loginPanelOpen, setLoginPanelOpen] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [temporaryAuth, setTemporaryAuth] = useState<TemporaryAuthTokens | null>(null);
+  const [existingAccount, setExistingAccount] = useState<ExistingAccountIdentity | null>(null);
   const [flowError, setFlowError] = useState<string | null>(null);
   const [stage, setStage] = useState<FlowStage>("form");
   const [flowId, setFlowId] = useState<string | null>(null);
   const [flowExpiresAt, setFlowExpiresAt] = useState<string | null>(null);
   const [emailCode, setEmailCode] = useState("");
-  const [busyAction, setBusyAction] = useState<"create" | "confirm" | "resend" | "status" | "request_password" | "password" | null>(null);
+  const [busyAction, setBusyAction] = useState<"create" | "confirm" | "resend" | "status" | "request_password" | "password" | "login" | null>(null);
   const [confirmationUnknown, setConfirmationUnknown] = useState(false);
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
@@ -555,6 +576,7 @@ function RegistrationForm({
   const [accountCompleted, setAccountCompleted] = useState(false);
   const optionsRef = useRef<HTMLFieldSetElement>(null);
   const emailCodeRef = useRef<HTMLInputElement>(null);
+  const loginEmailRef = useRef<HTMLInputElement>(null);
   const passwordCodeRef = useRef<HTMLInputElement>(null);
   const newPasswordRef = useRef<HTMLInputElement>(null);
   const repeatPasswordRef = useRef<HTMLInputElement>(null);
@@ -576,6 +598,12 @@ function RegistrationForm({
     setQuestionnaireValues({});
     setQuestionnaireErrors({});
     setNotice(null);
+    setLoginPanelOpen(false);
+    setLoginEmail("");
+    setLoginPassword("");
+    setLoginError(null);
+    setTemporaryAuth(null);
+    setExistingAccount(null);
     setFlowError(null);
     setStage("form");
     setFlowId(null);
@@ -589,6 +617,10 @@ function RegistrationForm({
   useEffect(() => {
     if (stage === "verification") emailCodeRef.current?.focus();
   }, [stage]);
+
+  useEffect(() => {
+    if (loginPanelOpen) loginEmailRef.current?.focus();
+  }, [loginPanelOpen]);
 
   useEffect(() => {
     if (passwordRequestSent) passwordCodeRef.current?.focus();
@@ -771,13 +803,79 @@ function RegistrationForm({
     }
   };
 
+  const cancelExistingAccount = async () => {
+    const refreshToken = temporaryAuth?.refresh_token;
+    setLoginPanelOpen(false);
+    setLoginEmail("");
+    setLoginPassword("");
+    setLoginError(null);
+    setTemporaryAuth(null);
+    setExistingAccount(null);
+    setNotice(null);
+    setFlowError(null);
+    idempotencyRef.current = null;
+    if (refreshToken) {
+      try {
+        await logoutExistingAccount(refreshToken);
+      } catch {
+        // Best-effort cleanup; local temporary credentials are already discarded.
+      }
+    }
+  };
+
+  const submitExistingAccountLogin = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setBusyAction("login");
+    setLoginError(null);
+    try {
+      const tokens = await loginExistingAccount(loginEmail.trim(), loginPassword);
+      const identity = await getExistingAccount(tokens.access_token);
+      if (
+        !identity.email
+        || !identity.first_name.trim()
+        || !identity.last_name.trim()
+        || !normalizeInternationalPhone(identity.phone)
+      ) {
+        try {
+          await logoutExistingAccount(tokens.refresh_token);
+        } catch {
+          // Best-effort cleanup after rejecting an incomplete canonical profile.
+        }
+        setLoginPassword("");
+        setLoginError("В аккаунте не заполнены данные, необходимые для регистрации. Вы можете продолжить регистрацию без входа.");
+        return;
+      }
+      setTemporaryAuth(tokens);
+      setExistingAccount(identity);
+      setLoginPassword("");
+      setLoginPanelOpen(false);
+      setNotice("Вход выполнен. Для регистрации будут использованы данные вашего аккаунта.");
+      idempotencyRef.current = null;
+    } catch (error: unknown) {
+      setLoginPassword("");
+      setLoginError(safeLoginError(error));
+      window.requestAnimationFrame(() => loginEmailRef.current?.focus());
+    } finally {
+      submittingRef.current = false;
+      setBusyAction(null);
+    }
+  };
+
   const continueWithAccountChoice = async (accountChoice: AccountChoice) => {
     if (submittingRef.current) return;
+    const signedInValues = existingAccount ? {
+      firstName: existingAccount.first_name,
+      lastName: existingAccount.last_name,
+      phone: existingAccount.phone,
+      email: existingAccount.email,
+    } : null;
     const normalizedValues = {
       ...values,
-      firstName: normalizeName(values.firstName),
-      lastName: normalizeName(values.lastName),
-      email: values.email.trim(),
+      firstName: normalizeName(signedInValues?.firstName ?? values.firstName),
+      lastName: normalizeName(signedInValues?.lastName ?? values.lastName),
+      phone: signedInValues?.phone ?? values.phone,
+      email: signedInValues?.email ?? values.email.trim(),
       accountChoice,
     };
     setValues(normalizedValues);
@@ -846,14 +944,18 @@ function RegistrationForm({
     submittingRef.current = true;
     setBusyAction("create");
     setFlowError(null);
-    setNotice("Отправляем данные и запрашиваем код подтверждения…");
+    setNotice(temporaryAuth ? "Отправляем регистрацию…" : "Отправляем данные и запрашиваем код подтверждения…");
     try {
-      const created = await createWebRegistrationIntent(payload);
+      const created = await createWebRegistrationIntent(payload, temporaryAuth?.access_token);
       setFlowId(created.flow_id);
       setFlowExpiresAt(created.expires_at);
       if (created.next_step === "completed") {
         const status = await getWebRegistrationIntentStatus(created.flow_id);
         applyStatus(status);
+        if (temporaryAuth) {
+          void logoutExistingAccount(temporaryAuth.refresh_token).catch(() => undefined);
+          setTemporaryAuth(null);
+        }
       } else {
         setEmailCode("");
         setStage("verification");
@@ -862,6 +964,10 @@ function RegistrationForm({
     } catch (error: unknown) {
       setFlowError(safeApiError(error, "create"));
       setNotice(null);
+      if (temporaryAuth && error instanceof PublicApiError && error.status === 401) {
+        setTemporaryAuth(null);
+        setExistingAccount(null);
+      }
     } finally {
       submittingRef.current = false;
       setBusyAction(null);
@@ -1195,17 +1301,26 @@ function RegistrationForm({
 
       <section className="surface section-card" aria-labelledby="personal-heading">
         <h2 id="personal-heading">Ваши данные</h2>
-        <div className="form-grid">
-          {field("first-name", "firstName", "Имя", { autoComplete: "given-name", maxLength: 100 })}
-          {field("last-name", "lastName", "Фамилия", { autoComplete: "family-name", maxLength: 100 })}
-          <PhoneInput
-            value={values.phone}
-            error={errors.phone}
-            onChange={(value) => updateField("phone", value)}
-            onBlur={() => validateField("phone")}
-          />
-          {field("email", "email", "Email", { type: "email", autoComplete: "email", inputMode: "email", maxLength: 254 })}
-        </div>
+        {existingAccount ? (
+          <dl className="account-identity" aria-label="Данные аккаунта только для чтения">
+            <div><dt>Имя</dt><dd>{existingAccount.first_name}</dd></div>
+            <div><dt>Фамилия</dt><dd>{existingAccount.last_name}</dd></div>
+            <div><dt>Телефон</dt><dd>{existingAccount.phone}</dd></div>
+            <div><dt>Email</dt><dd>{existingAccount.email}</dd></div>
+          </dl>
+        ) : (
+          <div className="form-grid">
+            {field("first-name", "firstName", "Имя", { autoComplete: "given-name", maxLength: 100 })}
+            {field("last-name", "lastName", "Фамилия", { autoComplete: "family-name", maxLength: 100 })}
+            <PhoneInput
+              value={values.phone}
+              error={errors.phone}
+              onChange={(value) => updateField("phone", value)}
+              onBlur={() => validateField("phone")}
+            />
+            {field("email", "email", "Email", { type: "email", autoComplete: "email", inputMode: "email", maxLength: 254 })}
+          </div>
+        )}
       </section>
 
       <section className="surface section-card legal-section" aria-labelledby="legal-heading">
@@ -1241,7 +1356,45 @@ function RegistrationForm({
 
       <section className="surface section-card" aria-labelledby="account-actions-heading">
         <h2 id="account-actions-heading">Как продолжить</h2>
-        <div className="account-action-grid">
+        {existingAccount ? (
+          <div className="signed-in-card" aria-live="polite" aria-atomic="true">
+            <p>Вы вошли как</p>
+            <strong>{existingAccount.first_name} {existingAccount.last_name}</strong>
+            <span>{existingAccount.email}</span>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={busyAction !== null}
+              onClick={() => void continueWithAccountChoice("without_password")}
+            >
+              {busyAction === "create" ? "Отправляем…" : "Продолжить регистрацию"}
+            </button>
+            <button className="text-button" type="button" disabled={busyAction !== null} onClick={() => void cancelExistingAccount()}>
+              Выйти / Использовать регистрацию без входа
+            </button>
+          </div>
+        ) : loginPanelOpen ? (
+          <div className="login-card">
+            <h3>Войти в аккаунт</h3>
+            <div className="form-field">
+              <label htmlFor="login-email">Email</label>
+              <input ref={loginEmailRef} id="login-email" type="email" autoComplete="email" value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} />
+            </div>
+            <div className="form-field">
+              <label htmlFor="login-password">Пароль</label>
+              <input id="login-password" type="password" autoComplete="current-password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} />
+            </div>
+            {loginError ? <p className="form-error" role="alert">{loginError}</p> : null}
+            <div className="flow-actions">
+              <button className="primary-button" type="button" disabled={busyAction !== null || !loginEmail.trim() || !loginPassword} onClick={() => void submitExistingAccountLogin()}>
+                {busyAction === "login" ? "Входим…" : "Войти"}
+              </button>
+              <button className="text-button" type="button" disabled={busyAction !== null} onClick={() => void cancelExistingAccount()}>Отмена</button>
+            </div>
+          </div>
+        ) : (
+          <>
+          <div className="account-action-grid">
           <div className="account-action-card">
             <p>Подтвердите email и запишитесь на мероприятие. Пароль не нужен. Чтобы ваши записи не дублировались, мы сохраним одну техническую карточку. Управлять или удалить данные можно по коду из email.</p>
             <button
@@ -1266,15 +1419,22 @@ function RegistrationForm({
               {busyAction === "create" && values.accountChoice === "create_account" ? "Отправляем…" : "Создать аккаунт"}
             </button>
           </div>
-        </div>
-        <button
-          className="text-button"
-          type="button"
-          disabled={busyAction !== null}
-          onClick={() => setNotice("Можно продолжить регистрацию через подтверждение email без обязательного ввода пароля. Регистрация будет связана с существующим аккаунтом, а основные данные подтверждённого профиля не будут молча перезаписаны.")}
-        >
-          У меня уже есть аккаунт
-        </button>
+          </div>
+          <button
+            className="text-button existing-account-button"
+            type="button"
+            disabled={busyAction !== null}
+            onClick={() => {
+              setLoginPanelOpen(true);
+              setLoginEmail(values.email.trim());
+              setLoginError(null);
+              setNotice(null);
+            }}
+          >
+            Уже есть аккаунт? Войти
+          </button>
+          </>
+        )}
       </section>
 
       <div className="flow-live" aria-live="polite" aria-atomic="true">
