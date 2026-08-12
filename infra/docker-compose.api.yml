@@ -94,6 +94,30 @@ services:
       api_postgres:
         condition: service_healthy
 
+  api_privacy_erasure_worker:
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile.local
+    container_name: sredi_svoih_api_privacy_erasure_worker
+    command: ["python", "-m", "app.workers.privacy_erasure"]
+    env_file:
+      - ./env/api.env.example
+    environment:
+      API_PRIVACY_ERASURE_WORKER_ENABLED: "${API_PRIVACY_ERASURE_WORKER_ENABLED:-false}"
+      API_PRIVACY_ERASURE_POLL_INTERVAL_SECONDS: "${API_PRIVACY_ERASURE_POLL_INTERVAL_SECONDS:-30}"
+      API_PRIVACY_ERASURE_BATCH_SIZE: "${API_PRIVACY_ERASURE_BATCH_SIZE:-10}"
+      API_PRIVACY_ERASURE_NOTIFICATION_KEY_B64:
+      API_PRIVACY_ERASURE_NOTIFICATION_KEY_ID:
+      API_PRIVACY_ERASURE_NOTIFICATION_DELIVERY_WINDOW_HOURS:
+      API_PRIVACY_ERASURE_FINANCIAL_RETENTION_DAYS:
+    depends_on:
+      api_postgres:
+        condition: service_healthy
+      api_object_storage_init:
+        condition: service_completed_successfully
+      api_mailpit:
+        condition: service_started
+
 volumes:
   api_postgres_data:
   api_object_storage_data:
