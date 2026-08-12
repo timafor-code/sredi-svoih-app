@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
@@ -42,23 +42,12 @@ export default function ProfileOnboardingScreen() {
   const loadSession = useAuthStore((state) => state.loadSession);
   const updateProfile = useAuthStore((state) => state.updateProfile);
 
-  const [displayName, setDisplayName] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [city, setCity] = useState('');
   const [nusach, setNusach] = useState<ProfileNusach>('common');
   const [localError, setLocalError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-
-  const profileDisplayName = useMemo(() => {
-    const firstLastName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ');
-
-    return profile?.display_name
-      ?? (firstLastName || null)
-      ?? profile?.full_name
-      ?? user?.email?.split('@')[0]
-      ?? '';
-  }, [profile?.display_name, profile?.first_name, profile?.full_name, profile?.last_name, user?.email]);
 
   useEffect(() => {
     if (user && profile) {
@@ -71,7 +60,6 @@ export default function ProfileOnboardingScreen() {
   }, [loadSession, profile, user]);
 
   useEffect(() => {
-    setDisplayName(profileDisplayName);
     setFirstName(profile?.first_name ?? '');
     setLastName(profile?.last_name ?? '');
     setCity(profile?.city ?? '');
@@ -81,7 +69,6 @@ export default function ProfileOnboardingScreen() {
     profile?.first_name,
     profile?.last_name,
     profile?.nusach,
-    profileDisplayName,
   ]);
 
   const handleReloadProfile = useCallback(() => {
@@ -104,7 +91,6 @@ export default function ProfileOnboardingScreen() {
     }
 
     const missingFields = [
-      !displayName.trim() ? 'имя для отображения' : null,
       !firstName.trim() ? 'имя' : null,
       !lastName.trim() ? 'фамилию' : null,
       !city.trim() ? 'город' : null,
@@ -122,7 +108,7 @@ export default function ProfileOnboardingScreen() {
     try {
       await updateProfile({
         city: trimOrNull(city),
-        display_name: trimOrNull(displayName),
+        display_name: nextFullName,
         first_name: trimOrNull(firstName),
         full_name: nextFullName,
         last_name: trimOrNull(lastName),
@@ -136,7 +122,7 @@ export default function ProfileOnboardingScreen() {
     } finally {
       setIsSaving(false);
     }
-  }, [city, displayName, firstName, lastName, nusach, profile, router, updateProfile, user]);
+  }, [city, firstName, lastName, nusach, profile, router, updateProfile, user]);
 
   if (!user || !profile) {
     const title = loading ? 'Загружаем профиль' : user ? 'Профиль не загружен' : 'Нужен вход';
@@ -195,12 +181,6 @@ export default function ProfileOnboardingScreen() {
 
         <View style={styles.section}>
           <SectionTitle title="ОСНОВНОЕ" />
-          <FormField
-            label="Имя для отображения"
-            value={displayName}
-            onChangeText={setDisplayName}
-            placeholder="Как показывать вас в приложении"
-          />
           <FormField label="Имя" value={firstName} onChangeText={setFirstName} />
           <FormField label="Фамилия" value={lastName} onChangeText={setLastName} />
           <FormField label="Город" value={city} onChangeText={setCity} placeholder="Москва" />
