@@ -50,6 +50,7 @@ class AdminMemberListItemResponse(BaseModel):
 
 
 class AdminMemberDetailResponse(AdminMemberListItemResponse):
+    account_email: str | None
     profile_community_id: UUID | None
     full_name: str | None
     hebrew_name: str | None
@@ -86,11 +87,6 @@ class AdminMemberProfileUpdateRequest(BaseModel):
     community_id: UUID = Field(
         validation_alias=AliasChoices("community_id", "communityId"),
     )
-    full_name: str | None = Field(
-        default=None,
-        max_length=240,
-        validation_alias=AliasChoices("full_name", "fullName"),
-    )
     first_name: str | None = Field(
         default=None,
         max_length=120,
@@ -100,11 +96,6 @@ class AdminMemberProfileUpdateRequest(BaseModel):
         default=None,
         max_length=120,
         validation_alias=AliasChoices("last_name", "lastName"),
-    )
-    display_name: str | None = Field(
-        default=None,
-        max_length=240,
-        validation_alias=AliasChoices("display_name", "displayName"),
     )
     hebrew_name: str | None = Field(
         default=None,
@@ -136,11 +127,6 @@ class AdminMemberProfileUpdateRequest(BaseModel):
         validation_alias=AliasChoices("marital_status", "maritalStatus"),
     )
     about: str | None = Field(default=None, max_length=200)
-    onboarding_completed: bool = Field(
-        default=False,
-        validation_alias=AliasChoices("onboarding_completed", "onboardingCompleted"),
-    )
-
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
 

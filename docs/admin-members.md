@@ -115,8 +115,7 @@ active community administrator, targets active in another community, invalid
 confirmation, temporarily unavailable deletion, and targets that are no longer
 available. It does not disclose other-community names, ids, roles, or counts.
 
-Profile-edit cleanup remains separate and is planned for the next PR,
-`refactor/admin-member-profile-edit`.
+The existing profile edit flow is described in [Profile Edit Mode](#profile-edit-mode).
 
 ## RPCs
 
@@ -152,7 +151,7 @@ community" actions should set `status` to `left` or `suspended`.
 - `communityId` or `community_id`
 - `fields`, an object keyed by supported `public.profiles` column names
 
-Supported editable profile fields are:
+The legacy Supabase RPC allowlist is:
 
 - `full_name`
 - `first_name`
@@ -182,6 +181,10 @@ The RPC writes only `public.profiles`. Updating `email` updates the profile
 field only; it does not touch Supabase Auth login email, Auth password,
 `auth.users`, `community_memberships`, event registrations, or prayer tracker
 data.
+
+This broader legacy RPC allowlist is not the final Admin Members edit contract.
+The current FastAPI-backed form does not send independently editable
+`full_name`, `display_name`, or `onboarding_completed` values.
 
 ## Admin Web Service Layer
 
@@ -245,22 +248,48 @@ PRs.
 
 ## Profile Edit Mode
 
-The member detail drawer now lets admins edit the selected user's existing
-profile fields in place. The drawer keeps read-only profile rows by default and
-switches only the profile section into an edit form after the admin clicks
-`Редактировать`.
+The existing member drawer is the single canonical edit flow: `Профиль` →
+`Редактировать` → `Отмена` / `Сохранить`. No second edit screen or profile
+endpoint is used. The same cleaned profile form remains reusable by Add
+Existing Profile, while role and membership status stay outside that form.
 
-Profile saves use `adminMembersService.updateAdminUserProfile`, which calls
-`admin_update_user_profile` through the regular authenticated Supabase client.
-The UI sends only changed camelCase fields to the service wrapper; cleared
-nullable fields are sent as `null`, and unchanged fields are omitted. After a
-successful save, the drawer refreshes the selected profile and the members list
-so the table row stays in sync.
+The ordinary edit form exposes only first name, last name, Hebrew name, contact
+email, phone, city, Gregorian birth date, birth-time context, structured Hebrew
+birth date, nusach, tribe status, marital status, and about. `first_name` and
+`last_name` are the only editable name sources. The FastAPI backend trims their
+values, treats blank values as `null`, and derives `full_name` and
+`display_name` from the persisted first and last names. Those derived fields
+remain available for display but cannot be edited independently.
 
-This edit mode updates only `public.profiles`. It does not create Auth users,
-create profiles for missing Auth users, change Auth email/password, touch
-`auth.users`, use the Supabase Admin API, or use a service-role key in browser
-code.
+The drawer explicitly separates two email meanings:
+
+- `Email аккаунта` is `app_users.email`, the canonical account/login identity.
+  It is detail-only, read-only, and never sent by the profile PATCH.
+- `Email для связи` is `profiles.email`. It remains editable and changing it
+  does not change login email, password, or authentication credentials.
+
+`onboarding_completed` is read-only compatibility data and is not part of the
+editable draft or PATCH request. Privacy preferences (`profile_visibility`,
+`birthday_visibility`, and `phone_visibility`) remain user-owned and are not
+silently changed by an admin profile save.
+
+The Hebrew birth date editor uses numeric Day and Year controls plus a Russian
+Hebrew-month select, including the supported Adar variants. It saves normalized
+`day`, `monthNameRu`, `year`, and `labelRu` values while preserving compatible
+existing metadata. All fields blank explicitly clears the date; partial or
+invalid dates are rejected before submission. Raw JSON and nested `source`
+metadata are never exposed. An untouched unrecognized legacy object is omitted
+from the PATCH instead of being erased.
+
+Profile saves use `adminMembersService.updateAdminUserProfile`, which calls the
+authenticated FastAPI `PATCH /admin/members/{user_id}/profile` endpoint. Only
+changed editable fields are sent; cleared nullable fields are sent as `null`,
+and unchanged fields are omitted. After success, the drawer and member list
+refresh so the derived display name remains in sync.
+
+Membership role/status actions and `Исключить из общины` remain separate from
+profile saves. Prayer Tracker stays private and is not read or shown. The
+existing account deletion lifecycle and drawer `Опасная зона` are unchanged.
 
 ## Membership Actions
 

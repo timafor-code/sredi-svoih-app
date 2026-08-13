@@ -12,16 +12,18 @@ export type AdminMemberProfileDraft = {
   birthDate: string;
   birthTimeContext: AdminMemberBirthTimeContext;
   city: string;
-  displayName: string;
   email: string;
   firstName: string;
-  fullName: string;
-  hebrewBirthDate: string;
+  hebrewBirthDateDay: string;
+  hebrewBirthDateMonthNameRu: string;
+  hebrewBirthDateOriginal: Record<string, unknown> | null;
+  hebrewBirthDateRecognized: boolean;
+  hebrewBirthDateTouched: boolean;
+  hebrewBirthDateYear: string;
   hebrewName: string;
   lastName: string;
   maritalStatus: AdminMemberMaritalStatus | "";
   nusach: string;
-  onboardingCompleted: boolean;
   phone: string;
   tribeStatus: AdminMemberTribeStatus | "";
 };
@@ -59,6 +61,25 @@ export const ADMIN_MEMBER_MARITAL_STATUS_OPTIONS: Array<{
   { value: "other", label: "Другое" },
 ];
 
+const HEBREW_MONTH_NAMES_RU = [
+  "Нисан",
+  "Ияр",
+  "Сиван",
+  "Тамуз",
+  "Ав",
+  "Элул",
+  "Тишрей",
+  "Хешван",
+  "Кислев",
+  "Тевет",
+  "Шват",
+  "Адар",
+  "Адар I",
+  "Адар II",
+] as const;
+
+type HebrewMonthNameRu = (typeof HEBREW_MONTH_NAMES_RU)[number];
+
 export function AdminMemberProfileForm({
   disabled,
   draft,
@@ -75,18 +96,32 @@ export function AdminMemberProfileForm({
     onChange({ ...draft, [key]: value });
   };
 
+  const updateHebrewBirthDate = (
+    key:
+      | "hebrewBirthDateDay"
+      | "hebrewBirthDateMonthNameRu"
+      | "hebrewBirthDateYear",
+    value: string,
+  ) => {
+    onChange({
+      ...draft,
+      [key]: value,
+      hebrewBirthDateTouched: true,
+    });
+  };
+
+  const clearHebrewBirthDate = () => {
+    onChange({
+      ...draft,
+      hebrewBirthDateDay: "",
+      hebrewBirthDateMonthNameRu: "",
+      hebrewBirthDateTouched: true,
+      hebrewBirthDateYear: "",
+    });
+  };
+
   return (
     <div className="member-detail-grid">
-      <label className="event-form-field">
-        <span>Полное имя</span>
-        <input
-          disabled={disabled}
-          onChange={(event) => updateDraft("fullName", event.target.value)}
-          type="text"
-          value={draft.fullName}
-        />
-      </label>
-
       <label className="event-form-field">
         <span>Имя</span>
         <input
@@ -108,16 +143,6 @@ export function AdminMemberProfileForm({
       </label>
 
       <label className="event-form-field">
-        <span>Отображаемое имя</span>
-        <input
-          disabled={disabled}
-          onChange={(event) => updateDraft("displayName", event.target.value)}
-          type="text"
-          value={draft.displayName}
-        />
-      </label>
-
-      <label className="event-form-field">
         <span>Еврейское имя</span>
         <input
           disabled={disabled}
@@ -128,11 +153,11 @@ export function AdminMemberProfileForm({
       </label>
 
       <label className="event-form-field">
-        <span>Email профиля</span>
+        <span>Email для связи</span>
         <input
           disabled={disabled}
           onChange={(event) => updateDraft("email", event.target.value)}
-          type="text"
+          type="email"
           value={draft.email}
         />
       </label>
@@ -187,6 +212,78 @@ export function AdminMemberProfileForm({
         </select>
       </label>
 
+      <fieldset
+        className="member-hebrew-date-editor event-form-field--wide"
+        disabled={disabled}
+      >
+        <legend>Еврейская дата рождения</legend>
+        <div className="member-hebrew-date-editor__fields">
+          <label className="event-form-field">
+            <span>День</span>
+            <input
+              max="30"
+              min="1"
+              onChange={(event) =>
+                updateHebrewBirthDate("hebrewBirthDateDay", event.target.value)
+              }
+              step="1"
+              type="number"
+              value={draft.hebrewBirthDateDay}
+            />
+          </label>
+
+          <label className="event-form-field">
+            <span>Месяц</span>
+            <select
+              onChange={(event) =>
+                updateHebrewBirthDate(
+                  "hebrewBirthDateMonthNameRu",
+                  event.target.value,
+                )
+              }
+              value={draft.hebrewBirthDateMonthNameRu}
+            >
+              <option value="">Не указан</option>
+              {HEBREW_MONTH_NAMES_RU.map((monthName) => (
+                <option key={monthName} value={monthName}>
+                  {monthName}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="event-form-field">
+            <span>Год</span>
+            <input
+              min="1"
+              onChange={(event) =>
+                updateHebrewBirthDate("hebrewBirthDateYear", event.target.value)
+              }
+              step="1"
+              type="number"
+              value={draft.hebrewBirthDateYear}
+            />
+          </label>
+        </div>
+
+        {draft.hebrewBirthDateOriginal &&
+        !draft.hebrewBirthDateRecognized &&
+        !draft.hebrewBirthDateTouched ? (
+          <p className="member-hebrew-date-editor__note">
+            Сохранено значение прежнего формата. Заполните дату заново или
+            очистите её; без изменений существующее значение будет сохранено.
+          </p>
+        ) : null}
+
+        <button
+          className="member-hebrew-date-editor__clear"
+          onClick={clearHebrewBirthDate}
+          type="button"
+        >
+          Очистить дату
+        </button>
+      </fieldset>
+
       <label className="event-form-field">
         <span>Нусах</span>
         <input
@@ -239,32 +336,6 @@ export function AdminMemberProfileForm({
         </select>
       </label>
 
-      <label className="event-form-field">
-        <span>Онбординг завершён</span>
-        <select
-          disabled={disabled}
-          onChange={(event) =>
-            updateDraft("onboardingCompleted", event.target.value === "true")
-          }
-          value={draft.onboardingCompleted ? "true" : "false"}
-        >
-          <option value="true">Да</option>
-          <option value="false">Нет</option>
-        </select>
-      </label>
-
-      <label className="event-form-field event-form-field--wide">
-        <span>Еврейская дата рождения (JSON)</span>
-        <textarea
-          disabled={disabled}
-          onChange={(event) =>
-            updateDraft("hebrewBirthDate", event.target.value)
-          }
-          placeholder='{"day":10,"monthNameRu":"Хешван","year":5746}'
-          value={draft.hebrewBirthDate}
-        />
-      </label>
-
       <label className="event-form-field event-form-field--wide">
         <span>О себе</span>
         <textarea
@@ -283,22 +354,28 @@ export function createAdminMemberProfileDraft(
   profile: AdminMemberProfile | null,
 ): AdminMemberProfileDraft {
   const detail = profile ?? member;
+  const structuredHebrewBirthDate = readStructuredHebrewBirthDate(
+    detail.hebrewBirthDate,
+  );
 
   return {
     about: profile?.about ?? "",
     birthDate: formatDateInputValue(detail.birthDate),
     birthTimeContext: normalizeBirthTimeContextDraft(profile?.birthTimeContext),
     city: detail.city ?? "",
-    displayName: detail.displayName ?? "",
     email: detail.email ?? "",
     firstName: detail.firstName ?? "",
-    fullName: profile?.fullName ?? "",
-    hebrewBirthDate: formatJsonForEdit(detail.hebrewBirthDate),
+    hebrewBirthDateDay: structuredHebrewBirthDate?.day.toString() ?? "",
+    hebrewBirthDateMonthNameRu:
+      structuredHebrewBirthDate?.monthNameRu ?? "",
+    hebrewBirthDateOriginal: detail.hebrewBirthDate,
+    hebrewBirthDateRecognized: structuredHebrewBirthDate !== null,
+    hebrewBirthDateTouched: false,
+    hebrewBirthDateYear: structuredHebrewBirthDate?.year.toString() ?? "",
     hebrewName: profile?.hebrewName ?? "",
     lastName: detail.lastName ?? "",
     maritalStatus: normalizeMaritalStatusDraft(profile?.maritalStatus),
     nusach: detail.nusach ?? "",
-    onboardingCompleted: detail.onboardingCompleted,
     phone: detail.phone ?? "",
     tribeStatus: normalizeTribeStatusDraft(profile?.tribeStatus),
   };
@@ -308,14 +385,13 @@ export function buildAdminMemberProfileUpdateFields(
   detail: AdminMemberListRow | AdminMemberProfile,
   draft: AdminMemberProfileDraft,
 ): AdminMemberProfileUpdateFieldsResult {
-  const hebrewBirthDateResult = parseHebrewBirthDateDraft(draft.hebrewBirthDate);
+  const hebrewBirthDateResult = buildHebrewBirthDateUpdate(draft);
 
   if (!hebrewBirthDateResult.ok) {
     return hebrewBirthDateResult;
   }
 
   const fields: AdminUpdateUserProfileFields = {};
-  const currentFullName = "fullName" in detail ? detail.fullName : null;
   const currentHebrewName = "hebrewName" in detail ? detail.hebrewName : null;
   const currentBirthTimeContext =
     "birthTimeContext" in detail ? detail.birthTimeContext : null;
@@ -323,11 +399,6 @@ export function buildAdminMemberProfileUpdateFields(
   const currentMaritalStatus =
     "maritalStatus" in detail ? detail.maritalStatus : null;
   const currentAbout = "about" in detail ? detail.about : null;
-
-  const fullName = nullableTrimmedString(draft.fullName);
-  if (fullName !== nullableTrimmedString(currentFullName)) {
-    fields.fullName = fullName;
-  }
 
   const firstName = nullableTrimmedString(draft.firstName);
   if (firstName !== nullableTrimmedString(detail.firstName)) {
@@ -337,11 +408,6 @@ export function buildAdminMemberProfileUpdateFields(
   const lastName = nullableTrimmedString(draft.lastName);
   if (lastName !== nullableTrimmedString(detail.lastName)) {
     fields.lastName = lastName;
-  }
-
-  const displayName = nullableTrimmedString(draft.displayName);
-  if (displayName !== nullableTrimmedString(detail.displayName)) {
-    fields.displayName = displayName;
   }
 
   const hebrewName = nullableTrimmedString(draft.hebrewName);
@@ -369,7 +435,10 @@ export function buildAdminMemberProfileUpdateFields(
     fields.birthDate = birthDate;
   }
 
-  if (!areJsonRecordsEqual(hebrewBirthDateResult.value, detail.hebrewBirthDate)) {
+  if (
+    hebrewBirthDateResult.changed &&
+    !areJsonRecordsEqual(hebrewBirthDateResult.value, detail.hebrewBirthDate)
+  ) {
     fields.hebrewBirthDate = hebrewBirthDateResult.value;
   }
 
@@ -402,43 +471,77 @@ export function buildAdminMemberProfileUpdateFields(
     fields.about = about;
   }
 
-  if (draft.onboardingCompleted !== detail.onboardingCompleted) {
-    fields.onboardingCompleted = draft.onboardingCompleted;
-  }
-
   return { fields, ok: true };
 }
 
-function parseHebrewBirthDateDraft(
-  value: string,
-): { ok: true; value: Record<string, unknown> | null } | { error: string; ok: false } {
-  const normalized = value.trim();
-
-  if (!normalized) {
-    return { ok: true, value: null };
+function buildHebrewBirthDateUpdate(
+  draft: AdminMemberProfileDraft,
+):
+  | { changed: boolean; ok: true; value: Record<string, unknown> | null }
+  | { error: string; ok: false } {
+  if (!draft.hebrewBirthDateTouched) {
+    return {
+      changed: false,
+      ok: true,
+      value: draft.hebrewBirthDateOriginal,
+    };
   }
 
-  let parsed: unknown;
+  const dayText = draft.hebrewBirthDateDay.trim();
+  const monthNameRu = draft.hebrewBirthDateMonthNameRu.trim();
+  const yearText = draft.hebrewBirthDateYear.trim();
 
-  try {
-    parsed = JSON.parse(normalized) as unknown;
-  } catch {
+  if (!dayText && !monthNameRu && !yearText) {
+    return { changed: true, ok: true, value: null };
+  }
+
+  if (!dayText || !monthNameRu || !yearText) {
     return {
-      error:
-        "Еврейская дата рождения должна быть корректным JSON-объектом.",
+      error: "Укажите день, месяц и год еврейской даты рождения.",
       ok: false,
     };
   }
 
-  if (!isRecord(parsed)) {
+  if (!/^\d+$/.test(dayText)) {
     return {
-      error:
-        "Еврейская дата рождения должна быть JSON-объектом или пустым значением.",
+      error: "День еврейской даты должен быть целым числом от 1 до 30.",
+      ok: false,
+    };
+  }
+  const day = Number(dayText);
+  if (day < 1 || day > 30) {
+    return {
+      error: "День еврейской даты должен быть целым числом от 1 до 30.",
       ok: false,
     };
   }
 
-  return { ok: true, value: parsed };
+  if (!isHebrewMonthNameRu(monthNameRu)) {
+    return {
+      error: "Выберите месяц еврейской даты из списка.",
+      ok: false,
+    };
+  }
+
+  if (!/^\d+$/.test(yearText) || Number(yearText) < 1) {
+    return {
+      error: "Год еврейской даты должен быть положительным целым числом.",
+      ok: false,
+    };
+  }
+  const year = Number(yearText);
+
+  return {
+    changed: true,
+    ok: true,
+    value: {
+      ...(draft.hebrewBirthDateOriginal ?? {}),
+      day,
+      labelRu: `${day} ${monthNameRu} ${year}`,
+      monthNameRu,
+      year,
+    },
+  };
 }
 
 function nullableTrimmedString(value: string | null | undefined): string | null {
@@ -467,16 +570,37 @@ function formatDateInputValue(value: string | null | undefined): string {
   return date.toISOString().slice(0, 10);
 }
 
-function formatJsonForEdit(value: Record<string, unknown> | null): string {
+function readStructuredHebrewBirthDate(
+  value: Record<string, unknown> | null,
+): { day: number; monthNameRu: string; year: number } | null {
   if (!value) {
-    return "";
+    return null;
   }
 
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return "";
+  const { day, monthNameRu, year } = value;
+  if (
+    typeof day !== "number" ||
+    !Number.isInteger(day) ||
+    day < 1 ||
+    day > 30 ||
+    typeof monthNameRu !== "string" ||
+    !isHebrewMonthNameRu(monthNameRu) ||
+    typeof year !== "number" ||
+    !Number.isInteger(year) ||
+    year < 1
+  ) {
+    return null;
   }
+
+  return {
+    day,
+    monthNameRu,
+    year,
+  };
+}
+
+function isHebrewMonthNameRu(value: string): value is HebrewMonthNameRu {
+  return HEBREW_MONTH_NAMES_RU.includes(value as HebrewMonthNameRu);
 }
 
 function areJsonRecordsEqual(
@@ -512,8 +636,4 @@ function normalizeMaritalStatusDraft(
   )
     ? (value as AdminMemberMaritalStatus)
     : "";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

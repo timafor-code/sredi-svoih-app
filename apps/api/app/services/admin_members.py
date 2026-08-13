@@ -50,10 +50,8 @@ NO_MEMBERSHIP_FILTER = "no_membership"
 # sets are intentionally not used here.
 PROFILE_UPDATE_FIELDS = frozenset(
     {
-        "full_name",
         "first_name",
         "last_name",
-        "display_name",
         "hebrew_name",
         "email",
         "phone",
@@ -65,7 +63,6 @@ PROFILE_UPDATE_FIELDS = frozenset(
         "tribe_status",
         "marital_status",
         "about",
-        "onboarding_completed",
     },
 )
 
@@ -448,6 +445,7 @@ async def get_admin_member(
         target_user_id=target_user_id,
         community_id=community_id,
     )
+    account_user = await session.get(AppUser, target_user_id)
     stats = await _member_registration_stats(
         session,
         community_id=community_id,
@@ -456,6 +454,7 @@ async def get_admin_member(
 
     return AdminMemberDetailResponse(
         **_list_item_kwargs(profile, membership, stats),
+        account_email=account_user.email if account_user is not None else None,
         profile_community_id=profile.community_id,
         full_name=profile.full_name,
         hebrew_name=profile.hebrew_name,
@@ -599,8 +598,24 @@ async def update_admin_member_profile(
             lock_profile=True,
         )
 
+        names_changed = "first_name" in updates or "last_name" in updates
+        for name_field in ("first_name", "last_name"):
+            if name_field in updates:
+                supplied_name = updates[name_field]
+                normalized_name = supplied_name.strip() if supplied_name else ""
+                updates[name_field] = normalized_name or None
+
         for field_name, value in updates.items():
             setattr(profile, field_name, value)
+
+        if names_changed:
+            derived_name = " ".join(
+                component.strip()
+                for component in (profile.first_name, profile.last_name)
+                if component and component.strip()
+            )
+            profile.full_name = derived_name or None
+            profile.display_name = derived_name or None
         profile.updated_at = _now()
 
         await session.flush()

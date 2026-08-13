@@ -71,6 +71,7 @@ export type AdminMemberListRow = {
 };
 
 export type AdminMemberProfile = AdminMemberListRow & {
+  accountEmail: string | null;
   profileCommunityId: string | null;
   fullName: string | null;
   hebrewName: string | null;
@@ -131,10 +132,8 @@ export type AdminStartedMemberDeletion = {
 };
 
 export type AdminUpdateUserProfileFields = {
-  fullName?: string | null;
   firstName?: string | null;
   lastName?: string | null;
-  displayName?: string | null;
   hebrewName?: string | null;
   email?: string | null;
   phone?: string | null;
@@ -146,7 +145,6 @@ export type AdminUpdateUserProfileFields = {
   tribeStatus?: AdminMemberTribeStatus | null;
   maritalStatus?: AdminMemberMaritalStatus | null;
   about?: string | null;
-  onboardingCompleted?: boolean;
 };
 
 export type AdminUpdateUserProfileInput = {

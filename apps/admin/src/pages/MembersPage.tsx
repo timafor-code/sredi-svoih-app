@@ -804,7 +804,7 @@ function MemberDetailDrawer({
           <div className="member-detail-drawer__title">
             <span>Карточка участника</span>
             <h2 id="member-detail-title">{detail.displayName}</h2>
-            <p>{detail.email ?? "email не указан"}</p>
+            <p>Email для связи: {detail.email ?? "не указан"}</p>
             <div className="member-detail-badges" aria-label="Статус и роль">
               <Badge tone={getMembershipStatusTone(detail)}>
                 {getMembershipStatusLabel(detail)}
@@ -1005,7 +1005,10 @@ function MemberProfileSection({
         <MemberDetailField label="Еврейское имя">
           {formatTextOrDash(profile?.hebrewName)}
         </MemberDetailField>
-        <MemberDetailField label="Email профиля">
+        <MemberDetailField label="Email аккаунта">
+          {formatTextOrDash(profile?.accountEmail)}
+        </MemberDetailField>
+        <MemberDetailField label="Email для связи">
           {formatTextOrDash(detail.email)}
         </MemberDetailField>
         <MemberDetailField label="Телефон">
