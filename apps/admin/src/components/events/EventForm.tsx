@@ -11,6 +11,10 @@ import {
 
 import { Button } from "../ui/Button";
 import {
+  EventImageUploader,
+  type EventImageUploadStage,
+} from "./EventImageUploader";
+import {
   buildEventUpdateInput,
   type EventUpdateFormState,
 } from "../../lib/eventUpdatePatch";
@@ -25,6 +29,7 @@ import type {
   AdminEventRegistrationMode,
   AdminEventStatus,
   AdminEventVisibility,
+  UpdateAdminEventInput,
 } from "../../types/events";
 import {
   ADMIN_EVENT_KINDS,
@@ -44,6 +49,7 @@ const LEGACY_LOCATION_VALUE = "__current_event_location__";
 
 type EventFormMode = "create" | "edit";
 type EventFormActionsPlacement = "bottom" | "stickyTop";
+type EventImageAuthoringMode = "file" | "legacy-url";
 
 type RegistrationModeSlotContext = {
   registrationMode: string;
@@ -58,7 +64,7 @@ type StringFormField = {
 type FormErrorKey = StringFormField | "isPermanent" | "form";
 type FormErrors = Partial<Record<FormErrorKey, string>>;
 
-type EventFormProps = {
+type EventFormSharedProps = {
   actionsPlacement?: EventFormActionsPlacement;
   cancelLabel?: string;
   categories?: AdminEventCategory[];
@@ -70,19 +76,38 @@ type EventFormProps = {
   disabled?: boolean;
   disabledMessage?: string | null;
   forceDraftHidden?: boolean;
-  initialEvent?: AdminEvent | null;
-  mode: EventFormMode;
+  imageAuthoringMode?: EventImageAuthoringMode;
+  imageError?: string | null;
+  imageSuccessMessage?: string | null;
+  imageUploadStage?: EventImageUploadStage | null;
   notice?: ReactNode;
   onCancel: () => void;
+  onRemoveImage?: () => void;
+  onRetryImage?: () => void;
   onRegistrationModeChange?: (mode: string) => void;
+  onSelectedImageFileChange?: (file: File | null) => void;
   registrationModeSlot?: ReactNode | ((context: RegistrationModeSlotContext) => ReactNode);
+  removingImage?: boolean;
+  selectedImageFile?: File | null;
   showEventKind?: boolean;
-  onSubmit: (input: AdminEventMutationInput) => Promise<boolean>;
   submitLabel?: string;
   submitError?: string | null;
   submittingLabel?: string;
   submitting: boolean;
 };
+
+type EventFormProps = EventFormSharedProps & (
+  | {
+      initialEvent?: AdminEvent | null;
+      mode: "create";
+      onSubmit: (input: AdminEventMutationInput) => Promise<boolean>;
+    }
+  | {
+      initialEvent: AdminEvent;
+      mode: "edit";
+      onSubmit: (input: UpdateAdminEventInput) => Promise<boolean>;
+    }
+);
 
 const defaultForm: EventFormState = {
   title: "",
@@ -119,7 +144,10 @@ const registrationModeOptions = ADMIN_EVENT_REGISTRATION_MODES.map((value) => ({
   value,
 }));
 
-export function EventForm({
+const ignoreSelectedImageFileChange = (_file: File | null) => undefined;
+
+export function EventForm(props: EventFormProps) {
+  const {
   actionsPlacement = "bottom",
   cancelLabel,
   categories = [],
@@ -132,23 +160,32 @@ export function EventForm({
   disabledMessage = null,
   forceDraftHidden = false,
   initialEvent = null,
+  imageAuthoringMode = "legacy-url",
+  imageError = null,
+  imageSuccessMessage = null,
+  imageUploadStage = null,
   mode,
   notice = null,
   onCancel,
+  onRemoveImage,
+  onRetryImage,
   onRegistrationModeChange,
+  onSelectedImageFileChange = ignoreSelectedImageFileChange,
   registrationModeSlot = null,
-  onSubmit,
+  removingImage = false,
+  selectedImageFile = null,
   submitLabel,
   submitError = null,
   submittingLabel,
   submitting,
-}: EventFormProps) {
+  } = props;
   const [form, setForm] = useState<EventFormState>(() =>
     buildInitialForm(initialEvent, forceDraftHidden),
   );
   const [errors, setErrors] = useState<FormErrors>({});
   const [isDirty, setIsDirty] = useState(false);
   const [hasSuccessfulEditSave, setHasSuccessfulEditSave] = useState(false);
+  const [hasImageValidationError, setHasImageValidationError] = useState(false);
   const previousEventIdRef = useRef<string | null>(initialEvent?.id ?? null);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -159,6 +196,7 @@ export function EventForm({
     setForm(buildInitialForm(initialEvent, forceDraftHidden));
     setErrors({});
     setIsDirty(false);
+    setHasImageValidationError(false);
 
     if (mode === "create" || isDifferentEvent) {
       setHasSuccessfulEditSave(false);
@@ -179,15 +217,23 @@ export function EventForm({
   const resolvedSubmittingLabel =
     submittingLabel ?? (mode === "create" ? "Сохраняем..." : "Обновляем...");
   const resolvedCancelLabel = cancelLabel ?? (mode === "create" ? "К списку" : "Назад к списку");
-  const isSavedEditState = mode === "edit" && hasSuccessfulEditSave && !isDirty;
+  const hasPendingImageChange =
+    imageAuthoringMode === "file" && selectedImageFile !== null;
+  const isSavedEditState =
+    mode === "edit" && hasSuccessfulEditSave && !isDirty && !hasPendingImageChange;
   const submitButtonLabel = submitting
     ? resolvedSubmittingLabel
     : isSavedEditState
       ? "Изменения сохранены"
       : resolvedSubmitLabel;
   const isSubmitDisabled =
-    disabled || submitting || isSavedEditState || (mode === "edit" && !isDirty);
-  const hasActiveEditSave = mode === "edit" && isDirty && !isSubmitDisabled;
+    disabled
+    || submitting
+    || hasImageValidationError
+    || isSavedEditState
+    || (mode === "edit" && !isDirty && !hasPendingImageChange);
+  const hasActiveEditSave =
+    mode === "edit" && (isDirty || hasPendingImageChange) && !isSubmitDisabled;
   const submitButtonVariant = hasActiveEditSave ? "success" : "secondary";
 
   const currentCategorySlug = form.category.trim();
@@ -439,13 +485,19 @@ export function EventForm({
         )
       : validation.input;
 
-    if (mode === "edit" && Object.keys(updateInput).length === 0) {
+    if (
+      mode === "edit"
+      && Object.keys(updateInput).length === 0
+      && !hasPendingImageChange
+    ) {
       setIsDirty(false);
       setHasSuccessfulEditSave(true);
       return;
     }
 
-    const isSaved = await onSubmit(updateInput as AdminEventMutationInput);
+    const isSaved = props.mode === "edit"
+      ? await props.onSubmit(updateInput as UpdateAdminEventInput)
+      : await props.onSubmit(validation.input);
 
     if (mode === "edit" && isSaved) {
       setIsDirty(false);
@@ -546,14 +598,31 @@ export function EventForm({
             onChange={(value) => updateField("description", value)}
             value={form.description}
           />
-          <TextField
-            label="Ссылка на изображение"
-            onChange={(value) => updateField("imageUrl", value)}
-            placeholder="https://..."
-            value={form.imageUrl}
-            wide
-          />
+          {imageAuthoringMode === "legacy-url" ? (
+            <TextField
+              label="Ссылка на изображение"
+              onChange={(value) => updateField("imageUrl", value)}
+              placeholder="https://..."
+              value={form.imageUrl}
+              wide
+            />
+          ) : null}
         </div>
+        {imageAuthoringMode === "file" ? (
+          <EventImageUploader
+            busy={submitting}
+            currentImageUrl={initialEvent?.imageUrl}
+            error={imageError}
+            onRemoveImage={onRemoveImage}
+            onRetryImage={onRetryImage}
+            onSelectedFileChange={onSelectedImageFileChange}
+            onValidationErrorChange={setHasImageValidationError}
+            removing={removingImage}
+            selectedFile={selectedImageFile}
+            successMessage={imageSuccessMessage}
+            uploadStage={imageUploadStage}
+          />
+        ) : null}
       </section>
 
       <section className="event-form-section">

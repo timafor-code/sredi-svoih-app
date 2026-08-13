@@ -54,7 +54,6 @@ export function buildEventUpdateInput(
   addTextUpdate("category", ["category"], input.category, event.category);
   addTextUpdate("locationName", ["locationName"], input.locationName, event.locationName);
   addTextUpdate("address", ["address"], input.address, event.address);
-  addTextUpdate("imageUrl", ["imageUrl"], input.imageUrl, event.imageUrl);
 
   if (changed("startDate", "startTime", "timezone") && !sameInstant(input.startsAt, event.startsAt)) {
     updates.startsAt = input.startsAt;

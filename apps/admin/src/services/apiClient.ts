@@ -125,16 +125,28 @@ function buildApiUrl(path: string, query?: ApiQueryParams): string {
   }
 }
 
-function createHeaders(customHeaders: ApiRequestHeaders | undefined, hasBody: boolean) {
+function isFormDataBody(value: unknown): value is FormData {
+  return typeof FormData !== "undefined" && value instanceof FormData;
+}
+
+function createHeaders(
+  customHeaders: ApiRequestHeaders | undefined,
+  hasBody: boolean,
+  formDataBody: boolean,
+) {
   const headers: Record<string, string> = {
     Accept: "application/json",
   };
 
-  if (hasBody) {
+  if (hasBody && !formDataBody) {
     headers["Content-Type"] = "application/json; charset=utf-8";
   }
 
   Object.entries(customHeaders ?? {}).forEach(([key, value]) => {
+    if (formDataBody && key.toLocaleLowerCase("en-US") === "content-type") {
+      return;
+    }
+
     if (value !== null && value !== undefined) {
       headers[key] = value;
     }
@@ -317,7 +329,8 @@ async function request<TData, TBody = unknown>(
   } = options;
   const url = buildApiUrl(path, query);
   const hasBody = body !== undefined;
-  const baseHeaders = createHeaders(customHeaders, hasBody);
+  const formDataBody = isFormDataBody(body);
+  const baseHeaders = createHeaders(customHeaders, hasBody, formDataBody);
   const abortController = createAbortController(signal, timeoutMs);
 
   try {
@@ -333,7 +346,9 @@ async function request<TData, TBody = unknown>(
       }
 
       const response = await fetch(url, {
-        body: hasBody ? JSON.stringify(body) : undefined,
+        body: hasBody
+          ? (formDataBody ? body as FormData : JSON.stringify(body))
+          : undefined,
         headers,
         method,
         signal: abortController.signal,
