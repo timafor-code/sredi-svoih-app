@@ -206,6 +206,29 @@ class AdminMemberDeletionTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def _get_member_detail(
+        self,
+        actor_id: UUID,
+        target_id: UUID,
+    ) -> httpx.Response:
+        return await self.client.get(
+            f"/admin/members/{target_id}",
+            headers=self._headers(actor_id),
+            params={"community_id": str(self.community_id)},
+        )
+
+    async def _update_member_profile(
+        self,
+        actor_id: UUID,
+        target_id: UUID,
+        **fields: object,
+    ) -> httpx.Response:
+        return await self.client.patch(
+            f"/admin/members/{target_id}/profile",
+            headers=self._headers(actor_id),
+            json={"community_id": str(self.community_id), **fields},
+        )
+
     async def _add_credentials(self, user_id: UUID) -> dict[str, UUID]:
         ids = {
             "auth_session": uuid4(),
@@ -771,17 +794,178 @@ class AdminMemberDeletionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(user.auth_token_version, 0)
         self.assertEqual(request_count, 0)
 
+    async def test_member_detail_separates_account_and_contact_email(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                account = await session.get(AppUser, target_id)
+                profile = await session.scalar(
+                    select(Profile).where(Profile.user_id == target_id),
+                )
+                account.email = "login@example.invalid"
+                profile.email = "contact@example.invalid"
+
+        response = await self._get_member_detail(admin_id, target_id)
+
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()["data"]
+        self.assertEqual(data["account_email"], "login@example.invalid")
+        self.assertEqual(data["email"], "contact@example.invalid")
+
+    async def test_contact_email_update_does_not_change_account_email(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                account = await session.get(AppUser, target_id)
+                profile = await session.scalar(
+                    select(Profile).where(Profile.user_id == target_id),
+                )
+                account.email = "login@example.invalid"
+                profile.email = "contact@example.invalid"
+
+        response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            email="new-contact@example.invalid",
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(
+            response.json()["data"]["email"],
+            "new-contact@example.invalid",
+        )
+        async with AsyncSessionLocal() as session:
+            account = await session.get(AppUser, target_id)
+            profile = await session.scalar(
+                select(Profile).where(Profile.user_id == target_id),
+            )
+        self.assertEqual(account.email, "login@example.invalid")
+        self.assertEqual(profile.email, "new-contact@example.invalid")
+
+    async def test_first_and_last_names_are_normalized_and_derive_names(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+
+        response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            first_name=" Иван ",
+            last_name=" Петров ",
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()["data"]
+        self.assertEqual(data["first_name"], "Иван")
+        self.assertEqual(data["last_name"], "Петров")
+        self.assertEqual(data["full_name"], "Иван Петров")
+        self.assertEqual(data["display_name"], "Иван Петров")
+        async with AsyncSessionLocal() as session:
+            profile = await session.scalar(
+                select(Profile).where(Profile.user_id == target_id),
+            )
+        self.assertEqual(profile.first_name, "Иван")
+        self.assertEqual(profile.last_name, "Петров")
+        self.assertEqual(profile.full_name, "Иван Петров")
+        self.assertEqual(profile.display_name, "Иван Петров")
+
+    async def test_partial_first_name_update_uses_persisted_last_name(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                profile = await session.scalar(
+                    select(Profile).where(Profile.user_id == target_id),
+                )
+                profile.first_name = "Иван"
+                profile.last_name = "Петров"
+                profile.full_name = "Иван Петров"
+                profile.display_name = "Иван Петров"
+
+        response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            first_name="Пётр",
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()["data"]
+        self.assertEqual(data["first_name"], "Пётр")
+        self.assertEqual(data["last_name"], "Петров")
+        self.assertEqual(data["full_name"], "Пётр Петров")
+        self.assertEqual(data["display_name"], "Пётр Петров")
+
+    async def test_derived_and_technical_profile_fields_are_rejected(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+
+        for field_name, value in (
+            ("full_name", "Injected Full Name"),
+            ("display_name", "Injected Display Name"),
+            ("onboarding_completed", True),
+            ("account_email", "injected@example.invalid"),
+        ):
+            with self.subTest(field_name=field_name):
+                response = await self._update_member_profile(
+                    admin_id,
+                    target_id,
+                    **{field_name: value},
+                )
+                self.assertEqual(response.status_code, 422, response.text)
+
+    async def test_approved_profile_fields_still_save(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+        hebrew_birth_date = {
+            "day": 10,
+            "monthNameRu": "Хешван",
+            "year": 5746,
+            "labelRu": "10 Хешван 5746",
+            "source": {"uncertainty": True},
+        }
+
+        response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            hebrew_name="Моше",
+            email="contact-updated@example.invalid",
+            phone="+79990000000",
+            city="Москва",
+            birth_date="1985-10-23",
+            hebrew_birth_date=hebrew_birth_date,
+            birth_time_context="after_sunset",
+            nusach="ashkenaz",
+            tribe_status="israel",
+            marital_status="married",
+            about="Synthetic profile update",
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        async with AsyncSessionLocal() as session:
+            profile = await session.scalar(
+                select(Profile).where(Profile.user_id == target_id),
+            )
+        self.assertEqual(profile.hebrew_name, "Моше")
+        self.assertEqual(profile.email, "contact-updated@example.invalid")
+        self.assertEqual(profile.phone, "+79990000000")
+        self.assertEqual(profile.city, "Москва")
+        self.assertEqual(str(profile.birth_date), "1985-10-23")
+        self.assertEqual(profile.hebrew_birth_date, hebrew_birth_date)
+        self.assertEqual(profile.birth_time_context, "after_sunset")
+        self.assertEqual(profile.nusach, "ashkenaz")
+        self.assertEqual(profile.tribe_status, "israel")
+        self.assertEqual(profile.marital_status, "married")
+        self.assertEqual(profile.about, "Synthetic profile update")
+
     async def test_profile_and_membership_updates_remain_separate(self) -> None:
         admin_id = await self._add_admin()
         target_id = await self._add_target()
 
-        profile_response = await self.client.patch(
-            f"/admin/members/{target_id}/profile",
-            headers=self._headers(admin_id),
-            json={
-                "community_id": str(self.community_id),
-                "first_name": "Updated",
-            },
+        profile_response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            first_name="Updated",
         )
         self.assertEqual(profile_response.status_code, 200, profile_response.text)
         membership_response = await self.client.patch(

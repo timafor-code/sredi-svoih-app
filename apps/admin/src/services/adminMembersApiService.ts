@@ -138,6 +138,7 @@ function normalizeAdminMemberProfile(
 ): AdminMemberProfile {
   return {
     ...normalizeAdminMemberListRow(row),
+    accountEmail: nullableString(row.account_email),
     profileCommunityId: nullableString(row.profile_community_id),
     fullName: nullableString(row.full_name),
     hebrewName: nullableString(row.hebrew_name),
@@ -219,10 +220,8 @@ function buildUpdateUserProfileBody(
     community_id: input.communityId,
   };
 
-  includeProfileField(body, "full_name", source.fullName);
   includeProfileField(body, "first_name", source.firstName);
   includeProfileField(body, "last_name", source.lastName);
-  includeProfileField(body, "display_name", source.displayName);
   includeProfileField(body, "hebrew_name", source.hebrewName);
   includeProfileField(body, "email", source.email);
   includeProfileField(body, "phone", source.phone);
@@ -234,7 +233,6 @@ function buildUpdateUserProfileBody(
   includeProfileField(body, "tribe_status", source.tribeStatus);
   includeProfileField(body, "marital_status", source.maritalStatus);
   includeProfileField(body, "about", source.about);
-  includeProfileField(body, "onboarding_completed", source.onboardingCompleted);
 
   return body;
 }

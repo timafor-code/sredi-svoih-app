@@ -3934,6 +3934,56 @@ a {
   grid-column: 1 / -1;
 }
 
+.member-hebrew-date-editor {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  margin: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 11px;
+}
+
+.member-hebrew-date-editor legend {
+  padding: 0 5px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.member-hebrew-date-editor__fields {
+  display: grid;
+  grid-template-columns:
+    minmax(90px, 0.7fr)
+    minmax(150px, 1.3fr)
+    minmax(110px, 1fr);
+  gap: 10px;
+}
+
+.member-hebrew-date-editor__note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.member-hebrew-date-editor__clear {
+  justify-self: start;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--gold);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.member-hebrew-date-editor__clear:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
 .event-form-field span {
   color: var(--text-soft);
   font-size: 12px;
@@ -12206,6 +12256,7 @@ a {
   .event-action-dialog__states,
   .event-form-grid--two,
   .event-form-grid--time,
+  .member-hebrew-date-editor__fields,
   .event-web-registration-card__publication,
   .event-questionnaire-card__facts,
   .event-questionnaire-card__published-list,

@@ -1930,7 +1930,11 @@ unaffiliated profiles, sorted by display name and profile creation time.
 (`profile_community_id`, `full_name`, `hebrew_name`, `birth_time_context`,
 `tribe_status`, `marital_status`, `about`, visibility fields,
 `notification_preferences`) and membership detail (`membership_community_id`,
-`membership_created_at`).
+`membership_created_at`). Detail also includes `account_email`, the canonical
+read-only account/login email from `app_users.email`. The existing `email`
+field remains the editable contact email from `profiles.email`; it is not the
+login identity. `account_email` is intentionally absent from the Members list
+response.
 
 `GET /admin/members/{user_id}/registrations` returns the member's registration
 history scoped to events of the selected community only: event id/title,
@@ -1940,13 +1944,26 @@ selected participation-option snapshots. Registrations in other communities
 are never returned.
 
 `PATCH /admin/members/{user_id}/profile` updates only the safe profile fields
-already used by the Members admin UI: `full_name`, `first_name`, `last_name`,
-`display_name`, `hebrew_name`, `email`, `phone`, `city`, `birth_date`,
-`hebrew_birth_date`, `birth_time_context`, `nusach`, `tribe_status`,
-`marital_status`, `about`, and `onboarding_completed`. Unknown fields are
-rejected, at least one profile field is required, and enum/length constraints
-are validated strictly. The endpoint never touches `app_users` auth columns or
-Supabase Auth.
+used by the final Members edit form: `first_name`, `last_name`, `hebrew_name`,
+`email`, `phone`, `city`, `birth_date`, `hebrew_birth_date`,
+`birth_time_context`, `nusach`, `tribe_status`, `marital_status`, and `about`.
+Unknown fields are rejected, at least one profile field is required, and
+enum/length constraints are validated strictly. `email` is contact email only.
+`account_email` cannot be changed through this endpoint, and the endpoint does
+not change login credentials or passwords.
+
+When either name component is supplied, the backend trims it, converts an empty
+value to `null`, and derives both `full_name` and `display_name` from the
+persisted normalized `first_name` plus `last_name`. Clients cannot supply
+`full_name`, `display_name`, or `onboarding_completed` independently.
+
+`hebrew_birth_date` keeps its JSONB wire/storage compatibility, but the admin UI
+edits it only through structured Day / Month / Year controls. A complete value
+contains normalized `day`, allowed Russian `monthNameRu`, positive `year`, and
+a matching `labelRu`; `null` explicitly clears it. The UI never exposes a raw
+JSON editor. Unrecognized existing objects are omitted from the PATCH while
+untouched, and compatible metadata keys are preserved when a structured
+replacement is saved.
 
 `PATCH /admin/members/{user_id}/membership` takes `community_id`, `role`
 (`member`/`rabbi`/`event_manager`/`admin`), and `status`
