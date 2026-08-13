@@ -141,6 +141,13 @@ function isUuid(value: unknown): value is string {
   return typeof value === "string" && UUID_PATTERN.test(value);
 }
 
+const POSTGRESQL_UUID_SHAPE_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isPostgresqlUuid(value: unknown): value is string {
+  return typeof value === "string" && POSTGRESQL_UUID_SHAPE_PATTERN.test(value);
+}
+
 function isDateTime(value: unknown): value is string {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
 }
@@ -265,7 +272,7 @@ function isDeletionPrivacyRequest(value: unknown): value is DeletionPrivacyReque
   return isRecord(value)
     && isUuid(value.id)
     && value.request_type === "deletion"
-    && (value.community_id === null || isUuid(value.community_id))
+    && (value.community_id === null || isPostgresqlUuid(value.community_id))
     && (value.message === null || typeof value.message === "string")
     && typeof value.status === "string"
     && PRIVACY_REQUEST_STATUSES.has(value.status)

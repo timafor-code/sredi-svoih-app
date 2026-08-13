@@ -519,7 +519,7 @@ describe("public event API", () => {
     vi.mocked(fetch)
       .mockImplementationOnce(() => fetchResponse(envelope({
         id: PRIVACY_REQUEST_ID,
-        community_id: null,
+        community_id: "00000000-0000-0000-0000-000000000001",
         request_type: "deletion",
         message: null,
         status: "open",
@@ -556,6 +556,24 @@ describe("public event API", () => {
       }),
     );
     expect(JSON.stringify(vi.mocked(fetch).mock.calls)).not.toContain("normal-account-access-token");
+  });
+
+  it("rejects a malformed deletion-request community UUID", async () => {
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(envelope({
+      id: PRIVACY_REQUEST_ID,
+      community_id: "not-a-uuid",
+      request_type: "deletion",
+      message: null,
+      status: "open",
+      resolution_note: null,
+      resolved_at: null,
+      created_at: EXPIRES_AT,
+      updated_at: EXPIRES_AT,
+    }), 201));
+
+    await expect(createDeletionPrivacyRequest("privacy-session-token")).rejects.toMatchObject({
+      code: "invalid_response",
+    });
   });
 
   it("rejects malformed privacy responses and maps transport failures safely", async () => {

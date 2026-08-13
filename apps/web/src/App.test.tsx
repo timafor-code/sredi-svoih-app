@@ -80,7 +80,7 @@ function privacySession() {
 function deletionPrivacyRequest() {
   return envelope({
     id: PRIVACY_REQUEST_ID,
-    community_id: null,
+    community_id: "00000000-0000-0000-0000-000000000001",
     request_type: "deletion",
     message: null,
     status: "open",
