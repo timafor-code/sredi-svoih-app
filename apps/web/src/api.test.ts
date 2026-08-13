@@ -98,9 +98,15 @@ describe("public event API", () => {
 
   it("loads My Tickets only from the canonical authenticated endpoint", async () => {
     const registration = myRegistration();
+    (registration.event as unknown as Record<string, unknown>).source_metadata = {
+      imported_from: "canonical-api",
+    };
     vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(envelope([registration])));
 
     await expect(getMyRegistrations("current-memory-access-token")).resolves.toEqual([registration]);
+    expect((registration.event as unknown as Record<string, unknown>).community_id).toBe(
+      "00000000-0000-0000-0000-000000000001",
+    );
 
     expect(fetch).toHaveBeenCalledWith("/api/me/registrations", expect.objectContaining({
       method: "GET",
@@ -116,6 +122,22 @@ describe("public event API", () => {
   it("rejects malformed My Tickets responses without exposing backend data", async () => {
     const malformed = myRegistration({ payment_status: "unknown" as "paid" });
     vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(envelope([malformed])));
+
+    await expect(getMyRegistrations("current-memory-access-token")).rejects.toMatchObject({
+      name: "PublicApiError",
+      code: "invalid_response",
+    });
+  });
+
+  it.each([
+    ["event start", () => myRegistration({ event: { starts_at: "not-a-date" } })],
+    ["selected option amount", () => {
+      const registration = myRegistration();
+      registration.selected_options[0].total_amount = 12.5;
+      return registration;
+    }],
+  ])("rejects a malformed critical My Tickets %s", async (_field, buildRegistration) => {
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(envelope([buildRegistration()])));
 
     await expect(getMyRegistrations("current-memory-access-token")).rejects.toMatchObject({
       name: "PublicApiError",

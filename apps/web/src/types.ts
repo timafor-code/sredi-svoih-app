@@ -162,106 +162,45 @@ export type MyRegistrationPaymentStatus =
   | "paid";
 
 export type MyRegistrationEvent = {
-  id: string;
-  community_id: string;
-  event_kind: string;
   title: string;
-  subtitle: string | null;
-  description: string | null;
-  short_description: string | null;
   starts_at: string;
   ends_at: string | null;
-  is_permanent: boolean;
   timezone: string | null;
   location_name: string | null;
   address: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  image_url: string | null;
-  category: string;
-  audience: string | null;
-  visibility: string;
-  status: string;
-  source_url: string | null;
-  registration_mode: string;
-  registration_url: string | null;
-  capacity: number | null;
-  waitlist_enabled: boolean;
-  requires_approval: boolean;
-  price_amount: number | null;
-  price_currency: string | null;
-  published_at: string | null;
-  created_at: string;
-  updated_at: string;
 };
 
 export type MyRegistrationOccurrence = {
-  id: string;
-  event_id: string;
   title: string | null;
   starts_at: string;
   ends_at: string | null;
   timezone: string;
-  registration_opens_at: string | null;
-  registration_closes_at: string | null;
-  capacity: number | null;
-  waitlist_enabled: boolean | null;
-  requires_approval: boolean | null;
-  status: string;
-  sort_order: number;
-  created_at: string;
-  updated_at: string;
 };
 
 export type MyRegistrationSelectedOption = {
   id: string;
-  option_id: string | null;
   title_snapshot: string;
   description_snapshot: string | null;
-  option_type_snapshot: string;
   quantity: number;
-  unit_price_amount: number;
   total_amount: number;
   currency: string;
   counts_toward_capacity: boolean;
   seats_count: number;
   is_donation: boolean;
-  created_at: string;
-};
-
-export type MyRegistrationCapacityReservation = {
-  id: string;
-  capacity_unit_id: string;
-  option_id: string | null;
-  capacity_unit_key_snapshot: string;
-  capacity_unit_title_snapshot: string;
-  option_title_snapshot: string | null;
-  quantity: number;
-  seats_per_quantity: number;
-  seats_count: number;
-  created_at: string;
 };
 
 export type MyRegistration = {
   id: string;
   event_id: string;
   occurrence_id: string | null;
-  user_id: string;
   status: MyRegistrationStatus;
   seats_count: number;
   guest_names: unknown[];
-  comment: string | null;
   registered_at: string;
-  confirmed_at: string | null;
-  cancelled_at: string | null;
   payment_status: MyRegistrationPaymentStatus;
-  payment_id: string | null;
-  created_at: string;
-  updated_at: string;
   event: MyRegistrationEvent;
   occurrence: MyRegistrationOccurrence | null;
   selected_options: MyRegistrationSelectedOption[];
-  capacity_reservations: MyRegistrationCapacityReservation[];
   total_amount: number | null;
   total_currency: string | null;
 };
