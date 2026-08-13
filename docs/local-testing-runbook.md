@@ -1,371 +1,169 @@
 # «Среди Своих»: локальный запуск и ручное тестирование
 
-Единая памятка для Windows PowerShell. Все команды выполняются из корня репозитория:
+Единая памятка для Windows PowerShell.
+
+Локальный проект:
 
 ```powershell
-cd F:\2026\SS-App\code\sredi-svoih-app
+F:\2026\SS-App\code\sredi-svoih-app
 ```
 
 Текущий локальный runtime состоит из четырёх частей:
 
 | Контур | Команда запуска | Адрес |
 | --- | --- | --- |
-| Python API, PostgreSQL, MinIO и Mailpit | Docker Compose | `http://127.0.0.1:8000` |
+| Python API + PostgreSQL + MinIO + Mailpit | Docker Compose | `http://127.0.0.1:8000` |
 | Web-admin | `npm run admin:dev` | `http://localhost:5173` |
-| Публичная web-регистрация | `npm run web:dev` | `http://localhost:5174` |
-| Мобильное приложение на физическом iPhone | `npm run mobile:iphone` | Expo Go / `http://localhost:8081` |
+| Public web registration | `npm run web:dev` | `http://localhost:5174` |
+| Mobile на физическом iPhone | `npm run mobile:iphone` | Expo Go / Metro `8081` |
 
-Supabase для текущего API-only runtime запускать не требуется. Исторические Supabase migrations остаются архивом и не являются рабочим локальным контуром приложения.
+Supabase для текущего production-like API runtime не запускается. Mobile, admin и public web работают через Python/FastAPI API.
 
-## 1. Самый частый сценарий: запустить всё
+> **Главное правило:** четыре открытых окна PowerShell не означают, что локальный контур работает. Перед запуском admin, web и Expo обязательно должен успешно отвечать `http://127.0.0.1:8000/health`.
 
-Откройте четыре окна PowerShell.
+---
 
-### Окно 1 — API и все Docker-сервисы
+# 1. Канонический запуск после включения компьютера
 
-Обычный ежедневный запуск одновременно включает бесплатную и платную
-web-регистрацию:
+Этот раздел — основной ежедневный алгоритм для сценария:
+
+```text
+Windows только что включён
+→ ничего не запущено
+→ нужно поднять API, admin, web и iPhone/Expo Go
+```
+
+## Шаг 0 — запустить Docker Desktop
+
+Сначала запустите **Docker Desktop** и дождитесь, пока Docker Engine полностью загрузится.
+
+После этого откройте PowerShell и выполните:
 
 ```powershell
-docker compose -f infra/docker-compose.api.yml up -d
+cd F:\2026\SS-App\code\sredi-svoih-app
+docker version
+docker compose version
+```
+
+`docker version` должен показать не только Client, но и Server.
+
+Если Server недоступен, не продолжайте запуск проекта. Сначала дождитесь запуска Docker Desktop.
+
+---
+
+## Окно 1 — API и Docker-сервисы
+
+Откройте первое окно PowerShell.
+
+### 1.1. Перейдите в проект
+
+```powershell
+cd F:\2026\SS-App\code\sredi-svoih-app
+```
+
+### 1.2. Поднимите текущую версию API
+
+Канонический cold-start использует `--build`, чтобы после merge/pull не остаться на старом Python image:
+
+```powershell
+docker compose -f infra/docker-compose.api.yml up -d --build
+```
+
+Почему это важно: содержимое `apps/api` копируется внутрь Docker image через `Dockerfile.local`. Обычный restart контейнера не подхватывает новый Python-код.
+
+### 1.3. Примените Alembic migrations
+
+```powershell
 docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
 ```
 
-После одного запуска доступны опубликованные события с `internal_free` и
-`internal_paid`; дополнительная переменная окружения не нужна.
+Если команда выполнена без ошибки — продолжайте.
 
-Если вы переключили ветку, получили новый backend-код или изменился `apps/api`:
+### 1.4. Проверьте контейнеры
 
 ```powershell
+docker compose -f infra/docker-compose.api.yml ps -a
+```
+
+Нормальное состояние:
+
+- `api_backend` — running;
+- `api_postgres` — running / healthy;
+- `api_object_storage` — running;
+- `api_mailpit` — running;
+- `api_object_storage_init` — может быть `Exited (0)`: это нормально, он создаёт bucket и завершает работу;
+- `api_privacy_erasure_worker` — при выключенном `API_PRIVACY_ERASURE_WORKER_ENABLED` может завершиться успешно; это не означает, что API сломан.
+
+### 1.5. Обязательная проверка API
+
+```powershell
+curl.exe --fail http://127.0.0.1:8000/health
+curl.exe --fail http://127.0.0.1:8000/version
+```
+
+**Не переходите к окну 2, пока `/health` не отвечает успешно.**
+
+Дополнительно можно открыть:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+### 1.6. Если `/health` не работает
+
+Сначала:
+
+```powershell
+docker compose -f infra/docker-compose.api.yml ps -a
+docker compose -f infra/docker-compose.api.yml logs --tail=150 api_backend
+```
+
+Проверить, занят ли порт 8000:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue
+```
+
+Если `api_backend` не запущен и `exec ... alembic` выполнить невозможно:
+
+```powershell
+docker compose -f infra/docker-compose.api.yml run --rm api_backend alembic upgrade head
 docker compose -f infra/docker-compose.api.yml up -d --build --force-recreate api_backend
-docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
+curl.exe --fail http://127.0.0.1:8000/health
 ```
 
-### Окно 2 — админка
+Не используйте `down -v` для обычного восстановления: эта команда удаляет локальные PostgreSQL/MinIO volumes.
+
+---
+
+## Окно 2 — Web-admin
+
+Открывать только после успешного `/health` в окне 1.
 
 ```powershell
 cd F:\2026\SS-App\code\sredi-svoih-app
 npm run admin:dev
 ```
 
-Открыть: `http://localhost:5173`.
-
-### Окно 3 — публичная web-регистрация
-
-```powershell
-cd F:\2026\SS-App\code\sredi-svoih-app
-npm run web:dev
-```
-
-Открыть ссылку, скопированную из карточки web-регистрации события в админке:
+Открыть:
 
 ```text
-http://localhost:5174/events/<public-slug>
+http://localhost:5173
 ```
 
-Для выбора конкретной даты постоянного события:
-
-```text
-http://localhost:5174/events/<public-slug>?occurrence=<occurrence-uuid>
-```
-
-### Окно 4 — мобильное приложение с аккаунтами и внутренней регистрацией
-
-Сначала сохраните локальный IP компьютера и account-режимы в корневом
-`.env.local`, как описано в разделе 3. Затем выполните одну каноническую команду:
-
-```powershell
-cd F:\2026\SS-App\code\sredi-svoih-app
-npm run mobile:iphone
-```
-
-Команда сама запускает или актуализирует локальный Docker-контур и затем запускает
-Expo с очищенным Metro cache. На iPhone откройте QR-код через Expo Go. iPhone и
-компьютер должны находиться в одной локальной сети.
-
-## 2. Первый запуск на компьютере
-
-Проверьте, что установлены Git, Node.js/npm, Docker Desktop и Expo Go на iPhone. Затем:
-
-```powershell
-cd F:\2026\SS-App\code\sredi-svoih-app
-git switch main
-git pull origin main
-git status --short
-npm ci
-npm ci --prefix apps/admin
-npm ci --prefix apps/web
-docker compose -f infra/docker-compose.api.yml up -d --build
-docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
-```
-
-Первый Docker-запуск скачивает образы и собирает Python API, поэтому занимает больше времени. Последующие `docker compose ... up -d` используют уже скачанные образы и сохранённые build layers.
-
-## 3. Постоянная локальная конфигурация без повторного ввода переменных
-
-Локальные `.env.local` игнорируются Git и не должны коммититься. Корневой
-`.env.local` читает launcher мобильного приложения; здесь хранятся только
-разрешённые `EXPO_PUBLIC_*` значения. Для public web не нужна отдельная
-переменная запуска backend.
-
-Остальные локальные файлы создайте один раз, не перезаписывая существующие:
-
-```powershell
-cd F:\2026\SS-App\code\sredi-svoih-app
-if (-not (Test-Path .env.local)) { Copy-Item .env.example .env.local }
-if (-not (Test-Path apps/admin/.env.local)) { Copy-Item apps/admin/.env.example apps/admin/.env.local }
-if (-not (Test-Path apps/web/.env.local)) { Copy-Item apps/web/.env.example apps/web/.env.local }
-notepad .env.local
-```
-
-Для тестирования мобильного приложения с аккаунтами содержимое корневого `.env.local` должно выглядеть так:
+Локальный admin должен обращаться к API по:
 
 ```dotenv
-EXPO_PUBLIC_API_URL=http://<LAN-IP>:8000
-EXPO_PUBLIC_APP_ACCESS_MODE=account
-EXPO_PUBLIC_EVENT_REGISTRATION_MODE=account
+VITE_API_URL=http://127.0.0.1:8000
 ```
 
-После сохранения запускайте локальный runtime физического iPhone одной командой:
-
-```powershell
-cd F:\2026\SS-App\code\sredi-svoih-app
-npm run mobile:iphone
-```
-
-Launcher явно читает только эти три разрешённые mobile-переменные из корневого
-`.env.local`. Для `npm run mobile:iphone` файл является источником истины: старые
-одноимённые `$env:EXPO_PUBLIC_*` из PowerShell не переопределяют его значения.
-Произвольные backend-переменные из файла не копируются в Expo.
-
-Из `EXPO_PUBLIC_API_URL` launcher получает LAN hostname/IP и перед запуском Expo:
-
-- выполняет `docker compose -f infra/docker-compose.api.yml up -d` без удаления
-  PostgreSQL или MinIO volumes;
-- передаёт только процессу Docker Compose
-  `API_OBJECT_STORAGE_HOST_BIND=0.0.0.0`;
-- передаёт backend public endpoint для presigned avatar URLs как
-  `API_OBJECT_STORAGE_PUBLIC_ENDPOINT_URL=http://<LAN-IP>:59000`;
-- запускает Expo с тремя значениями из `.env.local` и `--clear`.
-
-Launcher отклонит невалидный API URL, а также `localhost` и `127.0.0.1`. Проверить
-конфигурацию без запуска Docker и Expo можно так:
-
-```powershell
-npm run mobile:iphone -- --check
-```
-
-Обычный `npx expo start` не изменён. Если он нужен как ручной troubleshooting
-fallback и в текущем окне PowerShell ранее задавались `$env:EXPO_PUBLIC_*`, очистить
-их можно так:
-
-```powershell
-Remove-Item Env:EXPO_PUBLIC_API_URL -ErrorAction SilentlyContinue
-Remove-Item Env:EXPO_PUBLIC_APP_ACCESS_MODE -ErrorAction SilentlyContinue
-Remove-Item Env:EXPO_PUBLIC_EVENT_REGISTRATION_MODE -ErrorAction SilentlyContinue
-```
-
-## 4. Режимы мобильного приложения
-
-Для канонического запуска укажите нужные значения в корневом `.env.local`, затем
-выполните `npm run mobile:iphone`. Launcher передаёт значения без скрытой замены на
-другой режим.
-
-Ниже оставлены ручные команды только как troubleshooting fallback для обычного
-`npx expo start`.
-
-### Приложение с аккаунтами и внутренней регистрацией на события
-
-```powershell
-$env:EXPO_PUBLIC_API_URL="http://<LAN-IP>:8000"
-$env:EXPO_PUBLIC_APP_ACCESS_MODE="account"
-$env:EXPO_PUBLIC_EVENT_REGISTRATION_MODE="account"
-npx expo start --clear
-```
-
-### Приложение с аккаунтами, но с переходом на публичную web-регистрацию
-
-```powershell
-$env:EXPO_PUBLIC_API_URL="http://<LAN-IP>:8000"
-$env:EXPO_PUBLIC_APP_ACCESS_MODE="account"
-$env:EXPO_PUBLIC_EVENT_REGISTRATION_MODE="public_web"
-npx expo start --clear
-```
-
-### Гостевое приложение с переходом на публичную web-регистрацию
-
-```powershell
-$env:EXPO_PUBLIC_API_URL="http://<LAN-IP>:8000"
-$env:EXPO_PUBLIC_APP_ACCESS_MODE="guest_only"
-$env:EXPO_PUBLIC_EVENT_REGISTRATION_MODE="public_web"
-npx expo start --clear
-```
-
-### Полностью гостевой вариант без регистрации на события
-
-```powershell
-$env:EXPO_PUBLIC_API_URL="http://<LAN-IP>:8000"
-$env:EXPO_PUBLIC_APP_ACCESS_MODE="guest_only"
-$env:EXPO_PUBLIC_EVENT_REGISTRATION_MODE="disabled"
-npx expo start --clear
-```
-
-Неизвестные или пропущенные значения работают безопасно: приложение переходит в `guest_only`, а регистрация — в `disabled`.
-
-## 5. Как узнать LAN IP компьютера
-
-В PowerShell:
-
-```powershell
-Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike "127.*" -and $_.AddressState -eq "Preferred" } | Select-Object InterfaceAlias,IPAddress
-```
-
-Обычно нужен IPv4 активного Wi-Fi или Ethernet, например `192.168.1.25`. Тогда:
-
-```text
-EXPO_PUBLIC_API_URL=http://192.168.1.25:8000
-```
-
-С iPhone проверьте доступность API в Safari:
-
-```text
-http://192.168.1.25:8000/health
-```
-
-Затем проверьте доступность MinIO для прямой загрузки аватара:
-
-```text
-http://192.168.1.25:59000
-```
-
-XML/S3 error или `AccessDenied` допустимы: они подтверждают, что iPhone видит
-object storage. Ошибка сетевого подключения означает, что LAN-доступ всё ещё
-заблокирован.
-
-Если Windows Firewall блокирует порт `59000`, администратор компьютера может вручную
-добавить правило:
-
-```powershell
-New-NetFirewallRule -DisplayName "Sredi Svoih MinIO 59000" -Direction Inbound -Protocol TCP -LocalPort 59000 -Action Allow
-```
-
-Launcher не меняет Windows Firewall и не требует запуска с повышенными правами.
-Если API-адрес не открывается, проверьте общую Wi-Fi сеть и разрешение Windows
-Firewall для Docker/порта `8000`. На физическом iPhone нельзя использовать
-`127.0.0.1` или `localhost`: они указывают на сам телефон.
-
-## 6. API, база, почта и object storage
-
-### Проверка API
-
-```powershell
-curl.exe http://127.0.0.1:8000/health
-curl.exe http://127.0.0.1:8000/version
-```
-
-Полезные адреса:
-
-- API: `http://127.0.0.1:8000`;
-- Swagger / FastAPI docs: `http://127.0.0.1:8000/docs`;
-- Mailpit: `http://127.0.0.1:8025`;
-- MinIO console: `http://127.0.0.1:59001`;
-- PostgreSQL с компьютера: `localhost:55432`.
-
-Mobile, admin и public web обращаются только к Python API. Подключать их напрямую к PostgreSQL нельзя.
-
-### Статус контейнеров
-
-```powershell
-docker compose -f infra/docker-compose.api.yml ps
-```
-
-### Логи API
-
-```powershell
-docker compose -f infra/docker-compose.api.yml logs -f --tail=100 api_backend
-```
-
-### Логи всех Docker-сервисов
-
-```powershell
-docker compose -f infra/docker-compose.api.yml logs -f --tail=100
-```
-
-Выход из просмотра логов: `Ctrl+C`. Контейнеры при этом продолжают работать.
-
-### Применить миграции
-
-Если API уже запущен:
-
-```powershell
-docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
-```
-
-Если контейнер API не запускается, миграцию можно выполнить временным контейнером:
-
-```powershell
-docker compose -f infra/docker-compose.api.yml run --rm api_backend alembic upgrade head
-```
-
-### Пересобрать только API после backend-изменений
-
-Код API копируется в Docker image. Обычный `restart` новый код не подхватит — нужна пересборка:
-
-```powershell
-docker compose -f infra/docker-compose.api.yml up -d --build --force-recreate api_backend
-docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
-docker compose -f infra/docker-compose.api.yml logs -f --tail=100 api_backend
-```
-
-### Полностью перезапустить Docker-контур без удаления данных
-
-```powershell
-docker compose -f infra/docker-compose.api.yml down
-docker compose -f infra/docker-compose.api.yml up -d --build
-docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
-```
-
-`down` без `-v` сохраняет PostgreSQL и MinIO volumes. Не используйте `down -v`, если не хотите удалить локальную API-базу и объекты.
-
-## 7. Публичная web-регистрация
-
-### Бесплатная и платная регистрация
-
-```powershell
-docker compose -f infra/docker-compose.api.yml up -d
-npm run web:dev
-```
-
-В админке у события должны быть:
-
-- статус `published`;
-- видимость `public`;
-- режим регистрации `internal_free` или `internal_paid`;
-- web-публикация `Только по ссылке` (`unlisted`) или `listed`;
-- действующее согласие на регистрацию;
-- сохранённый публичный slug.
-
-Код подтверждения email приходит не во внешнюю почту, а в локальный Mailpit:
-
-```text
-http://127.0.0.1:8025
-```
-
-Один обычный запуск API обслуживает оба режима одновременно. `internal_free`
-по-прежнему принимает только бесплатные варианты без donations. `internal_paid`
-поддерживает существующие бесплатные, платные и donation options. Текущая
-реализация создаёт платную регистрацию со статусами `pending/pending`, но не
-проводит реальную оплату и не должна показывать, что платёж завершён.
-
-## 8. Админка
-
-Проверить локальные настройки:
+Проверить текущий файл:
 
 ```powershell
 Get-Content apps/admin/.env.local
 ```
 
-Ожидаемые значения:
+Ожидаемый локальный набор:
 
 ```dotenv
 VITE_API_URL=http://127.0.0.1:8000
@@ -373,50 +171,376 @@ VITE_ADMIN_ENV_LABEL=staging
 VITE_ADMIN_BASE_PATH=/
 ```
 
-Запуск:
+Важно: то, что Vite сообщил `Local: http://localhost:5173`, доказывает только запуск frontend dev server. Это **не доказывает**, что Python API работает.
+
+---
+
+## Окно 3 — Public web registration
+
+Открывать только после успешного `/health` в окне 1.
 
 ```powershell
-npm run admin:dev
+cd F:\2026\SS-App\code\sredi-svoih-app
+npm run web:dev
 ```
 
-Vite автоматически обновляет страницу после обычных изменений React/CSS. После изменения зависимостей остановите процесс через `Ctrl+C`, затем:
+Открыть:
 
-```powershell
-npm ci --prefix apps/admin
-npm run admin:dev
+```text
+http://localhost:5174
 ```
 
-## 9. Public web
-
-Проверить локальные настройки:
+Проверить env:
 
 ```powershell
 Get-Content apps/web/.env.local
 ```
 
-Ожидаемые значения:
+Ожидается:
 
 ```dotenv
 VITE_WEB_API_BASE_URL=/api
 VITE_WEB_API_PROXY_TARGET=http://127.0.0.1:8000
 ```
 
-Запуск:
+После запуска Vite отдельно проверьте proxy:
 
 ```powershell
-npm run web:dev
+curl.exe --fail http://localhost:5174/api/health
 ```
 
-Vite proxy перенаправляет `/api` на локальный Python API. После изменения зависимостей:
+Диагностика:
+
+- `http://127.0.0.1:8000/health` работает, но `http://localhost:5174/api/health` нет → проверять Vite proxy / `apps/web/.env.local`;
+- оба адреса не работают → вернуться к окну 1 и чинить API.
+
+Ссылка на событие:
+
+```text
+http://localhost:5174/events/<public-slug>
+```
+
+Для legacy/preselected occurrence сценария:
+
+```text
+http://localhost:5174/events/<public-slug>?occurrence=<occurrence-uuid>
+```
+
+---
+
+## Перед окном 4 — обязательно проверить текущий LAN IP
+
+После перезагрузки компьютера или Wi-Fi роутер может выдать компьютеру другой IPv4.
+
+Проверьте:
 
 ```powershell
+Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike "127.*" -and $_.AddressState -eq "Preferred" } | Select-Object InterfaceAlias,IPAddress
+```
+
+Нужен IPv4 активного Wi-Fi/Ethernet, например:
+
+```text
+192.168.1.25
+```
+
+Проверьте корневой `.env.local`:
+
+```powershell
+Get-Content .env.local
+```
+
+Для account-режима ожидается:
+
+```dotenv
+EXPO_PUBLIC_API_URL=http://192.168.1.25:8000
+EXPO_PUBLIC_APP_ACCESS_MODE=account
+EXPO_PUBLIC_EVENT_REGISTRATION_MODE=account
+```
+
+IP в `EXPO_PUBLIC_API_URL` должен совпадать с **текущим** LAN IP компьютера.
+
+---
+
+## Окно 4 — Mobile на физическом iPhone через Expo Go
+
+Сначала проверить конфигурацию без запуска Expo:
+
+```powershell
+cd F:\2026\SS-App\code\sredi-svoih-app
+npm run mobile:iphone -- --check
+```
+
+На iPhone, подключённом к той же сети, откройте Safari:
+
+```text
+http://<CURRENT-LAN-IP>:8000/health
+```
+
+Если Safari не открывает этот адрес, Expo-приложение также не сможет нормально работать с API. Сначала решите LAN/Firewall проблему.
+
+Только после успешной проверки запускайте:
+
+```powershell
+npm run mobile:iphone
+```
+
+Launcher:
+
+- читает `EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_APP_ACCESS_MODE`, `EXPO_PUBLIC_EVENT_REGISTRATION_MODE` из корневого `.env.local`;
+- вызывает `docker compose ... up -d`;
+- делает MinIO доступным для LAN на `59000`;
+- выставляет public avatar storage URL через текущий LAN IP;
+- запускает Expo с очищенным Metro cache.
+
+Но `npm run mobile:iphone` **не заменяет окно 1**: он не является полным API readiness gate и не должен использоваться вместо проверки Alembic + `/health`.
+
+На физическом iPhone нельзя указывать `127.0.0.1` или `localhost`: они указывают на сам iPhone.
+
+---
+
+# 2. Как понять, что весь локальный контур готов
+
+Перед ручным тестированием должны выполняться все применимые проверки:
+
+| Проверка | Адрес |
+| --- | --- |
+| API health | `http://127.0.0.1:8000/health` |
+| API version | `http://127.0.0.1:8000/version` |
+| Swagger | `http://127.0.0.1:8000/docs` |
+| Admin | `http://localhost:5173` |
+| Public web | `http://localhost:5174` |
+| Web → API proxy | `http://localhost:5174/api/health` |
+| Mailpit | `http://127.0.0.1:8025` |
+| MinIO console | `http://127.0.0.1:59001` |
+| API с физического iPhone | `http://<CURRENT-LAN-IP>:8000/health` |
+
+**Readiness-критерий — работа этих сервисов, а не количество открытых PowerShell-окон.**
+
+---
+
+# 3. Первый запуск проекта на новом компьютере
+
+Это отличается от обычного ежедневного cold-start.
+
+Нужно установить:
+
+- Git;
+- Node.js/npm;
+- Docker Desktop;
+- Expo Go на iPhone.
+
+Затем:
+
+```powershell
+cd F:\2026\SS-App\code\sredi-svoih-app
+git switch main
+git pull origin main
+git status --short
+npm ci
+npm ci --prefix apps/admin
 npm ci --prefix apps/web
-npm run web:dev
 ```
 
-## 10. После переключения ветки или получения нового PR
+Создать локальные env-файлы только если их ещё нет:
 
-Сначала остановите Expo, admin и public web через `Ctrl+C`. Затем:
+```powershell
+if (-not (Test-Path .env.local)) { Copy-Item .env.example .env.local }
+if (-not (Test-Path apps/admin/.env.local)) { Copy-Item apps/admin/.env.example apps/admin/.env.local }
+if (-not (Test-Path apps/web/.env.local)) { Copy-Item apps/web/.env.example apps/web/.env.local }
+```
+
+После этого выполнить канонический запуск из раздела 1.
+
+Первый Docker build занимает заметно больше времени, потому что скачиваются образы и устанавливаются Python dependencies.
+
+---
+
+# 4. Mobile `.env.local` и режимы приложения
+
+Корневой `.env.local` используется launcher'ом `npm run mobile:iphone`.
+
+Для аккаунтов + internal registration:
+
+```dotenv
+EXPO_PUBLIC_API_URL=http://<LAN-IP>:8000
+EXPO_PUBLIC_APP_ACCESS_MODE=account
+EXPO_PUBLIC_EVENT_REGISTRATION_MODE=account
+```
+
+Account + public web registration:
+
+```dotenv
+EXPO_PUBLIC_API_URL=http://<LAN-IP>:8000
+EXPO_PUBLIC_APP_ACCESS_MODE=account
+EXPO_PUBLIC_EVENT_REGISTRATION_MODE=public_web
+```
+
+Guest + public web registration:
+
+```dotenv
+EXPO_PUBLIC_API_URL=http://<LAN-IP>:8000
+EXPO_PUBLIC_APP_ACCESS_MODE=guest_only
+EXPO_PUBLIC_EVENT_REGISTRATION_MODE=public_web
+```
+
+Guest без registration:
+
+```dotenv
+EXPO_PUBLIC_API_URL=http://<LAN-IP>:8000
+EXPO_PUBLIC_APP_ACCESS_MODE=guest_only
+EXPO_PUBLIC_EVENT_REGISTRATION_MODE=disabled
+```
+
+Проверка:
+
+```powershell
+npm run mobile:iphone -- --check
+```
+
+Локальные `.env.local` не коммитятся.
+
+---
+
+# 5. LAN, iPhone и MinIO
+
+Проверка LAN IP:
+
+```powershell
+Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike "127.*" -and $_.AddressState -eq "Preferred" } | Select-Object InterfaceAlias,IPAddress
+```
+
+С компьютера:
+
+```text
+http://<LAN-IP>:8000/health
+```
+
+Затем с iPhone Safari:
+
+```text
+http://<LAN-IP>:8000/health
+```
+
+Для аватаров после запуска `npm run mobile:iphone`:
+
+```text
+http://<LAN-IP>:59000
+```
+
+XML/S3 error или `AccessDenied` допустимы: это означает, что iPhone видит MinIO.
+
+Если Windows Firewall блокирует MinIO:
+
+```powershell
+New-NetFirewallRule -DisplayName "Sredi Svoih MinIO 59000" -Direction Inbound -Protocol TCP -LocalPort 59000 -Action Allow
+```
+
+Для API при необходимости аналогично проверить Windows Firewall / Docker network access на port `8000`.
+
+---
+
+# 6. API, PostgreSQL, Mailpit и MinIO
+
+## API
+
+```powershell
+curl.exe --fail http://127.0.0.1:8000/health
+curl.exe --fail http://127.0.0.1:8000/version
+```
+
+## Контейнеры
+
+```powershell
+docker compose -f infra/docker-compose.api.yml ps -a
+```
+
+## Логи API
+
+```powershell
+docker compose -f infra/docker-compose.api.yml logs -f --tail=100 api_backend
+```
+
+Выход: `Ctrl+C`. Контейнер остаётся работать.
+
+## Все Docker logs
+
+```powershell
+docker compose -f infra/docker-compose.api.yml logs -f --tail=100
+```
+
+## Alembic migration
+
+Если API running:
+
+```powershell
+docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
+```
+
+Если API container не стартует:
+
+```powershell
+docker compose -f infra/docker-compose.api.yml run --rm api_backend alembic upgrade head
+```
+
+## Mailpit
+
+```text
+http://127.0.0.1:8025
+```
+
+Локальные email-коды приходят сюда, а не на внешний email.
+
+## MinIO console
+
+```text
+http://127.0.0.1:59001
+```
+
+## PostgreSQL host port
+
+```text
+localhost:55432
+```
+
+Frontend-клиенты не должны подключаться к PostgreSQL напрямую.
+
+---
+
+# 7. Public web registration
+
+Сначала API должен пройти `/health`.
+
+Затем:
+
+```powershell
+npm run web:dev
+curl.exe --fail http://localhost:5174/api/health
+```
+
+Для доступного события в admin обычно должны быть корректно настроены:
+
+- `published`;
+- `public` visibility;
+- `internal_free` или `internal_paid`;
+- web visibility `unlisted`/`listed`;
+- public slug;
+- occurrence/window/capacity;
+- актуальный текст согласия.
+
+Локальный Mailpit:
+
+```text
+http://127.0.0.1:8025
+```
+
+`internal_paid` в текущем локальном runtime создаёт регистрацию со статусами `pending / pending`; реальный payment gateway не выполняется.
+
+---
+
+# 8. Что делать после merge / git pull
+
+Остановите Expo/admin/web через `Ctrl+C`.
 
 ```powershell
 cd F:\2026\SS-App\code\sredi-svoih-app
@@ -426,107 +550,131 @@ git pull origin main
 npm ci
 npm ci --prefix apps/admin
 npm ci --prefix apps/web
-docker compose -f infra/docker-compose.api.yml up -d --build
-docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
 ```
 
-После этого снова запустите admin, public web и Expo в отдельных окнах.
+Затем снова пройдите **канонический запуск из раздела 1**, начиная с Docker/API.
 
-Если тестируется конкретный PR через GitHub CLI:
+Если менялся Python backend, plain restart недостаточен: нужен build/recreate.
 
-```powershell
-cd F:\2026\SS-App\code\sredi-svoih-app
-git status --short
-gh pr checkout <PR-number>
-npm ci
-npm ci --prefix apps/admin
-npm ci --prefix apps/web
-docker compose -f infra/docker-compose.api.yml up -d --build
-docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
-```
+---
 
-Не переключайте ветку при наличии неожиданных modified/staged файлов. Не добавляйте в commit локальные `.env.local`, `supabase/functions/`, `supabase/snippets/` или `500`.
+# 9. Что именно перезапускать после изменений
 
-## 11. Что именно перезапускать после изменений
-
-| Что изменилось | Что сделать |
+| Что изменилось | Что делать |
 | --- | --- |
-| Только admin React/CSS | Обычно ничего: Vite HMR обновит страницу |
-| `apps/admin/package*.json` | `Ctrl+C`, `npm ci --prefix apps/admin`, `npm run admin:dev` |
-| Только public web React/CSS | Обычно ничего: Vite HMR обновит страницу |
-| `apps/web/package*.json` | `Ctrl+C`, `npm ci --prefix apps/web`, `npm run web:dev` |
-| Mobile JS/TS | Expo обычно обновит приложение автоматически |
-| Mobile env или странный Metro cache | `Ctrl+C`, затем `npm run mobile:iphone` |
-| Python API | `docker compose ... up -d --build --force-recreate api_backend` |
-| Alembic migration | Пересобрать API и выполнить `alembic upgrade head` |
-| Docker Compose или backend env | Пересоздать затронутые сервисы, при сомнении — весь API-контур |
+| Только mobile JS/TS | Expo обычно обновит автоматически; при проблеме restart `npm run mobile:iphone` |
+| Корневой `.env.local` | остановить Expo → `npm run mobile:iphone -- --check` → `npm run mobile:iphone` |
+| LAN IP изменился | обновить `EXPO_PUBLIC_API_URL` → проверить Safari `/health` → restart mobile launcher |
+| Только admin React/CSS | обычно Vite HMR достаточно |
+| `apps/admin/package*.json` | `Ctrl+C` → `npm ci --prefix apps/admin` → `npm run admin:dev` |
+| Только public web React/CSS | обычно Vite HMR достаточно |
+| `apps/web/package*.json` | `Ctrl+C` → `npm ci --prefix apps/web` → `npm run web:dev` |
+| Python в `apps/api` | `docker compose -f infra/docker-compose.api.yml up -d --build --force-recreate api_backend` → Alembic → `/health` |
+| Alembic migration | rebuild API при необходимости → `alembic upgrade head` → `/health` |
+| Dockerfile / Python dependencies | rebuild affected image/service |
+| `infra/docker-compose.api.yml` или backend env | recreate affected services; затем `/health` |
 
-## 12. Остановка
+Главное backend-правило:
 
-Admin, public web и Expo останавливаются в своих окнах через:
+```text
+apps/api копируется внутрь Docker image.
+Простой restart контейнера не загружает изменённый Python-код.
+```
+
+---
+
+# 10. Остановка локального контура
+
+Admin, web и Expo:
 
 ```text
 Ctrl+C
 ```
 
-Остановить Docker-контур без удаления данных:
+Docker без удаления данных:
 
 ```powershell
 cd F:\2026\SS-App\code\sredi-svoih-app
 docker compose -f infra/docker-compose.api.yml down
 ```
 
-## 13. Быстрая диагностика
+Не добавляйте `-v`, если не хотите удалить PostgreSQL и MinIO volumes.
 
-### Админка или web-регистрация показывает API error
+---
+
+# 11. Быстрая диагностика
+
+## Admin или web показывает API error
 
 ```powershell
-docker compose -f infra/docker-compose.api.yml ps
-curl.exe http://127.0.0.1:8000/health
+docker compose -f infra/docker-compose.api.yml ps -a
+curl.exe --fail http://127.0.0.1:8000/health
 docker compose -f infra/docker-compose.api.yml logs --tail=200 api_backend
 ```
 
-### После merge виден старый backend-код
+## После merge остался старый API
 
 ```powershell
 docker compose -f infra/docker-compose.api.yml up -d --build --force-recreate api_backend
 docker compose -f infra/docker-compose.api.yml exec api_backend alembic upgrade head
+curl.exe --fail http://127.0.0.1:8000/health
 ```
 
-### Web-регистрация пишет, что email недоступен
+## Web работает, но `/api/health` нет
 
 ```powershell
-docker compose -f infra/docker-compose.api.yml up -d api_mailpit api_backend
+curl.exe --fail http://127.0.0.1:8000/health
+Get-Content apps/web/.env.local
+curl.exe --fail http://localhost:5174/api/health
+```
+
+Если direct API green, искать проблему в web proxy/env.
+
+## Email code не приходит
+
+```powershell
+docker compose -f infra/docker-compose.api.yml ps -a
 docker compose -f infra/docker-compose.api.yml logs --tail=100 api_mailpit api_backend
 ```
 
-Затем откройте `http://127.0.0.1:8025`.
+Открыть:
 
-### Публичная страница события недоступна
+```text
+http://127.0.0.1:8025
+```
 
-Проверьте в админке статус `published`, видимость `public`, режим
-`internal_free` или `internal_paid`, web-публикацию, валидный slug и действующее
-согласие. Также проверьте occurrence, capacity и окно регистрации.
+## iPhone не видит API
 
-### iPhone не видит API
+На PC:
 
 ```powershell
-curl.exe http://127.0.0.1:8000/health
+curl.exe --fail http://127.0.0.1:8000/health
 Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike "127.*" -and $_.AddressState -eq "Preferred" } | Select-Object InterfaceAlias,IPAddress
 ```
 
-Проверьте `http://<LAN-IP>:8000/health` сначала в браузере компьютера, затем в Safari на iPhone.
+Потом:
 
-### Avatar upload на iPhone завершается `Network request failed`
+```text
+http://<LAN-IP>:8000/health
+```
 
-Запустите приложение через `npm run mobile:iphone`, затем откройте в Safari на
-iPhone `http://<LAN-IP>:59000`. XML/S3 error или `AccessDenied` допустимы. Если
-соединения нет, проверьте Windows Firewall и при необходимости добавьте описанное в
-разделе 5 ручное inbound-правило для TCP `59000`.
+Сначала открыть на PC, затем на iPhone Safari.
 
-## 14. Команды проверок перед merge
+Проверить, что `.env.local` содержит тот же LAN IP.
 
-Это автоматические проверки, а не browser/Expo smoke:
+## Port 8000 занят
+
+```powershell
+Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue
+```
+
+Определите процесс, который занял порт, прежде чем перезапускать API.
+
+---
+
+# 12. Автоматические проверки перед merge
+
+Это проверки кода, а не browser/Expo smoke:
 
 ```powershell
 npm run typecheck
@@ -538,7 +686,7 @@ npm run web:build
 git diff --check
 ```
 
-Комплексная проверка parity web-регистрации:
+Parity web-registration:
 
 ```powershell
 npm run check:web-registration-parity
@@ -546,13 +694,17 @@ npm run check:web-registration-parity
 
 Browser smoke и Expo/iPhone smoke выполняются владельцем вручную.
 
-## 15. Команды, которые нельзя использовать без отдельного осознанного решения
+---
 
-Не запускайте для обычного тестирования:
+# 13. Команды, которые нельзя использовать для обычного запуска
+
+Не выполнять без отдельного осознанного решения владельца:
 
 ```text
 docker compose -f infra/docker-compose.api.yml down -v
 npx supabase db reset
 ```
 
-Первая команда удаляет локальные Docker volumes, включая API PostgreSQL и MinIO. Вторая относится к историческому Supabase-контуру и запрещена без отдельной явной команды владельца проекта.
+`down -v` удаляет локальные Docker volumes, включая PostgreSQL и MinIO.
+
+`npx supabase db reset` относится к историческому Supabase-контуру и не нужен для текущего FastAPI/PostgreSQL runtime.
