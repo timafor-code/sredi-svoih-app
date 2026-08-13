@@ -148,10 +148,20 @@ async def resolve_manageable_community_ids(
     session: AsyncSession,
     current_user: AppUser,
 ) -> list[UUID]:
+    return await resolve_manageable_community_ids_for_user(
+        session,
+        current_user.id,
+    )
+
+
+async def resolve_manageable_community_ids_for_user(
+    session: AsyncSession,
+    user_id: UUID,
+) -> list[UUID]:
     result = await session.scalars(
         select(CommunityMembership.community_id)
         .where(
-            CommunityMembership.user_id == current_user.id,
+            CommunityMembership.user_id == user_id,
             CommunityMembership.status == ACTIVE_STATUS,
             CommunityMembership.role.in_(EVENT_MANAGER_ROLES),
         )
