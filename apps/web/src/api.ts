@@ -605,118 +605,76 @@ function isExistingAccountMe(value: unknown): value is {
 
 function isMyRegistrationEvent(value: unknown): value is MyRegistration["event"] {
   return isRecord(value)
-    && isUuid(value.id)
-    && isUuid(value.community_id)
-    && typeof value.event_kind === "string"
     && typeof value.title === "string"
-    && isNullableString(value.subtitle)
-    && isNullableString(value.description)
-    && isNullableString(value.short_description)
+    && value.title.trim().length > 0
     && isDateTime(value.starts_at)
     && isNullableDateTime(value.ends_at)
-    && typeof value.is_permanent === "boolean"
     && isNullableString(value.timezone)
     && isNullableString(value.location_name)
-    && isNullableString(value.address)
-    && isNullableNumber(value.latitude)
-    && isNullableNumber(value.longitude)
-    && isNullableString(value.image_url)
-    && typeof value.category === "string"
-    && isNullableString(value.audience)
-    && typeof value.visibility === "string"
-    && typeof value.status === "string"
-    && isNullableString(value.source_url)
-    && typeof value.registration_mode === "string"
-    && isNullableString(value.registration_url)
-    && isNullableNumber(value.capacity)
-    && typeof value.waitlist_enabled === "boolean"
-    && typeof value.requires_approval === "boolean"
-    && isNullableNumber(value.price_amount)
-    && isNullableString(value.price_currency)
-    && isNullableDateTime(value.published_at)
-    && isDateTime(value.created_at)
-    && isDateTime(value.updated_at);
+    && isNullableString(value.address);
 }
 
 function isMyRegistrationOccurrence(value: unknown): value is NonNullable<MyRegistration["occurrence"]> {
   return isRecord(value)
-    && isUuid(value.id)
-    && isUuid(value.event_id)
     && isNullableString(value.title)
     && isDateTime(value.starts_at)
     && isNullableDateTime(value.ends_at)
     && typeof value.timezone === "string"
-    && isNullableDateTime(value.registration_opens_at)
-    && isNullableDateTime(value.registration_closes_at)
-    && isNullableNumber(value.capacity)
-    && isNullableBoolean(value.waitlist_enabled)
-    && isNullableBoolean(value.requires_approval)
-    && typeof value.status === "string"
-    && Number.isInteger(value.sort_order)
-    && isDateTime(value.created_at)
-    && isDateTime(value.updated_at);
+    && value.timezone.trim().length > 0;
 }
 
 function isMyRegistrationSelectedOption(value: unknown): value is MyRegistration["selected_options"][number] {
   return isRecord(value)
     && isUuid(value.id)
-    && (value.option_id === null || isUuid(value.option_id))
     && typeof value.title_snapshot === "string"
+    && value.title_snapshot.trim().length > 0
     && isNullableString(value.description_snapshot)
-    && typeof value.option_type_snapshot === "string"
     && Number.isInteger(value.quantity)
-    && Number.isInteger(value.unit_price_amount)
+    && typeof value.quantity === "number"
+    && value.quantity >= 1
     && Number.isInteger(value.total_amount)
+    && typeof value.total_amount === "number"
+    && value.total_amount >= 0
     && typeof value.currency === "string"
+    && value.currency.trim().length > 0
     && typeof value.counts_toward_capacity === "boolean"
     && Number.isInteger(value.seats_count)
-    && typeof value.is_donation === "boolean"
-    && isDateTime(value.created_at);
-}
-
-function isMyRegistrationCapacityReservation(
-  value: unknown,
-): value is MyRegistration["capacity_reservations"][number] {
-  return isRecord(value)
-    && isUuid(value.id)
-    && isUuid(value.capacity_unit_id)
-    && (value.option_id === null || isUuid(value.option_id))
-    && typeof value.capacity_unit_key_snapshot === "string"
-    && typeof value.capacity_unit_title_snapshot === "string"
-    && isNullableString(value.option_title_snapshot)
-    && Number.isInteger(value.quantity)
-    && Number.isInteger(value.seats_per_quantity)
-    && Number.isInteger(value.seats_count)
-    && isDateTime(value.created_at);
+    && typeof value.seats_count === "number"
+    && value.seats_count >= 0
+    && typeof value.is_donation === "boolean";
 }
 
 function isMyRegistration(value: unknown): value is MyRegistration {
-  return isRecord(value)
-    && isUuid(value.id)
-    && isUuid(value.event_id)
-    && (value.occurrence_id === null || isUuid(value.occurrence_id))
-    && isUuid(value.user_id)
-    && typeof value.status === "string"
-    && MY_REGISTRATION_STATUSES.has(value.status as MyRegistrationStatus)
-    && Number.isInteger(value.seats_count)
-    && Array.isArray(value.guest_names)
-    && isNullableString(value.comment)
-    && isDateTime(value.registered_at)
-    && isNullableDateTime(value.confirmed_at)
-    && isNullableDateTime(value.cancelled_at)
-    && typeof value.payment_status === "string"
-    && MY_REGISTRATION_PAYMENT_STATUSES.has(value.payment_status as MyRegistrationPaymentStatus)
-    && isNullableString(value.payment_id)
-    && isDateTime(value.created_at)
-    && isDateTime(value.updated_at)
-    && isMyRegistrationEvent(value.event)
-    && (value.occurrence === null || isMyRegistrationOccurrence(value.occurrence))
-    && Array.isArray(value.selected_options)
-    && value.selected_options.every(isMyRegistrationSelectedOption)
-    && Array.isArray(value.capacity_reservations)
-    && value.capacity_reservations.every(isMyRegistrationCapacityReservation)
-    && isNullableNumber(value.total_amount)
-    && isNullableString(value.total_currency);
+  if (!isRecord(value)) return false;
+
+  const hasValidTotal = (value.total_amount === null && value.total_currency === null)
+    || (typeof value.total_amount === "number"
+      && Number.isInteger(value.total_amount)
+      && value.total_amount >= 0
+      && typeof value.total_currency === "string"
+      && value.total_currency.trim().length > 0);
+  if (!isUuid(value.id)
+    || !isUuid(value.event_id)
+    || !(value.occurrence_id === null || isUuid(value.occurrence_id))
+  ) return false;
+
+  if (typeof value.status !== "string"
+    || !MY_REGISTRATION_STATUSES.has(value.status as MyRegistrationStatus)
+    || typeof value.seats_count !== "number"
+    || !Number.isInteger(value.seats_count)
+    || value.seats_count < 1
+    || !Array.isArray(value.guest_names)
+    || !isDateTime(value.registered_at)
+    || typeof value.payment_status !== "string"
+    || !MY_REGISTRATION_PAYMENT_STATUSES.has(value.payment_status as MyRegistrationPaymentStatus)
+    || !isMyRegistrationEvent(value.event)
+    || !Array.isArray(value.selected_options)
+    || !value.selected_options.every(isMyRegistrationSelectedOption)
+    || !hasValidTotal) return false;
+
+  if (value.occurrence === null) return value.occurrence_id === null;
+  return isMyRegistrationOccurrence(value.occurrence)
+    && value.occurrence_id !== null;
 }
 
 async function authCodeRequest(path: string, body: Record<string, string>): Promise<AuthCodeResult> {

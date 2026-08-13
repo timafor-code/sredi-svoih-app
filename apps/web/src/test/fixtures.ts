@@ -18,15 +18,17 @@ export const QUESTION_IDS = {
   boolean: "88888888-8888-4888-8888-888888888885",
 };
 
-type MyRegistrationOverrides = Partial<Omit<MyRegistration, "event" | "occurrence">> & {
-  event?: Partial<MyRegistration["event"]>;
-  occurrence?: Partial<NonNullable<MyRegistration["occurrence"]>> | null;
-};
+type MyRegistrationOverrides = Partial<Omit<MyRegistration, "event" | "occurrence">>
+  & Record<string, unknown>
+  & {
+    event?: Partial<MyRegistration["event"]> & Record<string, unknown>;
+    occurrence?: (Partial<NonNullable<MyRegistration["occurrence"]>> & Record<string, unknown>) | null;
+  };
 
 export function myRegistration(overrides: MyRegistrationOverrides = {}): MyRegistration {
-  const event: MyRegistration["event"] = {
+  const event = {
     id: EVENT_ID,
-    community_id: "99999999-9999-4999-8999-999999999999",
+    community_id: "00000000-0000-0000-0000-000000000001",
     event_kind: "shabbat",
     title: "Шаббат для друзей",
     subtitle: "Тёплая встреча общины",
@@ -131,7 +133,7 @@ export function myRegistration(overrides: MyRegistrationOverrides = {}): MyRegis
     ...Object.fromEntries(
       Object.entries(overrides).filter(([key]) => key !== "event" && key !== "occurrence"),
     ),
-  } as MyRegistration;
+  } as unknown as MyRegistration;
 }
 
 export const REGISTRATION_FIXTURE_ID = "77777777-7777-4777-8777-777777777700";

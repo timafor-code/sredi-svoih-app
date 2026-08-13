@@ -1084,13 +1084,16 @@ describe("local form shell", () => {
     expect(await screen.findByText("У вас пока нет регистраций.")).toBeInTheDocument();
   });
 
-  it("shows canonical ticket details, truthful payment copy, and active/past tabs", async () => {
+  it("renders realistic canonical ticket metadata, truthful payment copy, and active/past tabs", async () => {
     const user = userEvent.setup();
     await renderEvent();
     const accountPanel = await signInExistingAccount(user, "tickets-access-token");
     const pending = myRegistration({
       event: { starts_at: "2099-09-12T15:00:00+03:00", ends_at: "2099-09-12T18:00:00+03:00" },
     });
+    expect((pending.event as unknown as Record<string, unknown>).community_id).toBe(
+      "00000000-0000-0000-0000-000000000001",
+    );
     const free = myRegistration({
       id: "77777777-7777-4777-8777-777777777711",
       event: {
