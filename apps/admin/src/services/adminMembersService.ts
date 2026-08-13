@@ -3,5 +3,6 @@ export {
   listAdminUserRegistrations,
   listAdminUsers,
   setAdminUserMembership,
+  startAdminMemberDeletion,
   updateAdminUserProfile,
 } from "./adminMembersApiService";

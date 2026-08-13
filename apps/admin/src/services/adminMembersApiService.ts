@@ -1,5 +1,7 @@
 import { apiClient } from "./apiClient";
 import type {
+  AdminApiMemberDeletionRequest,
+  AdminApiMemberDeletionResponse,
   AdminApiMemberDetailResponse,
   AdminApiMemberListItemResponse,
   AdminApiMemberMembershipResponse,
@@ -12,6 +14,8 @@ import type {
   AdminMemberListRow,
   AdminMemberProfile,
   AdminMemberRegistrationRow,
+  AdminStartedMemberDeletion,
+  AdminStartMemberDeletionInput,
   AdminSetUserMembershipInput,
   AdminUpdatedUserProfile,
   AdminUpdateUserProfileInput,
@@ -312,4 +316,27 @@ export async function setAdminUserMembership(
       status: input.status,
     },
   );
+}
+
+export async function startAdminMemberDeletion(
+  input: AdminStartMemberDeletionInput,
+): Promise<AdminStartedMemberDeletion> {
+  const body: AdminApiMemberDeletionRequest = {
+    community_id: input.communityId,
+    confirmation: "DELETE",
+  };
+  const row = await apiClient.post<
+    AdminApiMemberDeletionResponse,
+    AdminApiMemberDeletionRequest
+  >(`/admin/members/${encodeURIComponent(input.userId)}/deletion`, body);
+
+  if (row.state !== "deletion_pending") {
+    throw new Error("Admin member deletion did not enter deletion_pending.");
+  }
+
+  return {
+    requestId: requiredString(row.request_id, ""),
+    userId: requiredString(row.user_id, input.userId),
+    state: row.state,
+  };
 }
