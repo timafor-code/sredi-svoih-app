@@ -41,6 +41,58 @@ admin members surface. These RPCs do not read `prayer_activity_logs`.
 The member card may include profile fields, community membership, and event
 registration aggregates or history for the selected community.
 
+## Admin Account Deletion API
+
+The Python API now provides a backend-only deletion-start operation:
+
+```text
+POST /admin/members/{user_id}/deletion
+```
+
+The JSON request contains `community_id` and the exact confirmation string
+`DELETE`. The authenticated current user is the only source of the acting admin
+identity. The endpoint requires that actor to have an active `admin` membership
+in the selected community and applies the existing Members target scope, so an
+arbitrary unrelated user id cannot be used for global deletion.
+
+This operation is deliberately separate from `Исключить из общины`.
+Membership exclusion remains a `community_memberships.status` update such as
+`left`; it does not delete an account. Full deletion instead enters the existing
+privacy-erasure lifecycle and immediately returns:
+
+```json
+{
+  "request_id": "uuid",
+  "user_id": "uuid",
+  "state": "deletion_pending"
+}
+```
+
+The transaction blocks self-deletion, deletion of the last active admin, and
+targets with another active community membership. It locks the community,
+acting identity/membership, target, and relevant memberships before deciding
+or changing state. This serializes concurrent destructive decisions for one
+community, including two admins attempting to delete each other.
+
+For an accepted new request, the backend creates one admin-origin
+`PrivacyRequest`, records the target, selected community, authenticated
+initiator, request timestamp, and request id, then reuses the canonical privacy
+service to set `deletion_pending`, increment `auth_token_version`, revoke
+credentials, invalidate unfinished codes, clean pending registration intents,
+and cancel applicable future free registrations. It does not fabricate subject
+identity verification. Repeating the call returns the existing active request
+without duplicating that transition, including when the existing request began
+through self-service.
+
+The endpoint does not physically delete the user and does not call the erasure
+worker. Final destruction remains asynchronous and worker-owned. The existing
+deletion-start email is attempted only after commit when a canonical email is
+present; an admin-origin target without email still enters deletion normally.
+
+No deletion UI, danger zone, button, or confirmation dialog is included in
+this backend PR. That web-admin work belongs to the next PR,
+`feature/admin-member-deletion-ui`.
+
 ## RPCs
 
 - `admin_list_users(payload jsonb default '{}'::jsonb)` returns profiles,

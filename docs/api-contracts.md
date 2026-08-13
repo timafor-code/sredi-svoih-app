@@ -1850,6 +1850,7 @@ endpoint.
 | GET | `/admin/members/{user_id}/registrations` | admin | Read the member's event registration history for the selected community. |
 | PATCH | `/admin/members/{user_id}/profile` | admin | Update allowed profile fields. |
 | PATCH | `/admin/members/{user_id}/membership` | admin | Update membership role/status fields. |
+| POST | `/admin/members/{user_id}/deletion` | admin | Start asynchronous canonical account deletion. |
 | POST | `/admin/invites` | admin | Create an invite and return the plaintext code once. |
 | GET | `/admin/invites` | admin | List invite records without plaintext codes. |
 | POST | `/admin/invites/{invite_id}/revoke` | admin | Revoke an invite. |
@@ -1956,6 +1957,65 @@ re-activation keeps the original `joined_at`. Invalid role/status values are
 rejected with `422 validation_error`. Unlike the Supabase RPC, the API also
 applies the members scope rule to this write, so a user active only in another
 community cannot be pulled in through this endpoint.
+
+`POST /admin/members/{user_id}/deletion` is the backend-only administrative
+entry point into the canonical privacy-erasure lifecycle. It accepts:
+
+```json
+{
+  "community_id": "00000000-0000-0000-0000-000000000000",
+  "confirmation": "DELETE"
+}
+```
+
+The confirmation value is case-sensitive and must equal `DELETE` exactly.
+The acting administrator is always derived from the authenticated bearer token;
+the request cannot supply an actor id. A successful `ApiResponse` contains:
+
+```json
+{
+  "request_id": "00000000-0000-0000-0000-000000000000",
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "state": "deletion_pending"
+}
+```
+
+Only an active `admin` membership in `community_id` may start the operation.
+The target must also be inside the existing Members scope for that community.
+The endpoint rejects self-deletion (`cannot_delete_self`), deletion of the last
+active community admin (`cannot_delete_last_admin`), and global deletion when
+the target has an active membership in another community
+(`member_has_other_active_communities`). The cross-community error does not
+include community identifiers, names, roles, or counts. An invalid confirmation
+returns `invalid_confirmation` without changing state.
+
+For a new request, one transaction creates an `origin = admin` privacy deletion
+request with the authenticated admin as `initiated_by_user_id`, sets
+`admin_authorized_at`, leaves `identity_verified_at` null, transitions the
+target to `deletion_pending`, increments `auth_token_version` once, and applies
+the canonical credential and future-free-registration cleanup. Community,
+actor, target, membership, and last-admin decisions are protected by row locks;
+destructive requests for the same community are serialized so concurrent
+cross-delete attempts cannot leave the community without an active admin.
+
+The privacy request itself is the durable destructive-action trace: it records
+the target user, selected community, authenticated initiator, admin origin,
+request timestamp, and privacy request id. An existing event-only admin audit
+table is not used for this member lifecycle.
+
+The operation is idempotent. If the target is already `deletion_pending`, the
+API returns the existing active canonical deletion request where safely
+available, without changing its self-service/admin origin, creating another
+request, incrementing `auth_token_version`, or replaying the lifecycle.
+
+The success response means deletion has started; it does not mean physical
+destruction is complete. The endpoint never executes the erasure worker or
+deletes the `app_users` row synchronously. The existing asynchronous worker
+owns final destruction and the `completed`/`completed_with_retention` outcome.
+If the target has a canonical email, the existing deletion-start notification
+is attempted after commit. Admin-origin deletion also succeeds without an
+email, skips notification, and does not synthesize a recipient. Notification
+delivery failure cannot reactivate the committed account.
 
 Privacy: admin members responses expose only app-user identity summary,
 profile fields, membership fields for the selected community, and
