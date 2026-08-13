@@ -465,11 +465,13 @@ async def remove_admin_event_image(
         await session.refresh(event)
 
     if cleanup_image_id is not None:
-        await _best_effort_delete_image_row(
+        cleanup_succeeded = await _best_effort_delete_image_row(
             session,
             storage,
             image_id=cleanup_image_id,
         )
+        if not cleanup_succeeded:
+            raise _storage_unavailable_error()
     return event
 
 

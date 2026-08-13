@@ -1587,10 +1587,13 @@ exactly one part named `file`, and that part must be an uploaded file. A missing
 part, duplicate part, second file, ordinary form field, JSON body, or other
 multipart content is rejected. The filename, extension, declared MIME type,
 dimensions, and request `Content-Length` are not authoritative. The backend
-reads through a hard source-byte cap, decodes under a pixel-area limit, rejects
-SVG and animated/multi-frame input, verifies any declared MIME type against the
-decoded container, and accepts only JPEG, PNG, or WebP. Accepted input is
-re-encoded as a metadata-free, bounded WebP before storage.
+first reads the raw request stream through a bounded 12 MiB source allowance
+plus a fixed 64 KiB multipart-envelope allowance, before multipart parsing or
+spooling. It then enforces the exact 12 MiB file limit during normalization,
+decodes under a pixel-area limit, rejects SVG and animated/multi-frame input,
+verifies any declared MIME type against the decoded container, and accepts only
+JPEG, PNG, or WebP. Accepted input is re-encoded as a metadata-free, bounded
+WebP before storage.
 
 `DELETE /admin/events/{event_id}/image` accepts no body. It succeeds when the
 event has no image, clears only `events.image_url` for a legacy/external URL
@@ -1623,7 +1626,7 @@ Image-lifecycle failures use the existing error envelope with `data = null`,
 | 413 | `event_image_too_large` | Source bytes, decoded pixel area, or normalized output exceeds a backend limit. |
 | 415 | `unsupported_event_image_type` | Format, animation, SVG input, or declared MIME/content mismatch is unsupported. |
 | 422 | `invalid_event_image` | Multipart shape is invalid or a supported raster container cannot be decoded safely. |
-| 503 | `event_image_storage_unavailable` | Event-image storage is disabled, incomplete, or the provider operation failed. |
+| 503 | `event_image_storage_unavailable` | Event-image storage is disabled, incomplete, or a write/delete provider operation failed. |
 
 Reuploading content whose normalized SHA-256 matches the current active managed
 image returns the current event without changing its URL/version token, adding
@@ -1638,6 +1641,9 @@ replaced without attempting deletion of the external object.
 
 Object deletion is idempotent. Successful deletion marks metadata `deleted`;
 failed deletion leaves `delete_pending` without restoring the public event URL.
+For managed removal, that post-commit deletion failure returns safe
+`503 event_image_storage_unavailable`; the committed database state remains
+`events.image_url = null` with metadata `delete_pending` for a later retry.
 Each later mutation retries only a small fixed number of stale `pending` or
 `delete_pending` rows selected by `updated_at`. Cleanup never deletes an
 `active` row or an object still referenced by the event URL. There is no public

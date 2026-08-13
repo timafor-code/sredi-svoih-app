@@ -45,6 +45,8 @@ router = APIRouter(prefix="/admin", tags=["admin-events"])
 CurrentUser = Annotated[AppUser, Depends(require_auth)]
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 
+_EVENT_IMAGE_MULTIPART_ENVELOPE_BYTES = 64 * 1024
+
 
 def _invalid_event_image_request() -> HTTPException:
     return HTTPException(
@@ -66,9 +68,43 @@ def _invalid_event_image_removal_request() -> HTTPException:
     )
 
 
+def _event_image_request_too_large() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        detail={
+            "code": "event_image_too_large",
+            "message": "Event image exceeds allowed limits",
+        },
+    )
+
+
+async def _read_bounded_event_image_request(request: Request) -> bytes:
+    request_limit = (
+        admin_event_images_service.MAX_EVENT_IMAGE_SOURCE_BYTES
+        + _EVENT_IMAGE_MULTIPART_ENVELOPE_BYTES
+    )
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > request_limit:
+            raise _event_image_request_too_large()
+        body.extend(chunk)
+    return bytes(body)
+
+
 async def _parse_event_image_form(request: Request) -> tuple[FormData, UploadFile]:
+    body = await _read_bounded_event_image_request(request)
+    body_sent = False
+
+    async def receive() -> dict[str, object]:
+        nonlocal body_sent
+        if body_sent:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        body_sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    bounded_request = Request(request.scope, receive=receive)
     try:
-        form = await request.form()
+        form = await bounded_request.form(max_files=2, max_fields=1)
     except (MultiPartException, StarletteHTTPException, ValueError) as exc:
         raise _invalid_event_image_request() from exc
 

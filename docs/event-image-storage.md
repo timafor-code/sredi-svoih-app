@@ -79,8 +79,11 @@ in the event's community. Unknown and cross-community event ids share the safe
 
 Upload accepts exactly one multipart uploaded-file part named `file`. The
 backend does not trust filename, extension, MIME declaration, dimensions, or
-`Content-Length`. Normalization runs off the async event loop and outside the
-activation lock. Before storage readiness, metadata may exist only as
+`Content-Length`. Before invoking the multipart parser, it reads the raw request
+stream through a hard bound consisting of the 12 MiB source limit plus a fixed
+64 KiB allowance for multipart boundaries and headers. Normalization retains
+the exact 12 MiB file limit, runs off the async event loop, and stays outside
+the activation lock. Before storage readiness, metadata may exist only as
 non-active `pending`; an active row can therefore never point at an object
 whose write did not complete.
 
@@ -118,8 +121,10 @@ URL with no active managed row is cleared only in PostgreSQL. For a managed
 image, an event lock protects one transaction that clears `events.image_url`
 and marks the active row `delete_pending`. Object deletion happens only after
 that commit. Failure does not restore the public URL; it leaves retryable
-metadata and returns no provider detail. Success advances the row to `deleted`
-with `deleted_at`.
+metadata, returns safe `503 event_image_storage_unavailable`, and exposes no
+provider detail. The authoritative database state after that error remains
+`events.image_url = null` with the managed row `delete_pending`. Success
+advances the row to `deleted` with `deleted_at`.
 
 If a new object write succeeds but activation fails, the row remains
 non-active, the session is rolled back explicitly, and deletion is attempted

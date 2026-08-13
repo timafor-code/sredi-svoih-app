@@ -13,6 +13,7 @@ import httpx
 from PIL import Image
 from sqlalchemy import delete, func, select
 
+from app.api.admin import events as admin_events_api
 from app.core.tokens import create_access_token
 from app.db.models.core import (
     AppUser,
@@ -485,6 +486,44 @@ class AdminEventImageLifecycleTests(unittest.IsolatedAsyncioTestCase):
             "invalid_event_image",
         )
 
+    async def test_oversized_multipart_is_rejected_before_parsing_work(self) -> None:
+        oversized_content = b"x" * (
+            admin_event_images.MAX_EVENT_IMAGE_SOURCE_BYTES
+            + admin_events_api._EVENT_IMAGE_MULTIPART_ENVELOPE_BYTES
+            + 1
+        )
+        with (
+            patch.object(admin_event_images, "normalize_event_image") as normalize,
+            patch.object(
+                admin_event_images,
+                "get_event_image_storage",
+            ) as storage_factory,
+        ):
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                response = await client.put(
+                    f"/admin/events/{self.event_id}/image",
+                    headers=self.admin_headers,
+                    files={
+                        "file": (
+                            "oversized.jpg",
+                            oversized_content,
+                            "image/jpeg",
+                        ),
+                    },
+                )
+
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(
+            response.json()["error"]["code"],
+            "event_image_too_large",
+        )
+        normalize.assert_not_called()
+        storage_factory.assert_not_called()
+
     async def test_validation_errors_have_stable_status_and_codes(self) -> None:
         cases: list[tuple[bytes, str, int, str, dict[str, int]]] = [
             (
@@ -618,6 +657,44 @@ class AdminEventImageLifecycleTests(unittest.IsolatedAsyncioTestCase):
         legacy_remove = await self._remove()
         self.assertEqual(legacy_remove.status_code, 200)
         self.assertIsNone(legacy_remove.json()["data"]["image_url"])
+
+    async def test_managed_removal_delete_failure_is_safe_and_retryable(self) -> None:
+        uploaded = await self._upload(_image_bytes("JPEG"), "image/jpeg")
+        self.assertEqual(uploaded.status_code, 200)
+        image = (await self._event_image_rows())[0]
+        self.storage.fail_delete_keys.add(image.object_key)
+
+        failed = await self._remove()
+
+        self.assertEqual(failed.status_code, 503)
+        self.assertEqual(
+            failed.json()["error"]["code"],
+            "event_image_storage_unavailable",
+        )
+        self.assertIsNone(await self._event_image_url())
+        rows = await self._event_image_rows()
+        self.assertEqual(rows[0].status, "delete_pending")
+        for forbidden in (
+            image.object_key,
+            "synthetic delete failure",
+            "synthetic-etag",
+            "bucket",
+            "endpoint",
+            "credential",
+        ):
+            self.assertNotIn(forbidden, failed.text)
+
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                retryable = await session.get(EventImage, image.id)
+                assert retryable is not None
+                retryable.updated_at = self.now - timedelta(hours=2)
+        self.storage.fail_delete_keys.clear()
+
+        retried = await self._remove()
+        self.assertEqual(retried.status_code, 200)
+        rows = await self._event_image_rows()
+        self.assertEqual(rows[0].status, "deleted")
 
     async def test_storage_write_failure_preserves_current_image(self) -> None:
         initial = await self._upload(_image_bytes("JPEG"), "image/jpeg")
