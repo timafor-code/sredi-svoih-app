@@ -28,7 +28,7 @@ from app.db.models.core import (
 )
 from app.db.session import AsyncSessionLocal, engine
 from app.main import app
-from app.services import admin_members
+from app.services import admin_members, privacy_erasure
 from app.services.email_delivery import EmailSendResult
 from app.services.privacy_erasure_worker import (
     privacy_erasure_request_is_authorized,
@@ -530,10 +530,14 @@ class AdminMemberDeletionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(actor.status, "active")
         self.assertEqual(target.status, "deletion_pending")
 
-    async def test_last_admin_guard_rejects_without_destructive_state(self) -> None:
+    async def test_last_admin_guard_ignores_deletion_pending_admin(self) -> None:
         guarded_community_id = uuid4()
         self.community_ids.append(guarded_community_id)
         target_id = await self._add_user()
+        pending_admin_id = await self._add_user(
+            status="deletion_pending",
+            auth_token_version=1,
+        )
         async with AsyncSessionLocal() as session:
             async with session.begin():
                 session.add(
@@ -546,6 +550,12 @@ class AdminMemberDeletionTests(unittest.IsolatedAsyncioTestCase):
                 )
         membership_id = await self._add_membership(
             target_id,
+            community_id=guarded_community_id,
+            role="admin",
+            status="active",
+        )
+        await self._add_membership(
+            pending_admin_id,
             community_id=guarded_community_id,
             role="admin",
             status="active",
@@ -575,6 +585,105 @@ class AdminMemberDeletionTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(user.status, "active")
         self.assertEqual(request_count, 0)
+
+    async def test_last_admin_guard_waits_for_self_service_transition(self) -> None:
+        guarded_community_id = uuid4()
+        self.community_ids.append(guarded_community_id)
+        target_id = await self._add_user()
+        candidate_id = await self._add_user()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(
+                    Community(
+                        id=guarded_community_id,
+                        name="Synthetic concurrent guard community",
+                        city="Moscow",
+                        slug=f"admin-members-concurrent-guard-{self.marker}",
+                    ),
+                )
+        target_membership_id = await self._add_membership(
+            target_id,
+            community_id=guarded_community_id,
+            role="admin",
+            status="active",
+        )
+        await self._add_membership(
+            candidate_id,
+            community_id=guarded_community_id,
+            role="admin",
+            status="active",
+        )
+        request_id = uuid4()
+
+        async def run_guard() -> None:
+            async with AsyncSessionLocal() as guard_session:
+                async with guard_session.begin():
+                    target_membership = await guard_session.get(
+                        CommunityMembership,
+                        target_membership_id,
+                        with_for_update=True,
+                    )
+                    await admin_members._ensure_other_active_admin_remains(
+                        guard_session,
+                        community_id=guarded_community_id,
+                        target_user_id=target_id,
+                        target_membership=target_membership,
+                    )
+
+        guard_task: asyncio.Task[None] | None = None
+        async with AsyncSessionLocal() as transition_session:
+            try:
+                await transition_session.begin()
+                transition_session.add(
+                    PrivacyRequest(
+                        id=request_id,
+                        user_id=candidate_id,
+                        community_id=guarded_community_id,
+                        request_type="deletion",
+                        status="open",
+                        origin="self_service",
+                        identity_verified_at=self.now,
+                        created_at=self.now,
+                        updated_at=self.now,
+                    ),
+                )
+                await transition_session.flush()
+                await privacy_erasure._confirm_in_transaction(
+                    transition_session,
+                    request_id=request_id,
+                    user_id=candidate_id,
+                )
+
+                guard_task = asyncio.create_task(run_guard())
+                await asyncio.sleep(0.1)
+                self.assertFalse(guard_task.done())
+
+                await transition_session.commit()
+                with self.assertRaises(HTTPException) as raised:
+                    await asyncio.wait_for(guard_task, timeout=2)
+            finally:
+                if transition_session.in_transaction():
+                    await transition_session.rollback()
+                if guard_task is not None and not guard_task.done():
+                    guard_task.cancel()
+                    await asyncio.gather(guard_task, return_exceptions=True)
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(
+            raised.exception.detail["code"],
+            "cannot_delete_last_admin",
+        )
+        async with AsyncSessionLocal() as session:
+            target = await session.get(AppUser, target_id)
+            candidate = await session.get(AppUser, candidate_id)
+            target_request_count = await session.scalar(
+                select(func.count())
+                .select_from(PrivacyRequest)
+                .where(PrivacyRequest.user_id == target_id),
+            )
+        self.assertEqual(target.status, "active")
+        self.assertEqual(candidate.status, "deletion_pending")
+        self.assertEqual(target_request_count, 0)
 
     async def test_concurrent_cross_delete_cannot_leave_zero_active_admins(self) -> None:
         admin_a_id = await self._add_admin()

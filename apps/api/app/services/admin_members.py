@@ -758,19 +758,23 @@ async def _ensure_other_active_admin_remains(
     ):
         return
 
-    active_admin_user_ids = list(
+    usable_admin_membership_ids = list(
         await session.scalars(
-            select(CommunityMembership.user_id)
+            select(CommunityMembership.id)
+            .join(AppUser, AppUser.id == CommunityMembership.user_id)
             .where(
                 CommunityMembership.community_id == community_id,
                 CommunityMembership.role == "admin",
                 CommunityMembership.status == ACTIVE_STATUS,
+                CommunityMembership.user_id != target_user_id,
+                AppUser.status == ACTIVE_STATUS,
+                AppUser.erased_at.is_(None),
             )
-            .order_by(CommunityMembership.id)
-            .with_for_update(),
+            .order_by(CommunityMembership.id, AppUser.id)
+            .with_for_update(of=[CommunityMembership, AppUser]),
         ),
     )
-    if not any(user_id != target_user_id for user_id in active_admin_user_ids):
+    if not usable_admin_membership_ids:
         raise _deletion_error(
             "cannot_delete_last_admin",
             "The last active community admin cannot be deleted",
