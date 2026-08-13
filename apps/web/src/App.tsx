@@ -21,6 +21,7 @@ import {
 } from "./api";
 import { AccountPanel } from "./components/AccountPanel";
 import { MyTicketsPanel } from "./components/MyTicketsPanel";
+import { WebDeleteAccountFlow } from "./components/WebDeleteAccountFlow";
 import { formatDate, formatDateTimeRange, formatTime } from "./format";
 import { PhoneInput } from "./PhoneInput";
 import { normalizeInternationalPhone } from "./phone";
@@ -585,6 +586,9 @@ function RegistrationForm({
   const [repeatPassword, setRepeatPassword] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [accountCompleted, setAccountCompleted] = useState(false);
+  const [verifiedRegistrationEmail, setVerifiedRegistrationEmail] = useState<string | null>(null);
+  const [passwordlessDeletionOpen, setPasswordlessDeletionOpen] = useState(false);
+  const [passwordlessDeletionPending, setPasswordlessDeletionPending] = useState(false);
   const optionsRef = useRef<HTMLFieldSetElement>(null);
   const emailCodeRef = useRef<HTMLInputElement>(null);
   const loginEmailRef = useRef<HTMLInputElement>(null);
@@ -595,6 +599,7 @@ function RegistrationForm({
   const repeatPasswordRef = useRef<HTMLInputElement>(null);
   const submittingRef = useRef(false);
   const idempotencyRef = useRef<{ signature: string; key: string } | null>(null);
+  const pendingPasswordlessEmailRef = useRef<string | null>(null);
   const displayTotals = useMemo(
     () => calculateRegistrationDisplayTotals(options, selections),
     [options, selections],
@@ -624,6 +629,10 @@ function RegistrationForm({
     setRegistration(null);
     setAccountNextStep(null);
     setSetPasswordCode(null);
+    setVerifiedRegistrationEmail(null);
+    setPasswordlessDeletionOpen(false);
+    setPasswordlessDeletionPending(false);
+    pendingPasswordlessEmailRef.current = null;
     idempotencyRef.current = null;
   }, [eventId]);
 
@@ -790,6 +799,8 @@ function RegistrationForm({
     setFlowError(null);
     setNotice(null);
     setConfirmationUnknown(false);
+    setVerifiedRegistrationEmail(pendingPasswordlessEmailRef.current);
+    setPasswordlessDeletionPending(false);
     if (temporaryAuth) onAuthenticatedRegistrationCompleted();
   };
 
@@ -951,6 +962,9 @@ function RegistrationForm({
       ...requestWithoutKey,
       idempotency_key: idempotencyRef.current.key,
     };
+    pendingPasswordlessEmailRef.current = !temporaryAuth && accountChoice === "without_password"
+      ? payload.email.trim().toLowerCase()
+      : null;
 
     submittingRef.current = true;
     setBusyAction("create");
@@ -1039,6 +1053,10 @@ function RegistrationForm({
     setNotice(null);
     setConfirmationUnknown(false);
     setCooldownUntil(null);
+    setVerifiedRegistrationEmail(null);
+    setPasswordlessDeletionOpen(false);
+    setPasswordlessDeletionPending(false);
+    pendingPasswordlessEmailRef.current = null;
     setStage("form");
   };
 
@@ -1201,6 +1219,22 @@ function RegistrationForm({
 
         {accountNextStep === "none" ? <p className="muted-copy">Регистрация сохранена. Код подтверждения был отправлен на указанный email. Пароль и web-сессия не создавались.</p> : null}
         {accountNextStep === "sign_in" ? <p className="muted-copy">Регистрация сохранена. Для управления аккаунтом можно войти с существующим паролем.</p> : null}
+        {verifiedRegistrationEmail && !passwordlessDeletionPending ? (
+          <div className="account-followup">
+            <p className="muted-copy">Можно управлять данными этой подтверждённой регистрации без создания пароля.</p>
+            <button
+              id="passwordless-data-management-button"
+              className="secondary-button"
+              type="button"
+              onClick={() => setPasswordlessDeletionOpen(true)}
+            >
+              Управление данными
+            </button>
+          </div>
+        ) : null}
+        {passwordlessDeletionPending ? (
+          <p className="registration-result">Запрос на удаление подтверждён. Доступ остановлен, удаление будет завершено по правилам хранения данных.</p>
+        ) : null}
         {accountNextStep === "request_set_password" && !passwordRequestSent ? (
           <div className="account-followup">
             <p className="muted-copy">Чтобы задать пароль, запросите одноразовый код. Ответ не раскрывает, существует ли аккаунт.</p>
@@ -1243,6 +1277,20 @@ function RegistrationForm({
           {notice ? <p className="form-notice" role="status">{notice}</p> : null}
           {passwordError ? <p className="form-error" role="alert">{passwordError}</p> : null}
         </div>
+        {passwordlessDeletionOpen && verifiedRegistrationEmail ? (
+          <WebDeleteAccountFlow
+            email={verifiedRegistrationEmail}
+            onClose={() => {
+              setPasswordlessDeletionOpen(false);
+              if (!passwordlessDeletionPending) {
+                window.requestAnimationFrame(() => {
+                  document.getElementById("passwordless-data-management-button")?.focus();
+                });
+              }
+            }}
+            onDeletionPending={() => setPasswordlessDeletionPending(true)}
+          />
+        ) : null}
       </section>
     );
   }
@@ -1483,6 +1531,7 @@ function EventPage({
   const [dateStepComplete, setDateStepComplete] = useState(!dateStepRequired);
   const [ticketsOpen, setTicketsOpen] = useState(false);
   const [ticketsRevision, setTicketsRevision] = useState(0);
+  const [accountDeletionEmail, setAccountDeletionEmail] = useState<string | null>(null);
   const occurrenceContractKey = availableOccurrences.map((item) => item.id).join(":");
   useEffect(() => {
     if (!authenticatedAccount) setTicketsOpen(false);
@@ -1565,6 +1614,7 @@ function EventPage({
           {authenticatedAccount ? (
             <AccountPanel
               identity={authenticatedAccount.identity}
+              onDeleteAccount={() => setAccountDeletionEmail(authenticatedAccount.identity.email)}
               onOpenTickets={() => setTicketsOpen(true)}
               onSignOut={onSignOut}
             />
@@ -1575,6 +1625,20 @@ function EventPage({
               revision={ticketsRevision}
               onClose={closeTickets}
               onUnauthorized={onSignOut}
+            />
+          ) : null}
+          {accountDeletionEmail ? (
+            <WebDeleteAccountFlow
+              email={accountDeletionEmail}
+              onClose={() => {
+                setAccountDeletionEmail(null);
+                if (authenticatedAccount) {
+                  window.requestAnimationFrame(() => {
+                    document.getElementById("account-delete-button")?.focus();
+                  });
+                }
+              }}
+              onDeletionPending={onSignOut}
             />
           ) : null}
           {dateSelectionPending ? (

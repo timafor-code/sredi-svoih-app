@@ -2,10 +2,14 @@ import type {
   AccountNextStep,
   ApiResponse,
   AuthCodeResult,
+  DeletionPrivacyRequest,
   MyRegistration,
   MyRegistrationPaymentStatus,
   MyRegistrationStatus,
   OccurrenceSelectionMode,
+  PrivacyAccessAccepted,
+  PrivacyErasureLifecycle,
+  PrivacySession,
   WebEventRegistrationFormResponse,
   WebRegistrationConfirmResult,
   WebRegistrationIntentCreated,
@@ -76,6 +80,16 @@ const MY_REGISTRATION_PAYMENT_STATUSES = new Set<MyRegistrationPaymentStatus>([
   "refunded",
   "paid",
 ]);
+
+const PRIVACY_REQUEST_STATUSES = new Set([
+  "open",
+  "reviewed",
+  "resolved",
+  "rejected",
+  "closed",
+]);
+
+const PRIVACY_REQUEST_TIMEOUT_MS = 15_000;
 
 export class RegistrationUnavailableError extends Error {}
 export class PublicApiError extends Error {
@@ -233,6 +247,41 @@ function isIntentStatus(value: unknown): value is WebRegistrationIntentStatus {
 
 function isAuthCodeResult(value: unknown): value is AuthCodeResult {
   return isRecord(value) && value.ok === true;
+}
+
+function isPrivacyAccessAccepted(value: unknown): value is PrivacyAccessAccepted {
+  return isRecord(value) && value.accepted === true;
+}
+
+function isPrivacySession(value: unknown): value is PrivacySession {
+  return isRecord(value)
+    && isOpaqueCredential(value.privacy_session_token)
+    && value.token_type === "bearer"
+    && value.scope === "privacy_self_service"
+    && isDateTime(value.expires_at);
+}
+
+function isDeletionPrivacyRequest(value: unknown): value is DeletionPrivacyRequest {
+  return isRecord(value)
+    && isUuid(value.id)
+    && value.request_type === "deletion"
+    && (value.community_id === null || isUuid(value.community_id))
+    && (value.message === null || typeof value.message === "string")
+    && typeof value.status === "string"
+    && PRIVACY_REQUEST_STATUSES.has(value.status)
+    && (value.resolution_note === null || typeof value.resolution_note === "string")
+    && isNullableDateTime(value.resolved_at)
+    && isDateTime(value.created_at)
+    && isDateTime(value.updated_at);
+}
+
+function isPrivacyErasureLifecycle(value: unknown): value is PrivacyErasureLifecycle {
+  return isRecord(value)
+    && isUuid(value.request_id)
+    && (value.state === "deletion_pending" || value.state === "cancelled")
+    && isDateTime(value.processing_stopped_at)
+    && isNullableDateTime(value.cancelled_at)
+    && value.registrations_require_reregistration_after_cancel === true;
 }
 
 function isErrorEnvelope(value: unknown): value is { error: { code: string } } {
@@ -580,6 +629,69 @@ async function authJsonRequest<T>(
   return body;
 }
 
+function normalizePrivacyEmail(email: string): string {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) throw new PublicApiError("invalid_request");
+  return normalized;
+}
+
+function normalizePrivacySessionToken(token: string): string {
+  const normalized = token.trim();
+  if (!normalized) throw new PublicApiError("privacy_session_required");
+  return normalized;
+}
+
+async function privacyJsonRequest<T>(
+  path: string,
+  body: Record<string, string>,
+  validator: (value: unknown) => value is T,
+  privacySessionToken: string | null,
+): Promise<T> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), PRIVACY_REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${normalizedBaseUrl()}${path}`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(privacySessionToken === null
+          ? {}
+          : { Authorization: `Bearer ${normalizePrivacySessionToken(privacySessionToken)}` }),
+      },
+      credentials: "omit",
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const responseBody = await readJson(response);
+    if (!response.ok) {
+      if (!isErrorEnvelope(responseBody)) {
+        throw new PublicApiError("invalid_response", response.status);
+      }
+      throw new PublicApiError(
+        responseBody.error.code,
+        response.status,
+        retryAfterSeconds(response),
+      );
+    }
+    if (
+      !isRecord(responseBody)
+      || responseBody.error !== null
+      || !isRecord(responseBody.meta)
+      || !validator(responseBody.data)
+    ) {
+      throw new PublicApiError("invalid_response", response.status);
+    }
+    return responseBody.data;
+  } catch (error: unknown) {
+    if (error instanceof PublicApiError) throw error;
+    throw new PublicApiError(controller.signal.aborted ? "request_timeout" : "network_error");
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
 function isTemporaryAuthTokens(value: unknown): value is TemporaryAuthTokens {
   return isRecord(value)
     && typeof value.access_token === "string"
@@ -755,6 +867,54 @@ export async function logoutExistingAccount(refreshToken: string): Promise<void>
     { method: "POST", body: JSON.stringify({ refresh_token: refreshToken }) },
     (value): value is { ok: boolean } => isRecord(value) && value.ok === true,
   );
+}
+
+export function requestPrivacyAccessCode(email: string): Promise<PrivacyAccessAccepted> {
+  return privacyJsonRequest(
+    "/privacy/access/request",
+    { email: normalizePrivacyEmail(email) },
+    isPrivacyAccessAccepted,
+    null,
+  );
+}
+
+export function confirmPrivacyAccessCode(email: string, code: string): Promise<PrivacySession> {
+  if (!/^\d{6}$/.test(code)) throw new PublicApiError("invalid_request");
+  return privacyJsonRequest(
+    "/privacy/access/confirm",
+    { email: normalizePrivacyEmail(email), code },
+    isPrivacySession,
+    null,
+  );
+}
+
+export function createDeletionPrivacyRequest(
+  privacySessionToken: string,
+): Promise<DeletionPrivacyRequest> {
+  return privacyJsonRequest(
+    "/privacy/requests",
+    { request_type: "deletion" },
+    isDeletionPrivacyRequest,
+    privacySessionToken,
+  );
+}
+
+export async function confirmPrivacyErasure(
+  requestId: string,
+  privacySessionToken: string,
+): Promise<PrivacyErasureLifecycle> {
+  const normalizedRequestId = requestId.trim();
+  if (!isUuid(normalizedRequestId)) throw new PublicApiError("invalid_request");
+  const lifecycle = await privacyJsonRequest(
+    `/privacy/requests/${encodeURIComponent(normalizedRequestId)}/confirm-erasure`,
+    { confirmation: "delete_my_data" },
+    isPrivacyErasureLifecycle,
+    privacySessionToken,
+  );
+  if (lifecycle.request_id !== normalizedRequestId) {
+    throw new PublicApiError("invalid_response");
+  }
+  return lifecycle;
 }
 
 export function getWebRegistrationIntentStatus(

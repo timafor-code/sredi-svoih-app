@@ -143,6 +143,30 @@ export type ExistingAccountIdentity = {
   phone: string;
 };
 
+export type PrivacyAccessAccepted = {
+  accepted: true;
+};
+
+export type PrivacySession = {
+  privacy_session_token: string;
+  token_type: "bearer";
+  scope: "privacy_self_service";
+  expires_at: string;
+};
+
+export type DeletionPrivacyRequest = {
+  id: string;
+  request_type: "deletion";
+};
+
+export type PrivacyErasureLifecycle = {
+  request_id: string;
+  state: "deletion_pending" | "cancelled";
+  processing_stopped_at: string;
+  cancelled_at: string | null;
+  registrations_require_reregistration_after_cancel: true;
+};
+
 export type MyRegistrationStatus =
   | "pending"
   | "confirmed"

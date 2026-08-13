@@ -1,16 +1,20 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ExistingAccountIdentity } from "../types";
 
 export function AccountPanel({
   identity,
+  onDeleteAccount,
   onOpenTickets,
   onSignOut,
 }: {
   identity: ExistingAccountIdentity;
+  onDeleteAccount: () => void;
   onOpenTickets: () => void;
   onSignOut: () => void;
 }): ReactNode {
   const panelRef = useRef<HTMLElement>(null);
+  const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const [managementOpen, setManagementOpen] = useState(false);
   const fullName = [identity.first_name, identity.last_name].filter(Boolean).join(" ");
 
   useEffect(() => {
@@ -42,9 +46,36 @@ export function AccountPanel({
         >
           Мои билеты
         </button>
+        <button
+          className="secondary-button"
+          type="button"
+          aria-expanded={managementOpen}
+          aria-controls="account-management-actions"
+          onClick={() => {
+            setManagementOpen((open) => !open);
+            if (!managementOpen) {
+              window.requestAnimationFrame(() => deleteButtonRef.current?.focus());
+            }
+          }}
+        >
+          Управление аккаунтом
+        </button>
         <button className="secondary-button account-sign-out" type="button" onClick={onSignOut}>
           Выйти
         </button>
+        {managementOpen ? (
+          <div id="account-management-actions" className="account-management-actions">
+            <button
+              ref={deleteButtonRef}
+              id="account-delete-button"
+              className="danger-text-button"
+              type="button"
+              onClick={onDeleteAccount}
+            >
+              Удалить аккаунт
+            </button>
+          </div>
+        ) : null}
       </div>
     </section>
   );

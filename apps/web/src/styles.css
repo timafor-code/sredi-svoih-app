@@ -809,13 +809,30 @@ select {
 
 .account-panel-actions {
   display: grid;
-  grid-template-columns: repeat(2, auto);
+  grid-template-columns: repeat(3, auto);
   gap: 10px;
 }
 
 .account-panel-actions .secondary-button {
   width: auto;
   min-width: 116px;
+}
+
+.account-management-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.danger-text-button {
+  min-height: 44px;
+  border: 0;
+  padding: 8px 4px;
+  background: transparent;
+  color: var(--danger);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 .my-tickets-panel {
@@ -1085,7 +1102,8 @@ select {
 }
 
 .primary-button,
-.secondary-button {
+.secondary-button,
+.danger-button {
   width: 100%;
   min-height: 50px;
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -1105,17 +1123,119 @@ select {
   color: var(--text);
 }
 
+.danger-button {
+  background: linear-gradient(135deg, #c91e35, #8f1526);
+  border-color: rgba(255, 119, 119, 0.65);
+}
+
 .primary-button:hover,
-.secondary-button:hover {
+.secondary-button:hover,
+.danger-button:hover {
   filter: brightness(1.08);
 }
 
 .primary-button:disabled,
 .secondary-button:disabled,
+.danger-button:disabled,
 .text-button:disabled {
   cursor: not-allowed;
   filter: none;
   opacity: 0.58;
+}
+
+.delete-account-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(3, 4, 9, 0.82);
+  backdrop-filter: blur(8px);
+}
+
+.delete-account-dialog {
+  width: min(100%, 560px);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  display: grid;
+  gap: 18px;
+  padding: clamp(22px, 5vw, 34px);
+}
+
+.delete-account-dialog h2,
+.delete-account-dialog h3,
+.delete-account-dialog p {
+  margin: 0;
+}
+
+.delete-account-dialog h2,
+.delete-account-dialog h3 {
+  color: var(--danger);
+}
+
+.delete-account-dialog p {
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.delete-account-email {
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.delete-account-email-box,
+.delete-account-final-confirmation {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid rgba(255, 119, 119, 0.38);
+  border-radius: 14px;
+  background: rgba(255, 119, 119, 0.06);
+}
+
+.delete-account-email-box span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.delete-account-email-box input {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+  cursor: default;
+}
+
+.delete-account-email-box small {
+  color: var(--text-muted);
+}
+
+.delete-account-code-field {
+  max-width: 100%;
+}
+
+.delete-account-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.delete-account-actions .text-button {
+  margin-top: 0;
+  text-align: center;
+}
+
+.delete-account-error {
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 119, 119, 0.45);
+  border-radius: 14px;
+  background: rgba(255, 119, 119, 0.08);
+  color: var(--danger) !important;
 }
 
 .form-notice {
@@ -1360,6 +1480,15 @@ select {
     grid-template-columns: 1fr;
   }
 
+  .account-management-actions {
+    grid-column: auto;
+    justify-content: stretch;
+  }
+
+  .danger-text-button {
+    width: 100%;
+  }
+
   .account-panel-actions .secondary-button {
     width: 100%;
   }
@@ -1405,6 +1534,16 @@ select {
 
   .site-footer {
     margin-top: 32px;
+  }
+
+  .delete-account-backdrop {
+    place-items: end center;
+    padding: 10px;
+  }
+
+  .delete-account-dialog {
+    max-height: calc(100vh - 20px);
+    border-radius: 18px;
   }
 }
 
