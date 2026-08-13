@@ -92,7 +92,28 @@ docker compose -f infra/docker-compose.api.yml ps -a
 - `api_object_storage` — running;
 - `api_mailpit` — running;
 - `api_object_storage_init` — может быть `Exited (0)`: это нормально, он создаёт bucket и завершает работу;
-- `api_privacy_erasure_worker` — при выключенном `API_PRIVACY_ERASURE_WORKER_ENABLED` может завершиться успешно; это не означает, что API сломан.
+- `api_privacy_erasure_worker` — running; обычный локальный full runtime включает его автоматически.
+
+Если privacy-erasure worker не остаётся running, проверьте состояние и последние безопасные логи:
+
+```powershell
+docker compose -f infra/docker-compose.api.yml ps -a
+docker compose -f infra/docker-compose.api.yml logs --tail=100 api_privacy_erasure_worker
+```
+
+Admin delete, mobile self-delete и public-web self-delete только создают один и тот же `deletion_pending` lifecycle. Физическое удаление выполняет асинхронно тот же локальный `api_privacy_erasure_worker`:
+
+```text
+Admin delete / Mobile self-delete / Public-web self-delete
+                         ↓
+                 deletion_pending
+                         ↓
+                same local worker
+                         ↓
+                 physical erasure
+```
+
+Локальный polling interval равен 5 секундам, поэтому завершение не обязано быть мгновенным. HTTP delete/confirm вызов сам по себе не удаляет физически граф данных.
 
 ### 1.5. Обязательная проверка API
 

@@ -81,11 +81,13 @@ deadline. Completion notification uses the existing data-minimal
 destroyed.
 
 Erasure authorization is origin-aware without creating another deletion
-engine. Existing `self_service` requests still require subject identity
-verification. A future `admin` entry point must instead provide the acting
-admin's app-user id and an admin-authorization timestamp; it must not populate
-the subject's identity-verification timestamp. Both origins then execute this
-same worker, retention classifier, deletion manifest, and evidence path.
+engine. The `self_service` origin covers mobile, public-web signed-in deletion,
+and the public-web passwordless verified flow; it requires subject identity
+verification. The `admin` origin is created by web-admin member deletion and
+instead provides the acting admin's app-user id and an admin-authorization
+timestamp without populating the subject's identity-verification timestamp.
+Both origins execute the same worker, retention classifier, deletion manifest,
+and destruction-evidence path.
 
 The self-service canonical-email and notification requirements are unchanged.
 For a valid admin-origin request only, a target without a canonical email does
@@ -107,6 +109,15 @@ documented in the production deploy runbook. PostgreSQL queue claiming prevents
 concurrent execution and releases recoverably if a worker crashes; the runtime
 still delegates all classification, deletion, retention, evidence, and
 notification behavior to the canonical idempotent single-request worker.
+
+The local Compose contour enables this same worker with clearly synthetic,
+local-only notification-encryption and retention prerequisites. The local
+retention duration exists only to exercise the existing paid-registration
+retention path; it is not a production policy, legal decision, or approved
+production value. This local default does not enable production automatically.
+Production still requires owner-approved worker configuration, secrets,
+retention duration, storage, email, process supervision, and deployment
+decisions.
 
 Only canonical retryable failures are polled again. Completed, cancelled, and
 manual-review requests do not hot-loop. When the runtime is disabled, eligible

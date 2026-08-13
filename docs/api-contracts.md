@@ -2719,6 +2719,20 @@ or registration comments.
 Both lifecycle routes require `Authorization: Bearer <privacy_session_token>`.
 An ordinary API JWT is not accepted. Responses set `Cache-Control: no-store`.
 
+Mobile self-service, public-web signed-in deletion, and the public-web
+passwordless verified flow all use the same privacy access, request, and
+confirmation endpoints and create the canonical `self_service` lifecycle.
+`POST /admin/members/{user_id}/deletion` is a separate authorized entry point
+only for creating the same lifecycle with `origin = admin`. Once a request is
+`deletion_pending`, the same privacy-erasure worker processes either origin
+through the same retention classifier, deletion manifest, and destruction
+evidence path.
+
+Physical completion is asynchronous and is represented by `completed` or
+`completed_with_retention`. In either successful state the live `app_users`
+row and profile identity are removed; selective financial retention does not
+retain the live account.
+
 ### `POST /privacy/requests/{request_id}/confirm-erasure`
 
 The strict request body is:

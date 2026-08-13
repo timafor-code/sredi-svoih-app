@@ -579,7 +579,11 @@ class PrivacyErasureCompletionNotificationDatabaseTests(
         )
         missing_config = await execute_privacy_erasure_request(
             request_id,
-            settings=Settings(),
+            settings=Settings(
+                api_privacy_erasure_notification_key_b64="",
+                api_privacy_erasure_notification_key_id="",
+                api_privacy_erasure_notification_delivery_window_hours=None,
+            ),
             storage_factory=lambda: (_ for _ in ()).throw(
                 AssertionError("storage must not be called"),
             ),

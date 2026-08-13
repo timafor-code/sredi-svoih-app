@@ -317,6 +317,90 @@ class PrivacyErasureRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(executor.await_args.args, (admin_request_id,))
         self.assertNotEqual(admin_request_id, incomplete_request_id)
 
+    async def test_runtime_physically_erases_self_service_and_admin_origins(
+        self,
+    ) -> None:
+        self_service_user_id, self_service_request_id, _, _ = (
+            await self._add_subject()
+        )
+        admin_user_id, admin_request_id, _, _ = await self._add_subject(
+            origin=ADMIN_ERASURE_ORIGIN,
+            verified=False,
+            initiated_by_user_id=self.admin_id,
+            admin_authorized=True,
+        )
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                await session.execute(
+                    update(PrivacyRequest)
+                    .where(
+                        PrivacyRequest.id.in_(
+                            {self_service_request_id, admin_request_id},
+                        ),
+                    )
+                    .values(created_at=self.queue_created_at - timedelta(days=1)),
+                )
+
+        async def executor(request_id: UUID) -> PrivacyErasureWorkerResult:
+            return await execute_privacy_erasure_request(
+                request_id,
+                settings=self.settings,
+                register_storage_factory=lambda: self.register_storage,
+                notification_email_sender=lambda **_kwargs: EmailSendResult(
+                    sent=True,
+                    disabled=False,
+                ),
+            )
+
+        self.assertEqual(await self._runtime(executor, batch_size=2).run_once(), 2)
+
+        async with AsyncSessionLocal() as session:
+            remaining_user_count = await session.scalar(
+                select(func.count())
+                .select_from(AppUser)
+                .where(
+                    AppUser.id.in_({self_service_user_id, admin_user_id}),
+                ),
+            )
+            requests = list(
+                (
+                    await session.scalars(
+                        select(PrivacyRequest).where(
+                            PrivacyRequest.id.in_(
+                                {self_service_request_id, admin_request_id},
+                            ),
+                        ),
+                    )
+                ).all(),
+            )
+            evidence = list(
+                (
+                    await session.scalars(
+                        select(PrivacyDestructionEvidence).where(
+                            PrivacyDestructionEvidence.id.in_(
+                                {
+                                    request.destruction_evidence_id
+                                    for request in requests
+                                },
+                            ),
+                        ),
+                    )
+                ).all(),
+            )
+
+        self.assertEqual(remaining_user_count, 0)
+        self.assertEqual(len(requests), 2)
+        self.assertTrue(all(request.completed_at is not None for request in requests))
+        self.assertTrue(
+            all(request.destruction_evidence_id is not None for request in requests),
+        )
+        self.assertEqual(len(evidence), 2)
+        self.assertEqual(
+            {item.execution_version for item in evidence},
+            {PRIVACY_ERASURE_EXECUTION_VERSION},
+        )
+        self.assertEqual({item.result_status for item in evidence}, {"completed"})
+
     async def test_empty_queue_waits_for_poll_interval_without_hot_loop(self) -> None:
         stop = asyncio.Event()
         runtime = self._runtime(AsyncMock())
