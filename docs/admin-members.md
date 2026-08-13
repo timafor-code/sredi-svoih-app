@@ -26,6 +26,11 @@ The admin list combines:
 - profiles with a `community_memberships` row in the selected community;
 - app profiles that do not currently have an active membership.
 
+The ordinary `GET /admin/members` list includes a profile only when its linked
+`app_users` account is active and has not been erased. Accounts in
+`deletion_pending`, erased accounts, and profiles without a linked app account
+are excluded by the backend before filtering, ordering, and pagination.
+
 That means a person can appear in web-admin even before they become a member of
 the community. In the UI, a profile without a membership should be labeled as
 "Пользователь приложения" rather than as a community member.
@@ -106,9 +111,11 @@ A successful response means `deletion_pending`, not completed physical
 deletion. The drawer and confirmation dialog close, an accessible page-level
 message explains that access has ended and background deletion will finish
 automatically, and the target is suppressed from subsequent Members results
-for the current page session. This suppression is in memory only because the
-current list contract does not expose account deletion state. Physical
-destruction remains owned by the canonical privacy-erasure worker.
+for the current page session. This in-memory suppression is optimistic UX only.
+The backend is the data-visibility source of truth: as soon as deletion starts,
+fresh `GET /admin/members` responses exclude the `deletion_pending` account, so
+it remains absent after a browser reload. Physical destruction remains
+asynchronous and owned by the canonical privacy-erasure worker.
 
 The UI safely explains the backend protections for self-deletion, the last
 active community administrator, targets active in another community, invalid

@@ -284,6 +284,7 @@ async def list_admin_members(
             stats.c.registrations_cancelled,
             stats.c.last_registration_at,
         )
+        .join(AppUser, AppUser.id == Profile.user_id)
         .outerjoin(
             CommunityMembership,
             and_(
@@ -292,7 +293,11 @@ async def list_admin_members(
             ),
         )
         .outerjoin(stats, stats.c.user_id == Profile.user_id)
-        .where(_member_scope_condition())
+        .where(
+            AppUser.status == ACTIVE_STATUS,
+            AppUser.erased_at.is_(None),
+            _member_scope_condition(),
+        )
     )
 
     if status_filter == NO_MEMBERSHIP_FILTER:

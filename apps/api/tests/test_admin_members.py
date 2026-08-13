@@ -206,6 +206,17 @@ class AdminMemberDeletionTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def _list_members(
+        self,
+        actor_id: UUID,
+        **filters: object,
+    ) -> httpx.Response:
+        return await self.client.get(
+            "/admin/members",
+            headers=self._headers(actor_id),
+            params={"community_id": str(self.community_id), **filters},
+        )
+
     async def _get_member_detail(
         self,
         actor_id: UUID,
@@ -294,6 +305,65 @@ class AdminMemberDeletionTests(unittest.IsolatedAsyncioTestCase):
                     ],
                 )
         return ids
+
+    async def test_active_member_remains_visible_in_fresh_list(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+
+        response = await self._list_members(admin_id)
+
+        self.assertEqual(response.status_code, 200, response.text)
+        user_ids = {row["user_id"] for row in response.json()["data"]}
+        self.assertIn(str(target_id), user_ids)
+
+    async def test_deletion_pending_member_is_hidden_from_list_and_filters(
+        self,
+    ) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target(user_status="deletion_pending")
+
+        response = await self._list_members(admin_id)
+        filtered_response = await self._list_members(
+            admin_id,
+            search=str(target_id),
+            role="member",
+            membership_status="active",
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(filtered_response.status_code, 200, filtered_response.text)
+        self.assertNotIn(
+            str(target_id),
+            {row["user_id"] for row in response.json()["data"]},
+        )
+        self.assertNotIn(
+            str(target_id),
+            {row["user_id"] for row in filtered_response.json()["data"]},
+        )
+
+    async def test_admin_deletion_removes_member_from_fresh_list_response(
+        self,
+    ) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+        other_member_id = await self._add_target()
+
+        before = await self._list_members(admin_id)
+        self.assertEqual(before.status_code, 200, before.text)
+        self.assertIn(
+            str(target_id),
+            {row["user_id"] for row in before.json()["data"]},
+        )
+
+        deletion = await self._delete_member(admin_id, target_id)
+        self.assertEqual(deletion.status_code, 200, deletion.text)
+        self.assertEqual(deletion.json()["data"]["state"], "deletion_pending")
+
+        refreshed = await self._list_members(admin_id)
+        self.assertEqual(refreshed.status_code, 200, refreshed.text)
+        refreshed_user_ids = {row["user_id"] for row in refreshed.json()["data"]}
+        self.assertNotIn(str(target_id), refreshed_user_ids)
+        self.assertIn(str(other_member_id), refreshed_user_ids)
 
     async def test_success_starts_canonical_admin_erasure_and_revokes_access(
         self,
