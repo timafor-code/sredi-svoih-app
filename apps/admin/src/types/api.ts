@@ -506,6 +506,17 @@ export type AdminApiMemberMembershipResponse = {
   created_at: string;
 };
 
+export type AdminApiMemberDeletionRequest = {
+  community_id: string;
+  confirmation: "DELETE";
+};
+
+export type AdminApiMemberDeletionResponse = {
+  request_id: string;
+  user_id: string;
+  state: "deletion_pending";
+};
+
 export type AdminApiInviteRole = "member" | "event_manager" | "admin" | "rabbi";
 
 export type AdminApiInviteStatus = "active" | "used" | "expired" | "revoked";

@@ -119,6 +119,17 @@ export type AdminSetUserMembershipInput = {
   status: AdminMemberMembershipStatus;
 };
 
+export type AdminStartMemberDeletionInput = {
+  userId: string;
+  communityId: string;
+};
+
+export type AdminStartedMemberDeletion = {
+  requestId: string;
+  userId: string;
+  state: "deletion_pending";
+};
+
 export type AdminUpdateUserProfileFields = {
   fullName?: string | null;
   firstName?: string | null;

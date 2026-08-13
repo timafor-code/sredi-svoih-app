@@ -89,9 +89,34 @@ worker. Final destruction remains asynchronous and worker-owned. The existing
 deletion-start email is attempted only after commit when a canonical email is
 present; an admin-origin target without email still enters deletion normally.
 
-No deletion UI, danger zone, button, or confirmation dialog is included in
-this backend PR. That web-admin work belongs to the next PR,
-`feature/admin-member-deletion-ui`.
+### Admin Account Deletion UI
+
+The member drawer now places full account deletion in a separate `Опасная зона`
+below the ordinary profile, membership, and registration controls. It is not
+part of `Действия с членством`: `Исключить из общины` remains a membership-only
+status change, while `Удалить пользователя` starts global account deletion.
+
+Opening the destructive action shows the target profile details and requires
+the admin to type the exact UI phrase `УДАЛИТЬ`. Only after that local check does
+the service call `POST /admin/members/{user_id}/deletion`; the browser sends the
+canonical API confirmation `DELETE`, never the Russian phrase and never an
+actor/admin id.
+
+A successful response means `deletion_pending`, not completed physical
+deletion. The drawer and confirmation dialog close, an accessible page-level
+message explains that access has ended and background deletion will finish
+automatically, and the target is suppressed from subsequent Members results
+for the current page session. This suppression is in memory only because the
+current list contract does not expose account deletion state. Physical
+destruction remains owned by the canonical privacy-erasure worker.
+
+The UI safely explains the backend protections for self-deletion, the last
+active community administrator, targets active in another community, invalid
+confirmation, temporarily unavailable deletion, and targets that are no longer
+available. It does not disclose other-community names, ids, roles, or counts.
+
+Profile-edit cleanup remains separate and is planned for the next PR,
+`refactor/admin-member-profile-edit`.
 
 ## RPCs
 

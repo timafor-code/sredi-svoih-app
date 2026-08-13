@@ -13,6 +13,7 @@ import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
 import { AddMemberDialog } from "../components/members/AddMemberDialog";
+import { AdminMemberDeleteDialog } from "../components/members/AdminMemberDeleteDialog";
 import {
   ADMIN_MEMBER_BIRTH_TIME_CONTEXT_OPTIONS,
   ADMIN_MEMBER_MARITAL_STATUS_OPTIONS,
@@ -27,6 +28,7 @@ import {
   listAdminUserRegistrations,
   listAdminUsers,
   setAdminUserMembership,
+  startAdminMemberDeletion,
   updateAdminUserProfile,
 } from "../services/adminMembersService";
 import { useAdminAuth } from "../store/useAdminAuth";
@@ -40,6 +42,7 @@ import {
   type AdminMemberListRow,
   type AdminMemberProfile,
   type AdminMemberRegistrationRow,
+  type AdminStartedMemberDeletion,
 } from "../types/members";
 
 type MembershipStatusFilter = NonNullable<AdminMemberListFilters["membershipStatus"]>;
@@ -143,6 +146,7 @@ export function MembersPage() {
   const communityId = auth.membership?.community_id ?? null;
   const requestSeq = useRef(0);
   const detailRequestSeq = useRef(0);
+  const suppressedMemberIdsRef = useRef<Set<string>>(new Set());
 
   const [members, setMembers] = useState<AdminMemberListRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -162,6 +166,13 @@ export function MembersPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [deletionSuccess, setDeletionSuccess] = useState<string | null>(null);
+
+  const filterSuppressedMembers = useCallback(
+    (rows: AdminMemberListRow[]) =>
+      rows.filter((row) => !suppressedMemberIdsRef.current.has(row.userId)),
+    [],
+  );
 
   const loadMembers = useCallback(async () => {
     const requestId = requestSeq.current + 1;
@@ -188,7 +199,7 @@ export function MembersPage() {
       });
 
       if (requestId === requestSeq.current) {
-        setMembers(nextMembers);
+        setMembers(filterSuppressedMembers(nextMembers));
       }
     } catch (nextError) {
       if (requestId === requestSeq.current) {
@@ -204,7 +215,7 @@ export function MembersPage() {
         setLoading(false);
       }
     }
-  }, [communityId, membershipStatus, role, search]);
+  }, [communityId, filterSuppressedMembers, membershipStatus, role, search]);
 
   useEffect(() => {
     void loadMembers();
@@ -301,9 +312,11 @@ export function MembersPage() {
           }),
         ]);
 
+        const visibleMembers = filterSuppressedMembers(nextMembers);
+
         if (detailRequestId === detailRequestSeq.current) {
           const refreshedMember =
-            nextMembers.find((nextMember) => nextMember.userId === member.userId) ??
+            visibleMembers.find((nextMember) => nextMember.userId === member.userId) ??
             profile;
 
           setSelectedMember((currentMember) =>
@@ -314,7 +327,7 @@ export function MembersPage() {
         }
 
         if (listRequestId === requestSeq.current) {
-          setMembers(nextMembers);
+          setMembers(visibleMembers);
           setError(null);
           setLoading(false);
         }
@@ -334,7 +347,26 @@ export function MembersPage() {
         throw nextError;
       }
     },
-    [communityId, membershipStatus, role, search],
+    [communityId, filterSuppressedMembers, membershipStatus, role, search],
+  );
+
+  const handleMemberDeletionStarted = useCallback(
+    (member: AdminMemberListRow, deletion: AdminStartedMemberDeletion) => {
+      suppressedMemberIdsRef.current.add(member.userId);
+      suppressedMemberIdsRef.current.add(deletion.userId);
+      setMembers((currentMembers) =>
+        currentMembers.filter(
+          (currentMember) =>
+            !suppressedMemberIdsRef.current.has(currentMember.userId),
+        ),
+      );
+      setDeletionSuccess(
+        "Удаление запущено. Доступ пользователя к аккаунту прекращён. Фоновое удаление данных будет завершено автоматически.",
+      );
+      closeMemberDetails();
+      void loadMembers();
+    },
+    [closeMemberDetails, loadMembers],
   );
 
   const summary = useMemo<MembersSummary>(
@@ -367,6 +399,16 @@ export function MembersPage() {
           Добавить участника
         </Button>
       </div>
+
+      {deletionSuccess ? (
+        <p
+          aria-live="polite"
+          className="members-page-feedback members-page-feedback--success"
+          role="status"
+        >
+          {deletionSuccess}
+        </p>
+      ) : null}
 
       <div className="members-summary-grid" aria-label="Метрики участников">
         <MembersSummaryCard label="Всего в списке" tone="blue" value={summary.total} />
@@ -477,6 +519,7 @@ export function MembersPage() {
           detailLoading={detailLoading}
           member={selectedMember}
           onClose={closeMemberDetails}
+          onDeletionStarted={handleMemberDeletionStarted}
           onMembershipChanged={refreshMemberMembershipData}
           onProfileChanged={refreshMemberMembershipData}
           onRetry={retryMemberDetails}
@@ -589,6 +632,7 @@ function MemberDetailDrawer({
   detailLoading,
   member,
   onClose,
+  onDeletionStarted,
   onMembershipChanged,
   onProfileChanged,
   onRetry,
@@ -600,6 +644,10 @@ function MemberDetailDrawer({
   detailLoading: boolean;
   member: AdminMemberListRow;
   onClose: () => void;
+  onDeletionStarted: (
+    member: AdminMemberListRow,
+    deletion: AdminStartedMemberDeletion,
+  ) => void;
   onMembershipChanged: (member: AdminMemberListRow) => Promise<void>;
   onProfileChanged: (member: AdminMemberListRow) => Promise<void>;
   onRetry: () => void;
@@ -624,6 +672,7 @@ function MemberDetailDrawer({
   );
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const hasMembershipChanges =
     Boolean(detail.membershipId) &&
     (membershipRole !== currentMembershipRole ||
@@ -642,6 +691,7 @@ function MemberDetailDrawer({
     setProfileDraft(createAdminMemberProfileDraft(member, profile));
     setProfileSaving(false);
     setProfileError(null);
+    setDeleteDialogOpen(false);
   }, [detail.userId]);
 
   const saveMembership = useCallback(
@@ -741,14 +791,15 @@ function MemberDetailDrawer({
   }, [communityId, detail, onProfileChanged, profileDraft]);
 
   return (
-    <div className="member-detail-backdrop" onClick={onClose}>
-      <aside
-        aria-labelledby="member-detail-title"
-        aria-modal="true"
-        className="member-detail-drawer"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-      >
+    <>
+      <div className="member-detail-backdrop" onClick={onClose}>
+        <aside
+          aria-labelledby="member-detail-title"
+          aria-modal="true"
+          className="member-detail-drawer"
+          onClick={(event) => event.stopPropagation()}
+          role="dialog"
+        >
         <header className="member-detail-drawer__head">
           <div className="member-detail-drawer__title">
             <span>Карточка участника</span>
@@ -837,11 +888,34 @@ function MemberDetailDrawer({
                 profile={profile}
                 registrations={registrations}
               />
+              <MemberDangerZone onDelete={() => setDeleteDialogOpen(true)} />
             </>
           )}
         </div>
-      </aside>
-    </div>
+        </aside>
+      </div>
+
+      {deleteDialogOpen ? (
+        <AdminMemberDeleteDialog
+          member={detail}
+          onClose={() => setDeleteDialogOpen(false)}
+          onConfirm={() => {
+            if (!communityId) {
+              return Promise.reject(new Error(COMMUNITY_ID_ERROR));
+            }
+
+            return startAdminMemberDeletion({
+              userId: detail.userId,
+              communityId,
+            });
+          }}
+          onDeletionStarted={(deletion) => {
+            setDeleteDialogOpen(false);
+            onDeletionStarted(detail, deletion);
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -1224,6 +1298,27 @@ function MemberMembershipFeedback({
   }
 
   return null;
+}
+
+function MemberDangerZone({ onDelete }: { onDelete: () => void }) {
+  return (
+    <section className="member-danger-zone">
+      <h3>Опасная зона</h3>
+      <div className="member-danger-zone__content">
+        <div>
+          <strong>Удалить пользователя полностью</strong>
+          <p>
+            Удаляет аккаунт пользователя и запускает уничтожение связанных
+            персональных данных. Пользователь сразу потеряет доступ к приложению.
+            Это не то же самое, что «Исключить из общины».
+          </p>
+        </div>
+        <Button className="button--member-danger" onClick={onDelete}>
+          Удалить пользователя
+        </Button>
+      </div>
+    </section>
+  );
 }
 
 function MemberRegistrationsSection({
