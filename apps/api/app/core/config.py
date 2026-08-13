@@ -1,5 +1,6 @@
 from functools import lru_cache
 from ipaddress import ip_address
+import re
 from urllib.parse import urlsplit, urlunsplit
 
 from typing import Literal
@@ -90,9 +91,11 @@ class Settings(BaseSettings):
     api_object_storage_public_endpoint_url: str = ""
     api_object_storage_region: str = "us-east-1"
     api_object_storage_bucket: str = ""
+    api_object_storage_event_images_bucket: str = "event-images"
     api_object_storage_access_key_id: str = ""
     api_object_storage_secret_access_key: str = ""
     api_object_storage_path_style: bool = False
+    api_event_image_public_base_url: str = ""
     api_avatar_upload_url_ttl_seconds: int = Field(default=300, gt=0, le=3600)
     api_avatar_read_url_ttl_seconds: int = Field(default=300, gt=0, le=3600)
     api_avatar_max_size_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
@@ -155,6 +158,83 @@ class Settings(BaseSettings):
             parsed.port
         except ValueError as exc:
             raise ValueError("PUBLIC_WEB_BASE_URL has an invalid port") from exc
+
+        return urlunsplit(
+            (
+                parsed.scheme.lower(),
+                parsed.netloc,
+                parsed.path.rstrip("/"),
+                "",
+                "",
+            ),
+        )
+
+    @field_validator("api_object_storage_event_images_bucket")
+    @classmethod
+    def validate_event_images_bucket(cls, value: str) -> str:
+        normalized = value.strip()
+        if not re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", normalized):
+            raise ValueError(
+                "API_OBJECT_STORAGE_EVENT_IMAGES_BUCKET must be a valid S3 bucket name",
+            )
+        return normalized
+
+    @field_validator("api_event_image_public_base_url")
+    @classmethod
+    def validate_event_image_public_base_url(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            return ""
+
+        parsed = urlsplit(normalized)
+        if parsed.scheme not in {"http", "https"} or parsed.hostname is None:
+            raise ValueError(
+                "API_EVENT_IMAGE_PUBLIC_BASE_URL must be an absolute HTTP(S) URL",
+            )
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError(
+                "API_EVENT_IMAGE_PUBLIC_BASE_URL must not contain user info",
+            )
+        if parsed.query or parsed.fragment:
+            raise ValueError(
+                "API_EVENT_IMAGE_PUBLIC_BASE_URL must not contain query or fragment data",
+            )
+        if any(segment in {".", ".."} for segment in parsed.path.split("/")):
+            raise ValueError(
+                "API_EVENT_IMAGE_PUBLIC_BASE_URL must not contain dot segments",
+            )
+
+        hostname = parsed.hostname.lower()
+        address = None
+        try:
+            address = ip_address(hostname)
+        except ValueError:
+            pass
+
+        is_loopback = hostname == "localhost" or bool(address and address.is_loopback)
+        if parsed.scheme == "http" and not is_loopback:
+            raise ValueError(
+                "API_EVENT_IMAGE_PUBLIC_BASE_URL requires HTTPS outside localhost/loopback",
+            )
+        if address is not None and not address.is_global and not address.is_loopback:
+            raise ValueError(
+                "API_EVENT_IMAGE_PUBLIC_BASE_URL must not use a private/internal address",
+            )
+        if address is None and (
+            hostname in {"api-object-storage", "api_object_storage", "minio"}
+            or hostname.endswith((".internal", ".local"))
+            or ("." not in hostname and hostname != "localhost")
+        ):
+            raise ValueError(
+                "API_EVENT_IMAGE_PUBLIC_BASE_URL must not use an internal hostname",
+            )
+
+        try:
+            parsed.port
+        except ValueError as exc:
+            raise ValueError(
+                "API_EVENT_IMAGE_PUBLIC_BASE_URL has an invalid port",
+            ) from exc
 
         return urlunsplit(
             (
