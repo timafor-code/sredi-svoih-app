@@ -26,6 +26,7 @@ from app.db.models.core import (
 from app.db.session import AsyncSessionLocal, engine
 from app.services.email_delivery import EmailSendResult
 from app.services.privacy_erasure_worker import (
+    ADMIN_ERASURE_ORIGIN,
     DATABASE_FAILURE_CODE,
     MANUAL_REVIEW_FAILURE_CODE,
     PRIVACY_ERASURE_EXECUTION_VERSION,
@@ -60,7 +61,8 @@ class PrivacyErasureRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.marker = uuid4().hex[:12]
         self.community_id = uuid4()
         self.event_id = uuid4()
-        self.user_ids: set[UUID] = set()
+        self.admin_id = uuid4()
+        self.user_ids: set[UUID] = {self.admin_id}
         self.request_ids: set[UUID] = set()
         self.registration_ids: set[UUID] = set()
         self.settings = Settings(
@@ -78,13 +80,21 @@ class PrivacyErasureRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         async with AsyncSessionLocal() as session:
             async with session.begin():
-                session.add(
-                    Community(
-                        id=self.community_id,
-                        name="Synthetic runtime community",
-                        city="Moscow",
-                        slug=f"runtime-{self.marker}",
-                    ),
+                session.add_all(
+                    [
+                        Community(
+                            id=self.community_id,
+                            name="Synthetic runtime community",
+                            city="Moscow",
+                            slug=f"runtime-{self.marker}",
+                        ),
+                        AppUser(
+                            id=self.admin_id,
+                            account_origin="admin",
+                            claim_state="claimed",
+                            status="active",
+                        ),
+                    ],
                 )
                 await session.flush()
                 session.add(
@@ -162,6 +172,11 @@ class PrivacyErasureRuntimeTests(unittest.IsolatedAsyncioTestCase):
         failure_code: str | None = None,
         cancelled: bool = False,
         completed: bool = False,
+        origin: str = "self_service",
+        verified: bool = True,
+        initiated_by_user_id: UUID | None = None,
+        admin_authorized: bool = False,
+        processing_stopped: bool = True,
     ) -> tuple[UUID, UUID, str, str]:
         user_id = uuid4()
         request_id = uuid4()
@@ -205,8 +220,13 @@ class PrivacyErasureRuntimeTests(unittest.IsolatedAsyncioTestCase):
                         request_type="deletion",
                         message="Synthetic private runtime request",
                         status="resolved" if completed else "open",
-                        identity_verified_at=self.now,
-                        processing_stopped_at=self.now,
+                        identity_verified_at=self.now if verified else None,
+                        origin=origin,
+                        initiated_by_user_id=initiated_by_user_id,
+                        admin_authorized_at=self.now if admin_authorized else None,
+                        processing_stopped_at=self.now
+                        if processing_stopped
+                        else None,
                         execution_started_at=self.now if completed else None,
                         completed_at=self.now if completed else None,
                         pre_deletion_user_status="active",
@@ -270,6 +290,32 @@ class PrivacyErasureRuntimeTests(unittest.IsolatedAsyncioTestCase):
         processed = await self._runtime(executor, batch_size=2).run_once()
         self.assertEqual(processed, 2)
         self.assertEqual(executor.await_count, 2)
+
+    async def test_valid_admin_authorization_enters_runtime_queue(self) -> None:
+        _, admin_request_id, _, _ = await self._add_subject(
+            origin=ADMIN_ERASURE_ORIGIN,
+            verified=False,
+            initiated_by_user_id=self.admin_id,
+            admin_authorized=True,
+        )
+        _, incomplete_request_id, _, _ = await self._add_subject(
+            origin=ADMIN_ERASURE_ORIGIN,
+            verified=False,
+            initiated_by_user_id=self.admin_id,
+            admin_authorized=False,
+            processing_stopped=False,
+        )
+        executor = AsyncMock(
+            side_effect=lambda request_id: PrivacyErasureWorkerResult(
+                request_id,
+                "retryable_failure",
+            ),
+        )
+        processed = await self._runtime(executor).run_once()
+        self.assertEqual(processed, 1)
+        self.assertEqual(executor.await_count, 1)
+        self.assertEqual(executor.await_args.args, (admin_request_id,))
+        self.assertNotEqual(admin_request_id, incomplete_request_id)
 
     async def test_empty_queue_waits_for_poll_interval_without_hot_loop(self) -> None:
         stop = asyncio.Event()

@@ -1937,9 +1937,26 @@ class PrivacyRequest(Base):
             name="privacy_requests_identity_verified_order_check",
         ),
         CheckConstraint(
+            "origin IN ('self_service', 'admin')",
+            name="privacy_requests_origin_check",
+        ),
+        CheckConstraint(
+            "admin_authorized_at IS NULL OR origin = 'admin'",
+            name="privacy_requests_admin_authorization_origin_check",
+        ),
+        CheckConstraint(
+            "admin_authorized_at IS NULL OR admin_authorized_at >= created_at",
+            name="privacy_requests_admin_authorized_order_check",
+        ),
+        CheckConstraint(
             "processing_stopped_at IS NULL OR "
-            "(identity_verified_at IS NOT NULL "
-            "AND processing_stopped_at >= identity_verified_at)",
+            "((origin = 'self_service' "
+            "AND identity_verified_at IS NOT NULL "
+            "AND processing_stopped_at >= identity_verified_at) OR "
+            "(origin = 'admin' "
+            "AND admin_authorized_at IS NOT NULL "
+            "AND initiated_by_user_id IS NOT NULL "
+            "AND processing_stopped_at >= admin_authorized_at))",
             name="privacy_requests_processing_stopped_order_check",
         ),
         CheckConstraint(
@@ -2053,6 +2070,18 @@ class PrivacyRequest(Base):
         ForeignKey("app_users.id", ondelete="SET NULL"),
     )
     identity_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
+    origin: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'self_service'"),
+    )
+    initiated_by_user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="SET NULL"),
+    )
+    admin_authorized_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
     )
     processing_stopped_at: Mapped[datetime | None] = mapped_column(

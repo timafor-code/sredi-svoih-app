@@ -386,12 +386,14 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_migration_metadata_constraints_queue_index_and_defaults(self) -> None:
         script = ScriptDirectory.from_config(Config("alembic.ini"))
         expected_head = script.get_current_head()
-        self.assertIsNotNone(expected_head)
+        self.assertEqual(expected_head, "20260813120000")
+        origin_revision = script.get_revision("20260813120000")
         notification_revision = script.get_revision("20260806200000")
         audit_revision = script.get_revision("20260806190000")
         worker_revision = script.get_revision("20260806180000")
         token_revision = script.get_revision("20260806170000")
         lifecycle_revision = script.get_revision("20260806160000")
+        self.assertEqual(origin_revision.down_revision, "20260812120000")
         self.assertEqual(notification_revision.down_revision, "20260806190000")
         self.assertEqual(audit_revision.down_revision, "20260806180000")
         self.assertEqual(worker_revision.down_revision, "20260806170000")
@@ -401,10 +403,17 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
         async with engine.connect() as connection:
             metadata = await connection.run_sync(self._read_lifecycle_metadata)
         self.assertTrue(
-            {"pre_deletion_user_status", "cancelled_at"}.issubset(
+            {
+                "pre_deletion_user_status",
+                "cancelled_at",
+                "origin",
+                "initiated_by_user_id",
+                "admin_authorized_at",
+            }.issubset(
                 metadata["columns"],
             ),
         )
+        self.assertIn("self_service", metadata["column_defaults"]["origin"])
         self.assertIn("auth_token_version", metadata["app_user_columns"])
         self.assertIn(
             "app_users_auth_token_version_nonnegative_check",
@@ -420,6 +429,9 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 "privacy_requests_cancelled_without_completion",
                 "privacy_requests_cancelled_without_evidence",
                 "privacy_requests_cancelled_before_execution",
+                "privacy_requests_origin_check",
+                "privacy_requests_admin_authorization_origin_check",
+                "privacy_requests_admin_authorized_order_check",
             }.issubset(metadata["constraints"]),
         )
         queue_index = metadata["queue_index"]
@@ -456,6 +468,13 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
             "retention",
             pyinspect.getsource(lifecycle_revision.module.upgrade),
         )
+        origin_upgrade_source = pyinspect.getsource(origin_revision.module.upgrade)
+        self.assertIn("SET origin = 'self_service'", origin_upgrade_source)
+        self.assertIn("privacy_requests_origin_check", origin_upgrade_source)
+        self.assertIn(
+            "privacy_requests_processing_stopped_order_check",
+            origin_upgrade_source,
+        )
         token_upgrade_source = pyinspect.getsource(token_revision.module.upgrade)
         token_downgrade_source = pyinspect.getsource(token_revision.module.downgrade)
         self.assertIn("auth_token_version", token_upgrade_source)
@@ -472,6 +491,9 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
             user = await session.get(AppUser, user_id)
         self.assertIsNone(row.pre_deletion_user_status)
         self.assertIsNone(row.cancelled_at)
+        self.assertEqual(row.origin, "self_service")
+        self.assertIsNone(row.initiated_by_user_id)
+        self.assertIsNone(row.admin_authorized_at)
         self.assertEqual(user.auth_token_version, 0)
 
     @staticmethod
@@ -488,6 +510,10 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
             },
             "columns": {
                 item["name"] for item in inspector.get_columns("privacy_requests")
+            },
+            "column_defaults": {
+                item["name"]: str(item["default"])
+                for item in inspector.get_columns("privacy_requests")
             },
             "constraints": {
                 item["name"]

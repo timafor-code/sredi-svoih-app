@@ -2525,6 +2525,16 @@ performed and no request email is sent. Admin review uses
 `/admin/privacy/requests`.
 Raw request messages are treated as personal data and are not logged.
 
+Every privacy request has an explicit erasure origin. Existing and newly
+created subject requests use `origin = self_service`, with
+`initiated_by_user_id = null` and `admin_authorized_at = null`. The database
+migration backfills existing rows to that value and constrains the allowed
+origins to `self_service` and `admin`. The backend foundation also stores an
+optional `initiated_by_user_id` reference and `admin_authorized_at` timestamp
+for a future admin-origin deletion entry point. No admin deletion endpoint is
+implemented in this PR, and admin authorization never fabricates
+`identity_verified_at`.
+
 Schema/runtime status: `privacy_access_codes`, `privacy_access_sessions`, the
 expanded `privacy_requests` lifecycle fields, and PII-free
 `privacy_destruction_evidence` reuse the PR #344 storage foundation.
@@ -2672,9 +2682,19 @@ sign in or recover access again and re-register for events. Once
 `execution_started_at` is set, cancellation returns
 `409 privacy_erasure_already_started`.
 
-The worker accepts only deletion requests with a processing-stop
-timestamp, no cancellation, no completion, and a still-existing
-`deletion_pending` app user. Only that worker may set `execution_started_at`.
+The worker accepts only deletion requests with a processing-stop timestamp, no
+cancellation, no completion, and a still-existing `deletion_pending` app user.
+Authorization must be either a `self_service` request with a non-null
+`identity_verified_at`, or an `admin` request with both a non-null
+`admin_authorized_at` and `initiated_by_user_id`. The automatic runtime queue
+uses the same predicate. All retention planning and remaining lifecycle gates
+are unchanged. Only the canonical worker may set `execution_started_at`.
+
+Self-service requests keep the existing canonical-email requirement. A valid
+admin-origin request may erase a target without a canonical email; in that
+case the worker creates the normal destruction evidence and deletes the live
+account graph but intentionally creates no completion-notification outbox
+recipient. No placeholder recipient is stored.
 
 ### Operational privacy-erasure CLI
 
@@ -2689,8 +2709,11 @@ Safe stdout JSON contains `request_id`, `execution_version`, and one stable
 erasure result: `completed`, `already_completed`, `retryable_failure`, or
 `not_eligible`. It also contains `notification_result`: `sent`, `already_sent`,
 `retryable_failure`, `expired`, `legacy_notification_unavailable`, or
-`not_created`. It may include a destruction-evidence id after completion and
-only stable erasure/notification failure codes:
+`not_created`. A successful admin-origin erasure without an email recipient
+uses `skipped_no_recipient`; the single-request CLI treats only that explicit
+skip as a successful notification outcome. It may include a
+destruction-evidence id after completion and only stable erasure/notification
+failure codes:
 
 - `privacy_erasure_manual_review_required`;
 - `privacy_erasure_retention_configuration_unavailable`;
@@ -2708,7 +2731,8 @@ only stable erasure/notification failure codes:
 - `privacy_erasure_notification_delivery_window_expired`.
 
 Completed/already-completed plus sent/already-sent results exit 0; legacy
-already-completed plus `legacy_notification_unavailable` also exits 0.
+already-completed plus `legacy_notification_unavailable` and completed admin
+erasure plus `skipped_no_recipient` also exit 0.
 Retryable erasure or notification failure exits 1, ineligible/manual-review or
 expired notification exits 2, and invalid arguments exit 64. Output never
 contains user identity/contact data, encrypted recipient, nonce, key id,

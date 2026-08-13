@@ -32,6 +32,7 @@ DELIVERY_UNAVAILABLE = "privacy_erasure_notification_delivery_unavailable"
 DELIVERY_WINDOW_EXPIRED = (
     "privacy_erasure_notification_delivery_window_expired"
 )
+NOTIFICATION_SKIPPED_NO_RECIPIENT = "skipped_no_recipient"
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,10 @@ async def deliver_privacy_erasure_completion_notification(
                     and evidence.result_status
                     in {"completed", "completed_with_retention"}
                 ):
+                    if privacy_request.origin == "admin":
+                        return PrivacyErasureNotificationResult(
+                            NOTIFICATION_SKIPPED_NO_RECIPIENT,
+                        )
                     return PrivacyErasureNotificationResult(
                         "legacy_notification_unavailable",
                     )

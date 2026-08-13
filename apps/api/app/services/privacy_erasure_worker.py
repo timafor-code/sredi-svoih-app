@@ -7,9 +7,10 @@ import logging
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.config import Settings, get_settings
 from app.db.models.core import (
@@ -57,6 +58,8 @@ from app.storage.s3 import get_avatar_storage
 logger = logging.getLogger(__name__)
 
 PRIVACY_ERASURE_EXECUTION_VERSION = "privacy-erasure-worker-v4"
+SELF_SERVICE_ERASURE_ORIGIN = "self_service"
+ADMIN_ERASURE_ORIGIN = "admin"
 MANUAL_REVIEW_FAILURE_CODE = "privacy_erasure_manual_review_required"
 RETENTION_CONFIGURATION_FAILURE_CODE = (
     "privacy_erasure_retention_configuration_unavailable"
@@ -101,8 +104,8 @@ class PrivacyErasureWorkerResult:
 @dataclass(frozen=True)
 class _ClaimedRequest:
     user_id: UUID
-    recipient: str
-    notification_config: PrivacyErasureNotificationEncryptionConfig
+    recipient: str | None
+    notification_config: PrivacyErasureNotificationEncryptionConfig | None
 
 
 class _AvatarDeletionFailed(RuntimeError):
@@ -165,10 +168,40 @@ async def _completed_result(
     )
 
 
+def privacy_erasure_authorization_predicate() -> ColumnElement[bool]:
+    return or_(
+        and_(
+            PrivacyRequest.origin == SELF_SERVICE_ERASURE_ORIGIN,
+            PrivacyRequest.identity_verified_at.is_not(None),
+        ),
+        and_(
+            PrivacyRequest.origin == ADMIN_ERASURE_ORIGIN,
+            PrivacyRequest.admin_authorized_at.is_not(None),
+            PrivacyRequest.initiated_by_user_id.is_not(None),
+        ),
+    )
+
+
+def privacy_erasure_request_is_authorized(
+    privacy_request: PrivacyRequest,
+) -> bool:
+    return bool(
+        (
+            privacy_request.origin == SELF_SERVICE_ERASURE_ORIGIN
+            and privacy_request.identity_verified_at is not None
+        )
+        or (
+            privacy_request.origin == ADMIN_ERASURE_ORIGIN
+            and privacy_request.admin_authorized_at is not None
+            and privacy_request.initiated_by_user_id is not None
+        ),
+    )
+
+
 def _request_lifecycle_is_eligible(privacy_request: PrivacyRequest) -> bool:
     return (
         privacy_request.request_type == "deletion"
-        and privacy_request.identity_verified_at is not None
+        and privacy_erasure_request_is_authorized(privacy_request)
         and privacy_request.processing_stopped_at is not None
         and privacy_request.cancelled_at is None
         and privacy_request.completed_at is None
@@ -269,17 +302,23 @@ async def _claim(
                     failure_code=MANUAL_REVIEW_FAILURE_CODE,
                 )
 
-            try:
-                notification_config = load_notification_encryption_config(settings)
-            except PrivacyErasureNotificationCryptoError:
-                privacy_request.failure_code = NOTIFICATION_CONFIGURATION_FAILURE_CODE
-                privacy_request.updated_at = now
-                return _result(
-                    request_id,
-                    "retryable_failure",
-                    failure_code=NOTIFICATION_CONFIGURATION_FAILURE_CODE,
-                )
-            if user.email is None or not user.email.strip():
+            normalized_email = user.email.strip() if user.email else ""
+            recipient = normalized_email or None
+            notification_config = None
+            if recipient is not None or privacy_request.origin != ADMIN_ERASURE_ORIGIN:
+                try:
+                    notification_config = load_notification_encryption_config(settings)
+                except PrivacyErasureNotificationCryptoError:
+                    privacy_request.failure_code = (
+                        NOTIFICATION_CONFIGURATION_FAILURE_CODE
+                    )
+                    privacy_request.updated_at = now
+                    return _result(
+                        request_id,
+                        "retryable_failure",
+                        failure_code=NOTIFICATION_CONFIGURATION_FAILURE_CODE,
+                    )
+            if recipient is None and privacy_request.origin != ADMIN_ERASURE_ORIGIN:
                 privacy_request.failure_code = (
                     NOTIFICATION_RECIPIENT_MISSING_FAILURE_CODE
                 )
@@ -296,7 +335,7 @@ async def _claim(
             privacy_request.updated_at = now
             return _ClaimedRequest(
                 user_id=user.id,
-                recipient=user.email,
+                recipient=recipient,
                 notification_config=notification_config,
             )
 
@@ -335,8 +374,8 @@ async def _delete_content_graph(
     now: datetime,
     avatar_keys: list[str],
     subject_ref_hash: str,
-    recipient: str,
-    notification_config: PrivacyErasureNotificationEncryptionConfig,
+    recipient: str | None,
+    notification_config: PrivacyErasureNotificationEncryptionConfig | None,
     retention_plan: PrivacyErasureRetentionPlan,
 ) -> UUID:
     manifest = await apply_privacy_erasure_deletion_manifest(
@@ -367,35 +406,38 @@ async def _delete_content_graph(
     session.add(evidence)
     await session.flush()
 
-    outbox_id = uuid4()
-    try:
-        encrypted_recipient = encrypt_notification_recipient(
-            recipient,
-            outbox_id=outbox_id,
-            privacy_request_id=privacy_request.id,
-            destruction_evidence_id=evidence.id,
-            config=notification_config,
+    if recipient is not None:
+        if notification_config is None:
+            raise _NotificationEncryptionFailed()
+        outbox_id = uuid4()
+        try:
+            encrypted_recipient = encrypt_notification_recipient(
+                recipient,
+                outbox_id=outbox_id,
+                privacy_request_id=privacy_request.id,
+                destruction_evidence_id=evidence.id,
+                config=notification_config,
+            )
+        except Exception:  # noqa: BLE001 - crypto details must not escape.
+            raise _NotificationEncryptionFailed() from None
+        session.add(
+            PrivacyErasureNotificationOutbox(
+                id=outbox_id,
+                privacy_request_id=privacy_request.id,
+                destruction_evidence_id=evidence.id,
+                notification_kind=evidence.result_status,
+                status="pending",
+                recipient_ciphertext=encrypted_recipient.ciphertext,
+                recipient_nonce=encrypted_recipient.nonce,
+                encryption_key_id=encrypted_recipient.key_id,
+                attempt_count=0,
+                expires_at=now
+                + timedelta(hours=notification_config.delivery_window_hours),
+                created_at=now,
+                updated_at=now,
+            ),
         )
-    except Exception:  # noqa: BLE001 - crypto details must not escape.
-        raise _NotificationEncryptionFailed() from None
-    session.add(
-        PrivacyErasureNotificationOutbox(
-            id=outbox_id,
-            privacy_request_id=privacy_request.id,
-            destruction_evidence_id=evidence.id,
-            notification_kind=evidence.result_status,
-            status="pending",
-            recipient_ciphertext=encrypted_recipient.ciphertext,
-            recipient_nonce=encrypted_recipient.nonce,
-            encryption_key_id=encrypted_recipient.key_id,
-            attempt_count=0,
-            expires_at=now
-            + timedelta(hours=notification_config.delivery_window_hours),
-            created_at=now,
-            updated_at=now,
-        ),
-    )
-    await session.flush()
+        await session.flush()
 
     privacy_request.status = "resolved"
     privacy_request.resolved_at = now

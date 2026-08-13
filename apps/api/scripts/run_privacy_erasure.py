@@ -7,6 +7,9 @@ import sys
 from collections.abc import Sequence
 from uuid import UUID
 
+from app.services.privacy_erasure_completion_notification import (
+    NOTIFICATION_SKIPPED_NO_RECIPIENT,
+)
 from app.services.privacy_erasure_worker import execute_privacy_erasure_request
 
 
@@ -43,6 +46,7 @@ def _exit_code(result: str, notification_result: str) -> int:
         "sent",
         "already_sent",
         "legacy_notification_unavailable",
+        NOTIFICATION_SKIPPED_NO_RECIPIENT,
     }:
         return 0
     if result == "retryable_failure":
