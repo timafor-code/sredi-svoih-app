@@ -10,6 +10,8 @@ from app.core.authorization import require_auth
 from app.db.models.core import AppUser
 from app.db.session import get_db_session
 from app.schemas.admin_members import (
+    AdminMemberDeletionRequest,
+    AdminMemberDeletionResponse,
     AdminMemberDetailResponse,
     AdminMemberListItemResponse,
     AdminMemberMembershipResponse,
@@ -129,3 +131,22 @@ async def update_admin_member_membership(
         payload,
     )
     return ApiResponse[AdminMemberMembershipResponse](data=membership)
+
+
+@router.post(
+    "/members/{user_id}/deletion",
+    response_model=ApiResponse[AdminMemberDeletionResponse],
+)
+async def start_admin_member_deletion(
+    user_id: UUID,
+    payload: AdminMemberDeletionRequest,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[AdminMemberDeletionResponse]:
+    deletion = await admin_members_service.start_admin_member_deletion(
+        session,
+        current_user,
+        user_id,
+        payload,
+    )
+    return ApiResponse[AdminMemberDeletionResponse](data=deletion)

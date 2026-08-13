@@ -39,7 +39,7 @@ _PENDING_WEB_INTENT_STATUS = "email_verification_required"
 
 
 @dataclass(frozen=True)
-class _ConfirmResult:
+class ErasureStartResult:
     response: PrivacyErasureLifecycleResponse
     notification_email: str | None
 
@@ -158,12 +158,92 @@ async def _delete_pending_web_registration_intents(
     )
 
 
+async def _start_erasure_in_transaction(
+    session: AsyncSession,
+    *,
+    privacy_request: PrivacyRequest,
+    user: AppUser,
+    now: datetime,
+) -> ErasureStartResult:
+    if user.status == DELETION_PENDING_STATUS or user.erased_at is not None:
+        raise _not_available()
+
+    privacy_request.pre_deletion_user_status = user.status
+    privacy_request.processing_stopped_at = now
+    privacy_request.failure_code = None
+    privacy_request.updated_at = now
+
+    user.status = DELETION_PENDING_STATUS
+    user.auth_token_version += 1
+    user.deletion_requested_at = now
+    user.updated_at = now
+
+    await _revoke_credentials(session, user_id=user.id, now=now)
+    if user.email is not None:
+        await _delete_pending_web_registration_intents(
+            session,
+            canonical_email=user.email,
+        )
+    await registrations_service.cancel_future_free_registrations_for_erasure(
+        session,
+        user_id=user.id,
+        now=now,
+    )
+    await session.flush()
+    return ErasureStartResult(
+        response=_response(privacy_request, state=DELETION_PENDING_STATUS),
+        notification_email=user.email,
+    )
+
+
+async def start_admin_erasure_in_transaction(
+    session: AsyncSession,
+    *,
+    user: AppUser,
+    community_id: UUID,
+    initiated_by_user_id: UUID,
+) -> ErasureStartResult:
+    """Start an admin-authorized erasure inside the caller's transaction."""
+    now = _now()
+    privacy_request = PrivacyRequest(
+        user_id=user.id,
+        community_id=community_id,
+        request_type="deletion",
+        status="open",
+        origin="admin",
+        initiated_by_user_id=initiated_by_user_id,
+        admin_authorized_at=now,
+        identity_verified_at=None,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(privacy_request)
+    return await _start_erasure_in_transaction(
+        session,
+        privacy_request=privacy_request,
+        user=user,
+        now=now,
+    )
+
+
+async def notify_erasure_started(notification_email: str | None) -> None:
+    if notification_email is None:
+        return
+    try:
+        await run_in_threadpool(
+            send_privacy_erasure_accepted,
+            to_address=notification_email,
+        )
+    except PrivacyErasureEmailDeliveryError:
+        logger.warning("Privacy erasure accepted email delivery failed")
+
+
 async def _confirm_in_transaction(
     session: AsyncSession,
     *,
     request_id: UUID,
     user_id: UUID,
-) -> _ConfirmResult:
+) -> ErasureStartResult:
     privacy_request = await session.scalar(
         select(PrivacyRequest)
         .where(
@@ -195,7 +275,7 @@ async def _confirm_in_transaction(
             or not privacy_request.pre_deletion_user_status
         ):
             raise _not_available()
-        return _ConfirmResult(
+        return ErasureStartResult(
             response=_response(privacy_request, state=DELETION_PENDING_STATUS),
             notification_email=None,
         )
@@ -204,32 +284,13 @@ async def _confirm_in_transaction(
         raise _not_available()
 
     now = _now()
-    privacy_request.pre_deletion_user_status = user.status
     if privacy_request.identity_verified_at is None:
         privacy_request.identity_verified_at = now
-    privacy_request.processing_stopped_at = now
-    privacy_request.failure_code = None
-    privacy_request.updated_at = now
-
-    user.status = DELETION_PENDING_STATUS
-    user.auth_token_version += 1
-    user.deletion_requested_at = now
-    user.updated_at = now
-
-    await _revoke_credentials(session, user_id=user.id, now=now)
-    await _delete_pending_web_registration_intents(
+    return await _start_erasure_in_transaction(
         session,
-        canonical_email=user.email,
-    )
-    await registrations_service.cancel_future_free_registrations_for_erasure(
-        session,
-        user_id=user.id,
+        privacy_request=privacy_request,
+        user=user,
         now=now,
-    )
-    await session.flush()
-    return _ConfirmResult(
-        response=_response(privacy_request, state=DELETION_PENDING_STATUS),
-        notification_email=user.email,
     )
 
 
@@ -246,14 +307,7 @@ async def confirm_erasure(
             user_id=user_id,
         )
 
-    if result.notification_email is not None:
-        try:
-            await run_in_threadpool(
-                send_privacy_erasure_accepted,
-                to_address=result.notification_email,
-            )
-        except PrivacyErasureEmailDeliveryError:
-            logger.warning("Privacy erasure accepted email delivery failed")
+    await notify_erasure_started(result.notification_email)
     return result.response
 
 

@@ -185,3 +185,18 @@ class AdminMemberMembershipResponse(BaseModel):
     joined_at: datetime | None
     invited_by: UUID | None
     created_at: datetime
+
+
+class AdminMemberDeletionRequest(BaseModel):
+    community_id: UUID = Field(
+        validation_alias=AliasChoices("community_id", "communityId"),
+    )
+    confirmation: str = Field(max_length=32)
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+class AdminMemberDeletionResponse(BaseModel):
+    request_id: UUID
+    user_id: UUID
+    state: Literal["deletion_pending"]

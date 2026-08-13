@@ -13,14 +13,18 @@ from sqlalchemy.orm import aliased
 
 from app.db.models.core import (
     AppUser,
+    Community,
     CommunityMembership,
     Event,
     EventOccurrence,
     EventRegistration,
     EventRegistrationOptionSelection,
+    PrivacyRequest,
     Profile,
 )
 from app.schemas.admin_members import (
+    AdminMemberDeletionRequest,
+    AdminMemberDeletionResponse,
     AdminMemberDetailResponse,
     AdminMemberListItemResponse,
     AdminMemberMembershipResponse,
@@ -30,6 +34,7 @@ from app.schemas.admin_members import (
     AdminMemberRegistrationResponse,
 )
 from app.services import authorization as authorization_service
+from app.services import privacy_erasure as privacy_erasure_service
 from app.services.admin_registrations import build_selected_option_response
 from app.services.authorization import ACTIVE_STATUS
 
@@ -97,6 +102,10 @@ def _not_found(message: str = "Member not found") -> HTTPException:
 
 def _validation_error(message: str) -> HTTPException:
     return _error(http_status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", message)
+
+
+def _deletion_error(code: str, message: str) -> HTTPException:
+    return _error(http_status.HTTP_409_CONFLICT, code, message)
 
 
 async def _require_admin_community(
@@ -666,3 +675,197 @@ async def update_admin_member_membership(
             invited_by=membership.invited_by,
             created_at=membership.created_at,
         )
+
+
+async def _lock_admin_deletion_context(
+    session: AsyncSession,
+    current_user: AppUser,
+    community_id: UUID,
+) -> AppUser:
+    # Serializing on the stable community row makes last-admin decisions from
+    # concurrent destructive requests share one transaction order.
+    await session.scalar(
+        select(Community.id)
+        .where(Community.id == community_id)
+        .with_for_update(),
+    )
+
+    actor = await session.scalar(
+        select(AppUser)
+        .where(AppUser.id == current_user.id)
+        .with_for_update()
+        .execution_options(populate_existing=True),
+    )
+    if actor is None:
+        raise authorization_service.AuthenticationRequiredError()
+
+    await session.scalar(
+        select(CommunityMembership.id)
+        .where(
+            CommunityMembership.user_id == actor.id,
+            CommunityMembership.community_id == community_id,
+        )
+        .with_for_update(),
+    )
+    await authorization_service.require_active_user(session, actor.id)
+    await _require_admin_community(session, actor, community_id)
+    return actor
+
+
+async def _lock_target_memberships(
+    session: AsyncSession,
+    target_user_id: UUID,
+) -> list[CommunityMembership]:
+    result = await session.scalars(
+        select(CommunityMembership)
+        .where(CommunityMembership.user_id == target_user_id)
+        .order_by(CommunityMembership.id)
+        .with_for_update(),
+    )
+    return list(result)
+
+
+async def _existing_active_deletion_request(
+    session: AsyncSession,
+    target_user_id: UUID,
+) -> PrivacyRequest | None:
+    return await session.scalar(
+        select(PrivacyRequest)
+        .where(
+            PrivacyRequest.user_id == target_user_id,
+            PrivacyRequest.request_type == "deletion",
+            PrivacyRequest.processing_stopped_at.is_not(None),
+            PrivacyRequest.cancelled_at.is_(None),
+            PrivacyRequest.completed_at.is_(None),
+        )
+        .order_by(PrivacyRequest.created_at.desc(), PrivacyRequest.id.desc())
+        .limit(1)
+        .with_for_update(),
+    )
+
+
+async def _ensure_other_active_admin_remains(
+    session: AsyncSession,
+    *,
+    community_id: UUID,
+    target_user_id: UUID,
+    target_membership: CommunityMembership | None,
+) -> None:
+    if (
+        target_membership is None
+        or target_membership.role != "admin"
+        or target_membership.status != ACTIVE_STATUS
+    ):
+        return
+
+    active_admin_user_ids = list(
+        await session.scalars(
+            select(CommunityMembership.user_id)
+            .where(
+                CommunityMembership.community_id == community_id,
+                CommunityMembership.role == "admin",
+                CommunityMembership.status == ACTIVE_STATUS,
+            )
+            .order_by(CommunityMembership.id)
+            .with_for_update(),
+        ),
+    )
+    if not any(user_id != target_user_id for user_id in active_admin_user_ids):
+        raise _deletion_error(
+            "cannot_delete_last_admin",
+            "The last active community admin cannot be deleted",
+        )
+
+
+async def start_admin_member_deletion(
+    session: AsyncSession,
+    current_user: AppUser,
+    target_user_id: UUID,
+    payload: AdminMemberDeletionRequest,
+) -> AdminMemberDeletionResponse:
+    if payload.confirmation != "DELETE":
+        raise _error(
+            http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "invalid_confirmation",
+            "Confirmation must match DELETE exactly",
+        )
+
+    erasure_start: privacy_erasure_service.ErasureStartResult | None = None
+    async with _transaction_scope(session):
+        actor = await _lock_admin_deletion_context(
+            session,
+            current_user,
+            payload.community_id,
+        )
+        if target_user_id == actor.id:
+            raise _deletion_error(
+                "cannot_delete_self",
+                "Admins must use self-service deletion for their own account",
+            )
+
+        target_user = await session.scalar(
+            select(AppUser)
+            .where(AppUser.id == target_user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True),
+        )
+        if target_user is None or target_user.erased_at is not None:
+            raise _not_found()
+
+        _, target_membership = await _resolve_scoped_member(
+            session,
+            target_user_id=target_user_id,
+            community_id=payload.community_id,
+            lock_profile=True,
+            lock_membership=True,
+        )
+        target_memberships = await _lock_target_memberships(session, target_user_id)
+
+        if target_user.status == privacy_erasure_service.DELETION_PENDING_STATUS:
+            existing_request = await _existing_active_deletion_request(
+                session,
+                target_user_id,
+            )
+            if existing_request is None:
+                raise _deletion_error(
+                    "member_deletion_unavailable",
+                    "The existing member deletion request is unavailable",
+                )
+            return AdminMemberDeletionResponse(
+                request_id=existing_request.id,
+                user_id=target_user_id,
+                state="deletion_pending",
+            )
+
+        if any(
+            membership.community_id != payload.community_id
+            and membership.status == ACTIVE_STATUS
+            for membership in target_memberships
+        ):
+            raise _deletion_error(
+                "member_has_other_active_communities",
+                "Another active community membership prevents global deletion",
+            )
+
+        await _ensure_other_active_admin_remains(
+            session,
+            community_id=payload.community_id,
+            target_user_id=target_user_id,
+            target_membership=target_membership,
+        )
+        erasure_start = await privacy_erasure_service.start_admin_erasure_in_transaction(
+            session,
+            user=target_user,
+            community_id=payload.community_id,
+            initiated_by_user_id=actor.id,
+        )
+        response = AdminMemberDeletionResponse(
+            request_id=erasure_start.response.request_id,
+            user_id=target_user_id,
+            state="deletion_pending",
+        )
+
+    await privacy_erasure_service.notify_erasure_started(
+        erasure_start.notification_email if erasure_start is not None else None,
+    )
+    return response
