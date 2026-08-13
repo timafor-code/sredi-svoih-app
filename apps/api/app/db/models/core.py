@@ -2079,7 +2079,6 @@ class PrivacyRequest(Base):
     )
     initiated_by_user_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("app_users.id", ondelete="SET NULL"),
     )
     admin_authorized_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),

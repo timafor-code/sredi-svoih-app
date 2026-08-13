@@ -48,14 +48,6 @@ def upgrade() -> None:
         "WHERE origin IS NULL",
     )
     op.alter_column("privacy_requests", "origin", nullable=False)
-    op.create_foreign_key(
-        "privacy_requests_initiated_by_user_id_fkey",
-        "privacy_requests",
-        "app_users",
-        ["initiated_by_user_id"],
-        ["id"],
-        ondelete="SET NULL",
-    )
     op.create_check_constraint(
         "privacy_requests_origin_check",
         "privacy_requests",
@@ -117,11 +109,6 @@ def downgrade() -> None:
         "privacy_requests_origin_check",
         "privacy_requests",
         type_="check",
-    )
-    op.drop_constraint(
-        "privacy_requests_initiated_by_user_id_fkey",
-        "privacy_requests",
-        type_="foreignkey",
     )
     op.drop_column("privacy_requests", "admin_authorized_at")
     op.drop_column("privacy_requests", "initiated_by_user_id")
