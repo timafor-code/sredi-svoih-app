@@ -1926,6 +1926,12 @@ name/contact/profile summary fields, `hebrew_birth_date`, `nusach`,
 existing RPC: active memberships first, then other membership rows, then
 unaffiliated profiles, sorted by display name and profile creation time.
 
+The list returns profiles only when the linked `app_users` row is active and
+has `erased_at IS NULL`. `deletion_pending`, erased, and missing app accounts
+are not part of the ordinary Members list. This backend visibility rule applies
+immediately after deletion starts and does not depend on completion of the
+asynchronous privacy-erasure worker.
+
 `GET /admin/members/{user_id}` returns the list row fields plus profile detail
 (`profile_community_id`, `full_name`, `hebrew_name`, `birth_time_context`,
 `tribe_status`, `marital_status`, `about`, visibility fields,
