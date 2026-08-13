@@ -20,6 +20,7 @@ from app.services.privacy_erasure_worker import (
     RETRYABLE_FAILURE_CODES,
     PrivacyErasureWorkerResult,
     execute_privacy_erasure_request,
+    privacy_erasure_authorization_predicate,
 )
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ class PrivacyErasureRuntime:
             .join(AppUser, AppUser.id == PrivacyRequest.user_id)
             .where(
                 PrivacyRequest.request_type == "deletion",
-                PrivacyRequest.identity_verified_at.is_not(None),
+                privacy_erasure_authorization_predicate(),
                 PrivacyRequest.processing_stopped_at.is_not(None),
                 PrivacyRequest.cancelled_at.is_(None),
                 PrivacyRequest.completed_at.is_(None),

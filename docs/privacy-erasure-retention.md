@@ -80,6 +80,19 @@ deadline. Completion notification uses the existing data-minimal
 `completed_with_retention` copy and does not claim that every record has been
 destroyed.
 
+Erasure authorization is origin-aware without creating another deletion
+engine. Existing `self_service` requests still require subject identity
+verification. A future `admin` entry point must instead provide the acting
+admin's app-user id and an admin-authorization timestamp; it must not populate
+the subject's identity-verification timestamp. Both origins then execute this
+same worker, retention classifier, deletion manifest, and evidence path.
+
+The self-service canonical-email and notification requirements are unchanged.
+For a valid admin-origin request only, a target without a canonical email does
+not block physical erasure. The completion outbox is omitted, no recipient
+placeholder is stored, destruction evidence is still created, and the worker
+reports `skipped_no_recipient` as the intentional notification outcome.
+
 Routine paid history does not require manual review. Manual review remains for
 unsupported, unknown, or inconsistent finalized financial data that cannot be
 classified safely. Configuration failure is retryable after an approved value

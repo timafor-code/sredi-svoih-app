@@ -55,16 +55,26 @@ from app.db.models.core import (
 )
 from app.db.models.seating import EventSeatingAssignment, EventSeatingLayout
 from app.db.session import AsyncSessionLocal, engine
+from app.services.privacy_erasure_completion_notification import (
+    NOTIFICATION_SKIPPED_NO_RECIPIENT,
+)
+from app.services.privacy_erasure_deletion_manifest import (
+    apply_privacy_erasure_deletion_manifest,
+)
 from app.services.privacy_erasure_worker import (
+    ADMIN_ERASURE_ORIGIN,
     AVATAR_STORAGE_FAILURE_CODE,
     DATABASE_FAILURE_CODE,
     MANUAL_REVIEW_FAILURE_CODE,
+    NOTIFICATION_RECIPIENT_MISSING_FAILURE_CODE,
     PRIVACY_ERASURE_EXECUTION_VERSION,
     RETENTION_CONFIGURATION_FAILURE_CODE,
     RESTORE_REGISTER_FAILURE_CODE,
+    SELF_SERVICE_ERASURE_ORIGIN,
     SUBJECT_MISSING_FAILURE_CODE,
     PrivacyErasureWorkerResult,
     execute_privacy_erasure_request,
+    privacy_erasure_request_is_authorized,
 )
 from app.services.privacy_erasure_restore_register import (
     ensure_restore_register_marker,
@@ -301,10 +311,18 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
         processing_stopped: bool = True,
         status: str = "deletion_pending",
         cancelled: bool = False,
-    ) -> tuple[UUID, UUID, str, str]:
+        origin: str = SELF_SERVICE_ERASURE_ORIGIN,
+        initiated_by_user_id: UUID | None = None,
+        admin_authorized: bool = False,
+        has_email: bool = True,
+    ) -> tuple[UUID, UUID, str | None, str]:
         user_id = uuid4()
         request_id = uuid4()
-        email = f"subject-{self.marker}-{len(self.user_ids)}@example.invalid"
+        email = (
+            f"subject-{self.marker}-{len(self.user_ids)}@example.invalid"
+            if has_email
+            else None
+        )
         phone = f"+7999{int(user_id.hex[:7], 16) % 10**7:07d}"
         self.user_ids.add(user_id)
         self.request_ids.add(request_id)
@@ -316,7 +334,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                         email=email,
                         phone=phone,
                         password_hash=f"synthetic-hash-{self.marker}",
-                        account_origin="password_signup",
+                        account_origin="password_signup" if has_email else "migration",
                         claim_state="claimed",
                         status=status,
                         deletion_requested_at=self.now
@@ -333,8 +351,11 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                         message="Synthetic privacy request content",
                         status="open",
                         identity_verified_at=self.now if verified else None,
+                        origin=origin,
+                        initiated_by_user_id=initiated_by_user_id,
+                        admin_authorized_at=self.now if admin_authorized else None,
                         processing_stopped_at=self.now
-                        if verified and processing_stopped
+                        if processing_stopped
                         else None,
                         pre_deletion_user_status="active"
                         if processing_stopped
@@ -345,6 +366,118 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 )
         return user_id, request_id, email, phone
+
+    def test_self_service_and_admin_authorization_rules_are_explicit(self) -> None:
+        base = {
+            "request_type": "deletion",
+            "status": "open",
+            "processing_stopped_at": self.now,
+            "pre_deletion_user_status": "active",
+            "created_at": self.now,
+            "updated_at": self.now,
+        }
+        self.assertTrue(
+            privacy_erasure_request_is_authorized(
+                PrivacyRequest(
+                    **base,
+                    origin=SELF_SERVICE_ERASURE_ORIGIN,
+                    identity_verified_at=self.now,
+                ),
+            ),
+        )
+        self.assertFalse(
+            privacy_erasure_request_is_authorized(
+                PrivacyRequest(**base, origin=SELF_SERVICE_ERASURE_ORIGIN),
+            ),
+        )
+        self.assertTrue(
+            privacy_erasure_request_is_authorized(
+                PrivacyRequest(
+                    **base,
+                    origin=ADMIN_ERASURE_ORIGIN,
+                    initiated_by_user_id=self.other_user_id,
+                    admin_authorized_at=self.now,
+                ),
+            ),
+        )
+        for values in (
+            {},
+            {"admin_authorized_at": self.now},
+            {"initiated_by_user_id": self.other_user_id},
+            {"identity_verified_at": self.now},
+        ):
+            with self.subTest(values=values):
+                self.assertFalse(
+                    privacy_erasure_request_is_authorized(
+                        PrivacyRequest(
+                            **base,
+                            origin=ADMIN_ERASURE_ORIGIN,
+                            **values,
+                        ),
+                    ),
+                )
+
+    async def test_admin_origin_without_email_completes_and_skips_notification(
+        self,
+    ) -> None:
+        user_id, request_id, _, _ = await self._add_subject(
+            verified=False,
+            origin=ADMIN_ERASURE_ORIGIN,
+            initiated_by_user_id=self.other_user_id,
+            admin_authorized=True,
+            has_email=False,
+        )
+        with patch(
+            "app.services.privacy_erasure_worker."
+            "apply_privacy_erasure_deletion_manifest",
+            side_effect=apply_privacy_erasure_deletion_manifest,
+        ) as manifest:
+            first = await self._execute_worker(request_id)
+        manifest.assert_awaited_once()
+        self.assertEqual(first.result, "completed")
+        self.assertEqual(
+            first.notification_result,
+            NOTIFICATION_SKIPPED_NO_RECIPIENT,
+        )
+        self.assertIsNotNone(first.destruction_evidence_id)
+        self.evidence_ids.add(first.destruction_evidence_id)
+
+        async with AsyncSessionLocal() as session:
+            request = await session.get(PrivacyRequest, request_id)
+            outbox = await session.scalar(
+                select(PrivacyErasureNotificationOutbox).where(
+                    PrivacyErasureNotificationOutbox.privacy_request_id
+                    == request_id,
+                ),
+            )
+            self.assertIsNone(await session.get(AppUser, user_id))
+        self.assertEqual(request.origin, ADMIN_ERASURE_ORIGIN)
+        self.assertIsNone(request.identity_verified_at)
+        self.assertEqual(request.initiated_by_user_id, self.other_user_id)
+        self.assertIsNotNone(request.admin_authorized_at)
+        self.assertIsNotNone(request.completed_at)
+        self.assertIsNone(outbox)
+
+        replay = await self._execute_worker(request_id)
+        self.assertEqual(replay.result, "already_completed")
+        self.assertEqual(
+            replay.notification_result,
+            NOTIFICATION_SKIPPED_NO_RECIPIENT,
+        )
+
+    async def test_self_service_without_email_remains_ineligible(self) -> None:
+        user_id, request_id, _, _ = await self._add_subject(has_email=False)
+        result = await self._execute_worker(request_id)
+        self.assertEqual(result.result, "not_eligible")
+        self.assertEqual(
+            result.failure_code,
+            NOTIFICATION_RECIPIENT_MISSING_FAILURE_CODE,
+        )
+        async with AsyncSessionLocal() as session:
+            request = await session.get(PrivacyRequest, request_id)
+            self.assertIsNotNone(await session.get(AppUser, user_id))
+        self.assertIsNone(request.execution_started_at)
+        self.assertIsNone(request.completed_at)
 
     async def _add_complete_graph(
         self,
@@ -1335,6 +1468,13 @@ class PrivacyErasureCliTests(unittest.TestCase):
                 "already_completed",
                 None,
                 "legacy_notification_unavailable",
+                None,
+                0,
+            ),
+            (
+                "completed",
+                None,
+                NOTIFICATION_SKIPPED_NO_RECIPIENT,
                 None,
                 0,
             ),
