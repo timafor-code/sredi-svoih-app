@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  confirmPrivacyAccessCode,
+  confirmPrivacyErasure,
   confirmSetPassword,
   confirmWebRegistrationEmail,
+  createDeletionPrivacyRequest,
   createWebRegistrationIntent,
   getExistingAccount,
   getMyRegistrations,
@@ -12,6 +15,7 @@ import {
   loginExistingAccount,
   logoutExistingAccount,
   requestSetPassword,
+  requestPrivacyAccessCode,
   resendWebRegistrationCode,
 } from "./api";
 import {
@@ -35,6 +39,7 @@ function fetchResponse(body: unknown, status = 200, headers: Record<string, stri
 const FLOW_ID = "opaque-flow-credential";
 const REGISTRATION_ID = "77777777-7777-4777-8777-777777777777";
 const EXPIRES_AT = "2026-09-12T18:00:00+03:00";
+const PRIVACY_REQUEST_ID = "88888888-8888-4888-8888-888888888888";
 const UUID_REFERENCE = { kind: "uuid", value: EVENT_ID } as const;
 const SLUG_REFERENCE = { kind: "slug", value: "shabbat-dlya-druzey" } as const;
 
@@ -478,5 +483,110 @@ describe("public event API", () => {
   it("rejects a malformed error envelope instead of exposing its message", async () => {
     vi.mocked(fetch).mockImplementation(() => fetchResponse({ message: "sensitive backend detail" }, 409));
     await expect(getWebRegistrationIntentStatus(FLOW_ID)).rejects.toMatchObject({ code: "invalid_response" });
+  });
+
+  it("keeps privacy code requests public and validates the privacy session", async () => {
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => fetchResponse(envelope({ accepted: true }), 202))
+      .mockImplementationOnce(() => fetchResponse(envelope({
+        privacy_session_token: "privacy-session-token",
+        token_type: "bearer",
+        scope: "privacy_self_service",
+        expires_at: EXPIRES_AT,
+      })));
+
+    await expect(requestPrivacyAccessCode("  IVAN@example.invalid ")).resolves.toEqual({ accepted: true });
+    await expect(confirmPrivacyAccessCode("IVAN@example.invalid", "123456")).resolves.toMatchObject({
+      privacy_session_token: "privacy-session-token",
+    });
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "/api/privacy/access/request", expect.objectContaining({
+      method: "POST",
+      credentials: "omit",
+      body: JSON.stringify({ email: "ivan@example.invalid" }),
+    }));
+    expect(fetch).toHaveBeenNthCalledWith(2, "/api/privacy/access/confirm", expect.objectContaining({
+      method: "POST",
+      credentials: "omit",
+      body: JSON.stringify({ email: "ivan@example.invalid", code: "123456" }),
+    }));
+    for (const call of vi.mocked(fetch).mock.calls) {
+      expect(call[1]?.headers).not.toHaveProperty("Authorization");
+    }
+  });
+
+  it("uses only the privacy bearer for deletion request creation and erasure confirmation", async () => {
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => fetchResponse(envelope({
+        id: PRIVACY_REQUEST_ID,
+        community_id: "00000000-0000-0000-0000-000000000001",
+        request_type: "deletion",
+        message: null,
+        status: "open",
+        resolution_note: null,
+        resolved_at: null,
+        created_at: EXPIRES_AT,
+        updated_at: EXPIRES_AT,
+      }), 201))
+      .mockImplementationOnce(() => fetchResponse(envelope({
+        request_id: PRIVACY_REQUEST_ID,
+        state: "deletion_pending",
+        processing_stopped_at: EXPIRES_AT,
+        cancelled_at: null,
+        registrations_require_reregistration_after_cancel: true,
+      })));
+
+    await expect(createDeletionPrivacyRequest("privacy-session-token")).resolves.toMatchObject({
+      id: PRIVACY_REQUEST_ID,
+    });
+    await expect(confirmPrivacyErasure(PRIVACY_REQUEST_ID, "privacy-session-token")).resolves.toMatchObject({
+      state: "deletion_pending",
+    });
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "/api/privacy/requests", expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: "Bearer privacy-session-token" }),
+      body: JSON.stringify({ request_type: "deletion" }),
+    }));
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      `/api/privacy/requests/${PRIVACY_REQUEST_ID}/confirm-erasure`,
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer privacy-session-token" }),
+        body: JSON.stringify({ confirmation: "delete_my_data" }),
+      }),
+    );
+    expect(JSON.stringify(vi.mocked(fetch).mock.calls)).not.toContain("normal-account-access-token");
+  });
+
+  it("rejects a malformed deletion-request community UUID", async () => {
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(envelope({
+      id: PRIVACY_REQUEST_ID,
+      community_id: "not-a-uuid",
+      request_type: "deletion",
+      message: null,
+      status: "open",
+      resolution_note: null,
+      resolved_at: null,
+      created_at: EXPIRES_AT,
+      updated_at: EXPIRES_AT,
+    }), 201));
+
+    await expect(createDeletionPrivacyRequest("privacy-session-token")).rejects.toMatchObject({
+      code: "invalid_response",
+    });
+  });
+
+  it("rejects malformed privacy responses and maps transport failures safely", async () => {
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => fetchResponse(envelope({ accepted: "yes" }), 202))
+      .mockRejectedValueOnce(new Error("raw network detail"));
+
+    await expect(requestPrivacyAccessCode("ivan@example.invalid")).rejects.toMatchObject({
+      code: "invalid_response",
+    });
+    await expect(requestPrivacyAccessCode("ivan@example.invalid")).rejects.toMatchObject({
+      code: "network_error",
+      message: "Public API request failed",
+    });
   });
 });

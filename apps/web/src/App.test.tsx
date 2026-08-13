@@ -28,6 +28,7 @@ function response(body: unknown, status = 200, headers: Record<string, string> =
 
 const FLOW_ID = "opaque-flow-credential";
 const REGISTRATION_ID = "77777777-7777-4777-8777-777777777777";
+const PRIVACY_REQUEST_ID = "88888888-8888-4888-8888-888888888888";
 const EXPIRES_AT = "2026-09-12T18:00:00+03:00";
 const SET_PASSWORD_CODE = "opaque-set-password-code-with-sufficient-length";
 
@@ -65,6 +66,43 @@ function registrationResult(
     set_password_code: accountNextStep === "set_password" ? SET_PASSWORD_CODE : null,
     set_password_expires_at: accountNextStep === "set_password" ? EXPIRES_AT : null,
   });
+}
+
+function privacySession() {
+  return envelope({
+    privacy_session_token: "privacy-session-token",
+    token_type: "bearer",
+    scope: "privacy_self_service",
+    expires_at: EXPIRES_AT,
+  });
+}
+
+function deletionPrivacyRequest() {
+  return envelope({
+    id: PRIVACY_REQUEST_ID,
+    community_id: "00000000-0000-0000-0000-000000000001",
+    request_type: "deletion",
+    message: null,
+    status: "open",
+    resolution_note: null,
+    resolved_at: null,
+    created_at: EXPIRES_AT,
+    updated_at: EXPIRES_AT,
+  });
+}
+
+function deletionPendingLifecycle() {
+  return envelope({
+    request_id: PRIVACY_REQUEST_ID,
+    state: "deletion_pending",
+    processing_stopped_at: EXPIRES_AT,
+    cancelled_at: null,
+    registrations_require_reregistration_after_cancel: true,
+  });
+}
+
+function apiError(code: string, message = "hidden backend detail") {
+  return { data: null, error: { code, message }, meta: {} };
 }
 
 function successfulFetch(data = eventResponse()) {
@@ -160,6 +198,13 @@ async function signInExistingAccount(
   await user.type(screen.getByLabelText("Пароль"), "secret-password");
   await user.click(screen.getByRole("button", { name: "Войти" }));
   return screen.findByRole("region", { name: "Аккаунт" });
+}
+
+async function openSignedInDeletion(user: ReturnType<typeof userEvent.setup>) {
+  const accountPanel = await signInExistingAccount(user, "normal-account-access-token");
+  await user.click(within(accountPanel).getByRole("button", { name: "Управление аккаунтом" }));
+  await user.click(within(accountPanel).getByRole("button", { name: "Удалить аккаунт" }));
+  return screen.findByRole("dialog", { name: "Удаление аккаунта и данных" });
 }
 
 describe("public event page", () => {
@@ -1044,6 +1089,149 @@ describe("local form shell", () => {
     expect(window.location.href).not.toContain("secret-password");
   });
 
+  it("uses the signed-in canonical email for public privacy verification and keeps auth on invalid code or cancel", async () => {
+    const user = userEvent.setup();
+    await renderEvent();
+    const dialog = await openSignedInDeletion(user);
+    const email = within(dialog).getByLabelText("Email для подтверждения удаления");
+    expect(email).toHaveValue("ivan@example.ru");
+    expect(email).toHaveAttribute("readonly");
+    expect(screen.getByRole("button", { name: "Выйти" })).toBeInTheDocument();
+
+    vi.mocked(fetch).mockImplementationOnce(() => response(envelope({ accepted: true }), 202));
+    await user.click(within(dialog).getByRole("button", { name: "Получить код подтверждения" }));
+    const codeInput = await screen.findByLabelText("Код подтверждения удаления");
+    expect(codeInput).toHaveFocus();
+    await user.type(codeInput, "12a34b56");
+    expect(codeInput).toHaveValue("123456");
+
+    vi.mocked(fetch).mockImplementationOnce(() => response(
+      apiError("invalid_or_expired_privacy_code", "email exists; paid invoice 42"),
+      400,
+    ));
+    await user.click(screen.getByRole("button", { name: "Продолжить" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Неверный или просроченный код.");
+    expect(screen.queryByText(/paid invoice|email exists/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Аккаунт" })).toBeInTheDocument();
+
+    const requestCall = vi.mocked(fetch).mock.calls.find(([input]) => String(input).endsWith("/privacy/access/request"));
+    const confirmCall = vi.mocked(fetch).mock.calls.find(([input]) => String(input).endsWith("/privacy/access/confirm"));
+    expect(requestCall?.[1]?.body).toBe(JSON.stringify({ email: "ivan@example.ru" }));
+    expect(confirmCall?.[1]?.body).toBe(JSON.stringify({ email: "ivan@example.ru", code: "123456" }));
+    expect(requestCall?.[1]?.headers).not.toHaveProperty("Authorization");
+    expect(confirmCall?.[1]?.headers).not.toHaveProperty("Authorization");
+
+    await user.click(screen.getByRole("button", { name: "Отмена" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Аккаунт" })).toBeInTheDocument();
+  });
+
+  it("retries confirm-erasure with the same request and clears account plus tickets on deletion_pending", async () => {
+    const user = userEvent.setup();
+    const storageSpy = vi.spyOn(Storage.prototype, "setItem");
+    await renderEvent();
+    const initialUrl = window.location.href;
+    const accountPanel = await signInExistingAccount(user, "normal-account-access-token");
+    vi.mocked(fetch).mockImplementationOnce(() => response(envelope([myRegistration()])));
+    await user.click(within(accountPanel).getByRole("button", { name: "Мои билеты" }));
+    expect(await screen.findByRole("heading", { name: "Мои билеты" })).toBeInTheDocument();
+    await user.click(within(accountPanel).getByRole("button", { name: "Управление аккаунтом" }));
+    await user.click(within(accountPanel).getByRole("button", { name: "Удалить аккаунт" }));
+
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response(envelope({ accepted: true }), 202))
+      .mockImplementationOnce(() => response(privacySession()))
+      .mockImplementationOnce(() => response(deletionPrivacyRequest(), 201))
+      .mockRejectedValueOnce(new Error("socket timeout"));
+    await user.click(screen.getByRole("button", { name: "Получить код подтверждения" }));
+    await user.type(screen.getByLabelText("Код подтверждения удаления"), "123456");
+    await user.click(screen.getByRole("button", { name: "Продолжить" }));
+    expect(await screen.findByRole("heading", { name: "Подтвердите удаление аккаунта" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Перейти к удалению аккаунта" }));
+    await user.click(screen.getByRole("button", { name: "Нет, вернуться" }));
+    expect(screen.getByRole("region", { name: "Аккаунт" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Перейти к удалению аккаунта" }));
+    await user.click(screen.getByRole("button", { name: "Да, удалить аккаунт" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Проверьте соединение");
+    expect(screen.getByRole("region", { name: "Аккаунт" })).toBeInTheDocument();
+
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response(deletionPendingLifecycle()))
+      .mockImplementationOnce(() => response({ ok: true }));
+    await user.click(screen.getByRole("button", { name: "Перейти к удалению аккаунта" }));
+    await user.click(screen.getByRole("button", { name: "Да, удалить аккаунт" }));
+    expect(await screen.findByRole("heading", { name: "Запрос на удаление подтверждён" })).toBeInTheDocument();
+    expect(screen.getByText(/Доступ к аккаунту остановлен.*правилами хранения данных/)).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Аккаунт" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Мои билеты" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Продолжить без пароля" })).toBeInTheDocument();
+
+    const createCalls = vi.mocked(fetch).mock.calls.filter(([input]) => String(input).endsWith("/privacy/requests"));
+    const confirmCalls = vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes("/confirm-erasure"));
+    expect(createCalls).toHaveLength(1);
+    expect(confirmCalls).toHaveLength(2);
+    expect(confirmCalls.map(([input]) => String(input))).toEqual([
+      `/api/privacy/requests/${PRIVACY_REQUEST_ID}/confirm-erasure`,
+      `/api/privacy/requests/${PRIVACY_REQUEST_ID}/confirm-erasure`,
+    ]);
+    for (const call of [...createCalls, ...confirmCalls]) {
+      expect(call[1]?.headers).toMatchObject({ Authorization: "Bearer privacy-session-token" });
+      expect(call[1]?.headers).not.toMatchObject({ Authorization: "Bearer normal-account-access-token" });
+    }
+    expect(storageSpy).not.toHaveBeenCalled();
+    expect(window.localStorage).toHaveLength(0);
+    expect(window.sessionStorage).toHaveLength(0);
+    expect(window.location.href).toBe(initialUrl);
+    expect(window.location.href).not.toContain("privacy-session-token");
+    expect(window.location.href).not.toContain(PRIVACY_REQUEST_ID);
+    expect(window.location.href).not.toContain("123456");
+  });
+
+  it("returns an expired privacy session to code verification without corrupting ordinary auth", async () => {
+    const user = userEvent.setup();
+    await renderEvent();
+    await openSignedInDeletion(user);
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response(envelope({ accepted: true }), 202))
+      .mockImplementationOnce(() => response(privacySession()))
+      .mockImplementationOnce(() => response(deletionPrivacyRequest(), 201))
+      .mockImplementationOnce(() => response(apiError("privacy_session_expired"), 401));
+    await user.click(screen.getByRole("button", { name: "Получить код подтверждения" }));
+    await user.type(screen.getByLabelText("Код подтверждения удаления"), "123456");
+    await user.click(screen.getByRole("button", { name: "Продолжить" }));
+    await user.click(screen.getByRole("button", { name: "Перейти к удалению аккаунта" }));
+    await user.click(screen.getByRole("button", { name: "Да, удалить аккаунт" }));
+
+    expect(await screen.findByLabelText("Код подтверждения удаления")).toHaveFocus();
+    expect(screen.getByRole("alert")).toHaveTextContent("Сеанс подтверждения истёк");
+    expect(screen.getByRole("region", { name: "Аккаунт" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Выйти" })).toBeInTheDocument();
+  });
+
+  it("shows generic manual processing copy without backend financial details", async () => {
+    const user = userEvent.setup();
+    await renderEvent();
+    await openSignedInDeletion(user);
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response(envelope({ accepted: true }), 202))
+      .mockImplementationOnce(() => response(privacySession()))
+      .mockImplementationOnce(() => response(deletionPrivacyRequest(), 201))
+      .mockImplementationOnce(() => response(
+        apiError("privacy_erasure_manual_review_required", "payment event 123 requires retention"),
+        409,
+      ));
+    await user.click(screen.getByRole("button", { name: "Получить код подтверждения" }));
+    await user.type(screen.getByLabelText("Код подтверждения удаления"), "123456");
+    await user.click(screen.getByRole("button", { name: "Продолжить" }));
+    await user.click(screen.getByRole("button", { name: "Перейти к удалению аккаунта" }));
+    await user.click(screen.getByRole("button", { name: "Да, удалить аккаунт" }));
+
+    expect(await screen.findByRole("heading", { name: "Требуется дополнительная обработка" })).toBeInTheDocument();
+    expect(screen.queryByText(/payment|event 123|retention/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Аккаунт" })).toBeInTheDocument();
+  });
+
   it("never offers or fetches My Tickets while signed out", async () => {
     await renderEvent();
 
@@ -1468,6 +1656,53 @@ describe("registration intent and account claim flow", () => {
     expect(screen.queryByRole("button", { name: "Мои билеты" })).not.toBeInTheDocument();
     expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).includes("/me/registrations")))
       .toBe(false);
+  });
+
+  it("deletes passwordless registration data through the current verified email without creating account auth", async () => {
+    const storageSpy = vi.spyOn(Storage.prototype, "setItem");
+    const user = await setupValidForm();
+    const initialUrl = window.location.href;
+    await createIntent(user);
+    await confirmIntent(user);
+    expect(await screen.findByRole("button", { name: "Управление данными" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Мои билеты" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Пароль")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Управление данными" }));
+    const email = screen.getByLabelText("Email для подтверждения удаления");
+    expect(email).toHaveValue("anna@example.ru");
+    expect(email).toHaveAttribute("readonly");
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response(envelope({ accepted: true }), 202))
+      .mockImplementationOnce(() => response(privacySession()))
+      .mockImplementationOnce(() => response(deletionPrivacyRequest(), 201))
+      .mockImplementationOnce(() => response(deletionPendingLifecycle()));
+    await user.click(screen.getByRole("button", { name: "Получить код подтверждения" }));
+    await user.type(screen.getByLabelText("Код подтверждения удаления"), "123456");
+    await user.click(screen.getByRole("button", { name: "Продолжить" }));
+    await user.click(screen.getByRole("button", { name: "Перейти к удалению аккаунта" }));
+    await user.click(screen.getByRole("button", { name: "Да, удалить аккаунт" }));
+
+    expect(await screen.findByRole("heading", { name: "Запрос на удаление подтверждён" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Аккаунт" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Мои билеты" })).not.toBeInTheDocument();
+    const privacyAccessRequest = vi.mocked(fetch).mock.calls.find(([input]) => String(input).endsWith("/privacy/access/request"));
+    expect(privacyAccessRequest?.[1]?.body).toBe(JSON.stringify({ email: "anna@example.ru" }));
+    expect(privacyAccessRequest?.[1]?.headers).not.toHaveProperty("Authorization");
+    expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).includes("/auth/me"))).toBe(false);
+    expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).includes("/me/registrations"))).toBe(false);
+    expect(storageSpy).not.toHaveBeenCalled();
+    expect(window.localStorage).toHaveLength(0);
+    expect(window.sessionStorage).toHaveLength(0);
+    expect(window.location.href).toBe(initialUrl);
+    expect(window.location.href).not.toContain("privacy-session-token");
+    expect(window.location.href).not.toContain(PRIVACY_REQUEST_ID);
+    expect(window.location.href).not.toContain("123456");
+
+    await user.click(screen.getByRole("button", { name: "Вернуться к регистрации" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Управление данными" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Запрос на удаление подтверждён.*Доступ остановлен/)).toBeInTheDocument();
   });
 
   it("claims the same registration through the direct set-password handoff", async () => {

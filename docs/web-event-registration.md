@@ -34,7 +34,12 @@ Current repository behavior:
   including strict validation, version binding, final persistence, retention,
   and privacy coverage. This completes webreg PR 11;
 - public web registration supports `internal_free` and `internal_paid`
-  contracts simultaneously after an ordinary API start.
+  contracts simultaneously after an ordinary API start;
+- the public web has an in-memory authenticated account panel with canonical
+  My Tickets loading and privacy deletion. Signed-in deletion uses the
+  canonical account email, while a completed passwordless registration may use
+  only that flow's already verified email. Both paths reuse the FastAPI privacy
+  session and erasure lifecycle without creating persistent browser auth.
 
 Mobile, public web, and web-admin must use one FastAPI API and one canonical
 PostgreSQL model. They must not create a second backend, a separate web-user
@@ -547,6 +552,29 @@ Explicit privacy-session confirmation performs the reversible processing stop;
 the separate operational worker CLI performs irreversible execution for one
 request id. Cancellation remains available only before worker claim.
 
+The public web exposes this lifecycle through a focused deletion dialog. The
+access request and code confirmation are public requests with no ordinary
+account bearer. Request creation and erasure confirmation send exactly one
+`Authorization` header containing the short-lived privacy-session bearer; the
+ordinary access token is never substituted or combined. The privacy token,
+six-digit code, and deletion request id exist only in React component memory.
+They are never written to browser storage, cookies, URL state, or logs.
+
+For a signed-in user, the read-only email comes only from canonical `/auth/me`
+identity state. A successful `deletion_pending` response immediately clears the
+in-memory authenticated account and unmounts My Tickets; local logout is only
+best-effort because the backend has already revoked normal credentials. For a
+passwordless registration, “Управление данными” is available only after the
+current registration email-verification flow succeeds. It uses that verified
+email read-only and does not call `/auth/me`, `/me/registrations`, create a
+normal account session, expose historical tickets, or require a password.
+
+If erasure confirmation fails after request creation, the public web retries
+confirmation with the same in-memory request id instead of creating a duplicate
+request. Expired, revoked, or missing privacy sessions return only the deletion
+dialog to code verification and leave unrelated ordinary auth untouched. Safe
+Russian error copy does not expose backend response bodies or financial detail.
+
 Real SMTP smoke is deferred to the production SMTP/deploy stage; automated
 coverage uses fakes/mocks around the existing SMTP boundary. The current
 email limiter is process-local with 900-second/five-attempt local defaults.
@@ -582,6 +610,9 @@ are not approvals and must not be presented as final values.
   are included in the MVP.
 - Verification/magic-link secrets are exchanged for a session and removed from
   the URL immediately.
+- Public registration account and privacy credentials remain in React memory
+  only. The public web does not persist access, refresh, privacy-session, code,
+  or privacy-request credentials in browser storage, cookies, or URL state.
 - Public/cookie-auth web sessions use Secure, HttpOnly, SameSite cookies, a
   `__Host-` prefix where applicable, short access lifetime, refresh rotation,
   and CSRF tokens. Refresh tokens are never stored in `localStorage`. Mobile
@@ -721,18 +752,18 @@ No value is invented for these unresolved decisions:
 
 `POST /privacy/requests/{request_id}/confirm-erasure` accepts only a valid
 `privacy_self_service` session and the exact confirmation literal
-`delete_my_data`. Before changing state, the API fails closed when any
-registration has a non-`internal_free` mode, payment identifier, financial
-payment status, priced option snapshot, or donation marker. Such requests need
-manual review until an approved retention matrix exists.
+`delete_my_data`. A valid confirmation enters `deletion_pending` immediately;
+registrations, tickets, payments, or historical participation do not keep the
+account accessible. Selective financial retention is classified by the
+canonical backend erasure worker rather than by public-web conditions.
 
 A successful confirmation atomically moves the canonical user to
 `deletion_pending`, revokes auth/privacy sessions and one-time codes, removes
 only unfinished web-registration intents matched by canonical normalized
 `app_users.email`, and cancels future free registrations in canonical
-cancellable statuses. Past, attended, no-show, paid, and donation records are
-unchanged. Cancelled registrations stop counting toward capacity through the
-existing registration-status rules; capacity reservation rows are not deleted.
+cancellable statuses. Records that require retention remain subject to the
+backend retention policy and may complete as `completed_with_retention`; the
+public web does not disclose or infer record-level retention reasons.
 
 `POST /privacy/requests/{request_id}/cancel-erasure` is available through a new
 privacy session only until worker execution begins. It restores the saved user
