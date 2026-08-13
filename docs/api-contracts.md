@@ -1537,6 +1537,8 @@ to the resource visibility rule.
 | POST | `/admin/events` | Create an event. |
 | GET | `/admin/events/{event_id}` | Return one event in admin shape. |
 | PATCH | `/admin/events/{event_id}` | Update editable event fields. |
+| PUT | `/admin/events/{event_id}/image` | Upload, normalize, and atomically activate or replace the event image. |
+| DELETE | `/admin/events/{event_id}/image` | Idempotently remove a managed or legacy event image reference. |
 | POST | `/admin/events/{event_id}/publish` | Publish an event. |
 | POST | `/admin/events/{event_id}/archive` | Archive an event. |
 | POST | `/admin/events/{event_id}/cancel` | Cancel an event. |
@@ -1577,6 +1579,80 @@ Admin event responses reuse public event fields and additionally include
 `source_type`, `source_external_id`, `manual_override`, `created_by`, and
 `updated_by`. Admin registration-management, seating, and import endpoints
 remain future PR scope.
+
+#### Admin event image lifecycle
+
+`PUT /admin/events/{event_id}/image` requires `multipart/form-data` with
+exactly one part named `file`, and that part must be an uploaded file. A missing
+part, duplicate part, second file, ordinary form field, JSON body, or other
+multipart content is rejected. The filename, extension, declared MIME type,
+dimensions, and request `Content-Length` are not authoritative. The backend
+first reads the raw request stream through a bounded 12 MiB source allowance
+plus a fixed 64 KiB multipart-envelope allowance, before multipart parsing or
+spooling. It then enforces the exact 12 MiB file limit during normalization,
+decodes under a pixel-area limit, rejects SVG and animated/multi-frame input,
+verifies any declared MIME type against the decoded container, and accepts only
+JPEG, PNG, or WebP. Accepted input is re-encoded as a metadata-free, bounded
+WebP before storage.
+
+`DELETE /admin/events/{event_id}/image` accepts no body. It succeeds when the
+event has no image, clears only `events.image_url` for a legacy/external URL
+that has no active managed row, and clears the URL plus advances managed
+metadata through its deletion lifecycle for a managed image. Repeating the
+request is safe.
+
+Both routes require the ordinary bearer token and an active `admin` or
+`event_manager` membership in the event's community. A member or suspended
+membership cannot mutate images. An actor who manages another community gets
+the same `404 not_found` response as an unknown event, so the route does not
+reveal cross-community existence. Authorization is completed before image
+normalization or object-storage writes.
+
+Both success responses are exactly the existing standard
+`ApiResponse[AdminEventResponse]` shape: `data` is the complete unchanged admin
+event response schema, `error` is `null`, and `meta.request_id` is present. On
+upload, `data.image_url` is the activated managed public URL; on removal it is
+`null`. No object key, ETag, content hash, version-token field, storage
+endpoint, provider payload, credential, or internal image metadata is added to
+the response. The public URL contains only the public object path and a
+non-secret `?v=<UUID>` cache-version query.
+
+Image-lifecycle failures use the existing error envelope with `data = null`,
+`meta.request_id`, and one of these stable status/code pairs:
+
+| HTTP | Code | Contract |
+| ---: | --- | --- |
+| 404 | `not_found` | Event is unknown or outside the actor's manageable communities. |
+| 413 | `event_image_too_large` | Source bytes, decoded pixel area, or normalized output exceeds a backend limit. |
+| 415 | `unsupported_event_image_type` | Format, animation, SVG input, or declared MIME/content mismatch is unsupported. |
+| 422 | `invalid_event_image` | Multipart shape is invalid or a supported raster container cannot be decoded safely. |
+| 503 | `event_image_storage_unavailable` | Event-image storage is disabled, incomplete, or a write/delete provider operation failed. |
+
+Reuploading content whose normalized SHA-256 matches the current active managed
+image returns the current event without changing its URL/version token, adding
+a second active row, or writing another object. Different content uses a new
+opaque object key and version token. The old event URL remains visible while
+the new file is normalized and written. Under an event row lock, the backend
+rechecks same-content replay, locks relevant metadata, verifies event/community
+ownership, marks the previous managed row `delete_pending`, activates the new
+row, and changes `events.image_url` in one PostgreSQL transaction. Only after
+that commit does it attempt old-object deletion. A legacy/external URL is
+replaced without attempting deletion of the external object.
+
+Object deletion is idempotent. Successful deletion marks metadata `deleted`;
+failed deletion leaves `delete_pending` without restoring the public event URL.
+For managed removal, that post-commit deletion failure returns safe
+`503 event_image_storage_unavailable`; the committed database state remains
+`events.image_url = null` with metadata `delete_pending` for a later retry.
+Each later mutation retries only a small fixed number of stale `pending` or
+`delete_pending` rows selected by `updated_at`. Cleanup never deletes an
+`active` row or an object still referenced by the event URL. There is no public
+cleanup route or scheduled worker in this contract.
+
+Ordinary JSON `POST /admin/events` and `PATCH /admin/events/{event_id}` continue
+to accept nullable `image_url` temporarily for compatibility. This lifecycle
+PR does not add the later arbitrary-URL hardening guard and does not change
+importer behavior.
 
 Implemented behavior (PR 20): the Python API exposes the admin category,
 occurrence, participation-option, and capacity-unit endpoints listed above.

@@ -3,7 +3,10 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from starlette.datastructures import FormData, UploadFile
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.formparsers import MultiPartException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import require_auth
@@ -34,12 +37,86 @@ from app.schemas.events import (
     PaginationMeta,
 )
 from app.services import admin_events as admin_events_service
+from app.services import admin_event_images as admin_event_images_service
 from app.services.admin_events import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
 
 router = APIRouter(prefix="/admin", tags=["admin-events"])
 
 CurrentUser = Annotated[AppUser, Depends(require_auth)]
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
+
+_EVENT_IMAGE_MULTIPART_ENVELOPE_BYTES = 64 * 1024
+
+
+def _invalid_event_image_request() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail={
+            "code": "invalid_event_image",
+            "message": "Exactly one uploaded file part named 'file' is required",
+        },
+    )
+
+
+def _invalid_event_image_removal_request() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail={
+            "code": "invalid_event_image",
+            "message": "Event image removal does not accept a request body",
+        },
+    )
+
+
+def _event_image_request_too_large() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        detail={
+            "code": "event_image_too_large",
+            "message": "Event image exceeds allowed limits",
+        },
+    )
+
+
+async def _read_bounded_event_image_request(request: Request) -> bytes:
+    request_limit = (
+        admin_event_images_service.MAX_EVENT_IMAGE_SOURCE_BYTES
+        + _EVENT_IMAGE_MULTIPART_ENVELOPE_BYTES
+    )
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > request_limit:
+            raise _event_image_request_too_large()
+        body.extend(chunk)
+    return bytes(body)
+
+
+async def _parse_event_image_form(request: Request) -> tuple[FormData, UploadFile]:
+    body = await _read_bounded_event_image_request(request)
+    body_sent = False
+
+    async def receive() -> dict[str, object]:
+        nonlocal body_sent
+        if body_sent:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        body_sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    bounded_request = Request(request.scope, receive=receive)
+    try:
+        form = await bounded_request.form(max_files=2, max_fields=1)
+    except (MultiPartException, StarletteHTTPException, ValueError) as exc:
+        raise _invalid_event_image_request() from exc
+
+    parts = form.multi_items()
+    if (
+        len(parts) != 1
+        or parts[0][0] != "file"
+        or not isinstance(parts[0][1], UploadFile)
+    ):
+        await form.close()
+        raise _invalid_event_image_request()
+    return form, parts[0][1]
 
 
 @router.get("/events", response_model=PaginatedApiResponse[AdminEventResponse])
@@ -172,6 +249,68 @@ async def update_admin_event(
         current_user,
         event_id,
         payload,
+    )
+    return ApiResponse[AdminEventResponse](data=AdminEventResponse.model_validate(event))
+
+
+@router.put(
+    "/events/{event_id}/image",
+    response_model=ApiResponse[AdminEventResponse],
+)
+async def upload_admin_event_image(
+    event_id: UUID,
+    request: Request,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[AdminEventResponse]:
+    actor_user_id = current_user.id
+    community_id = (
+        await admin_event_images_service.authorize_admin_event_image_mutation(
+            session,
+            current_user,
+            event_id,
+        )
+    )
+    form, uploaded_file = await _parse_event_image_form(request)
+    try:
+        event = await admin_event_images_service.upload_admin_event_image(
+            session,
+            actor_user_id,
+            event_id,
+            community_id=community_id,
+            source=uploaded_file.file,
+            declared_content_type=uploaded_file.content_type,
+        )
+    finally:
+        await form.close()
+    return ApiResponse[AdminEventResponse](data=AdminEventResponse.model_validate(event))
+
+
+@router.delete(
+    "/events/{event_id}/image",
+    response_model=ApiResponse[AdminEventResponse],
+)
+async def remove_admin_event_image(
+    event_id: UUID,
+    request: Request,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[AdminEventResponse]:
+    actor_user_id = current_user.id
+    community_id = (
+        await admin_event_images_service.authorize_admin_event_image_mutation(
+            session,
+            current_user,
+            event_id,
+        )
+    )
+    if await request.body():
+        raise _invalid_event_image_removal_request()
+    event = await admin_event_images_service.remove_admin_event_image(
+        session,
+        actor_user_id,
+        event_id,
+        community_id=community_id,
     )
     return ApiResponse[AdminEventResponse](data=AdminEventResponse.model_validate(event))
 
