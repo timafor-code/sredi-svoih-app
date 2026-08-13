@@ -37,6 +37,7 @@ from app.db.models.imports import (
     EventImportRun,
     EventImportSource,
 )
+from app.db.models.event_image import EventImage
 from app.db.models.seating import (
     EventSeatingAssignment,
     EventSeatingLayout,
@@ -73,6 +74,7 @@ __all__ = [
     "EventImportItem",
     "EventImportRun",
     "EventImportSource",
+    "EventImage",
     "EventOccurrence",
     "EventParticipationOption",
     "EventParticipationOptionCapacityUnit",

@@ -206,18 +206,9 @@ class S3AvatarStorage:
         return self._presign_client
 
     def _build_s3_client(self, *, endpoint_url: str) -> Any:
-        settings = self._settings
-        addressing_style = "path" if settings.api_object_storage_path_style else "auto"
-        return boto3.session.Session().client(
-            "s3",
-            endpoint_url=endpoint_url.strip(),
-            region_name=settings.api_object_storage_region,
-            aws_access_key_id=settings.api_object_storage_access_key_id,
-            aws_secret_access_key=settings.api_object_storage_secret_access_key,
-            config=Config(
-                signature_version="s3v4",
-                s3={"addressing_style": addressing_style},
-            ),
+        return build_s3_client(
+            settings=self._settings,
+            endpoint_url=endpoint_url,
         )
 
     def _require_settings(self, *, require_public_endpoint: bool = False) -> Settings:
@@ -242,6 +233,22 @@ class S3AvatarStorage:
 
 def get_avatar_storage() -> S3AvatarStorage:
     return S3AvatarStorage()
+
+
+def build_s3_client(*, settings: Settings, endpoint_url: str) -> Any:
+    """Build the backend S3 client shared by private and public-media stores."""
+    addressing_style = "path" if settings.api_object_storage_path_style else "auto"
+    return boto3.session.Session().client(
+        "s3",
+        endpoint_url=endpoint_url.strip(),
+        region_name=settings.api_object_storage_region,
+        aws_access_key_id=settings.api_object_storage_access_key_id,
+        aws_secret_access_key=settings.api_object_storage_secret_access_key,
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": addressing_style},
+        ),
+    )
 
 
 def _expires_at(ttl_seconds: int) -> datetime:

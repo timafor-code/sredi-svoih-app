@@ -55,6 +55,9 @@ services:
         done
         mc mb --ignore-existing local/avatars
         mc anonymous set none local/avatars
+        mc mb --ignore-existing local/event-images
+        printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":["*"]},"Action":["s3:GetObject"],"Resource":["arn:aws:s3:::event-images/*"]}]}' > /tmp/event-images-public-read.json
+        mc anonymous set-json /tmp/event-images-public-read.json local/event-images
 
   api_mailpit:
     image: axllent/mailpit:v1.30.7
