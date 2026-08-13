@@ -4,6 +4,7 @@ import {
   confirmWebRegistrationEmail,
   createWebRegistrationIntent,
   getExistingAccount,
+  getMyRegistrations,
   getWebEventRegistrationForm,
   getWebRegistrationIntentStatus,
   isSafePublicUrl,
@@ -17,6 +18,7 @@ import {
   EVENT_ID,
   OCCURRENCE_ONE_ID,
   eventResponse,
+  myRegistration,
   responseWithOccurrences,
   responseWithQuestionnaire,
 } from "./test/fixtures";
@@ -92,6 +94,33 @@ describe("public event API", () => {
     expect(fetch).toHaveBeenNthCalledWith(3, "/api/auth/logout", expect.objectContaining({
       body: JSON.stringify({ refresh_token: "temporary-refresh" }),
     }));
+  });
+
+  it("loads My Tickets only from the canonical authenticated endpoint", async () => {
+    const registration = myRegistration();
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(envelope([registration])));
+
+    await expect(getMyRegistrations("current-memory-access-token")).resolves.toEqual([registration]);
+
+    expect(fetch).toHaveBeenCalledWith("/api/me/registrations", expect.objectContaining({
+      method: "GET",
+      credentials: "omit",
+      headers: expect.objectContaining({
+        Authorization: "Bearer current-memory-access-token",
+      }),
+    }));
+    expect(vi.mocked(fetch).mock.calls[0][1]).not.toHaveProperty("body");
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).not.toContain("email");
+  });
+
+  it("rejects malformed My Tickets responses without exposing backend data", async () => {
+    const malformed = myRegistration({ payment_status: "unknown" as "paid" });
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(envelope([malformed])));
+
+    await expect(getMyRegistrations("current-memory-access-token")).rejects.toMatchObject({
+      name: "PublicApiError",
+      code: "invalid_response",
+    });
   });
 
   it("accepts a canonical /auth/me response with no profile as incomplete identity", async () => {

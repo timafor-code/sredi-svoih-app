@@ -1,4 +1,8 @@
-import type { WebEventRegistrationFormResponse, WebRegistrationState } from "../types";
+import type {
+  MyRegistration,
+  WebEventRegistrationFormResponse,
+  WebRegistrationState,
+} from "../types";
 
 export const EVENT_ID = "11111111-1111-4111-8111-111111111111";
 export const PUBLIC_SLUG = "shabbat-dlya-druzey";
@@ -13,6 +17,124 @@ export const QUESTION_IDS = {
   multi: "88888888-8888-4888-8888-888888888884",
   boolean: "88888888-8888-4888-8888-888888888885",
 };
+
+type MyRegistrationOverrides = Partial<Omit<MyRegistration, "event" | "occurrence">> & {
+  event?: Partial<MyRegistration["event"]>;
+  occurrence?: Partial<NonNullable<MyRegistration["occurrence"]>> | null;
+};
+
+export function myRegistration(overrides: MyRegistrationOverrides = {}): MyRegistration {
+  const event: MyRegistration["event"] = {
+    id: EVENT_ID,
+    community_id: "99999999-9999-4999-8999-999999999999",
+    event_kind: "shabbat",
+    title: "Шаббат для друзей",
+    subtitle: "Тёплая встреча общины",
+    description: "Описание",
+    short_description: "Короткое описание",
+    starts_at: "2026-09-12T15:00:00+03:00",
+    ends_at: "2026-09-12T18:00:00+03:00",
+    is_permanent: false,
+    timezone: "Europe/Moscow",
+    location_name: "Общинный центр",
+    address: "Москва, ул. Примерная, 1",
+    latitude: null,
+    longitude: null,
+    image_url: null,
+    category: "community",
+    audience: null,
+    visibility: "public",
+    status: "published",
+    source_url: null,
+    registration_mode: "internal_paid",
+    registration_url: null,
+    capacity: 40,
+    waitlist_enabled: false,
+    requires_approval: false,
+    price_amount: 1500,
+    price_currency: "RUB",
+    published_at: "2026-08-01T00:00:00+03:00",
+    created_at: "2026-08-01T00:00:00+03:00",
+    updated_at: "2026-08-01T00:00:00+03:00",
+    ...overrides.event,
+  };
+  const occurrence = overrides.occurrence === undefined
+    ? null
+    : overrides.occurrence === null
+      ? null
+      : {
+        id: OCCURRENCE_TWO_ID,
+        event_id: EVENT_ID,
+        title: "Суббота",
+        starts_at: "2026-09-12T15:00:00+03:00",
+        ends_at: "2026-09-12T18:00:00+03:00",
+        timezone: "Europe/Moscow",
+        registration_opens_at: null,
+        registration_closes_at: null,
+        capacity: 20,
+        waitlist_enabled: false,
+        requires_approval: false,
+        status: "active",
+        sort_order: 0,
+        created_at: "2026-08-01T00:00:00+03:00",
+        updated_at: "2026-08-01T00:00:00+03:00",
+        ...overrides.occurrence,
+      };
+
+  return {
+    id: REGISTRATION_FIXTURE_ID,
+    event_id: event.id,
+    occurrence_id: occurrence?.id ?? null,
+    user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    status: "confirmed",
+    seats_count: 2,
+    guest_names: ["Мария Иванова"],
+    comment: null,
+    registered_at: "2026-08-12T10:00:00+03:00",
+    confirmed_at: "2026-08-12T10:01:00+03:00",
+    cancelled_at: null,
+    payment_status: "pending",
+    payment_id: null,
+    created_at: "2026-08-12T10:00:00+03:00",
+    updated_at: "2026-08-12T10:01:00+03:00",
+    event,
+    occurrence,
+    selected_options: [{
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      option_id: OPTION_ID,
+      title_snapshot: "Основное участие",
+      description_snapshot: "Одно место",
+      option_type_snapshot: "participation",
+      quantity: 2,
+      unit_price_amount: 1500,
+      total_amount: 3000,
+      currency: "RUB",
+      counts_toward_capacity: true,
+      seats_count: 2,
+      is_donation: false,
+      created_at: "2026-08-12T10:00:00+03:00",
+    }],
+    capacity_reservations: [{
+      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      capacity_unit_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      option_id: OPTION_ID,
+      capacity_unit_key_snapshot: "seat",
+      capacity_unit_title_snapshot: "Место",
+      option_title_snapshot: "Основное участие",
+      quantity: 2,
+      seats_per_quantity: 1,
+      seats_count: 2,
+      created_at: "2026-08-12T10:00:00+03:00",
+    }],
+    total_amount: 3000,
+    total_currency: "RUB",
+    ...Object.fromEntries(
+      Object.entries(overrides).filter(([key]) => key !== "event" && key !== "occurrence"),
+    ),
+  } as MyRegistration;
+}
+
+export const REGISTRATION_FIXTURE_ID = "77777777-7777-4777-8777-777777777700";
 
 export function eventResponse(
   registrationState: WebRegistrationState = "open",

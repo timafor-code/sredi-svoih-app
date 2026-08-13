@@ -20,6 +20,7 @@ import {
   resendWebRegistrationCode,
 } from "./api";
 import { AccountPanel } from "./components/AccountPanel";
+import { MyTicketsPanel } from "./components/MyTicketsPanel";
 import { formatDate, formatDateTimeRange, formatTime } from "./format";
 import { PhoneInput } from "./PhoneInput";
 import { normalizeInternationalPhone } from "./phone";
@@ -530,6 +531,7 @@ function RegistrationForm({
   privacyDocument,
   authenticatedAccount,
   onAuthenticatedAccountChange,
+  onAuthenticatedRegistrationCompleted,
 }: {
   eventId: string;
   eventTitle: string;
@@ -543,6 +545,7 @@ function RegistrationForm({
   privacyDocument?: WebRegistrationLegalDocument;
   authenticatedAccount: AuthenticatedAccountState | null;
   onAuthenticatedAccountChange: (account: AuthenticatedAccountState | null) => void;
+  onAuthenticatedRegistrationCompleted: () => void;
 }): ReactNode {
   const emptyValues: FormValues = {
     firstName: "",
@@ -787,6 +790,7 @@ function RegistrationForm({
     setFlowError(null);
     setNotice(null);
     setConfirmationUnknown(false);
+    if (temporaryAuth) onAuthenticatedRegistrationCompleted();
   };
 
   const applyStatus = (status: Awaited<ReturnType<typeof getWebRegistrationIntentStatus>>) => {
@@ -1477,7 +1481,12 @@ function EventPage({
   ]);
   const [selectedOccurrenceId, setSelectedOccurrenceId] = useState(initialOccurrenceId);
   const [dateStepComplete, setDateStepComplete] = useState(!dateStepRequired);
+  const [ticketsOpen, setTicketsOpen] = useState(false);
+  const [ticketsRevision, setTicketsRevision] = useState(0);
   const occurrenceContractKey = availableOccurrences.map((item) => item.id).join(":");
+  useEffect(() => {
+    if (!authenticatedAccount) setTicketsOpen(false);
+  }, [authenticatedAccount]);
   useEffect(() => {
     setSelectedOccurrenceId((current) => {
       if (data.occurrence_selection_mode !== "user_select") {
@@ -1523,6 +1532,13 @@ function EventPage({
     if (selectedOccurrence?.registration_state === "open") setDateStepComplete(true);
   };
 
+  const closeTickets = () => {
+    setTicketsOpen(false);
+    window.requestAnimationFrame(() => {
+      document.getElementById("account-my-tickets-button")?.focus();
+    });
+  };
+
   return (
     <PageFrame privacyDocument={privacyDocument}>
       <main id="main-content" className="event-layout">
@@ -1547,7 +1563,19 @@ function EventPage({
 
         <div className="form-column">
           {authenticatedAccount ? (
-            <AccountPanel identity={authenticatedAccount.identity} onSignOut={onSignOut} />
+            <AccountPanel
+              identity={authenticatedAccount.identity}
+              onOpenTickets={() => setTicketsOpen(true)}
+              onSignOut={onSignOut}
+            />
+          ) : null}
+          {authenticatedAccount && ticketsOpen ? (
+            <MyTicketsPanel
+              accessToken={authenticatedAccount.tokens.access_token}
+              revision={ticketsRevision}
+              onClose={closeTickets}
+              onUnauthorized={onSignOut}
+            />
           ) : null}
           {dateSelectionPending ? (
             <OccurrenceSelector
@@ -1585,6 +1613,9 @@ function EventPage({
                   privacyDocument={privacyDocument}
                   authenticatedAccount={authenticatedAccount}
                   onAuthenticatedAccountChange={onAuthenticatedAccountChange}
+                  onAuthenticatedRegistrationCompleted={() => {
+                    setTicketsRevision((value) => value + 1);
+                  }}
                 />
               ) : null}
             </>
