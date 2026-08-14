@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { DragEvent as ReactDragEvent } from "react";
 
 import type {
@@ -9,10 +9,12 @@ import {
   formatPaymentStatus,
   getRegistrationStatusLabel,
 } from "../registrations/formatters";
+import { SeatingUnseatedDialog } from "./SeatingUnseatedDialog";
 
 export function SeatingAssignmentsPanel({
   canAddReserve = false,
   error,
+  fullListGuests,
   guests,
   isSeatingDone,
   isLoading,
@@ -30,6 +32,9 @@ export function SeatingAssignmentsPanel({
   /** PR 16: when true, the "+ Резерв" action and reserve chips are interactive. */
   canAddReserve?: boolean;
   error: string | null;
+  /** Complete loaded registration roster; unlike `guests`, this does not shrink as seats fill. */
+  fullListGuests: SeatingGuestPoolItem[];
+  /** Currently unseated registration guests used by the inline drag/drop pool. */
   guests: SeatingGuestPoolItem[];
   isSeatingDone: boolean;
   isLoading: boolean;
@@ -47,6 +52,8 @@ export function SeatingAssignmentsPanel({
   warning?: string | null;
 }) {
   const [isDropTarget, setIsDropTarget] = useState(false);
+  const [isFullListOpen, setIsFullListOpen] = useState(false);
+  const handleCloseFullList = useCallback(() => setIsFullListOpen(false), []);
 
   const handleDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
     if (!manualSeatingEnabled || !onPoolDrop) {
@@ -78,6 +85,15 @@ export function SeatingAssignmentsPanel({
           <span className="seat-pool__count">
             {isLoading ? "..." : formatGuestCount(guests.length)}
           </span>
+          <button
+            aria-expanded={isFullListOpen}
+            aria-haspopup="dialog"
+            className="seat-pool__all"
+            onClick={() => setIsFullListOpen(true)}
+            type="button"
+          >
+            Весь список
+          </button>
           {canAddReserve && onAddReserve ? (
             <button
               className="seat-pool__add"
@@ -162,6 +178,14 @@ export function SeatingAssignmentsPanel({
           </>
         )}
       </div>
+
+      {isFullListOpen ? (
+        <SeatingUnseatedDialog
+          fullListGuests={fullListGuests}
+          onClose={handleCloseFullList}
+          reserves={reserves}
+        />
+      ) : null}
     </aside>
   );
 }

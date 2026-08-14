@@ -1753,6 +1753,7 @@ export function SeatingLayoutEditor({
             <SeatingAssignmentsPanel
               canAddReserve={manualSeatingEnabled}
               error={guestPoolError}
+              fullListGuests={guestPool}
               guests={visibleGuestPool}
               isSeatingDone={isSeatingDone}
               isLoading={isGuestPoolLoading}
