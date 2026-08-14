@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { DragEvent as ReactDragEvent } from "react";
 
 import type {
@@ -9,6 +9,7 @@ import {
   formatPaymentStatus,
   getRegistrationStatusLabel,
 } from "../registrations/formatters";
+import { SeatingUnseatedDialog } from "./SeatingUnseatedDialog";
 
 export function SeatingAssignmentsPanel({
   canAddReserve = false,
@@ -47,6 +48,8 @@ export function SeatingAssignmentsPanel({
   warning?: string | null;
 }) {
   const [isDropTarget, setIsDropTarget] = useState(false);
+  const [isFullListOpen, setIsFullListOpen] = useState(false);
+  const handleCloseFullList = useCallback(() => setIsFullListOpen(false), []);
 
   const handleDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
     if (!manualSeatingEnabled || !onPoolDrop) {
@@ -76,8 +79,17 @@ export function SeatingAssignmentsPanel({
         <h4>Не рассажены</h4>
         <div className="seat-pool__head-meta">
           <span className="seat-pool__count">
-            {isLoading ? "..." : formatGuestCount(guests.length)}
+            {isLoading ? "..." : formatGuestCount(guests.length + reserves.length)}
           </span>
+          <button
+            aria-expanded={isFullListOpen}
+            aria-haspopup="dialog"
+            className="seat-pool__all"
+            onClick={() => setIsFullListOpen(true)}
+            type="button"
+          >
+            Весь список
+          </button>
           {canAddReserve && onAddReserve ? (
             <button
               className="seat-pool__add"
@@ -162,6 +174,14 @@ export function SeatingAssignmentsPanel({
           </>
         )}
       </div>
+
+      {isFullListOpen ? (
+        <SeatingUnseatedDialog
+          guests={guests}
+          onClose={handleCloseFullList}
+          reserves={reserves}
+        />
+      ) : null}
     </aside>
   );
 }

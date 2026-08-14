@@ -152,6 +152,18 @@ The guest pool may be empty. The UI should make the likely causes readable:
 An empty pool warning is informational. It must not create guests, change
 registrations, auto-seat, or change the seating algorithm.
 
+The right-column metrics are intentionally compact so the inline `Не
+рассажены` pool can grow through the remaining desktop sidebar height while
+keeping its own scroll. The display omits `Свободно по лимиту`; the underlying
+`freeByLimit` calculation and all capacity semantics remain unchanged.
+
+`Весь список` opens a client-only view of the current unseated state without a
+second request. Registration guests are grouped by their existing
+`registrationId`, with participant and guest rows, party-level
+option/status/payment metadata, named guests where available, and readable
+fallback guest labels. Operational reserves appear in a separate section and
+remain unrelated to registrations.
+
 Assignment behavior:
 
 - auto seating is deterministic and uses `spreadSeatIndexes` so people are spread
@@ -307,4 +319,4 @@ Not run by Codex. Manual smoke is performed by the project owner.
 
 ## Next PR
 
-`feature/admin-feedback-review-list`
+`feature/admin-seating-rabbi-manual-override`

@@ -77,27 +77,17 @@ export function SeatingMetricsPanel({
     },
   ];
 
-  if (summary.freeByLimit !== null) {
-    cards.push({
-      id: "free-by-limit",
-      label: "свободно по лимиту",
-      value: formatCount(summary.freeByLimit),
-    });
-  }
-
   cards.push({
     id: "free-physical",
     label: "физически свободно",
     value: formatCount(summary.freePhysical),
   });
 
-  if (normalizedRabbiReserveCount > 0) {
-    cards.push({
-      id: "rabbi-reserve",
-      label: "раввинский резерв",
-      value: formatCount(normalizedRabbiReserveCount),
-    });
-  }
+  cards.push({
+    id: "rabbi-reserve",
+    label: "раввинский резерв",
+    value: formatCount(normalizedRabbiReserveCount),
+  });
 
   cards.push({
     id: "unseated",
