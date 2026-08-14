@@ -1,8 +1,9 @@
 # Admin seating
 
 The seating editor is available from the web-admin registrations capacity bucket
-UI. This document describes the implemented seating flow, including the manual
-administrator override for protected rabbi-table seats.
+UI. This document describes the implemented seating flow, including party-aware
+automatic placement and the manual administrator override for protected
+rabbi-table seats.
 
 The seating service uses the shared browser-safe admin `apiClient` and the
 Python `/admin/seating/*` endpoints. The canvas, geometry model, editor UX,
@@ -24,7 +25,7 @@ the registrations capacity bucket UI:
   controls, zoom/fit, loading/error states, and keyboard shortcuts;
 - built-in and user template library;
 - real guest pool for the selected capacity bucket;
-- deterministic auto seating;
+- deterministic party-aware auto seating;
 - manual drag/drop seating;
 - operational reserves;
 - edit-preserve reconcile when geometry changes after seating;
@@ -170,8 +171,14 @@ reserves appear in a separate section and remain unrelated to registrations.
 
 Assignment behavior:
 
-- auto seating is deterministic and uses `spreadSeatIndexes` so people are spread
-  across available physical seats instead of filling the first seats only;
+- auto seating groups active seat-taking rows only by their existing
+  `registrationId`; participant rows are placed before guests, with guests ordered
+  by `guestIndex` and then stable guest key;
+- a complete party first uses one fitting table, preferring the smallest excess
+  eligible capacity and a compact deterministic seat subset;
+- when one table cannot fit a party, directly connected tables are preferred,
+  followed by the minimum practical number of eligible tables; physical
+  shortages still return every unresolved person to the unassigned pool;
 - ordinary auto seating excludes rabbi-table seats;
 - manual drag/drop supports pool-to-seat, seat-to-seat, occupied-seat swap, and
   seat-to-pool;
@@ -179,7 +186,10 @@ Assignment behavior:
   guests onto rabbi-table seats as an explicit administrator override;
 - manually placed guests are saved as manual/locked assignments;
 - repeat auto seating preserves manual/locked assignments and placed reserves,
-  then fills only free eligible seats;
+  then prefers eligible seats on the locked party member's table and connected
+  tables without moving the lock;
+- a manually locked ordinary guest may remain on a rabbi seat, but the rest of
+  that party cannot automatically consume other protected rabbi seats;
 - assignments are saved through `saveSeatingAssignments()` /
   `admin_save_seating_assignments`;
 - reopening a layout restores saved assignments from the backend.
@@ -279,49 +289,60 @@ Print behavior:
 
 Not run by Codex. Manual smoke is performed by the project owner.
 
-1. Open a seating layout containing a rabbi table.
-2. Drag an ordinary participant from `Не рассажены` onto a free rabbi seat.
-3. Confirm the placement succeeds.
-4. Drag an ordinary registration guest onto another free rabbi seat.
-5. Confirm the placement succeeds.
-6. Move an already seated ordinary guest from a regular seat onto a rabbi seat.
-7. Confirm the move succeeds.
-8. Swap an ordinary guest on a regular seat with an occupant on a rabbi seat.
-9. Confirm the swap succeeds.
-10. Swap again in the opposite direction and confirm an ordinary displaced guest
-    can remain on the rabbi seat.
-11. Confirm operational reserves still move to/from rabbi seats normally.
-12. Save the seating.
-13. Close the seating editor.
-14. Reopen it.
-15. Confirm manually placed ordinary guests remain on their rabbi seats.
+Prepare approximately five seats for registration A, three for B, and one each
+for C and D.
+
+1. Run automatic seating.
+2. Confirm all five A members sit at one table when a fitting eligible table exists.
+3. Confirm all three B members sit together where possible.
+4. Confirm C and D use remaining eligible seats without splitting A unnecessarily.
+5. Confirm party members occupy compact nearby positions rather than being spread
+   deliberately around a table.
+6. Use a layout where A cannot fit one table but two connected tables can fit it.
+7. Confirm A prefers those connected tables.
+8. Confirm A uses the minimum practical number of tables.
+9. Manually move one A member to a regular table seat.
+10. Run automatic seating again.
+11. Confirm that manual placement remains.
+12. Confirm remaining A members prefer that same table when enough eligible seats
+    exist.
+13. Repeat with the locked table lacking enough room.
+14. Confirm remaining A members prefer connected tables.
+15. Manually place one A member on a protected rabbi seat.
 16. Run automatic seating again.
-17. Confirm the manually placed ordinary guests remain locked and are not moved.
-18. Start from a clean layout with no manually placed ordinary guests on rabbi
-    seats.
-19. Run automatic seating.
-20. Confirm ordinary guests do not automatically consume protected rabbi seats.
-21. Confirm the explicit rabbi guest behavior is unchanged.
-22. Confirm rabbi head behavior is unchanged.
-23. Confirm normal manual seating on regular tables still works.
-24. Confirm `Весь список`, save/reopen, reserves, metrics, and printing still work
-    normally.
+17. Confirm the manually placed person remains there.
+18. Confirm ordinary remaining A members do not automatically occupy the other
+    protected rabbi seats.
+19. Confirm explicit rabbi guest behavior remains correct.
+20. Confirm rabbi head behavior remains unchanged.
+21. Confirm operational reserves remain unchanged.
+22. Confirm a layout with insufficient physical seats leaves the correct guests in
+    the unassigned pool.
+23. Confirm the shortage warning and count remain correct.
+24. Confirm single-person registrations still auto-seat normally.
+25. Confirm the complete registration roster still appears in the full-list view.
+26. Confirm metrics remain correct.
+27. Save.
+28. Close and reopen.
+29. Confirm seating persists.
+30. Confirm printing remains correct.
+31. Confirm manual drag/drop still works.
+32. Confirm capacity limits and capacity sync are unchanged.
 
 ## Out Of Scope
 
 - RPC changes;
 - Supabase schema or migrations;
-- seating algorithm changes;
-- automatic seating distribution changes beyond retaining rabbi-seat protection;
 - capacity reservation business logic changes;
 - donation business logic changes;
 - seat-by-seat seating assignment export;
 - PDF seating chart generation;
-- family/group seating;
+- household, surname, or relationship-based party inference;
+- advanced preference, demographic, VIP, or generalized optimization models;
 - mobile seating;
 - payment gateway;
 - advanced conflict/audit reports.
 
 ## Next PR
 
-`feature/admin-seating-party-autoassign`
+None — the seating UX, rabbi override, and party auto-seating series is complete.
