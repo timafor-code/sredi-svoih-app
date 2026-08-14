@@ -14,6 +14,7 @@ import { SeatingUnseatedDialog } from "./SeatingUnseatedDialog";
 export function SeatingAssignmentsPanel({
   canAddReserve = false,
   error,
+  fullListGuests,
   guests,
   isSeatingDone,
   isLoading,
@@ -31,6 +32,9 @@ export function SeatingAssignmentsPanel({
   /** PR 16: when true, the "+ Резерв" action and reserve chips are interactive. */
   canAddReserve?: boolean;
   error: string | null;
+  /** Complete loaded registration roster; unlike `guests`, this does not shrink as seats fill. */
+  fullListGuests: SeatingGuestPoolItem[];
+  /** Currently unseated registration guests used by the inline drag/drop pool. */
   guests: SeatingGuestPoolItem[];
   isSeatingDone: boolean;
   isLoading: boolean;
@@ -79,7 +83,7 @@ export function SeatingAssignmentsPanel({
         <h4>Не рассажены</h4>
         <div className="seat-pool__head-meta">
           <span className="seat-pool__count">
-            {isLoading ? "..." : formatGuestCount(guests.length + reserves.length)}
+            {isLoading ? "..." : formatGuestCount(guests.length)}
           </span>
           <button
             aria-expanded={isFullListOpen}
@@ -177,7 +181,7 @@ export function SeatingAssignmentsPanel({
 
       {isFullListOpen ? (
         <SeatingUnseatedDialog
-          guests={guests}
+          fullListGuests={fullListGuests}
           onClose={handleCloseFullList}
           reserves={reserves}
         />

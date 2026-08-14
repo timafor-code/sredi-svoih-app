@@ -20,18 +20,21 @@ type SeatingParty = {
 };
 
 export function SeatingUnseatedDialog({
-  guests,
+  fullListGuests,
   onClose,
   reserves,
 }: {
-  guests: SeatingGuestPoolItem[];
+  fullListGuests: SeatingGuestPoolItem[];
   onClose: () => void;
   reserves: SeatingReservePoolItem[];
 }) {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  const parties = useMemo(() => groupGuestsByRegistration(guests), [guests]);
-  const totalCount = guests.length + reserves.length;
+  const parties = useMemo(
+    () => groupGuestsByRegistration(fullListGuests),
+    [fullListGuests],
+  );
+  const totalCount = fullListGuests.length;
 
   useEffect(() => {
     const previouslyFocused = document.activeElement;
