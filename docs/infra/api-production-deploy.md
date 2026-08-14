@@ -2,9 +2,9 @@
 
 ## Purpose and operating boundary
 
-This owner-run runbook covers the post-PR-38 production architecture. It
-documents the repository at PR 39; it does not deploy, create infrastructure,
-or authorize a production change.
+This owner-run runbook covers the checked-in single-host production
+architecture. It documents preparation and promotion; it does not deploy,
+create infrastructure, issue a certificate, or authorize a production change.
 
 | Label | Meaning |
 | --- | --- |
@@ -28,25 +28,18 @@ Related runbooks:
 ## Verified topology
 
 ```text
-Expo mobile release                         web-admin static build
-EXPO_PUBLIC_API_URL                         VITE_API_URL
-          |                                        |
-          +------------ HTTPS JSON API ------------+
-                               |
-                     TLS reverse proxy
-                     <api-domain>:443
-                               |
-              private upstream, port 8000
-                               |
-      apps/api FastAPI process     privacy-erasure worker process
-                   \                    /
-            backend-only service dependencies
-              |                              |
-     private PostgreSQL in Russia   private S3-compatible storage in Russia
-                                                |
-                         public HTTPS endpoint only for short-lived
-                         presigned avatar upload/read URLs
+Internet
+  -> host Nginx :443
+  -> 127.0.0.1:8000
+  -> FastAPI container
+  -> private Docker database network
+  -> PostgreSQL
 ```
+
+Nginx is the only public application ingress and runs directly on the prepared
+Ubuntu host. It is not a Docker service. External object storage remains a
+separate, disabled-by-default dependency and is not part of this checked-in
+request path.
 
 | Component | Verified repository fact | Production requirement / owner decision |
 | --- | --- | --- |
@@ -56,6 +49,7 @@ EXPO_PUBLIC_API_URL                         VITE_API_URL
 | Object storage | Local MinIO service `api_object_storage` exposes port 9000 internally and creates the private `avatars` bucket with anonymous access disabled. | Use Russia-hosted S3-compatible storage and a private bucket. Choose public signed-URL hostname, TLS, CORS, versioning, lifecycle, and recovery. Local MinIO is not the production provider. |
 | Web-admin | `apps/admin/src/services/apiClient.ts` reads `VITE_API_URL`. | Build the static artifact with the production API URL and allow that exact browser origin through API CORS. |
 | Mobile | `src/services/apiClient.ts` reads `EXPO_PUBLIC_API_URL`. | Embed the public HTTPS API URL in the mobile build. It is public configuration, not a secret. |
+| Reverse proxy | `infra/nginx/api-http.conf.example` and `infra/nginx/api-https.conf.example` define the reviewed host-level Nginx bootstrap and TLS paths. | Replace `<api-domain>` only on the host. Nginx is not part of Compose and proxies only to `127.0.0.1:8000`. |
 | Health | `GET /health` returns process status/service. `GET /version` returns service, version, environment, optional Git SHA, and timestamp. | Monitor both through the public proxy. `/health` is liveness only; it does not query PostgreSQL. Check migrations separately. |
 
 ### Local Compose is not a production recipe
@@ -91,9 +85,11 @@ owner explicitly targets `api_migrate`. The privacy-erasure worker is behind
 the `privacy-erasure` profile and remains disabled in the committed production
 environment example. No push worker, MinIO, or Mailpit service is included.
 
-Reverse proxy and TLS configuration is intentionally outside this PR. Compose
-does not provision production object storage: the API environment contract is
-ready for a separately reviewed external Russia-hosted S3-compatible service.
+Host-level Nginx and TLS templates are checked in under `infra/nginx/`. Nginx
+remains intentionally outside `infra/docker-compose.prod.yml`; do not add an
+Nginx container. Compose does not provision production object storage: the API
+environment contract is ready for a separately reviewed external Russia-hosted
+S3-compatible service.
 
 ## Prerequisites and owner decisions
 
@@ -107,8 +103,9 @@ to this repository.
 - **Network and DNS:** `<api-domain>`, `<admin-domain>`, private API-to-DB and
   API-to-storage routes, operator source networks, and the public
   object-storage signed-URL hostname.
-- **TLS:** certificate issuer, renewal owner, DNS validation, expiry alerts,
-  and reverse-proxy product. The repository selects none of these.
+- **TLS:** `<api-domain>`, certificate account/contact handling, renewal owner,
+  validation method, and expiry alerts. The checked-in single-host path uses
+  host-level Nginx and Certbot/Let's Encrypt placeholder paths.
 - **Runtime:** immutable artifact naming, deployment runner, restart policy,
   resource limits, operating-system patching, time synchronization, and log
   destination.
@@ -139,9 +136,9 @@ configuration already exists.
 2. Put PostgreSQL and storage on private networks. Permit the API workload
    only the necessary service routes. Do not publish the database,
    object-storage console, credentials, or database connection string.
-3. Expose only the reverse proxy/load balancer publicly. It should accept 443
-   and, if used, 80 only to redirect to HTTPS. Bind FastAPI port 8000 to
-   loopback or a private service network, not a public interface.
+3. Expose only host-level Nginx publicly. It accepts 443 and uses 80 only for
+   HTTP-01 validation and HTTPS redirects. FastAPI remains bound to
+   `127.0.0.1:8000`; PostgreSQL has no published host port.
 4. Install and patch the selected container/runtime and PostgreSQL client
    tools. The checked-in Python target is 3.12; `apps/api/pyproject.toml`
    requires Python `>=3.12`.
@@ -152,35 +149,165 @@ configuration already exists.
    access to inject API secrets. It must not have client secret paths or broad
    backup/storage deletion permission.
 
-## Reverse proxy and TLS requirements
+## Host Nginx and TLS owner-run sequence
 
-No proxy configuration is checked in. The owner must implement and review the
-following in the selected product:
+The two files under `infra/nginx/` are templates, not deployable unchanged.
+They contain no real domain, IP address, certificate, private key, or secret.
+The Ubuntu host owns Nginx; `infra/docker-compose.prod.yml` owns only the
+loopback-published FastAPI container and its private database network.
 
-- Terminate a valid certificate for `https://<api-domain>` and redirect HTTP
-  to HTTPS; monitor expiry and renewal.
-- Proxy all API paths, including `/health` and `/version`, to the private API
-  upstream on port 8000 without stripping paths. Keep the upstream private.
-- Preserve host and scheme through the chosen proxy headers. Forward a valid
-  `X-Request-ID` when supplied, or allow the API to generate one; return the
-  API response's `X-Request-ID` for safe correlation.
-- Set conservative request-size, timeout, rate-limit, and access-log rules.
-  Do not log `Authorization`, cookies, signed-URL query strings, or bodies.
-- Configure trusted forwarded headers only when the runtime/proxy explicitly
-  supports it. The checked-in application has no trusted-proxy allowlist; do
-  not trust client-supplied forwarding headers by default.
-- Keep browser CORS in API configuration, not a permissive proxy rule.
+The final proxy passes all paths without rewriting to
+`http://127.0.0.1:8000`, including `/health` and `/version`. It replaces
+caller-supplied forwarding metadata with values derived from Nginx's direct
+connection. The application accepts UUID `X-Request-ID` values and generates a
+new UUID for an absent or invalid value, so the proxy passes the original
+header to that application validator and logs only the response request ID.
+The 13 MiB Nginx body ceiling covers the backend's 12 MiB event-image source
+plus its 64 KiB multipart envelope; the backend remains the precise validator.
 
-Owner-run staging checks:
+### Phase A — DNS prerequisite
 
-```powershell
-curl.exe -fsS https://<api-domain>/health
-curl.exe -fsS https://<api-domain>/version
+1. The owner chooses the real `<api-domain>` and records it outside Git.
+2. The owner creates a DNS A record for that hostname pointing to the
+   production server's public IPv4. Do not add the public IP to this repository.
+3. Wait until public DNS resolvers return the correct address before requesting
+   a certificate. Certificate issuance must not begin while DNS is stale or
+   incorrect.
+
+### Phase B — host packages
+
+On Ubuntu 24.04, the owner installs the distribution Nginx package:
+
+```bash
+sudo apt update
+sudo apt install --yes nginx snapd
 ```
 
-Expected `/health` data is `status: "ok"` and the configured service name.
-`/version` includes `api_version`, `environment`, and, when supplied,
-`git_sha`. Do not put secrets in URLs or command lines.
+For Certbot, use the [currently recommended official snap installation
+path](https://certbot.eff.org/instructions?ws=nginx&os=snap). This method is
+identified explicitly; do not assume Certbot is already present and do not mix
+the snap with an OS-packaged Certbot installation.
+
+```bash
+sudo snap install core
+sudo snap refresh core
+sudo snap install --classic certbot
+sudo ln -s /snap/bin/certbot /usr/local/bin/certbot
+certbot --version
+```
+
+If `/usr/local/bin/certbot` already exists, verify that it resolves to
+`/snap/bin/certbot` instead of overwriting it blindly. These are owner-run host
+commands, never Codex-run deployment commands.
+
+### Phase C — HTTP bootstrap
+
+1. Create the HTTP-01 webroot on the host:
+
+   ```bash
+   sudo install -d -m 0755 /var/www/certbot/.well-known/acme-challenge
+   ```
+
+2. Copy `infra/nginx/api-http.conf.example` from the production workspace and
+   replace every `<api-domain>` with the real hostname in the host copy only:
+
+   ```bash
+   sudo install -m 0644 /opt/sredi-svoih/infra/nginx/api-http.conf.example /etc/nginx/sites-available/sredi-svoih-api.conf
+   sudoedit /etc/nginx/sites-available/sredi-svoih-api.conf
+   sudo ln -s /etc/nginx/sites-available/sredi-svoih-api.conf /etc/nginx/sites-enabled/sredi-svoih-api.conf
+   ```
+
+3. If `/etc/nginx/sites-enabled/default` exists, disable that default-site
+   symlink so the checked-in catch-all owns port 80. Then validate before any
+   reload:
+
+   ```bash
+   sudo unlink /etc/nginx/sites-enabled/default
+   sudo nginx -t
+   sudo systemctl reload nginx
+   ```
+
+   Run the reload only when `sudo nginx -t` succeeds. If the default symlink is
+   absent, skip only the `unlink` command.
+
+4. Verify the intended hostname reaches the HTTP-01 webroot on public port 80
+   before issuance. The bootstrap returns 503 for ordinary API paths because
+   plaintext API traffic is not production-ready and is never proxied.
+
+   ```bash
+   printf '%s\n' 'http-01-owner-probe' | sudo tee /var/www/certbot/.well-known/acme-challenge/owner-probe >/dev/null
+   curl -fsS http://<api-domain>/.well-known/acme-challenge/owner-probe
+   sudo rm /var/www/certbot/.well-known/acme-challenge/owner-probe
+   ```
+
+### Phase D — certificate issuance
+
+Only after public DNS and port 80 are correct, the owner issues the certificate
+for the actual hostname:
+
+```bash
+sudo certbot certonly --webroot --webroot-path /var/www/certbot --domain <api-domain>
+```
+
+`certonly --webroot` is the conservative path: Certbot writes the HTTP-01 token
+under the dedicated webroot but does not rewrite unrelated Nginx configuration.
+Handle Certbot account, contact email, and private-key material only on the
+host; do not put them in Git. HTTP-01 requires the hostname to be publicly
+reachable on port 80. DNS validation is an intentional owner-selected
+alternative when inbound port 80 is not used.
+
+Certificate issuance is owner-run and must never be run by Codex against a real
+domain.
+
+### Phase E — HTTPS promotion
+
+1. Copy `infra/nginx/api-https.conf.example` over the enabled site's source,
+   replace every `<api-domain>` in the host copy, and confirm the referenced
+   Certbot certificate paths exist:
+
+   ```bash
+   sudo install -m 0644 /opt/sredi-svoih/infra/nginx/api-https.conf.example /etc/nginx/sites-available/sredi-svoih-api.conf
+   sudoedit /etc/nginx/sites-available/sredi-svoih-api.conf
+   sudo nginx -t
+   sudo systemctl reload nginx
+   ```
+
+   Reload only after `sudo nginx -t` succeeds. Do not enable HSTS, HTTP/3, or
+   QUIC during this promotion. HSTS is a later owner decision after HTTPS is
+   stable and its domain/subdomain consequences are understood.
+
+2. Verify the active Nginx configuration proxies only to loopback, HTTP
+   redirects ordinary API traffic to the fixed HTTPS hostname, and HTTPS serves
+   the intended hostname:
+
+   ```bash
+   sudo nginx -T | grep -F 'proxy_pass http://127.0.0.1:8000;'
+   curl -I http://<api-domain>/health
+   curl -fsS https://<api-domain>/health
+   curl -fsS https://<api-domain>/version
+   sudo ss -ltn
+   ```
+
+   Expect the HTTP health request to redirect to HTTPS. Confirm the socket list
+   shows FastAPI only on `127.0.0.1:8000`, no public `:8000`, and no published
+   PostgreSQL `:5432`. Expected `/health` data is `status: "ok"` and the
+   configured service name. `/version` includes `api_version`, `environment`,
+   and, when supplied, `git_sha`. Do not put secrets in URLs or command lines.
+
+### Phase F — renewal
+
+Test renewal and inspect the schedule supplied by the Certbot snap:
+
+```bash
+sudo certbot renew --dry-run
+systemctl list-timers --all | grep -E 'certbot|snap.certbot.renew'
+systemctl status snap.certbot.renew.timer
+```
+
+The installed Certbot package supplies automated renewal. Do not add a custom
+renewal cron job. If the exact timer unit differs, use `systemctl list-timers`
+and `snap services certbot` to identify the installed schedule and record the
+result in the owner change record.
 
 ## API environment inventory
 

@@ -1,0 +1,39 @@
+# Host-level Nginx bootstrap configuration for Ubuntu 24.04.
+#
+# Replace every <api-domain> placeholder before installation. This file is
+# included from Nginx's http context (for example through sites-enabled).
+# IPv6 listeners are intentionally commented out. Enable both matching IPv6
+# lines only after public IPv6 routing and firewall policy are configured.
+
+server {
+    listen 80 default_server;
+    # listen [::]:80 default_server;
+
+    server_name _;
+    access_log off;
+
+    # Do not route arbitrary Host values to FastAPI.
+    return 444;
+}
+
+server {
+    listen 80;
+    # listen [::]:80;
+
+    server_name <api-domain>;
+    access_log off;
+
+    # Certbot's webroot authenticator writes HTTP-01 challenge files here.
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    # Before certificate promotion, the API is not production-ready and this
+    # bootstrap site must not proxy public plaintext traffic to FastAPI.
+    location / {
+        add_header Retry-After 3600 always;
+        return 503;
+    }
+}
