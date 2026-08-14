@@ -3,10 +3,13 @@
 Event-image writes are owned by the FastAPI backend. Administrators and other
 clients must never receive object-storage credentials, choose authoritative
 object keys, write directly to the bucket, or connect directly to PostgreSQL.
-Authorized event-image writes are exposed only through the event-scoped
+Ordinary manual event-image writes are exposed only through the event-scoped
 `PUT /admin/events/{event_id}/image` and
-`DELETE /admin/events/{event_id}/image` lifecycle routes. There is no general
-media or direct-storage endpoint.
+`DELETE /admin/events/{event_id}/image` lifecycle routes. The existing
+backend-owned website-import publication flow remains the explicit compatibility
+exception for its verified internal image URL. There is no general media or
+direct-storage endpoint, and the importer exception does not authorize arbitrary
+ordinary admin URLs.
 
 ## Public promotional-media boundary
 
@@ -149,8 +152,10 @@ payloads, internal endpoints, or credentials.
 The public-media boundary is unchanged: only normalized promotional event
 images are anonymously readable, while writes/deletes remain backend-only and
 the private avatar bucket remains private. Ordinary admin event JSON create
-and update continue to accept nullable `image_url` temporarily until the later
-upload-only hardening PR; importer behavior is unchanged.
+and update reject both `image_url` and `imageUrl`. Manual writes must use the
+dedicated upload route and removal must use the dedicated delete route. The
+existing internal website-import image URL publication path is preserved
+unchanged as the narrow compatibility exception.
 
 ## Web-admin uploader behavior
 
@@ -158,9 +163,10 @@ The manual web-admin event form no longer accepts a caller-authored image URL.
 It keeps the response `image_url` as the read/render contract for existing,
 legacy, and managed event images, while new replacements use the authenticated
 event-scoped multipart route with one `file` part. Ordinary event create and
-update JSON payloads omit `image_url`; the backend compatibility field remains
-temporarily available for non-manual migration paths until the separate
-upload-only hardening PR.
+update JSON payloads omit `image_url`, and their API schemas reject both
+`image_url` and `imageUrl`. The shared import-review flow retains its separate
+backend-owned publication contract; it is not routed through the ordinary
+admin create/update schemas.
 
 The uploader accepts JPEG, PNG, and WebP in its browser picker, reports the
 12 MiB convenience limit, decodes source dimensions for advisory minimum-size
@@ -186,6 +192,28 @@ the dedicated empty-body DELETE route. When removal returns an uncertain
 storage or network result, the admin reads the event again before presenting
 the best available authoritative state and never exposes provider details.
 
+## Compatibility and release checklist
+
+`events.image_url` remains present and nullable in admin, mobile, public, and
+list/detail responses. Managed images return the backend-generated public URL.
+Historical and external values already stored in the column remain readable
+until replaced or removed; there is no backfill or historical migration in this
+release.
+
+Release readiness requires all of the following:
+
+- ordinary arbitrary `image_url` and `imageUrl` JSON writes are rejected;
+- importer create/update publication retains its existing internal image URL;
+- uploader create, replace, remove, and repeated remove remain green;
+- admin and mobile consumers continue rendering the response `image_url`;
+- frontend configuration contains no object-storage credentials;
+- the production event-image bucket, public base URL, anonymous-read-only
+  policy, backups/replicas, and hosting-location contour are operationally
+  reviewed.
+
+Passing code tests does not establish that the production infrastructure review
+is complete; that review remains an operational release gate.
+
 ## Rollback and orphan cleanup
 
 Migration downgrade is suitable only for disposable development environments.
@@ -203,4 +231,6 @@ Future lifecycle code must leave a failed write non-active. If an object write
 succeeds but database activation fails, it should mark or retain the row for
 cleanup and attempt best-effort object deletion. Cleanup must be idempotent,
 bounded, observable through non-sensitive counts, and safe to retry. Rollback
-must not silently invalidate existing managed URLs or orphan objects.
+must not silently invalidate existing managed URLs or orphan objects. An
+ordinary rollback must never drop `event_images` metadata or the event-image
+bucket: already activated managed URLs and historical URLs must remain readable.

@@ -366,7 +366,6 @@ async def create_admin_event(
             address=payload.address,
             latitude=payload.latitude,
             longitude=payload.longitude,
-            image_url=payload.image_url,
             category=payload.category,
             audience=payload.audience,
             visibility=payload.visibility,

@@ -11,6 +11,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 import httpx
 from PIL import Image
+from pydantic import ValidationError
 from sqlalchemy import delete, func, select
 
 from app.api.admin import events as admin_events_api
@@ -778,10 +779,49 @@ class AdminEventImageLifecycleTests(unittest.IsolatedAsyncioTestCase):
         old_row = next(row for row in rows if row.id == first_row.id)
         self.assertEqual(old_row.status, "deleted")
 
-    async def test_stale_cleanup_is_bounded_and_never_makes_pending_visible(self) -> None:
+    async def test_stale_cleanup_is_bounded_and_preserves_active_or_referenced_objects(self) -> None:
+        uploaded = await self._upload(_image_bytes("JPEG"), "image/jpeg")
+        self.assertEqual(uploaded.status_code, 200)
+        active_url = uploaded.json()["data"]["image_url"]
+        active_row = (await self._event_image_rows())[0]
+
+        referenced_id = uuid4()
+        referenced_key = build_event_image_object_key(
+            community_id=self.community_id,
+            event_id=self.event_id,
+        )
+        referenced_url = self.storage.public_url(
+            object_key=referenced_key,
+            version_token=uuid4(),
+        )
+        self.storage.objects[referenced_key] = b"referenced"
+
         stale_ids: list[UUID] = []
         async with AsyncSessionLocal() as session:
             async with session.begin():
+                event = await session.get(Event, self.event_id)
+                stored_active = await session.get(EventImage, active_row.id)
+                assert event is not None
+                assert stored_active is not None
+                event.image_url = referenced_url
+                stored_active.updated_at = self.now - timedelta(hours=4)
+                session.add(
+                    EventImage(
+                        id=referenced_id,
+                        event_id=self.event_id,
+                        community_id=self.community_id,
+                        object_key=referenced_key,
+                        content_type="image/webp",
+                        size_bytes=10,
+                        width=1,
+                        height=1,
+                        content_sha256="f" * 64,
+                        version_token=uuid4(),
+                        status="delete_pending",
+                        created_by=self.admin_id,
+                        updated_at=self.now - timedelta(hours=3),
+                    ),
+                )
                 for index in range(
                     admin_event_images.STALE_EVENT_IMAGE_CLEANUP_LIMIT + 1,
                 ):
@@ -804,22 +844,46 @@ class AdminEventImageLifecycleTests(unittest.IsolatedAsyncioTestCase):
                             height=1,
                             content_sha256=f"{index:064x}",
                             version_token=uuid4(),
-                            status="pending",
+                            status="pending" if index % 2 == 0 else "delete_pending",
                             created_by=self.admin_id,
-                            updated_at=self.now - timedelta(hours=2),
+                            updated_at=self.now - timedelta(hours=2, minutes=30)
+                            + timedelta(seconds=index),
                         ),
                     )
 
-        removed = await self._remove()
-        self.assertEqual(removed.status_code, 200)
-        self.assertIsNone(removed.json()["data"]["image_url"])
+        async with AsyncSessionLocal() as session:
+            await admin_event_images._cleanup_stale_event_images(
+                session,
+                self.storage,
+                event_id=self.event_id,
+                community_id=self.community_id,
+            )
+
         rows = await self._event_image_rows()
+        reloaded_active = next(row for row in rows if row.id == active_row.id)
+        reloaded_referenced = next(row for row in rows if row.id == referenced_id)
+        stale_rows = [row for row in rows if row.id in stale_ids]
+
+        self.assertEqual(reloaded_active.status, "active")
+        self.assertEqual(reloaded_referenced.status, "delete_pending")
+        self.assertIn(active_row.object_key, self.storage.objects)
+        self.assertIn(referenced_key, self.storage.objects)
+        self.assertNotIn(active_row.object_key, self.storage.delete_history)
+        self.assertNotIn(referenced_key, self.storage.delete_history)
         self.assertEqual(
-            sum(row.status == "deleted" for row in rows),
+            sum(row.status == "deleted" for row in stale_rows),
+            admin_event_images.STALE_EVENT_IMAGE_CLEANUP_LIMIT - 1,
+        )
+        self.assertEqual(
+            sum(row.status in {"pending", "delete_pending"} for row in stale_rows),
+            2,
+        )
+        self.assertLessEqual(
+            len(self.storage.delete_history),
             admin_event_images.STALE_EVENT_IMAGE_CLEANUP_LIMIT,
         )
-        self.assertEqual(sum(row.status == "pending" for row in rows), 1)
-        self.assertIsNone(await self._event_image_url())
+        self.assertEqual(await self._event_image_url(), referenced_url)
+        self.assertNotEqual(active_url, referenced_url)
 
     async def test_concurrent_replacements_leave_one_matching_active_row(self) -> None:
         self.storage.put_barrier_count = 2
@@ -866,43 +930,90 @@ class AdminEventImageLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(event_url)
         self.assertIn(active_rows[0].object_key, event_url or "")
 
-    async def test_json_image_url_compatibility_and_single_alembic_head(self) -> None:
-        legacy_url = "https://legacy.example.invalid/compatible.jpg"
+    async def test_json_image_url_bypass_is_rejected_and_legacy_reads_remain_compatible(self) -> None:
+        legacy_url = "https://legacy.example.invalid/historical.jpg"
         starts_at = (self.now + timedelta(days=10)).isoformat()
-        create_model = AdminEventCreateRequest(
-            community_id=self.community_id,
-            title="Compatible model",
-            starts_at=starts_at,
-            image_url=legacy_url,
-        )
-        update_model = AdminEventUpdateRequest(image_url=legacy_url)
-        self.assertEqual(create_model.image_url, legacy_url)
-        self.assertEqual(update_model.image_url, legacy_url)
+
+        self.assertNotIn("image_url", AdminEventCreateRequest.model_fields)
+        self.assertNotIn("image_url", AdminEventUpdateRequest.model_fields)
+        for image_field in ("image_url", "imageUrl"):
+            with self.subTest(schema="create", image_field=image_field):
+                with self.assertRaises(ValidationError):
+                    AdminEventCreateRequest.model_validate(
+                        {
+                            "community_id": self.community_id,
+                            "title": "Rejected schema create",
+                            "starts_at": starts_at,
+                            image_field: legacy_url,
+                        },
+                    )
+            with self.subTest(schema="update", image_field=image_field):
+                with self.assertRaises(ValidationError):
+                    AdminEventUpdateRequest.model_validate({image_field: legacy_url})
+
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                event = await session.get(Event, self.event_id)
+                assert event is not None
+                event.image_url = legacy_url
 
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
             transport=transport,
             base_url="http://testserver",
         ) as client:
-            created = await client.post(
+            for image_field in ("image_url", "imageUrl"):
+                created = await client.post(
+                    "/admin/events",
+                    headers=self.admin_headers,
+                    json={
+                        "community_id": str(self.community_id),
+                        "title": f"Rejected API create {image_field}",
+                        "starts_at": starts_at,
+                        image_field: legacy_url,
+                    },
+                )
+                self.assertEqual(created.status_code, 422, created.text)
+                self.assertEqual(created.json()["error"]["code"], "validation_error")
+
+                updated = await client.patch(
+                    f"/admin/events/{self.event_id}",
+                    headers=self.admin_headers,
+                    json={image_field: "https://arbitrary.example/image.jpg"},
+                )
+                self.assertEqual(updated.status_code, 422, updated.text)
+                self.assertEqual(updated.json()["error"]["code"], "validation_error")
+
+            manual_without_image = await client.post(
                 "/admin/events",
                 headers=self.admin_headers,
                 json={
                     "community_id": str(self.community_id),
-                    "title": "Compatible event create",
+                    "title": "Manual event without image",
                     "starts_at": starts_at,
-                    "image_url": legacy_url,
                 },
             )
-            updated = await client.patch(
+            historical_read = await client.get(
                 f"/admin/events/{self.event_id}",
                 headers=self.admin_headers,
-                json={"image_url": legacy_url},
             )
-        self.assertEqual(created.status_code, 201)
-        self.assertEqual(created.json()["data"]["image_url"], legacy_url)
-        self.assertEqual(updated.status_code, 200)
-        self.assertEqual(updated.json()["data"]["image_url"], legacy_url)
+
+        self.assertEqual(manual_without_image.status_code, 201)
+        self.assertIsNone(manual_without_image.json()["data"]["image_url"])
+        self.assertEqual(historical_read.status_code, 200)
+        self.assertEqual(historical_read.json()["data"]["image_url"], legacy_url)
+
+        async with AsyncSessionLocal() as session:
+            rejected_count = await session.scalar(
+                select(func.count())
+                .select_from(Event)
+                .where(Event.title.like("Rejected API create%")),
+            )
+            stored_url = await session.scalar(
+                select(Event.image_url).where(Event.id == self.event_id),
+            )
+        self.assertEqual(rejected_count, 0)
+        self.assertEqual(stored_url, legacy_url)
 
         script = ScriptDirectory.from_config(Config("alembic.ini"))
         self.assertEqual(script.get_heads(), ["20260813210000"])

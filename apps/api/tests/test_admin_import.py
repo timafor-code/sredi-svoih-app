@@ -14,7 +14,7 @@ from app.importer.dedupe import build_dedupe
 from app.importer.parser import ParsedImportItem, ParsedImportItemResult, ParsedWebsiteResult
 from app.importer.runner import execute_review_import
 from app.schemas.admin_events import AdminEventUpdateRequest
-from app.schemas.admin_import import AdminImportIgnoreRequest
+from app.schemas.admin_import import AdminImportIgnoreRequest, AdminImportItemPublishRequest
 from app.services import admin_import as admin_import_service
 from app.services import admin_events as admin_events_service
 from app.services.import_maintenance import ignore_exact_open_import_duplicates
@@ -92,6 +92,7 @@ class AdminImportTests(unittest.IsolatedAsyncioTestCase):
         source_url: str | None,
         title: str = "Imported event",
         starts_at: datetime | None = None,
+        image_url: str | None = None,
     ) -> ParsedImportItemResult:
         event_starts_at = starts_at or self.now + timedelta(days=7)
         return ParsedImportItemResult(
@@ -99,7 +100,7 @@ class AdminImportTests(unittest.IsolatedAsyncioTestCase):
                 external_id=external_id,
                 source_url=source_url,
                 title=title,
-                image_url=None,
+                image_url=image_url,
                 description="Imported description",
                 short_description="Imported short description",
                 starts_at=event_starts_at,
@@ -348,6 +349,74 @@ class AdminImportTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
         self.assertEqual(statuses.count("ignored"), 1)
+
+    async def test_import_publication_preserves_internal_image_url_on_create_and_update(self) -> None:
+        created_image_url = "https://media.example.invalid/import-mirror/created.webp"
+        create_run = await self._run_import(
+            [
+                self._parsed_item(
+                    external_id="image-create",
+                    source_url="https://sredisvoih.com/events/image-create",
+                    image_url=created_image_url,
+                ),
+            ],
+        )
+
+        async with AsyncSessionLocal() as session:
+            create_item = await session.scalar(
+                select(EventImportItem).where(EventImportItem.run_id == create_run.id),
+            )
+            actor = await self._actor(session)
+            assert create_item is not None
+            created = await admin_import_service.publish_admin_import_item(
+                session,
+                actor,
+                create_item.id,
+                AdminImportItemPublishRequest(image_url=created_image_url),
+            )
+
+        self.assertTrue(created.created)
+        self.assertIsNotNone(created.event)
+        assert created.event is not None
+        event_id = created.event.id
+        self.assertEqual(created.event.image_url, created_image_url)
+
+        updated_image_url = "https://media.example.invalid/import-mirror/updated.webp"
+        update_run = await self._run_import(
+            [
+                self._parsed_item(
+                    external_id="image-update",
+                    source_url="https://sredisvoih.com/events/image-update",
+                    title="Updated imported event",
+                    starts_at=self.now + timedelta(days=8),
+                    image_url=updated_image_url,
+                ),
+            ],
+        )
+
+        async with AsyncSessionLocal() as session:
+            update_item = await session.scalar(
+                select(EventImportItem).where(EventImportItem.run_id == update_run.id),
+            )
+            actor = await self._actor(session)
+            assert update_item is not None
+            updated = await admin_import_service.publish_admin_import_item(
+                session,
+                actor,
+                update_item.id,
+                AdminImportItemPublishRequest(
+                    event_id=event_id,
+                    image_url=updated_image_url,
+                ),
+            )
+            stored_event = await session.get(Event, event_id)
+
+        self.assertFalse(updated.created)
+        self.assertIsNotNone(updated.event)
+        assert updated.event is not None
+        assert stored_event is not None
+        self.assertEqual(updated.event.image_url, updated_image_url)
+        self.assertEqual(stored_event.image_url, updated_image_url)
 
     async def test_unmodified_legacy_category_does_not_block_an_unrelated_patch(self) -> None:
         event_id = uuid4()
