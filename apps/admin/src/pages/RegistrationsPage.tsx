@@ -158,6 +158,7 @@ export function RegistrationsPage() {
   const [registrationSearch, setRegistrationSearch] = useState("");
   const [registrationSourceFilter, setRegistrationSourceFilter] =
     useState<AdminRegistrationSourceFilter>("all");
+  const [selectedCapacityUnitId, setSelectedCapacityUnitId] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [selectedRegistrationId, setSelectedRegistrationId] = useState<string | null>(null);
 
@@ -286,6 +287,7 @@ export function RegistrationsPage() {
         const nextRegistrations = await listEventRegistrations({
           eventId: selectedEventId,
           occurrenceId: eventHasOccurrences ? selectedOccurrenceId : null,
+          capacityUnitId: selectedCapacityUnitId,
           status: "all",
           sourceChannel: registrationSourceFilter,
           search: registrationSearch.trim() || null,
@@ -324,6 +326,7 @@ export function RegistrationsPage() {
       offset,
       registrationSearch,
       registrationSourceFilter,
+      selectedCapacityUnitId,
       selectedEventId,
       selectedOccurrenceId,
     ],
@@ -388,6 +391,21 @@ export function RegistrationsPage() {
   useEffect(() => {
     void loadCapacityAnalytics();
   }, [loadCapacityAnalytics]);
+
+  useEffect(() => {
+    if (!selectedCapacityUnitId || capacityAnalyticsLoading) {
+      return;
+    }
+
+    const selectedUnitIsAvailable = capacityAnalytics?.buckets.some(
+      (bucket) => bucket.capacityUnitId === selectedCapacityUnitId,
+    );
+    if (!selectedUnitIsAvailable) {
+      setSelectedCapacityUnitId(null);
+      setSelectedRegistrationId(null);
+      setOffset(0);
+    }
+  }, [capacityAnalytics, capacityAnalyticsLoading, selectedCapacityUnitId]);
 
   useEffect(() => {
     if (!selectedEventId || !eventHasOccurrences) {
@@ -603,6 +621,7 @@ export function RegistrationsPage() {
     }
 
     setSelectedEventId(eventId);
+    setSelectedCapacityUnitId(null);
     setSelectedRegistrationId(null);
     setRegistrationSearch("");
     setOffset(0);
@@ -637,6 +656,12 @@ export function RegistrationsPage() {
     },
     [],
   );
+
+  const handleCapacityUnitFilterChange = useCallback((capacityUnitId: string | null) => {
+    setSelectedCapacityUnitId(capacityUnitId);
+    setSelectedRegistrationId(null);
+    setOffset(0);
+  }, []);
 
   const handleCloseRegistrationModal = useCallback(() => {
     setSelectedRegistrationId(null);
@@ -703,7 +728,10 @@ export function RegistrationsPage() {
 
     setExcelExportLoading(true);
 
-    void exportEventRegistrationsToExcel(selectedEvent, { occurrence: exportOccurrence })
+    void exportEventRegistrationsToExcel(selectedEvent, {
+      occurrence: exportOccurrence,
+      capacityUnitId: selectedCapacityUnitId,
+    })
       .then((result) => {
         pushToast("success", `Excel готов: ${formatRegistrationCount(result.rowCount)}.`);
       })
@@ -722,6 +750,7 @@ export function RegistrationsPage() {
     exportOccurrence,
     isOccurrenceContextMissing,
     pushToast,
+    selectedCapacityUnitId,
     selectedEvent,
   ]);
 
@@ -822,6 +851,43 @@ export function RegistrationsPage() {
               </div>
 
               <div className="registrations-table-panel">
+                <div
+                  aria-label="Фильтр по единице вместимости"
+                  className="registration-capacity-tabs"
+                  role="tablist"
+                >
+                  <button
+                    aria-selected={selectedCapacityUnitId === null}
+                    className={`registration-capacity-tabs__button${
+                      selectedCapacityUnitId === null
+                        ? " registration-capacity-tabs__button--active"
+                        : ""
+                    }`}
+                    onClick={() => handleCapacityUnitFilterChange(null)}
+                    role="tab"
+                    type="button"
+                  >
+                    Общее
+                  </button>
+                  {(capacityAnalytics?.buckets ?? []).map((bucket) => {
+                    const isSelected = selectedCapacityUnitId === bucket.capacityUnitId;
+
+                    return (
+                      <button
+                        aria-selected={isSelected}
+                        className={`registration-capacity-tabs__button${
+                          isSelected ? " registration-capacity-tabs__button--active" : ""
+                        }`}
+                        key={bucket.capacityUnitId}
+                        onClick={() => handleCapacityUnitFilterChange(bucket.capacityUnitId)}
+                        role="tab"
+                        type="button"
+                      >
+                        {bucket.title}
+                      </button>
+                    );
+                  })}
+                </div>
                 <div className="registrations-table-panel__head">
                   <span>
                     Показано {registrationRangeStart}-{registrationRangeEnd}

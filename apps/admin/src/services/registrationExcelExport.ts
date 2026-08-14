@@ -26,10 +26,12 @@ type RegistrationExcelExportOccurrence = Pick<
 
 export type RegistrationExcelExportOptions = {
   occurrence?: RegistrationExcelExportOccurrence | null;
+  capacityUnitId?: string | null;
 };
 
 type RegistrationExcelExportScope = {
   occurrence: RegistrationExcelExportOccurrence | null;
+  capacityUnitId: string | null;
 };
 
 type RegistrationExportColumn = {
@@ -151,6 +153,7 @@ export async function exportEventRegistrationsToExcel(
 ): Promise<RegistrationExcelExportResult> {
   const scope: RegistrationExcelExportScope = {
     occurrence: options.occurrence ?? null,
+    capacityUnitId: options.capacityUnitId ?? null,
   };
   const registrations = await fetchAllEventRegistrations(event.eventId, scope);
   const sheets = createRegistrationSheets(event, registrations, scope);
@@ -181,6 +184,7 @@ async function fetchAllEventRegistrations(
     const page = await listEventRegistrations({
       eventId,
       occurrenceId: scope.occurrence?.id ?? null,
+      capacityUnitId: scope.capacityUnitId,
       limit: EXPORT_PAGE_SIZE,
       offset,
     });

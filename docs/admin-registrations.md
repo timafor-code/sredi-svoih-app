@@ -23,6 +23,7 @@ Registrations v15 is implemented for the admin workflow and now includes Phase
   modal;
 - canonical registration-source badges for mobile, public web, and admin-created
   registrations, plus a server-side source filter;
+- dynamic capacity-unit tabs with server-side registration classification;
 - status and attendance actions;
 - Excel export from the registrations table header;
 - seating editor opened from capacity buckets.
@@ -71,17 +72,33 @@ The page should make the current scope obvious before showing operational data:
 ## Table Filters And Search
 
 The registrations table requests server results by the selected
-event/occurrence context, search string, registration source, page size, and
-offset. Registration source is the canonical API value `mobile`, `public_web`,
-or `admin`; it is never inferred from profile, contact, or registration data.
+event/occurrence context, capacity unit, search string, registration source,
+page size, and offset. Registration source is the canonical API value `mobile`,
+`public_web`, or `admin`; it is never inferred from profile, contact, or
+registration data.
 The visible source badges are `Mobile`, `Web`, and `Admin`, with the full Russian
 source name available in the table and registration details.
 
 Source filtering is performed by FastAPI through the `source_channel` query
-parameter, not by filtering one already loaded page in the browser. Search and
-source filters can be combined with occurrence selection. Changing the source
-filter resets pagination and closes selected-registration details, while event
-and occurrence changes preserve the selected source filter.
+parameter, not by filtering one already loaded page in the browser. Capacity
+unit filtering is performed through the optional `capacity_unit_id=<uuid>`
+query parameter on `GET /admin/events/{event_id}/registrations`. Omitting it
+keeps the unfiltered `Общее` view. The API validates that the unit belongs to
+the manageable event before applying search, source, status, occurrence, limit,
+and offset filters.
+
+A registration qualifies for a capacity-unit tab through its persisted
+`event_registration_capacity_reservations` row or, when the matching persisted
+row is absent, through a non-donation, capacity-counting selected option mapped
+by `event_participation_option_capacity_units`. The fallback is read-only. A
+multi-unit option can therefore place the same registration in multiple tabs,
+while donation and non-capacity options do not qualify it. Status does not
+change this classification.
+
+Search, source, and capacity-unit filters can be combined with occurrence
+selection. Changing the source or capacity-unit filter resets pagination and
+closes selected-registration details. Event changes reset the capacity-unit tab
+to `Общее`; occurrence changes preserve it only while the unit remains valid.
 
 Empty table states distinguish between:
 
@@ -98,8 +115,8 @@ options, or notification behavior.
 ## Excel Export
 
 `apps/admin/src/services/registrationExcelExport.ts` builds the workbook from
-the same registration service data the page already uses. This PR does not
-change the export service or Excel schema.
+the same registration service data the page already uses. The Excel schema is
+unchanged.
 
 The export action respects the current selected context:
 
@@ -107,6 +124,9 @@ The export action respects the current selected context:
 - event with occurrences: export the selected occurrence only;
 - event with occurrences and no selected occurrence: export should remain
   unavailable until a concrete date/session is selected.
+- selected capacity-unit tab: export only registrations in that unit, combined
+  with the selected occurrence context;
+- `Общее`: preserve the existing event/occurrence export behavior.
 
 The workbook keeps the existing operational columns:
 
