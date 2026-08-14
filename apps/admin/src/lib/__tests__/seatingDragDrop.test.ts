@@ -251,20 +251,181 @@ test("dropping on the same seat is a no-op", () => {
   assertEqual(result.rejection, "noop", "rejection reason");
 });
 
-test("ordinary guest cannot be dropped on a rabbi-reserved seat", () => {
+test("ordinary pool guest may be manually placed on a free rabbi seat", () => {
   const geometry = defaultGeometry();
-  const guest = makeGuest(1);
+  const guest = makeGuest(1, {
+    guestIndex: 0,
+    guestName: "Ordinary guest",
+    source: "guest",
+  });
+  const targetIndex = rabbiSeatIndex(geometry);
   const result = applySeatingDragDrop({
     assignments: [],
     geometry,
     guestPool: [guest],
     source: { kind: "pool", guestKey: guest.key },
-    target: { kind: "seat", seatIndex: rabbiSeatIndex(geometry) },
+    target: { kind: "seat", seatIndex: targetIndex },
   });
 
-  assert(!result.changed, "drop rejected");
-  assertEqual(result.rejection, "rabbi_reserved_seat", "rejection reason");
-  assertEqual(result.assignments.length, 0, "no assignment created");
+  assert(result.changed, "drop changed state");
+  assertEqual(result.assignments.length, 1, "one assignment created");
+  const placed = result.assignments[0];
+  assertEqual(
+    placed.seatKey,
+    seatingSeatKey(geometry.seats[targetIndex], targetIndex),
+    "ordinary guest occupies rabbi seat",
+  );
+  assertEqual(placed.type, "guest", "ordinary guest type preserved");
+  assertEqual(placed.registrationId, guest.registrationId, "registration preserved");
+  assertEqual(placed.locked, true, "manual placement is locked");
+  assertEqual(placed.placementSource, "manual", "manual placement source");
+});
+
+test("ordinary seated guest may move from a regular seat to a free rabbi seat", () => {
+  const geometry = defaultGeometry();
+  const guest = makeGuest(1);
+  const sourceIndex = regularSeatIndexes(geometry)[0];
+  const targetIndex = rabbiSeatIndex(geometry);
+  const result = applySeatingDragDrop({
+    assignments: [placedAssignment(guest, geometry, sourceIndex)],
+    geometry,
+    guestPool: [guest],
+    source: { kind: "seat", seatIndex: sourceIndex },
+    target: { kind: "seat", seatIndex: targetIndex },
+  });
+
+  assert(result.changed, "move changed state");
+  assert(
+    result.assignments.every(
+      (assignment) =>
+        assignment.seatKey !== seatingSeatKey(geometry.seats[sourceIndex], sourceIndex),
+    ),
+    "old seat is free",
+  );
+  const placed = result.assignments[0];
+  assertEqual(
+    placed.seatKey,
+    seatingSeatKey(geometry.seats[targetIndex], targetIndex),
+    "guest moved to rabbi seat",
+  );
+  assertEqual(placed.locked, true, "manual move is locked");
+  assertEqual(placed.placementSource, "manual", "manual move source");
+});
+
+test("ordinary pool guest may displace an occupant from a rabbi seat", () => {
+  const geometry = defaultGeometry();
+  const seated = makeGuest(1);
+  const incoming = makeGuest(2, {
+    guestIndex: 0,
+    guestName: "Incoming guest",
+    source: "guest",
+  });
+  const targetIndex = rabbiSeatIndex(geometry);
+  const targetSeatKey = seatingSeatKey(geometry.seats[targetIndex], targetIndex);
+  const result = applySeatingDragDrop({
+    assignments: [placedAssignment(seated, geometry, targetIndex)],
+    geometry,
+    guestPool: [seated, incoming],
+    source: { kind: "pool", guestKey: incoming.key },
+    target: { kind: "seat", seatIndex: targetIndex },
+  });
+
+  assert(result.changed, "occupied drop changed state");
+  const onTarget = result.assignments.filter(
+    (assignment) => assignment.seatKey === targetSeatKey,
+  );
+  assertEqual(onTarget.length, 1, "exactly one occupant remains on rabbi seat");
+  assertEqual(onTarget[0].registrationId, incoming.registrationId, "incoming guest seated");
+  assertEqual(onTarget[0].locked, true, "incoming placement is locked");
+  assertEqual(onTarget[0].placementSource, "manual", "incoming placement is manual");
+  const displaced = result.assignments.find(
+    (assignment) => assignment.registrationId === seated.registrationId,
+  );
+  assertEqual(displaced?.seatKey ?? "null", "null", "displaced occupant returned to pool");
+  [seated, incoming].forEach((guest) => {
+    assertEqual(
+      result.assignments.filter(
+        (assignment) => assignment.registrationId === guest.registrationId,
+      ).length,
+      1,
+      `${guest.key} represented exactly once`,
+    );
+  });
+});
+
+test("ordinary guest may swap from a regular seat into an occupied rabbi seat", () => {
+  const geometry = defaultGeometry();
+  const regularGuest = makeGuest(1);
+  const rabbiSeatOccupant = makeGuest(2);
+  const regularIndex = regularSeatIndexes(geometry)[0];
+  const rabbiIndex = rabbiSeatIndex(geometry);
+  const result = applySeatingDragDrop({
+    assignments: [
+      placedAssignment(regularGuest, geometry, regularIndex),
+      placedAssignment(rabbiSeatOccupant, geometry, rabbiIndex),
+    ],
+    geometry,
+    guestPool: [regularGuest, rabbiSeatOccupant],
+    source: { kind: "seat", seatIndex: regularIndex },
+    target: { kind: "seat", seatIndex: rabbiIndex },
+  });
+
+  assert(result.changed, "swap changed state");
+  const byGuest = new Map(
+    result.assignments.map((assignment) => [assignment.registrationId, assignment]),
+  );
+  assertEqual(
+    byGuest.get(regularGuest.registrationId)?.seatKey,
+    seatingSeatKey(geometry.seats[rabbiIndex], rabbiIndex),
+    "ordinary guest moved onto rabbi seat",
+  );
+  assertEqual(
+    byGuest.get(rabbiSeatOccupant.registrationId)?.seatKey,
+    seatingSeatKey(geometry.seats[regularIndex], regularIndex),
+    "rabbi-seat occupant moved onto regular seat",
+  );
+  assertEqual(byGuest.size, 2, "both guests represented exactly once");
+  result.assignments.forEach((assignment) => {
+    assertEqual(assignment.locked, true, "swapped assignment is locked");
+    assertEqual(assignment.placementSource, "manual", "swapped assignment is manual");
+  });
+});
+
+test("swap out of a rabbi seat may leave an ordinary displaced guest there", () => {
+  const geometry = defaultGeometry();
+  const rabbiSeatGuest = makeGuest(1);
+  const regularGuest = makeGuest(2);
+  const rabbiIndex = rabbiSeatIndex(geometry);
+  const regularIndex = regularSeatIndexes(geometry)[0];
+  const result = applySeatingDragDrop({
+    assignments: [
+      {
+        ...placedAssignment(rabbiSeatGuest, geometry, rabbiIndex),
+        locked: true,
+        placementSource: "manual",
+      },
+      placedAssignment(regularGuest, geometry, regularIndex),
+    ],
+    geometry,
+    guestPool: [rabbiSeatGuest, regularGuest],
+    source: { kind: "seat", seatIndex: rabbiIndex },
+    target: { kind: "seat", seatIndex: regularIndex },
+  });
+
+  assert(result.changed, "reverse-direction swap changed state");
+  const byGuest = new Map(
+    result.assignments.map((assignment) => [assignment.registrationId, assignment]),
+  );
+  assertEqual(
+    byGuest.get(regularGuest.registrationId)?.seatKey,
+    seatingSeatKey(geometry.seats[rabbiIndex], rabbiIndex),
+    "displaced ordinary guest occupies rabbi source seat",
+  );
+  assertEqual(byGuest.size, 2, "both guests represented exactly once");
+  result.assignments.forEach((assignment) => {
+    assertEqual(assignment.locked, true, "swapped assignment is locked");
+    assertEqual(assignment.placementSource, "manual", "swapped assignment is manual");
+  });
 });
 
 test("explicit rabbi guest may be placed on a rabbi-reserved seat", () => {
@@ -511,6 +672,9 @@ test("a reserve may be placed on a rabbi-reserved seat", () => {
 
   assert(result.changed, "reserve allowed on rabbi seat");
   assertEqual(result.assignments[0].type, "reserve", "reserve seated");
+  assertEqual(result.assignments[0].registrationId, null, "reserve has no registration");
+  assertEqual(result.assignments[0].locked, true, "reserve placement is locked");
+  assertEqual(result.assignments[0].placementSource, "manual", "reserve placement is manual");
 });
 
 test("the source assignments array is not mutated", () => {

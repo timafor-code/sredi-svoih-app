@@ -21,12 +21,11 @@
 // `assignments` array as a pooled entry (`seatKey === null`) until placed, so a
 // seated reserve moves/swaps/unassigns through the generic `seat` source like any
 // occupant. Reserves represent the rabbi's operational guests (габай, гость
-// раввина) and are therefore allowed onto rabbi-reserved seats; ordinary
-// registration guests are still blocked from them.
+// раввина) and remain distinct from registration guests. Explicit admin
+// drag/drop may place either kind of occupant onto a rabbi-reserved seat.
 //
 // Rejections (no-op, the caller decides whether/how to surface them):
 //   * dropping onto the same seat;
-//   * dropping onto a rabbi-reserved seat with an ordinary (non-rabbi) guest;
 //   * an out-of-range seat index;
 //   * a missing source occupant / missing pool guest / missing pooled reserve;
 //   * a guest that is already seated (duplicate assignment).
@@ -34,11 +33,7 @@
 // Seat keys are always rebuilt from the geometry via `seatingSeatKey`, which is
 // derived from the stable `client_table_id`, never the volatile DB row id.
 
-import {
-  isExplicitRabbiGuest,
-  seatIndexFromSeatKey,
-  seatingSeatKey,
-} from "./seatingAutoAssign";
+import { seatIndexFromSeatKey, seatingSeatKey } from "./seatingAutoAssign";
 import type {
   SeatingAssignment,
   SeatingGeometryResult,
@@ -93,7 +88,6 @@ export function applySeatingDragDrop({
   // ---- resolve the moving entity ----------------------------------------
   let sourcePos: number | null = null;
   let movingGuest: SeatingGuestPoolItem | null = null;
-  let movingIsReserve = false;
 
   if (source.kind === "seat") {
     const pos = placedPosByIndex.get(source.seatIndex);
@@ -101,7 +95,6 @@ export function applySeatingDragDrop({
       return rejection(assignments, "missing_source_occupant");
     }
     sourcePos = pos;
-    movingIsReserve = next[pos].type === "reserve";
   } else if (source.kind === "reserve") {
     // A pooled reserve is already an assignment (seatKey === null); place it by
     // setting its seatKey. It can never be on two seats: there is exactly one
@@ -116,7 +109,6 @@ export function applySeatingDragDrop({
       return rejection(assignments, "missing_reserve");
     }
     sourcePos = pos;
-    movingIsReserve = true;
   } else {
     movingGuest = guestPool.find((guest) => guest.key === source.guestKey) ?? null;
     if (!movingGuest) {
@@ -147,19 +139,6 @@ export function applySeatingDragDrop({
     return rejection(assignments, "noop");
   }
 
-  const movingIsRabbi =
-    source.kind === "pool"
-      ? isExplicitRabbiGuest(movingGuest!)
-      : source.kind === "seat"
-        ? isRabbiSeatedOccupant(next[sourcePos!], geometry, guestPool)
-        : false;
-
-  // Reserves may take rabbi-reserved seats (they ARE the rabbi/admin reserve);
-  // only ordinary registration guests are blocked there.
-  if (isRabbiReservedSeat(geometry, targetIndex) && !movingIsRabbi && !movingIsReserve) {
-    return rejection(assignments, "rabbi_reserved_seat");
-  }
-
   const targetSeatKey = seatingSeatKey(geometry.seats[targetIndex], targetIndex);
   const targetPos = placedPosByIndex.get(targetIndex);
 
@@ -168,17 +147,6 @@ export function applySeatingDragDrop({
     const sourceSeatKey = next[sPos].seatKey as string;
 
     if (targetPos !== undefined) {
-      // swap — the displaced occupant takes the source seat; guard the rabbi seat
-      // (a reserve is allowed back onto a rabbi-reserved source seat).
-      const displacedIsRabbi = isRabbiSeatedOccupant(next[targetPos], geometry, guestPool);
-      const displacedIsReserve = next[targetPos].type === "reserve";
-      if (
-        isRabbiReservedSeat(geometry, source.seatIndex) &&
-        !displacedIsRabbi &&
-        !displacedIsReserve
-      ) {
-        return rejection(assignments, "rabbi_reserved_seat");
-      }
       next[targetPos] = markManual({ ...next[targetPos], seatKey: sourceSeatKey });
     }
 
@@ -287,29 +255,4 @@ function guestSignature(
     (label ?? "").trim().toLocaleLowerCase("ru-RU"),
     (initials ?? "").trim().toLocaleLowerCase("ru-RU"),
   ].join("|");
-}
-
-function isRabbiReservedSeat(
-  geometry: SeatingGeometryResult,
-  seatIndex: number,
-): boolean {
-  return Boolean(geometry.seats[seatIndex]?.isRabbiTable);
-}
-
-function isRabbiSeatedOccupant(
-  assignment: SeatingAssignment,
-  geometry: SeatingGeometryResult,
-  guestPool: readonly SeatingGuestPoolItem[],
-): boolean {
-  const guest = guestPool.find((candidate) => matchesGuest(assignment, candidate));
-  if (guest && isExplicitRabbiGuest(guest)) {
-    return true;
-  }
-
-  // A guest already seated on a rabbi-reserved seat is allowed to stay/return
-  // there (e.g. the rabbi head occupant swapping within the rabbi area).
-  const seatIndex = assignment.seatKey
-    ? seatIndexFromSeatKey(assignment.seatKey, geometry)
-    : null;
-  return seatIndex !== null && isRabbiReservedSeat(geometry, seatIndex);
 }
