@@ -195,11 +195,13 @@ export type AdminEventMutationInput = {
   priceCurrency: string;
 };
 
-export type CreateAdminEventInput = AdminEventMutationInput & {
+export type AdminEventApiMutationInput = Omit<AdminEventMutationInput, "imageUrl">;
+
+export type CreateAdminEventInput = AdminEventApiMutationInput & {
   communityId: string;
 };
 
-export type UpdateAdminEventInput = Partial<AdminEventMutationInput>;
+export type UpdateAdminEventInput = Partial<AdminEventApiMutationInput>;
 
 export type AdminEventWebRegistration = {
   eventId: string;

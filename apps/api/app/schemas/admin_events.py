@@ -106,11 +106,6 @@ class AdminEventCreateRequest(BaseModel):
         ge=Decimal("-180"),
         le=Decimal("180"),
     )
-    image_url: str | None = Field(
-        default=None,
-        max_length=2000,
-        validation_alias=AliasChoices("image_url", "imageUrl"),
-    )
     category: str = Field(default="community", min_length=1, max_length=64)
     audience: str | None = Field(default=None, max_length=120)
     visibility: AdminEventVisibility = "public"
@@ -157,7 +152,6 @@ class AdminEventCreateRequest(BaseModel):
         "short_description",
         "location_name",
         "address",
-        "image_url",
         "audience",
         "source_url",
         "registration_url",
@@ -226,11 +220,6 @@ class AdminEventUpdateRequest(BaseModel):
         ge=Decimal("-180"),
         le=Decimal("180"),
     )
-    image_url: str | None = Field(
-        default=None,
-        max_length=2000,
-        validation_alias=AliasChoices("image_url", "imageUrl"),
-    )
     category: str | None = Field(default=None, min_length=1, max_length=64)
     audience: str | None = Field(default=None, max_length=120)
     visibility: AdminEventVisibility | None = None
@@ -278,7 +267,6 @@ class AdminEventUpdateRequest(BaseModel):
         "timezone",
         "location_name",
         "address",
-        "image_url",
         "category",
         "audience",
         "source_url",

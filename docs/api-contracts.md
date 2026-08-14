@@ -1575,10 +1575,18 @@ datetimes must be ISO 8601 values with timezone, `ends_at` must be `null` or
 later than `starts_at`, enum values must match the event table checks,
 `capacity` must be positive when present, and `price_amount` must be
 non-negative. Event category slugs must already exist in the target community.
+Ordinary `POST /admin/events` and `PATCH /admin/events/{event_id}` JSON requests
+reject both caller-authored `image_url` and the camelCase `imageUrl` alias with
+the standard request-validation envelope. Manual image creation or replacement
+must use `PUT /admin/events/{event_id}/image`; removal must use
+`DELETE /admin/events/{event_id}/image`.
 Admin event responses reuse public event fields and additionally include
 `source_type`, `source_external_id`, `manual_override`, `created_by`, and
-`updated_by`. Admin registration-management, seating, and import endpoints
-remain future PR scope.
+`updated_by`. The nullable response `image_url` remains the stable read/render
+field for managed images and historical or external values already stored in
+`events.image_url`; this change performs no backfill or historical migration.
+Admin registration-management, seating, and import endpoints remain future PR
+scope.
 
 #### Admin event image lifecycle
 
@@ -1649,10 +1657,16 @@ Each later mutation retries only a small fixed number of stale `pending` or
 `active` row or an object still referenced by the event URL. There is no public
 cleanup route or scheduled worker in this contract.
 
-Ordinary JSON `POST /admin/events` and `PATCH /admin/events/{event_id}` continue
-to accept nullable `image_url` temporarily for compatibility. This lifecycle
-PR does not add the later arbitrary-URL hardening guard and does not change
-importer behavior.
+Ordinary JSON `POST /admin/events` and `PATCH /admin/events/{event_id}` no longer
+accept `image_url` or `imageUrl`. Their managed upload and removal routes are
+the only ordinary manual image-write path. Responses continue to expose the
+nullable `image_url`, so managed URLs and historical/external stored URLs remain
+read-compatible until an administrator replaces or removes them. The existing
+backend-owned website-import publication flow remains an explicit compatibility
+exception: its `AdminImportItemPublishRequest` may publish the importer's
+verified internal image URL. That separate path does not make arbitrary URL
+writes valid for ordinary admin event JSON requests and is not broadened by
+this contract.
 
 Implemented behavior (PR 20): the Python API exposes the admin category,
 occurrence, participation-option, and capacity-unit endpoints listed above.

@@ -7,7 +7,7 @@ import type {
 } from "../types/api";
 import type {
   AdminEvent,
-  AdminEventMutationInput,
+  AdminEventApiMutationInput,
   CreateAdminEventInput,
   UpdateAdminEventInput,
 } from "../types/events";
@@ -59,7 +59,7 @@ function normalizeAdminApiEvent(row: AdminApiEventResponse): AdminEvent {
 }
 
 function buildAdminEventApiPayload(
-  input: Partial<AdminEventMutationInput> & { communityId?: string },
+  input: Partial<AdminEventApiMutationInput> & { communityId?: string },
 ): Partial<AdminEventApiMutationPayload> {
   return compactUndefined({
     community_id: input.communityId,
