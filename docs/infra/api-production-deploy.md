@@ -50,7 +50,7 @@ EXPO_PUBLIC_API_URL                         VITE_API_URL
 
 | Component | Verified repository fact | Production requirement / owner decision |
 | --- | --- | --- |
-| API | `apps/api` is FastAPI. `apps/api/Dockerfile` is the production image and starts `uvicorn app.main:app --host 0.0.0.0 --port 8000`; `apps/api/Dockerfile.local` is local-development-only. | Choose Russia-hosted compute, runner, registry, private network, supervision, and resource limits. No production Compose file, systemd unit, proxy configuration, or provider is checked in. |
+| API | `apps/api` is FastAPI. `apps/api/Dockerfile` is the production image and starts `uvicorn app.main:app --host 0.0.0.0 --port 8000`; `apps/api/Dockerfile.local` is local-development-only. | `infra/docker-compose.prod.yml` defines the checked-in single-host production container topology. The owner still chooses the immutable image tag, secrets, resource limits, and promotion timing. |
 | Privacy erasure worker | `python -m app.workers.privacy_erasure` is a separate process using the same backend image and PostgreSQL/storage/email dependencies. It is not a FastAPI background task and exposes no HTTP trigger. | Supervise it independently from FastAPI. Run one or more instances only after migrations and dependencies are ready, with the backend-only enable flag and mandatory erasure/retention configuration reviewed. |
 | PostgreSQL | The local contour uses `postgres:16-alpine` as `api_postgres`, locally bound at `127.0.0.1:55432:5432`. Alembic is under `apps/api/alembic`. | Run PostgreSQL in Russia on a private network. Do not expose 5432 to the public, mobile, or web-admin. Choose managed/self-managed operation, availability, and backups. |
 | Object storage | Local MinIO service `api_object_storage` exposes port 9000 internally and creates the private `avatars` bucket with anonymous access disabled. | Use Russia-hosted S3-compatible storage and a private bucket. Choose public signed-URL hostname, TLS, CORS, versioning, lifecycle, and recovery. Local MinIO is not the production provider. |
@@ -70,6 +70,30 @@ It is useful only as a verified reference for local services: `api_backend`,
 `api_postgres`, `api_object_storage`, `api_object_storage_init`, and the
 optional `api_push_worker` profile, and the separate
 `api_privacy_erasure_worker` service.
+
+### Checked-in single-host production Compose
+
+`infra/docker-compose.prod.yml` is the production-only topology for the
+prepared single host. It builds the API-backed services from
+`apps/api/Dockerfile`, keeps the image's canonical FastAPI command, runs
+PostgreSQL 16 on a persistent named volume, and provides an owner-invoked
+one-shot `api_migrate` service. It does not change or replace the local-only
+`infra/docker-compose.api.yml` contour.
+
+FastAPI is published only as `127.0.0.1:8000:8000`; PostgreSQL has no published
+host port and joins only the internal `api_database` network. FastAPI and the
+optional privacy-erasure worker also join the egress-capable `api_egress`
+network for reviewed external HTTPS dependencies. The Compose file publishes
+neither the database network nor external dependency ports.
+
+The migration service is behind the `migration` profile and runs only when the
+owner explicitly targets `api_migrate`. The privacy-erasure worker is behind
+the `privacy-erasure` profile and remains disabled in the committed production
+environment example. No push worker, MinIO, or Mailpit service is included.
+
+Reverse proxy and TLS configuration is intentionally outside this PR. Compose
+does not provision production object storage: the API environment contract is
+ready for a separately reviewed external Russia-hosted S3-compatible service.
 
 ## Prerequisites and owner decisions
 
@@ -165,6 +189,14 @@ server-side only. Inject **Secret** values at runtime through the approved
 mechanism; `apps/api/.env.example` and `infra/env/api.env.example` are not
 production secret stores.
 
+The committed `infra/env/compose.prod.env.example` and
+`infra/env/api.prod.env.example` contain fake placeholders only. On the server,
+the owner creates `infra/env/.env.compose.production` and
+`infra/env/.env.api.production`, restricts them to the deployment account (for
+example with mode `600`), and never commits or copies them into image layers.
+The repository `.gitignore` ignores `.env.*` files; verify `git status` before
+every deployment and commit.
+
 | Group | Exact setting names | Production rule |
 | --- | --- | --- |
 | Release identity | `APP_NAME`, `APP_ENV`, `API_VERSION`, `GIT_SHA`, `LOG_LEVEL` | `APP_ENV=production` is an **Owner decision**. Set version and optional SHA to the immutable release. Logging must not reveal request data. |
@@ -256,33 +288,51 @@ infrastructure. Run them only after owner approval and secret injection.
 1. **Prepare an immutable release.** Use an approved revision in a controlled
    deployment workspace. Record commit SHA/release tag; never build from an
    unreviewed worktree.
-2. **Build the verified API source.** The dedicated production image is defined
-   by `apps/api/Dockerfile` and exposes container port 8000. A standard Docker
-   build grounded in that path is:
+2. **Prepare the owner-only runtime files.** In `/opt/sredi-svoih`, derive the
+   two ignored files from the committed examples, replace every placeholder
+   with an approved production value, and restrict access before invoking
+   Compose. The Compose env file must point `API_ENV_FILE` to
+   `./env/.env.api.production`. Never commit these files or print their resolved
+   values into logs.
+3. **Validate and build the verified API source.** The production topology and
+   dedicated image are defined by `infra/docker-compose.prod.yml` and
+   `apps/api/Dockerfile`. From the production workspace, run:
 
-   ```powershell
-   docker build -f apps/api/Dockerfile -t sredi-svoih-api:<immutable-release> apps/api
+   ```bash
+   docker compose \
+     --env-file infra/env/.env.compose.production \
+     -f infra/docker-compose.prod.yml \
+     config
+
+   docker compose \
+     --env-file infra/env/.env.compose.production \
+     -f infra/docker-compose.prod.yml \
+     build
    ```
 
-   This does not define a production runner, registry, network, or secret
-   mechanism.
-3. **Validate resolved configuration without printing secrets.** Confirm
-   production environment, exact CORS origins, private DB/storage routes,
-   release identity, and disabled migration compatibility path.
-4. **Take and verify a pre-migration backup.** Follow
+   Confirm the resolved API binding is exactly loopback-only, PostgreSQL has no
+   host binding, the database network is internal, and no local-only service is
+   present. This preparation sequence intentionally omits `up -d`: proxy/TLS,
+   external S3, real secrets, backup readiness, and migration prerequisites
+   must be resolved first.
+4. **Take and verify a pre-migration logical backup.** Follow
    [backup and restore](postgres-backup-restore.md), recording artifact ID and
-   last successful restore-test result.
+   last successful restore-test result. Host disk snapshots are an additional
+   recovery layer, not a replacement for the PostgreSQL logical backup and
+   restore procedure.
 5. **Run Alembic once from the approved image.** `apps/api/alembic/env.py`
-   reads API settings; the verified command is `alembic upgrade head`. An
-   illustrative workload command is:
+   reads API settings; the owner-controlled one-shot command is:
 
-   ```powershell
-   docker run --rm --env-file <secret-manager-runtime-file> sredi-svoih-api:<immutable-release> alembic upgrade head
+   ```bash
+   docker compose \
+     --env-file infra/env/.env.compose.production \
+     -f infra/docker-compose.prod.yml \
+     run --rm api_migrate
    ```
 
-   The file is a **Placeholder** for an owner-controlled non-repository secret
-   delivery method. Do not run concurrent migration jobs, automatic downgrades,
-   or production migrations from a developer workstation.
+   Run it before API promotion. The profile prevents migration execution as
+   part of normal API startup. Do not run concurrent migration jobs, automatic
+   downgrades, or production migrations from a developer workstation.
 6. **Deploy private API instance(s), with the erasure worker disabled.** Start
    the approved image with injected settings; expose port 8000 only to
    proxy/private network; configure TLS and proxy rules before public traffic.
