@@ -253,6 +253,20 @@ async def update_admin_event(
     return ApiResponse[AdminEventResponse](data=AdminEventResponse.model_validate(event))
 
 
+@router.delete("/events/{event_id}", response_model=ApiResponse[AdminEventResponse])
+async def delete_admin_event(
+    event_id: UUID,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[AdminEventResponse]:
+    deleted_event = await admin_events_service.delete_admin_event(
+        session,
+        current_user,
+        event_id,
+    )
+    return ApiResponse[AdminEventResponse](data=deleted_event)
+
+
 @router.put(
     "/events/{event_id}/image",
     response_model=ApiResponse[AdminEventResponse],

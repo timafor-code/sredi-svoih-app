@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
+import { ApiClientError } from "../services/apiClient";
 import {
   deleteAdminEvent,
   listAdminEvents,
@@ -339,7 +340,10 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
       setActionSuccess(`Событие «${pendingDeleteEvent.title}» удалено.`);
     } catch (nextError) {
       setDeleteError(
-        nextError instanceof Error
+        nextError instanceof ApiClientError
+          && nextError.code === "event_has_registrations"
+          ? "Событие нельзя удалить, потому что на него уже есть регистрации. Чтобы сохранить историю участников, отмените событие или перенесите его в архив."
+          : nextError instanceof Error
           ? nextError.message
           : "Не удалось удалить событие через admin_delete_event.",
       );
@@ -964,8 +968,8 @@ function EventDeleteDialog({
 
         <div className="event-action-dialog__notice event-action-dialog__notice--danger">
           <p>
-            Это действие полностью удалит запись события из базы. Его нельзя будет
-            восстановить из админки.
+            Полное удаление доступно только для события без регистраций.
+            Если на событие уже есть регистрации, используйте «В архив» или «Отменить».
           </p>
         </div>
 

@@ -195,8 +195,10 @@ export async function updateAdminEvent(
   return normalizeAdminApiEvent(event);
 }
 
-export async function deleteAdminEvent(_eventId: string): Promise<AdminEvent> {
-  throw new Error(
-    "Delete admin event is not available through the API. Use archive or cancel instead.",
+export async function deleteAdminEvent(eventId: string): Promise<AdminEvent> {
+  const event = await apiClient.delete<AdminApiEventResponse>(
+    `/admin/events/${encodeURIComponent(eventId)}`,
   );
+
+  return normalizeAdminApiEvent(event);
 }
