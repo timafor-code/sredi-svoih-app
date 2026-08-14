@@ -27,7 +27,6 @@ type AdminEventApiMutationPayload = {
   timezone?: string;
   location_name?: string | null;
   address?: string | null;
-  image_url?: string | null;
   category?: string;
   audience?: string | null;
   visibility?: string;
@@ -75,7 +74,6 @@ function buildAdminEventApiPayload(
     timezone: input.timezone,
     location_name: input.locationName,
     address: input.address,
-    image_url: input.imageUrl,
     category: input.category,
     audience: input.audience,
     visibility: input.visibility,
@@ -169,6 +167,14 @@ export async function createAdminEvent(input: CreateAdminEventInput): Promise<Ad
     AdminApiEventResponse,
     Partial<AdminEventApiMutationPayload>
   >("/admin/events", payload);
+
+  return normalizeAdminApiEvent(event);
+}
+
+export async function getAdminEvent(eventId: string): Promise<AdminEvent> {
+  const event = await apiClient.get<AdminApiEventResponse>(
+    `/admin/events/${encodeURIComponent(eventId)}`,
+  );
 
   return normalizeAdminApiEvent(event);
 }

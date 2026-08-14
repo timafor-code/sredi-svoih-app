@@ -152,6 +152,40 @@ the private avatar bucket remains private. Ordinary admin event JSON create
 and update continue to accept nullable `image_url` temporarily until the later
 upload-only hardening PR; importer behavior is unchanged.
 
+## Web-admin uploader behavior
+
+The manual web-admin event form no longer accepts a caller-authored image URL.
+It keeps the response `image_url` as the read/render contract for existing,
+legacy, and managed event images, while new replacements use the authenticated
+event-scoped multipart route with one `file` part. Ordinary event create and
+update JSON payloads omit `image_url`; the backend compatibility field remains
+temporarily available for non-manual migration paths until the separate
+upload-only hardening PR.
+
+The uploader accepts JPEG, PNG, and WebP in its browser picker, reports the
+12 MiB convenience limit, decodes source dimensions for advisory minimum-size
+and 16:9 warnings, and shows both contain and cover previews without forcing a
+crop. These checks are not authoritative; the backend repeats all security and
+normalization validation. Source files, filenames, dimensions, and object URLs
+remain in component memory only. Every local object URL is revoked when a file
+is replaced, cancelled, successfully uploaded, or its owning component
+unmounts.
+
+Create with an image is sequenced as a draft/hidden row first, followed by the
+image upload and then the existing status/visibility transition. The requested
+final state remains in memory. If upload fails, retries reuse the created event
+UUID and cannot create another row; continuing without an image is an explicit
+administrator action. If only the final transition fails, retry runs only that
+remaining transition and does not upload the image again.
+
+Edit keeps the current stored image visible beside a distinct local
+replacement preview. Ordinary field saving and image replacement are separate
+observable steps, so a failed replacement does not roll back already-saved
+fields and does not hide the old image. Removal asks for confirmation and uses
+the dedicated empty-body DELETE route. When removal returns an uncertain
+storage or network result, the admin reads the event again before presenting
+the best available authoritative state and never exposes provider details.
+
 ## Rollback and orphan cleanup
 
 Migration downgrade is suitable only for disposable development environments.

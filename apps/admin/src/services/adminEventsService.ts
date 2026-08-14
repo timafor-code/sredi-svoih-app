@@ -35,6 +35,7 @@ export function normalizeAdminEventRow(row: Partial<AdminEventRow>): AdminEvent 
 export {
   createAdminEvent,
   deleteAdminEvent,
+  getAdminEvent,
   listAdminEvents,
   updateAdminEvent,
 } from "./adminEventsApiService";
