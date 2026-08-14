@@ -1,0 +1,113 @@
+# Host-level Nginx HTTPS configuration for Ubuntu 24.04.
+#
+# Replace every <api-domain> placeholder only after Certbot has issued the
+# matching certificate. This file is included from Nginx's http context (for
+# example through sites-enabled). IPv6 listeners are intentionally commented
+# out; enable all matching IPv6 lines only after public IPv6 routing and
+# firewall policy are configured.
+
+# Deliberately excludes $request and $request_uri so query strings are never
+# written to the API access log. No authorization headers, cookies, or bodies
+# are logged. The request ID comes from FastAPI's validated/generated response.
+log_format sredi_svoih_api
+    '$remote_addr [$time_local] "$request_method $uri $server_protocol" '
+    '$status $body_bytes_sent rt=$request_time '
+    'request_id="$upstream_http_x_request_id"';
+
+server {
+    listen 80 default_server;
+    # listen [::]:80 default_server;
+
+    server_name _;
+    access_log off;
+
+    # Do not redirect or proxy arbitrary Host values.
+    return 444;
+}
+
+server {
+    listen 80;
+    # listen [::]:80;
+
+    server_name <api-domain>;
+    access_log off;
+
+    # Keep HTTP-01 available for Certbot webroot renewal. All ordinary API
+    # traffic is redirected to the fixed, reviewed HTTPS hostname below.
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 308 https://<api-domain>$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl default_server;
+    # listen [::]:443 ssl default_server;
+
+    server_name _;
+    access_log off;
+
+    # Ubuntu 24.04's Nginx supports rejecting an unmatched SNI handshake
+    # without inventing a catch-all certificate. The return also prevents an
+    # unmatched HTTP Host from being handled after a valid-domain handshake.
+    ssl_reject_handshake on;
+    return 444;
+}
+
+server {
+    listen 443 ssl;
+    # listen [::]:443 ssl;
+
+    server_name <api-domain>;
+
+    # Defense in depth for TLS connections whose SNI selected this server but
+    # whose HTTP Host header is not the reviewed API hostname.
+    if ($host != <api-domain>) {
+        return 444;
+    }
+
+    ssl_certificate /etc/letsencrypt/live/<api-domain>/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/<api-domain>/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:SrediSvoihTLS:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    # The backend accepts a 12 MiB event-image source plus a 64 KiB multipart
+    # envelope. 13 MiB keeps Nginx above that valid request boundary while the
+    # backend remains the authoritative precise size and image validator.
+    client_max_body_size 13m;
+
+    access_log /var/log/nginx/sredi-svoih-api.access.log sredi_svoih_api;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Do not pass caller-controlled forwarding metadata as trusted proxy
+        # context. Nginx supplies the headers above from its direct connection.
+        proxy_set_header Forwarded "";
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header X-Forwarded-Port "";
+
+        # FastAPI accepts UUID request IDs and replaces absent/invalid values
+        # with a generated UUID, which is returned in the response header.
+        proxy_set_header X-Request-ID $http_x_request_id;
+
+        # No WebSocket upgrade headers are needed by the checked-in API.
+        proxy_set_header Connection "";
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 60s;
+    }
+}
