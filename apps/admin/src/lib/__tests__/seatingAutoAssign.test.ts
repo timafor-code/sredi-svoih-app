@@ -9,6 +9,8 @@ import { reconcileSeatingAssignments } from "../seatingAssignmentReconcile";
 import { TABLE_H, TABLE_W, computeTableSeats } from "../seatingGeometry";
 import type {
   SeatingAssignment,
+  SeatingConnection,
+  SeatingGeometryResult,
   SeatingGuestPoolItem,
   SeatingTable,
 } from "../../types/seating";
@@ -92,7 +94,117 @@ function defaultTables(): SeatingTable[] {
   ];
 }
 
-test("deterministic spread: same input produces same assignments", () => {
+function makeParty(
+  registrationId: string,
+  size: number,
+  firstGuestNumber: number,
+): SeatingGuestPoolItem[] {
+  return Array.from({ length: size }, (_, memberIndex) =>
+    makeGuest(firstGuestNumber + memberIndex, {
+      guestIndex: memberIndex === 0 ? null : memberIndex - 1,
+      guestName: memberIndex === 0 ? null : `Party guest ${memberIndex}`,
+      registrationId,
+      source: memberIndex === 0 ? "participant" : "guest",
+      sourceLabel: memberIndex === 0 ? "Participant" : "Guest",
+    }),
+  );
+}
+
+function makeSyntheticLayout(
+  specs: Array<{ id: string; isRabbiTable?: boolean; seatCount: number }>,
+): { geometry: SeatingGeometryResult; tables: SeatingTable[] } {
+  const tables = specs.map((spec, index) =>
+    makeTable({
+      cx: 100 + index * 240,
+      id: spec.id,
+      isRabbiTable: spec.isRabbiTable ?? false,
+    }),
+  );
+  const tableById = new Map(tables.map((table) => [table.id, table]));
+  const seats = specs.flatMap((spec) =>
+    Array.from({ length: spec.seatCount }, (_, slot) => {
+      const table = tableById.get(spec.id)!;
+      return {
+        anchor: { x: table.cx + slot, y: table.cy },
+        edge: "a" as const,
+        isRabbiTable: table.isRabbiTable,
+        kind: "side" as const,
+        slot,
+        tableId: table.id,
+        x: table.cx + slot,
+        y: table.cy - 40,
+      };
+    }),
+  );
+  const rabbiTableSeats = seats
+    .map((seat, seatIndex) => ({ seat, seatIndex }))
+    .filter(({ seat }) => seat.isRabbiTable);
+  const rabbiHeadIndex =
+    rabbiTableSeats[Math.floor(rabbiTableSeats.length / 2)]?.seatIndex ?? 0;
+  return {
+    geometry: {
+      headIndex: rabbiHeadIndex,
+      height: 640,
+      physicalSeatCount: seats.length,
+      seats,
+      seams: [],
+      width: 980,
+    },
+    tables,
+  };
+}
+
+function makeConnection(aTableId: string, bTableId: string): SeatingConnection {
+  return {
+    aEnd: "b",
+    aTableId,
+    bEnd: "a",
+    bTableId,
+    x: 0,
+    y: 0,
+  };
+}
+
+function tableSeatIndexes(
+  geometry: SeatingGeometryResult,
+  tableId: string,
+): number[] {
+  return geometry.seats
+    .map((seat, seatIndex) => ({ seat, seatIndex }))
+    .filter(({ seat }) => seat.tableId === tableId)
+    .map(({ seatIndex }) => seatIndex);
+}
+
+function lockedGuestAssignment(
+  guest: SeatingGuestPoolItem,
+  geometry: SeatingGeometryResult,
+  tableId: string,
+  localSeatIndex = 0,
+): SeatingAssignment {
+  const seatIndex = tableSeatIndexes(geometry, tableId)[localSeatIndex];
+  return {
+    guestInitials: guest.initials,
+    guestLabel: guest.displayName,
+    id: `locked:${guest.key}`,
+    layoutId: "layout-1",
+    locked: true,
+    placementSource: "manual",
+    registrationId: guest.registrationId,
+    seatKey: `${tableId}:${seatStable(geometry, seatIndex)}`,
+    type: "guest",
+  };
+}
+
+function assignedTableIds(
+  result: ReturnType<typeof autoAssignSeating>,
+  registrationId: string,
+): string[] {
+  return result.assignedSeats
+    .filter((assigned) => assigned.guest.registrationId === registrationId)
+    .map((assigned) => result.geometry.seats[assigned.seatIndex].tableId);
+}
+
+test("deterministic auto seating: same input produces same assignments", () => {
   const tables = defaultTables();
   const guests = Array.from({ length: 4 }, (_, i) => makeGuest(i + 1));
   const first = autoAssignSeating({ guestPool: guests, tables });
@@ -102,11 +214,6 @@ test("deterministic spread: same input produces same assignments", () => {
     first.assignedSeats.map((seat) => `${seat.guest.key}@${seat.seatKey}`),
     second.assignedSeats.map((seat) => `${seat.guest.key}@${seat.seatKey}`),
     "stable assignments",
-  );
-  assert(
-    JSON.stringify(first.assignedSeats.map((seat) => seat.seatIndex)) !==
-      JSON.stringify([8, 9, 10, 11]),
-    "regular seats must be spread, not first N",
   );
 });
 
@@ -704,6 +811,383 @@ test("repeat auto after geometry reconcile preserves locked/manual/reserve place
   assert(
     result.assignedSeats.every((seat) => seat.guest.registrationId !== null),
     "auto never seats reserves",
+  );
+});
+
+test("party scenario 1: a party of five fits one table in deterministic member order", () => {
+  const registrationId = "registration-a";
+  const party = makeParty(registrationId, 5, 100);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "party-table", seatCount: 7 },
+    { id: "larger-table", seatCount: 8 },
+  ]);
+  const result = autoAssignSeating({
+    geometry,
+    guestPool: [party[3], party[0], party[4], party[2], party[1]],
+    tables,
+  });
+
+  assertArrayEqual(
+    assignedTableIds(result, registrationId),
+    Array(5).fill("party-table"),
+    "complete party uses one exact-fit table",
+  );
+  assertArrayEqual(
+    result.assignedSeats.map((assigned) => assigned.guest.key),
+    party.map((guest) => guest.key),
+    "participant precedes guests ordered by guestIndex",
+  );
+  const partySeatIndexes = result.assignedSeats.map((assigned) => assigned.seatIndex);
+  assertEqual(
+    Math.max(...partySeatIndexes) - Math.min(...partySeatIndexes),
+    4,
+    "party uses the smallest-span table-local subset",
+  );
+});
+
+test("party scenario 2: two registrations form independent parties", () => {
+  const partyA = makeParty("registration-a", 5, 200);
+  const partyB = makeParty("registration-b", 3, 300);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "table-a", seatCount: 5 },
+    { id: "table-b", seatCount: 3 },
+  ]);
+  const result = autoAssignSeating({
+    geometry,
+    guestPool: [...partyA, ...partyB],
+    tables,
+  });
+
+  assertArrayEqual(
+    assignedTableIds(result, "registration-a"),
+    Array(5).fill("table-a"),
+    "party A grouped",
+  );
+  assertArrayEqual(
+    assignedTableIds(result, "registration-b"),
+    Array(3).fill("table-b"),
+    "party B grouped independently",
+  );
+});
+
+test("party scenario 3: singles do not fragment a party with a fitting table", () => {
+  const partyA = makeParty("registration-a", 5, 400);
+  const singleB = makeParty("registration-b", 1, 500);
+  const singleC = makeParty("registration-c", 1, 600);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "party-table", seatCount: 5 },
+    { id: "singles-table", seatCount: 2 },
+  ]);
+  const result = autoAssignSeating({
+    geometry,
+    guestPool: [...partyA, ...singleB, ...singleC],
+    tables,
+  });
+
+  assertArrayEqual(
+    assignedTableIds(result, "registration-a"),
+    Array(5).fill("party-table"),
+    "party A remains whole",
+  );
+  assertEqual(result.assignedSeats.length, 7, "party and both singles seated");
+});
+
+test("party scenario 4: an oversized party prefers a complete connected set", () => {
+  const party = makeParty("registration-a", 7, 700);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "connected-a", seatCount: 4 },
+    { id: "connected-b", seatCount: 4 },
+    { id: "chain-a", seatCount: 3 },
+    { id: "chain-b", seatCount: 3 },
+    { id: "chain-c", seatCount: 3 },
+  ]);
+  const result = autoAssignSeating({
+    connections: [
+      makeConnection("connected-a", "connected-b"),
+      makeConnection("chain-a", "chain-b"),
+      makeConnection("chain-b", "chain-c"),
+    ],
+    geometry,
+    guestPool: party,
+    tables,
+  });
+  const usedTables = new Set(assignedTableIds(result, "registration-a"));
+
+  assertArrayEqual(
+    [...usedTables].sort(),
+    ["connected-a", "connected-b"],
+    "two connected tables used",
+  );
+  assertEqual(result.assignedSeats.length, 7, "complete party assigned");
+});
+
+test("party scenario 5: a locked member anchors the remainder to the same table", () => {
+  const party = makeParty("registration-a", 5, 800);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "anchor", seatCount: 5 },
+    { id: "other", seatCount: 4 },
+  ]);
+  const result = autoAssignSeating({
+    geometry,
+    guestPool: party,
+    lockedAssignments: [lockedGuestAssignment(party[0], geometry, "anchor")],
+    tables,
+  });
+
+  assertEqual(result.assignedSeats.length, 4, "only unlocked members returned");
+  assertArrayEqual(
+    assignedTableIds(result, "registration-a"),
+    Array(4).fill("anchor"),
+    "remainder uses locked member table",
+  );
+  assert(
+    result.assignedSeats.every((assigned) => assigned.guest.key !== party[0].key),
+    "locked member is not duplicated",
+  );
+});
+
+test("party scenario 6: an insufficient locked table expands onto its connection", () => {
+  const party = makeParty("registration-a", 5, 900);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "anchor", seatCount: 3 },
+    { id: "connected", seatCount: 4 },
+    { id: "unrelated", seatCount: 4 },
+  ]);
+  const lockedAssignment = lockedGuestAssignment(party[0], geometry, "anchor");
+  const lockedSeatKey = lockedAssignment.seatKey;
+  const result = autoAssignSeating({
+    connections: [makeConnection("anchor", "connected")],
+    geometry,
+    guestPool: party,
+    lockedAssignments: [lockedAssignment],
+    tables,
+  });
+  const usedTables = assignedTableIds(result, "registration-a");
+
+  assertEqual(lockedAssignment.seatKey, lockedSeatKey, "locked placement unchanged");
+  assertEqual(usedTables.filter((tableId) => tableId === "anchor").length, 2, "anchor free seats used");
+  assertEqual(usedTables.filter((tableId) => tableId === "connected").length, 2, "connected fallback used");
+  assert(!usedTables.includes("unrelated"), "unrelated table avoided");
+});
+
+test("party scenario 7: a manual rabbi-seat lock anchors only eligible connected seats", () => {
+  const party = makeParty("registration-a", 5, 1000);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "connected", seatCount: 4 },
+    { id: "unrelated", seatCount: 4 },
+  ]);
+  const lockedAssignment = lockedGuestAssignment(party[0], geometry, "rabbi");
+  const lockedSeatIndex = seatIndexFromSeatKey(lockedAssignment.seatKey, geometry);
+  const result = autoAssignSeating({
+    connections: [makeConnection("rabbi", "connected")],
+    geometry,
+    guestPool: party,
+    lockedAssignments: [lockedAssignment],
+    tables,
+  });
+
+  assert(
+    lockedSeatIndex !== null && result.blockedRabbiSeats.includes(lockedSeatIndex),
+    "manual rabbi seat remains occupied/protected",
+  );
+  assertArrayEqual(
+    assignedTableIds(result, "registration-a"),
+    Array(4).fill("connected"),
+    "remaining party uses connected eligible table",
+  );
+  assert(
+    result.assignedSeats.every((assigned) => !geometry.seats[assigned.seatIndex].isRabbiTable),
+    "other protected rabbi seats stay unused",
+  );
+});
+
+test("party scenario 8: fresh ordinary parties never consume protected rabbi seats", () => {
+  const party = makeParty("registration-a", 3, 1100);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 5 },
+    { id: "regular", seatCount: 3 },
+  ]);
+  const result = autoAssignSeating({ geometry, guestPool: party, tables });
+
+  assertArrayEqual(
+    assignedTableIds(result, "registration-a"),
+    Array(3).fill("regular"),
+    "ordinary party uses only regular table",
+  );
+});
+
+test("party scenario 9: explicit rabbi guest keeps the existing head placement", () => {
+  const rabbiGuest = makeGuest(1200, {
+    id: "explicit-rabbi",
+    key: "explicit-rabbi",
+    registrationId: "rabbi-registration",
+  });
+  const ordinaryParty = makeParty("registration-a", 2, 1210);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 3 },
+    { id: "regular", seatCount: 2 },
+  ]);
+  const result = autoAssignSeating({
+    geometry,
+    guestPool: [rabbiGuest, ...ordinaryParty],
+    rabbiGuestKeys: [rabbiGuest.key],
+    tables,
+  });
+  const rabbiAssignment = result.assignedSeats.find(
+    (assigned) => assigned.guest.key === rabbiGuest.key,
+  );
+
+  assertEqual(rabbiAssignment?.seatIndex ?? -1, geometry.headIndex, "rabbi head preserved");
+  assert(rabbiAssignment?.isRabbiHead === true, "rabbi head marker preserved");
+  assertArrayEqual(
+    assignedTableIds(result, "registration-a"),
+    ["regular", "regular"],
+    "ordinary party remains protected",
+  );
+});
+
+test("party scenario 10: a locked reserve blocks its seat without joining a party", () => {
+  const party = makeParty("registration-a", 3, 1300);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "regular", seatCount: 4 },
+  ]);
+  const reserveSeatIndex = tableSeatIndexes(geometry, "regular")[0];
+  const reserve: SeatingAssignment = {
+    guestInitials: "R",
+    guestLabel: "Reserve",
+    id: "reserve-party-regression",
+    layoutId: "layout-1",
+    locked: true,
+    placementSource: "manual",
+    registrationId: null,
+    seatKey: `regular:${seatStable(geometry, reserveSeatIndex)}`,
+    type: "reserve",
+  };
+  const result = autoAssignSeating({
+    geometry,
+    guestPool: party,
+    lockedAssignments: [reserve],
+    tables,
+  });
+
+  assertEqual(result.assignedSeats.length, 3, "all registration guests seated");
+  assert(
+    result.assignedSeats.every((assigned) => assigned.seatIndex !== reserveSeatIndex),
+    "reserve seat remains blocked",
+  );
+});
+
+test("party scenario 11: insufficient seats return exact unresolved members and warning", () => {
+  const party = makeParty("registration-a", 5, 1400);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "regular", seatCount: 3 },
+  ]);
+  const result = autoAssignSeating({ geometry, guestPool: party, tables });
+
+  assertEqual(result.assignedSeats.length, 3, "all eligible physical seats used");
+  assertArrayEqual(
+    result.remainingUnassignedGuests.map((guest) => guest.key),
+    party.slice(3).map((guest) => guest.key),
+    "exact unresolved party members returned",
+  );
+  assertEqual(result.warning?.code, "not_enough_physical_seats", "shortage warning");
+  assertEqual(result.warning?.overflowCount, 2, "overflow count");
+});
+
+test("party scenario 12: repeated calls preserve assignments and overflow order", () => {
+  const partyA = makeParty("registration-a", 5, 1500);
+  const partyB = makeParty("registration-b", 2, 1600);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "table-a", seatCount: 4 },
+    { id: "table-b", seatCount: 2 },
+  ]);
+  const input = { geometry, guestPool: [...partyA, ...partyB], tables };
+  const first = autoAssignSeating(input);
+  const second = autoAssignSeating(input);
+
+  assertArrayEqual(
+    first.assignedSeats.map((assigned) => `${assigned.guest.key}@${assigned.seatKey}`),
+    second.assignedSeats.map((assigned) => `${assigned.guest.key}@${assigned.seatKey}`),
+    "guest-to-seat mapping repeats",
+  );
+  assertArrayEqual(
+    first.remainingUnassignedGuests.map((guest) => guest.key),
+    second.remainingUnassignedGuests.map((guest) => guest.key),
+    "unassigned order repeats",
+  );
+});
+
+test("party scenario 13: single-person registrations still auto-seat", () => {
+  const singles = [
+    ...makeParty("registration-a", 1, 1700),
+    ...makeParty("registration-b", 1, 1710),
+    ...makeParty("registration-c", 1, 1720),
+    ...makeParty("registration-d", 1, 1730),
+  ];
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 3 },
+    { id: "regular-a", seatCount: 2 },
+    { id: "regular-b", seatCount: 2 },
+  ]);
+  const result = autoAssignSeating({ geometry, guestPool: singles, tables });
+
+  assertEqual(result.assignedSeats.length, singles.length, "all singles seated");
+  assertEqual(result.remainingUnassignedGuests.length, 0, "no single left behind");
+  assert(
+    result.assignedSeats.every((assigned) => !geometry.seats[assigned.seatIndex].isRabbiTable),
+    "singles do not consume rabbi seats",
+  );
+});
+
+test("party scenario 14: blocked seats do not count toward whole-table fit", () => {
+  const party = makeParty("registration-a", 3, 1800);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "blocked-table", seatCount: 3 },
+    { id: "eligible-table", seatCount: 4 },
+  ]);
+  const blockedSeatIndex = tableSeatIndexes(geometry, "blocked-table")[1];
+  const result = autoAssignSeating({
+    blockedSeatIndexes: [blockedSeatIndex],
+    geometry,
+    guestPool: party,
+    tables,
+  });
+
+  assertArrayEqual(
+    assignedTableIds(result, "registration-a"),
+    Array(3).fill("eligible-table"),
+    "party evaluates genuinely eligible capacity",
+  );
+  assert(
+    result.assignedSeats.every((assigned) => assigned.seatIndex !== blockedSeatIndex),
+    "blocked seat unused",
+  );
+});
+
+test("party scenario 15: exact fit beats a larger eligible table", () => {
+  const party = makeParty("registration-a", 5, 1900);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "exact", seatCount: 5 },
+    { id: "larger", seatCount: 8 },
+  ]);
+  const result = autoAssignSeating({ geometry, guestPool: party, tables });
+
+  assertArrayEqual(
+    assignedTableIds(result, "registration-a"),
+    Array(5).fill("exact"),
+    "smallest non-negative excess wins",
   );
 });
 

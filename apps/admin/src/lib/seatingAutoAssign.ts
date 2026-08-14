@@ -2,7 +2,6 @@ import {
   computeTableSeats,
   pickRabbiHeadIndex,
   rabbiSeatIndexes,
-  spreadSeatIndexes,
 } from "./seatingGeometry";
 import type {
   ComputedSeat,
@@ -94,6 +93,18 @@ type RabbiMarkerRecord = {
   tags?: unknown;
 };
 
+type LockedPlacements = {
+  guestSignatureCounts: Map<string, number>;
+  seatIndexes: Set<number>;
+  tableIdsByRegistration: Map<string, string[]>;
+};
+
+type AutoSeatingParty = {
+  anchorTableIds: string[];
+  members: SeatingGuestPoolItem[];
+  registrationId: string;
+};
+
 export function autoAssignSeating({
   blockedSeatIndexes = [],
   capacityUnitId,
@@ -147,9 +158,7 @@ export function autoAssignSeating({
     ...blockedSeatIndexes,
     ...locked.seatIndexes,
   ]);
-  const queueGuests = activeGuests.filter(
-    (guest) => !locked.guestSignatures.has(guestPoolSignature(guest)),
-  );
+  const queueGuests = excludeLockedGuests(activeGuests, locked.guestSignatureCounts);
   const rabbiGuest = queueGuests.find((guest) =>
     isExplicitRabbiGuest(guest, rabbiGuestKeys),
   );
@@ -170,32 +179,31 @@ export function autoAssignSeating({
     });
   }
 
-  const assignableCount = countAssignableRegularSeats(geometry, blockedSeats);
-  const targetIndexes = spreadSeatIndexes(
-    geometry.seats.length,
-    Math.min(queue.length, assignableCount),
-    headIndex,
-    blockedSeats,
+  const tableOrder = buildStableTableOrder(tables, geometry);
+  const tableRank = new Map(tableOrder.map((tableId, index) => [tableId, index]));
+  const freeSeatsByTable = buildEligibleSeatsByTable(geometry, blockedSeats);
+  const adjacency = buildConnectionAdjacency(tableOrder, connections);
+  const parties = buildAutoSeatingParties(
+    queue,
+    locked.tableIdsByRegistration,
   );
-
-  targetIndexes.forEach((seatIndex, queueIndex) => {
-    const guest = queue[queueIndex];
-    const seat = geometry.seats[seatIndex];
-    if (!guest || !seat) return;
-
-    assignedSeats.push({
-      guest,
-      isRabbiHead: false,
-      seatIndex,
-      seatKey: seatingSeatKey(seat, seatIndex),
-    });
-  });
+  const unassignedPartyGuests = parties.flatMap((party) =>
+    placeParty({
+      adjacency,
+      assignedSeats,
+      freeSeatsByTable,
+      geometry,
+      party,
+      tableOrder,
+      tableRank,
+    }),
+  );
 
   const remainingUnassignedGuests = [
     ...(rabbiGuest && !assignedSeats.some((seat) => seat.guest === rabbiGuest)
       ? [rabbiGuest]
       : []),
-    ...queue.slice(targetIndexes.length),
+    ...unassignedPartyGuests,
   ];
 
   return {
@@ -362,17 +370,502 @@ function blockedRabbiSeatIndexes(
   return Array.from(indexes).sort((a, b) => a - b);
 }
 
-function countAssignableRegularSeats(
+function buildStableTableOrder(
+  tables: readonly SeatingTable[],
   geometry: SeatingGeometryResult,
-  blockedSeats: Set<number>,
-): number {
-  let count = 0;
-  geometry.seats.forEach((_, index) => {
-    if (!blockedSeats.has(index)) {
-      count += 1;
-    }
+): string[] {
+  const seen = new Set<string>();
+  const tableOrder: string[] = [];
+
+  const add = (tableId: string) => {
+    if (seen.has(tableId)) return;
+    seen.add(tableId);
+    tableOrder.push(tableId);
+  };
+
+  tables.forEach((table) => add(table.id));
+  geometry.seats.forEach((seat) => add(seat.tableId));
+  return tableOrder;
+}
+
+function buildEligibleSeatsByTable(
+  geometry: SeatingGeometryResult,
+  blockedSeats: ReadonlySet<number>,
+): Map<string, number[]> {
+  const seatsByTable = new Map<string, number[]>();
+
+  geometry.seats.forEach((seat, seatIndex) => {
+    if (blockedSeats.has(seatIndex)) return;
+    const indexes = seatsByTable.get(seat.tableId) ?? [];
+    indexes.push(seatIndex);
+    seatsByTable.set(seat.tableId, indexes);
   });
-  return count;
+
+  return seatsByTable;
+}
+
+function buildConnectionAdjacency(
+  tableOrder: readonly string[],
+  connections: readonly SeatingConnection[],
+): Map<string, string[]> {
+  const adjacency = new Map(tableOrder.map((tableId) => [tableId, [] as string[]]));
+
+  connections.forEach((connection) => {
+    const a = adjacency.get(connection.aTableId);
+    const b = adjacency.get(connection.bTableId);
+    if (!a || !b) return;
+    if (!a.includes(connection.bTableId)) a.push(connection.bTableId);
+    if (!b.includes(connection.aTableId)) b.push(connection.aTableId);
+  });
+
+  const rank = new Map(tableOrder.map((tableId, index) => [tableId, index]));
+  adjacency.forEach((neighbors) => {
+    neighbors.sort((a, b) => tableRankOf(a, rank) - tableRankOf(b, rank));
+  });
+  return adjacency;
+}
+
+function buildAutoSeatingParties(
+  guests: readonly SeatingGuestPoolItem[],
+  tableIdsByRegistration: ReadonlyMap<string, readonly string[]>,
+): AutoSeatingParty[] {
+  const parties = new Map<string, SeatingGuestPoolItem[]>();
+
+  guests.forEach((guest) => {
+    const members = parties.get(guest.registrationId) ?? [];
+    members.push(guest);
+    parties.set(guest.registrationId, members);
+  });
+
+  return Array.from(parties, ([registrationId, members]) => ({
+    anchorTableIds: [...(tableIdsByRegistration.get(registrationId) ?? [])],
+    members: [...members].sort(comparePartyMembers),
+    registrationId,
+  }));
+}
+
+function comparePartyMembers(
+  a: SeatingGuestPoolItem,
+  b: SeatingGuestPoolItem,
+): number {
+  const sourceOrder = Number(a.source === "guest") - Number(b.source === "guest");
+  if (sourceOrder !== 0) return sourceOrder;
+
+  const guestIndexOrder =
+    (a.guestIndex ?? Number.MAX_SAFE_INTEGER) -
+    (b.guestIndex ?? Number.MAX_SAFE_INTEGER);
+  if (guestIndexOrder !== 0) return guestIndexOrder;
+
+  return compareStableStrings(a.key, b.key) || compareStableStrings(a.id, b.id);
+}
+
+function placeParty({
+  adjacency,
+  assignedSeats,
+  freeSeatsByTable,
+  geometry,
+  party,
+  tableOrder,
+  tableRank,
+}: {
+  adjacency: ReadonlyMap<string, readonly string[]>;
+  assignedSeats: SeatingAutoAssignedSeat[];
+  freeSeatsByTable: Map<string, number[]>;
+  geometry: SeatingGeometryResult;
+  party: AutoSeatingParty;
+  tableOrder: readonly string[];
+  tableRank: ReadonlyMap<string, number>;
+}): SeatingGuestPoolItem[] {
+  if (party.members.length === 0) return [];
+
+  const anchorTableIds = party.anchorTableIds.filter((tableId) =>
+    tableRank.has(tableId),
+  );
+  let selectedTableIds: string[] | null = null;
+
+  if (anchorTableIds.length > 0) {
+    const anchorTable = chooseWholePartyTable(
+      anchorTableIds,
+      party.members.length,
+      freeSeatsByTable,
+      tableRank,
+    );
+    if (anchorTable) {
+      selectedTableIds = [anchorTable];
+    } else {
+      selectedTableIds = chooseConnectedTableSet({
+        adjacency,
+        anchorTableIds,
+        freeSeatsByTable,
+        requiredSeats: party.members.length,
+        tableOrder,
+        tableRank,
+      });
+    }
+  }
+
+  if (!selectedTableIds) {
+    const wholeTable = chooseWholePartyTable(
+      tableOrder,
+      party.members.length,
+      freeSeatsByTable,
+      tableRank,
+    );
+    if (wholeTable) {
+      selectedTableIds = [wholeTable];
+    }
+  }
+
+  if (!selectedTableIds) {
+    selectedTableIds = chooseConnectedTableSet({
+      adjacency,
+      anchorTableIds: [],
+      freeSeatsByTable,
+      requiredSeats: party.members.length,
+      tableOrder,
+      tableRank,
+    });
+  }
+
+  let assignedCount = 0;
+  if (selectedTableIds) {
+    assignedCount = assignPartyMembers({
+      anchorTableIds,
+      assignedSeats,
+      freeSeatsByTable,
+      geometry,
+      members: party.members,
+      tableIds: selectedTableIds,
+      tableRank,
+    });
+  }
+
+  if (assignedCount < party.members.length) {
+    const fallbackTableIds = buildFragmentationOrder({
+      adjacency,
+      anchorTableIds,
+      freeSeatsByTable,
+      tableOrder,
+      tableRank,
+    });
+    assignedCount += assignPartyMembers({
+      anchorTableIds,
+      assignedSeats,
+      freeSeatsByTable,
+      geometry,
+      members: party.members.slice(assignedCount),
+      tableIds: fallbackTableIds,
+      tableRank,
+    });
+  }
+
+  return party.members.slice(assignedCount);
+}
+
+function chooseWholePartyTable(
+  tableIds: readonly string[],
+  partySize: number,
+  freeSeatsByTable: ReadonlyMap<string, readonly number[]>,
+  tableRank: ReadonlyMap<string, number>,
+): string | null {
+  const candidates = tableIds.filter(
+    (tableId) => (freeSeatsByTable.get(tableId)?.length ?? 0) >= partySize,
+  );
+
+  candidates.sort((a, b) => {
+    const aSeats = freeSeatsByTable.get(a) ?? [];
+    const bSeats = freeSeatsByTable.get(b) ?? [];
+    return (
+      aSeats.length - partySize - (bSeats.length - partySize) ||
+      compactSeatSpan(aSeats, partySize) - compactSeatSpan(bSeats, partySize) ||
+      tableRankOf(a, tableRank) - tableRankOf(b, tableRank)
+    );
+  });
+
+  return candidates[0] ?? null;
+}
+
+function chooseCompactSeats(
+  availableSeatIndexes: readonly number[],
+  count: number,
+): number[] {
+  if (count <= 0) return [];
+  if (count >= availableSeatIndexes.length) return [...availableSeatIndexes];
+
+  let bestStart = 0;
+  let bestSpan = Number.POSITIVE_INFINITY;
+  for (let start = 0; start + count <= availableSeatIndexes.length; start += 1) {
+    const span =
+      availableSeatIndexes[start + count - 1] - availableSeatIndexes[start];
+    if (span < bestSpan) {
+      bestSpan = span;
+      bestStart = start;
+    }
+  }
+  return availableSeatIndexes.slice(bestStart, bestStart + count);
+}
+
+function compactSeatSpan(
+  availableSeatIndexes: readonly number[],
+  count: number,
+): number {
+  const selected = chooseCompactSeats(availableSeatIndexes, count);
+  if (selected.length < 2) return 0;
+  return selected[selected.length - 1] - selected[0];
+}
+
+function chooseConnectedTableSet({
+  adjacency,
+  anchorTableIds,
+  freeSeatsByTable,
+  requiredSeats,
+  tableOrder,
+  tableRank,
+}: {
+  adjacency: ReadonlyMap<string, readonly string[]>;
+  anchorTableIds: readonly string[];
+  freeSeatsByTable: ReadonlyMap<string, readonly number[]>;
+  requiredSeats: number;
+  tableOrder: readonly string[];
+  tableRank: ReadonlyMap<string, number>;
+}): string[] | null {
+  const roots =
+    anchorTableIds.length > 0
+      ? anchorTableIds
+      : tableOrder.filter((tableId) => (freeSeatsByTable.get(tableId)?.length ?? 0) > 0);
+  const queue: string[][] = [];
+  const seen = new Set<string>();
+
+  roots.forEach((root) => {
+    if (!adjacency.has(root)) return;
+    const key = connectedSetKey([root], tableRank);
+    if (seen.has(key)) return;
+    seen.add(key);
+    queue.push([root]);
+  });
+
+  let best: string[] | null = null;
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const current = queue[cursor];
+    if (best && current.length > best.length) break;
+
+    const capacity = connectedSetCapacity(current, freeSeatsByTable);
+    if (current.length > 1 && capacity >= requiredSeats) {
+      if (
+        !best ||
+        compareConnectedSets(
+          current,
+          best,
+          requiredSeats,
+          freeSeatsByTable,
+          tableRank,
+        ) < 0
+      ) {
+        best = current;
+      }
+      continue;
+    }
+
+    const nextTableIds = new Set<string>();
+    current.forEach((tableId) => {
+      (adjacency.get(tableId) ?? []).forEach((neighbor) => {
+        if (!current.includes(neighbor)) nextTableIds.add(neighbor);
+      });
+    });
+
+    Array.from(nextTableIds)
+      .sort((a, b) => tableRankOf(a, tableRank) - tableRankOf(b, tableRank))
+      .forEach((nextTableId) => {
+        const expanded = [...current, nextTableId].sort(
+          (a, b) => tableRankOf(a, tableRank) - tableRankOf(b, tableRank),
+        );
+        if (best && expanded.length > best.length) return;
+        const key = connectedSetKey(expanded, tableRank);
+        if (seen.has(key)) return;
+        seen.add(key);
+        queue.push(expanded);
+      });
+  }
+
+  return best;
+}
+
+function compareConnectedSets(
+  a: readonly string[],
+  b: readonly string[],
+  requiredSeats: number,
+  freeSeatsByTable: ReadonlyMap<string, readonly number[]>,
+  tableRank: ReadonlyMap<string, number>,
+): number {
+  return (
+    a.length - b.length ||
+    connectedSetCapacity(a, freeSeatsByTable) - requiredSeats -
+      (connectedSetCapacity(b, freeSeatsByTable) - requiredSeats) ||
+    compareTableIdLists(a, b, tableRank)
+  );
+}
+
+function connectedSetCapacity(
+  tableIds: readonly string[],
+  freeSeatsByTable: ReadonlyMap<string, readonly number[]>,
+): number {
+  return tableIds.reduce(
+    (total, tableId) => total + (freeSeatsByTable.get(tableId)?.length ?? 0),
+    0,
+  );
+}
+
+function connectedSetKey(
+  tableIds: readonly string[],
+  tableRank: ReadonlyMap<string, number>,
+): string {
+  return [...tableIds]
+    .sort((a, b) => tableRankOf(a, tableRank) - tableRankOf(b, tableRank))
+    .join("\u0000");
+}
+
+function compareTableIdLists(
+  a: readonly string[],
+  b: readonly string[],
+  tableRank: ReadonlyMap<string, number>,
+): number {
+  for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+    const difference = tableRankOf(a[index], tableRank) - tableRankOf(b[index], tableRank);
+    if (difference !== 0) return difference;
+  }
+  return a.length - b.length;
+}
+
+function assignPartyMembers({
+  anchorTableIds,
+  assignedSeats,
+  freeSeatsByTable,
+  geometry,
+  members,
+  tableIds,
+  tableRank,
+}: {
+  anchorTableIds: readonly string[];
+  assignedSeats: SeatingAutoAssignedSeat[];
+  freeSeatsByTable: Map<string, number[]>;
+  geometry: SeatingGeometryResult;
+  members: readonly SeatingGuestPoolItem[];
+  tableIds: readonly string[];
+  tableRank: ReadonlyMap<string, number>;
+}): number {
+  const anchorSet = new Set(anchorTableIds);
+  const orderedTableIds = [...new Set(tableIds)]
+    .filter((tableId) => (freeSeatsByTable.get(tableId)?.length ?? 0) > 0)
+    .sort((a, b) => {
+      const anchorOrder = Number(anchorSet.has(b)) - Number(anchorSet.has(a));
+      if (anchorOrder !== 0) return anchorOrder;
+      const capacityOrder =
+        (freeSeatsByTable.get(b)?.length ?? 0) -
+        (freeSeatsByTable.get(a)?.length ?? 0);
+      return capacityOrder || tableRankOf(a, tableRank) - tableRankOf(b, tableRank);
+    });
+
+  let assignedCount = 0;
+  orderedTableIds.forEach((tableId) => {
+    if (assignedCount >= members.length) return;
+    const available = freeSeatsByTable.get(tableId) ?? [];
+    const selected = chooseCompactSeats(
+      available,
+      Math.min(available.length, members.length - assignedCount),
+    );
+    const selectedSet = new Set(selected);
+
+    selected.forEach((seatIndex) => {
+      const guest = members[assignedCount];
+      const seat = geometry.seats[seatIndex];
+      if (!guest || !seat) return;
+      assignedSeats.push({
+        guest,
+        isRabbiHead: false,
+        seatIndex,
+        seatKey: seatingSeatKey(seat, seatIndex),
+      });
+      assignedCount += 1;
+    });
+    freeSeatsByTable.set(
+      tableId,
+      available.filter((seatIndex) => !selectedSet.has(seatIndex)),
+    );
+  });
+
+  return assignedCount;
+}
+
+function buildFragmentationOrder({
+  adjacency,
+  anchorTableIds,
+  freeSeatsByTable,
+  tableOrder,
+  tableRank,
+}: {
+  adjacency: ReadonlyMap<string, readonly string[]>;
+  anchorTableIds: readonly string[];
+  freeSeatsByTable: ReadonlyMap<string, readonly number[]>;
+  tableOrder: readonly string[];
+  tableRank: ReadonlyMap<string, number>;
+}): string[] {
+  const anchorSet = new Set(anchorTableIds);
+  const distances = connectionDistances(anchorTableIds, adjacency);
+
+  return tableOrder
+    .filter((tableId) => (freeSeatsByTable.get(tableId)?.length ?? 0) > 0)
+    .sort((a, b) => {
+      const aCategory = anchorSet.has(a) ? 0 : distances.has(a) ? 1 : 2;
+      const bCategory = anchorSet.has(b) ? 0 : distances.has(b) ? 1 : 2;
+      if (aCategory !== bCategory) return aCategory - bCategory;
+
+      if (aCategory === 1) {
+        const distanceOrder = (distances.get(a) ?? 0) - (distances.get(b) ?? 0);
+        if (distanceOrder !== 0) return distanceOrder;
+      }
+
+      const capacityOrder =
+        (freeSeatsByTable.get(b)?.length ?? 0) -
+        (freeSeatsByTable.get(a)?.length ?? 0);
+      return capacityOrder || tableRankOf(a, tableRank) - tableRankOf(b, tableRank);
+    });
+}
+
+function connectionDistances(
+  roots: readonly string[],
+  adjacency: ReadonlyMap<string, readonly string[]>,
+): Map<string, number> {
+  const distances = new Map<string, number>();
+  const queue: string[] = [];
+
+  roots.forEach((root) => {
+    if (!adjacency.has(root) || distances.has(root)) return;
+    distances.set(root, 0);
+    queue.push(root);
+  });
+
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const tableId = queue[cursor];
+    const distance = distances.get(tableId) ?? 0;
+    (adjacency.get(tableId) ?? []).forEach((neighbor) => {
+      if (distances.has(neighbor)) return;
+      distances.set(neighbor, distance + 1);
+      queue.push(neighbor);
+    });
+  }
+
+  return distances;
+}
+
+function tableRankOf(
+  tableId: string,
+  tableRank: ReadonlyMap<string, number>,
+): number {
+  return tableRank.get(tableId) ?? Number.MAX_SAFE_INTEGER;
+}
+
+function compareStableStrings(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function guestToAssignmentEntry(
@@ -511,6 +1004,21 @@ function guestPoolSignature(guest: SeatingGuestPoolItem): string {
   return assignmentGuestSignature(guest.registrationId, guest.displayName, guest.initials);
 }
 
+function excludeLockedGuests(
+  guests: readonly SeatingGuestPoolItem[],
+  lockedGuestSignatureCounts: ReadonlyMap<string, number>,
+): SeatingGuestPoolItem[] {
+  const remainingCounts = new Map(lockedGuestSignatureCounts);
+
+  return guests.filter((guest) => {
+    const signature = guestPoolSignature(guest);
+    const count = remainingCounts.get(signature) ?? 0;
+    if (count <= 0) return true;
+    remainingCounts.set(signature, count - 1);
+    return false;
+  });
+}
+
 /**
  * PR 15: resolve the seats and guests that a repeat auto seating must preserve.
  * Only placed assignments whose `seat_key` resolves to a valid seat in the
@@ -520,9 +1028,10 @@ function guestPoolSignature(guest: SeatingGuestPoolItem): string {
 function resolveLockedPlacements(
   lockedAssignments: readonly SeatingAssignment[],
   geometry: SeatingGeometryResult,
-): { seatIndexes: Set<number>; guestSignatures: Set<string> } {
+): LockedPlacements {
   const seatIndexes = new Set<number>();
-  const guestSignatures = new Set<string>();
+  const guestSignatureCounts = new Map<string, number>();
+  const tableIdsByRegistration = new Map<string, string[]>();
 
   lockedAssignments.forEach((assignment) => {
     if (!assignment.seatKey) {
@@ -535,16 +1044,23 @@ function resolveLockedPlacements(
     }
 
     seatIndexes.add(seatIndex);
-    guestSignatures.add(
-      assignmentGuestSignature(
-        assignment.registrationId,
-        assignment.guestLabel,
-        assignment.guestInitials,
-      ),
+    if (assignment.type !== "guest" || !assignment.registrationId) return;
+
+    const signature = assignmentGuestSignature(
+      assignment.registrationId,
+      assignment.guestLabel,
+      assignment.guestInitials,
     );
+    guestSignatureCounts.set(signature, (guestSignatureCounts.get(signature) ?? 0) + 1);
+
+    const tableId = geometry.seats[seatIndex]?.tableId;
+    if (!tableId) return;
+    const tableIds = tableIdsByRegistration.get(assignment.registrationId) ?? [];
+    if (!tableIds.includes(tableId)) tableIds.push(tableId);
+    tableIdsByRegistration.set(assignment.registrationId, tableIds);
   });
 
-  return { seatIndexes, guestSignatures };
+  return { guestSignatureCounts, seatIndexes, tableIdsByRegistration };
 }
 
 function seatStablePart(seat: ComputedSeat): string | null {
