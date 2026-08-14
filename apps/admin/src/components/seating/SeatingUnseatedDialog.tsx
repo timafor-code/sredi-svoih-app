@@ -109,12 +109,12 @@ export function SeatingUnseatedDialog({
       >
         <header className="seat-unseated-dialog__head">
           <div>
-            <span>Не рассажены</span>
+            <span>Гости</span>
             <h3 id="seat-unseated-dialog-title">Весь список</h3>
             <p id="seat-unseated-dialog-count">Всего: {formatSeatCount(totalCount)}</p>
           </div>
           <button
-            aria-label="Закрыть весь список нерассаженных"
+            aria-label="Закрыть полный список гостей"
             className="seat-unseated-dialog__close"
             onClick={onClose}
             ref={closeButtonRef}

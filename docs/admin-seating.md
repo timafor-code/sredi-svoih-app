@@ -157,12 +157,14 @@ The right-column metrics are intentionally compact so the inline `Не
 keeping its own scroll. The display omits `Свободно по лимиту`; the underlying
 `freeByLimit` calculation and all capacity semantics remain unchanged.
 
-`Весь список` opens a client-only view of the current unseated state without a
-second request. Registration guests are grouped by their existing
-`registrationId`, with participant and guest rows, party-level
-option/status/payment metadata, named guests where available, and readable
-fallback guest labels. Operational reserves appear in a separate section and
-remain unrelated to registrations.
+The inline `Не рассажены` pool contains only registration guests who currently
+have no seat. `Весь список` instead shows the complete loaded registration guest
+roster for the selected slot, so the same roster remains visible before, during,
+and after seating. It uses the existing loaded `guestPool` without a second API
+request. Registration guests are grouped by their existing `registrationId`,
+with participant and guest rows, party-level option/status/payment metadata,
+named guests where available, and readable fallback guest labels. Operational
+reserves appear in a separate section and remain unrelated to registrations.
 
 Assignment behavior:
 
