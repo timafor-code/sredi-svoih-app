@@ -545,6 +545,7 @@ function placeParty({
       adjacency,
       anchorTableIds,
       freeSeatsByTable,
+      requiredSeats: party.members.length - assignedCount,
       tableOrder,
       tableRank,
     });
@@ -800,35 +801,121 @@ function buildFragmentationOrder({
   adjacency,
   anchorTableIds,
   freeSeatsByTable,
+  requiredSeats,
   tableOrder,
   tableRank,
 }: {
   adjacency: ReadonlyMap<string, readonly string[]>;
   anchorTableIds: readonly string[];
   freeSeatsByTable: ReadonlyMap<string, readonly number[]>;
+  requiredSeats: number;
   tableOrder: readonly string[];
   tableRank: ReadonlyMap<string, number>;
 }): string[] {
   const anchorSet = new Set(anchorTableIds);
   const distances = connectionDistances(anchorTableIds, adjacency);
+  const eligibleAnchorTableIds = tableOrder
+    .filter(
+      (tableId) =>
+        anchorSet.has(tableId) &&
+        (freeSeatsByTable.get(tableId)?.length ?? 0) > 0,
+    )
+    .sort((a, b) => tableRankOf(a, tableRank) - tableRankOf(b, tableRank));
+  const anchorCapacity = connectedSetCapacity(
+    eligibleAnchorTableIds,
+    freeSeatsByTable,
+  );
+  const remainingSeats = Math.max(0, requiredSeats - anchorCapacity);
+  const additionalTableIds = tableOrder.filter(
+    (tableId) =>
+      !anchorSet.has(tableId) &&
+      (freeSeatsByTable.get(tableId)?.length ?? 0) > 0,
+  );
 
-  return tableOrder
-    .filter((tableId) => (freeSeatsByTable.get(tableId)?.length ?? 0) > 0)
+  return [
+    ...eligibleAnchorTableIds,
+    ...selectMinimumAdditionalTables({
+      distances,
+      freeSeatsByTable,
+      requiredSeats: remainingSeats,
+      tableIds: additionalTableIds,
+      tableRank,
+    }),
+  ];
+}
+
+function selectMinimumAdditionalTables({
+  distances,
+  freeSeatsByTable,
+  requiredSeats,
+  tableIds,
+  tableRank,
+}: {
+  distances: ReadonlyMap<string, number>;
+  freeSeatsByTable: ReadonlyMap<string, readonly number[]>;
+  requiredSeats: number;
+  tableIds: readonly string[];
+  tableRank: ReadonlyMap<string, number>;
+}): string[] {
+  const totalCapacity = connectedSetCapacity(tableIds, freeSeatsByTable);
+  const targetSeats = Math.min(requiredSeats, totalCapacity);
+  if (targetSeats <= 0) return [];
+
+  // Final fallback only: capacity establishes the minimum added-table count.
+  // Proximity may choose among feasible sets of that size, but cannot increase it.
+  const capacitiesDescending = tableIds
+    .map((tableId) => freeSeatsByTable.get(tableId)?.length ?? 0)
+    .sort((a, b) => b - a);
+  let minimumTableCount = 0;
+  let accumulatedCapacity = 0;
+  while (
+    minimumTableCount < capacitiesDescending.length &&
+    accumulatedCapacity < targetSeats
+  ) {
+    accumulatedCapacity += capacitiesDescending[minimumTableCount];
+    minimumTableCount += 1;
+  }
+
+  const preferredTableIds = [...tableIds]
     .sort((a, b) => {
-      const aCategory = anchorSet.has(a) ? 0 : distances.has(a) ? 1 : 2;
-      const bCategory = anchorSet.has(b) ? 0 : distances.has(b) ? 1 : 2;
-      if (aCategory !== bCategory) return aCategory - bCategory;
-
-      if (aCategory === 1) {
+      const connectedOrder = Number(distances.has(b)) - Number(distances.has(a));
+      if (connectedOrder !== 0) return connectedOrder;
+      if (distances.has(a) && distances.has(b)) {
         const distanceOrder = (distances.get(a) ?? 0) - (distances.get(b) ?? 0);
         if (distanceOrder !== 0) return distanceOrder;
       }
-
       const capacityOrder =
-        (freeSeatsByTable.get(b)?.length ?? 0) -
-        (freeSeatsByTable.get(a)?.length ?? 0);
+        (freeSeatsByTable.get(a)?.length ?? 0) -
+        (freeSeatsByTable.get(b)?.length ?? 0);
       return capacityOrder || tableRankOf(a, tableRank) - tableRankOf(b, tableRank);
     });
+
+  const selected: string[] = [];
+  let selectedCapacity = 0;
+  preferredTableIds.forEach((tableId, index) => {
+    if (selected.length >= minimumTableCount) return;
+    const slotsAfterSelection = minimumTableCount - selected.length - 1;
+    const remainingCandidates = preferredTableIds.slice(index + 1);
+    if (remainingCandidates.length < slotsAfterSelection) return;
+
+    const maximumRemainingCapacity = remainingCandidates
+      .map((candidateId) => freeSeatsByTable.get(candidateId)?.length ?? 0)
+      .sort((a, b) => b - a)
+      .slice(0, slotsAfterSelection)
+      .reduce((total, capacity) => total + capacity, 0);
+    const capacity = freeSeatsByTable.get(tableId)?.length ?? 0;
+    if (
+      selectedCapacity + capacity + maximumRemainingCapacity <
+      targetSeats
+    ) {
+      return;
+    }
+
+    selected.push(tableId);
+    selectedCapacity += capacity;
+  });
+
+  return selected;
 }
 
 function connectionDistances(

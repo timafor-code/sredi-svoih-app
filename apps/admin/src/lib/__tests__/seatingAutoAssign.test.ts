@@ -1191,6 +1191,53 @@ test("party scenario 15: exact fit beats a larger eligible table", () => {
   );
 });
 
+test("fragmentation fallback minimizes additional tables before anchor proximity", () => {
+  const party = makeParty("registration-a", 7, 2000);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "anchor", seatCount: 1 },
+    { id: "connected-small-1", seatCount: 1 },
+    { id: "connected-small-2", seatCount: 1 },
+    { id: "unrelated-large-1", seatCount: 3 },
+    { id: "unrelated-large-2", seatCount: 3 },
+  ]);
+  const lockedAssignment = lockedGuestAssignment(party[0], geometry, "anchor");
+  const result = autoAssignSeating({
+    connections: [
+      makeConnection("anchor", "connected-small-1"),
+      makeConnection("anchor", "connected-small-2"),
+    ],
+    geometry,
+    guestPool: party,
+    lockedAssignments: [lockedAssignment],
+    tables,
+  });
+  const usedTableIds = assignedTableIds(result, "registration-a");
+
+  assertEqual(result.assignedSeats.length, 6, "all unlocked party members seated");
+  assertArrayEqual(
+    [...new Set(usedTableIds)].sort(),
+    ["unrelated-large-1", "unrelated-large-2"],
+    "fallback uses exactly two additional tables",
+  );
+  assert(
+    !usedTableIds.includes("connected-small-1") &&
+      !usedTableIds.includes("connected-small-2"),
+    "small connected tables do not increase fragmentation",
+  );
+  assert(
+    result.assignedSeats.every((assigned) => assigned.guest.key !== party[0].key),
+    "locked member is not duplicated",
+  );
+  assert(
+    result.assignedSeats.every(
+      (assigned) => !geometry.seats[assigned.seatIndex].isRabbiTable,
+    ),
+    "ordinary fallback keeps rabbi seats protected",
+  );
+  assertEqual(lockedAssignment.seatKey?.startsWith("anchor:"), true, "lock unchanged");
+});
+
 function seatStable(geometry: ReturnType<typeof computeTableSeats>, index: number): string {
   const seat = geometry.seats[index];
   if (seat.kind === "side" && seat.edge && typeof seat.slot === "number") {
