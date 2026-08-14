@@ -111,12 +111,14 @@ This invariant must stay true across seating work:
   limit for public registration.
 - `physicalSeatCount` is the number of physical chairs produced by the current
   seating geometry.
-- `occupiedSeats` and `freeByLimit` are registration-capacity metrics. They use
-  the capacity bucket occupancy and do not infer demand from the layout.
-- `freePhysical` is a current-layout metric. It subtracts the valid placed guest
-  and reserve occupants from `physicalSeatCount`.
+- `Занято` is the number of actual guests currently seated on physical chairs.
+- `Свободно по лимиту` is registration capacity remaining and continues to use
+  the capacity bucket occupancy rather than current canvas occupants.
+- `Физически свободно` is the physical chair count minus all current guest and
+  reserve occupants.
+- A manual reserve consumes a physical chair but is not a person in `Занято`.
 - Hidden preserved assignments during table editing are restoration state, not
-  current physical occupancy, and are not subtracted from `freePhysical`.
+  current seating occupancy.
 - A placed manual reserve is already a physical occupant and is deducted from
   `freePhysical` exactly once. Rabbi reserve remains a separate informational
   reservation metric; an empty rabbi-reserved chair is still physically free.

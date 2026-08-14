@@ -43,6 +43,19 @@ export type SeatingCapacitySummary = {
   physicalOverflow: number;
 };
 
+export type SeatingMetricsDisplayInput = Omit<SeatingCapacityInput, "occupiedSeats"> & {
+  registrationOccupiedSeats: number;
+  seatedGuestCount: number;
+};
+
+export type SeatingMetricsDisplaySummary = Omit<
+  SeatingCapacitySummary,
+  "occupiedSeats"
+> & {
+  registrationOccupiedSeats: number;
+  seatedGuestCount: number;
+};
+
 // Coerce any number-ish input to a finite, non-negative integer so the summary
 // can never produce NaN/negative noise from a transient or bad value.
 function toCount(value: number | null | undefined): number {
@@ -88,5 +101,24 @@ export function computeSeatingCapacitySummary(
     // No limit → nothing to overflow.
     physicalOverflow:
       capacityLimit === null ? 0 : Math.max(0, physicalSeatCount - capacityLimit),
+  };
+}
+
+export function computeSeatingMetricsDisplaySummary(
+  input: SeatingMetricsDisplayInput,
+): SeatingMetricsDisplaySummary {
+  const { occupiedSeats: registrationOccupiedSeats, ...capacitySummary } =
+    computeSeatingCapacitySummary({
+      capacityLimit: input.capacityLimit,
+      occupiedSeats: input.registrationOccupiedSeats,
+      physicalOccupiedSeats: input.physicalOccupiedSeats,
+      physicalSeatCount: input.physicalSeatCount,
+      reserveSeats: input.reserveSeats,
+    });
+
+  return {
+    ...capacitySummary,
+    registrationOccupiedSeats,
+    seatedGuestCount: toCount(input.seatedGuestCount),
   };
 }

@@ -1,4 +1,7 @@
-import { computeSeatingCapacitySummary } from "../seatingCapacity";
+import {
+  computeSeatingCapacitySummary,
+  computeSeatingMetricsDisplaySummary,
+} from "../seatingCapacity";
 
 let passed = 0;
 const failures: string[] = [];
@@ -42,42 +45,49 @@ test("limit 70, physical 80, occupied 55: overflow + free seats", () => {
 });
 
 test("physical free uses actual placed occupants, not registration occupancy", () => {
-  const summary = computeSeatingCapacitySummary({
+  const summary = computeSeatingMetricsDisplaySummary({
     physicalSeatCount: 40,
     capacityLimit: 40,
-    occupiedSeats: 31,
+    registrationOccupiedSeats: 31,
+    seatedGuestCount: 33,
     physicalOccupiedSeats: 33,
   });
 
-  assertEqual(summary.occupiedSeats, 31, "registration occupancy remains unchanged");
+  assertEqual(summary.registrationOccupiedSeats, 31, "registration occupancy remains unchanged");
+  assertEqual(summary.seatedGuestCount, 33, "occupied card uses current seated guests");
   assertEqual(summary.physicalOccupiedSeats, 33, "actual placed occupants reported");
   assertEqual(summary.freeByLimit, 9, "40 - 31 registration seats");
   assertEqual(summary.freePhysical, 7, "40 - 33 occupied physical chairs");
 });
 
 test("physical free uses zero current occupants while preserved assignments are hidden", () => {
-  const summary = computeSeatingCapacitySummary({
+  const summary = computeSeatingMetricsDisplaySummary({
     physicalSeatCount: 40,
     capacityLimit: 40,
-    occupiedSeats: 31,
+    registrationOccupiedSeats: 31,
+    seatedGuestCount: 0,
     physicalOccupiedSeats: 0,
   });
 
-  assertEqual(summary.occupiedSeats, 31, "registration occupancy remains unchanged");
+  assertEqual(summary.registrationOccupiedSeats, 31, "registration occupancy remains unchanged");
+  assertEqual(summary.seatedGuestCount, 0, "hidden assignments are not currently seated");
   assertEqual(summary.physicalOccupiedSeats, 0, "no current physical occupants");
   assertEqual(summary.freeByLimit, 9, "40 - 31 registration seats");
   assertEqual(summary.freePhysical, 40, "40 - 0 occupied physical chairs");
 });
 
 test("placed reserve in physical occupancy is counted exactly once", () => {
-  const summary = computeSeatingCapacitySummary({
+  const summary = computeSeatingMetricsDisplaySummary({
     physicalSeatCount: 40,
     capacityLimit: 40,
-    occupiedSeats: 31,
+    registrationOccupiedSeats: 31,
+    seatedGuestCount: 32,
     physicalOccupiedSeats: 33,
     reserveSeats: 1,
   });
 
+  assertEqual(summary.seatedGuestCount, 32, "manual reserve does not inflate occupied card");
+  assertEqual(summary.physicalOccupiedSeats, 33, "reserve remains a physical occupant");
   assertEqual(summary.freeByLimit, 9, "reserve does not affect registration limit math");
   assertEqual(summary.freePhysical, 7, "reserve is already one of the 33 physical occupants");
   assertEqual(summary.reserveSeats, 1, "reserve remains separately reported");

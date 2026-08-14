@@ -2,11 +2,11 @@ import { useMemo } from "react";
 import type { ReactNode } from "react";
 
 import {
-  computeSeatingCapacitySummary,
-  type SeatingCapacityInput,
+  computeSeatingMetricsDisplaySummary,
+  type SeatingMetricsDisplayInput,
 } from "../../lib/seatingCapacity";
 
-type SeatingMetricsPanelProps = SeatingCapacityInput & {
+type SeatingMetricsPanelProps = SeatingMetricsDisplayInput & {
   action?: ReactNode;
   rabbiReserveCount: number;
   tableCount: number;
@@ -22,24 +22,33 @@ type SeatingMetricCard = {
 export function SeatingMetricsPanel({
   action,
   capacityLimit,
-  occupiedSeats,
   physicalOccupiedSeats,
   physicalSeatCount,
   rabbiReserveCount,
+  registrationOccupiedSeats,
   reserveSeats = 0,
+  seatedGuestCount,
   tableCount,
   unseatedCount,
 }: SeatingMetricsPanelProps) {
   const summary = useMemo(
     () =>
-      computeSeatingCapacitySummary({
+      computeSeatingMetricsDisplaySummary({
         capacityLimit,
-        occupiedSeats,
         physicalOccupiedSeats,
         physicalSeatCount,
+        registrationOccupiedSeats,
         reserveSeats,
+        seatedGuestCount,
       }),
-    [capacityLimit, occupiedSeats, physicalOccupiedSeats, physicalSeatCount, reserveSeats],
+    [
+      capacityLimit,
+      physicalOccupiedSeats,
+      physicalSeatCount,
+      registrationOccupiedSeats,
+      reserveSeats,
+      seatedGuestCount,
+    ],
   );
   const normalizedRabbiReserveCount = toCount(rabbiReserveCount);
   const normalizedTableCount = toCount(tableCount);
@@ -64,7 +73,7 @@ export function SeatingMetricsPanel({
     {
       id: "occupied",
       label: "занято",
-      value: formatCount(summary.occupiedSeats),
+      value: formatCount(summary.seatedGuestCount),
     },
   ];
 
@@ -97,7 +106,7 @@ export function SeatingMetricsPanel({
   });
 
   const hasShortage = summary.missingPhysical > 0;
-  const seatsNeeded = summary.occupiedSeats + summary.reserveSeats;
+  const seatsNeeded = summary.registrationOccupiedSeats + summary.reserveSeats;
 
   return (
     <section
