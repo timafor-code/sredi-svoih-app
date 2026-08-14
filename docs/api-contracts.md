@@ -1537,6 +1537,7 @@ to the resource visibility rule.
 | POST | `/admin/events` | Create an event. |
 | GET | `/admin/events/{event_id}` | Return one event in admin shape. |
 | PATCH | `/admin/events/{event_id}` | Update editable event fields. |
+| DELETE | `/admin/events/{event_id}` | Hard-delete an event only when no registrations exist. |
 | PUT | `/admin/events/{event_id}/image` | Upload, normalize, and atomically activate or replace the event image. |
 | DELETE | `/admin/events/{event_id}/image` | Idempotently remove a managed or legacy event image reference. |
 | POST | `/admin/events/{event_id}/publish` | Publish an event. |
@@ -1560,6 +1561,18 @@ pagination envelope as public event lists (`limit`, `cursor`, `next_cursor`,
 `has_more`). `GET /admin/events/{event_id}`, `PATCH`, and status actions scope
 the lookup by manageable community and return `404 not_found` for missing or
 cross-community events without revealing private existence.
+
+`DELETE /admin/events/{event_id}` locks and re-reads the manageable event and
+hard-deletes it only when no `event_registrations` row exists. If registration
+history exists, it returns `409 event_has_registrations` without deleting or
+changing the event, registrations, image, or event-owned configuration; admins
+must archive or cancel instead. An allowed deletion relies on the canonical
+database cascades for event-owned rows. Managed image objects are removed
+through the event-image lifecycle before the event transaction commits;
+`event_image_storage_unavailable` prevents a false successful deletion and leaves
+the operation retryable. Legacy or external `image_url` values do not trigger an
+object-storage deletion attempt. Success returns the deleted event snapshot in
+the standard `ApiResponse[AdminEventResponse]` envelope.
 
 `POST /admin/events` creates a manual event with `source_type = 'manual'`,
 `manual_override = true`, and `created_by`/`updated_by` set to the actor. If the

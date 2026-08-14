@@ -475,6 +475,41 @@ async def remove_admin_event_image(
     return event
 
 
+async def delete_managed_event_image_for_event_deletion(
+    session: AsyncSession,
+    event: Event,
+) -> None:
+    """Delete managed objects before the locked event row is deleted.
+
+    The caller owns the transaction and event row lock. Legacy/external URLs have
+    no managed row, so they deliberately bypass object storage.
+    """
+    managed_images = list(
+        await session.scalars(
+            select(EventImage)
+            .where(
+                EventImage.event_id == event.id,
+                EventImage.status != "deleted",
+            )
+            .order_by(EventImage.created_at, EventImage.id)
+            .with_for_update(),
+        ),
+    )
+    if not managed_images:
+        return
+
+    # Preserve the active object until pending cleanup has succeeded so a
+    # failed deletion does not unnecessarily break the event's visible image.
+    managed_images.sort(key=lambda image: image.status == "active")
+    storage = get_event_image_storage()
+    for image in managed_images:
+        _verify_image_matches_event(image, event)
+        if not await _delete_event_image_object(storage, image):
+            raise _storage_unavailable_error()
+    event.image_url = None
+    await session.flush()
+
+
 async def _same_content_event(
     session: AsyncSession,
     actor_user_id: UUID,
@@ -695,20 +730,29 @@ async def _delete_image_row_if_safe(
         if image.status not in {"pending", "delete_pending"}:
             return False
 
-        image.status = "delete_pending"
-        image.updated_at = _now()
-        try:
-            await storage.delete_image(object_key=image.object_key)
-        except EventImageStorageError:
+        if not await _delete_event_image_object(storage, image):
             await session.flush()
             return False
-
-        now = _now()
-        image.status = "deleted"
-        image.deleted_at = now
-        image.updated_at = now
         await session.flush()
         return True
+
+
+async def _delete_event_image_object(
+    storage: S3EventImageStorage,
+    image: EventImage,
+) -> bool:
+    image.status = "delete_pending"
+    image.updated_at = _now()
+    try:
+        await storage.delete_image(object_key=image.object_key)
+    except EventImageStorageError:
+        return False
+
+    now = _now()
+    image.status = "deleted"
+    image.deleted_at = now
+    image.updated_at = now
+    return True
 
 
 async def _mark_nonstored_image_deleted(

@@ -28,6 +28,7 @@ from app.schemas.admin_events import (
     AdminEventCategoryCreateRequest,
     AdminEventCategoryUpdateRequest,
     AdminEventCreateRequest,
+    AdminEventResponse,
     AdminEventOccurrenceResponse,
     AdminEventOccurrencesReplaceRequest,
     AdminEventParticipationOptionUpsertRequest,
@@ -123,6 +124,14 @@ def _validation_error(message: str) -> HTTPException:
 
 def _conflict(message: str) -> HTTPException:
     return _error(http_status.HTTP_409_CONFLICT, "conflict", message)
+
+
+def _event_has_registrations() -> HTTPException:
+    return _error(
+        http_status.HTTP_409_CONFLICT,
+        "event_has_registrations",
+        "Event cannot be deleted because registrations exist. Archive or cancel it instead.",
+    )
 
 
 def _invalid_public_slug(error: InvalidPublicSlugError) -> HTTPException:
@@ -480,6 +489,47 @@ async def update_admin_event(
         await session.flush()
         await session.refresh(event)
         return event
+
+
+async def delete_admin_event(
+    session: AsyncSession,
+    current_user: AppUser,
+    event_id: UUID,
+) -> AdminEventResponse:
+    manageable_community_ids = await resolve_manageable_community_ids(
+        session,
+        current_user,
+    )
+    _require_manageable_communities(manageable_community_ids)
+
+    async with _transaction_scope(session):
+        event = await _lock_admin_event(
+            session,
+            event_id=event_id,
+            manageable_community_ids=manageable_community_ids,
+        )
+        registration_id = await session.scalar(
+            select(EventRegistration.id)
+            .where(EventRegistration.event_id == event.id)
+            .limit(1),
+        )
+        if registration_id is not None:
+            raise _event_has_registrations()
+
+        deleted_snapshot = AdminEventResponse.model_validate(event)
+
+        # Imported locally to avoid the existing admin-event-image service's
+        # dependency on this module while keeping deletion orchestration here.
+        from app.services import admin_event_images as admin_event_images_service
+
+        await admin_event_images_service.delete_managed_event_image_for_event_deletion(
+            session,
+            event,
+        )
+        await session.delete(event)
+        await session.flush()
+
+    return deleted_snapshot
 
 
 async def transition_admin_event_status(
