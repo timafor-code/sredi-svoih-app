@@ -55,6 +55,20 @@ test("physical free uses actual placed occupants, not registration occupancy", (
   assertEqual(summary.freePhysical, 7, "40 - 33 occupied physical chairs");
 });
 
+test("physical free uses zero current occupants while preserved assignments are hidden", () => {
+  const summary = computeSeatingCapacitySummary({
+    physicalSeatCount: 40,
+    capacityLimit: 40,
+    occupiedSeats: 31,
+    physicalOccupiedSeats: 0,
+  });
+
+  assertEqual(summary.occupiedSeats, 31, "registration occupancy remains unchanged");
+  assertEqual(summary.physicalOccupiedSeats, 0, "no current physical occupants");
+  assertEqual(summary.freeByLimit, 9, "40 - 31 registration seats");
+  assertEqual(summary.freePhysical, 40, "40 - 0 occupied physical chairs");
+});
+
 test("placed reserve in physical occupancy is counted exactly once", () => {
   const summary = computeSeatingCapacitySummary({
     physicalSeatCount: 40,

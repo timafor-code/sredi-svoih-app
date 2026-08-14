@@ -115,6 +115,8 @@ This invariant must stay true across seating work:
   the capacity bucket occupancy and do not infer demand from the layout.
 - `freePhysical` is a current-layout metric. It subtracts the valid placed guest
   and reserve occupants from `physicalSeatCount`.
+- Hidden preserved assignments during table editing are restoration state, not
+  current physical occupancy, and are not subtracted from `freePhysical`.
 - A placed manual reserve is already a physical occupant and is deducted from
   `freePhysical` exactly once. Rabbi reserve remains a separate informational
   reservation metric; an empty rabbi-reserved chair is still physically free.

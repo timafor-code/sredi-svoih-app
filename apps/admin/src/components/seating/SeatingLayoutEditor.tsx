@@ -1737,7 +1737,7 @@ export function SeatingLayoutEditor({
               action={capacitySyncButton}
               capacityLimit={capacityLimit}
               occupiedSeats={slot.bucket.occupiedSeats}
-              physicalOccupiedSeats={assignmentRestoreState.occupants.length}
+              physicalOccupiedSeats={seatOccupants.length}
               physicalSeatCount={geometry.physicalSeatCount}
               rabbiReserveCount={rabbiReserveCount}
               reserveSeats={placedReserveCount}
