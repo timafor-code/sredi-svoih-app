@@ -126,7 +126,13 @@ test("more guests than seats leaves overflow unassigned", () => {
 test("regular guests are not placed at the rabbi table", () => {
   const tables = defaultTables();
   const result = autoAssignSeating({
-    guestPool: Array.from({ length: 5 }, (_, i) => makeGuest(i + 1)),
+    guestPool: Array.from({ length: 5 }, (_, i) =>
+      makeGuest(i + 1, {
+        guestIndex: i,
+        guestName: `Ordinary guest ${i + 1}`,
+        source: "guest",
+      }),
+    ),
     tables,
   });
 
@@ -278,6 +284,45 @@ test("hydrate saved assignments restores occupied seats after reopen", () => {
       "restored occupant maps to canvas seat",
     );
   });
+});
+
+test("restore keeps a manual ordinary guest on a rabbi seat", () => {
+  const tables = defaultTables();
+  const geometry = computeTableSeats({ tables });
+  const guest = makeGuest(1, {
+    guestIndex: 0,
+    guestName: "Ordinary guest",
+    source: "guest",
+  });
+  const rabbiSeatIndex = geometry.seats.findIndex((seat) => seat.isRabbiTable);
+  const manualAssignment: SeatingAssignment = {
+    guestInitials: guest.initials,
+    guestLabel: guest.displayName,
+    id: "manual-rabbi-1",
+    layoutId: "layout-1",
+    locked: true,
+    placementSource: "manual",
+    registrationId: guest.registrationId,
+    seatKey: `${geometry.seats[rabbiSeatIndex].tableId}:${seatStable(
+      geometry,
+      rabbiSeatIndex,
+    )}`,
+    type: "guest",
+  };
+
+  const restored = deriveSeatingAssignmentRestoreState({
+    assignments: [manualAssignment],
+    geometry,
+    guestPool: [guest],
+  });
+
+  assertEqual(restored.invalidAssignments.length, 0, "rabbi seat assignment is valid");
+  assertEqual(restored.currentAssignments[0]?.seatKey, manualAssignment.seatKey, "seat retained");
+  assertEqual(restored.occupants.length, 1, "ordinary guest remains seated");
+  assertEqual(restored.occupants[0]?.seatIndex, rabbiSeatIndex, "occupant remains on rabbi seat");
+  assertEqual(restored.occupants[0]?.locked, true, "restored placement remains locked");
+  assertEqual(restored.occupants[0]?.placementSource, "manual", "manual source retained");
+  assertEqual(restored.unassignedGuests.length, 0, "guest is not returned to pool");
 });
 
 test("saved assignment with missing seat key returns guest to unassigned pool", () => {
@@ -446,6 +491,53 @@ test("repeat auto seating preserves locked placements and only seats the pool", 
   );
   // The other three pool guests are seated.
   assertEqual(result.assignedSeats.length, 3, "remaining pool guests seated");
+});
+
+test("repeat auto seating preserves a locked ordinary guest on a rabbi seat", () => {
+  const tables = defaultTables();
+  const geometry = computeTableSeats({ tables });
+  const guests = Array.from({ length: 4 }, (_, i) => makeGuest(i + 1));
+  const lockedSeatIndex = geometry.seats.findIndex((seat) => seat.isRabbiTable);
+  const lockedAssignment: SeatingAssignment = {
+    guestInitials: guests[0].initials,
+    guestLabel: guests[0].displayName,
+    id: "manual-rabbi-1",
+    layoutId: "layout-1",
+    locked: true,
+    placementSource: "manual",
+    registrationId: guests[0].registrationId,
+    seatKey: `${geometry.seats[lockedSeatIndex].tableId}:${seatStable(
+      geometry,
+      lockedSeatIndex,
+    )}`,
+    type: "guest",
+  };
+
+  const result = autoAssignSeating({
+    guestPool: guests,
+    lockedAssignments: [lockedAssignment],
+    tables,
+  });
+
+  assert(
+    result.blockedRabbiSeats.includes(lockedSeatIndex),
+    "locked rabbi seat remains protected from auto",
+  );
+  assert(
+    result.assignedSeats.every((seat) => seat.seatIndex !== lockedSeatIndex),
+    "locked seat is not reused",
+  );
+  assert(
+    result.assignedSeats.every(
+      (seat) => seat.guest.registrationId !== guests[0].registrationId,
+    ),
+    "locked ordinary guest is excluded from the auto queue",
+  );
+  assert(
+    result.assignedSeats.every((seat) => !geometry.seats[seat.seatIndex].isRabbiTable),
+    "remaining ordinary guests use only auto-eligible seats",
+  );
+  assertEqual(result.assignedSeats.length, 3, "only remaining guests are auto seated");
 });
 
 test("repeat auto seating treats a locked reserve seat as blocked and never seats reserves", () => {

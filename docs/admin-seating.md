@@ -1,8 +1,8 @@
 # Admin seating
 
 The seating editor is available from the web-admin registrations capacity bucket
-UI. This document describes the implemented seating flow and the Phase 3 / PR 24
-beta UX polish around guest-pool clarity.
+UI. This document describes the implemented seating flow, including the manual
+administrator override for protected rabbi-table seats.
 
 The seating service uses the shared browser-safe admin `apiClient` and the
 Python `/admin/seating/*` endpoints. The canvas, geometry model, editor UX,
@@ -40,10 +40,12 @@ The seating editor remains a manual operational tool. It helps admins build a
 physical layout and place guests for one selected slot:
 `(event_id, occurrence_id, capacity_unit_id)`.
 
-This PR does not change the seating algorithm, auto-seat behavior, manual-seat
-behavior, capacity reservation logic, donation logic, backend RPCs, or schema.
-The editor must not auto-create guests, auto-seat empty pools, or infer missing
-registrations.
+Manual drag/drop is an explicit administrator operation and may place any
+registered participant or guest on a rabbi-table seat. This does not change the
+automatic seating algorithm: rabbi seats remain protected from ordinary auto
+placement. Capacity reservation logic, donation logic, backend RPCs, and schema
+are unchanged. The editor must not auto-create guests, auto-seat empty pools, or
+infer missing registrations.
 
 ## Backend Architecture
 
@@ -173,6 +175,8 @@ Assignment behavior:
 - ordinary auto seating excludes rabbi-table seats;
 - manual drag/drop supports pool-to-seat, seat-to-seat, occupied-seat swap, and
   seat-to-pool;
+- manual drag/drop may place or swap ordinary participants and registration
+  guests onto rabbi-table seats as an explicit administrator override;
 - manually placed guests are saved as manual/locked assignments;
 - repeat auto seating preserves manual/locked assignments and placed reserves,
   then fills only free eligible seats;
@@ -209,6 +213,11 @@ instance. There is no live binding back to the template.
 
 Every valid layout has exactly one rabbi table. Its head seat is visually marked
 with a star, and ordinary auto seating does not place guests at the rabbi table.
+Administrators may nevertheless place any participant, registration guest, or
+operational reserve there through manual drag/drop, including occupied-seat
+displacement and swaps. Those placements remain manual/locked and survive
+reopen and repeat auto seating. Explicit rabbi guest and rabbi-head automatic
+behavior are unchanged.
 
 Reserves are operational placeholders for physical chairs:
 
@@ -270,46 +279,40 @@ Print behavior:
 
 Not run by Codex. Manual smoke is performed by the project owner.
 
-1. Open Registrations page as admin.
-2. Select an event and occurrence with a capacity bucket.
-3. Open the seating editor from that bucket.
-4. Confirm the modal states that seating is a manual tool for the selected slot.
-5. Open a slot where the guest pool is empty.
-6. Confirm the empty guest pool warning explains possible causes.
-7. Confirm donation-only registrations are described as non-seat items.
-8. Confirm empty guest pool does not auto-create guests.
-9. Confirm empty guest pool does not auto-seat anyone.
-10. Confirm capacity limit is described separately from physical seats.
-11. Confirm existing layout editing still works.
-12. Confirm manual drag/drop still works when guests exist.
-13. Confirm auto seating still uses the existing behavior when guests exist.
-14. Complete a seating and confirm the `Печать рассадки` button is enabled.
-15. Click `Печать рассадки` and confirm the browser print dialog opens.
-16. Confirm the print preview starts with the seating document on page 1, not an
-    empty first page.
-17. In print preview, confirm the scheme fits A4 landscape.
-18. Confirm the print header shows event title, occurrence/slot subtitle,
-    capacity bucket title, and print timestamp.
-19. Confirm the scheme shows compact labels like `ТГ 12`.
-20. Confirm empty seats show readable print numbers.
-21. Confirm occupied seat numbers are logical by table/visual order, not raw
-    geometry order.
-22. Confirm the legend is compact and sorted by print number.
-23. Confirm no third page is created just for one or two legend rows.
-24. Confirm placed reserves and unseated reserves are labelled `Резерв`.
-25. Confirm unseated guests/reserves appear in `Не рассажены`.
-26. Confirm email and phone do not appear in print preview.
-27. Save as PDF via browser print.
-28. Confirm the editor is restored after closing the print dialog.
-29. Confirm no RPC/schema/seating algorithm/Excel schema changes were made.
-30. Confirm no browser smoke was run by Codex.
+1. Open a seating layout containing a rabbi table.
+2. Drag an ordinary participant from `Не рассажены` onto a free rabbi seat.
+3. Confirm the placement succeeds.
+4. Drag an ordinary registration guest onto another free rabbi seat.
+5. Confirm the placement succeeds.
+6. Move an already seated ordinary guest from a regular seat onto a rabbi seat.
+7. Confirm the move succeeds.
+8. Swap an ordinary guest on a regular seat with an occupant on a rabbi seat.
+9. Confirm the swap succeeds.
+10. Swap again in the opposite direction and confirm an ordinary displaced guest
+    can remain on the rabbi seat.
+11. Confirm operational reserves still move to/from rabbi seats normally.
+12. Save the seating.
+13. Close the seating editor.
+14. Reopen it.
+15. Confirm manually placed ordinary guests remain on their rabbi seats.
+16. Run automatic seating again.
+17. Confirm the manually placed ordinary guests remain locked and are not moved.
+18. Start from a clean layout with no manually placed ordinary guests on rabbi
+    seats.
+19. Run automatic seating.
+20. Confirm ordinary guests do not automatically consume protected rabbi seats.
+21. Confirm the explicit rabbi guest behavior is unchanged.
+22. Confirm rabbi head behavior is unchanged.
+23. Confirm normal manual seating on regular tables still works.
+24. Confirm `Весь список`, save/reopen, reserves, metrics, and printing still work
+    normally.
 
 ## Out Of Scope
 
 - RPC changes;
 - Supabase schema or migrations;
 - seating algorithm changes;
-- auto-seat/manual-seat behavior changes;
+- automatic seating distribution changes beyond retaining rabbi-seat protection;
 - capacity reservation business logic changes;
 - donation business logic changes;
 - seat-by-seat seating assignment export;
@@ -321,4 +324,4 @@ Not run by Codex. Manual smoke is performed by the project owner.
 
 ## Next PR
 
-`feature/admin-seating-rabbi-manual-override`
+`feature/admin-seating-party-autoassign`
