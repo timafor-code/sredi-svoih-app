@@ -438,6 +438,10 @@ export function SeatingLayoutEditor({
     () => (isSeatingDone ? assignmentRestoreState.occupants : []),
     [assignmentRestoreState.occupants, isSeatingDone],
   );
+  const seatedGuestCount = useMemo(
+    () => seatOccupants.filter((occupant) => occupant.type === "guest").length,
+    [seatOccupants],
+  );
   const currentAssignments = useMemo(
     () => (isSeatingDone ? assignmentRestoreState.currentAssignments : assignments),
     [assignmentRestoreState.currentAssignments, assignments, isSeatingDone],
@@ -1736,10 +1740,12 @@ export function SeatingLayoutEditor({
             <SeatingMetricsPanel
               action={capacitySyncButton}
               capacityLimit={capacityLimit}
-              occupiedSeats={slot.bucket.occupiedSeats}
+              physicalOccupiedSeats={seatOccupants.length}
               physicalSeatCount={geometry.physicalSeatCount}
               rabbiReserveCount={rabbiReserveCount}
+              registrationOccupiedSeats={slot.bucket.occupiedSeats}
               reserveSeats={placedReserveCount}
+              seatedGuestCount={seatedGuestCount}
               tableCount={tables.length}
               unseatedCount={unassignedGuestPool.length + pooledReserves.length}
             />
