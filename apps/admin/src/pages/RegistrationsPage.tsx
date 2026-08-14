@@ -499,6 +499,13 @@ export function RegistrationsPage() {
       occurrences.find((occurrence) => occurrence.id === selectedOccurrenceId) ?? null,
     [occurrences, selectedOccurrenceId],
   );
+  const selectedCapacityUnit = useMemo(
+    () =>
+      capacityAnalytics?.buckets.find(
+        (bucket) => bucket.capacityUnitId === selectedCapacityUnitId,
+      ) ?? null,
+    [capacityAnalytics, selectedCapacityUnitId],
+  );
   const isOccurrenceContextMissing = eventHasOccurrences && !selectedOccurrence;
   const exportOccurrence =
     eventHasOccurrences && selectedOccurrence ? selectedOccurrence : null;
@@ -731,6 +738,7 @@ export function RegistrationsPage() {
     void exportEventRegistrationsToExcel(selectedEvent, {
       occurrence: exportOccurrence,
       capacityUnitId: selectedCapacityUnitId,
+      capacityUnitTitle: selectedCapacityUnit?.title ?? null,
     })
       .then((result) => {
         pushToast("success", `Excel готов: ${formatRegistrationCount(result.rowCount)}.`);
@@ -751,6 +759,7 @@ export function RegistrationsPage() {
     isOccurrenceContextMissing,
     pushToast,
     selectedCapacityUnitId,
+    selectedCapacityUnit,
     selectedEvent,
   ]);
 

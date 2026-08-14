@@ -27,11 +27,13 @@ type RegistrationExcelExportOccurrence = Pick<
 export type RegistrationExcelExportOptions = {
   occurrence?: RegistrationExcelExportOccurrence | null;
   capacityUnitId?: string | null;
+  capacityUnitTitle?: string | null;
 };
 
 type RegistrationExcelExportScope = {
   occurrence: RegistrationExcelExportOccurrence | null;
   capacityUnitId: string | null;
+  capacityUnitTitle: string | null;
 };
 
 type RegistrationExportColumn = {
@@ -154,6 +156,7 @@ export async function exportEventRegistrationsToExcel(
   const scope: RegistrationExcelExportScope = {
     occurrence: options.occurrence ?? null,
     capacityUnitId: options.capacityUnitId ?? null,
+    capacityUnitTitle: options.capacityUnitTitle ?? null,
   };
   const registrations = await fetchAllEventRegistrations(event.eventId, scope);
   const sheets = createRegistrationSheets(event, registrations, scope);
@@ -620,10 +623,14 @@ function buildExportFileName(
   const occurrencePart = scope.occurrence
     ? formatOccurrenceForFileName(scope.occurrence)
     : null;
+  const capacityUnitPart = scope.capacityUnitTitle?.trim()
+    ? sanitizeFileNamePart(scope.capacityUnitTitle)
+    : null;
   const parts = [
     "registrations",
     sanitizeFileNamePart(eventTitle),
     occurrencePart,
+    capacityUnitPart,
     formatDateForFileName(new Date()),
   ].filter((part): part is string => Boolean(part));
 
