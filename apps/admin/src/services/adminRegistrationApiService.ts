@@ -292,6 +292,7 @@ export async function listEventRegistrations(
     `/admin/events/${encodeURIComponent(params.eventId)}/registrations`,
     {
       query: {
+        capacity_unit_id: params.capacityUnitId ?? undefined,
         limit: params.limit ?? undefined,
         occurrence_id: params.occurrenceId ?? undefined,
         offset: params.offset ?? undefined,

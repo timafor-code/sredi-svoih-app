@@ -145,6 +145,7 @@ export type AdminEventRegistrationRow = {
 export type ListEventRegistrationsParams = {
   eventId: string;
   occurrenceId?: string | null;
+  capacityUnitId?: string | null;
   status?: AdminRegistrationStatus | "all" | null;
   sourceChannel?: AdminRegistrationSourceFilter | null;
   search?: string | null;

@@ -228,6 +228,27 @@ async def _validate_occurrence(
     return occurrence
 
 
+async def _validate_capacity_unit(
+    session: AsyncSession,
+    *,
+    event_id: UUID,
+    capacity_unit_id: UUID | None,
+) -> EventCapacityUnit | None:
+    if capacity_unit_id is None:
+        return None
+
+    capacity_unit = await session.scalar(
+        select(EventCapacityUnit).where(
+            EventCapacityUnit.id == capacity_unit_id,
+            EventCapacityUnit.event_id == event_id,
+        ),
+    )
+    if capacity_unit is None:
+        raise _not_found("Capacity unit not found")
+
+    return capacity_unit
+
+
 def build_selected_option_response(
     selection: EventRegistrationOptionSelection,
 ) -> AdminRegistrationSelectedOptionResponse:
@@ -385,6 +406,7 @@ async def list_admin_event_registrations(
     event_id: UUID,
     *,
     occurrence_id: UUID | None,
+    capacity_unit_id: UUID | None,
     status: str | None,
     source_channel: str | None,
     search: str | None,
@@ -397,6 +419,11 @@ async def list_admin_event_registrations(
         event_id=event.id,
         occurrence_id=occurrence_id,
     )
+    await _validate_capacity_unit(
+        session,
+        event_id=event.id,
+        capacity_unit_id=capacity_unit_id,
+    )
     status_filter = _normalize_status_filter(status)
     source_channel_filter = _normalize_source_channel_filter(source_channel)
 
@@ -407,6 +434,55 @@ async def list_admin_event_registrations(
         query = query.where(EventRegistration.status == status_filter)
     if source_channel_filter is not None:
         query = query.where(EventRegistration.source_channel == source_channel_filter)
+    if capacity_unit_id is not None:
+        persisted_reservation_exists = (
+            select(EventRegistrationCapacityReservation.id)
+            .where(
+                EventRegistrationCapacityReservation.registration_id
+                == EventRegistration.id,
+                EventRegistrationCapacityReservation.event_id == event.id,
+                EventRegistrationCapacityReservation.capacity_unit_id
+                == capacity_unit_id,
+            )
+            .exists()
+        )
+        matching_persisted_reservation_exists = (
+            select(EventRegistrationCapacityReservation.id)
+            .where(
+                EventRegistrationCapacityReservation.registration_id
+                == EventRegistration.id,
+                EventRegistrationCapacityReservation.event_id == event.id,
+                EventRegistrationCapacityReservation.capacity_unit_id
+                == capacity_unit_id,
+                EventRegistrationCapacityReservation.option_id
+                == EventRegistrationOptionSelection.option_id,
+            )
+            .exists()
+        )
+        fallback_selection_exists = (
+            select(EventRegistrationOptionSelection.id)
+            .join(
+                EventParticipationOptionCapacityUnit,
+                EventParticipationOptionCapacityUnit.option_id
+                == EventRegistrationOptionSelection.option_id,
+            )
+            .where(
+                EventRegistrationOptionSelection.registration_id
+                == EventRegistration.id,
+                EventRegistrationOptionSelection.option_id.is_not(None),
+                EventRegistrationOptionSelection.is_donation.is_(False),
+                EventRegistrationOptionSelection.counts_toward_capacity.is_(True),
+                EventRegistrationOptionSelection.quantity > 0,
+                EventParticipationOptionCapacityUnit.event_id == event.id,
+                EventParticipationOptionCapacityUnit.capacity_unit_id
+                == capacity_unit_id,
+                ~matching_persisted_reservation_exists,
+            )
+            .exists()
+        )
+        query = query.where(
+            or_(persisted_reservation_exists, fallback_selection_exists),
+        )
 
     normalized_search = _first_text(search)
     if normalized_search is not None:
