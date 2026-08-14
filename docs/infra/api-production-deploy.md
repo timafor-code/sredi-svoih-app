@@ -50,7 +50,7 @@ EXPO_PUBLIC_API_URL                         VITE_API_URL
 
 | Component | Verified repository fact | Production requirement / owner decision |
 | --- | --- | --- |
-| API | `apps/api` is FastAPI. `apps/api/Dockerfile.local` starts `uvicorn app.main:app --host 0.0.0.0 --port 8000`. | Choose Russia-hosted compute, runner, registry, private network, supervision, and resource limits. No production Compose file, systemd unit, proxy configuration, or provider is checked in. |
+| API | `apps/api` is FastAPI. `apps/api/Dockerfile` is the production image and starts `uvicorn app.main:app --host 0.0.0.0 --port 8000`; `apps/api/Dockerfile.local` is local-development-only. | Choose Russia-hosted compute, runner, registry, private network, supervision, and resource limits. No production Compose file, systemd unit, proxy configuration, or provider is checked in. |
 | Privacy erasure worker | `python -m app.workers.privacy_erasure` is a separate process using the same backend image and PostgreSQL/storage/email dependencies. It is not a FastAPI background task and exposes no HTTP trigger. | Supervise it independently from FastAPI. Run one or more instances only after migrations and dependencies are ready, with the backend-only enable flag and mandatory erasure/retention configuration reviewed. |
 | PostgreSQL | The local contour uses `postgres:16-alpine` as `api_postgres`, locally bound at `127.0.0.1:55432:5432`. Alembic is under `apps/api/alembic`. | Run PostgreSQL in Russia on a private network. Do not expose 5432 to the public, mobile, or web-admin. Choose managed/self-managed operation, availability, and backups. |
 | Object storage | Local MinIO service `api_object_storage` exposes port 9000 internally and creates the private `avatars` bucket with anonymous access disabled. | Use Russia-hosted S3-compatible storage and a private bucket. Choose public signed-URL hostname, TLS, CORS, versioning, lifecycle, and recovery. Local MinIO is not the production provider. |
@@ -60,10 +60,11 @@ EXPO_PUBLIC_API_URL                         VITE_API_URL
 
 ### Local Compose is not a production recipe
 
-`infra/docker-compose.api.yml` is a local development contour only. It uses
-synthetic local PostgreSQL, MinIO, JWT, token-hash, and storage values from
-`infra/env/api.env.example`; publishes `8000:8000`; has no TLS; and has no
-production secret integration. Do not copy it or its values to production.
+`infra/docker-compose.api.yml` and the `apps/api/Dockerfile.local` images it
+builds are a local development contour only. They use synthetic local
+PostgreSQL, MinIO, JWT, token-hash, and storage values from
+`infra/env/api.env.example`; publish `8000:8000`; have no TLS; and have no
+production secret integration. Do not copy them or their values to production.
 
 It is useful only as a verified reference for local services: `api_backend`,
 `api_postgres`, `api_object_storage`, `api_object_storage_init`, and the
@@ -255,12 +256,12 @@ infrastructure. Run them only after owner approval and secret injection.
 1. **Prepare an immutable release.** Use an approved revision in a controlled
    deployment workspace. Record commit SHA/release tag; never build from an
    unreviewed worktree.
-2. **Build the verified API source.** The only API Dockerfile is
-   `apps/api/Dockerfile.local`, which exposes port 8000. A standard Docker
+2. **Build the verified API source.** The dedicated production image is defined
+   by `apps/api/Dockerfile` and exposes container port 8000. A standard Docker
    build grounded in that path is:
 
    ```powershell
-   docker build -f apps/api/Dockerfile.local -t sredi-svoih-api:<immutable-release> apps/api
+   docker build -f apps/api/Dockerfile -t sredi-svoih-api:<immutable-release> apps/api
    ```
 
    This does not define a production runner, registry, network, or secret
