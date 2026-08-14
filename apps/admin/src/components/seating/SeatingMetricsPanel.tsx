@@ -23,6 +23,7 @@ export function SeatingMetricsPanel({
   action,
   capacityLimit,
   occupiedSeats,
+  physicalOccupiedSeats,
   physicalSeatCount,
   rabbiReserveCount,
   reserveSeats = 0,
@@ -34,10 +35,11 @@ export function SeatingMetricsPanel({
       computeSeatingCapacitySummary({
         capacityLimit,
         occupiedSeats,
+        physicalOccupiedSeats,
         physicalSeatCount,
         reserveSeats,
       }),
-    [capacityLimit, occupiedSeats, physicalSeatCount, reserveSeats],
+    [capacityLimit, occupiedSeats, physicalOccupiedSeats, physicalSeatCount, reserveSeats],
   );
   const normalizedRabbiReserveCount = toCount(rabbiReserveCount);
   const normalizedTableCount = toCount(tableCount);

@@ -111,6 +111,13 @@ This invariant must stay true across seating work:
   limit for public registration.
 - `physicalSeatCount` is the number of physical chairs produced by the current
   seating geometry.
+- `occupiedSeats` and `freeByLimit` are registration-capacity metrics. They use
+  the capacity bucket occupancy and do not infer demand from the layout.
+- `freePhysical` is a current-layout metric. It subtracts the valid placed guest
+  and reserve occupants from `physicalSeatCount`.
+- A placed manual reserve is already a physical occupant and is deducted from
+  `freePhysical` exactly once. Rabbi reserve remains a separate informational
+  reservation metric; an empty rabbi-reserved chair is still physically free.
 - Changing table geometry never automatically changes the registration limit.
 - Limit 70 / physical seats 80 is valid: the extra 10 physical seats are an
   operational reserve buffer.

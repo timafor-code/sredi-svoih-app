@@ -33,11 +33,40 @@ test("limit 70, physical 80, occupied 55: overflow + free seats", () => {
   assertEqual(summary.physicalSeatCount, 80, "physical");
   assertEqual(summary.capacityLimit, 70, "limit");
   assertEqual(summary.occupiedSeats, 55, "occupied");
+  assertEqual(summary.physicalOccupiedSeats, 55, "physical occupancy falls back safely");
   assertEqual(summary.reserveSeats, 0, "reserves default 0");
   assertEqual(summary.freeByLimit, 15, "70 - 55");
   assertEqual(summary.freePhysical, 25, "80 - 55 - 0");
   assertEqual(summary.missingPhysical, 0, "no shortage");
   assertEqual(summary.physicalOverflow, 10, "80 - 70");
+});
+
+test("physical free uses actual placed occupants, not registration occupancy", () => {
+  const summary = computeSeatingCapacitySummary({
+    physicalSeatCount: 40,
+    capacityLimit: 40,
+    occupiedSeats: 31,
+    physicalOccupiedSeats: 33,
+  });
+
+  assertEqual(summary.occupiedSeats, 31, "registration occupancy remains unchanged");
+  assertEqual(summary.physicalOccupiedSeats, 33, "actual placed occupants reported");
+  assertEqual(summary.freeByLimit, 9, "40 - 31 registration seats");
+  assertEqual(summary.freePhysical, 7, "40 - 33 occupied physical chairs");
+});
+
+test("placed reserve in physical occupancy is counted exactly once", () => {
+  const summary = computeSeatingCapacitySummary({
+    physicalSeatCount: 40,
+    capacityLimit: 40,
+    occupiedSeats: 31,
+    physicalOccupiedSeats: 33,
+    reserveSeats: 1,
+  });
+
+  assertEqual(summary.freeByLimit, 9, "reserve does not affect registration limit math");
+  assertEqual(summary.freePhysical, 7, "reserve is already one of the 33 physical occupants");
+  assertEqual(summary.reserveSeats, 1, "reserve remains separately reported");
 });
 
 // limit 70 / physical 60 / occupied 68 / reserves 0
@@ -92,6 +121,7 @@ test("reserves reduce freePhysical but not occupiedSeats", () => {
   assertEqual(withReserves.freeByLimit, base.freeByLimit, "limit math ignores reserves");
   assertEqual(withReserves.freePhysical, 20, "80 - 55 - 5");
   assertEqual(base.freePhysical, 25, "80 - 55 - 0");
+  assertEqual(withReserves.physicalOccupiedSeats, 60, "fallback includes placed reserves");
   assertEqual(withReserves.reserveSeats, 5, "reserves reported");
   // Reserves do feed the physical shortage check.
   const tight = computeSeatingCapacitySummary({
@@ -134,6 +164,18 @@ test("non-finite and negative inputs are sanitised", () => {
   assertEqual(summary.freePhysical, 0, "0 - 0 - 0");
   assertEqual(summary.missingPhysical, 0, "0 needed");
   assertEqual(summary.physicalOverflow, 0, "no limit");
+});
+
+test("explicit invalid physical occupancy is sanitised", () => {
+  const summary = computeSeatingCapacitySummary({
+    physicalSeatCount: 40,
+    capacityLimit: 40,
+    occupiedSeats: 31,
+    physicalOccupiedSeats: Number.NaN,
+  });
+
+  assertEqual(summary.physicalOccupiedSeats, 0, "NaN physical occupancy -> 0");
+  assertEqual(summary.freePhysical, 40, "sanitised occupancy is used safely");
 });
 
 // A zero or non-positive limit is "без лимита", not a real limit of 0.

@@ -16,6 +16,9 @@ export type SeatingCapacityInput = {
   physicalSeatCount: number;
   capacityLimit: number | null;
   occupiedSeats: number;
+  // Actual valid occupants placed on the current physical seating layout.
+  // When omitted, legacy callers fall back to occupiedSeats + reserveSeats.
+  physicalOccupiedSeats?: number;
   reserveSeats?: number;
 };
 
@@ -23,11 +26,13 @@ export type SeatingCapacitySummary = {
   physicalSeatCount: number;
   capacityLimit: number | null;
   occupiedSeats: number;
+  physicalOccupiedSeats: number;
   reserveSeats: number;
   // capacityLimit − occupiedSeats; `null` when there is no limit (not 0/NaN).
   freeByLimit: number | null;
-  // physicalSeatCount − occupiedSeats − reserveSeats, clamped to >= 0. The
-  // deficit (when it would go negative) is reported by `missingPhysical`.
+  // physicalSeatCount minus actual occupied physical chairs, clamped to >= 0.
+  // Explicit physical occupancy already includes placed reserves, so reserves
+  // are not subtracted from it a second time.
   freePhysical: number;
   // max(0, occupiedSeats + reserveSeats − physicalSeatCount): how many chairs
   // are missing for everyone who must be seated. Computed the same way whether
@@ -62,6 +67,10 @@ export function computeSeatingCapacitySummary(
   const physicalSeatCount = toCount(input.physicalSeatCount);
   const occupiedSeats = toCount(input.occupiedSeats);
   const reserveSeats = toCount(input.reserveSeats);
+  const physicalOccupiedSeats =
+    input.physicalOccupiedSeats === undefined
+      ? occupiedSeats + reserveSeats
+      : toCount(input.physicalOccupiedSeats);
   const capacityLimit = normalizeLimit(input.capacityLimit);
 
   const seatsNeeded = occupiedSeats + reserveSeats;
@@ -70,10 +79,11 @@ export function computeSeatingCapacitySummary(
     physicalSeatCount,
     capacityLimit,
     occupiedSeats,
+    physicalOccupiedSeats,
     reserveSeats,
     // Guard the null limit BEFORE the subtraction — never `null − number`.
     freeByLimit: capacityLimit === null ? null : capacityLimit - occupiedSeats,
-    freePhysical: Math.max(0, physicalSeatCount - seatsNeeded),
+    freePhysical: Math.max(0, physicalSeatCount - physicalOccupiedSeats),
     missingPhysical: Math.max(0, seatsNeeded - physicalSeatCount),
     // No limit → nothing to overflow.
     physicalOverflow:
