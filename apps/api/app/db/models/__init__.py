@@ -38,6 +38,7 @@ from app.db.models.imports import (
     EventImportSource,
 )
 from app.db.models.event_image import EventImage
+from app.db.models.privacy_financial_review import PrivacyFinancialReviewEvidence
 from app.db.models.seating import (
     EventSeatingAssignment,
     EventSeatingLayout,
@@ -94,6 +95,7 @@ __all__ = [
     "PrivacyAccessCode",
     "PrivacyAccessSession",
     "PrivacyDestructionEvidence",
+    "PrivacyFinancialReviewEvidence",
     "PrivacyRequest",
     "Profile",
     "ProfileAvatar",
