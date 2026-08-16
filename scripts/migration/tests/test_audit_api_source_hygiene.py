@@ -29,6 +29,12 @@ class ClassificationTests(unittest.TestCase):
             <= set(AUDIT.PROMOTE.EXCLUDED_TABLES),
         )
 
+    def test_privacy_review_evidence_is_part_of_privacy_history(self) -> None:
+        self.assertIn(
+            "privacy_financial_review_evidence",
+            AUDIT.PRIVACY_HISTORY_TABLES,
+        )
+
     def test_text_columns_only_returns_textual_schema_columns(self) -> None:
         schema = AUDIT.PROMOTE.TableSchema(
             name="events",
