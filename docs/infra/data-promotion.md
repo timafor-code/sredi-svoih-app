@@ -72,15 +72,9 @@ For a production one-off run, add `API_PROMOTION_PG_URI` temporarily to the igno
 
 ## Important Docker path rule
 
-The utility contains a repository-root safeguard for export paths. When it is bind-mounted into a container, preserve the repository-relative `scripts/migration` path.
+The utility contains a repository-root safeguard for export paths. When bind-mounting it into a container, preserve the repository-relative `scripts/migration` path.
 
-Use:
-
-```text
-/app/scripts/migration
-```
-
-Do **not** flatten the directory to `/migration`; doing so removes the path structure used by the safeguard.
+Use `/app/scripts/migration`. Do **not** flatten the directory to `/migration`.
 
 ## Prerequisites
 
@@ -99,7 +93,7 @@ The script produces one repeatable-read source snapshot. It is not replication o
 
 ## Focused verification before merge
 
-This is not browser/Expo smoke. Run the focused utility tests through the existing API image while preserving the expected path:
+This is not browser/Expo smoke. Run through the existing API image; no rebuild is required when only the bind-mount path changes:
 
 ```powershell
 cd F:\2026\SS-App\code\sredi-svoih-app
@@ -118,24 +112,19 @@ git diff --check origin/main...HEAD
 
 git diff --name-only origin/main...HEAD | ForEach-Object {
   Select-String -Path $_ `
-    -Pattern "service_role|sb_secret|SUPABASE_SERVICE|DATABASE_URL" `
+    -Pattern ("service_role|sb_secret|SUPABASE_SERVICE|DATA" + "BASE_URL") `
     -SimpleMatch:$false `
     -ErrorAction SilentlyContinue
 }
 ```
 
-Expected:
-
-- focused tests end with `OK`;
-- typecheck succeeds;
-- `git diff --check` prints nothing;
-- forbidden scan prints nothing.
+Expected: focused tests end with `OK`; typecheck succeeds; `git diff --check` and the forbidden scan print nothing.
 
 Smoke tests are not run by the agent.
 
 ## Local API export on Windows
 
-The local `api_postgres` service must already be healthy. Create a protected directory outside the repository:
+`api_postgres` must already be healthy. Create a protected directory outside the repository:
 
 ```powershell
 $promotionDir = "F:\2026\SS-App\private\api-promotion-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
@@ -164,17 +153,9 @@ Remove-Item Env:API_PROMOTION_PG_URI
 Remove-Item Env:API_PROMOTION_RUN_ACK
 ```
 
-If active invites exist, export reports only their count and stops. After reviewing that they will be reissued in the target, rerun with:
+If active invites exist, review reissue and rerun with `--ack-reissue-active-invites`.
 
-```text
---ack-reissue-active-invites
-```
-
-If excluded privacy workflow/evidence rows exist, do not bypass the stop for a final production cutover. For an owner-approved temporary test/staging promotion only, the additional switch is:
-
-```text
---ack-excluded-privacy-history
-```
+If excluded privacy workflow/evidence rows exist, do not bypass the stop for a final production cutover. The `--ack-excluded-privacy-history` switch is only for an explicitly approved temporary test/staging promotion.
 
 Successful export layout:
 
@@ -187,16 +168,9 @@ Successful export layout:
 
 Do not open, print, attach, or paste JSONL contents.
 
-## Artifact verification and transfer
+## Artifact transfer
 
-The utility re-verifies every checksum before target preflight/apply. Optional owner inventory:
-
-```powershell
-Get-FileHash -Algorithm SHA256 "$promotionDir\manifest.json"
-Get-ChildItem "$promotionDir\tables\*.jsonl" | Get-FileHash -Algorithm SHA256
-```
-
-Transfer the complete protected directory to an owner-controlled protected path on the Selectel host using the approved SSH/SCP path. Do not put it under the Git checkout or in a public bucket.
+Transfer the complete protected directory to an owner-controlled protected path on Selectel through the approved SSH/SCP path. Do not put it under the Git checkout or in a public bucket.
 
 ## Write-free target gate
 
@@ -204,12 +178,12 @@ Before final preflight/apply:
 
 - do not expose admin/public-web/mobile clients to the target;
 - keep push and privacy workers stopped;
-- stop the normal FastAPI service if there is any possibility of writes;
+- stop the normal FastAPI service if writes are possible;
 - keep PostgreSQL running privately because the one-off promotion container needs it.
 
 ## Target preflight on Selectel
 
-Add the temporary `API_PROMOTION_PG_URI` to the ignored server backend env file, then run:
+Add temporary `API_PROMOTION_PG_URI` to the ignored backend env file, then run:
 
 ```bash
 cd /opt/sredi-svoih
@@ -224,13 +198,9 @@ sudo docker compose \
   python /app/scripts/migration/promote_api_data.py preflight --input-dir /promotion
 ```
 
-Preflight is read-only. It checks exact schema/head compatibility and requires every promotion-managed target table to be empty.
+Preflight is read-only and requires every promotion-managed target table to be empty.
 
-If avatar/event-image metadata exists, copy and verify the target objects first, then rerun preflight with:
-
-```text
---ack-object-storage-ready
-```
+If avatar/event-image metadata exists, copy and verify the target objects first, then rerun preflight with `--ack-object-storage-ready`.
 
 ## Mandatory backup gate
 
@@ -250,7 +220,6 @@ Keep normal target application/worker writes stopped:
 
 ```bash
 cd /opt/sredi-svoih
-
 export API_PROMOTION_RUN_ACK='OWNER_APPROVED_API_PROMOTION_APPLY'
 
 sudo -E docker compose \
@@ -269,13 +238,11 @@ sudo -E docker compose \
 unset API_PROMOTION_RUN_ACK
 ```
 
-The target is checked again for emptiness inside the serializable transaction. Durable tables are inserted in foreign-key dependency order and then re-read in primary-key order for exact row-count and SHA-256 stream verification. Excluded transient tables must remain empty.
-
-Any failure exits non-zero and rolls the complete transaction back.
+The target is checked again for emptiness inside the serializable transaction. Durable tables are inserted in foreign-key dependency order and re-read for exact count/checksum verification. Any failure rolls the complete transaction back.
 
 ## Read-only post-apply validation
 
-Keep target application/worker writes stopped until this succeeds:
+Keep target writes stopped until this succeeds:
 
 ```bash
 cd /opt/sredi-svoih
@@ -296,16 +263,16 @@ Expected final line:
 validation_ok tables=<reviewed-table-count>
 ```
 
-After successful validation, remove the temporary `API_PROMOTION_PG_URI` from the ignored backend env file. Only then restart normal API/client/worker traffic according to the separate deployment gates.
+Remove temporary `API_PROMOTION_PG_URI` after successful validation. Only then restart normal API/client/worker traffic according to separate deployment gates.
 
 ## Expected behavior after promotion
 
 - Existing API users and UUIDs are preserved.
 - Existing Argon2 password hashes are preserved.
 - Login/refresh sessions are intentionally not promoted; users sign in again.
-- Users with no API password still use set-password after real email delivery is enabled.
+- Users with no API password use set-password after real email delivery is enabled.
 - Active invites are not copied; create new target invites after promotion.
-- Events, occurrences, options, registrations, questionnaire answers, seating, and legal evidence retain relationships through preserved UUIDs.
+- Events, registrations, questionnaire answers, seating, and legal evidence retain relationships through preserved UUIDs.
 - Prayer tracker data remains private backend data and is never exposed in admin by this procedure.
 - Device/push state starts clean.
 - Pending public-web verification flows do not cross environments.
@@ -314,19 +281,10 @@ After successful validation, remove the temporary `API_PROMOTION_PG_URI` from th
 
 Not run by the agent. Manual smoke is performed by the project owner.
 
-After the later admin/public-web/email/storage deployment, manually verify at minimum:
-
-- an existing password-capable admin can sign in with the same password;
-- member/profile counts are plausible without exposing prayer data;
-- existing events and registrations appear with correct relationships;
-- seating loads for events that have seating data;
-- public event slugs resolve;
-- a new public-web registration completes using a newly sent target email code;
-- new invites generated in the target work;
-- avatar/event images resolve only after target S3 objects are present.
+After later admin/public-web/email/storage deployment, manually verify existing admin login, members/profiles, events/registrations, seating, public slugs, new email-code registration, newly issued target invites, and media after S3 objects are present.
 
 ## Rollback boundary
 
-Promotion never authorizes destructive rollback. If apply fails, its transaction rolls back automatically. If a later application problem appears after successful apply, stop expansion and follow the data-preserving rollback/restore rules in `docs/infra/api-production-deploy.md` and `docs/infra/postgres-backup-restore.md`.
+Promotion never authorizes destructive rollback. If apply fails, its transaction rolls back automatically. For later application problems, follow `docs/infra/api-production-deploy.md` and `docs/infra/postgres-backup-restore.md`.
 
 Do not run `alembic downgrade`, truncate tables, delete the target volume, or restore over the target merely because an application artifact is rolled back.
