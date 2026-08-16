@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.util
 import os
 import sys
@@ -260,18 +261,26 @@ class TransactionTests(unittest.IsolatedAsyncioTestCase):
         }
 
     def _run_patches(self, conn, before, after, execute_cleanup):
-        return (
-            patch.dict(os.environ, {"APP_ENV": "local"}, clear=False),
-            patch.object(CLEANUP.PROMOTE, "connect", AsyncMock(return_value=conn)),
-            patch.object(CLEANUP.PROMOTE, "configure_stable_session", AsyncMock()),
+        stack = contextlib.ExitStack()
+        stack.enter_context(patch.dict(os.environ, {"APP_ENV": "local"}, clear=False))
+        stack.enter_context(
+            patch.object(CLEANUP.PROMOTE, "connect", AsyncMock(return_value=conn))
+        )
+        stack.enter_context(
+            patch.object(CLEANUP.PROMOTE, "configure_stable_session", AsyncMock())
+        )
+        stack.enter_context(
             patch.object(
                 CLEANUP.PROMOTE,
                 "validate_schema_classification",
                 AsyncMock(return_value={}),
-            ),
-            patch.object(CLEANUP, "_snapshot", AsyncMock(side_effect=[before, after])),
-            patch.object(CLEANUP, "_execute_cleanup", execute_cleanup),
+            )
         )
+        stack.enter_context(
+            patch.object(CLEANUP, "_snapshot", AsyncMock(side_effect=[before, after]))
+        )
+        stack.enter_context(patch.object(CLEANUP, "_execute_cleanup", execute_cleanup))
+        return stack
 
     async def test_dry_run_rolls_back_exact_simulation(self) -> None:
         conn = FakeConnection()
