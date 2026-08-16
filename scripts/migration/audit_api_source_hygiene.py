@@ -89,7 +89,7 @@ def _count_query_for_ilike(
 ) -> tuple[str, tuple[str, ...]]:
     table_sql = PROMOTE.quote_identifier(table_name)
     if not columns:
-        return f"SELECT 0::bigint FROM public.{table_sql}", ()
+        return "SELECT 0::bigint", ()
     clauses = []
     params: list[str] = []
     for column in columns:
@@ -142,7 +142,7 @@ def _combined_direct_query(
             )
 
     if not clauses:
-        return f"SELECT 0::bigint FROM public.{table_sql}", ()
+        return "SELECT 0::bigint", ()
     return (
         f"SELECT count(*) FROM public.{table_sql} WHERE ({' OR '.join(clauses)})",
         tuple(params),
@@ -152,7 +152,10 @@ def _combined_direct_query(
 async def _fetch_count(conn: Any, query: str, params: tuple[str, ...] = ()) -> int:
     if not query.lstrip().upper().startswith("SELECT "):
         raise HygieneAuditError("Hygiene audit attempted a non-read-only statement.")
-    return int(await conn.fetchval(query, *params))
+    value = await conn.fetchval(query, *params)
+    if value is None:
+        raise HygieneAuditError("Hygiene audit count query returned no scalar result.")
+    return int(value)
 
 
 async def audit_table(conn: Any, schema: Any) -> TableAudit:
