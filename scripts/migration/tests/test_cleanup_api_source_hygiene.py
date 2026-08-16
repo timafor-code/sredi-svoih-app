@@ -21,6 +21,15 @@ VALID_URI = "postgresql://sredi_api:sredi_api@api_postgres:5432/sredi_api"
 
 
 class TargetSafetyTests(unittest.TestCase):
+    def test_only_local_app_environment_is_allowed(self) -> None:
+        with patch.dict(os.environ, {"APP_ENV": "local"}, clear=True):
+            CLEANUP.validate_local_environment()
+        for value in ("production", "staging", "", "development"):
+            with self.subTest(app_env=value):
+                with patch.dict(os.environ, {"APP_ENV": value}, clear=True):
+                    with self.assertRaises(CLEANUP.LocalCleanupError):
+                        CLEANUP.validate_local_environment()
+
     def test_exact_local_compose_target_is_allowed(self) -> None:
         CLEANUP.validate_local_source_uri(VALID_URI)
         CLEANUP.validate_local_source_uri(
@@ -36,6 +45,7 @@ class TargetSafetyTests(unittest.TestCase):
             "postgresql://sredi_api:x@api_postgres:5432/production",
             "postgresql://sredi_api:x@api_postgres:5433/sredi_api",
             "postgresql://sredi_api:x@api_postgres:5432/sredi_api?sslmode=require",
+            "postgresql://sredi_api:wrong-password@api_postgres:5432/sredi_api",
         )
         for uri in invalid:
             with self.subTest(uri=uri):
@@ -191,6 +201,7 @@ class TransactionTests(unittest.IsolatedAsyncioTestCase):
         before = self._snapshot()
         after = self._snapshot("no_direct_hygiene_blockers_detected")
         with (
+            patch.dict(os.environ, {"APP_ENV": "local"}, clear=False),
             patch.object(CLEANUP.PROMOTE, "connect", AsyncMock(return_value=conn)),
             patch.object(CLEANUP.PROMOTE, "configure_stable_session", AsyncMock()),
             patch.object(
@@ -224,6 +235,7 @@ class TransactionTests(unittest.IsolatedAsyncioTestCase):
         before = self._snapshot()
         after = self._snapshot("no_direct_hygiene_blockers_detected")
         with (
+            patch.dict(os.environ, {"APP_ENV": "local"}, clear=False),
             patch.object(CLEANUP.PROMOTE, "connect", AsyncMock(return_value=conn)),
             patch.object(CLEANUP.PROMOTE, "configure_stable_session", AsyncMock()),
             patch.object(
@@ -256,6 +268,7 @@ class TransactionTests(unittest.IsolatedAsyncioTestCase):
         conn = FakeConnection()
         before = self._snapshot()
         with (
+            patch.dict(os.environ, {"APP_ENV": "local"}, clear=False),
             patch.object(CLEANUP.PROMOTE, "connect", AsyncMock(return_value=conn)),
             patch.object(CLEANUP.PROMOTE, "configure_stable_session", AsyncMock()),
             patch.object(
