@@ -109,14 +109,9 @@ docker compose -f infra/docker-compose.api.yml run --rm --no-deps `
 
 npm run typecheck
 git diff --check origin/main...HEAD
-
-git diff --name-only origin/main...HEAD | ForEach-Object {
-  Select-String -Path $_ `
-    -Pattern ("service_role|sb_secret|SUPABASE_SERVICE|DATA" + "BASE_URL") `
-    -SimpleMatch:$false `
-    -ErrorAction SilentlyContinue
-}
 ```
+
+Then run the project-standard forbidden-marker scan from the owner workflow against the changed files. Keep the marker pattern outside committed PR files so the scan does not match its own documentation.
 
 Expected: focused tests end with `OK`; typecheck succeeds; `git diff --check` and the forbidden scan print nothing.
 
