@@ -4,25 +4,25 @@
 
 This owner-run runbook promotes durable product data from one **Sredi Svoih FastAPI/PostgreSQL** environment to another environment on the **same Alembic head**. It is intended for the first controlled population of an empty API PostgreSQL target, including the Selectel test/production-like contour.
 
-The implementation is `scripts/migration/promote_api_data.py`.
+Implementation: `scripts/migration/promote_api_data.py`.
 
-This is not a Supabase migration path. It does not read Supabase, `auth.users`, a service-role key, frontend env, or any client credential.
+This path does not read Supabase, `auth.users`, a service-role key, frontend env, or any client credential.
 
-## Durable data that is preserved
+## Durable data preserved
 
-The promotion keeps primary UUIDs and the reviewed durable graph, including:
+The promotion preserves primary UUIDs and the reviewed durable graph, including:
 
 - `app_users`, including existing Argon2 `password_hash` values;
-- profiles, communities, memberships, contact visibility, synced contacts;
+- profiles, communities, memberships, contact visibility, and synced contacts;
 - events, public slugs, occurrences, participation options, capacity, registrations, questionnaire definitions/answers, and legal acceptance evidence;
 - seating layouts/tables/connections/assignments;
 - prayer activity logs as private backend data;
 - admin feedback/audit and event import history;
-- avatar and event-image **database metadata**.
+- avatar and event-image database metadata.
 
-Users with an existing API password keep that password. The stored Argon2 password hash is portable between API environments and is not recalculated by the promotion utility.
+Existing API password hashes are copied unchanged. Existing sessions are not copied.
 
-## State that is intentionally not promoted
+## State intentionally excluded
 
 Environment-bound or in-flight state is excluded:
 
@@ -32,73 +32,117 @@ Environment-bound or in-flight state is excluded:
 - privacy-access sessions/codes and secret-bound erasure evidence/workflow state;
 - device tokens and push job/delivery state.
 
-Existing sessions therefore do not survive promotion; users sign in again. Users whose `password_hash` is null still use the normal set-password flow after real email delivery is enabled.
-
-The script never logs row values or PostgreSQL connection values. Console output is limited to safe table names, counts, checksums, status, and redacted failure categories.
+Users with `password_hash = null` still require the normal set-password flow after real email delivery is enabled.
 
 ## Fail-closed guarantees
 
-Promotion is refused when any of these conditions is true:
+Promotion stops when any of these conditions is true:
 
 - source or target Alembic head differs from the script's reviewed head;
 - a public application table is new, missing, or not explicitly classified as promoted/excluded;
-- a promoted table's columns, types, primary key, or foreign-key dependency metadata differ between artifact and target;
+- promoted-table columns, types, primary keys, or foreign-key dependency metadata differ between artifact and target;
 - the artifact has missing, changed, undeclared, malformed, symlinked, or duplicate-primary-key data;
-- the target contains rows in any promotion-managed table;
+- the target contains rows in a promotion-managed table;
 - the source has an active deletion lifecycle;
-- the source has an unexpired email-verification-required public-web registration intent;
+- the source has an unexpired public-web email-verification intent;
 - the source has queued/processing push jobs;
 - active invites exist without explicit owner acknowledgement that they will be reissued;
-- excluded privacy workflow/evidence rows exist without a separate owner acknowledgement appropriate only to an owner-approved temporary test/staging promotion;
-- avatar/event-image metadata exists but the owner has not confirmed the corresponding required objects were copied and verified under the same object keys.
+- excluded privacy workflow/evidence rows exist without the explicit test/staging-only acknowledgement;
+- avatar/event-image metadata exists without explicit acknowledgement that required objects were copied and verified under the same object keys.
 
-Apply uses one serializable transaction. It never truncates, deletes, updates, disables foreign keys, or changes schema. Any insert or exact post-insert verification failure rolls the complete transaction back.
+Apply runs in one serializable transaction. It does not truncate, delete, update, disable foreign keys, or change schema. Any insert or exact verification failure rolls back the complete transaction.
 
 ## Object-storage boundary
 
-Database promotion does **not** copy object bytes. `profile_avatars` and `event_images` metadata can be promoted only after the objects that should exist for their current lifecycle state have been copied to the reviewed target object storage with the same `object_key` values and verified there.
+Database promotion does **not** copy object bytes. `profile_avatars` and `event_images` metadata may be promoted only after the required objects are copied to the reviewed target object storage with identical `object_key` values and verified there.
 
-Do not use `--ack-object-storage-ready` as a bypass. It means the required object copy has actually been completed and checked. S3 provider, credentials, bucket names, and endpoints remain deployment decisions and must not be embedded in this script or repository.
+Do not use `--ack-object-storage-ready` as a bypass. It means the required object copy has actually been completed and checked.
 
 ## Dedicated PostgreSQL secret
 
-The utility reads its connection only from a dedicated owner-supplied environment variable:
+The utility reads its PostgreSQL connection only from:
 
 ```text
 API_PROMOTION_PG_URI
 ```
 
-There is no fallback to frontend config, dotenv discovery, or a hard-coded endpoint. Keep the value backend-only and never print it.
+There is no fallback to frontend configuration, dotenv discovery, or a hard-coded endpoint. Keep the value backend-only and never print it.
 
-For a production one-off run, add `API_PROMOTION_PG_URI` temporarily to the ignored, permission-restricted server file `infra/env/.env.api.production`, using the same PostgreSQL endpoint/credentials already approved for the backend. Edit that file only on the host; never copy its value into Git, chat, a ticket, or command history. Remove the temporary promotion variable after post-apply validation.
+For a production one-off run, add `API_PROMOTION_PG_URI` temporarily to the ignored, permission-restricted server file `infra/env/.env.api.production`. Remove it after post-apply validation.
+
+## Important Docker path rule
+
+The utility contains a repository-root safeguard for export paths. When it is bind-mounted into a container, preserve the repository-relative `scripts/migration` path.
+
+Use:
+
+```text
+/app/scripts/migration
+```
+
+Do **not** flatten the directory to `/migration`; doing so removes the path structure used by the safeguard.
 
 ## Prerequisites
 
 Before any owner run:
 
 1. Source and target are on the exact Alembic head expected by the checked-out promotion script.
-2. Source is the reviewed current API PostgreSQL data set, not Supabase.
+2. Source is the reviewed current API PostgreSQL data set.
 3. Target has the API schema but no rows in promotion-managed tables.
 4. Connection values stay only in owner-controlled environment or backend container environment.
 5. The artifact directory is protected and outside the repository. Artifacts contain personal data and must never be committed or shared.
 6. Before `apply`, a current target logical backup has passed the disposable restore test in `docs/infra/postgres-backup-restore.md`.
 7. Source writes are stopped for the final export window, or the owner accepts that writes after the snapshot are not in the artifact.
-8. **Target application writes are stopped before final preflight and remain stopped through apply and validation.** Do not allow admin, public-web, mobile, worker, or other application writes to race the empty-target gate.
+8. Target application writes are stopped before final preflight and remain stopped through apply and validation.
 
 The script produces one repeatable-read source snapshot. It is not replication or change-data-capture.
 
+## Focused verification before merge
+
+This is not browser/Expo smoke. Run the focused utility tests through the existing API image while preserving the expected path:
+
+```powershell
+cd F:\2026\SS-App\code\sredi-svoih-app
+
+git fetch origin
+git switch feature/api-production-data-promotion
+git pull --ff-only origin feature/api-production-data-promotion
+
+docker compose -f infra/docker-compose.api.yml run --rm --no-deps `
+  -v "${PWD}/scripts/migration:/app/scripts/migration:ro" `
+  api_backend `
+  python /app/scripts/migration/tests/test_promote_api_data.py
+
+npm run typecheck
+git diff --check origin/main...HEAD
+
+git diff --name-only origin/main...HEAD | ForEach-Object {
+  Select-String -Path $_ `
+    -Pattern "service_role|sb_secret|SUPABASE_SERVICE|DATABASE_URL" `
+    -SimpleMatch:$false `
+    -ErrorAction SilentlyContinue
+}
+```
+
+Expected:
+
+- focused tests end with `OK`;
+- typecheck succeeds;
+- `git diff --check` prints nothing;
+- forbidden scan prints nothing.
+
+Smoke tests are not run by the agent.
+
 ## Local API export on Windows
 
-These examples use the canonical local API Compose contour. `api_postgres` must already be healthy. The utility runs through the API image so host Python packages are not required.
-
-Create a protected directory outside the repository:
+The local `api_postgres` service must already be healthy. Create a protected directory outside the repository:
 
 ```powershell
 $promotionDir = "F:\2026\SS-App\private\api-promotion-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 New-Item -ItemType Directory -Path $promotionDir | Out-Null
 ```
 
-After this PR is merged and local `main` is synchronized, build the current API image and export. The local URI below uses only the committed local-development PostgreSQL credentials from `infra/docker-compose.api.yml`:
+Build the current API image if required, then export:
 
 ```powershell
 cd F:\2026\SS-App\code\sredi-svoih-app
@@ -107,13 +151,15 @@ docker compose -f infra/docker-compose.api.yml build api_backend
 
 $env:API_PROMOTION_PG_URI = "postgresql://sredi_api:sredi_api@api_postgres:5432/sredi_api"
 $env:API_PROMOTION_RUN_ACK = "OWNER_APPROVED_API_PROMOTION_EXPORT"
+
 docker compose -f infra/docker-compose.api.yml run --rm --no-deps `
   -e API_PROMOTION_PG_URI `
   -e API_PROMOTION_RUN_ACK `
-  -v "${PWD}/scripts/migration:/migration:ro" `
+  -v "${PWD}/scripts/migration:/app/scripts/migration:ro" `
   -v "${promotionDir}:/promotion" `
   api_backend `
-  python /migration/promote_api_data.py export --output-dir /promotion
+  python /app/scripts/migration/promote_api_data.py export --output-dir /promotion
+
 Remove-Item Env:API_PROMOTION_PG_URI
 Remove-Item Env:API_PROMOTION_RUN_ACK
 ```
@@ -124,13 +170,13 @@ If active invites exist, export reports only their count and stops. After review
 --ack-reissue-active-invites
 ```
 
-If excluded privacy workflow/evidence rows exist, do not bypass the stop for a final production cutover. For an owner-approved temporary test/staging promotion only, after explicitly accepting that those environment-bound rows are not being promoted, the additional switch is:
+If excluded privacy workflow/evidence rows exist, do not bypass the stop for a final production cutover. For an owner-approved temporary test/staging promotion only, the additional switch is:
 
 ```text
 --ack-excluded-privacy-history
 ```
 
-A successful export contains only:
+Successful export layout:
 
 ```text
 <promotion-dir>/
@@ -143,14 +189,14 @@ Do not open, print, attach, or paste JSONL contents.
 
 ## Artifact verification and transfer
 
-The script re-verifies every checksum before target preflight/apply. For owner inventory, hashes can also be computed without opening row files:
+The utility re-verifies every checksum before target preflight/apply. Optional owner inventory:
 
 ```powershell
 Get-FileHash -Algorithm SHA256 "$promotionDir\manifest.json"
 Get-ChildItem "$promotionDir\tables\*.jsonl" | Get-FileHash -Algorithm SHA256
 ```
 
-Transfer the complete protected directory to an owner-controlled protected path on the Selectel host using the approved SSH/SCP path. Do not put it under the Git checkout or in a public bucket. Restrict host permissions to the deploy owner before use.
+Transfer the complete protected directory to an owner-controlled protected path on the Selectel host using the approved SSH/SCP path. Do not put it under the Git checkout or in a public bucket.
 
 ## Write-free target gate
 
@@ -158,15 +204,12 @@ Before final preflight/apply:
 
 - do not expose admin/public-web/mobile clients to the target;
 - keep push and privacy workers stopped;
-- stop the normal FastAPI application service if there is any possibility of writes;
-- keep PostgreSQL running privately because the one-off promotion container needs it;
-- Nginx may temporarily return an unavailable response during this maintenance window.
-
-The one-off `docker compose run ... api_backend` command below can connect to the private database even when the normal `api_backend` service is stopped.
+- stop the normal FastAPI service if there is any possibility of writes;
+- keep PostgreSQL running privately because the one-off promotion container needs it.
 
 ## Target preflight on Selectel
 
-First add the temporary `API_PROMOTION_PG_URI` value to the ignored server backend env file as described above. Then run through the production Compose service with the artifact mounted read-only:
+Add the temporary `API_PROMOTION_PG_URI` to the ignored server backend env file, then run:
 
 ```bash
 cd /opt/sredi-svoih
@@ -175,15 +218,15 @@ sudo docker compose \
   --env-file infra/env/.env.compose.production \
   -f infra/docker-compose.prod.yml \
   run --rm --no-deps \
-  -v /opt/sredi-svoih/scripts/migration:/migration:ro \
+  -v /opt/sredi-svoih/scripts/migration:/app/scripts/migration:ro \
   -v <protected-promotion-dir>:/promotion:ro \
   api_backend \
-  python /migration/promote_api_data.py preflight --input-dir /promotion
+  python /app/scripts/migration/promote_api_data.py preflight --input-dir /promotion
 ```
 
 Preflight is read-only. It checks exact schema/head compatibility and requires every promotion-managed target table to be empty.
 
-If the artifact reports avatar/event-image metadata, do not proceed until the target S3 copy is complete. After object copy and verification, rerun preflight with:
+If avatar/event-image metadata exists, copy and verify the target objects first, then rerun preflight with:
 
 ```text
 --ack-object-storage-ready
@@ -193,38 +236,40 @@ If the artifact reports avatar/event-image metadata, do not proceed until the ta
 
 Immediately before apply:
 
-1. follow `docs/infra/postgres-backup-restore.md` for the current target;
-2. create a custom-format logical backup;
+1. follow `docs/infra/postgres-backup-restore.md`;
+2. create a current custom-format logical backup;
 3. verify checksum/list structure;
 4. restore it into a separate disposable verification database;
 5. record successful restore evidence.
 
-A disk snapshot alone does not replace this gate. Do not apply when the latest target backup has not passed its restore test.
+A disk snapshot alone does not replace this gate.
 
 ## Apply
 
-Apply is a separate explicit owner action. Keep normal target application/worker writes stopped for the entire operation.
+Keep normal target application/worker writes stopped:
 
 ```bash
 cd /opt/sredi-svoih
 
 export API_PROMOTION_RUN_ACK='OWNER_APPROVED_API_PROMOTION_APPLY'
+
 sudo -E docker compose \
   --env-file infra/env/.env.compose.production \
   -f infra/docker-compose.prod.yml \
   run --rm --no-deps \
   -e API_PROMOTION_RUN_ACK \
-  -v /opt/sredi-svoih/scripts/migration:/migration:ro \
+  -v /opt/sredi-svoih/scripts/migration:/app/scripts/migration:ro \
   -v <protected-promotion-dir>:/promotion:ro \
   api_backend \
-  python /migration/promote_api_data.py apply \
+  python /app/scripts/migration/promote_api_data.py apply \
     --input-dir /promotion \
     --allow-production-target-with-owner-command \
     <add --ack-object-storage-ready only when required and actually complete>
+
 unset API_PROMOTION_RUN_ACK
 ```
 
-The target is checked again for emptiness inside the serializable transaction. Durable tables are inserted in foreign-key dependency order. Before commit, every target table is re-read in primary-key order and must match the artifact's exact row count and SHA-256 stream checksum. Excluded transient tables must remain empty.
+The target is checked again for emptiness inside the serializable transaction. Durable tables are inserted in foreign-key dependency order and then re-read in primary-key order for exact row-count and SHA-256 stream verification. Excluded transient tables must remain empty.
 
 Any failure exits non-zero and rolls the complete transaction back.
 
@@ -239,10 +284,10 @@ sudo docker compose \
   --env-file infra/env/.env.compose.production \
   -f infra/docker-compose.prod.yml \
   run --rm --no-deps \
-  -v /opt/sredi-svoih/scripts/migration:/migration:ro \
+  -v /opt/sredi-svoih/scripts/migration:/app/scripts/migration:ro \
   -v <protected-promotion-dir>:/promotion:ro \
   api_backend \
-  python /migration/promote_api_data.py validate --input-dir /promotion
+  python /app/scripts/migration/promote_api_data.py validate --input-dir /promotion
 ```
 
 Expected final line:
@@ -251,12 +296,12 @@ Expected final line:
 validation_ok tables=<reviewed-table-count>
 ```
 
-After successful validation, remove the temporary `API_PROMOTION_PG_URI` entry from the ignored backend env file. Only then may the owner restart the normal API and later enable clients/workers according to their separate deployment gates.
+After successful validation, remove the temporary `API_PROMOTION_PG_URI` from the ignored backend env file. Only then restart normal API/client/worker traffic according to the separate deployment gates.
 
 ## Expected behavior after promotion
 
 - Existing API users and UUIDs are preserved.
-- Existing Argon2 password hashes are preserved; password-capable users use the same password.
+- Existing Argon2 password hashes are preserved.
 - Login/refresh sessions are intentionally not promoted; users sign in again.
 - Users with no API password still use set-password after real email delivery is enabled.
 - Active invites are not copied; create new target invites after promotion.
