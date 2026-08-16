@@ -29,6 +29,7 @@ AUDITED_PROMOTED_TABLES: tuple[str, ...] = PROMOTE.PROMOTED_TABLES
 PRIVACY_HISTORY_TABLES: tuple[str, ...] = (
     "privacy_destruction_evidence",
     "privacy_erasure_notification_outbox",
+    "privacy_financial_review_evidence",
     "privacy_requests",
     "privacy_retained_financial_evidence",
 )
