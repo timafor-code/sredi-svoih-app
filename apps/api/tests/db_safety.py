@@ -8,20 +8,20 @@ EXPECTED_TEST_USER = "sredi_api_test"
 _ALLOWED_SCHEMES = {"postgresql", "postgresql+asyncpg"}
 
 
-class TestDatabaseSafetyError(RuntimeError):
+class DatabaseSafetyError(RuntimeError):
     """Safe test-database configuration error without connection details."""
 
 
 def validate_test_database_environment(*, app_env: str, db_dsn: str) -> None:
     if app_env.strip().lower() != "test":
-        raise TestDatabaseSafetyError(
+        raise DatabaseSafetyError(
             "API test database guard: APP_ENV must be test."
         )
 
     try:
         parsed = urlsplit(db_dsn.strip())
     except (TypeError, ValueError):
-        raise TestDatabaseSafetyError(
+        raise DatabaseSafetyError(
             "API test database guard: database target is invalid."
         ) from None
 
@@ -32,6 +32,6 @@ def validate_test_database_environment(*, app_env: str, db_dsn: str) -> None:
         or parsed.username != EXPECTED_TEST_USER
         or database != EXPECTED_TEST_DATABASE
     ):
-        raise TestDatabaseSafetyError(
+        raise DatabaseSafetyError(
             "API test database guard: database target is not the dedicated test database."
         )
