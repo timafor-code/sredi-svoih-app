@@ -53,9 +53,10 @@ SYNTHETIC_ROOT_TABLES: tuple[str, ...] = (
 )
 
 # Leaked test legal documents are handled separately and last. Legal acceptances
-# reference published legal documents with ON DELETE RESTRICT, so deleting a
-# synthetic legal document before synthetic users would be unsafe and can fail.
+# reference published legal documents with ON DELETE RESTRICT. A deterministic
+# synthetic legal document is deletable only when no acceptance references it.
 SYNTHETIC_LEGAL_DOCUMENT_TABLE = "legal_documents"
+LEGAL_ACCEPTANCE_TABLE = "legal_acceptances"
 
 
 class LocalCleanupError(PROMOTE.PromotionError):
@@ -137,6 +138,44 @@ def _root_delete_query(schema: Any) -> tuple[str, tuple[str, ...]]:
     )
 
 
+def _legal_document_reference_clause(*, referenced: bool) -> str:
+    exists = "EXISTS" if referenced else "NOT EXISTS"
+    legal_documents = PROMOTE.quote_identifier(SYNTHETIC_LEGAL_DOCUMENT_TABLE)
+    legal_acceptances = PROMOTE.quote_identifier(LEGAL_ACCEPTANCE_TABLE)
+    return (
+        f"{exists} (SELECT 1 FROM public.{legal_acceptances} AS la "
+        f"WHERE la.legal_document_id = public.{legal_documents}.id)"
+    )
+
+
+def _legal_document_count_query(
+    schema: Any,
+    *,
+    protected: bool,
+) -> tuple[str, tuple[str, ...]]:
+    if schema.name != SYNTHETIC_LEGAL_DOCUMENT_TABLE:
+        raise LocalCleanupError("Legal-document query received an unexpected table.")
+    predicate, params = _signature_predicate(schema)
+    reference_clause = _legal_document_reference_clause(referenced=protected)
+    return (
+        f"SELECT count(*) FROM public.{PROMOTE.quote_identifier(schema.name)} "
+        f"WHERE {predicate} AND {reference_clause}",
+        params,
+    )
+
+
+def _legal_document_delete_query(schema: Any) -> tuple[str, tuple[str, ...]]:
+    if schema.name != SYNTHETIC_LEGAL_DOCUMENT_TABLE:
+        raise LocalCleanupError("Legal-document delete received an unexpected table.")
+    predicate, params = _signature_predicate(schema)
+    reference_clause = _legal_document_reference_clause(referenced=False)
+    return (
+        f"DELETE FROM public.{PROMOTE.quote_identifier(schema.name)} "
+        f"WHERE {predicate} AND {reference_clause}",
+        params,
+    )
+
+
 def _parse_command_count(command_tag: str, expected_command: str) -> int:
     parts = command_tag.strip().split()
     if len(parts) != 2 or parts[0].upper() != expected_command.upper():
@@ -162,10 +201,25 @@ def _synthetic_candidate_tables() -> tuple[str, ...]:
 
 async def _count_root_candidates(conn: Any, schemas: dict[str, Any]) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for table_name in _synthetic_candidate_tables():
+    for table_name in SYNTHETIC_ROOT_TABLES:
         query, params = _root_count_query(schemas[table_name])
         counts[table_name] = await _fetch_count(conn, query, params)
+
+    legal_schema = schemas[SYNTHETIC_LEGAL_DOCUMENT_TABLE]
+    query, params = _legal_document_count_query(legal_schema, protected=False)
+    counts[SYNTHETIC_LEGAL_DOCUMENT_TABLE] = await _fetch_count(conn, query, params)
     return counts
+
+
+async def _count_protected_synthetic_legal_documents(
+    conn: Any,
+    schemas: dict[str, Any],
+) -> int:
+    query, params = _legal_document_count_query(
+        schemas[SYNTHETIC_LEGAL_DOCUMENT_TABLE],
+        protected=True,
+    )
+    return await _fetch_count(conn, query, params)
 
 
 async def _table_counts(
@@ -204,10 +258,15 @@ async def _snapshot(conn: Any, schemas: dict[str, Any]) -> dict[str, Any]:
     )
     transient_table_counts = await _table_counts(conn, TRANSIENT_TABLES)
     root_candidates = await _count_root_candidates(conn, schemas)
+    protected_legal_documents = await _count_protected_synthetic_legal_documents(
+        conn,
+        schemas,
+    )
     return {
         "promoted_table_counts": promoted_table_counts,
         "transient_table_counts": transient_table_counts,
         "synthetic_root_candidates": root_candidates,
+        "protected_synthetic_legal_documents": protected_legal_documents,
         "hygiene": await _hygiene_summary(conn, schemas),
     }
 
@@ -239,6 +298,15 @@ async def _delete_root_candidates(conn: Any, schema: Any) -> int:
     return _parse_command_count(command, "DELETE")
 
 
+async def _delete_unreferenced_legal_document_candidates(
+    conn: Any,
+    schema: Any,
+) -> int:
+    query, params = _legal_document_delete_query(schema)
+    command = await conn.execute(query, *params)
+    return _parse_command_count(command, "DELETE")
+
+
 async def _execute_cleanup(
     conn: Any,
     schemas: dict[str, Any],
@@ -261,12 +329,15 @@ async def _execute_cleanup(
             schemas[table_name],
         )
 
-    # Delete leaked synthetic legal-document fixtures only after synthetic users.
-    # Their legal_acceptances have ON DELETE RESTRICT toward legal_documents and
-    # are removed by the existing app_users cascade before this final step.
-    roots_deleted[SYNTHETIC_LEGAL_DOCUMENT_TABLE] = await _delete_root_candidates(
-        conn,
-        schemas[SYNTHETIC_LEGAL_DOCUMENT_TABLE],
+    # Delete only deterministic synthetic legal documents that are no longer
+    # referenced. Surviving legal_acceptances protect their document via the
+    # existing ON DELETE RESTRICT contract and are never rewritten or deleted
+    # merely to make source cleanup succeed.
+    roots_deleted[SYNTHETIC_LEGAL_DOCUMENT_TABLE] = (
+        await _delete_unreferenced_legal_document_candidates(
+            conn,
+            schemas[SYNTHETIC_LEGAL_DOCUMENT_TABLE],
+        )
     )
 
     return {
@@ -284,7 +355,22 @@ def _assert_targeted_cleanup_complete(after: dict[str, Any]) -> None:
         )
     if roots_remaining:
         raise LocalCleanupError(
-            "Targeted deterministic synthetic roots remain; transaction will be rolled back."
+            "Targeted deterministic synthetic roots or unreferenced legal documents remain; "
+            "transaction will be rolled back."
+        )
+
+
+def _apply_blocked(after: dict[str, Any]) -> bool:
+    return int(after.get("protected_synthetic_legal_documents", 0)) > 0
+
+
+def _assert_apply_not_blocked(after: dict[str, Any]) -> None:
+    protected = int(after.get("protected_synthetic_legal_documents", 0))
+    if protected:
+        raise LocalCleanupError(
+            f"Cleanup apply blocked: {protected} deterministic synthetic legal document(s) "
+            "remain protected by legal acceptances. Resolve their classification separately; "
+            "no cleanup changes were committed."
         )
 
 
@@ -295,6 +381,7 @@ def _build_report(
     after: dict[str, Any],
     deleted: dict[str, dict[str, int]],
 ) -> dict[str, Any]:
+    protected = int(after.get("protected_synthetic_legal_documents", 0))
     return {
         "format_version": FORMAT_VERSION,
         "alembic_head": PROMOTE.EXPECTED_ALEMBIC_HEAD,
@@ -302,6 +389,8 @@ def _build_report(
         "mode": "apply" if apply else "dry_run_rollback",
         "cleanup_performed": apply,
         "simulation_performed": not apply,
+        "apply_blocked": protected > 0,
+        "protected_synthetic_legal_documents": protected,
         "before": before,
         "planned_or_applied_deletes": deleted,
         "after_simulated_or_committed": after,
@@ -312,7 +401,9 @@ def _build_report(
             "Apply requires owner-reviewed dry-run, verified backup restore, and explicit acknowledgement.",
             "All environment-bound/transient promotion-excluded tables are cleared only after the lifecycle guard passes.",
             "Durable deletion is limited to deterministic signature matches in reviewed root tables.",
-            "Synthetic legal documents are deleted last so legal-acceptance RESTRICT references are respected.",
+            "Only unreferenced deterministic synthetic legal documents are cleanup candidates.",
+            "Referenced deterministic synthetic legal documents are reported as protected and block apply.",
+            "Legal acceptances are never deleted or rewritten merely to make cleanup succeed.",
             "A separate read-only hygiene audit must be rerun and owner-approved after apply.",
         ],
     }
@@ -339,6 +430,7 @@ async def run_cleanup(pg_uri: str, *, apply: bool) -> dict[str, Any]:
             deleted=deleted,
         )
         if apply:
+            _assert_apply_not_blocked(after)
             await tx.commit()
         else:
             await tx.rollback()
@@ -397,7 +489,9 @@ def _print_safe_summary(report: dict[str, Any]) -> None:
         f"before_verdict={before['verdict']} "
         f"after_verdict={after['verdict']} "
         f"transient_deleted={sum(deleted['transient_rows_deleted'].values())} "
-        f"synthetic_roots_deleted={sum(deleted['synthetic_roots_deleted'].values())}"
+        f"synthetic_roots_deleted={sum(deleted['synthetic_roots_deleted'].values())} "
+        f"protected_synthetic_legal_documents={report['protected_synthetic_legal_documents']} "
+        f"apply_blocked={str(report['apply_blocked']).lower()}"
     )
 
 

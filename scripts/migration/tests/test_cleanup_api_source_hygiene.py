@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.util
 import os
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import AsyncMock, patch
 
 
 CLEANUP_PATH = Path(__file__).resolve().parents[1] / "cleanup_api_source_hygiene.py"
@@ -62,6 +63,7 @@ class TargetSafetyTests(unittest.TestCase):
             {"app_users", "communities", "events", "event_registrations"},
         )
         self.assertEqual(CLEANUP.SYNTHETIC_LEGAL_DOCUMENT_TABLE, "legal_documents")
+        self.assertEqual(CLEANUP.LEGAL_ACCEPTANCE_TABLE, "legal_acceptances")
         self.assertEqual(
             set(CLEANUP._synthetic_candidate_tables()),
             {
@@ -130,6 +132,19 @@ class ApprovalTests(unittest.TestCase):
 
 
 class QuerySafetyTests(unittest.TestCase):
+    def _legal_schema(self):
+        return CLEANUP.PROMOTE.TableSchema(
+            name="legal_documents",
+            columns=(
+                ("id", "uuid"),
+                ("version", "text"),
+                ("title", "text"),
+                ("published_url", "text"),
+            ),
+            primary_key=("id",),
+            dependencies=(),
+        )
+
     def test_root_delete_is_parameterized_and_has_where_clause(self) -> None:
         schema = CLEANUP.PROMOTE.TableSchema(
             name="events",
@@ -145,24 +160,33 @@ class QuerySafetyTests(unittest.TestCase):
         self.assertNotIn("%synthetic-%", query)
         self.assertGreater(len(params), 0)
 
-    def test_legal_document_delete_uses_same_parameterized_signatures(self) -> None:
-        schema = CLEANUP.PROMOTE.TableSchema(
-            name="legal_documents",
-            columns=(
-                ("id", "uuid"),
-                ("version", "text"),
-                ("title", "text"),
-                ("published_url", "text"),
-            ),
-            primary_key=("id",),
-            dependencies=(),
-        )
-        query, params = CLEANUP._root_delete_query(schema)
+    def test_legal_document_delete_is_parameterized_and_unreferenced_only(self) -> None:
+        query, params = CLEANUP._legal_document_delete_query(self._legal_schema())
         self.assertTrue(
             query.startswith('DELETE FROM public."legal_documents" WHERE '),
         )
+        self.assertIn("NOT EXISTS", query)
+        self.assertIn("legal_acceptances", query)
+        self.assertIn("legal_document_id", query)
         self.assertGreater(len(params), 0)
         self.assertNotIn("Synthetic %", query)
+        self.assertNotIn("%@example.invalid%", query)
+        self.assertNotIn("%synthetic-%", query)
+
+    def test_legal_document_candidate_counts_split_deletable_and_protected(self) -> None:
+        deletable_query, deletable_params = CLEANUP._legal_document_count_query(
+            self._legal_schema(),
+            protected=False,
+        )
+        protected_query, protected_params = CLEANUP._legal_document_count_query(
+            self._legal_schema(),
+            protected=True,
+        )
+        self.assertIn("NOT EXISTS", deletable_query)
+        self.assertIn("EXISTS", protected_query)
+        self.assertNotIn("NOT EXISTS", protected_query)
+        self.assertEqual(deletable_params, protected_params)
+        self.assertGreater(len(deletable_params), 0)
 
     def test_no_text_root_cannot_match_any_row(self) -> None:
         schema = CLEANUP.PROMOTE.TableSchema(
@@ -217,6 +241,7 @@ class TransactionTests(unittest.IsolatedAsyncioTestCase):
         verdict: str = "review_required",
         *,
         active_deletion: int = 0,
+        protected_legal_documents: int = 0,
     ):
         return {
             "promoted_table_counts": {},
@@ -224,6 +249,7 @@ class TransactionTests(unittest.IsolatedAsyncioTestCase):
             "synthetic_root_candidates": {
                 name: 0 for name in CLEANUP._synthetic_candidate_tables()
             },
+            "protected_synthetic_legal_documents": protected_legal_documents,
             "hygiene": {
                 "verdict": verdict,
                 "promoted_summary": {},
@@ -234,31 +260,39 @@ class TransactionTests(unittest.IsolatedAsyncioTestCase):
             },
         }
 
-    async def test_dry_run_rolls_back_exact_simulation(self) -> None:
-        conn = FakeConnection()
-        before = self._snapshot()
-        after = self._snapshot("no_direct_hygiene_blockers_detected")
-        with (
-            patch.dict(os.environ, {"APP_ENV": "local"}, clear=False),
-            patch.object(CLEANUP.PROMOTE, "connect", AsyncMock(return_value=conn)),
-            patch.object(CLEANUP.PROMOTE, "configure_stable_session", AsyncMock()),
+    def _run_patches(self, conn, before, after, execute_cleanup):
+        stack = contextlib.ExitStack()
+        stack.enter_context(patch.dict(os.environ, {"APP_ENV": "local"}, clear=False))
+        stack.enter_context(
+            patch.object(CLEANUP.PROMOTE, "connect", AsyncMock(return_value=conn))
+        )
+        stack.enter_context(
+            patch.object(CLEANUP.PROMOTE, "configure_stable_session", AsyncMock())
+        )
+        stack.enter_context(
             patch.object(
                 CLEANUP.PROMOTE,
                 "validate_schema_classification",
                 AsyncMock(return_value={}),
-            ),
-            patch.object(CLEANUP, "_snapshot", AsyncMock(side_effect=[before, after])),
-            patch.object(
-                CLEANUP,
-                "_execute_cleanup",
-                AsyncMock(
-                    return_value={
-                        "transient_rows_deleted": {},
-                        "synthetic_roots_deleted": {},
-                    }
-                ),
-            ),
-        ):
+            )
+        )
+        stack.enter_context(
+            patch.object(CLEANUP, "_snapshot", AsyncMock(side_effect=[before, after]))
+        )
+        stack.enter_context(patch.object(CLEANUP, "_execute_cleanup", execute_cleanup))
+        return stack
+
+    async def test_dry_run_rolls_back_exact_simulation(self) -> None:
+        conn = FakeConnection()
+        before = self._snapshot()
+        after = self._snapshot("no_direct_hygiene_blockers_detected")
+        execute_cleanup = AsyncMock(
+            return_value={
+                "transient_rows_deleted": {},
+                "synthetic_roots_deleted": {},
+            }
+        )
+        with self._run_patches(conn, before, after, execute_cleanup):
             report = await CLEANUP.run_cleanup(VALID_URI, apply=False)
 
         self.assertTrue(conn.tx.started)
@@ -267,32 +301,38 @@ class TransactionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(conn.closed)
         self.assertFalse(report["cleanup_performed"])
         self.assertTrue(report["simulation_performed"])
+        self.assertFalse(report["apply_blocked"])
 
-    async def test_apply_commits_only_after_post_cleanup_assertion(self) -> None:
+    async def test_dry_run_completes_and_reports_protected_legal_documents(self) -> None:
+        conn = FakeConnection()
+        before = self._snapshot(protected_legal_documents=2)
+        after = self._snapshot(protected_legal_documents=2)
+        execute_cleanup = AsyncMock(
+            return_value={
+                "transient_rows_deleted": {},
+                "synthetic_roots_deleted": {},
+            }
+        )
+        with self._run_patches(conn, before, after, execute_cleanup):
+            report = await CLEANUP.run_cleanup(VALID_URI, apply=False)
+
+        self.assertTrue(conn.tx.rolled_back)
+        self.assertFalse(conn.tx.committed)
+        self.assertEqual(report["protected_synthetic_legal_documents"], 2)
+        self.assertTrue(report["apply_blocked"])
+        self.assertFalse(report["cleanup_performed"])
+
+    async def test_apply_commits_only_when_no_protected_legal_documents_remain(self) -> None:
         conn = FakeConnection()
         before = self._snapshot()
         after = self._snapshot("no_direct_hygiene_blockers_detected")
-        with (
-            patch.dict(os.environ, {"APP_ENV": "local"}, clear=False),
-            patch.object(CLEANUP.PROMOTE, "connect", AsyncMock(return_value=conn)),
-            patch.object(CLEANUP.PROMOTE, "configure_stable_session", AsyncMock()),
-            patch.object(
-                CLEANUP.PROMOTE,
-                "validate_schema_classification",
-                AsyncMock(return_value={}),
-            ),
-            patch.object(CLEANUP, "_snapshot", AsyncMock(side_effect=[before, after])),
-            patch.object(
-                CLEANUP,
-                "_execute_cleanup",
-                AsyncMock(
-                    return_value={
-                        "transient_rows_deleted": {},
-                        "synthetic_roots_deleted": {},
-                    }
-                ),
-            ),
-        ):
+        execute_cleanup = AsyncMock(
+            return_value={
+                "transient_rows_deleted": {},
+                "synthetic_roots_deleted": {},
+            }
+        )
+        with self._run_patches(conn, before, after, execute_cleanup):
             report = await CLEANUP.run_cleanup(VALID_URI, apply=True)
 
         self.assertTrue(conn.tx.started)
@@ -301,6 +341,28 @@ class TransactionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(conn.closed)
         self.assertTrue(report["cleanup_performed"])
         self.assertFalse(report["simulation_performed"])
+        self.assertFalse(report["apply_blocked"])
+
+    async def test_apply_with_protected_legal_documents_fails_closed_and_rolls_back(self) -> None:
+        conn = FakeConnection()
+        before = self._snapshot(protected_legal_documents=1)
+        after = self._snapshot(protected_legal_documents=1)
+        execute_cleanup = AsyncMock(
+            return_value={
+                "transient_rows_deleted": {},
+                "synthetic_roots_deleted": {},
+            }
+        )
+        with self._run_patches(conn, before, after, execute_cleanup):
+            with self.assertRaisesRegex(
+                CLEANUP.LocalCleanupError,
+                "protected by legal acceptances",
+            ):
+                await CLEANUP.run_cleanup(VALID_URI, apply=True)
+
+        self.assertTrue(conn.tx.rolled_back)
+        self.assertFalse(conn.tx.committed)
+        self.assertTrue(conn.closed)
 
     async def test_active_deletion_lifecycle_blocks_before_any_cleanup_delete(self) -> None:
         conn = FakeConnection()
@@ -341,6 +403,7 @@ class TransactionTests(unittest.IsolatedAsyncioTestCase):
             for name in CLEANUP._synthetic_candidate_tables()
         }
         delete_root = AsyncMock(return_value=0)
+        delete_legal = AsyncMock(return_value=0)
         with (
             patch.object(
                 CLEANUP.PROMOTE,
@@ -352,14 +415,19 @@ class TransactionTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch.object(CLEANUP, "_delete_all_from_table", AsyncMock(return_value=0)),
             patch.object(CLEANUP, "_delete_root_candidates", delete_root),
+            patch.object(
+                CLEANUP,
+                "_delete_unreferenced_legal_document_candidates",
+                delete_legal,
+            ),
         ):
             await CLEANUP._execute_cleanup(conn, schemas)
 
         root_names = [item.args[1].name for item in delete_root.await_args_list]
-        self.assertEqual(root_names[-1], CLEANUP.SYNTHETIC_LEGAL_DOCUMENT_TABLE)
-        self.assertEqual(
-            set(root_names[:-1]),
-            set(CLEANUP.SYNTHETIC_ROOT_TABLES),
+        self.assertEqual(set(root_names), set(CLEANUP.SYNTHETIC_ROOT_TABLES))
+        delete_legal.assert_awaited_once_with(
+            conn,
+            schemas[CLEANUP.SYNTHETIC_LEGAL_DOCUMENT_TABLE],
         )
 
     async def test_failure_rolls_back(self) -> None:

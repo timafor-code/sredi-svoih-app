@@ -35,13 +35,14 @@ Current reviewed head:
 20260816184500
 ```
 
-The cleanup now has an additional hard stop: if any `app_users` row still has `status='deletion_pending'` or a non-null `deletion_requested_at`, cleanup refuses to start before any DELETE statement is executed. Resolve those users through the canonical privacy-erasure worker first.
+The cleanup has a hard stop: if any `app_users` row still has `status='deletion_pending'` or a non-null `deletion_requested_at`, cleanup refuses to start before any DELETE statement is executed. Resolve those users through the canonical privacy-erasure worker first.
 
 It never:
 
 - runs `db reset`;
 - truncates the database;
 - blanket-deletes `app_users`, `events`, or `legal_documents`;
+- deletes or rewrites `legal_acceptances` merely to make cleanup succeed;
 - prints row values, UUIDs, names, email addresses, phone numbers, prayer rows, questionnaire answers, password hashes, tokens, codes, or secrets;
 - connects to production;
 - creates a production promotion artifact.
@@ -75,9 +76,24 @@ There is no fuzzy classification and no deletion of unclassified rows. Existing 
 
 ### Leaked synthetic legal documents
 
-The known leaked synthetic `legal_documents` fixtures are also eligible only by those same deterministic signatures. They are not blanket-deleted.
+The known leaked synthetic `legal_documents` fixtures are eligible only by those same deterministic signatures. They are never blanket-deleted.
 
-They are deliberately deleted **after** synthetic user/event roots. `legal_acceptances.legal_document_id` uses `ON DELETE RESTRICT`, so this order ensures synthetic acceptances disappear through the existing user cascade before their synthetic legal document is removed. A remaining real acceptance therefore continues to protect its legal document from deletion.
+`legal_acceptances.legal_document_id` uses `ON DELETE RESTRICT`. Therefore a deterministic synthetic legal document is a cleanup candidate only when it is **unreferenced**:
+
+```text
+deterministic synthetic signature
+AND NOT EXISTS legal_acceptances referencing that legal_document
+```
+
+A deterministic synthetic legal document that is still referenced is not deleted. It is reported only as the aggregate count:
+
+```text
+protected_synthetic_legal_documents
+```
+
+No document IDs, acceptance IDs, user IDs, or row values are emitted.
+
+This protection is deliberate. A surviving `legal_acceptance` is evidence and is not deleted, reassigned, or rewritten merely to make cleanup succeed.
 
 ## Dry-run behavior
 
@@ -87,7 +103,18 @@ The utility first snapshots aggregate state and checks the active deletion lifec
 
 When the lifecycle count is zero, the utility executes the exact cleanup plan inside one PostgreSQL transaction, collects aggregate before/after counts and the hygiene verdict, then rolls the entire transaction back.
 
-Therefore the dry run validates actual foreign-key behavior without persisting changes. If any statement fails, the transaction is rolled back and the command fails closed. The report contains counts only.
+Unreferenced deterministic synthetic legal documents are simulated as deletions. Referenced deterministic synthetic legal documents remain protected and are reported as an aggregate count.
+
+A dry run may therefore complete successfully with:
+
+```text
+protected_synthetic_legal_documents > 0
+apply_blocked = true
+```
+
+That state is useful review output, not permission to apply. The working database is still rolled back to its original state.
+
+If any statement fails, the transaction is rolled back and the command fails closed. The report contains counts only.
 
 ## Mandatory backup gate before apply
 
@@ -124,18 +151,23 @@ Review at minimum:
 - target is `local_docker_api_postgres/sredi_api`;
 - mode is `dry_run_rollback`;
 - `cleanup_performed` is `false`;
+- `simulation_performed` is `true`;
 - active deletion lifecycle users are zero;
 - transient-table deletion counts are expected;
 - deterministic synthetic-root counts are expected;
-- synthetic `legal_documents` candidate/deletion count is expected;
+- unreferenced synthetic `legal_documents` deletion count is expected;
+- `protected_synthetic_legal_documents` is understood;
+- `apply_blocked` matches whether protected synthetic legal documents remain;
 - promoted table before/after counts do not imply removal of owner-required users/events/registrations;
 - no row values or identifiers appear in the report.
 
 **Stop after the dry run.** Do not run apply until the project owner separately approves that exact dry-run result and confirms a fresh backup restore made after the current database state was finalized.
 
+If `protected_synthetic_legal_documents` is nonzero, apply is blocked. Resolve that remaining classification separately; do not delete or rewrite acceptances to bypass the gate.
+
 ## Apply gate
 
-Apply has three independent gates:
+Apply has these independent gates:
 
 1. `--apply`;
 2. both owner flags:
@@ -147,7 +179,9 @@ Apply has three independent gates:
 API_LOCAL_CLEANUP_ACK=OWNER_APPROVED_LOCAL_DATA_CLEANUP_APPLY
 ```
 
-If any gate is missing, the utility refuses to mutate.
+4. `protected_synthetic_legal_documents` must be zero after the simulated cleanup state is evaluated.
+
+If any gate is missing or protected synthetic legal documents remain, the utility refuses to commit and rolls the transaction back.
 
 After separate owner approval, the command shape is:
 
@@ -185,10 +219,7 @@ A remaining `review_required` result is not permission to broaden cleanup. It me
 ```powershell
 cd F:\2026\SS-App\code\sredi-svoih-app
 
-python scripts/migration/tests/test_promote_api_data.py
-python scripts/migration/tests/test_audit_api_source_hygiene.py
 python scripts/migration/tests/test_cleanup_api_source_hygiene.py
-
 npm run typecheck
 git diff --check origin/main...HEAD
 ```
@@ -204,6 +235,7 @@ This cleanup stage is complete when:
 - the canonical privacy-erasure worker reduces active deletion lifecycle users to zero;
 - the owner creates and restore-tests a fresh local source backup;
 - the owner runs and reviews cleanup dry-run output;
+- `protected_synthetic_legal_documents` is zero before apply;
 - the owner separately authorizes apply;
 - apply completes transactionally;
 - the read-only hygiene audit is rerun;
