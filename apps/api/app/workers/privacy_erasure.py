@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 
 _TRY_LOCK_SQL = text("SELECT pg_try_advisory_lock(:lock_key)")
 _UNLOCK_SQL = text("SELECT pg_advisory_unlock(:lock_key)")
+_CANONICAL_RECOVERY_FAILURE_CODES = frozenset(
+    {"privacy_erasure_manual_review_required"},
+)
 
 
 def _advisory_lock_key(request_id: UUID) -> int:
@@ -67,6 +70,13 @@ class PrivacyErasureRuntime:
         self,
         connection: AsyncConnection,
     ) -> list[tuple[UUID, int]]:
+        failure_codes = RETRYABLE_FAILURE_CODES
+        if self._executor is None:
+            # Canonical runtime gets one recovery path for requests that first
+            # failed closed on inconsistent finalized financial evidence. A
+            # custom executor keeps the historical retry contract unchanged.
+            failure_codes = RETRYABLE_FAILURE_CODES | _CANONICAL_RECOVERY_FAILURE_CODES
+
         query = (
             select(PrivacyRequest.id)
             .join(AppUser, AppUser.id == PrivacyRequest.user_id)
@@ -79,7 +89,7 @@ class PrivacyErasureRuntime:
                 PrivacyRequest.destruction_evidence_id.is_(None),
                 or_(
                     PrivacyRequest.failure_code.is_(None),
-                    PrivacyRequest.failure_code.in_(RETRYABLE_FAILURE_CODES),
+                    PrivacyRequest.failure_code.in_(failure_codes),
                 ),
                 AppUser.status == DELETION_PENDING_STATUS,
                 AppUser.deletion_requested_at.is_not(None),
