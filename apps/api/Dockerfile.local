@@ -5,15 +5,19 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+# Keep third-party dependencies in a stable Docker layer. Application code,
+# migrations, scripts, and tests change much more often than pyproject.toml.
 COPY pyproject.toml ./
+RUN mkdir -p app \
+    && touch app/__init__.py \
+    && python -m pip install --no-cache-dir --upgrade pip \
+    && python -m pip install --no-cache-dir .
+
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
 COPY scripts ./scripts
 COPY tests ./tests
-
-RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -m pip install --no-cache-dir .
 
 EXPOSE 8000
 
