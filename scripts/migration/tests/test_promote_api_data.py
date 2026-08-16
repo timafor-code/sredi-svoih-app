@@ -61,6 +61,9 @@ class ConfigurationTests(unittest.TestCase):
         with self.assertRaisesRegex(PROMOTE.PromotionError, "environment variable name"):
             PROMOTE.load_pg_uri("PROMOTION_URI;echo")
 
+    def test_expected_alembic_head_matches_privacy_review_release(self) -> None:
+        self.assertEqual(PROMOTE.EXPECTED_ALEMBIC_HEAD, "20260816184500")
+
 
 class ClassificationTests(unittest.TestCase):
     def test_promoted_and_excluded_tables_are_disjoint(self) -> None:
@@ -97,6 +100,7 @@ class ClassificationTests(unittest.TestCase):
             "invites",
             "privacy_access_codes",
             "privacy_access_sessions",
+            "privacy_financial_review_evidence",
             "web_registration_intents",
             "web_registration_verification_codes",
             "device_tokens",
@@ -104,6 +108,10 @@ class ClassificationTests(unittest.TestCase):
             "push_notification_deliveries",
         }
         self.assertTrue(required <= set(PROMOTE.EXCLUDED_TABLES))
+
+    def test_privacy_review_evidence_is_environment_bound_not_promoted(self) -> None:
+        self.assertIn("privacy_financial_review_evidence", PROMOTE.EXCLUDED_TABLES)
+        self.assertNotIn("privacy_financial_review_evidence", PROMOTE.PROMOTED_TABLES)
 
     def test_app_users_remains_promoted_so_argon2_password_hashes_are_preserved(self) -> None:
         self.assertIn("app_users", PROMOTE.PROMOTED_TABLES)
