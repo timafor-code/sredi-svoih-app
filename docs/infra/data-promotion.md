@@ -34,7 +34,7 @@ Environment-bound or in-flight state is excluded:
 
 Existing sessions therefore do not survive promotion; users sign in again. Users whose `password_hash` is null still use the normal set-password flow after real email delivery is enabled.
 
-The script never logs row values or database URLs. Console output is limited to safe table names, counts, checksums, status, and redacted failure categories.
+The script never logs row values or database connection values. Console output is limited to safe table names, counts, checksums, status, and redacted failure categories.
 
 ## Fail-closed guarantees
 
@@ -60,6 +60,18 @@ Database promotion does **not** copy object bytes. `profile_avatars` and `event_
 
 Do not use `--ack-object-storage-ready` as a bypass. It means the required object copy has actually been completed and checked. S3 provider, credentials, bucket names, and endpoints remain deployment decisions and must not be embedded in this script or repository.
 
+## Dedicated database secret
+
+The utility reads its connection only from a dedicated owner-supplied environment variable:
+
+```text
+API_PROMOTION_DATABASE_URL
+```
+
+There is no fallback to frontend config, dotenv discovery, or a hard-coded endpoint. Keep the value backend-only and never print it.
+
+For a production one-off run, add `API_PROMOTION_DATABASE_URL` temporarily to the ignored, permission-restricted server file `infra/env/.env.api.production`, using the same PostgreSQL endpoint/credentials already approved for the backend. Edit that file only on the host; never copy its value into Git, chat, a ticket, or command history. Remove the temporary promotion variable after post-apply validation.
+
 ## Prerequisites
 
 Before any owner run:
@@ -67,7 +79,7 @@ Before any owner run:
 1. Source and target are on the exact Alembic head expected by the checked-out promotion script.
 2. Source is the reviewed current API PostgreSQL data set, not Supabase.
 3. Target has the API schema but no rows in promotion-managed tables.
-4. Database URLs stay only in owner-controlled environment or backend container environment. Never paste them into Git, chat, tickets, command arguments, or frontend config.
+4. Connection values stay only in owner-controlled environment or backend container environment.
 5. The artifact directory is protected and outside the repository. Artifacts contain personal data and must never be committed or shared.
 6. Before `apply`, a current target logical backup has passed the disposable restore test in `docs/infra/postgres-backup-restore.md`.
 7. Source writes are stopped for the final export window, or the owner accepts that writes after the snapshot are not in the artifact.
@@ -86,20 +98,23 @@ $promotionDir = "F:\2026\SS-App\private\api-promotion-$(Get-Date -Format 'yyyyMM
 New-Item -ItemType Directory -Path $promotionDir | Out-Null
 ```
 
-After this PR is merged and local `main` is synchronized, build the current API image and export:
+After this PR is merged and local `main` is synchronized, build the current API image and export. The local URL below uses only the committed local-development PostgreSQL credentials from `infra/docker-compose.api.yml`:
 
 ```powershell
 cd F:\2026\SS-App\code\sredi-svoih-app
 
 docker compose -f infra/docker-compose.api.yml build api_backend
 
+$env:API_PROMOTION_DATABASE_URL = "postgresql://sredi_api:sredi_api@api_postgres:5432/sredi_api"
 $env:API_PROMOTION_RUN_ACK = "OWNER_APPROVED_API_PROMOTION_EXPORT"
 docker compose -f infra/docker-compose.api.yml run --rm --no-deps `
+  -e API_PROMOTION_DATABASE_URL `
   -e API_PROMOTION_RUN_ACK `
   -v "${PWD}/scripts/migration:/migration:ro" `
   -v "${promotionDir}:/promotion" `
   api_backend `
   python /migration/promote_api_data.py export --output-dir /promotion
+Remove-Item Env:API_PROMOTION_DATABASE_URL
 Remove-Item Env:API_PROMOTION_RUN_ACK
 ```
 
@@ -151,7 +166,7 @@ The one-off `docker compose run ... api_backend` command below can connect to th
 
 ## Target preflight on Selectel
 
-Run through the production Compose API service so `DATABASE_URL` comes from the ignored backend production env file instead of shell history. Mount the artifact read-only:
+First add the temporary `API_PROMOTION_DATABASE_URL` value to the ignored server backend env file as described above. Then run through the production Compose service with the artifact mounted read-only:
 
 ```bash
 cd /opt/sredi-svoih
@@ -236,7 +251,7 @@ Expected final line:
 validation_ok tables=<reviewed-table-count>
 ```
 
-Only after successful validation may the owner restart the normal API and later enable clients/workers according to their separate deployment gates.
+After successful validation, remove the temporary `API_PROMOTION_DATABASE_URL` entry from the ignored backend env file. Only then may the owner restart the normal API and later enable clients/workers according to their separate deployment gates.
 
 ## Expected behavior after promotion
 
