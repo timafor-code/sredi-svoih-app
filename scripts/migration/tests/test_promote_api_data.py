@@ -38,16 +38,16 @@ class ConfigurationTests(unittest.TestCase):
 
     def test_database_url_is_owner_environment_only(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaisesRegex(PROMOTE.PromotionError, "DATABASE_URL"):
-                PROMOTE.load_database_url("DATABASE_URL")
+            with self.assertRaisesRegex(PROMOTE.PromotionError, PROMOTE.DEFAULT_DATABASE_ENV):
+                PROMOTE.load_database_url(PROMOTE.DEFAULT_DATABASE_ENV)
 
         with patch.dict(
             os.environ,
-            {"SOURCE_DATABASE_URL": "postgresql://owner@localhost:55432/sredi_api"},
+            {"SOURCE_PROMOTION_URL": "postgresql://owner@localhost:55432/sredi_api"},
             clear=True,
         ):
             self.assertEqual(
-                PROMOTE.load_database_url("SOURCE_DATABASE_URL"),
+                PROMOTE.load_database_url("SOURCE_PROMOTION_URL"),
                 "postgresql://owner@localhost:55432/sredi_api",
             )
 
@@ -59,7 +59,7 @@ class ConfigurationTests(unittest.TestCase):
 
     def test_unsafe_environment_variable_name_is_rejected(self) -> None:
         with self.assertRaisesRegex(PROMOTE.PromotionError, "environment variable name"):
-            PROMOTE.load_database_url("DATABASE_URL;echo")
+            PROMOTE.load_database_url("PROMOTION_URL;echo")
 
 
 class ClassificationTests(unittest.TestCase):
@@ -149,7 +149,10 @@ class ArtifactValidationTests(unittest.TestCase):
     def test_jsonl_validation_rejects_duplicate_primary_key(self) -> None:
         entry = {
             "name": "events",
-            "columns": [{"name": "id", "type": "uuid"}, {"name": "title", "type": "text"}],
+            "columns": [
+                {"name": "id", "type": "uuid"},
+                {"name": "title", "type": "text"},
+            ],
             "primary_key": ["id"],
             "row_count": 2,
         }
@@ -168,7 +171,10 @@ class ArtifactValidationTests(unittest.TestCase):
     def test_jsonl_validation_rejects_column_mismatch(self) -> None:
         entry = {
             "name": "events",
-            "columns": [{"name": "id", "type": "uuid"}, {"name": "title", "type": "text"}],
+            "columns": [
+                {"name": "id", "type": "uuid"},
+                {"name": "title", "type": "text"},
+            ],
             "primary_key": ["id"],
             "row_count": 1,
         }
