@@ -67,16 +67,22 @@ class QuerySafetyTests(unittest.TestCase):
         self.assertNotIn("Synthetic own request", query)
         self.assertEqual(params, ("Synthetic own request",))
 
-    def test_no_text_columns_returns_constant_select(self) -> None:
+    def test_no_text_columns_returns_row_independent_constant_select(self) -> None:
         query, params = AUDIT._count_query_for_ilike(
             "event_capacity_units",
             (),
             "%synthetic-%",
         )
-        self.assertEqual(
-            query,
-            'SELECT 0::bigint FROM public."event_capacity_units"',
+        self.assertEqual(query, "SELECT 0::bigint")
+        self.assertEqual(params, ())
+
+    def test_combined_query_without_signatures_is_row_independent(self) -> None:
+        query, params = AUDIT._combined_direct_query(
+            "event_capacity_units",
+            (),
+            include_privacy_messages=False,
         )
+        self.assertEqual(query, "SELECT 0::bigint")
         self.assertEqual(params, ())
 
     def test_audit_module_has_no_direct_database_write_call(self) -> None:
@@ -84,6 +90,22 @@ class QuerySafetyTests(unittest.TestCase):
         self.assertNotIn("conn.execute(", source)
         self.assertNotIn("conn.executemany(", source)
         self.assertNotIn("conn.copy_", source)
+
+
+class AsyncQuerySafetyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_scalar_result_fails_closed(self) -> None:
+        class EmptyResultConnection:
+            async def fetchval(self, _query, *_params):
+                return None
+
+        with self.assertRaisesRegex(
+            AUDIT.HygieneAuditError,
+            "returned no scalar result",
+        ):
+            await AUDIT._fetch_count(
+                EmptyResultConnection(),
+                "SELECT 0::bigint",
+            )
 
 
 class ReportTests(unittest.TestCase):
