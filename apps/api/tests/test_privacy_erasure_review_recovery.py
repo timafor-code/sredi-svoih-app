@@ -60,7 +60,7 @@ class PrivacyErasureReviewRecoveryTests(unittest.IsolatedAsyncioTestCase):
             api_privacy_erasure_poll_interval_seconds=1,
             api_privacy_erasure_batch_size=10,
             api_privacy_erasure_notification_key_b64=base64.b64encode(
-                b"synthetic-review-notice-key-32byt"
+                b"synthetic-review-notice-key-32bx"
             ).decode("ascii"),
             api_privacy_erasure_notification_key_id="synthetic-review-key-v1",
             api_privacy_erasure_notification_delivery_window_hours=24,
