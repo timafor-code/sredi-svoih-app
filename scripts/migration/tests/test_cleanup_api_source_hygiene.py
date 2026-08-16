@@ -6,7 +6,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, call, patch
 
 
 CLEANUP_PATH = Path(__file__).resolve().parents[1] / "cleanup_api_source_hygiene.py"
@@ -61,8 +61,19 @@ class TargetSafetyTests(unittest.TestCase):
             set(CLEANUP.SYNTHETIC_ROOT_TABLES),
             {"app_users", "communities", "events", "event_registrations"},
         )
+        self.assertEqual(CLEANUP.SYNTHETIC_LEGAL_DOCUMENT_TABLE, "legal_documents")
+        self.assertEqual(
+            set(CLEANUP._synthetic_candidate_tables()),
+            {
+                "app_users",
+                "communities",
+                "events",
+                "event_registrations",
+                "legal_documents",
+            },
+        )
         self.assertTrue(
-            set(CLEANUP.SYNTHETIC_ROOT_TABLES)
+            set(CLEANUP._synthetic_candidate_tables())
             <= set(CLEANUP.PROMOTE.PROMOTED_TABLES)
         )
 
@@ -134,6 +145,25 @@ class QuerySafetyTests(unittest.TestCase):
         self.assertNotIn("%synthetic-%", query)
         self.assertGreater(len(params), 0)
 
+    def test_legal_document_delete_uses_same_parameterized_signatures(self) -> None:
+        schema = CLEANUP.PROMOTE.TableSchema(
+            name="legal_documents",
+            columns=(
+                ("id", "uuid"),
+                ("version", "text"),
+                ("title", "text"),
+                ("published_url", "text"),
+            ),
+            primary_key=("id",),
+            dependencies=(),
+        )
+        query, params = CLEANUP._root_delete_query(schema)
+        self.assertTrue(
+            query.startswith('DELETE FROM public."legal_documents" WHERE '),
+        )
+        self.assertGreater(len(params), 0)
+        self.assertNotIn("Synthetic %", query)
+
     def test_no_text_root_cannot_match_any_row(self) -> None:
         schema = CLEANUP.PROMOTE.TableSchema(
             name="events",
@@ -149,6 +179,7 @@ class QuerySafetyTests(unittest.TestCase):
         source = CLEANUP_PATH.read_text(encoding="utf-8")
         self.assertNotIn('DELETE FROM public."app_users"', source)
         self.assertNotIn('DELETE FROM public."events"', source)
+        self.assertNotIn('DELETE FROM public."legal_documents"', source)
         self.assertNotIn("TRUNCATE ", source.upper())
 
 
@@ -181,18 +212,25 @@ class FakeConnection:
 
 
 class TransactionTests(unittest.IsolatedAsyncioTestCase):
-    def _snapshot(self, verdict: str = "review_required"):
+    def _snapshot(
+        self,
+        verdict: str = "review_required",
+        *,
+        active_deletion: int = 0,
+    ):
         return {
             "promoted_table_counts": {},
             "transient_table_counts": {name: 0 for name in CLEANUP.TRANSIENT_TABLES},
             "synthetic_root_candidates": {
-                name: 0 for name in CLEANUP.SYNTHETIC_ROOT_TABLES
+                name: 0 for name in CLEANUP._synthetic_candidate_tables()
             },
             "hygiene": {
                 "verdict": verdict,
                 "promoted_summary": {},
                 "privacy_history_summary": {},
-                "live_state": {},
+                "live_state": {
+                    "active_deletion_lifecycle_users": active_deletion,
+                },
             },
         }
 
@@ -263,6 +301,66 @@ class TransactionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(conn.closed)
         self.assertTrue(report["cleanup_performed"])
         self.assertFalse(report["simulation_performed"])
+
+    async def test_active_deletion_lifecycle_blocks_before_any_cleanup_delete(self) -> None:
+        conn = FakeConnection()
+        before = self._snapshot(active_deletion=2)
+        execute_cleanup = AsyncMock()
+        with (
+            patch.dict(os.environ, {"APP_ENV": "local"}, clear=False),
+            patch.object(CLEANUP.PROMOTE, "connect", AsyncMock(return_value=conn)),
+            patch.object(CLEANUP.PROMOTE, "configure_stable_session", AsyncMock()),
+            patch.object(
+                CLEANUP.PROMOTE,
+                "validate_schema_classification",
+                AsyncMock(return_value={}),
+            ),
+            patch.object(CLEANUP, "_snapshot", AsyncMock(return_value=before)),
+            patch.object(CLEANUP, "_execute_cleanup", execute_cleanup),
+        ):
+            with self.assertRaisesRegex(
+                CLEANUP.LocalCleanupError,
+                "active deletion lifecycle",
+            ):
+                await CLEANUP.run_cleanup(VALID_URI, apply=False)
+
+        execute_cleanup.assert_not_awaited()
+        self.assertTrue(conn.tx.rolled_back)
+        self.assertFalse(conn.tx.committed)
+        self.assertTrue(conn.closed)
+
+    async def test_legal_documents_are_deleted_after_other_synthetic_roots(self) -> None:
+        conn = object()
+        schemas = {
+            name: CLEANUP.PROMOTE.TableSchema(
+                name=name,
+                columns=(("id", "uuid"),),
+                primary_key=("id",),
+                dependencies=(),
+            )
+            for name in CLEANUP._synthetic_candidate_tables()
+        }
+        delete_root = AsyncMock(return_value=0)
+        with (
+            patch.object(
+                CLEANUP.PROMOTE,
+                "topological_order",
+                side_effect=[
+                    tuple(CLEANUP.TRANSIENT_TABLES),
+                    tuple(CLEANUP.SYNTHETIC_ROOT_TABLES),
+                ],
+            ),
+            patch.object(CLEANUP, "_delete_all_from_table", AsyncMock(return_value=0)),
+            patch.object(CLEANUP, "_delete_root_candidates", delete_root),
+        ):
+            await CLEANUP._execute_cleanup(conn, schemas)
+
+        root_names = [item.args[1].name for item in delete_root.await_args_list]
+        self.assertEqual(root_names[-1], CLEANUP.SYNTHETIC_LEGAL_DOCUMENT_TABLE)
+        self.assertEqual(
+            set(root_names[:-1]),
+            set(CLEANUP.SYNTHETIC_ROOT_TABLES),
+        )
 
     async def test_failure_rolls_back(self) -> None:
         conn = FakeConnection()
