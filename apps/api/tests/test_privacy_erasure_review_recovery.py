@@ -82,7 +82,7 @@ class PrivacyErasureReviewRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 session.add(
                     EventCategory(
                         community_id=self.community_id,
-                        slug="review-recovery",
+                        slug="review_recovery",
                         title="Review recovery",
                         color="#123456",
                         icon="*",
@@ -95,7 +95,7 @@ class PrivacyErasureReviewRecoveryTests(unittest.IsolatedAsyncioTestCase):
                         community_id=self.community_id,
                         title="Synthetic review recovery event",
                         starts_at=self.now + timedelta(days=7),
-                        category="review-recovery",
+                        category="review_recovery",
                         registration_mode="internal_paid",
                         price_amount=12500,
                         price_currency="RUB",
