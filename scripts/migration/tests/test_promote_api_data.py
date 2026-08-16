@@ -22,32 +22,32 @@ SPEC.loader.exec_module(PROMOTE)
 
 
 class ConfigurationTests(unittest.TestCase):
-    def test_help_does_not_require_database_environment(self) -> None:
+    def test_help_does_not_require_pg_environment(self) -> None:
         with patch.dict(os.environ, {}, clear=True), contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaises(SystemExit) as raised:
                 PROMOTE.build_parser().parse_args(["--help"])
         self.assertEqual(raised.exception.code, 0)
 
-    def test_sqlalchemy_asyncpg_url_is_normalized_for_asyncpg(self) -> None:
+    def test_sqlalchemy_asyncpg_uri_is_normalized_for_asyncpg(self) -> None:
         self.assertEqual(
-            PROMOTE.normalize_database_url(
+            PROMOTE.normalize_pg_uri(
                 "postgresql+asyncpg://owner:secret@api_postgres:5432/sredi_api"
             ),
             "postgresql://owner:secret@api_postgres:5432/sredi_api",
         )
 
-    def test_database_url_is_owner_environment_only(self) -> None:
+    def test_pg_uri_is_owner_environment_only(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaisesRegex(PROMOTE.PromotionError, PROMOTE.DEFAULT_DATABASE_ENV):
-                PROMOTE.load_database_url(PROMOTE.DEFAULT_DATABASE_ENV)
+            with self.assertRaisesRegex(PROMOTE.PromotionError, PROMOTE.DEFAULT_PG_ENV):
+                PROMOTE.load_pg_uri(PROMOTE.DEFAULT_PG_ENV)
 
         with patch.dict(
             os.environ,
-            {"SOURCE_PROMOTION_URL": "postgresql://owner@localhost:55432/sredi_api"},
+            {"SOURCE_PROMOTION_PG_URI": "postgresql://owner@localhost:55432/sredi_api"},
             clear=True,
         ):
             self.assertEqual(
-                PROMOTE.load_database_url("SOURCE_PROMOTION_URL"),
+                PROMOTE.load_pg_uri("SOURCE_PROMOTION_PG_URI"),
                 "postgresql://owner@localhost:55432/sredi_api",
             )
 
@@ -59,7 +59,7 @@ class ConfigurationTests(unittest.TestCase):
 
     def test_unsafe_environment_variable_name_is_rejected(self) -> None:
         with self.assertRaisesRegex(PROMOTE.PromotionError, "environment variable name"):
-            PROMOTE.load_database_url("PROMOTION_URL;echo")
+            PROMOTE.load_pg_uri("PROMOTION_URI;echo")
 
 
 class ClassificationTests(unittest.TestCase):
