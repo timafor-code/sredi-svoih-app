@@ -31,7 +31,8 @@ DEFAULT_DATABASE_ENV = "DATABASE_URL"
 ACK_ENV = "API_PROMOTION_RUN_ACK"
 EXPORT_ACK = "OWNER_APPROVED_API_PROMOTION_EXPORT"
 APPLY_ACK = "OWNER_APPROVED_API_PROMOTION_APPLY"
-SAFE_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]*$")
+SAFE_SQL_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]*$")
+SAFE_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # Explicit, reviewed API-owned data that is portable between environments when
 # source and target are on the same Alembic head.
@@ -102,7 +103,7 @@ OBJECT_METADATA_TABLES = frozenset({"profile_avatars", "event_images"})
 
 
 class PromotionError(RuntimeError):
-    """An error message that is safe to show without database values or secrets."""
+    """An error whose text is safe to show without database values or secrets."""
 
 
 @dataclass(frozen=True)
@@ -114,7 +115,7 @@ class TableSchema:
 
 
 def quote_identifier(value: str) -> str:
-    if not SAFE_IDENTIFIER.fullmatch(value):
+    if not SAFE_SQL_IDENTIFIER.fullmatch(value):
         raise PromotionError("Unsafe SQL identifier in reviewed table metadata.")
     return f'"{value}"'
 
@@ -129,14 +130,14 @@ def normalize_database_url(value: str) -> str:
 
 
 def load_database_url(env_name: str) -> str:
-    if not SAFE_IDENTIFIER.fullmatch(env_name):
+    if not SAFE_ENV_NAME.fullmatch(env_name):
         raise PromotionError("Database environment variable name is invalid.")
     raw = os.environ.get(env_name, "").strip()
     if not raw:
         raise PromotionError(f"{env_name} must be supplied by the owner environment.")
     normalized = normalize_database_url(raw)
     parsed = urlsplit(normalized)
-    if parsed.scheme not in {"postgresql", "postgres"} or not parsed.hostname:
+    if parsed.scheme != "postgresql" or not parsed.hostname:
         raise PromotionError(f"{env_name} is not a PostgreSQL connection URL.")
     return normalized
 
@@ -165,7 +166,7 @@ def sha256_file(path: Path) -> str:
 async def connect(database_url: str) -> asyncpg.Connection:
     try:
         return await asyncpg.connect(database_url)
-    except Exception as exc:  # noqa: BLE001 - redact all driver detail
+    except Exception as exc:  # noqa: BLE001 - never leak driver details
         raise PromotionError("Database connection failed; details are intentionally redacted.") from exc
 
 
@@ -250,20 +251,23 @@ async def table_schema(conn: asyncpg.Connection, table_name: str) -> TableSchema
         """,
         table_name,
     )
-    dependencies = tuple(
-        str(row["dependency"])
-        for row in dependency_rows
-        if str(row["dependency"]) != table_name
-    )
     return TableSchema(
         name=table_name,
-        columns=tuple((str(row["column_name"]), str(row["data_type"])) for row in column_rows),
+        columns=tuple(
+            (str(row["column_name"]), str(row["data_type"])) for row in column_rows
+        ),
         primary_key=tuple(str(row["column_name"]) for row in pk_rows),
-        dependencies=dependencies,
+        dependencies=tuple(
+            str(row["dependency"])
+            for row in dependency_rows
+            if str(row["dependency"]) != table_name
+        ),
     )
 
 
-async def validate_schema_classification(conn: asyncpg.Connection) -> dict[str, TableSchema]:
+async def validate_schema_classification(
+    conn: asyncpg.Connection,
+) -> dict[str, TableSchema]:
     head = await current_alembic_head(conn)
     if head != EXPECTED_ALEMBIC_HEAD:
         raise PromotionError(
@@ -294,8 +298,7 @@ async def configure_stable_session(conn: asyncpg.Connection) -> None:
 
 
 def topological_order(
-    promoted: set[str],
-    schemas: dict[str, TableSchema],
+    promoted: set[str], schemas: dict[str, TableSchema]
 ) -> tuple[str, ...]:
     remaining = set(promoted)
     ordered: list[str] = []
@@ -313,8 +316,7 @@ def topological_order(
 
 
 async def row_json_stream(
-    conn: asyncpg.Connection,
-    schema: TableSchema,
+    conn: asyncpg.Connection, schema: TableSchema
 ) -> AsyncIterator[str]:
     table_sql = quote_identifier(schema.name)
     order_sql = ", ".join(quote_identifier(column) for column in schema.primary_key)
@@ -332,8 +334,7 @@ async def count_table(conn: asyncpg.Connection, table_name: str) -> int:
 
 
 async def hash_table_from_database(
-    conn: asyncpg.Connection,
-    schema: TableSchema,
+    conn: asyncpg.Connection, schema: TableSchema
 ) -> tuple[int, str]:
     digest = hashlib.sha256()
     row_count = 0
@@ -443,10 +444,7 @@ def ensure_output_directory(path: Path, *, allow_in_repository: bool) -> None:
 
 
 def manifest_table_entry(
-    schema: TableSchema,
-    *,
-    row_count: int,
-    checksum: str,
+    schema: TableSchema, *, row_count: int, checksum: str
 ) -> dict[str, Any]:
     return {
         "name": schema.name,
@@ -546,10 +544,13 @@ async def export_artifact(args: argparse.Namespace) -> None:
         )
 
         checksum_lines = [f"{sha256_file(manifest_path)}  manifest.json"]
-        for entry in entries:
-            checksum_lines.append(f"{entry['sha256']}  {entry['path']}")
-        checksums_path = output_dir / "checksums.sha256"
-        checksums_path.write_text("\n".join(checksum_lines) + "\n", encoding="utf-8")
+        checksum_lines.extend(
+            f"{entry['sha256']}  {entry['path']}" for entry in entries
+        )
+        (output_dir / "checksums.sha256").write_text(
+            "\n".join(checksum_lines) + "\n",
+            encoding="utf-8",
+        )
         print(
             f"export_complete tables={len(entries)} output={output_dir} "
             f"object_storage_required={str(any(object_rows.values())).lower()}"
@@ -558,99 +559,22 @@ async def export_artifact(args: argparse.Namespace) -> None:
         await conn.close()
 
 
-def load_manifest(input_dir: Path) -> dict[str, Any]:
-    if input_dir.is_symlink():
-        raise PromotionError("Input directory must not be a symbolic link.")
-    manifest_path = input_dir / "manifest.json"
-    checksums_path = input_dir / "checksums.sha256"
-    tables_dir = input_dir / "tables"
-    if not manifest_path.is_file() or not checksums_path.is_file() or not tables_dir.is_dir():
-        raise PromotionError("Promotion artifact layout is incomplete.")
-    if manifest_path.is_symlink() or checksums_path.is_symlink() or tables_dir.is_symlink():
-        raise PromotionError("Promotion artifact must not contain symbolic links.")
-
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        raise PromotionError("manifest.json is invalid.") from exc
-    if manifest.get("format_version") != FORMAT_VERSION:
-        raise PromotionError("Promotion artifact format version is unsupported.")
-    if manifest.get("alembic_head") != EXPECTED_ALEMBIC_HEAD:
-        raise PromotionError("Promotion artifact Alembic head is unsupported.")
-
-    entries = manifest.get("tables")
-    if not isinstance(entries, list):
-        raise PromotionError("Promotion manifest table list is invalid.")
-    declared = {entry.get("name") for entry in entries if isinstance(entry, dict)}
-    if declared != set(PROMOTED_TABLES):
-        raise PromotionError("Promotion manifest table allowlist does not match this release.")
-
-    excluded = manifest.get("excluded_tables")
-    if not isinstance(excluded, list):
-        raise PromotionError("Promotion manifest excluded-table list is invalid.")
-    excluded_declared = {
-        entry.get("name") for entry in excluded if isinstance(entry, dict)
-    }
-    if excluded_declared != set(EXCLUDED_TABLES):
-        raise PromotionError("Promotion manifest excluded-table set does not match this release.")
-
-    expected_files = {"manifest.json", "checksums.sha256"}
-    checksum_expected: dict[str, str] = {}
-    for entry in entries:
-        table_name = str(entry["name"])
-        relative_path = str(entry.get("path", ""))
-        expected_path = f"tables/{table_name}.jsonl"
-        if relative_path != expected_path:
-            raise PromotionError(f"Artifact path mismatch for table {table_name}.")
-        expected_files.add(expected_path)
-        artifact_path = input_dir / relative_path
-        if not artifact_path.is_file() or artifact_path.is_symlink():
-            raise PromotionError(f"Artifact file missing or unsafe for table {table_name}.")
-        actual_hash = sha256_file(artifact_path)
-        if actual_hash != entry.get("sha256"):
-            raise PromotionError(f"Checksum mismatch for table {table_name}.")
-        checksum_expected[relative_path] = actual_hash
-        validate_jsonl(entry, artifact_path)
-
-    actual_files = {
-        str(path.relative_to(input_dir)).replace("\\", "/")
-        for path in input_dir.rglob("*")
-        if path.is_file()
-    }
-    if actual_files != expected_files:
-        raise PromotionError("Promotion artifact contains missing or undeclared files.")
-
-    checksum_expected["manifest.json"] = sha256_file(manifest_path)
-    checksum_lines = [
-        line.strip()
-        for line in checksums_path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    parsed_index: dict[str, str] = {}
-    for line in checksum_lines:
-        parts = line.split(None, 1)
-        if len(parts) != 2:
-            raise PromotionError("checksums.sha256 contains an invalid line.")
-        digest, relative_path = parts
-        relative_path = relative_path.strip()
-        if relative_path.startswith("*"):
-            relative_path = relative_path[1:]
-        parsed_index[relative_path] = digest
-    if parsed_index != checksum_expected:
-        raise PromotionError("checksums.sha256 does not match declared artifacts.")
-    return manifest
-
-
 def validate_jsonl(entry: dict[str, Any], artifact_path: Path) -> None:
     column_entries = entry.get("columns")
     if not isinstance(column_entries, list):
         raise PromotionError(f"Column metadata invalid for table {entry.get('name')}.")
-    columns = [column.get("name") for column in column_entries if isinstance(column, dict)]
+    columns = [
+        column.get("name") for column in column_entries if isinstance(column, dict)
+    ]
     if not columns or len(columns) != len(column_entries):
         raise PromotionError(f"Column metadata invalid for table {entry.get('name')}.")
     column_set = set(columns)
     primary_key = entry.get("primary_key")
-    if not isinstance(primary_key, list) or not primary_key or not set(primary_key) <= column_set:
+    if (
+        not isinstance(primary_key, list)
+        or not primary_key
+        or not set(primary_key) <= column_set
+    ):
         raise PromotionError(f"Primary-key metadata invalid for table {entry.get('name')}.")
 
     seen_keys: set[str] = set()
@@ -681,6 +605,100 @@ def validate_jsonl(entry: dict[str, Any], artifact_path: Path) -> None:
         raise PromotionError(f"Row-count mismatch for table {entry.get('name')}.")
 
 
+def load_manifest(input_dir: Path) -> dict[str, Any]:
+    if not input_dir.is_dir() or input_dir.is_symlink():
+        raise PromotionError("Input directory is missing or unsafe.")
+
+    for path in input_dir.rglob("*"):
+        if path.is_symlink():
+            raise PromotionError("Promotion artifact must not contain symbolic links.")
+
+    manifest_path = input_dir / "manifest.json"
+    checksums_path = input_dir / "checksums.sha256"
+    tables_dir = input_dir / "tables"
+    if not manifest_path.is_file() or not checksums_path.is_file() or not tables_dir.is_dir():
+        raise PromotionError("Promotion artifact layout is incomplete.")
+
+    actual_dirs = {
+        str(path.relative_to(input_dir)).replace("\\", "/")
+        for path in input_dir.rglob("*")
+        if path.is_dir()
+    }
+    if actual_dirs != {"tables"}:
+        raise PromotionError("Promotion artifact contains an undeclared directory.")
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        raise PromotionError("manifest.json is invalid.") from exc
+    if manifest.get("format_version") != FORMAT_VERSION:
+        raise PromotionError("Promotion artifact format version is unsupported.")
+    if manifest.get("alembic_head") != EXPECTED_ALEMBIC_HEAD:
+        raise PromotionError("Promotion artifact Alembic head is unsupported.")
+
+    entries = manifest.get("tables")
+    if not isinstance(entries, list):
+        raise PromotionError("Promotion manifest table list is invalid.")
+    declared = {entry.get("name") for entry in entries if isinstance(entry, dict)}
+    if declared != set(PROMOTED_TABLES) or len(entries) != len(PROMOTED_TABLES):
+        raise PromotionError("Promotion manifest table allowlist does not match this release.")
+
+    excluded = manifest.get("excluded_tables")
+    if not isinstance(excluded, list):
+        raise PromotionError("Promotion manifest excluded-table list is invalid.")
+    excluded_declared = {
+        entry.get("name") for entry in excluded if isinstance(entry, dict)
+    }
+    if (
+        excluded_declared != set(EXCLUDED_TABLES)
+        or len(excluded) != len(EXCLUDED_TABLES)
+    ):
+        raise PromotionError("Promotion manifest excluded-table set does not match this release.")
+
+    expected_files = {"manifest.json", "checksums.sha256"}
+    checksum_expected: dict[str, str] = {}
+    for entry in entries:
+        table_name = str(entry["name"])
+        relative_path = str(entry.get("path", ""))
+        expected_path = f"tables/{table_name}.jsonl"
+        if relative_path != expected_path:
+            raise PromotionError(f"Artifact path mismatch for table {table_name}.")
+        expected_files.add(expected_path)
+        artifact_path = input_dir / relative_path
+        if not artifact_path.is_file() or artifact_path.is_symlink():
+            raise PromotionError(f"Artifact file missing or unsafe for table {table_name}.")
+        actual_hash = sha256_file(artifact_path)
+        if actual_hash != entry.get("sha256"):
+            raise PromotionError(f"Checksum mismatch for table {table_name}.")
+        checksum_expected[relative_path] = actual_hash
+        validate_jsonl(entry, artifact_path)
+
+    actual_files = {
+        str(path.relative_to(input_dir)).replace("\\", "/")
+        for path in input_dir.rglob("*")
+        if path.is_file()
+    }
+    if actual_files != expected_files:
+        raise PromotionError("Promotion artifact contains missing or undeclared files.")
+
+    checksum_expected["manifest.json"] = sha256_file(manifest_path)
+    parsed_index: dict[str, str] = {}
+    for line in checksums_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            raise PromotionError("checksums.sha256 contains an invalid line.")
+        digest, relative_path = parts
+        relative_path = relative_path.strip().removeprefix("*")
+        if relative_path in parsed_index:
+            raise PromotionError("checksums.sha256 contains a duplicate path.")
+        parsed_index[relative_path] = digest
+    if parsed_index != checksum_expected:
+        raise PromotionError("checksums.sha256 does not match declared artifacts.")
+    return manifest
+
+
 def manifest_schemas(manifest: dict[str, Any]) -> dict[str, TableSchema]:
     result: dict[str, TableSchema] = {}
     for entry in manifest["tables"]:
@@ -697,8 +715,7 @@ def manifest_schemas(manifest: dict[str, Any]) -> dict[str, TableSchema]:
 
 
 async def validate_target_schema(
-    conn: asyncpg.Connection,
-    manifest: dict[str, Any],
+    conn: asyncpg.Connection, manifest: dict[str, Any]
 ) -> dict[str, TableSchema]:
     target_schemas = await validate_schema_classification(conn)
     artifact_schemas = manifest_schemas(manifest)
@@ -909,8 +926,7 @@ async def async_main(args: argparse.Namespace) -> None:
 
 def main() -> int:
     os.umask(0o077)
-    parser = build_parser()
-    args = parser.parse_args()
+    args = build_parser().parse_args()
     try:
         asyncio.run(async_main(args))
         return 0
@@ -920,8 +936,11 @@ def main() -> int:
     except KeyboardInterrupt:
         print("promotion_error: interrupted by owner", file=sys.stderr)
         return 130
-    except Exception as exc:  # noqa: BLE001 - never leak raw DB/row detail
-        print("promotion_error: unexpected failure; details intentionally redacted", file=sys.stderr)
+    except Exception:  # noqa: BLE001 - never leak DB/row details
+        print(
+            "promotion_error: unexpected failure; details intentionally redacted",
+            file=sys.stderr,
+        )
         return 1
 
 
