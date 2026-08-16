@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from app.core.config import get_settings
-from tests.db_safety import TestDatabaseSafetyError, validate_test_database_environment
+from tests.db_safety import DatabaseSafetyError, validate_test_database_environment
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -14,5 +14,5 @@ def pytest_configure(config: pytest.Config) -> None:
             app_env=settings.app_env,
             db_dsn=settings.db_dsn,
         )
-    except TestDatabaseSafetyError as exc:
+    except DatabaseSafetyError as exc:
         raise pytest.UsageError(str(exc)) from None
