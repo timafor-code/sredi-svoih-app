@@ -1225,7 +1225,10 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                         payment_status=payment_status,
                     )
 
-                first = await self._execute_worker(request_id)
+                first = await self._execute_worker(
+                    request_id,
+                    storage_factory=_FakeAvatarStorage,
+                )
                 self.assertEqual(first.result, "completed")
                 self.evidence_ids.add(first.destruction_evidence_id)
                 async with AsyncSessionLocal() as session:
