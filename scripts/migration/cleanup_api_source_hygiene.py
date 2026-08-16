@@ -32,6 +32,8 @@ LOCAL_HOST = "api_postgres"
 LOCAL_PORT = 5432
 LOCAL_DATABASE = "sredi_api"
 LOCAL_USER = "sredi_api"
+LOCAL_PASSWORD = "sredi_api"
+LOCAL_APP_ENV = "local"
 
 # These tables are intentionally excluded from environment promotion because they
 # contain environment-bound, transient, code/token, push, invite, or privacy
@@ -55,10 +57,19 @@ class LocalCleanupError(PROMOTE.PromotionError):
     """Safe cleanup failure without database row values or secrets."""
 
 
+def validate_local_environment() -> None:
+    if os.environ.get("APP_ENV") != LOCAL_APP_ENV:
+        raise LocalCleanupError(
+            "Cleanup requires APP_ENV=local. Production or unspecified API environments "
+            "are rejected before database connection."
+        )
+
+
 def validate_local_source_uri(pg_uri: str) -> None:
     parsed = urlsplit(PROMOTE.normalize_pg_uri(pg_uri))
     database = unquote(parsed.path.lstrip("/"))
     username = unquote(parsed.username or "")
+    password = unquote(parsed.password or "")
     port = parsed.port or LOCAL_PORT
     if (
         parsed.scheme != "postgresql"
@@ -66,12 +77,13 @@ def validate_local_source_uri(pg_uri: str) -> None:
         or port != LOCAL_PORT
         or database != LOCAL_DATABASE
         or username != LOCAL_USER
+        or password != LOCAL_PASSWORD
         or parsed.query
         or parsed.fragment
     ):
         raise LocalCleanupError(
             "Cleanup target must be exactly the local Docker api_postgres/sredi_api "
-            "database using the sredi_api role. Remote, production, tunneled, and "
+            "database using the fixed local development credentials. Remote, production, tunneled, and "
             "parameterized targets are rejected."
         )
 
@@ -274,6 +286,7 @@ def _build_report(
 
 
 async def run_cleanup(pg_uri: str, *, apply: bool) -> dict[str, Any]:
+    validate_local_environment()
     validate_local_source_uri(pg_uri)
     conn = await PROMOTE.connect(pg_uri)
     tx = conn.transaction(isolation="serializable")
