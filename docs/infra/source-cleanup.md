@@ -22,11 +22,19 @@ host: api_postgres
 port: 5432
 database: sredi_api
 user: sredi_api
+API environment: APP_ENV=local
 ```
 
 Remote hosts, `localhost`/`127.0.0.1` tunnel targets, other database names,
 other users, non-default ports, URI query parameters, and production targets are
-rejected before mutation.
+rejected before mutation. The connection must also use the fixed local Docker
+development credential from `infra/env/api.env.example`; the password is not
+printed in reports.
+
+The process must have `APP_ENV=local`. A missing, staging, or production
+`APP_ENV` is rejected before the database connection is opened. This is a
+separate safety gate because production Compose intentionally uses the same
+`api_postgres` service name.
 
 The utility also reuses the production-promotion schema guard and therefore
 requires the reviewed Alembic head and full public-table classification to match
