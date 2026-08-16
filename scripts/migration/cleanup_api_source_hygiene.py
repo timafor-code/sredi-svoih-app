@@ -52,6 +52,11 @@ SYNTHETIC_ROOT_TABLES: tuple[str, ...] = (
     "event_registrations",
 )
 
+# Leaked test legal documents are handled separately and last. Legal acceptances
+# reference published legal documents with ON DELETE RESTRICT, so deleting a
+# synthetic legal document before synthetic users would be unsafe and can fail.
+SYNTHETIC_LEGAL_DOCUMENT_TABLE = "legal_documents"
+
 
 class LocalCleanupError(PROMOTE.PromotionError):
     """Safe cleanup failure without database row values or secrets."""
@@ -151,9 +156,13 @@ async def _fetch_count(conn: Any, query: str, params: tuple[str, ...] = ()) -> i
     return int(value)
 
 
+def _synthetic_candidate_tables() -> tuple[str, ...]:
+    return SYNTHETIC_ROOT_TABLES + (SYNTHETIC_LEGAL_DOCUMENT_TABLE,)
+
+
 async def _count_root_candidates(conn: Any, schemas: dict[str, Any]) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for table_name in SYNTHETIC_ROOT_TABLES:
+    for table_name in _synthetic_candidate_tables():
         query, params = _root_count_query(schemas[table_name])
         counts[table_name] = await _fetch_count(conn, query, params)
     return counts
@@ -203,6 +212,20 @@ async def _snapshot(conn: Any, schemas: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _assert_no_active_deletion_lifecycle(snapshot: dict[str, Any]) -> None:
+    active = int(
+        snapshot["hygiene"]["live_state"].get(
+            "active_deletion_lifecycle_users",
+            0,
+        )
+    )
+    if active:
+        raise LocalCleanupError(
+            f"Cleanup blocked: {active} user(s) still have an active deletion lifecycle. "
+            "Run the canonical privacy-erasure worker to completion before cleanup."
+        )
+
+
 async def _delete_all_from_table(conn: Any, table_name: str) -> int:
     command = await conn.execute(
         f"DELETE FROM public.{PROMOTE.quote_identifier(table_name)}"
@@ -237,6 +260,14 @@ async def _execute_cleanup(
             conn,
             schemas[table_name],
         )
+
+    # Delete leaked synthetic legal-document fixtures only after synthetic users.
+    # Their legal_acceptances have ON DELETE RESTRICT toward legal_documents and
+    # are removed by the existing app_users cascade before this final step.
+    roots_deleted[SYNTHETIC_LEGAL_DOCUMENT_TABLE] = await _delete_root_candidates(
+        conn,
+        schemas[SYNTHETIC_LEGAL_DOCUMENT_TABLE],
+    )
 
     return {
         "transient_rows_deleted": dict(sorted(transient_deleted.items())),
@@ -277,9 +308,11 @@ def _build_report(
         "notes": [
             "Aggregate counts only; no database row values or identifiers are emitted.",
             "Dry-run executes the exact cleanup inside one transaction and rolls it back.",
+            "Cleanup refuses to run while any app user has an active deletion lifecycle.",
             "Apply requires owner-reviewed dry-run, verified backup restore, and explicit acknowledgement.",
-            "All environment-bound/transient promotion-excluded tables are cleared.",
+            "All environment-bound/transient promotion-excluded tables are cleared only after the lifecycle guard passes.",
             "Durable deletion is limited to deterministic signature matches in reviewed root tables.",
+            "Synthetic legal documents are deleted last so legal-acceptance RESTRICT references are respected.",
             "A separate read-only hygiene audit must be rerun and owner-approved after apply.",
         ],
     }
@@ -295,6 +328,7 @@ async def run_cleanup(pg_uri: str, *, apply: bool) -> dict[str, Any]:
         await PROMOTE.configure_stable_session(conn)
         schemas = await PROMOTE.validate_schema_classification(conn)
         before = await _snapshot(conn, schemas)
+        _assert_no_active_deletion_lifecycle(before)
         deleted = await _execute_cleanup(conn, schemas)
         after = await _snapshot(conn, schemas)
         _assert_targeted_cleanup_complete(after)

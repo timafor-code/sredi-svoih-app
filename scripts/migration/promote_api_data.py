@@ -25,7 +25,7 @@ import asyncpg
 
 
 FORMAT_VERSION = "api-promotion-1.0.0"
-EXPECTED_ALEMBIC_HEAD = "20260813210000"
+EXPECTED_ALEMBIC_HEAD = "20260816184500"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PG_ENV = "API_PROMOTION_PG_URI"
 ACK_ENV = "API_PROMOTION_RUN_ACK"
@@ -84,6 +84,7 @@ EXCLUDED_TABLES: dict[str, str] = {
     "privacy_access_sessions": "environment-bound privacy access session state",
     "privacy_destruction_evidence": "subject hashes are bound to deployment secrets",
     "privacy_erasure_notification_outbox": "encrypted environment-bound delivery state",
+    "privacy_financial_review_evidence": "subject hashes are bound to deployment secrets",
     "privacy_requests": "privacy workflow state requires a separate continuity decision",
     "privacy_retained_financial_evidence": "subject hashes are bound to deployment secrets",
     "push_notification_deliveries": "environment-bound push delivery state",
@@ -409,6 +410,7 @@ async def source_live_state_guards(
     for table_name in (
         "privacy_destruction_evidence",
         "privacy_erasure_notification_outbox",
+        "privacy_financial_review_evidence",
         "privacy_requests",
         "privacy_retained_financial_evidence",
     ):
