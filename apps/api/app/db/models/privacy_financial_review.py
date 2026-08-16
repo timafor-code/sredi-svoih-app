@@ -4,7 +4,15 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, DateTime, Index, Integer, Text, UniqueConstraint, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -32,10 +40,6 @@ class PrivacyFinancialReviewEvidence(Base):
         CheckConstraint(
             "jsonb_typeof(currency_codes) = 'array'",
             name="privacy_financial_review_evidence_currency_array_check",
-        ),
-        CheckConstraint(
-            "NOT jsonb_path_exists(currency_codes, '$[*] ? (@.type() != \"string\")')",
-            name="privacy_financial_review_evidence_currency_strings_check",
         ),
         CheckConstraint(
             "retention_basis_code = 'inconsistent_finalized_event_registration_financial'",
