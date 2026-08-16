@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from tests.db_safety import TestDatabaseSafetyError, validate_test_database_environment
+from tests.db_safety import DatabaseSafetyError, validate_test_database_environment
 
 
 class TestDatabaseSafetyTests(unittest.TestCase):
@@ -16,7 +16,7 @@ class TestDatabaseSafetyTests(unittest.TestCase):
         )
 
     def test_rejects_working_local_database(self) -> None:
-        with self.assertRaises(TestDatabaseSafetyError):
+        with self.assertRaises(DatabaseSafetyError):
             validate_test_database_environment(
                 app_env="test",
                 db_dsn=(
@@ -26,7 +26,7 @@ class TestDatabaseSafetyTests(unittest.TestCase):
             )
 
     def test_rejects_non_test_environment(self) -> None:
-        with self.assertRaises(TestDatabaseSafetyError):
+        with self.assertRaises(DatabaseSafetyError):
             validate_test_database_environment(
                 app_env="local",
                 db_dsn=(
@@ -36,7 +36,7 @@ class TestDatabaseSafetyTests(unittest.TestCase):
             )
 
     def test_rejects_remote_or_production_like_target(self) -> None:
-        with self.assertRaises(TestDatabaseSafetyError):
+        with self.assertRaises(DatabaseSafetyError):
             validate_test_database_environment(
                 app_env="test",
                 db_dsn=(
@@ -51,7 +51,7 @@ class TestDatabaseSafetyTests(unittest.TestCase):
             f"postgresql+asyncpg://sredi_api_test:{secret}@"
             "db.example.com:5432/sredi_api_test"
         )
-        with self.assertRaises(TestDatabaseSafetyError) as context:
+        with self.assertRaises(DatabaseSafetyError) as context:
             validate_test_database_environment(app_env="test", db_dsn=dsn)
 
         message = str(context.exception)
