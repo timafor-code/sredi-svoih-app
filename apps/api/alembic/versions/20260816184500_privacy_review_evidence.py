@@ -65,10 +65,6 @@ def upgrade() -> None:
             name="privacy_financial_review_evidence_currency_array_check",
         ),
         sa.CheckConstraint(
-            "NOT jsonb_path_exists(currency_codes, '$[*] ? (@.type() != \"string\")')",
-            name="privacy_financial_review_evidence_currency_strings_check",
-        ),
-        sa.CheckConstraint(
             "retention_basis_code = 'inconsistent_finalized_event_registration_financial'",
             name="privacy_financial_review_evidence_basis_check",
         ),
