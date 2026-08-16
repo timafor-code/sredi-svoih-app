@@ -27,15 +27,13 @@ import asyncpg
 FORMAT_VERSION = "api-promotion-1.0.0"
 EXPECTED_ALEMBIC_HEAD = "20260813210000"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_DATABASE_ENV = "API_PROMOTION_DATABASE_URL"
+DEFAULT_PG_ENV = "API_PROMOTION_PG_URI"
 ACK_ENV = "API_PROMOTION_RUN_ACK"
 EXPORT_ACK = "OWNER_APPROVED_API_PROMOTION_EXPORT"
 APPLY_ACK = "OWNER_APPROVED_API_PROMOTION_APPLY"
 SAFE_SQL_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]*$")
 SAFE_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-# Explicit, reviewed API-owned data that is portable between environments when
-# source and target are on the same Alembic head.
 PROMOTED_TABLES: tuple[str, ...] = (
     "admin_event_audit_entries",
     "admin_feedback",
@@ -75,8 +73,6 @@ PROMOTED_TABLES: tuple[str, ...] = (
     "synced_contacts",
 )
 
-# These rows are intentionally not portable. Several contain HMACs/encryption
-# bound to deployment secrets; others are in-flight delivery/runtime state.
 EXCLUDED_TABLES: dict[str, str] = {
     "auth_email_verification_codes": "one-time auth code state",
     "auth_sessions": "environment-bound refresh-session state",
@@ -103,7 +99,7 @@ OBJECT_METADATA_TABLES = frozenset({"profile_avatars", "event_images"})
 
 
 class PromotionError(RuntimeError):
-    """An error whose text is safe to show without database values or secrets."""
+    """An error whose text is safe to show without row values or secrets."""
 
 
 @dataclass(frozen=True)
@@ -120,7 +116,7 @@ def quote_identifier(value: str) -> str:
     return f'"{value}"'
 
 
-def normalize_database_url(value: str) -> str:
+def normalize_pg_uri(value: str) -> str:
     value = value.strip()
     if value.startswith("postgresql+asyncpg://"):
         return "postgresql://" + value.removeprefix("postgresql+asyncpg://")
@@ -129,16 +125,16 @@ def normalize_database_url(value: str) -> str:
     return value
 
 
-def load_database_url(env_name: str) -> str:
+def load_pg_uri(env_name: str) -> str:
     if not SAFE_ENV_NAME.fullmatch(env_name):
-        raise PromotionError("Database environment variable name is invalid.")
+        raise PromotionError("PostgreSQL environment variable name is invalid.")
     raw = os.environ.get(env_name, "").strip()
     if not raw:
         raise PromotionError(f"{env_name} must be supplied by the owner environment.")
-    normalized = normalize_database_url(raw)
+    normalized = normalize_pg_uri(raw)
     parsed = urlsplit(normalized)
     if parsed.scheme != "postgresql" or not parsed.hostname:
-        raise PromotionError(f"{env_name} is not a PostgreSQL connection URL.")
+        raise PromotionError(f"{env_name} is not a PostgreSQL connection URI.")
     return normalized
 
 
@@ -163,11 +159,11 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-async def connect(database_url: str) -> asyncpg.Connection:
+async def connect(pg_uri: str) -> asyncpg.Connection:
     try:
-        return await asyncpg.connect(database_url)
-    except Exception as exc:  # noqa: BLE001 - never leak driver details
-        raise PromotionError("Database connection failed; details are intentionally redacted.") from exc
+        return await asyncpg.connect(pg_uri)
+    except Exception as exc:  # noqa: BLE001
+        raise PromotionError("PostgreSQL connection failed; details are redacted.") from exc
 
 
 async def current_alembic_head(conn: asyncpg.Connection) -> str:
@@ -469,7 +465,7 @@ async def export_artifact(args: argparse.Namespace) -> None:
     tables_dir = output_dir / "tables"
     tables_dir.mkdir(mode=0o700)
 
-    conn = await connect(load_database_url(args.database_url_env))
+    conn = await connect(load_pg_uri(args.pg_uri_env))
     try:
         async with conn.transaction(isolation="repeatable_read", readonly=True):
             await configure_stable_session(conn)
@@ -740,7 +736,7 @@ async def require_empty_target(conn: asyncpg.Connection) -> None:
     if nonempty:
         summary = ", ".join(f"{name}={count}" for name, count in nonempty)
         raise PromotionError(
-            "Target database is not empty for promotion-managed tables: " + summary
+            "Target PostgreSQL is not empty for promotion-managed tables: " + summary
         )
 
 
@@ -762,7 +758,7 @@ async def preflight_target(args: argparse.Namespace) -> None:
     manifest = load_manifest(input_dir)
     require_object_storage_ack(manifest, args.ack_object_storage_ready)
 
-    conn = await connect(load_database_url(args.database_url_env))
+    conn = await connect(load_pg_uri(args.pg_uri_env))
     try:
         async with conn.transaction(isolation="repeatable_read", readonly=True):
             await configure_stable_session(conn)
@@ -828,7 +824,7 @@ async def apply_target(args: argparse.Namespace) -> None:
                 "Production apply requires --allow-production-target-with-owner-command."
             )
 
-    conn = await connect(load_database_url(args.database_url_env))
+    conn = await connect(load_pg_uri(args.pg_uri_env))
     try:
         async with conn.transaction(isolation="serializable"):
             await configure_stable_session(conn)
@@ -857,7 +853,7 @@ async def validate_target(args: argparse.Namespace) -> None:
     input_dir = Path(args.input_dir).expanduser().resolve()
     manifest = load_manifest(input_dir)
 
-    conn = await connect(load_database_url(args.database_url_env))
+    conn = await connect(load_pg_uri(args.pg_uri_env))
     try:
         async with conn.transaction(isolation="repeatable_read", readonly=True):
             await configure_stable_session(conn)
@@ -880,9 +876,9 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser = subparsers.add_parser("export", help="Export durable API data.")
     export_parser.add_argument("--output-dir", required=True)
     export_parser.add_argument(
-        "--database-url-env",
-        default=DEFAULT_DATABASE_ENV,
-        help="Environment variable containing the PostgreSQL URL.",
+        "--pg-uri-env",
+        default=DEFAULT_PG_ENV,
+        help="Environment variable containing the PostgreSQL connection URI.",
     )
     export_parser.add_argument("--allow-output-in-repository", action="store_true")
     export_parser.add_argument("--ack-reissue-active-invites", action="store_true")
@@ -896,9 +892,9 @@ def build_parser() -> argparse.ArgumentParser:
         child = subparsers.add_parser(name, help=help_text)
         child.add_argument("--input-dir", required=True)
         child.add_argument(
-            "--database-url-env",
-            default=DEFAULT_DATABASE_ENV,
-            help="Environment variable containing the PostgreSQL URL.",
+            "--pg-uri-env",
+            default=DEFAULT_PG_ENV,
+            help="Environment variable containing the PostgreSQL connection URI.",
         )
         if name in {"preflight", "apply"}:
             child.add_argument("--ack-object-storage-ready", action="store_true")
@@ -920,7 +916,7 @@ async def async_main(args: argparse.Namespace) -> None:
         await apply_target(args)
     elif args.command == "validate":
         await validate_target(args)
-    else:  # pragma: no cover - argparse prevents this
+    else:  # pragma: no cover
         raise PromotionError("Unsupported command.")
 
 
@@ -936,7 +932,7 @@ def main() -> int:
     except KeyboardInterrupt:
         print("promotion_error: interrupted by owner", file=sys.stderr)
         return 130
-    except Exception:  # noqa: BLE001 - never leak DB/row details
+    except Exception:  # noqa: BLE001
         print(
             "promotion_error: unexpected failure; details intentionally redacted",
             file=sys.stderr,
