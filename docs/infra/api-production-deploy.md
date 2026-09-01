@@ -294,6 +294,57 @@ domain.
    configured service name. `/version` includes `api_version`, `environment`,
    and, when supplied, `git_sha`. Do not put secrets in URLs or command lines.
 
+### Owner-only post-merge LTE/Wi-Fi timing diagnosis
+
+The HTTPS template logs total Nginx request time as `rt` and the
+separate `upstream_connect_time`, `upstream_header_time`, and
+`upstream_response_time` values. It keeps the response `request_id` for
+correlation and logs only method plus path, never a query string,
+authorization header, cookie, or body. An upstream value can be `-` when no
+upstream was contacted; multiple upstream attempts can produce comma-separated
+values.
+
+After this configuration has merged, the owner performs this production-only
+checklist:
+
+- [ ] Update the production workspace to the reviewed merged revision. Copy
+  `infra/nginx/api-https.conf.example` to the host site's configuration and
+  replace `<api-domain>` in the host copy only. Do not add diagnostic fields
+  beyond the reviewed privacy-safe format.
+- [ ] Run `sudo nginx -t`. Only if it succeeds, run
+  `sudo systemctl reload nginx`.
+- [ ] Confirm a safe `/health` request creates an entry in
+  `/var/log/nginx/sredi-svoih-api.access.log` containing all four timing fields
+  and a response request ID.
+- [ ] Record a fresh local baseline with
+  `curl -sS -o /dev/null -w 'connect=%{time_connect} start=%{time_starttransfer} total=%{time_total}\n' http://127.0.0.1:8000/health`.
+- [ ] Reproduce the same API method and path once over Wi-Fi and once over LTE.
+  Record the network, approximate time, outcome, and safe request ID when
+  available; do not record query values, credentials, tokens, or response
+  bodies.
+- [ ] Compare the matching access-log entries side by side, especially `rt`
+  against the three upstream timings. Preserve only redacted timing and
+  request-ID evidence in an incident record.
+
+Interpret the evidence as follows:
+
+1. **The LTE request never appears in the access log:** it did not reach a
+   request that Nginx could log. Investigate the client-to-ingress path such as
+   device/carrier connectivity, DNS, routing, or TLS; the access log provides
+   no FastAPI timing for that attempt.
+2. **`rt` is high while all upstream timings are low:** Nginx reached
+   FastAPI and received its response quickly. The delay is in the
+   client-facing/Nginx portion of the request rather than FastAPI processing;
+   compare Wi-Fi and LTE evidence before selecting a network fix.
+3. **An upstream timing is high:** high `upstream_connect_time` points to
+   establishing the Nginx-to-FastAPI connection, while high
+   `upstream_header_time` or `upstream_response_time` points to waiting for or
+   reading the FastAPI response. Correlate the request ID with privacy-safe API
+   logs and compare the same endpoint locally before changing network settings.
+4. **Local `http://127.0.0.1:8000/health` is slow:** the delay already exists
+   behind the public ingress. Investigate the API container/runtime and host
+   before attributing the incident to LTE or changing public network settings.
+
 ### Phase F — renewal
 
 Test renewal and inspect the schedule supplied by the Certbot snap:

@@ -12,6 +12,9 @@
 log_format sredi_svoih_api
     '$remote_addr [$time_local] "$request_method $uri $server_protocol" '
     '$status $body_bytes_sent rt=$request_time '
+    'upstream_connect_time=$upstream_connect_time '
+    'upstream_header_time=$upstream_header_time '
+    'upstream_response_time=$upstream_response_time '
     'request_id="$upstream_http_x_request_id"';
 
 server {
