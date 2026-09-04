@@ -5487,6 +5487,217 @@ a {
   font-size: 11px;
 }
 
+/* Tickets and capacity: one authoring surface, with a compact secondary rail. */
+.event-tickets-capacity {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  background: var(--glass);
+}
+
+.event-tickets-capacity__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.event-tickets-capacity__head h2,
+.tickets-capacity-panel h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.event-tickets-capacity__head p,
+.tickets-capacity-panel > p,
+.tickets-capacity-hint {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.tickets-selection-mode,
+.tickets-capacity-active {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.event-tickets-capacity .participation-constructor {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.tickets-capacity-rail,
+.tickets-capacity-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.tickets-capacity-panel {
+  padding: 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  background: var(--glass);
+}
+
+.tickets-capacity-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tickets-capacity-list {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tickets-capacity-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--glass-border);
+  padding: 6px 0;
+}
+
+.tickets-capacity-row__body,
+.tickets-option-body {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.tickets-capacity-row__body {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  padding: 4px 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.tickets-capacity-row__body span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.tickets-capacity-row--inactive .tickets-capacity-row__body {
+  opacity: 0.55;
+}
+
+.event-tickets-capacity .participation-option-row {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 0 10px;
+  gap: 0 8px;
+}
+
+.tickets-option-body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 300px;
+  padding: 12px 0;
+}
+
+.tickets-option-body:disabled {
+  cursor: default;
+}
+
+.event-tickets-capacity .participation-option-row__actions {
+  margin-left: auto;
+  padding: 4px 0;
+}
+
+.tickets-option-body .tickets-option-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  overflow: visible;
+  white-space: normal;
+}
+
+.tickets-option-body .tickets-slot-tag {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--glass-border);
+  border-radius: 5px;
+  color: var(--text-soft);
+  background: var(--glass);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.tickets-preview {
+  display: block;
+  position: static;
+}
+
+.tickets-preview > summary {
+  cursor: pointer;
+  padding: 12px;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.tickets-slot-modal {
+  width: min(480px, 100%);
+}
+
+.tickets-slot-modal .participation-modal__field > span,
+.tickets-option-modal .participation-modal__field > span {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 12px;
+}
+
+.tickets-slot-modal .participation-modal__advanced {
+  display: block;
+}
+
+.tickets-slot-modal .participation-modal__advanced .participation-modal__field {
+  margin-top: 12px;
+}
+
+.tickets-slot-modal .participation-modal__footer {
+  flex-wrap: wrap;
+}
+
+.tickets-option-body:focus-visible,
+.tickets-capacity-row__body:focus-visible,
+.tickets-preview > summary:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+@media (max-width: 600px) {
+  .event-tickets-capacity { padding: 12px; }
+  .tickets-option-body { grid-template-columns: minmax(0, 1fr) auto; }
+  .tickets-option-body > .participation-option-row__badge { grid-column: 1 / -1; justify-self: start; }
+  .tickets-selection-mode { flex-wrap: wrap; }
+}
+
 .participation-modal__toggles {
   display: flex;
   flex-wrap: wrap;
