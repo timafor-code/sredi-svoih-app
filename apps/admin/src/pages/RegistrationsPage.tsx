@@ -180,6 +180,22 @@ export function RegistrationsPage() {
   const registrationsHeaderDescription = "Рабочий центр заявок на события: список событий, таблица регистраций, детали участника, статусы, attendance и capacity управляются через Python API registration endpoints.";
   const registrationActions = API_REGISTRATION_ACTIONS;
 
+  useEffect(() => {
+    if (!seatingEditorSlot) {
+      return undefined;
+    }
+
+    const mobileViewport = window.matchMedia("(max-width: 960px)");
+    const closeSeatingOnMobile = () => {
+      if (mobileViewport.matches) {
+        setSeatingEditorSlot(null);
+      }
+    };
+    closeSeatingOnMobile();
+    mobileViewport.addEventListener("change", closeSeatingOnMobile);
+    return () => mobileViewport.removeEventListener("change", closeSeatingOnMobile);
+  }, [seatingEditorSlot]);
+
   const pushToast = useCallback((kind: ToastKind, message: string) => {
     const id = Date.now() + Math.random();
     setToasts((current) => [...current, { id, kind, message }]);
@@ -676,7 +692,7 @@ export function RegistrationsPage() {
 
   const handleOpenSeating = useCallback(
     (bucket: AdminRegistrationCapacityBucket) => {
-      if (!selectedEvent) {
+      if (!selectedEvent || window.matchMedia("(max-width: 960px)").matches) {
         return;
       }
 
@@ -1372,7 +1388,7 @@ function RegistrationConfirmDialog({
 
   return (
     <div
-      className="event-action-dialog-backdrop"
+      className="event-action-dialog-backdrop registration-action-dialog-backdrop"
       onMouseDown={(mouseEvent) => {
         if (mouseEvent.target === mouseEvent.currentTarget && !isLoading) {
           onCancel();
