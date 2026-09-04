@@ -487,6 +487,7 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
           </>,
           period: <GlassCard className="event-occurrences-card" elevated>
             <EventOccurrencesConstructor key={currentEvent.id} defaultTimezone={currentEvent.timezone}
+              eventStartsAt={currentEvent.startsAt} eventEndsAt={currentEvent.endsAt} eventStatus={currentEvent.status}
               eventKind={currentEvent.eventKind} eventCapacity={currentEvent.capacity} eventId={currentEvent.id}
               active={activeTab === "period"} onDirtyChange={setPeriodDirty} />
           </GlassCard>,
