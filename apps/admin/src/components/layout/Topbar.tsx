@@ -49,7 +49,7 @@ export function Topbar({
   );
 }
 
-function getProfileLabel(profile: AdminProfile | null, sessionEmail: string | null): string {
+export function getProfileLabel(profile: AdminProfile | null, sessionEmail: string | null): string {
   const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim();
 
   return (
