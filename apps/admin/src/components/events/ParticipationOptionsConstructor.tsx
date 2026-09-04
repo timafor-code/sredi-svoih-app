@@ -1,7 +1,9 @@
+import { ArrowDown, ArrowUp, Copy, Eye, EyeOff, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "../ui/Button";
+import { SaveStatusView } from "../ui/SaveStatusView";
 import {
   listAdminEventParticipationOptions,
   replaceAdminEventParticipationOptions,
@@ -856,25 +858,12 @@ export function ParticipationOptionsConstructor({
       </div>
 
       <footer className="participation-constructor__footer">
-        <div
-          aria-live="polite"
-          className="participation-constructor__footer-status"
-          role={saveError ? "alert" : "status"}
-        >
-          {saving ? (
-            <span className="participation-constructor__saving">
-              Сохраняем...
-            </span>
-          ) : saveError ? (
-            <span className="participation-constructor__error">
-              Ошибка сохранения: {saveError}
-            </span>
-          ) : savedAt ? (
-            <span className="participation-constructor__saved">
-              Сохранено в {new Date(savedAt).toLocaleTimeString("ru-RU")}
-            </span>
-          ) : null}
-        </div>
+        <SaveStatusView
+          saving={saving}
+          error={saveError}
+          savedAt={savedAt}
+          recovery="Обновите страницу, проверьте сохранённые варианты и повторите изменение."
+        />
       </footer>
 
       {modalState.kind !== "closed"
@@ -936,9 +925,6 @@ function OptionRow({
         .filter(Boolean)
         .join(" ")}
     >
-      <span aria-hidden className="participation-option-row__handle">
-        ⠿
-      </span>
       <span
         className={`participation-option-row__badge participation-option-row__badge--${typeKey}`}
       >
@@ -960,7 +946,7 @@ function OptionRow({
           title="Редактировать"
           type="button"
         >
-          ✎
+          <Pencil aria-hidden="true" size={16} />
         </button>
         <button
           aria-label={draft.isActive ? "Скрыть вариант" : "Показать вариант"}
@@ -970,17 +956,17 @@ function OptionRow({
           title={draft.isActive ? "Скрыть" : "Показать"}
           type="button"
         >
-          {draft.isActive ? "◎" : "◉"}
+          {draft.isActive ? <EyeOff aria-hidden="true" size={16} /> : <Eye aria-hidden="true" size={16} />}
         </button>
         <button
           aria-label="Дублировать вариант"
-          className="participation-option-row__action"
+          className="participation-option-row__action participation-option-row__action--create"
           disabled={disabled}
           onClick={onDuplicate}
           title="Дублировать"
           type="button"
         >
-          ◫
+          <Copy aria-hidden="true" size={16} />
         </button>
         <button
           aria-label="Переместить вариант выше"
@@ -990,7 +976,7 @@ function OptionRow({
           title="Переместить выше"
           type="button"
         >
-          ↑
+          <ArrowUp aria-hidden="true" size={16} />
         </button>
         <button
           aria-label="Переместить вариант ниже"
@@ -1000,9 +986,11 @@ function OptionRow({
           title="Переместить ниже"
           type="button"
         >
-          ↓
+          <ArrowDown aria-hidden="true" size={16} />
         </button>
-        <button
+        <Button
+          variant="destructive"
+          size="sm"
           aria-label="Удалить вариант"
           className="participation-option-row__action participation-option-row__action--danger"
           disabled={disabled}
@@ -1010,8 +998,8 @@ function OptionRow({
           title="Удалить"
           type="button"
         >
-          ✕
-        </button>
+          <Trash2 aria-hidden="true" size={16} />
+        </Button>
       </div>
     </li>
   );
@@ -1482,7 +1470,7 @@ function OptionModal({
           <Button onClick={onClose} variant="ghost">
             Отмена
           </Button>
-          <Button disabled={saving} onClick={onSubmit} variant="primary">
+          <Button disabled={saving} onClick={onSubmit} variant={isEdit ? "success" : "gold"}>
             {submitLabel}
           </Button>
         </footer>
@@ -1542,7 +1530,7 @@ function CapacityUnitsPicker({
         </p>
       ) : activeCapacityUnits.length === 0 ? (
         <p className="participation-modal-capacity__empty">
-          Сначала добавьте слоты мест ниже: + Шабат или + Unit.
+          Сначала добавьте слоты мест ниже: + Шабат или + Слот.
         </p>
       ) : (
         <div className="participation-modal-capacity__list">

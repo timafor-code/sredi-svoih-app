@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "../ui/Button";
+import { SaveStatusView } from "../ui/SaveStatusView";
 import {
   buildOccurrencePayloadFields,
   normalizeOccurrenceCapacityForDraft,
@@ -1376,18 +1377,18 @@ export function EventOccurrencesConstructor({
         </div>
         <div className="event-occurrences-constructor__head-actions">
           {hasPastActiveDrafts ? (
-            <Button disabled={disabled} onClick={openArchivePastConfirm} variant="gold">
+            <Button disabled={disabled} onClick={openArchivePastConfirm} variant="secondary">
               Архивировать прошедшие
             </Button>
           ) : null}
-          <Button disabled={disabled} onClick={openAddModal} variant="secondary">
+          <Button disabled={disabled} onClick={openAddModal} variant="gold">
             + Добавить дату
           </Button>
         </div>
       </header>
 
       <div className="event-occurrences-constructor__hint">
-        Если лимит даты пустой, она наследует общий capacity события.
+        Если лимит даты пустой, она наследует общий лимит мест события.
       </div>
 
       {loadError ? (
@@ -1396,11 +1397,7 @@ export function EventOccurrencesConstructor({
         </div>
       ) : null}
 
-      {saveError ? (
-        <div className="form-error event-occurrences-constructor__archive-error" role="alert">
-          {saveError}
-        </div>
-      ) : null}
+      <SaveStatusView error={saveError} recovery="Проверьте даты и повторите действие." />
 
       <OccurrenceGenerator
         disabled={disabled}
@@ -1495,15 +1492,7 @@ export function EventOccurrencesConstructor({
       </div>
 
       <footer className="event-occurrences-constructor__footer">
-        {saving ? (
-          <span className="event-occurrences-constructor__saving">
-            Сохраняем...
-          </span>
-        ) : savedAt ? (
-          <span className="event-occurrences-constructor__saved">
-            Сохранено в {formatSavedTime(savedAt)}
-          </span>
-        ) : null}
+        <SaveStatusView saving={saving} savedAt={saveError ? null : savedAt} />
       </footer>
 
       {modalState.kind !== "closed"
@@ -1951,7 +1940,9 @@ function OccurrenceRow({
         >
           ↓
         </button>
-        <button
+        <Button
+          variant="destructive"
+          size="sm"
           aria-label="Удалить дату"
           className="event-occurrence-row__action event-occurrence-row__action--danger"
           disabled={disabled}
@@ -1960,7 +1951,7 @@ function OccurrenceRow({
           type="button"
         >
           ×
-        </button>
+        </Button>
       </div>
 
       {isPastActive ? (
@@ -2127,7 +2118,7 @@ function ArchivePastConfirmModal({
           <Button disabled={saving} onClick={onClose} variant="ghost">
             Отмена
           </Button>
-          <Button disabled={saving} onClick={onConfirm} variant="gold">
+          <Button disabled={saving} onClick={onConfirm} variant="success">
             {saving ? "Архивируем..." : `Архивировать ${count} сеансов`}
           </Button>
         </footer>
@@ -2333,7 +2324,7 @@ function OccurrenceModal({
           <Button onClick={onClose} variant="ghost">
             Отмена
           </Button>
-          <Button disabled={saving} onClick={onSubmit} variant="primary">
+          <Button disabled={saving} onClick={onSubmit} variant={isEdit ? "success" : "gold"}>
             {isEdit ? "Сохранить" : "Добавить"}
           </Button>
         </footer>
@@ -2533,20 +2524,6 @@ function formatLocalDateTime(value: string): string | null {
   }
 
   return `${match[3]}.${match[2]}.${match[1]} ${match[4]}`;
-}
-
-function formatSavedTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return new Intl.DateTimeFormat("ru-RU", {
-    hour: "2-digit",
-    hour12: false,
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(date);
 }
 
 function formatDateTimeLocalForForm(value: string | null, timezone: string): string {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
+import { SaveStatusView } from "../ui/SaveStatusView";
 import { GlassCard } from "../ui/GlassCard";
 import { ApiClientError } from "../../services/apiClient";
 import {
@@ -96,10 +97,10 @@ export function EventWebRegistrationCard({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [visibilitySaving, setVisibilitySaving] = useState(false);
   const [visibilitySaveError, setVisibilitySaveError] = useState<string | null>(null);
-  const [visibilitySaveMessage, setVisibilitySaveMessage] = useState<string | null>(null);
+  const [visibilitySavedAt, setVisibilitySavedAt] = useState<string | null>(null);
   const [slugSaving, setSlugSaving] = useState(false);
   const [slugSaveError, setSlugSaveError] = useState<string | null>(null);
-  const [slugSaveMessage, setSlugSaveMessage] = useState<string | null>(null);
+  const [slugSavedAt, setSlugSavedAt] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<CopyFeedback | null>(null);
   const slugDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const slugAbortRef = useRef<AbortController | null>(null);
@@ -190,10 +191,10 @@ export function EventWebRegistrationCard({
     setLoadError(null);
     setVisibilitySaving(false);
     setVisibilitySaveError(null);
-    setVisibilitySaveMessage(null);
+    setVisibilitySavedAt(null);
     setSlugSaving(false);
     setSlugSaveError(null);
-    setSlugSaveMessage(null);
+    setSlugSavedAt(null);
     setSlugCheck({ kind: "idle" });
     setCopyFeedback(null);
 
@@ -247,7 +248,7 @@ export function EventWebRegistrationCard({
 
     setVisibilitySaving(true);
     setVisibilitySaveError(null);
-    setVisibilitySaveMessage(null);
+    setVisibilitySavedAt(null);
 
     try {
       const nextRegistration = await updateAdminEventWebRegistration(eventId, {
@@ -257,7 +258,7 @@ export function EventWebRegistrationCard({
       if (nextRegistration.webVisibility !== "listed") {
         setSelectedVisibility(nextRegistration.webVisibility);
       }
-      setVisibilitySaveMessage("Режим публикации сохранён");
+      setVisibilitySavedAt(new Date().toISOString());
     } catch (error) {
       setVisibilitySaveError(
         errorMessage(error, "Не удалось сохранить режим веб-регистрации."),
@@ -284,7 +285,7 @@ export function EventWebRegistrationCard({
 
     setSlugSaving(true);
     setSlugSaveError(null);
-    setSlugSaveMessage(null);
+    setSlugSavedAt(null);
 
     try {
       const nextRegistration = await updateAdminEventWebRegistration(eventId, {
@@ -294,7 +295,7 @@ export function EventWebRegistrationCard({
       setRegistration(nextRegistration);
       setSlugSuffix(nextRegistration.publicSlug);
       setSlugCheck({ kind: "idle" });
-      setSlugSaveMessage("Адрес страницы сохранён");
+      setSlugSavedAt(new Date().toISOString());
       setCopyFeedback(null);
     } catch (error) {
       if (
@@ -423,7 +424,7 @@ export function EventWebRegistrationCard({
               onChange={(event) => {
                 setSelectedVisibility(event.target.value as AdminEventWebVisibilityUpdate);
                 setVisibilitySaveError(null);
-                setVisibilitySaveMessage(null);
+                setVisibilitySavedAt(null);
               }}
               value={selectedVisibility}
             >
@@ -436,23 +437,20 @@ export function EventWebRegistrationCard({
               visibilitySaving || selectedVisibility === registration.webVisibility
             }
             onClick={() => void handleVisibilitySave()}
-            variant="primary"
+            variant="success"
           >
             {visibilitySaving ? "Сохраняем…" : "Сохранить режим"}
           </Button>
         </div>
       )}
 
-      {visibilitySaveMessage ? (
-        <p className="event-web-registration-feedback event-web-registration-feedback--success" role="status">
-          {visibilitySaveMessage}
-        </p>
-      ) : null}
-      {visibilitySaveError ? (
-        <p className="event-web-registration-feedback event-web-registration-feedback--error" role="alert">
-          {visibilitySaveError}
-        </p>
-      ) : null}
+      <SaveStatusView
+        saving={visibilitySaving}
+        error={visibilitySaveError}
+        savedAt={visibilitySavedAt}
+        unsaved={registration.webVisibility !== "listed" && selectedVisibility !== registration.webVisibility}
+        recovery="Повторите сохранение режима."
+      />
 
       <div className="event-web-registration-card__slug-editor">
         <div className="event-web-registration-card__slug-heading">
@@ -489,7 +487,7 @@ export function EventWebRegistrationCard({
                 const nextSuffix = event.target.value;
                 setSlugSuffix(nextSuffix);
                 setSlugSaveError(null);
-                setSlugSaveMessage(null);
+                setSlugSavedAt(null);
                 if (publicUrl) {
                   scheduleSlugCheck(nextSuffix, eventTitle);
                 }
@@ -539,21 +537,18 @@ export function EventWebRegistrationCard({
           <Button
             disabled={!canSaveSlug}
             onClick={() => void handleSlugSave()}
-            variant="primary"
+            variant="success"
           >
             {slugSaving ? "Сохраняем…" : "Сохранить адрес"}
           </Button>
         </div>
-        {slugSaveMessage ? (
-          <p className="event-web-registration-feedback event-web-registration-feedback--success" role="status" aria-live="polite">
-            {slugSaveMessage}
-          </p>
-        ) : null}
-        {slugSaveError ? (
-          <p className="event-web-registration-feedback event-web-registration-feedback--error" role="alert">
-            {slugSaveError}
-          </p>
-        ) : null}
+        <SaveStatusView
+          saving={slugSaving}
+          error={slugSaveError}
+          savedAt={slugSavedAt}
+          unsaved={slugSuffix !== registration.publicSlug}
+          recovery="Проверьте адрес и повторите сохранение."
+        />
       </div>
 
       <div className="event-web-registration-card__availability">
