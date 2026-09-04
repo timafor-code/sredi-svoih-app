@@ -6345,6 +6345,7 @@ a {
 }
 
 .event-occurrences-constructor {
+  container-type: inline-size;
   display: grid;
   gap: 12px;
   padding: 16px;
@@ -6432,19 +6433,30 @@ a {
 
 .event-occurrence-generator {
   display: grid;
-  gap: 14px;
+  gap: 8px;
   border: 1px solid var(--glass-border);
   border-radius: var(--radius);
-  padding: 14px;
-  background: rgba(255, 255, 255, 0.035);
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .event-occurrence-generator__head {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.event-occurrence-generator__head > div:first-child {
+  flex: 1 1 340px;
+  min-width: 0;
+}
+
+.event-occurrence-generator__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .event-occurrence-generator__head h3 {
@@ -6465,6 +6477,10 @@ a {
   display: grid;
   grid-template-columns: repeat(4, minmax(140px, 1fr));
   gap: 10px;
+}
+
+.event-occurrence-generator__grid[hidden] {
+  display: none;
 }
 
 .event-occurrence-generator__field {
@@ -6534,19 +6550,14 @@ a {
 
 .event-occurrence-generator__preview {
   display: grid;
-  overflow: hidden;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  background: rgba(0, 0, 0, 0.14);
+  min-width: 0;
 }
 
 .event-occurrence-generator__preview-head {
   display: flex;
   flex-wrap: wrap;
-  justify-content: space-between;
+  align-items: center;
   gap: 8px;
-  border-bottom: 1px solid var(--glass-border);
-  padding: 9px 10px;
 }
 
 .event-occurrence-generator__preview-head span {
@@ -6577,6 +6588,7 @@ a {
   margin: 0;
   padding: 0;
   list-style: none;
+  border-top: 1px solid var(--glass-border);
 }
 
 .event-occurrence-generator__preview-item {
@@ -6630,13 +6642,19 @@ a {
 
 .event-occurrences-constructor__layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
   align-items: start;
 }
 
 .event-occurrences-constructor__main {
   min-width: 0;
+  scroll-margin-block: 16px;
+}
+
+.event-occurrences-constructor__main:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 4px;
 }
 
 .event-occurrence-list-stack {
@@ -6646,7 +6664,9 @@ a {
 
 .event-occurrence-group {
   display: grid;
-  gap: 8px;
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
 }
 
 .event-occurrence-group__head {
@@ -6655,9 +6675,7 @@ a {
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px 12px;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  padding: 10px 12px;
+  padding: 8px 10px;
   background: rgba(255, 255, 255, 0.03);
 }
 
@@ -6689,7 +6707,7 @@ a {
 }
 
 .event-occurrence-group--archive {
-  gap: 6px;
+  gap: 0;
 }
 
 .event-occurrence-group--archive .event-occurrence-group__head {
@@ -6700,10 +6718,6 @@ a {
 .event-occurrence-group--archive .event-occurrence-group__head h3 {
   color: var(--text-muted);
   font-size: 12px;
-}
-
-.event-occurrence-group--archive .event-occurrence-rows {
-  gap: 6px;
 }
 
 .event-occurrence-group--archive .event-occurrence-row {
@@ -6769,7 +6783,7 @@ a {
 
 .event-occurrence-rows {
   display: grid;
-  gap: 8px;
+  gap: 0;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -6777,12 +6791,11 @@ a {
 
 .event-occurrence-row {
   display: grid;
-  grid-template-columns: minmax(116px, 0.28fr) minmax(0, 1fr) minmax(122px, auto) auto;
+  grid-template-columns: 156px minmax(0, 1fr) 122px auto;
   align-items: center;
-  gap: 10px;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  padding: 10px 12px;
+  gap: 6px 10px;
+  border-top: 1px solid var(--glass-border);
+  padding: 8px 10px;
   background: rgba(255, 255, 255, 0.035);
   transition: border-color 0.15s ease;
 }
@@ -6814,25 +6827,23 @@ a {
   gap: 3px;
 }
 
+.event-occurrence-row__heading,
 .event-occurrence-row__badges {
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  padding-top: 4px;
+  gap: 4px 8px;
 }
 
 .event-occurrence-row__date strong,
 .event-occurrence-row__title {
   min-width: 0;
-  overflow: hidden;
   color: var(--text);
   font-size: 13px;
   font-weight: 760;
   line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .event-occurrence-row__date span,
@@ -6846,7 +6857,8 @@ a {
 .event-occurrence-row__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
+  gap: 2px 12px;
+  overflow-wrap: anywhere;
 }
 
 .event-occurrence-row__past-badge {
@@ -6918,7 +6930,7 @@ a {
   font-weight: 850;
   line-height: 1.2;
   text-align: center;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .event-occurrence-row__registration-state--open {
@@ -6953,6 +6965,7 @@ a {
 
 .event-occurrence-row__actions {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 2px;
@@ -7014,8 +7027,6 @@ a {
 }
 
 .event-occurrences-summary {
-  position: sticky;
-  top: 8px;
   display: grid;
   overflow: hidden;
   border: 1px solid var(--glass-border);
@@ -7024,8 +7035,7 @@ a {
 }
 
 .event-occurrences-summary header {
-  border-bottom: 1px solid var(--glass-border);
-  padding: 10px 12px;
+  padding: 8px 10px 0;
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 850;
@@ -7035,19 +7045,16 @@ a {
 
 .event-occurrences-summary dl {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
   gap: 0;
   margin: 0;
 }
 
 .event-occurrences-summary div {
   display: grid;
+  align-content: start;
   gap: 4px;
-  border-bottom: 1px solid var(--glass-border);
-  padding: 10px 12px;
-}
-
-.event-occurrences-summary div:last-child {
-  border-bottom: 0;
+  padding: 8px 10px;
 }
 
 .event-occurrences-summary dt {
@@ -7122,21 +7129,21 @@ a {
   font-weight: 700;
 }
 
-@media (max-width: 1100px) {
+@container (max-width: 760px) {
   .event-occurrence-generator__grid {
-    grid-template-columns: repeat(2, minmax(140px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .event-occurrences-constructor__layout {
-    grid-template-columns: minmax(0, 1fr);
+  .event-occurrence-row {
+    grid-template-columns: 156px minmax(0, 1fr);
   }
 
-  .event-occurrences-summary {
-    position: static;
+  .event-occurrence-row__actions {
+    justify-self: end;
   }
 }
 
-@media (max-width: 860px) {
+@container (max-width: 480px) {
   .event-occurrence-generator__grid,
   .event-occurrence-generator__preview-item {
     grid-template-columns: minmax(0, 1fr);
@@ -7152,18 +7159,19 @@ a {
 
   .event-occurrence-row__date,
   .event-occurrence-row__body,
-  .event-occurrence-row__registration-state,
-  .event-occurrence-row__status-select {
+  .event-occurrence-row__actions {
     grid-column: 1 / -1;
   }
 
-  .event-occurrence-row__status,
-  .event-occurrence-row__registration-state {
-    justify-self: start;
+  .event-occurrence-row__date {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
   }
 
   .event-occurrence-row__actions {
-    justify-self: end;
+    justify-self: start;
   }
 
   .event-occurrence-group__head,
