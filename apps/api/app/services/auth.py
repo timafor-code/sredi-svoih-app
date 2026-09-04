@@ -267,12 +267,13 @@ async def _invalidate_user_auth_codes(
     )
 
 
-async def _create_auth_code_for_user(
+async def _stage_auth_code_for_user(
     session: AsyncSession,
     model: AuthCodeModel,
     *,
     user: AppUser,
 ) -> str:
+    """Invalidate prior codes and add a new one without committing."""
     now = _now()
     code = _new_auth_code()
     await _invalidate_user_auth_codes(session, model, user_id=user.id, now=now)
@@ -283,6 +284,17 @@ async def _create_auth_code_for_user(
             expires_at=now + _auth_code_ttl(),
         ),
     )
+    await session.flush()
+    return code
+
+
+async def _create_auth_code_for_user(
+    session: AsyncSession,
+    model: AuthCodeModel,
+    *,
+    user: AppUser,
+) -> str:
+    code = await _stage_auth_code_for_user(session, model, user=user)
     await session.commit()
     return code
 
@@ -347,6 +359,27 @@ def _send_email_verification_code(to_address: str, code: str) -> None:
         )
     except AuthEmailDeliveryError:
         _log_auth_email_delivery_failure(_EMAIL_VERIFICATION_PURPOSE)
+
+
+def _send_required_email_verification_code(to_address: str, code: str) -> None:
+    """Raise AuthEmailDeliveryError unless the code was actually sent."""
+    result = send_email_verification_email(
+        to_address=to_address,
+        code=code,
+        expiration_minutes=_auth_code_expiration_minutes(),
+    )
+    if not result.sent:
+        raise AuthEmailDeliveryError("Email verification delivery unavailable")
+
+
+def _email_delivery_unavailable_error() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "code": "email_delivery_unavailable",
+            "message": "Email delivery is temporarily unavailable",
+        },
+    )
 
 
 def _send_set_password_code(to_address: str, code: str) -> None:
@@ -598,12 +631,19 @@ async def create_email_verification_code(
     ):
         return _email_request_response()
 
-    code = await _create_auth_code_for_user(
+    code = await _stage_auth_code_for_user(
         session,
         AuthEmailVerificationCode,
         user=user,
     )
-    _send_email_verification_code(user.email, code)
+    try:
+        _send_required_email_verification_code(user.email, code)
+    except AuthEmailDeliveryError:
+        _log_auth_email_delivery_failure(_EMAIL_VERIFICATION_PURPOSE)
+        await session.rollback()
+        raise _email_delivery_unavailable_error() from None
+
+    await session.commit()
     return _email_request_response()
 
 
@@ -853,6 +893,8 @@ async def register_password_user(
     if existing_user is not None:
         raise AuthConflictError("Email is already registered")
 
+    _consume_auth_email_rate_limit(_EMAIL_VERIFICATION_PURPOSE, normalized_email)
+
     now = _now()
     user = AppUser(
         email=normalized_email,
@@ -868,15 +910,25 @@ async def register_password_user(
         await session.flush()
         profile = Profile(user_id=user.id)
         session.add(profile)
-        await session.commit()
+        code = await _stage_auth_code_for_user(
+            session,
+            AuthEmailVerificationCode,
+            user=user,
+        )
     except IntegrityError as exc:
         await session.rollback()
         raise AuthConflictError("Email is already registered") from exc
 
+    try:
+        _send_required_email_verification_code(user.email, code)
+    except AuthEmailDeliveryError:
+        _log_auth_email_delivery_failure(_EMAIL_VERIFICATION_PURPOSE)
+        await session.rollback()
+        raise _email_delivery_unavailable_error() from None
+
+    await session.commit()
     await session.refresh(user)
     await session.refresh(profile)
-
-    await create_email_verification_code(session, email=normalized_email)
 
     return RegisterResponse(
         user=_user_summary(user),
