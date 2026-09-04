@@ -43,7 +43,6 @@ import {
   replaceCanonicalEventPath,
 } from "./route";
 import type {
-  AccountChoice,
   AccountNextStep,
   ExistingAccountIdentity,
   TemporaryAuthTokens,
@@ -497,7 +496,6 @@ function ParticipationOptions({
 
 type FormValues = Record<PersonalField, string> & {
   seatsCount: string;
-  accountChoice: AccountChoice | null;
   consent: boolean;
 };
 
@@ -751,7 +749,6 @@ function RegistrationForm({
     phone: "",
     email: "",
     seatsCount: "1",
-    accountChoice: null,
     consent: false,
   };
   const [values, setValues] = useState<FormValues>(emptyValues);
@@ -791,6 +788,7 @@ function RegistrationForm({
   const [repeatPassword, setRepeatPassword] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [accountCompleted, setAccountCompleted] = useState(false);
+  const [passwordlessDeclined, setPasswordlessDeclined] = useState(false);
   const [verifiedRegistrationEmail, setVerifiedRegistrationEmail] = useState<string | null>(null);
   const [passwordlessDeletionOpen, setPasswordlessDeletionOpen] = useState(false);
   const [passwordlessDeletionPending, setPasswordlessDeletionPending] = useState(false);
@@ -810,6 +808,9 @@ function RegistrationForm({
   const usesCalculatedSeats = registrationMode === "internal_paid" && options.length > 0;
   const temporaryAuth = authenticatedAccount?.tokens ?? null;
   const existingAccount = authenticatedAccount?.identity ?? null;
+  const passwordlessAccountChoiceAvailable = accountNextStep === "none"
+    && verifiedRegistrationEmail !== null && !existingAccount && !passwordlessDeletionPending;
+  const showPasswordlessChoice = passwordlessAccountChoiceAvailable && !accountCompleted && !passwordlessDeclined;
   const participationError = displayTotals.hasMixedCurrencies
     ? MIXED_CURRENCY_ERROR
     : errors.options;
@@ -829,6 +830,7 @@ function RegistrationForm({
     setRegistration(null);
     setAccountNextStep(null);
     setSetPasswordCode(null);
+    setPasswordlessDeclined(false);
     setVerifiedRegistrationEmail(null);
     setPasswordlessDeletionOpen(false);
     setPasswordlessDeletionPending(false);
@@ -1041,7 +1043,7 @@ function RegistrationForm({
     }
   };
 
-  const continueWithAccountChoice = async (accountChoice: AccountChoice) => {
+  const continueRegistration = async () => {
     if (document.querySelector('[aria-modal="true"], dialog[open]')) return;
     flowOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : resumeRef.current;
     if (stage !== "form") {
@@ -1061,7 +1063,6 @@ function RegistrationForm({
       lastName: normalizeName(signedInValues?.lastName ?? values.lastName),
       phone: signedInValues?.phone ?? values.phone,
       email: signedInValues?.email ?? values.email.trim(),
-      accountChoice,
     };
     setValues(normalizedValues);
     const nextErrors: FormErrors = validatePersonalFields(normalizedValues);
@@ -1110,7 +1111,7 @@ function RegistrationForm({
         document_id: consentDocument.id,
         content_hash: consentDocument.content_hash,
       }],
-      account_choice: accountChoice,
+      account_choice: "without_password",
     };
     const signature = JSON.stringify(requestWithoutKey);
     try {
@@ -1125,7 +1126,7 @@ function RegistrationForm({
       ...requestWithoutKey,
       idempotency_key: idempotencyRef.current.key,
     };
-    pendingPasswordlessEmailRef.current = !temporaryAuth && accountChoice === "without_password"
+    pendingPasswordlessEmailRef.current = !temporaryAuth
       ? payload.email.trim().toLowerCase()
       : null;
 
@@ -1213,6 +1214,7 @@ function RegistrationForm({
 
   const startNewFlow = () => {
     closeFlow();
+    setPasswordlessDeclined(false);
     idempotencyRef.current = null;
     setFlowId(null);
     setFlowExpiresAt(null);
@@ -1234,7 +1236,7 @@ function RegistrationForm({
     setBusyAction("request_password");
     setPasswordError(null);
     try {
-      await requestSetPassword(values.email);
+      await requestSetPassword(verifiedRegistrationEmail ?? values.email);
       setPasswordRequestSent(true);
       setRequestedPasswordCode("");
       setNotice("Если задание пароля доступно, код отправлен на указанный email.");
@@ -1360,7 +1362,7 @@ function RegistrationForm({
     const resultOccurrence = occurrences.find((item) => item.id === registration.occurrence_id);
     const isPaidResult = registrationMode === "internal_paid";
     const showPasswordForm = accountNextStep === "set_password"
-      || (accountNextStep === "request_set_password" && passwordRequestSent);
+      || ((accountNextStep === "request_set_password" || showPasswordlessChoice) && passwordRequestSent);
     flowContent = (
       <section className="flow-card success-card" aria-labelledby="success-heading" aria-live="polite">
         <p className="eyebrow">Регистрация сохранена</p>
@@ -1392,7 +1394,8 @@ function RegistrationForm({
           </div>
         ) : null}
 
-        {accountNextStep === "none" ? <p className="muted-copy">Регистрация сохранена. Код подтверждения был отправлен на указанный email. Пароль и web-сессия не создавались.</p> : null}
+        {accountNextStep === "none" && !accountCompleted ? <p className="muted-copy">Регистрация уже сохранена. {existingAccount ? "Регистрация сохранена в вашем аккаунте." : "Код подтверждения был отправлен на указанный email. Пароль и web-сессия не создавались."}</p> : null}
+        {passwordlessDeclined ? <p className="muted-copy">Регистрация сохранена без пароля.</p> : null}
         {accountNextStep === "sign_in" && !accountCompleted && !existingAccount ? (
           <div className="account-followup">
             <p className="muted-copy">Регистрация уже сохранена. Вход необязателен: войти с существующим паролем для управления аккаунтом можно позже.</p>
@@ -1436,6 +1439,16 @@ function RegistrationForm({
         {passwordlessDeletionPending ? (
           <p className="registration-result">Запрос на удаление подтверждён. Доступ остановлен, удаление будет завершено по правилам хранения данных.</p>
         ) : null}
+        {showPasswordlessChoice ? (
+          <div className="account-followup">
+            <p className="muted-copy">По желанию можно задать пароль, чтобы входить в приложение и на сайт и видеть свои регистрации. Продолжение без пароля не влияет на сохранённую регистрацию.</p>
+            {!passwordRequestSent ? (
+              <button className="primary-button" type="button" disabled={busyAction !== null} onClick={sendPasswordCode}>
+                {busyAction === "request_password" ? "Отправляем…" : "Задать пароль"}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {accountNextStep === "request_set_password" && !passwordRequestSent ? (
           <div className="account-followup">
             <p className="muted-copy">Чтобы задать пароль, запросите одноразовый код. Ответ не раскрывает, существует ли аккаунт.</p>
@@ -1447,7 +1460,7 @@ function RegistrationForm({
         {showPasswordForm && !accountCompleted ? (
           <div className="account-followup" aria-labelledby="password-heading">
             <h3 id="password-heading">Задать пароль</h3>
-            {accountNextStep === "request_set_password" ? (
+            {accountNextStep === "request_set_password" || showPasswordlessChoice ? (
               <div className="form-field">
                 <label htmlFor="set-password-email-code">Код из письма</label>
                 <input
@@ -1473,6 +1486,17 @@ function RegistrationForm({
               {busyAction === "password" ? "Сохраняем…" : "Задать пароль"}
             </button>
           </div>
+        ) : null}
+        {showPasswordlessChoice ? (
+          <button className="secondary-button" type="button" disabled={busyAction !== null} onClick={() => {
+            setPasswordlessDeclined(true);
+            setRequestedPasswordCode("");
+            setNewPassword("");
+            setRepeatPassword("");
+            setPasswordError(null);
+            setNotice(null);
+            document.getElementById("success-heading")?.focus();
+          }}>Продолжить без пароля</button>
         ) : null}
         <div className="flow-live" aria-live="polite" aria-atomic="true">
           {notice ? <p className="form-notice" role="status">{notice}</p> : null}
@@ -1607,9 +1631,9 @@ function RegistrationForm({
             type="button"
             aria-describedby={!values.consent ? "consent-nudge" : undefined}
             disabled={stage === "form" && busyAction !== null}
-            onClick={() => void continueWithAccountChoice("without_password")}
+            onClick={() => void continueRegistration()}
           >
-            {stage === "verification" ? "Продолжить подтверждение" : stage === "success" ? "Посмотреть регистрацию" : busyAction === "create" && values.accountChoice === "without_password" ? "Отправляем…" : "Записаться на мероприятие"}
+            {stage === "verification" ? "Продолжить подтверждение" : stage === "success" ? "Посмотреть регистрацию" : busyAction === "create" ? "Отправляем…" : "Записаться на мероприятие"}
           </button>
           <p className="registration-caption">{existingAccount
             ? "Регистрация будет оформлена на данные аккаунта."
@@ -1618,15 +1642,7 @@ function RegistrationForm({
             <details className="continue-details">
               <summary>Что происходит с моими данными</summary>
               <p>Регистрация не требует пароля. Чтобы ваши записи не дублировались, мы сохраним одну техническую карточку участника. Управлять или удалить данные можно по коду из email.</p>
-              <p>Задайте пароль один раз, чтобы в дальнейшем не вводить данные повторно и видеть свои регистрации в приложении и на сайте.</p>
-              <button
-                className="text-button"
-                type="button"
-                disabled={busyAction !== null}
-                onClick={() => void continueWithAccountChoice("create_account")}
-              >
-                {busyAction === "create" && values.accountChoice === "create_account" ? "Отправляем…" : "Создать аккаунт"}
-              </button>
+              <p>После подтверждения email и сохранения регистрации можно по желанию задать пароль. Продолжение без пароля не влияет на сохранённую регистрацию.</p>
             </details>
           ) : null}
           {!values.consent ? <p className="consent-nudge" id="consent-nudge">Отметьте согласие выше, чтобы продолжить.</p> : null}
@@ -1641,7 +1657,7 @@ function RegistrationForm({
         <RegistrationFlowDialog
           stage={stage}
           paymentStatus={registration?.payment_status}
-          accountDone={accountNextStep === "none" || accountCompleted || signInDeclined || existingAccount !== null}
+          accountDone={(accountNextStep === "none" && !passwordlessAccountChoiceAvailable) || passwordlessDeclined || accountCompleted || signInDeclined || existingAccount !== null}
           eventTitle={eventTitle}
           onClose={closeFlow}
         >
