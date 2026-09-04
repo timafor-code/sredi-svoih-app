@@ -1615,7 +1615,7 @@ function OccurrenceGenerator({
           >
             {expanded ? "Свернуть настройки" : "Настроить"}
           </Button>
-          <Button disabled={applyDisabled} onClick={onApply} size="sm" variant="secondary">
+          <Button disabled={applyDisabled} onClick={onApply} size="sm" variant="gold">
             Создать даты
           </Button>
         </div>
