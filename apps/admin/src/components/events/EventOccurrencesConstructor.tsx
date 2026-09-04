@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "../ui/Button";
@@ -904,6 +904,9 @@ export function EventOccurrencesConstructor({
   const [generatorForm, setGeneratorForm] = useState<OccurrenceGeneratorForm>(() =>
     buildDefaultGeneratorForm(resolveDefaultGeneratorPreset(eventKind)),
   );
+  const [generatorExpanded, setGeneratorExpanded] = useState(false);
+  const [previewExpanded, setPreviewExpanded] = useState(false);
+  const occurrenceListRef = useRef<HTMLDivElement>(null);
   const saveInFlightRef = useRef(false);
   const remoteDraftsLoadTokenRef = useRef(0);
   const autoArchiveLoadTokenRef = useRef(0);
@@ -937,6 +940,8 @@ export function EventOccurrencesConstructor({
     setSavedAt(null);
     setArchiveToast(null);
     setArchiveExpanded(false);
+    setGeneratorExpanded(false);
+    setPreviewExpanded(false);
 
     listAdminEventOccurrences(eventId)
       .then((occurrences) => {
@@ -1325,7 +1330,7 @@ export function EventOccurrencesConstructor({
     }));
   };
 
-  const handleApplyGeneratedOccurrences = () => {
+  const handleApplyGeneratedOccurrences = async () => {
     if (
       loading ||
       saveInFlightRef.current ||
@@ -1344,8 +1349,15 @@ export function EventOccurrencesConstructor({
     }
 
     const nextDrafts = withSequentialSortOrder([...drafts, ...generatedDrafts]);
-    setDrafts(nextDrafts);
-    void persistDrafts(nextDrafts);
+    const persisted = await persistDrafts(nextDrafts);
+    if (persisted) {
+      setGeneratorExpanded(false);
+      setPreviewExpanded(false);
+      occurrenceListRef.current?.focus({ preventScroll: true });
+      window.requestAnimationFrame(() => {
+        occurrenceListRef.current?.scrollIntoView({ block: "start" });
+      });
+    }
   };
 
   const renderOccurrenceRow = ({ draft, index }: OccurrenceGroupItem) => (
@@ -1402,11 +1414,15 @@ export function EventOccurrencesConstructor({
       <OccurrenceGenerator
         disabled={disabled}
         eventCapacity={eventCapacity}
+        expanded={generatorExpanded}
         form={generatorForm}
         onApply={handleApplyGeneratedOccurrences}
         onFieldChange={updateGeneratorField}
         onPresetChange={handleGeneratorPresetChange}
+        onToggle={() => setGeneratorExpanded((current) => !current)}
+        onTogglePreview={() => setPreviewExpanded((current) => !current)}
         preview={generatorPreview}
+        previewExpanded={previewExpanded}
       />
 
       {archiveToast ? (
@@ -1425,7 +1441,14 @@ export function EventOccurrencesConstructor({
       ) : null}
 
       <div className="event-occurrences-constructor__layout">
-        <div className="event-occurrences-constructor__main">
+        <SummaryPanel summary={summary} />
+        <div
+          aria-label="Список дат и сеансов"
+          className="event-occurrences-constructor__main"
+          ref={occurrenceListRef}
+          role="region"
+          tabIndex={-1}
+        >
           {loading ? (
             <p className="event-occurrences-constructor__empty">
               Загружаем даты и сеансы...
@@ -1487,8 +1510,6 @@ export function EventOccurrencesConstructor({
             </div>
           )}
         </div>
-
-        <SummaryPanel summary={summary} />
       </div>
 
       <footer className="event-occurrences-constructor__footer">
@@ -1526,6 +1547,7 @@ export function EventOccurrencesConstructor({
 type OccurrenceGeneratorProps = {
   disabled: boolean;
   eventCapacity: number | null;
+  expanded: boolean;
   form: OccurrenceGeneratorForm;
   onApply: () => void;
   onFieldChange: <Field extends keyof OccurrenceGeneratorForm>(
@@ -1533,23 +1555,43 @@ type OccurrenceGeneratorProps = {
     value: OccurrenceGeneratorForm[Field],
   ) => void;
   onPresetChange: (value: string) => void;
+  onToggle: () => void;
+  onTogglePreview: () => void;
   preview: GeneratorPreview;
+  previewExpanded: boolean;
 };
 
 function OccurrenceGenerator({
   disabled,
   eventCapacity,
+  expanded,
   form,
   onApply,
   onFieldChange,
   onPresetChange,
+  onToggle,
+  onTogglePreview,
   preview,
+  previewExpanded,
 }: OccurrenceGeneratorProps) {
+  const settingsId = useId();
+  const previewId = useId();
   const startDayOptions =
     form.preset === "weekly_shabbat" ? SHABBAT_START_DAY_OPTIONS : WEEKDAY_OPTIONS;
   const showAutomationHint =
     form.preset === "weekly_shabbat" || form.preset === "weekly_sunday_school";
   const applyDisabled = disabled || Boolean(preview.error) || preview.creatableCount === 0;
+  const generatorSummary = [
+    GENERATOR_PRESET_OPTIONS.find((option) => option.value === form.preset)?.label,
+    WEEKDAY_OPTIONS.find((option) => option.value === form.startDayOfWeek)?.label,
+    form.startTime,
+    form.weeksAhead ? `Недель вперёд: ${form.weeksAhead}` : null,
+    form.registrationAlwaysOpen
+      ? "Регистрация открыта всегда"
+      : "Регистрация по окну",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const registrationHint = form.registrationAlwaysOpen
     ? "Подходит для курсов: все сгенерированные даты доступны для записи сразу."
     : showAutomationHint
@@ -1561,18 +1603,29 @@ function OccurrenceGenerator({
       <header className="event-occurrence-generator__head">
         <div>
           <h3>Генератор дат</h3>
-          {showAutomationHint ? (
-            <p>
-              Это создаёт конкретные даты. Автоматический cron появится позже.
-            </p>
-          ) : null}
+          <p>{generatorSummary}</p>
         </div>
-        <Button disabled={applyDisabled} onClick={onApply} variant="gold">
-          Создать даты
-        </Button>
+        <div className="event-occurrence-generator__actions">
+          <Button
+            aria-controls={settingsId}
+            aria-expanded={expanded}
+            onClick={onToggle}
+            size="sm"
+            variant="secondary"
+          >
+            {expanded ? "Свернуть настройки" : "Настроить"}
+          </Button>
+          <Button disabled={applyDisabled} onClick={onApply} size="sm" variant="gold">
+            Создать даты
+          </Button>
+        </div>
       </header>
 
-      <div className="event-occurrence-generator__grid">
+      <div
+        className="event-occurrence-generator__grid"
+        hidden={!expanded}
+        id={settingsId}
+      >
         <GeneratorField label="Шаблон">
           <select
             disabled={disabled}
@@ -1715,7 +1768,7 @@ function OccurrenceGenerator({
           >
             <option value="inherit">
               {eventCapacity === null
-                ? "Наследовать capacity события"
+                ? "Наследовать лимит события"
                 : `Наследовать ${eventCapacity}`}
             </option>
             <option value="custom">Свой лимит для дат</option>
@@ -1755,13 +1808,24 @@ function OccurrenceGenerator({
                   preview.items.length - preview.creatableCount
                 } пропущено`}
           </strong>
+          <Button
+            aria-controls={previewId}
+            aria-expanded={previewExpanded}
+            disabled={Boolean(preview.error)}
+            onClick={onTogglePreview}
+            size="sm"
+            variant="ghost"
+          >
+            {previewExpanded ? "Скрыть даты" : "Показать даты"}
+          </Button>
         </div>
 
         {preview.error ? (
           <div className="event-occurrence-generator__error" role="alert">
             {preview.error}
           </div>
-        ) : (
+        ) : null}
+        <div hidden={!previewExpanded || Boolean(preview.error)} id={previewId}>
           <ul className="event-occurrence-generator__preview-list">
             {preview.items.map((item) => (
               <li
@@ -1786,7 +1850,7 @@ function OccurrenceGenerator({
               </li>
             ))}
           </ul>
-        )}
+        </div>
       </div>
     </section>
   );
@@ -1852,33 +1916,32 @@ function OccurrenceRow({
         <span>{timeLabel}</span>
       </div>
 
-  <div className="event-occurrence-row__body">
-    <div className="event-occurrence-row__title">
-      {title ? title : "Без подписи"}
-    </div>
-
-    <div className="event-occurrence-row__meta">
-      <span>{formatRegistrationWindow(draft)}</span>
-      <span>{formatCapacity(draft)}</span>
-    </div>
-
-    <div
-      aria-label="Статус даты и состояние регистрации"
-      className="event-occurrence-row__badges"
-    >
-      <span
-        className={`event-occurrence-row__status event-occurrence-row__status--${draft.status}`}
-      >
-        {statusLabel}
-      </span>
-
-      <span
-        className={`event-occurrence-row__registration-state event-occurrence-row__registration-state--${draft.registrationState}`}
-      >
-        {registrationStateLabel}
-      </span>
-    </div>
-  </div>
+      <div className="event-occurrence-row__body">
+        <div className="event-occurrence-row__heading">
+          <div className="event-occurrence-row__title">
+            {title ? title : "Без подписи"}
+          </div>
+          <div
+            aria-label="Статус даты и состояние регистрации"
+            className="event-occurrence-row__badges"
+          >
+            <span
+              className={`event-occurrence-row__status event-occurrence-row__status--${draft.status}`}
+            >
+              {statusLabel}
+            </span>
+            <span
+              className={`event-occurrence-row__registration-state event-occurrence-row__registration-state--${draft.registrationState}`}
+            >
+              {registrationStateLabel}
+            </span>
+          </div>
+        </div>
+        <div className="event-occurrence-row__meta">
+          <span>{formatRegistrationWindow(draft)}</span>
+          <span>{formatCapacity(draft)}</span>
+        </div>
+      </div>
 
       <select
         aria-label="Изменить статус даты"
