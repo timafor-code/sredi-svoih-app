@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, Pencil, X } from "lucide-react";
 
 import { Button } from "../ui/Button";
 import { SaveStatusView } from "../ui/SaveStatusView";
+import { ApiClientError } from "../../services/apiClient";
 import {
   listAdminEventCapacityUnits,
   replaceAdminEventCapacityUnits,
@@ -246,6 +247,7 @@ function createUnitSaveQueue(
   let running = false;
   let pending = false;
   let uncertain: DraftUnit[] | null = null;
+  let rejected: DraftUnit[] | null = null;
 
   const update = (drafts: DraftUnit[]) => {
     latest = drafts;
@@ -262,12 +264,28 @@ function createUnitSaveQueue(
     return hydrate(sent);
   };
 
+  const restoreRejectedDeletion = async () => {
+    if (!rejected) return 0;
+    // Keep the deterministic rejection until GET succeeds. A failed recovery
+    // must retry reconciliation before another PUT, never repeat the deletion.
+    const units = await listAdminEventCapacityUnits(eventId);
+    attachIds(rejected, units);
+    const retainedIds = new Set(latest.map((draft) => draft.remoteId));
+    const restored = units.filter((unit) => !retainedIds.has(unit.id)).map(buildDraftFromUnit);
+    // Read latest after GET: edits completed during either request win over the
+    // server's older versions. Only missing persisted units are restored.
+    update([...latest, ...restored]);
+    rejected = null;
+    return restored.length;
+  };
+
   const save = async () => {
     pending = true;
     if (running) return;
     running = true;
     onStatus({ saving: true, error: null, savedAt: null });
     try {
+      if (rejected) await restoreRejectedDeletion();
       // A lost response may follow a successful PUT. Recover assigned IDs before
       // retrying so newly created slots (and their mappings) are not recreated.
       if (uncertain) {
@@ -281,7 +299,21 @@ function createUnitSaveQueue(
         const validation = validateUnitDrafts(sent);
         if (!validation.ok) throw new Error("Проверьте поля слотов.");
         uncertain = sent;
-        const units = await replaceAdminEventCapacityUnits(eventId, validation.inputs);
+        let units: AdminEventCapacityUnit[];
+        try {
+          units = await replaceAdminEventCapacityUnits(eventId, validation.inputs);
+        } catch (error) {
+          if (error instanceof ApiClientError && error.status === 409) {
+            // Unlike a lost response, this transaction was rejected/rolled back.
+            rejected = sent;
+            uncertain = null;
+            const restoredCount = await restoreRejectedDeletion();
+            throw new Error(restoredCount > 0
+              ? "Слот нельзя удалить, потому что по нему уже есть регистрации. Слот восстановлен."
+              : "Сохранение отклонено из-за конфликта. Локальные изменения сохранены.");
+          }
+          throw error;
+        }
         const saved = attachIds(sent, units);
         uncertain = null;
         onSaved(saved, units);
@@ -289,7 +321,9 @@ function createUnitSaveQueue(
       onStatus({ saving: false, error: null, savedAt: new Date().toISOString() });
     } catch (error) {
       pending = false;
-      onStatus({ saving: false, savedAt: null, error: error instanceof Error
+      onStatus({ saving: false, savedAt: null, error: rejected
+        ? "Не удалось восстановить слоты после конфликта. Повторите попытку."
+        : error instanceof Error
         ? error.message : "Не удалось сохранить слоты." });
     } finally {
       running = false;
