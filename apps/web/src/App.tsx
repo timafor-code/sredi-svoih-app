@@ -1532,6 +1532,53 @@ function EventPage({
   const [ticketsOpen, setTicketsOpen] = useState(false);
   const [ticketsRevision, setTicketsRevision] = useState(0);
   const [accountDeletionEmail, setAccountDeletionEmail] = useState<string | null>(null);
+  // EventPage is keyed by event ID, so description state resets on navigation.
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [stickyRegistrationVisible, setStickyRegistrationVisible] = useState(false);
+  const eventColumnRef = useRef<HTMLDivElement>(null);
+  const formColumnRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let frame: number | null = null;
+    const updateStickyRegistration = () => {
+      frame = null;
+      const formColumn = formColumnRef.current;
+      // Match the stacked CSS breakpoint and the mockup's scroll threshold.
+      // Keep the bar hidden throughout the form and below it, even for short states.
+      setStickyRegistrationVisible(
+        window.innerWidth <= 920
+        && window.scrollY > 260
+        && formColumn !== null
+        && formColumn.getBoundingClientRect().top >= window.innerHeight,
+      );
+    };
+    const scheduleUpdate = () => {
+      if (frame === null) frame = window.requestAnimationFrame(updateStickyRegistration);
+    };
+    updateStickyRegistration();
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+    // Image loading and description expansion can move the form without scrolling.
+    const resizeObserver = typeof ResizeObserver === "function"
+      ? new ResizeObserver(scheduleUpdate)
+      : null;
+    if (eventColumnRef.current) resizeObserver?.observe(eventColumnRef.current);
+    return () => {
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+      resizeObserver?.disconnect();
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
+  }, [descriptionExpanded]);
+
+  const jumpToRegistration = () => {
+    const formColumn = formColumnRef.current;
+    if (!formColumn) return;
+    const smoothScroll = window.matchMedia?.("(prefers-reduced-motion: no-preference)").matches;
+    formColumn.focus({ preventScroll: true });
+    formColumn.scrollIntoView({ behavior: smoothScroll ? "smooth" : "auto", block: "start" });
+  };
+
   const occurrenceContractKey = availableOccurrences.map((item) => item.id).join(":");
   useEffect(() => {
     if (!authenticatedAccount) setTicketsOpen(false);
@@ -1590,8 +1637,21 @@ function EventPage({
 
   return (
     <PageFrame privacyDocument={privacyDocument}>
+      {stickyRegistrationVisible ? (
+        <div className="sticky-registration">
+          <div className="sticky-registration-inner">
+            <div className="sticky-registration-copy">
+              <strong>{data.event.title}</strong>
+              <span>{dateSelectionPending ? "Выберите дату участия" : effectiveState ? STATUS_LABELS[effectiveState] : "Регистрация на мероприятие"}</span>
+            </div>
+            <button className="primary-button" type="button" onClick={jumpToRegistration}>
+              К регистрации
+            </button>
+          </div>
+        </div>
+      ) : null}
       <main id="main-content" className="event-layout">
-        <div className="event-column">
+        <div className="event-column" ref={eventColumnRef}>
           <article className="surface event-card">
             <EventImage imageUrl={data.event.image_url} title={data.event.title} />
             <div className="event-copy">
@@ -1604,13 +1664,32 @@ function EventPage({
                   <div><dt>Место</dt><dd>{[data.event.location_name, data.event.address].filter(Boolean).join(", ")}</dd></div>
                 ) : null}
               </dl>
+              <button className="primary-button jump-to-registration" type="button" onClick={jumpToRegistration}>
+                Перейти к регистрации <span aria-hidden="true">→</span>
+              </button>
               {data.event.short_description ? <p className="description">{data.event.short_description}</p> : null}
-              {data.event.description ? <p className="description full-description">{data.event.description}</p> : null}
+              {data.event.description ? (
+                <>
+                  <p id="event-description" className={`description full-description${descriptionExpanded ? " expanded" : ""}`}>
+                    {data.event.description}
+                  </p>
+                  <button
+                    className="description-toggle"
+                    type="button"
+                    aria-expanded={descriptionExpanded}
+                    aria-controls="event-description"
+                    onClick={() => setDescriptionExpanded((expanded) => !expanded)}
+                  >
+                    {descriptionExpanded ? "Свернуть" : "Читать полностью"}
+                    <span aria-hidden="true">{descriptionExpanded ? " ↑" : " ↓"}</span>
+                  </button>
+                </>
+              ) : null}
             </div>
           </article>
         </div>
 
-        <div className="form-column">
+        <div className="form-column" ref={formColumnRef} tabIndex={-1}>
           {authenticatedAccount ? (
             <AccountPanel
               identity={authenticatedAccount.identity}
