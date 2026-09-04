@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
   EVENT_ID,
@@ -31,6 +31,22 @@ const REGISTRATION_ID = "77777777-7777-4777-8777-777777777777";
 const PRIVACY_REQUEST_ID = "88888888-8888-4888-8888-888888888888";
 const EXPIRES_AT = "2026-09-12T18:00:00+03:00";
 const SET_PASSWORD_CODE = "opaque-set-password-code-with-sufficient-length";
+
+// jsdom has no native dialog top layer; model open/close for component tests.
+const originalShowModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "showModal");
+const originalDialogClose = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "close");
+beforeAll(() => {
+  Object.defineProperties(HTMLDialogElement.prototype, {
+    showModal: { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } },
+    close: { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; } },
+  });
+});
+afterAll(() => {
+  for (const [name, descriptor] of [["showModal", originalShowModal], ["close", originalDialogClose]] as const) {
+    if (descriptor) Object.defineProperty(HTMLDialogElement.prototype, name, descriptor);
+    else Reflect.deleteProperty(HTMLDialogElement.prototype, name);
+  }
+});
 
 afterEach(() => vi.useRealTimers());
 
@@ -160,9 +176,10 @@ async function fillValidQuestionnaire(user: ReturnType<typeof userEvent.setup>) 
 
 async function createIntent(
   user: ReturnType<typeof userEvent.setup>,
-  choice: "Продолжить без пароля" | "Создать аккаунт" = "Продолжить без пароля",
+  choice: "Записаться на мероприятие" | "Создать аккаунт" = "Записаться на мероприятие",
 ) {
   vi.mocked(fetch).mockImplementationOnce(() => response(intentCreated(), 201));
+  if (choice === "Создать аккаунт") await user.click(screen.getByText("Что происходит с моими данными"));
   await user.click(screen.getByRole("button", { name: choice }));
   await screen.findByRole("heading", { name: "Введите код из письма" });
 }
@@ -193,10 +210,10 @@ async function signInExistingAccount(
       profile: { first_name: "Иван", last_name: "Иванов", phone: "+79000000001" },
       memberships: [],
     }));
-  await user.click(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" }));
+  await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Войти" }));
   await user.type(screen.getByLabelText("Email", { selector: "#login-email" }), "ivan@example.ru");
   await user.type(screen.getByLabelText("Пароль"), "secret-password");
-  await user.click(screen.getByRole("button", { name: "Войти" }));
+  await user.click(within(screen.getByRole("dialog", { name: "Войти в аккаунт" })).getByRole("button", { name: "Войти" }));
   return screen.findByRole("region", { name: "Аккаунт" });
 }
 
@@ -244,6 +261,58 @@ describe("public event page", () => {
     await renderEvent(eventResponse(), "", PUBLIC_SLUG);
     expect(replaceSpy).toHaveBeenCalledTimes(1);
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([true, false])("preserves registration jumps, sticky visibility and description expansion (motion allowed: %s)", async (motionAllowed) => {
+    const user = userEvent.setup();
+    const originalWindowProperties = ["innerWidth", "scrollY", "matchMedia"].map((name) => (
+      [name, Object.getOwnPropertyDescriptor(window, name)] as const
+    ));
+    Object.defineProperties(window, {
+      innerWidth: { configurable: true, value: 390 },
+      scrollY: { configurable: true, value: 300 },
+      matchMedia: { configurable: true, value: vi.fn().mockReturnValue({ matches: motionAllowed }) },
+    });
+    // Layout and scrolling are unavailable in jsdom; exercise the page's handlers.
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const scrollIntoView = vi.fn();
+    const previousScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    try {
+      await renderEvent();
+      const column = document.querySelector(".form-column") as HTMLElement;
+      const bounds = vi.spyOn(column, "getBoundingClientRect").mockReturnValue({ top: window.innerHeight + 100 } as DOMRect);
+      fireEvent.resize(window);
+      act(() => frames.shift()?.(0));
+      const sticky = screen.getByRole("button", { name: "К регистрации" });
+      expect(sticky).toHaveClass("primary-button");
+      await user.click(sticky);
+      expect(column).toHaveFocus();
+      expect(scrollIntoView).toHaveBeenLastCalledWith({ behavior: motionAllowed ? "smooth" : "auto", block: "start" });
+      await user.click(screen.getByRole("button", { name: /Перейти к регистрации/ }));
+      expect(column).toHaveFocus();
+      expect(scrollIntoView).toHaveBeenCalledTimes(2);
+      bounds.mockReturnValue({ top: 100 } as DOMRect);
+      fireEvent.resize(window);
+      act(() => frames.shift()?.(0));
+      expect(screen.queryByRole("button", { name: "К регистрации" })).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: /Читать полностью/ }));
+      expect(screen.getByRole("button", { name: /Свернуть/ })).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByText(/Полное описание/)).toHaveClass("expanded");
+      expect(screen.getByText("Тёплая встреча общины")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: /Свернуть/ }));
+      expect(screen.getByRole("button", { name: /Читать полностью/ })).toHaveAttribute("aria-expanded", "false");
+    } finally {
+      HTMLElement.prototype.scrollIntoView = previousScrollIntoView;
+      for (const [name, descriptor] of originalWindowProperties) {
+        if (descriptor) Object.defineProperty(window, name, descriptor);
+        else Reflect.deleteProperty(window, name);
+      }
+    }
   });
 
   it("replaces an alias with the canonical path without a second fetch", async () => {
@@ -453,7 +522,7 @@ describe("registration state and occurrences", () => {
     await user.type(screen.getByLabelText("Email"), "anna@example.ru");
     await user.click(screen.getByLabelText(/Я ознакомился/));
     vi.mocked(fetch).mockImplementationOnce(() => response(intentCreated(), 201));
-    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
 
     const body = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body));
     expect(body.occurrence_id).toBe(OCCURRENCE_TWO_ID);
@@ -630,7 +699,7 @@ describe("participation option presentation", () => {
     await user.type(screen.getByLabelText("Телефон"), "+7 (999) 123-45-67");
     await user.type(screen.getByLabelText("Email"), "anna@example.ru");
     await user.click(screen.getByLabelText(/Я ознакомился/));
-    const continueButton = screen.getByRole("button", { name: "Продолжить без пароля" });
+    const continueButton = screen.getByRole("button", { name: "Записаться на мероприятие" });
     await user.click(continueButton);
 
     expect(screen.getByRole("group", { name: "Варианты участия" })).toHaveFocus();
@@ -786,7 +855,7 @@ describe("paid registration display totals", () => {
     await user.type(screen.getByLabelText("Телефон"), "+7 (999) 123-45-67");
     await user.type(screen.getByLabelText("Email"), "anna@example.ru");
     await user.click(screen.getByLabelText(/Я ознакомился/));
-    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     expect(screen.getByRole("group", { name: "Варианты участия" })).toHaveFocus();
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(donationInput).toBeChecked();
@@ -809,7 +878,7 @@ describe("paid registration display totals", () => {
     await user.type(screen.getByLabelText("Email"), "anna@example.ru");
     await user.click(screen.getByLabelText(/Я ознакомился/));
     vi.mocked(fetch).mockImplementationOnce(() => response(intentCreated(), 201));
-    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
 
     const body = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body));
     expect(body.seats_count).toBe(3);
@@ -842,7 +911,7 @@ describe("local form shell", () => {
 
   it("shows linked accessible errors and focuses the first invalid field", async () => {
     await renderEvent();
-    await userEvent.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await userEvent.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     expect(screen.getByRole("group", { name: "Варианты участия" })).toHaveFocus();
     expect(screen.getByLabelText("Имя")).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByText("Введите телефон.")).toHaveAttribute("id", "phone-error");
@@ -878,7 +947,7 @@ describe("local form shell", () => {
     await user.click(screen.getByLabelText(/Основное участие/));
     const seatsCount = screen.getByRole("spinbutton", { name: "Количество мест" });
     fireEvent.change(seatsCount, { target: { value } });
-    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     expect(seatsCount).toHaveFocus();
     expect(seatsCount).toHaveAttribute("aria-invalid", "true");
     expect(seatsCount).toHaveAttribute("aria-describedby", "seats-count-error");
@@ -893,16 +962,15 @@ describe("local form shell", () => {
     data.participation_options[0].max_quantity = 4;
     await renderEvent(data);
     const seatsCount = screen.getByRole("spinbutton", { name: "Количество мест" });
-    const optionQuantity = screen.getByLabelText("Количество: Основное участие");
     const user = userEvent.setup();
     await user.click(screen.getByRole("checkbox", { name: /Основное участие/ }));
     await user.click(screen.getByRole("button", { name: "Увеличить количество: Основное участие" }));
     await user.click(screen.getByRole("button", { name: "Увеличить количество: Основное участие" }));
-    expect(optionQuantity).toHaveTextContent("3");
+    expect(screen.getByLabelText("Количество: Основное участие")).toHaveTextContent("3");
     expect(seatsCount).toHaveValue(1);
     fireEvent.change(seatsCount, { target: { value: "1000" } });
     expect(seatsCount).toHaveValue(1000);
-    expect(optionQuantity).toHaveTextContent("3");
+    expect(screen.getByLabelText("Количество: Основное участие")).toHaveTextContent("3");
     expect(screen.queryByText(/остал|свободн/i)).not.toBeInTheDocument();
   });
 
@@ -929,88 +997,138 @@ describe("local form shell", () => {
     expect(screen.getByRole("spinbutton", { name: "Количество мест" })).toHaveValue(1);
   });
 
-  it("presents three account actions without account-choice radios or a generic continue button", async () => {
+  it("presents one primary registration action and a secondary account route in a disclosure", async () => {
+    const user = userEvent.setup();
     await renderEvent();
-    const withoutPassword = screen.getByRole("button", { name: "Продолжить без пароля" });
-    const createAccount = screen.getByRole("button", { name: "Создать аккаунт" });
-    expect(screen.queryByRole("radio", { name: /Продолжить без пароля/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("radio", { name: /Создать аккаунт/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Продолжить$/ })).not.toBeInTheDocument();
-    expect(withoutPassword).toHaveAttribute("aria-pressed", "false");
-    expect(createAccount).toHaveAttribute("aria-pressed", "false");
-    expect(withoutPassword).toHaveClass("primary-button");
-    expect(createAccount).toHaveClass("secondary-button");
-    expect(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" })).toBeInTheDocument();
-    expect(screen.getByText(/^Подтвердите email и запишитесь/)).toBeInTheDocument();
-    expect(screen.getByText(/^Задайте пароль один раз/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Согласие на регистрацию/ })).toHaveAttribute("target", "_blank");
-    expect(screen.getAllByRole("link", { name: /Политика конфиденциальности/ })[0]).toHaveAttribute("rel", "noopener noreferrer");
+    const confirm = screen.getByRole("button", { name: "Записаться на мероприятие" });
+    expect(confirm).toHaveClass("registration-confirm", "consent-incomplete");
+    expect(document.querySelectorAll(".registration-form .registration-confirm")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Создать аккаунт" })).not.toBeVisible();
+    await user.click(screen.getByText("Что происходит с моими данными"));
+    expect(screen.getByRole("button", { name: "Создать аккаунт" })).toHaveClass("text-button");
+    expect(screen.getByText(/Регистрация не требует пароля/)).toBeVisible();
+    expect(screen.getByText(/^Задайте пароль один раз/)).toBeVisible();
+    expect(screen.getByRole("link", { name: /Политика конфиденциальности/ })).toHaveAttribute("rel", "noopener noreferrer");
     expect(screen.queryByText(/маркетинг/i)).not.toBeInTheDocument();
   });
 
-  it.each([
-    ["Продолжить без пароля", "without_password", "Создать аккаунт"],
-    ["Создать аккаунт", "create_account", "Продолжить без пароля"],
-  ] as const)("uses shared validation and selects %s as %s", async (buttonName, _choice, otherButtonName) => {
+  it("keeps the consent link separate from the keyboard-accessible checkbox", async () => {
+    const user = userEvent.setup();
     await renderEvent();
-    const action = screen.getByRole("button", { name: buttonName });
-    await userEvent.click(action);
+    const consent = screen.getByLabelText(/Я ознакомился/);
+    const link = screen.getByRole("link", { name: /Согласие на регистрацию/ });
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(link.closest("label")).toBeNull();
+    await user.click(link);
+    expect(consent).not.toBeChecked();
+    consent.focus();
+    await user.keyboard(" ");
+    expect(consent).toBeChecked();
+    expect(consent.closest("section")).toHaveClass("checked");
+    await user.click(link);
+    expect(consent).toBeChecked();
+    expect(screen.queryByText("Отметьте согласие выше, чтобы продолжить.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Записаться на мероприятие" })).not.toHaveClass("consent-incomplete");
+    consent.focus();
+    await user.tab();
+    expect(link).toHaveFocus();
+  });
+
+  it.each(["Записаться на мероприятие", "Создать аккаунт"])("uses shared validation for %s", async (buttonName) => {
+    const user = userEvent.setup();
+    await renderEvent();
+    if (buttonName === "Создать аккаунт") await user.click(screen.getByText("Что происходит с моими данными"));
+    await user.click(screen.getByRole("button", { name: buttonName }));
     expect(screen.getByRole("group", { name: "Варианты участия" })).toHaveFocus();
     expect(screen.getByLabelText("Имя")).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByLabelText("Телефон")).toHaveAttribute("aria-invalid", "true");
-    expect(action).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: otherButtonName })).toHaveAttribute("aria-pressed", "false");
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it.each(["Продолжить без пароля", "Создать аккаунт"])("requires consent for %s", async (buttonName) => {
+  it.each(["Записаться на мероприятие", "Создать аккаунт"])("requires consent for %s", async (buttonName) => {
     const user = userEvent.setup();
     await renderEvent();
-    expect(screen.getByLabelText(/Я ознакомился/)).not.toBeChecked();
+    expect(screen.getByText("Отметьте согласие выше, чтобы продолжить.")).toBeVisible();
     await fillValidForm(user, { consent: false });
+    if (buttonName === "Создать аккаунт") await user.click(screen.getByText("Что происходит с моими данными"));
     await user.click(screen.getByRole("button", { name: buttonName }));
-    expect(screen.getByLabelText(/Я ознакомился/)).toHaveFocus();
-    expect(screen.getByText("Подтвердите согласие для продолжения.")).toBeInTheDocument();
-    expect(screen.queryByText(/Форма заполнена/)).not.toBeInTheDocument();
+    const consent = screen.getByLabelText(/Я ознакомился/);
+    expect(consent).toHaveFocus();
+    expect(consent).toHaveAttribute("aria-invalid", "true");
+    expect(consent).toHaveAttribute("aria-describedby", "consent-meta consent-error");
+    expect(consent.closest("section")).toHaveClass("invalid");
+    expect(screen.getByText("Подтвердите согласие для продолжения.")).toBeVisible();
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("shows and enforces the returned quantity boundaries", async () => {
+  it("shows quantity only for a selected option and enforces returned boundaries", async () => {
     const data = eventResponse();
     data.participation_options[0].allow_quantity = true;
     data.participation_options[0].min_quantity = 2;
     data.participation_options[0].max_quantity = 4;
     await renderEvent(data);
-
+    expect(screen.queryByLabelText("Количество: Основное участие")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /количество: Основное участие/i })).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    const option = screen.getByRole("checkbox", { name: /Основное участие/ });
+    await user.click(option);
     const quantity = screen.getByLabelText("Количество: Основное участие");
     const decrement = screen.getByRole("button", { name: "Уменьшить количество: Основное участие" });
     const increment = screen.getByRole("button", { name: "Увеличить количество: Основное участие" });
     expect(quantity).toHaveTextContent("2");
-    expect(decrement).toBeDisabled();
-    expect(increment).toBeDisabled();
-
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("checkbox", { name: /Основное участие/ }));
     expect(decrement).toBeDisabled();
     expect(increment).toBeEnabled();
     await user.click(increment);
     await user.click(increment);
     expect(quantity).toHaveTextContent("4");
     expect(increment).toBeDisabled();
+    await user.click(option);
+    expect(screen.queryByLabelText("Количество: Основное участие")).not.toBeInTheDocument();
+    await user.click(option);
+    expect(screen.getByLabelText("Количество: Основное участие")).toHaveTextContent("2");
   });
 
-  it("opens a real inline existing-account login form and cancel restores choices", async () => {
+  it.each(["header", "strip"])("opens the shared page-level sign-in from %s and preserves form state on close", async (entry) => {
+    const user = userEvent.setup();
     await renderEvent();
+    await fillValidForm(user);
     const initialUrl = window.location.href;
-    await userEvent.click(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" }));
-    expect(screen.getByRole("heading", { name: "Войти в аккаунт" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Email", { selector: "#login-email" })).toHaveAttribute("autocomplete", "email");
-    expect(screen.getByLabelText("Пароль")).toHaveAttribute("autocomplete", "current-password");
-    expect(screen.getByLabelText("Пароль")).toHaveAttribute("type", "password");
-    expect(screen.queryByText(/Можно продолжить регистрацию через подтверждение email/)).not.toBeInTheDocument();
+    const opener = entry === "header"
+      ? within(screen.getByRole("banner")).getByRole("button", { name: "Войти" })
+      : within(document.querySelector(".signin-strip") as HTMLElement).getByRole("button", { name: "Войти" });
+    expect(document.querySelector(".signin-strip")?.nextElementSibling).toBe(screen.getByRole("group", { name: "Варианты участия" }));
+    await user.click(opener);
+    const dialog = screen.getByRole("dialog", { name: "Войти в аккаунт" });
+    expect(dialog.closest(".registration-form")).toBeNull();
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    const email = within(dialog).getByLabelText("Email");
+    expect(email).toHaveValue("anna@example.ru");
+    expect(email).toHaveFocus();
+    expect(email).toHaveAttribute("autocomplete", "email");
+    await user.tab();
+    expect(within(dialog).getByLabelText("Пароль")).toHaveFocus();
+    expect(within(dialog).getByLabelText("Пароль")).toHaveAttribute("autocomplete", "current-password");
+    await user.type(within(dialog).getByLabelText("Пароль"), "unsent-password");
+    if (entry === "header") await user.keyboard("{Escape}");
+    else await user.click(within(dialog).getByRole("button", { name: "Закрыть вход" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+    expect(screen.getByLabelText("Имя")).toHaveValue("Анна Мария");
+    expect(screen.getByLabelText("Email")).toHaveValue("anna@example.ru");
+    expect(screen.getByLabelText(/Я ознакомился/)).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /Основное участие/ })).toBeChecked();
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(window.location.href).toBe(initialUrl);
-    await userEvent.click(screen.getByRole("button", { name: "Отмена" }));
-    expect(screen.getByRole("button", { name: "Продолжить без пароля" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Создать аккаунт" })).toBeInTheDocument();
+    await user.click(opener);
+    expect(screen.getByLabelText("Пароль")).toHaveValue("");
+    const reopened = screen.getByRole("dialog");
+    await user.click(within(reopened).getByRole("heading"));
+    expect(reopened).toBeInTheDocument();
+    fireEvent.pointerDown(reopened);
+    fireEvent.click(reopened);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
   });
 
   it("does not restore an authenticated account from persistent browser storage", async () => {
@@ -1022,9 +1140,46 @@ describe("local form shell", () => {
     await renderEvent();
 
     expect(screen.queryByRole("region", { name: "Аккаунт" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" })).toBeInTheDocument();
+    expect(within(screen.getByRole("banner")).getByRole("button", { name: "Войти" })).toBeInTheDocument();
     expect(storageReadSpy).not.toHaveBeenCalled();
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("discards a pending sign-in when the dialog is dismissed", async () => {
+    const user = userEvent.setup();
+    await renderEvent();
+    await user.type(screen.getByLabelText("Email"), "anna@example.ru");
+    let finishLogin!: (value: Response) => void;
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { finishLogin = resolve; }))
+      .mockImplementationOnce(() => response({
+        user: { email: "ivan@example.ru", email_verified_at: EXPIRES_AT },
+        profile: { first_name: "Иван", last_name: "Иванов", phone: "+79000000001" },
+        memberships: [],
+      }))
+      .mockImplementationOnce(() => response({ ok: true }));
+    const opener = within(screen.getByRole("banner")).getByRole("button", { name: "Войти" });
+    await user.click(opener);
+    await user.type(screen.getByLabelText("Пароль"), "secret-password");
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("button", { name: "Входим…" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(opener).toHaveFocus();
+    await act(async () => {
+      finishLogin(await response({
+        access_token: "temporary-access-token",
+        refresh_token: "temporary-refresh-token",
+        token_type: "bearer",
+        expires_at: EXPIRES_AT,
+        user: {},
+      }));
+    });
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/auth/logout", expect.objectContaining({
+      body: JSON.stringify({ refresh_token: "temporary-refresh-token" }),
+    })));
+    expect(screen.queryByRole("region", { name: "Аккаунт" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Email")).toHaveValue("anna@example.ru");
   });
 
   it("uses temporary in-memory login and canonical account data for completed registration", async () => {
@@ -1046,19 +1201,20 @@ describe("local form shell", () => {
         profile: { first_name: "Иван", last_name: "Иванов", phone: "+79000000001" },
         memberships: [],
       }));
-    await user.click(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Войти" }));
     const loginEmail = screen.getByLabelText("Email", { selector: "#login-email" });
     await user.clear(loginEmail);
     await user.type(loginEmail, "ivan@example.ru");
     await user.type(screen.getByLabelText("Пароль"), "secret-password");
-    await user.click(screen.getByRole("button", { name: "Войти" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Войти в аккаунт" })).getByRole("button", { name: "Войти" }));
     const accountPanel = await screen.findByRole("region", { name: "Аккаунт" });
     expect(within(accountPanel).getByText("Вы вошли")).toBeInTheDocument();
     expect(within(accountPanel).getByText("Иван Иванов")).toBeInTheDocument();
     expect(within(accountPanel).getByText("ivan@example.ru")).toBeInTheDocument();
     expect(accountPanel).toHaveFocus();
     expect(screen.getAllByText("ivan@example.ru")).toHaveLength(2);
-    expect(screen.queryByRole("button", { name: "Продолжить без пароля" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Записаться на мероприятие" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Войти" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Создать аккаунт" })).not.toBeInTheDocument();
     expect(storageSpy).not.toHaveBeenCalled();
     expect(window.localStorage).toHaveLength(0);
@@ -1073,7 +1229,7 @@ describe("local form shell", () => {
         registration: registrationResult().data.registration,
         account_next_step: "sign_in",
       })));
-    await user.click(screen.getByRole("button", { name: "Продолжить регистрацию" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Аккаунт" })).toBeInTheDocument();
     const request = JSON.parse(String(vi.mocked(fetch).mock.calls[3][1]?.body));
@@ -1165,7 +1321,7 @@ describe("local form shell", () => {
     expect(screen.getByText(/Доступ к аккаунту остановлен.*правилами хранения данных/)).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Аккаунт" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Мои билеты" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Продолжить без пароля" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Записаться на мероприятие" })).toBeInTheDocument();
 
     const createCalls = vi.mocked(fetch).mock.calls.filter(([input]) => String(input).endsWith("/privacy/requests"));
     const confirmCalls = vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes("/confirm-erasure"));
@@ -1254,7 +1410,7 @@ describe("local form shell", () => {
     expect(await screen.findByText("У вас пока нет регистраций.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Назад к регистрации" }));
     expect(screen.queryByRole("heading", { name: "Мои билеты" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Продолжить регистрацию" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Записаться на мероприятие" })).toBeInTheDocument();
     await waitFor(() => expect(within(accountPanel).getByRole("button", { name: "Мои билеты" })).toHaveFocus());
 
     vi.mocked(fetch)
@@ -1403,7 +1559,7 @@ describe("local form shell", () => {
         account_next_step: "sign_in",
       })))
       .mockImplementationOnce(() => response(envelope([newTicket])));
-    await user.click(screen.getByRole("button", { name: "Продолжить регистрацию" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
 
     expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Шаббат для друзей", level: 3 })).toBeInTheDocument();
@@ -1428,21 +1584,21 @@ describe("local form shell", () => {
         profile: { first_name: "Иван", last_name: "Иванов", phone: "+79000000001" },
         memberships: [],
       }));
-    await user.click(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Войти" }));
     const loginEmail = screen.getByLabelText("Email", { selector: "#login-email" });
     await user.clear(loginEmail);
     await user.type(loginEmail, "ivan@example.ru");
     await user.type(screen.getByLabelText("Пароль"), "secret-password");
-    await user.click(screen.getByRole("button", { name: "Войти" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Войти в аккаунт" })).getByRole("button", { name: "Войти" }));
 
     const accountPanel = await screen.findByRole("region", { name: "Аккаунт" });
     vi.mocked(fetch).mockImplementationOnce(() => response({ ok: true }));
     await user.click(within(accountPanel).getByRole("button", { name: "Выйти" }));
 
     expect(screen.queryByRole("region", { name: "Аккаунт" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Продолжить без пароля" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Создать аккаунт" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Записаться на мероприятие" })).toBeInTheDocument();
+    expect(screen.getByText("Что происходит с моими данными")).toBeInTheDocument();
+    expect(within(screen.getByRole("banner")).getByRole("button", { name: "Войти" })).toHaveFocus();
     expect(screen.getByLabelText("Имя")).toHaveValue("Анна Мария");
     expect(screen.getByLabelText("Email", { selector: "#email" })).toHaveValue("anna@example.ru");
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/auth/logout", expect.objectContaining({
@@ -1459,10 +1615,10 @@ describe("local form shell", () => {
       error: { code: "authentication_required", message: "email exists but password mismatch" },
       meta: {},
     }, 401));
-    await user.click(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Войти" }));
     await user.type(screen.getByLabelText("Email", { selector: "#login-email" }), "ivan@example.ru");
     await user.type(screen.getByLabelText("Пароль"), "wrong-password");
-    await user.click(screen.getByRole("button", { name: "Войти" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Войти в аккаунт" })).getByRole("button", { name: "Войти" }));
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Неверный email или пароль.");
     expect(alert).not.toHaveTextContent("email exists");
@@ -1485,10 +1641,10 @@ describe("local form shell", () => {
         memberships: [],
       }))
       .mockImplementationOnce(() => response({ ok: true }));
-    await user.click(screen.getByRole("button", { name: "Уже есть аккаунт? Войти" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Войти" }));
     await user.type(screen.getByLabelText("Email", { selector: "#login-email" }), "ivan@example.ru");
     await user.type(screen.getByLabelText("Пароль"), "secret-password");
-    await user.click(screen.getByRole("button", { name: "Войти" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Войти в аккаунт" })).getByRole("button", { name: "Войти" }));
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("В аккаунте не заполнены данные, необходимые для регистрации. Вы можете продолжить регистрацию без входа.");
@@ -1498,13 +1654,14 @@ describe("local form shell", () => {
   });
 
   it.each([
-    ["Продолжить без пароля", "without_password"],
+    ["Записаться на мероприятие", "without_password"],
     ["Создать аккаунт", "create_account"],
   ] as const)("normalizes names and submits %s through the shared intent flow", async (buttonName, accountChoice) => {
     const user = userEvent.setup();
     await renderEvent();
     await fillValidForm(user);
     vi.mocked(fetch).mockImplementationOnce(() => response(intentCreated(), 201));
+    if (buttonName === "Создать аккаунт") await user.click(screen.getByText("Что происходит с моими данными"));
     await user.click(screen.getByRole("button", { name: buttonName }));
     expect(await screen.findByLabelText("Код подтверждения")).toHaveFocus();
     const request = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body));
@@ -1535,6 +1692,7 @@ describe("local form shell", () => {
     fireEvent.change(screen.getByRole("spinbutton", { name: "Количество мест" }), { target: { value: "17" } });
     await user.click(screen.getByLabelText(/Основное участие/));
     await user.click(screen.getByLabelText(/Я ознакомился/));
+    await user.click(screen.getByText("Что происходит с моими данными"));
     await user.click(screen.getByRole("button", { name: "Создать аккаунт" }));
     expect(storageSpy).not.toHaveBeenCalled();
     expect(window.localStorage).toHaveLength(0);
@@ -1567,7 +1725,7 @@ describe("local form shell", () => {
     const user = userEvent.setup();
     await renderEvent(responseWithQuestionnaire());
     await fillValidForm(user);
-    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     expect(screen.getByLabelText(/Код встречи/)).toHaveFocus();
     expect(document.getElementById(`questionnaire-${QUESTION_IDS.short}-error`)).toHaveTextContent(
       "Ответьте на обязательный вопрос.",
@@ -1576,7 +1734,7 @@ describe("local form shell", () => {
     await fillValidQuestionnaire(user);
     await user.click(screen.getByRole("checkbox", { name: "Вторая" }));
     await user.click(screen.getByRole("checkbox", { name: "Третья" }));
-    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     expect(screen.getByRole("checkbox", { name: "Первая" })).toHaveFocus();
     expect(screen.getByText("Выберите не более 2 вариантов.")).toBeInTheDocument();
   });
@@ -1587,7 +1745,7 @@ describe("local form shell", () => {
     await fillValidForm(user);
     await fillValidQuestionnaire(user);
     vi.mocked(fetch).mockImplementationOnce(() => response(intentCreated(), 201));
-    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     const body = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body));
     expect(body.questionnaire_form_id).toBe(QUESTIONNAIRE_FORM_ID);
     expect(body.answers).toEqual([
@@ -1610,7 +1768,7 @@ describe("local form shell", () => {
       error: { code: "questionnaire_changed", message: "internal version details" },
       meta: {},
     }, 409));
-    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Анкета регистрации была обновлена. Обновите страницу и заполните дополнительные вопросы ещё раз.",
     );
@@ -1763,7 +1921,7 @@ describe("registration intent and account claim flow", () => {
     await user.click(screen.getByRole("button", { name: "Увеличить количество: Основное участие" }));
     await user.click(screen.getByRole("button", { name: "Увеличить количество: Основное участие" }));
     vi.mocked(fetch).mockImplementationOnce(() => response(intentCreated(), 201));
-    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     const body = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body));
     expect(body).toMatchObject({
       occurrence_id: OCCURRENCE_TWO_ID,
@@ -1780,19 +1938,19 @@ describe("registration intent and account claim flow", () => {
   it("reuses an idempotency key after a network failure and rotates it after payload changes", async () => {
     const user = await setupValidForm();
     vi.mocked(fetch).mockRejectedValueOnce(new TypeError("offline"));
-    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     await screen.findByRole("alert");
     const firstBody = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body));
 
     vi.mocked(fetch).mockRejectedValueOnce(new TypeError("offline"));
-    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
     const retryBody = JSON.parse(String(vi.mocked(fetch).mock.calls[2][1]?.body));
     expect(retryBody.idempotency_key).toBe(firstBody.idempotency_key);
 
     fireEvent.change(screen.getByRole("spinbutton", { name: "Количество мест" }), { target: { value: "2" } });
     vi.mocked(fetch).mockRejectedValueOnce(new TypeError("offline"));
-    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
     const changedBody = JSON.parse(String(vi.mocked(fetch).mock.calls[3][1]?.body));
     expect(changedBody.idempotency_key).not.toBe(firstBody.idempotency_key);
@@ -1802,7 +1960,7 @@ describe("registration intent and account claim flow", () => {
     const user = await setupValidForm();
     let resolvePost!: (value: Response) => void;
     vi.mocked(fetch).mockImplementationOnce(() => new Promise((resolve) => { resolvePost = resolve; }));
-    const button = screen.getByRole("button", { name: "Продолжить без пароля" });
+    const button = screen.getByRole("button", { name: "Записаться на мероприятие" });
     fireEvent.click(button);
     fireEvent.click(button);
     expect(fetch).toHaveBeenCalledTimes(2);
@@ -1858,7 +2016,7 @@ describe("registration intent and account claim flow", () => {
         },
         account_next_step: "none",
       })));
-    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
     expect(vi.mocked(fetch).mock.calls[2][0]).toBe(`/api/web/registration-intents/${FLOW_ID}/status`);
   });
@@ -1894,7 +2052,7 @@ describe("registration intent and account claim flow", () => {
     vi.mocked(fetch)
       .mockImplementationOnce(() => response(intentCreated("completed"), 201))
       .mockImplementationOnce(() => response(envelope({ state: "not_available", expires_at: null, registration: null, account_next_step: null })));
-    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("истёк или регистрация недоступна");
     expect(fetch).toHaveBeenCalledTimes(3);
   });
@@ -1947,7 +2105,7 @@ describe("registration intent and account claim flow", () => {
       error: { code, message: "email already exists; phone belongs to user 123" },
       meta: {},
     }, status));
-    await user.click(screen.getByRole("button", { name: "Продолжить без пароля" }));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(safeCopy);
     expect(alert).not.toHaveTextContent("email already exists");
