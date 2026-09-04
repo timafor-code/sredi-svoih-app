@@ -572,7 +572,7 @@ function SignInPanel({ initialEmail, readOnlyEmail = false, onClose, onAuthentic
       if (activeRef.current) {
         setLoginPassword("");
         setLoginError(safeLoginError(error));
-        emailRef.current?.focus();
+        (readOnlyEmail ? passwordRef : emailRef).current?.focus();
       }
     } finally {
       submittingRef.current = false;
