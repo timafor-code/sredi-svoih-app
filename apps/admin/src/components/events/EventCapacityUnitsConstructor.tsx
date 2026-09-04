@@ -17,6 +17,8 @@ import type {
 
 type EventCapacityUnitsConstructorProps = {
   eventId: string;
+  active?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
   onPersisted: (units: AdminEventCapacityUnit[], deletedIds: string[]) => void;
 };
 
@@ -332,7 +334,7 @@ function createUnitSaveQueue(
   return { update, save, getDrafts: () => latest };
 }
 
-export function EventCapacityUnitsConstructor({ eventId, onPersisted }: EventCapacityUnitsConstructorProps) {
+export function EventCapacityUnitsConstructor({ eventId, onPersisted, active = true, onDirtyChange }: EventCapacityUnitsConstructorProps) {
   const [drafts, setDrafts] = useState<DraftUnit[]>([]);
   const [savedSnapshot, setSavedSnapshot] = useState("[]");
   const [loading, setLoading] = useState(true);
@@ -443,6 +445,9 @@ export function EventCapacityUnitsConstructor({ eventId, onPersisted }: EventCap
   };
   const editorDirty = editor !== null && JSON.stringify(editor) !== JSON.stringify(drafts.find((draft) => draft.draftId === editor.draftId));
   const unsaved = editorDirty || JSON.stringify(drafts) !== savedSnapshot;
+  useEffect(() => { onDirtyChange?.(unsaved); }, [unsaved, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [eventId, onDirtyChange]);
+
   const feedback = <SaveStatusView saving={status.saving} error={Object.keys(errors).length ? "Исправьте поля слота. Изменения пока не сохранены." : status.error}
     unsaved={unsaved} savedAt={status.savedAt} recovery={status.error ? "Изменения сохранены локально. Повторите попытку." : undefined} />;
   const disabled = loading || Boolean(loadError);
@@ -478,7 +483,7 @@ export function EventCapacityUnitsConstructor({ eventId, onPersisted }: EventCap
       {feedback}
       {status.error ? <Button size="sm" onClick={() => { if (completeEdit()) void queue.save(); }}>Повторить сохранение</Button> : null}
       {editor ? createPortal(
-        <SlotModal onClose={closeEditor}>
+        <SlotModal active={active} onClose={closeEditor}>
           <header className="participation-modal__head">
             <h3 id="slot-editor-title">{editor.remoteId ? "Редактировать слот" : "Новый слот"}</h3>
             <button type="button" className="participation-modal__close" aria-label="Закрыть редактор слота" onClick={closeEditor}><X aria-hidden size={18} /></button>
@@ -512,11 +517,12 @@ export function EventCapacityUnitsConstructor({ eventId, onPersisted }: EventCap
   );
 }
 
-function SlotModal({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+function SlotModal({ children, onClose, active }: { children: ReactNode; onClose: () => void; active: boolean }) {
   const dialog = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
+    if (!active) return;
     const previousFocus = document.activeElement;
     dialog.current?.querySelector("input")?.focus();
     const handleKey = (event: KeyboardEvent) => {
@@ -535,8 +541,8 @@ function SlotModal({ children, onClose }: { children: ReactNode; onClose: () => 
       document.removeEventListener("keydown", handleKey);
       if (previousFocus instanceof HTMLElement) previousFocus.focus();
     };
-  }, []);
-  return <div className="participation-modal-overlay" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+  }, [active]);
+  return <div className="participation-modal-overlay" style={active ? undefined : { display: "none" }} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <div className="participation-modal tickets-slot-modal" ref={dialog} role="dialog" aria-modal="true" aria-labelledby="slot-editor-title">{children}</div>
   </div>;
 }

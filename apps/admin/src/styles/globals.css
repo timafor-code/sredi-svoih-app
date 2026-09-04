@@ -13833,3 +13833,155 @@ a {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Four-tab event authoring workspace; other admin pages retain their layout. */
+.event-form-layout-contents { display: contents; }
+.event-editor { gap: 16px; min-width: 0; }
+.event-editor-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  background: var(--surface-strong);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+.event-editor-header__title, .event-publication-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-width: 0;
+}
+.event-editor-header__title > div { flex: 1; min-width: 0; }
+.event-editor-header h1 { margin: 4px 0 0; font-size: 21px; overflow-wrap: anywhere; }
+.event-editor-kicker { color: var(--blue); font-size: 12px; font-weight: 600; }
+.event-publication-controls { justify-content: flex-start; }
+.event-publication-segment {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--bg);
+}
+.event-publication-segment button, .event-publication-more summary {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 8px 12px;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.event-publication-segment button[aria-pressed="true"] { color: var(--text); background: var(--blue-soft); }
+.event-publication-segment button:disabled { opacity: 0.45; cursor: default; }
+.event-publication-more { position: relative; }
+.event-publication-more summary { list-style: none; font-weight: 700; }
+.event-publication-more summary::-webkit-details-marker { display: none; }
+.event-publication-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  min-width: 145px;
+  padding: 6px;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: var(--elevated);
+  box-shadow: var(--shadow);
+}
+.event-publication-lifecycle { color: var(--gold); font-size: 12px; }
+.event-publication-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 80px;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: min(540px, calc(100vw - 48px));
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 14px 18px;
+  background: var(--elevated);
+  box-shadow: var(--shadow);
+}
+.event-publication-toast > button:last-child { background: transparent; color: var(--text-soft); border: 0; cursor: pointer; font-size: 20px; }
+.event-editor-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.event-editor-tabs > button {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 16px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.event-editor-tabs > button[aria-selected="true"] { color: var(--text); border-color: var(--blue); background: var(--blue-soft); }
+.event-editor-tabs > button:disabled { color: var(--text-muted); cursor: default; }
+.event-editor-tabs small { font-size: 10px; }
+.event-editor-dirty { color: var(--gold); font-size: 9px; }
+.event-editor-panel { display: grid; gap: 16px; min-width: 0; }
+.event-editor-panel[hidden] { display: none; }
+.event-editor .event-form-sticky-actions {
+  top: calc(var(--event-header-height, 140px) + 8px);
+  border-radius: 12px;
+  background: var(--surface-strong);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  flex-wrap: wrap;
+}
+.event-editor .event-form-sticky-actions .save-status { flex: 1; min-width: 150px; }
+.event-editor .event-create-card, .event-editor .glass-card { border-radius: 12px; }
+.event-edit-form__workspace { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+.event-edit-form__main { display: grid; gap: 24px; min-width: 0; }
+.event-edit-form .event-form-section { border: 0; padding: 0; }
+.event-edit-form .event-form-section__head h2 { font-size: 17px; }
+.event-edit-form__registration { padding: 16px !important; border-radius: 12px; background: var(--surface-strong); }
+.event-edit-form__registration .event-form-grid { grid-template-columns: minmax(0, 1fr); }
+.event-registration-modes { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.event-registration-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.event-registration-mode:has(input:checked) { border-color: var(--gold); background: var(--gold-soft); }
+.event-registration-mode input { margin: 3px 0 0; accent-color: var(--gold); }
+.event-registration-mode span { display: grid; gap: 4px; min-width: 0; }
+.event-registration-mode strong { font-size: 13px; }
+.event-registration-mode small { color: var(--text-muted); font-size: 11px; line-height: 1.4; }
+.event-editor button:focus-visible, .event-editor summary:focus-visible, .event-editor-panel:focus-visible,
+.event-editor input:focus-visible, .event-editor select:focus-visible, .event-editor textarea:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+.event-editor-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+@media (max-width: 1180px) {
+  .event-edit-form__workspace { grid-template-columns: minmax(0, 1fr); }
+  .event-registration-modes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .event-editor-tabs > button { padding: 10px; }
+}
+@media (max-width: 760px) {
+  .event-editor-header { padding: 12px; }
+  .event-editor-header h1 { font-size: 18px; }
+  .event-registration-modes { grid-template-columns: minmax(0, 1fr); }
+  .event-publication-segment button { padding: 8px; }
+  .event-editor .event-form-sticky-actions { gap: 8px; padding: 12px; }
+  .event-editor .event-form-sticky-actions__submit { min-width: 0; }
+}

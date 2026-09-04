@@ -6,7 +6,8 @@ import { EventOccurrencesConstructor } from "../components/events/EventOccurrenc
 import { EventQuestionnaireCard } from "../components/events/EventQuestionnaireCard";
 import { EventWebRegistrationCard } from "../components/events/EventWebRegistrationCard";
 import type { EventImageUploadStage } from "../components/events/EventImageUploader";
-import { Badge } from "../components/ui/Badge";
+import { EventEditorTabs, type EventEditorTab } from "../components/events/EventEditorTabs";
+import { SaveStatusView } from "../components/ui/SaveStatusView";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
 import { useAdminAuth } from "../context/AdminAuthContext";
@@ -19,7 +20,7 @@ import { ApiClientError } from "../services/apiClient";
 import { getAdminEvent, updateAdminEvent } from "../services/adminEventsService";
 import { listAdminCommunityLocations } from "../services/communityLocationsService";
 import { listAdminEventCategories } from "../services/eventCategoriesService";
-import { getEventStatusLabel, getEventVisibilityLabel } from "../types/events";
+import { getEventStatusLabel } from "../types/events";
 import type { AdminEvent, UpdateAdminEventInput } from "../types/events";
 import type { AdminCommunityLocation } from "../types/communityLocations";
 import type { AdminEventCategory } from "../types/eventCategories";
@@ -28,13 +29,71 @@ type EditEventPageProps = {
   event: AdminEvent;
   onBackToList: () => void;
   onSaved: (event: AdminEvent) => void;
+  onLeaveGuardChange?: (dirty: boolean) => void;
 };
 
-export function EditEventPage({ event, onBackToList, onSaved }: EditEventPageProps) {
+export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange }: EditEventPageProps) {
   const { isAdmin } = useAdminAuth();
   const mutationActiveRef = useRef(false);
   const [currentEvent, setCurrentEvent] = useState(event);
-  const [savedEvent, setSavedEvent] = useState<AdminEvent | null>(null);
+  const confirmedEventRef = useRef(event);
+  const [confirmedContentEvent, setConfirmedContentEvent] = useState(event);
+  const [activeTab, setActiveTab] = useState<EventEditorTab>("event");
+  const [registrationMode, setRegistrationMode] = useState<string>(event.registrationMode);
+  const [eventDirty, setEventDirty] = useState(false);
+  const [ticketsDirty, setTicketsDirty] = useState(false);
+  const [webDirty, setWebDirty] = useState(false);
+  const [questionnaireDirty, setQuestionnaireDirty] = useState(false);
+  const [periodDirty, setPeriodDirty] = useState(false);
+  const [publicationPending, setPublicationPending] = useState(0);
+  const publicationCountRef = useRef(0);
+  const publicationErrorRef = useRef<string | null>(null);
+  const publicationQueueRef = useRef(Promise.resolve());
+  const mountedRef = useRef(false);
+  const [publicationToast, setPublicationToast] = useState<{
+    saving?: boolean; savedAt?: string; error?: string; undo?: boolean;
+  } | null>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  useEffect(() => {
+    const observer = new ResizeObserver(() => {
+      shellRef.current?.style.setProperty("--event-header-height", `${headerRef.current?.offsetHeight ?? 0}px`);
+    });
+    if (headerRef.current) observer.observe(headerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const leaveDirty = eventDirty || webDirty || questionnaireDirty;
+  useEffect(() => { onLeaveGuardChange?.(leaveDirty); }, [leaveDirty, onLeaveGuardChange]);
+  useEffect(() => () => onLeaveGuardChange?.(false), [onLeaveGuardChange]);
+  useEffect(() => {
+    if (!leaveDirty) return;
+    const handleUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleUnload);
+    return () => window.removeEventListener("beforeunload", handleUnload);
+  }, [leaveDirty]);
+
+  useEffect(() => {
+    if ((activeTab === "tickets" && registrationMode !== "internal_paid")
+      || (activeTab === "web" && !["internal_free", "internal_paid"].includes(registrationMode))) {
+      setActiveTab("event");
+    }
+  }, [activeTab, registrationMode]);
+
+  useEffect(() => {
+    if (!publicationToast || publicationPending > 0 || publicationToast.saving || publicationToast.error) return;
+    const timeout = window.setTimeout(() => setPublicationToast(null), publicationToast.undo ? 8000 : 4000);
+    return () => window.clearTimeout(timeout);
+  }, [publicationToast, publicationPending]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [removingImage, setRemovingImage] = useState(false);
@@ -111,7 +170,10 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
 
   useEffect(() => {
     setCurrentEvent(event);
-    setSavedEvent(null);
+    confirmedEventRef.current = event;
+    setConfirmedContentEvent(event);
+    setRegistrationMode(event.registrationMode);
+    setActiveTab("event");
     setSubmitError(null);
     setSelectedImageFile(null);
     setImageStage(null);
@@ -128,9 +190,44 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
   }, []);
 
   const storeConfirmedEvent = (nextEvent: AdminEvent) => {
+    if (!mountedRef.current) return;
+    confirmedEventRef.current = nextEvent;
     setCurrentEvent(nextEvent);
-    setSavedEvent(nextEvent);
     onSaved(nextEvent);
+  };
+
+  const savePublication = (patch: Pick<UpdateAdminEventInput, "status" | "visibility">) => {
+    // Content/image writes and this publication queue never run concurrently.
+    if (mutationActiveRef.current) return;
+    if (publicationCountRef.current === 0) publicationErrorRef.current = null;
+    publicationCountRef.current += 1;
+    setPublicationPending(publicationCountRef.current);
+    setPublicationToast((previous) => ({ ...previous, saving: true, error: undefined }));
+    publicationQueueRef.current = publicationQueueRef.current.then(async () => {
+      if (!mountedRef.current) return;
+      const previous = confirmedEventRef.current;
+      try {
+        const confirmed = await updateAdminEvent(previous.id, patch);
+        if (!mountedRef.current) return;
+        storeConfirmedEvent(confirmed);
+        setPublicationToast((previousToast) => ({
+          savedAt: new Date().toISOString(),
+          error: publicationErrorRef.current ?? undefined,
+          undo: confirmed.status === "draft" && (
+            (previous.status === "published" && patch.status === "draft")
+            || (!patch.status && previousToast?.undo)
+          ),
+        }));
+      } catch {
+        publicationErrorRef.current = "Не удалось сохранить одно из изменений публикации. Проверьте статус и видимость и повторите действие.";
+        if (mountedRef.current) setPublicationToast((previousToast) => ({
+          ...previousToast, saving: false, error: publicationErrorRef.current ?? undefined,
+        }));
+      } finally {
+        publicationCountRef.current -= 1;
+        if (mountedRef.current) setPublicationPending(publicationCountRef.current);
+      }
+    });
   };
 
   const uploadPendingImage = async (
@@ -169,7 +266,7 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
   };
 
   const handleSubmit = async (input: UpdateAdminEventInput) => {
-    if (mutationActiveRef.current) {
+    if (mutationActiveRef.current || publicationCountRef.current > 0) {
       return false;
     }
 
@@ -187,6 +284,7 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
         try {
           eventForImage = await updateAdminEvent(currentEvent.id, input);
           storeConfirmedEvent(eventForImage);
+          if (mountedRef.current) setConfirmedContentEvent(eventForImage);
         } catch (error) {
           setSubmitError(
             error instanceof Error
@@ -213,7 +311,7 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
   };
 
   const retryImageUpload = async () => {
-    if (!selectedImageFile || mutationActiveRef.current) {
+    if (!selectedImageFile || mutationActiveRef.current || publicationCountRef.current > 0) {
       return;
     }
 
@@ -232,7 +330,7 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
   };
 
   const handleRemoveImage = async () => {
-    if (!currentEvent.imageUrl || mutationActiveRef.current) {
+    if (!currentEvent.imageUrl || mutationActiveRef.current || publicationCountRef.current > 0) {
       return;
     }
 
@@ -274,6 +372,8 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
           // The safe message below asks for a refresh when the read path is unavailable.
         }
 
+        if (!mountedRef.current) return;
+        confirmedEventRef.current = recoveredEvent;
         setCurrentEvent(recoveredEvent);
         if (refreshed || storageUnavailable) {
           onSaved(recoveredEvent);
@@ -301,86 +401,96 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
   };
 
   return (
-    <div className="page-stack page-stack--event-create">
-      <section className="page-header">
-        <Badge tone="blue">Редактирование</Badge>
-        <h1>Редактировать событие</h1>
-        <p>
-          Изменения сохраняются через Python API с текущей
-          пользовательской сессией.
-        </p>
-      </section>
-
-      {savedEvent ? (
-        <GlassCard className="event-create-success" elevated>
-          <div>
-            <span>Событие обновлено</span>
-            <h2>{savedEvent.title}</h2>
-            <p>
-              {getEventStatusLabel(savedEvent.status)} /{" "}
-              {getEventVisibilityLabel(savedEvent.visibility)}
-            </p>
-          </div>
-          <Button onClick={onBackToList} variant="primary">
-            Вернуться к списку
-          </Button>
-        </GlassCard>
-      ) : null}
-
-      <GlassCard className="event-create-card event-create-card--sticky-actions" elevated>
-        <EventForm
-          actionsPlacement="stickyTop"
-          initialEvent={currentEvent}
-          mode="edit"
-          categories={categories}
-          categoriesError={categoriesError}
-          categoriesLoading={categoriesLoading}
-          communityLocations={communityLocations}
-          communityLocationsError={communityLocationsError}
-          communityLocationsLoading={communityLocationsLoading}
-          imageError={imageError}
-          imageAuthoringMode="file"
-          imageSuccessMessage={imageSuccessMessage}
-          imageUploadStage={imageStage}
-          onCancel={onBackToList}
-          onRemoveImage={handleRemoveImage}
-          onRetryImage={retryImageUpload}
-          onSelectedImageFileChange={handleSelectedImageFileChange}
-          registrationModeSlot={({ registrationMode }) =>
-            registrationMode === "internal_paid" ? (
-              <div className="event-form-participation-slot">
-                <EventTicketsCapacityModule
-                  key={currentEvent.id}
-                  defaultPriceCurrency={currentEvent.priceCurrency}
-                  eventCapacity={currentEvent.capacity}
-                  eventId={currentEvent.id}
-                />
+    <div className="page-stack event-editor" ref={shellRef}>
+      <header className="event-editor-header" ref={headerRef}>
+        <div className="event-editor-header__title">
+          <div><span className="event-editor-kicker">Редактирование</span><h1>{currentEvent.title}</h1></div>
+          <Button variant="ghost" onClick={onBackToList}>К списку</Button>
+        </div>
+        <div className="event-publication-controls">
+          <div className="event-publication-segment" role="group" aria-label="Статус события">
+            {(["draft", "published"] as const).map((status) => <button type="button" key={status}
+              disabled={submitting} aria-pressed={currentEvent.status === status}
+              onClick={() => savePublication({ status })}>
+              {status === "draft" ? "Черновик" : "Опубликовано"}
+            </button>)}
+            <details className="event-publication-more">
+              <summary aria-label="Другие статусы события">⋯</summary>
+              <div className="event-publication-menu">
+                {(["cancelled", "archived"] as const).map((status) => <button type="button" key={status}
+                  disabled={submitting} aria-pressed={currentEvent.status === status}
+                  onClick={(event) => {
+                    event.currentTarget.closest("details")?.removeAttribute("open");
+                    savePublication({ status });
+                  }}>{getEventStatusLabel(status)}</button>)}
               </div>
-            ) : null
-          }
-          removingImage={removingImage}
-          selectedImageFile={selectedImageFile}
-          onSubmit={handleSubmit}
-          submitError={submitError}
-          submitting={submitting}
-        />
-      </GlassCard>
-
-      <EventWebRegistrationCard
-        eventId={currentEvent.id}
-        eventTitle={currentEvent.title}
-      />
-
-      {isAdmin === true ? <EventQuestionnaireCard eventId={currentEvent.id} /> : null}
-
-      <GlassCard className="event-occurrences-card" elevated>
-        <EventOccurrencesConstructor
-          defaultTimezone={currentEvent.timezone}
-          eventKind={currentEvent.eventKind}
-          eventCapacity={currentEvent.capacity}
-          eventId={currentEvent.id}
-        />
-      </GlassCard>
+            </details>
+          </div>
+          {currentEvent.status === "cancelled" || currentEvent.status === "archived"
+            ? <span className="event-publication-lifecycle">{getEventStatusLabel(currentEvent.status)}</span> : null}
+          <div className="event-publication-segment" role="group" aria-label="Видимость события">
+            {([ ["public", "Публично"], ["members_only", "Участники"], ["hidden", "Скрыто"] ] as const).map(([visibility, label]) =>
+              <button type="button" key={visibility} disabled={submitting} aria-pressed={currentEvent.visibility === visibility}
+                onClick={() => savePublication({ visibility })}>{label}</button>)}
+          </div>
+        </div>
+      </header>
+      {publicationToast ? <div className="event-publication-toast">
+        <SaveStatusView {...publicationToast} saving={publicationPending > 0} />
+        {publicationToast.undo && publicationPending === 0 ? <Button variant="ghost" size="sm"
+          onClick={() => savePublication({ status: "published" })}>Отменить снятие с публикации</Button> : null}
+        {!publicationPending ? <button type="button" aria-label="Закрыть уведомление" onClick={() => setPublicationToast(null)}>×</button> : null}
+      </div> : null}
+      <EventEditorTabs activeTab={activeTab} onTabChange={setActiveTab} registrationMode={registrationMode}
+        dirty={{ event: eventDirty, tickets: ticketsDirty, web: webDirty || questionnaireDirty, period: periodDirty }}
+        panels={{
+          event: <GlassCard className="event-create-card event-create-card--sticky-actions" elevated>
+            <EventForm
+              actionsPlacement="stickyTop"
+              initialEvent={currentEvent}
+              confirmedContentEvent={confirmedContentEvent}
+              publicationControlled
+              onDirtyChange={setEventDirty}
+              onRegistrationModeChange={setRegistrationMode}
+              onOpenTickets={() => setActiveTab("tickets")}
+              mode="edit"
+              categories={categories}
+              categoriesError={categoriesError}
+              categoriesLoading={categoriesLoading}
+              communityLocations={communityLocations}
+              communityLocationsError={communityLocationsError}
+              communityLocationsLoading={communityLocationsLoading}
+              imageError={imageError}
+              imageAuthoringMode="file"
+              imageSuccessMessage={imageSuccessMessage}
+              imageUploadStage={imageStage}
+              onCancel={onBackToList}
+              onRemoveImage={handleRemoveImage}
+              onRetryImage={retryImageUpload}
+              onSelectedImageFileChange={handleSelectedImageFileChange}
+              removingImage={removingImage}
+              selectedImageFile={selectedImageFile}
+              onSubmit={handleSubmit}
+              submitError={submitError}
+              submitting={submitting}
+              disabled={publicationPending > 0}
+            />
+          </GlassCard>,
+          tickets: <EventTicketsCapacityModule key={currentEvent.id} eventId={currentEvent.id}
+            defaultPriceCurrency={currentEvent.priceCurrency} eventCapacity={currentEvent.capacity}
+            active={activeTab === "tickets" && registrationMode === "internal_paid"} onDirtyChange={setTicketsDirty} />,
+          web: <>
+            <EventWebRegistrationCard key={`web-${currentEvent.id}`} eventId={currentEvent.id} eventTitle={currentEvent.title}
+              onDirtyChange={setWebDirty} />
+            {isAdmin === true ? <EventQuestionnaireCard key={`questionnaire-${currentEvent.id}`} eventId={currentEvent.id}
+              onDirtyChange={setQuestionnaireDirty} /> : null}
+          </>,
+          period: <GlassCard className="event-occurrences-card" elevated>
+            <EventOccurrencesConstructor key={currentEvent.id} defaultTimezone={currentEvent.timezone}
+              eventKind={currentEvent.eventKind} eventCapacity={currentEvent.capacity} eventId={currentEvent.id}
+              active={activeTab === "period"} onDirtyChange={setPeriodDirty} />
+          </GlassCard>,
+        }} />
     </div>
   );
 }

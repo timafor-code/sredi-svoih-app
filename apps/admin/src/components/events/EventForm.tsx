@@ -86,6 +86,10 @@ type EventFormSharedProps = {
   onRemoveImage?: () => void;
   onRetryImage?: () => void;
   onRegistrationModeChange?: (mode: string) => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  onOpenTickets?: () => void;
+  publicationControlled?: boolean;
+  confirmedContentEvent?: AdminEvent;
   onSelectedImageFileChange?: (file: File | null) => void;
   registrationModeSlot?: ReactNode | ((context: RegistrationModeSlotContext) => ReactNode);
   removingImage?: boolean;
@@ -171,6 +175,10 @@ export function EventForm(props: EventFormProps) {
   onRemoveImage,
   onRetryImage,
   onRegistrationModeChange,
+  onDirtyChange,
+  onOpenTickets,
+  publicationControlled = false,
+  confirmedContentEvent,
   onSelectedImageFileChange = ignoreSelectedImageFileChange,
   registrationModeSlot = null,
   removingImage = false,
@@ -184,20 +192,43 @@ export function EventForm(props: EventFormProps) {
     buildInitialForm(initialEvent, forceDraftHidden),
   );
   const [errors, setErrors] = useState<FormErrors>({});
-  const [isDirty, setIsDirty] = useState(false);
+  const [baseline, setBaseline] = useState(() => buildInitialForm(initialEvent, forceDraftHidden));
+  const externalPublication = mode === "edit" && publicationControlled;
+  const isDirty = mode === "edit" && Object.keys(form).some((key) => {
+    const field = key as keyof EventFormState;
+    if (externalPublication && (field === "status" || field === "visibility")) return false;
+    if (imageAuthoringMode === "file" && field === "imageUrl") return false;
+    return form[field] !== baseline[field];
+  });
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [hasSuccessfulEditSave, setHasSuccessfulEditSave] = useState(false);
   const [hasImageValidationError, setHasImageValidationError] = useState(false);
   const previousEventIdRef = useRef<string | null>(initialEvent?.id ?? null);
   const formRef = useRef<HTMLFormElement>(null);
+  const submittedFormRef = useRef(form);
+  const previousContentEventRef = useRef(confirmedContentEvent);
 
   useEffect(() => {
     const nextEventId = initialEvent?.id ?? null;
     const isDifferentEvent = nextEventId !== previousEventIdRef.current;
 
-    setForm(buildInitialForm(initialEvent, forceDraftHidden));
+    if (externalPublication && !isDifferentEvent) {
+      if (confirmedContentEvent !== previousContentEventRef.current && confirmedContentEvent) {
+        const confirmed = buildInitialForm(confirmedContentEvent, forceDraftHidden);
+        setBaseline(confirmed);
+        // Preserve edits made while the submitted content was being saved.
+        setForm((current) => Object.fromEntries(Object.entries(current).map(([key, value]) => [
+          key, value === submittedFormRef.current[key as keyof EventFormState]
+            ? confirmed[key as keyof EventFormState] : value,
+        ])) as EventFormState);
+      }
+      previousContentEventRef.current = confirmedContentEvent;
+      return;
+    }
+    const nextForm = buildInitialForm(initialEvent, forceDraftHidden);
+    setForm(nextForm);
+    setBaseline(nextForm);
     setErrors({});
-    setIsDirty(false);
     setHasImageValidationError(false);
 
     if (mode === "create" || isDifferentEvent) {
@@ -206,7 +237,18 @@ export function EventForm(props: EventFormProps) {
     }
 
     previousEventIdRef.current = nextEventId;
-  }, [forceDraftHidden, initialEvent, mode]);
+    previousContentEventRef.current = confirmedContentEvent;
+  }, [forceDraftHidden, initialEvent, mode, externalPublication, confirmedContentEvent]);
+
+  useEffect(() => {
+    onRegistrationModeChange?.(form.registrationMode);
+  }, [form.registrationMode, onRegistrationModeChange]);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty || (imageAuthoringMode === "file" && selectedImageFile !== null));
+  }, [isDirty, imageAuthoringMode, selectedImageFile, onDirtyChange]);
+
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange, initialEvent?.id]);
 
   const effectiveStatus = forceDraftHidden ? "draft" : form.status;
   const effectiveVisibility = forceDraftHidden ? "hidden" : form.visibility;
@@ -416,12 +458,7 @@ export function EventForm(props: EventFormProps) {
       return clearFormErrors(current, keysToClear);
     });
 
-    if (field === "registrationMode" && typeof value === "string") {
-      onRegistrationModeChange?.(value);
-    }
-
     if (mode === "edit") {
-      setIsDirty(true);
       setHasSuccessfulEditSave(false);
     }
   };
@@ -450,13 +487,13 @@ export function EventForm(props: EventFormProps) {
     );
 
     if (mode === "edit") {
-      setIsDirty(true);
       setHasSuccessfulEditSave(false);
     }
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submitting) return;
 
     if (disabled) {
       setErrors({ form: disabledMessage ?? "Форма сейчас недоступна." });
@@ -487,12 +524,18 @@ export function EventForm(props: EventFormProps) {
         )
       : validation.input;
 
+    if (externalPublication) {
+      delete (updateInput as UpdateAdminEventInput).status;
+      delete (updateInput as UpdateAdminEventInput).visibility;
+    }
+    submittedFormRef.current = form;
+
     if (
       mode === "edit"
       && Object.keys(updateInput).length === 0
       && !hasPendingImageChange
     ) {
-      setIsDirty(false);
+      setBaseline(form);
       setHasSuccessfulEditSave(true);
       return;
     }
@@ -503,7 +546,7 @@ export function EventForm(props: EventFormProps) {
 
     if (mode === "edit" && isSaved) {
       setSavedAt(new Date().toISOString());
-      setIsDirty(false);
+      if (!externalPublication || Object.keys(updateInput).length === 0) setBaseline(form);
       setHasSuccessfulEditSave(true);
     }
   };
@@ -519,7 +562,7 @@ export function EventForm(props: EventFormProps) {
   );
 
   return (
-    <form className="event-create-form" noValidate onSubmit={handleSubmit} ref={formRef}>
+    <form className={`event-create-form${externalPublication ? " event-edit-form" : ""}`} noValidate onSubmit={handleSubmit} ref={formRef}>
       {actionsPlacement === "stickyTop" ? (
         <div className="event-form-sticky-actions">
           <Button
@@ -556,6 +599,8 @@ export function EventForm(props: EventFormProps) {
 
       {notice}
 
+      <div className={externalPublication ? "event-edit-form__workspace" : "event-form-layout-contents"}>
+      <div className={externalPublication ? "event-edit-form__main" : "event-form-layout-contents"}>
       <section className="event-form-section">
         <div className="event-form-section__head">
           <h2>Основное</h2>
@@ -618,7 +663,7 @@ export function EventForm(props: EventFormProps) {
         </div>
         {imageAuthoringMode === "file" ? (
           <EventImageUploader
-            busy={submitting}
+            busy={submitting || disabled}
             currentImageUrl={initialEvent?.imageUrl}
             error={imageError}
             onRemoveImage={onRemoveImage}
@@ -633,9 +678,10 @@ export function EventForm(props: EventFormProps) {
         ) : null}
       </section>
 
-      <section className="event-form-section">
+      <section className={externalPublication ? "event-form-section" : "event-form-layout-contents"}>
+      <div className={externalPublication ? "event-form-layout-contents" : "event-form-section"}>
         <div className="event-form-section__head">
-          <h2>Дата и время</h2>
+          <h2>{externalPublication ? "Когда и где" : "Дата и время"}</h2>
         </div>
         <div className="event-form-grid event-form-grid--time">
           <TextField
@@ -682,12 +728,9 @@ export function EventForm(props: EventFormProps) {
             value={form.timezone}
           />
         </div>
-      </section>
-
-      <section className="event-form-section">
-        <div className="event-form-section__head">
-          <h2>Место</h2>
-        </div>
+      </div>
+      <div className={externalPublication ? "event-form-layout-contents" : "event-form-section"}>
+        <div className="event-form-section__head">{externalPublication ? <h3>Место</h3> : <h2>Место</h2>}</div>
         <div className="event-form-grid event-form-grid--two">
           <SelectField
             disabled={
@@ -723,9 +766,10 @@ export function EventForm(props: EventFormProps) {
             </div>
           ) : null}
         </div>
+      </div>
       </section>
 
-      <section className="event-form-section">
+      {!externalPublication ? <section className="event-form-section">
         <div className="event-form-section__head">
           <h2>Видимость и статус</h2>
         </div>
@@ -747,37 +791,57 @@ export function EventForm(props: EventFormProps) {
             value={effectiveVisibility}
           />
         </div>
-      </section>
+      </section> : null}
+      </div>
 
-      <section className="event-form-section">
+      <section className={`event-form-section${externalPublication ? " event-edit-form__registration" : ""}`}>
         <div className="event-form-section__head">
           <h2>Регистрация</h2>
         </div>
         <div className="event-form-grid event-form-grid--two">
-          <SelectField
+          {externalPublication ? (
+            <fieldset className="event-registration-modes">
+              <legend className="event-editor-sr-only">Тип регистрации</legend>
+              {[
+                ["none", "Без регистрации", "просто анонс, кнопки записи нет"],
+                ["external_link", "Внешняя ссылка", "запись на стороннем сайте"],
+                ["internal_free", "Внутренняя бесплатная", "запись в приложении и на веб-странице"],
+                ["internal_paid", "Варианты и оплата", "билеты, цены и слоты мест"],
+              ].map(([value, label, description]) => (
+                <label className="event-registration-mode" key={value}>
+                  <input type="radio" name="registration-mode" checked={form.registrationMode === value}
+                    onChange={() => updateField("registrationMode", value)} />
+                  <span><strong>{label}</strong><small>{description}</small></span>
+                </label>
+              ))}
+              {errors.registrationMode ? <small role="alert">{errors.registrationMode}</small> : null}
+            </fieldset>
+          ) : <SelectField
             error={errors.registrationMode}
             label="Тип регистрации *"
             onChange={(value) => updateField("registrationMode", value)}
             options={registrationModeOptions}
             value={form.registrationMode}
-          />
+          />}
           {form.registrationMode === "external_link" ? (
             <TextField
               error={errors.registrationUrl}
-              label="Ссылка регистрации"
+              label={externalPublication ? "Ссылка внешней регистрации" : "Ссылка регистрации"}
               onChange={(value) => updateField("registrationUrl", value)}
               placeholder="https://..."
               value={form.registrationUrl}
             />
           ) : null}
-          <TextField
+          {!externalPublication || form.registrationMode === "internal_free" || form.registrationMode === "internal_paid" ? <TextField
             error={errors.capacity}
-            label="Лимит мест"
+            label={externalPublication ? "Общий лимит регистраций" : "Лимит мест"}
             min={1}
             onChange={(value) => updateField("capacity", value)}
             type="number"
             value={form.capacity}
-          />
+          /> : null}
+          {externalPublication && form.registrationMode === "none" ? <p className="event-form-notice">Событие показывается как анонс — записи и лимитов нет.</p> : null}
+          {externalPublication && form.registrationMode === "internal_paid" ? <Button variant="gold" size="sm" onClick={onOpenTickets}>Билеты и места →</Button> : null}
         </div>
 
         {form.registrationMode === "internal_paid" && mode === "create" ? (
@@ -788,6 +852,7 @@ export function EventForm(props: EventFormProps) {
 
         {renderedRegistrationModeSlot}
       </section>
+      </div>
 
       {errors.form ? (
         <div className="form-error" role="alert">

@@ -99,6 +99,8 @@ type EventOccurrencesConstructorProps = {
   eventKind?: string | null;
   eventCapacity: number | null;
   eventId: string;
+  active?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 };
 
 type DraftOccurrence = {
@@ -883,12 +885,15 @@ export function EventOccurrencesConstructor({
   eventKind,
   eventCapacity,
   eventId,
+  active = true,
+  onDirtyChange,
 }: EventOccurrencesConstructorProps) {
   const fallbackTimezone =
     defaultTimezone && defaultTimezone.trim()
       ? defaultTimezone.trim()
       : DEFAULT_TIMEZONE;
 
+  const [confirmedDrafts, setConfirmedDrafts] = useState<DraftOccurrence[]>([]);
   const [drafts, setDrafts] = useState<DraftOccurrence[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -906,6 +911,15 @@ export function EventOccurrencesConstructor({
   );
   const [generatorExpanded, setGeneratorExpanded] = useState(false);
   const [previewExpanded, setPreviewExpanded] = useState(false);
+  const [generatorBaseline, setGeneratorBaseline] = useState(() => JSON.stringify(generatorForm));
+  const modalDirty = modalState.kind === "add" || (modalState.kind === "edit"
+    && JSON.stringify(modalState.form) !== JSON.stringify(drafts.find((draft) => draft.draftId === modalState.draftId)));
+  const dirty = modalDirty || JSON.stringify(generatorForm) !== generatorBaseline
+    || JSON.stringify(drafts) !== JSON.stringify(confirmedDrafts);
+
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [eventId, onDirtyChange]);
+
   const occurrenceListRef = useRef<HTMLDivElement>(null);
   const saveInFlightRef = useRef(false);
   const remoteDraftsLoadTokenRef = useRef(0);
@@ -946,7 +960,9 @@ export function EventOccurrencesConstructor({
     listAdminEventOccurrences(eventId)
       .then((occurrences) => {
         if (cancelled) return;
-        setDrafts(sortDrafts(occurrences.map(buildDraftFromOccurrence)));
+        const confirmed = sortDrafts(occurrences.map(buildDraftFromOccurrence));
+        setDrafts(confirmed);
+        setConfirmedDrafts(confirmed);
         remoteDraftsLoadTokenRef.current += 1;
         setRemoteDraftsLoadToken(remoteDraftsLoadTokenRef.current);
       })
@@ -969,7 +985,9 @@ export function EventOccurrencesConstructor({
   }, [eventId]);
 
   useEffect(() => {
-    setGeneratorForm(buildDefaultGeneratorForm(resolveDefaultGeneratorPreset(eventKind)));
+    const initial = buildDefaultGeneratorForm(resolveDefaultGeneratorPreset(eventKind));
+    setGeneratorForm(initial);
+    setGeneratorBaseline(JSON.stringify(initial));
   }, [eventId, eventKind]);
 
   const summary = useMemo(() => buildSummary(drafts, eventCapacity, nowTimestamp), [
@@ -1021,7 +1039,9 @@ export function EventOccurrencesConstructor({
 
     try {
       const saved = await replaceAdminEventOccurrences(eventId, inputs);
-      setDrafts(sortDrafts(saved.map(buildDraftFromOccurrence)));
+      const confirmed = sortDrafts(saved.map(buildDraftFromOccurrence));
+      setDrafts(confirmed);
+      setConfirmedDrafts(confirmed);
       setSaveError(null);
       setSavedAt(new Date().toISOString());
       return true;
@@ -1351,6 +1371,7 @@ export function EventOccurrencesConstructor({
     const nextDrafts = withSequentialSortOrder([...drafts, ...generatedDrafts]);
     const persisted = await persistDrafts(nextDrafts);
     if (persisted) {
+      setGeneratorBaseline(JSON.stringify(generatorForm));
       setGeneratorExpanded(false);
       setPreviewExpanded(false);
       occurrenceListRef.current?.focus({ preventScroll: true });
@@ -1519,6 +1540,7 @@ export function EventOccurrencesConstructor({
       {modalState.kind !== "closed"
         ? createPortal(
             <OccurrenceModal
+              active={active}
               onChange={updateModalForm}
               onClose={closeModal}
               onSubmit={submitModal}
@@ -1532,6 +1554,7 @@ export function EventOccurrencesConstructor({
       {archiveConfirmOpen && hasPastActiveDrafts
         ? createPortal(
             <ArchivePastConfirmModal
+              active={active}
               count={summary.pastActiveCount}
               onClose={closeArchivePastConfirm}
               onConfirm={confirmArchivePastOccurrences}
@@ -2119,17 +2142,20 @@ function SummaryPanel({ summary }: { summary: Summary }) {
 }
 
 function ArchivePastConfirmModal({
+  active,
   count,
   onClose,
   onConfirm,
   saving,
 }: {
+  active: boolean;
   count: number;
   onClose: () => void;
   onConfirm: () => void;
   saving: boolean;
 }) {
   useEffect(() => {
+    if (!active) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !saving) {
         onClose();
@@ -2138,11 +2164,12 @@ function ArchivePastConfirmModal({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, saving]);
+  }, [active, onClose, saving]);
 
   return (
     <div
       className="participation-modal-overlay"
+      style={active ? undefined : { display: "none" }}
       onClick={() => {
         if (!saving) {
           onClose();
@@ -2191,6 +2218,7 @@ function ArchivePastConfirmModal({
 }
 
 type OccurrenceModalProps = {
+  active: boolean;
   onChange: (updater: (form: DraftOccurrence) => DraftOccurrence) => void;
   onClose: () => void;
   onSubmit: () => void;
@@ -2199,6 +2227,7 @@ type OccurrenceModalProps = {
 };
 
 function OccurrenceModal({
+  active,
   onChange,
   onClose,
   onSubmit,
@@ -2209,6 +2238,7 @@ function OccurrenceModal({
   const isEdit = state.kind === "edit";
 
   useEffect(() => {
+    if (!active) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         onClose();
@@ -2217,11 +2247,12 @@ function OccurrenceModal({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [active, onClose]);
 
   return (
     <div
       className="participation-modal-overlay"
+      style={active ? undefined : { display: "none" }}
       onClick={onClose}
       role="presentation"
     >
