@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AdminLayout } from "./components/layout/AdminLayout";
 import { AdminAuthProvider } from "./context/AdminAuthContext";
@@ -39,18 +39,24 @@ function AdminApp() {
   const [eventsRefreshSignal, setEventsRefreshSignal] = useState(0);
   const [importReviewRefreshSignal, setImportReviewRefreshSignal] = useState(0);
   const role = auth.role ?? "member";
+  const editorLeaveDirtyRef = useRef(false);
+  const handleLeaveGuardChange = useCallback((dirty: boolean) => { editorLeaveDirtyRef.current = dirty; }, []);
+  const confirmEditorLeave = useCallback(() => !editorLeaveDirtyRef.current
+    || window.confirm("Есть несохранённые изменения. Покинуть страницу и потерять их?"), []);
 
   const handleSectionChange = useCallback((section: AdminSection) => {
+    if (!confirmEditorLeave()) return;
     setActiveSection(section);
     setIsCreatingEvent(false);
     setEditingEvent(null);
-  }, []);
+  }, [confirmEditorLeave]);
 
   const handleCreateEvent = useCallback(() => {
+    if (!confirmEditorLeave()) return;
     setActiveSection("events");
     setIsCreatingEvent(true);
     setEditingEvent(null);
-  }, []);
+  }, [confirmEditorLeave]);
 
   const handleEventCreated = useCallback(() => {
     setEventsRefreshSignal((current) => current + 1);
@@ -61,10 +67,11 @@ function AdminApp() {
   }, []);
 
   const handleEditEvent = useCallback((event: AdminEvent) => {
+    if (!confirmEditorLeave()) return;
     setActiveSection("events");
     setIsCreatingEvent(false);
     setEditingEvent(event);
-  }, []);
+  }, [confirmEditorLeave]);
 
   const handleEventSaved = useCallback((event: AdminEvent) => {
     setEditingEvent(event);
@@ -72,15 +79,17 @@ function AdminApp() {
   }, []);
 
   const handleBackToEventsList = useCallback(() => {
+    if (!confirmEditorLeave()) return;
     setIsCreatingEvent(false);
     setEditingEvent(null);
-  }, []);
+  }, [confirmEditorLeave]);
 
   const handleOpenEventsList = useCallback(() => {
+    if (!confirmEditorLeave()) return;
     setActiveSection("events");
     setIsCreatingEvent(false);
     setEditingEvent(null);
-  }, []);
+  }, [confirmEditorLeave]);
 
   const handleImportReviewRefresh = useCallback(() => {
     setImportReviewRefreshSignal((current) => current + 1);
@@ -123,6 +132,7 @@ function AdminApp() {
     handleImportEventCreated,
     handleOpenEventsList,
     handleSectionChange,
+    handleLeaveGuardChange,
   );
 
   return (
@@ -132,7 +142,7 @@ function AdminApp() {
       onCreateEvent={handleCreateEvent}
       onImportReviewRefresh={handleImportReviewRefresh}
       onSectionChange={handleSectionChange}
-      onSignOut={auth.signOut}
+      onSignOut={async () => { if (confirmEditorLeave()) await auth.signOut(); }}
       profile={auth.profile}
       role={role}
       sessionEmail={auth.session?.user.email ?? null}
@@ -165,6 +175,7 @@ function renderPage(
   onImportEventCreated: (event: AdminEvent) => void,
   onOpenEventsList: () => void,
   onSectionChange: (section: AdminSection) => void,
+  onLeaveGuardChange: (dirty: boolean) => void,
 ) {
   if (role === "member" || !canRoleOpenSection(role, activeSection)) {
     return <NoAccessPage />;
@@ -187,6 +198,8 @@ function renderPage(
       if (editingEvent) {
         return (
           <EditEventPage
+            key={editingEvent.id}
+            onLeaveGuardChange={onLeaveGuardChange}
             event={editingEvent}
             onBackToList={onBackToEventsList}
             onSaved={onEventSaved}

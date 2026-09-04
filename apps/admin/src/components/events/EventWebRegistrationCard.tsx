@@ -17,6 +17,7 @@ import type {
 
 type EventWebRegistrationCardProps = {
   eventId: string;
+  onDirtyChange?: (dirty: boolean) => void;
   eventTitle: string;
 };
 
@@ -86,6 +87,7 @@ function trustedPublicUrl(
 export function EventWebRegistrationCard({
   eventId,
   eventTitle,
+  onDirtyChange,
 }: EventWebRegistrationCardProps) {
   const [registration, setRegistration] = useState<AdminEventWebRegistration | null>(null);
   const [selectedVisibility, setSelectedVisibility] =
@@ -106,6 +108,14 @@ export function EventWebRegistrationCard({
   const slugAbortRef = useRef<AbortController | null>(null);
   const slugRequestSequenceRef = useRef(0);
   const mountedRef = useRef(false);
+
+  const dirty = Boolean(registration && (
+    (registration.webVisibility !== "listed" && selectedVisibility !== registration.webVisibility)
+    || slugSuffix !== registration.publicSlug
+  ));
+
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [eventId, onDirtyChange]);
 
   const cancelSlugWork = useCallback(() => {
     if (slugDebounceRef.current !== null) {

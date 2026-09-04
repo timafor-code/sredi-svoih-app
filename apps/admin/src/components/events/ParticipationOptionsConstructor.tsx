@@ -67,6 +67,8 @@ function typeLabelFor(value: string): string {
 
 type ParticipationOptionsConstructorProps = {
   eventId: string;
+  active?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
   eventCapacity: number | null;
   defaultPriceCurrency?: string | null;
   capacityUnits: AdminEventCapacityUnit[];
@@ -343,12 +345,15 @@ export function ParticipationOptionsConstructor({
   deletedCapacityUnitIds,
   capacityPanel,
   selectionMode,
+  active = true,
+  onDirtyChange,
 }: ParticipationOptionsConstructorProps) {
   const fallbackCurrency =
     defaultPriceCurrency && defaultPriceCurrency.trim()
       ? defaultPriceCurrency.trim().toUpperCase()
       : DEFAULT_PRICE_CURRENCY;
 
+  const [confirmedDrafts, setConfirmedDrafts] = useState<DraftOption[]>([]);
   const [drafts, setDrafts] = useState<DraftOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -359,6 +364,13 @@ export function ParticipationOptionsConstructor({
   const [previewQuantities, setPreviewQuantities] = useState<Record<string, number>>(
     {},
   );
+  const modalDirty = modalState.kind === "add" || (modalState.kind === "edit"
+    && JSON.stringify(modalState.form) !== JSON.stringify(drafts.find((draft) => draft.draftId === modalState.draftId)));
+  const dirty = modalDirty || JSON.stringify(drafts) !== JSON.stringify(confirmedDrafts);
+
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [eventId, onDirtyChange]);
+
   const saveInFlightRef = useRef(false);
   const deletedUnitIdsRef = useRef(deletedCapacityUnitIds);
   deletedUnitIdsRef.current = deletedCapacityUnitIds;
@@ -373,6 +385,7 @@ export function ParticipationOptionsConstructor({
     // Reflect only explicit, server-confirmed slot deletions (the API cascades
     // their mappings). An unresolved or inactive slot is never discarded here.
     setDrafts((current) => current.map(withoutDeletedSlots));
+    setConfirmedDrafts((current) => current.map(withoutDeletedSlots));
     setModalState((current) => current.kind === "closed" ? current : {
       ...current, form: withoutDeletedSlots(current.form),
     });
@@ -393,7 +406,9 @@ export function ParticipationOptionsConstructor({
       .then(([options, mappings]) => {
         if (cancelled) return;
         const mappingsByOptionId = buildMappingsByOptionId(mappings);
-        setDrafts(options.map((option) => withoutDeletedSlots(buildDraftFromOption(option, mappingsByOptionId))));
+        const confirmed = options.map((option) => withoutDeletedSlots(buildDraftFromOption(option, mappingsByOptionId)));
+        setDrafts(confirmed);
+        setConfirmedDrafts(confirmed);
       })
       .catch((error) => {
         if (cancelled) return;
@@ -502,9 +517,9 @@ export function ParticipationOptionsConstructor({
         mappingInputs,
       );
       const mappingsByOptionId = buildMappingsByOptionId(savedMappings);
-      setDrafts(
-        saved.map((option) => withoutDeletedSlots(buildDraftFromOption(option, mappingsByOptionId))),
-      );
+      const confirmed = saved.map((option) => withoutDeletedSlots(buildDraftFromOption(option, mappingsByOptionId)));
+      setDrafts(confirmed);
+      setConfirmedDrafts(confirmed);
       setSaveError(null);
       setSavedAt(new Date().toISOString());
     } catch (error) {
@@ -814,6 +829,7 @@ export function ParticipationOptionsConstructor({
       {modalState.kind !== "closed"
         ? createPortal(
             <OptionModal
+              active={active}
               capacityUnits={capacityUnits}
               onChange={updateModalForm}
               onClose={closeModal}
@@ -1128,6 +1144,7 @@ function PreviewRow({
 }
 
 type OptionModalProps = {
+  active: boolean;
   capacityUnits: AdminEventCapacityUnit[];
   onChange: (updater: (form: DraftOption) => DraftOption) => void;
   onClose: () => void;
@@ -1137,6 +1154,7 @@ type OptionModalProps = {
 };
 
 function OptionModal({
+  active,
   capacityUnits,
   onChange,
   onClose,
@@ -1147,6 +1165,7 @@ function OptionModal({
   const { form, errors } = state;
 
   useEffect(() => {
+    if (!active) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         onClose();
@@ -1155,7 +1174,7 @@ function OptionModal({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [active, onClose]);
 
   const isEdit = state.kind === "edit";
   const title = isEdit ? "Редактировать вариант участия" : "Новый вариант участия";
@@ -1164,6 +1183,7 @@ function OptionModal({
   return (
     <div
       className="participation-modal-overlay"
+      style={active ? undefined : { display: "none" }}
       onClick={onClose}
       role="presentation"
     >

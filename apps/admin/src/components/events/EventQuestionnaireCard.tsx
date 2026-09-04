@@ -19,6 +19,7 @@ import type {
 
 type EventQuestionnaireCardProps = {
   eventId: string;
+  onDirtyChange?: (dirty: boolean) => void;
 };
 
 type EditorOption = {
@@ -266,7 +267,7 @@ function PublishedQuestionnaire({ form }: { form: EventQuestionnaireForm }) {
   );
 }
 
-export function EventQuestionnaireCard({ eventId }: EventQuestionnaireCardProps) {
+export function EventQuestionnaireCard({ eventId, onDirtyChange }: EventQuestionnaireCardProps) {
   const [questionnaire, setQuestionnaire] = useState<AdminEventQuestionnaire | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [baselineSnapshot, setBaselineSnapshot] = useState<string | null>(null);
@@ -317,7 +318,10 @@ export function EventQuestionnaireCard({ eventId }: EventQuestionnaireCardProps)
   }, [eventId, reloadKey]);
 
   const currentSnapshot = useMemo(() => editorSnapshot(editor), [editor]);
-  const dirty = currentSnapshot !== baselineSnapshot;
+  const dirty = baselineSnapshot !== null && currentSnapshot !== baselineSnapshot;
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [eventId, onDirtyChange]);
+
   const validationIssue = useMemo(() => editorValidationIssue(editor), [editor]);
   const busy = saving || publishing;
 

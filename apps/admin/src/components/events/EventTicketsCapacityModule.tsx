@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { AdminEventCapacityUnit } from "../../types/eventCapacityUnits";
 import { EventCapacityUnitsConstructor } from "./EventCapacityUnitsConstructor";
@@ -6,11 +6,21 @@ import { ParticipationOptionsConstructor } from "./ParticipationOptionsConstruct
 
 type EventTicketsCapacityModuleProps = {
   eventId: string;
+  active?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
   eventCapacity: number | null;
   defaultPriceCurrency?: string | null;
 };
 
 export function EventTicketsCapacityModule(props: EventTicketsCapacityModuleProps) {
+  const [optionsDirty, setOptionsDirty] = useState(false);
+  const [slotsDirty, setSlotsDirty] = useState(false);
+  const { onDirtyChange, eventId } = props;
+  const dirty = optionsDirty || slotsDirty;
+
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [eventId, onDirtyChange]);
+
   // Only service-confirmed slot data is shared with option labels and pickers.
   const [capacityUnits, setCapacityUnits] = useState<AdminEventCapacityUnit[]>([]);
   const [deletedCapacityUnitIds, setDeletedCapacityUnitIds] = useState<string[]>([]);
@@ -37,9 +47,9 @@ export function EventTicketsCapacityModule(props: EventTicketsCapacityModuleProp
           </select>
         </label>
       </header>
-      <ParticipationOptionsConstructor {...props} capacityUnits={capacityUnits} selectionMode={selectionMode}
+      <ParticipationOptionsConstructor {...props} onDirtyChange={setOptionsDirty} capacityUnits={capacityUnits} selectionMode={selectionMode}
         deletedCapacityUnitIds={deletedCapacityUnitIds}
-        capacityPanel={<EventCapacityUnitsConstructor eventId={props.eventId} onPersisted={updateCapacityUnits} />} />
+        capacityPanel={<EventCapacityUnitsConstructor eventId={props.eventId} active={props.active} onDirtyChange={setSlotsDirty} onPersisted={updateCapacityUnits} />} />
     </section>
   );
 }
