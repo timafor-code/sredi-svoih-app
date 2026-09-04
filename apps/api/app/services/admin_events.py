@@ -40,6 +40,7 @@ from app.schemas.admin_events import (
     AdminEventWebRegistrationResponse,
     AdminEventWebRegistrationUpdateRequest,
 )
+from app.schemas.events import EventSchedule
 from app.services.admin_audit import (
     record_event_public_slug_change,
     record_event_web_visibility_change,
@@ -332,6 +333,33 @@ async def _lock_admin_event(
     return event
 
 
+async def _validate_schedule_options(
+    session: AsyncSession,
+    event_id: UUID,
+    schedule: EventSchedule | None,
+) -> None:
+    if schedule is None:
+        return
+    option_ids = {
+        item.option_id
+        for day in schedule.days
+        for item in day.items
+        if item.option_id is not None
+    }
+    if not option_ids:
+        return
+    owned_ids = set(
+        await session.scalars(
+            select(EventParticipationOption.id).where(
+                EventParticipationOption.event_id == event_id,
+                EventParticipationOption.id.in_(option_ids),
+            ),
+        ),
+    )
+    if option_ids - owned_ids:
+        raise _validation_error("schedule option id does not belong to event")
+
+
 async def create_admin_event(
     session: AsyncSession,
     current_user: AppUser,
@@ -367,6 +395,10 @@ async def create_admin_event(
             subtitle=payload.subtitle,
             description=payload.description,
             short_description=payload.short_description,
+            schedule=(
+                payload.schedule.model_dump(mode="json")
+                if payload.schedule is not None else None
+            ),
             starts_at=payload.starts_at,
             ends_at=payload.ends_at,
             is_permanent=payload.is_permanent,
@@ -396,6 +428,7 @@ async def create_admin_event(
         )
         session.add(event)
         await session.flush()
+        await _validate_schedule_options(session, event.id, payload.schedule)
         await assign_automatic_public_slug(
             session,
             event_id=event.id,
@@ -450,6 +483,13 @@ async def update_admin_event(
             event_id=event_id,
             manageable_community_ids=manageable_community_ids,
         )
+
+        if "schedule" in payload.model_fields_set:
+            await _validate_schedule_options(session, event.id, payload.schedule)
+            updates["schedule"] = (
+                payload.schedule.model_dump(mode="json")
+                if payload.schedule is not None else None
+            )
 
         combined = _combined_event_values(event, updates)
         price_currency = _validate_event_state(

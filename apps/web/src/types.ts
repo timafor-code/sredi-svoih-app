@@ -25,7 +25,26 @@ export type ApiErrorResponse = {
   meta: Record<string, unknown>;
 };
 
+export type WebEventScheduleItem = {
+  time: string;
+  title: string;
+  option_id: string | null;
+};
+
+export type WebEventScheduleDay = {
+  date: string;
+  label: string | null;
+  note: string | null;
+  items: WebEventScheduleItem[];
+};
+
+export type WebEventSchedule = {
+  version: 1;
+  days: WebEventScheduleDay[];
+};
+
 export type WebRegistrationEvent = {
+  schedule?: WebEventSchedule | null;
   id: string;
   title: string;
   subtitle: string | null;
