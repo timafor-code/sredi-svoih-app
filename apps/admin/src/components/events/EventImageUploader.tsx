@@ -260,7 +260,7 @@ export function EventImageUploader({
         </Button>
       ) : null}
       {currentImageUrl && onRemoveImage ? (
-        <Button disabled={busy || removing} onClick={onRemoveImage} size="sm" variant="ghost">
+        <Button disabled={busy || removing} onClick={onRemoveImage} size="sm" variant="destructive">
           {removing ? "Удаляем..." : "Удалить изображение"}
         </Button>
       ) : null}
@@ -296,7 +296,7 @@ export function EventImageUploader({
               JPG, PNG или WebP, до 12 МБ. Подробные превью доступны в просмотре.
             </p>
           </div>
-          <div className="event-image-uploader__compact-state">
+          <div className={`event-image-uploader__compact-state${displayedError ? " event-image-uploader__compact-state--error" : selectedFile || busy || removing ? " event-image-uploader__compact-state--pending" : currentImageUrl || successMessage ? " event-image-uploader__compact-state--saved" : ""}`}>
             <strong>{compactState}</strong>
             <span aria-live="polite" className="event-image-uploader__stage visually-hidden">
               {uploadStage ? UPLOAD_STAGE_LABELS[uploadStage] : null}

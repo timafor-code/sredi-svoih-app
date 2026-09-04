@@ -67,6 +67,7 @@ type FormErrors = Partial<Record<FormErrorKey, string>>;
 
 type EventFormSharedProps = {
   actionsPlacement?: EventFormActionsPlacement;
+  publicationControls?: ReactNode;
   cancelLabel?: string;
   categories?: AdminEventCategory[];
   categoriesLoading?: boolean;
@@ -154,6 +155,7 @@ const ignoreSelectedImageFileChange = (_file: File | null) => undefined;
 export function EventForm(props: EventFormProps) {
   const {
   actionsPlacement = "bottom",
+  publicationControls,
   cancelLabel,
   categories = [],
   categoriesLoading = false,
@@ -565,6 +567,7 @@ export function EventForm(props: EventFormProps) {
     <form className={`event-create-form${externalPublication ? " event-edit-form" : ""}`} noValidate onSubmit={handleSubmit} ref={formRef}>
       {actionsPlacement === "stickyTop" ? (
         <div className="event-form-sticky-actions">
+          <div className="event-form-sticky-actions__left">
           <Button
             className="event-form-sticky-actions__back"
             disabled={submitting}
@@ -574,6 +577,8 @@ export function EventForm(props: EventFormProps) {
             {resolvedCancelLabel}
           </Button>
           {saveStatus}
+          </div>
+          {publicationControls}
           <Button
             className="event-form-sticky-actions__submit"
             disabled={isSubmitDisabled}
@@ -767,6 +772,7 @@ export function EventForm(props: EventFormProps) {
           ) : null}
         </div>
       </div>
+      {externalPublication ? <p className="event-edit-form__period-hint">Окно записи настраивается во вкладке «Период регистрации».</p> : null}
       </section>
 
       {!externalPublication ? <section className="event-form-section">
@@ -841,7 +847,7 @@ export function EventForm(props: EventFormProps) {
             value={form.capacity}
           /> : null}
           {externalPublication && form.registrationMode === "none" ? <p className="event-form-notice">Событие показывается как анонс — записи и лимитов нет.</p> : null}
-          {externalPublication && form.registrationMode === "internal_paid" ? <Button variant="gold" size="sm" onClick={onOpenTickets}>Билеты и места →</Button> : null}
+          {externalPublication && form.registrationMode === "internal_paid" ? <Button className="event-edit-form__tickets-link" variant="gold" size="sm" onClick={onOpenTickets}>Билеты и места →</Button> : null}
         </div>
 
         {form.registrationMode === "internal_paid" && mode === "create" ? (

@@ -20,7 +20,7 @@ import { ApiClientError } from "../services/apiClient";
 import { getAdminEvent, updateAdminEvent } from "../services/adminEventsService";
 import { listAdminCommunityLocations } from "../services/communityLocationsService";
 import { listAdminEventCategories } from "../services/eventCategoriesService";
-import { getEventStatusLabel } from "../types/events";
+import { getEventStatusLabel, getEventVisibilityLabel } from "../types/events";
 import type { AdminEvent, UpdateAdminEventInput } from "../types/events";
 import type { AdminCommunityLocation } from "../types/communityLocations";
 import type { AdminEventCategory } from "../types/eventCategories";
@@ -54,20 +54,10 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
   const [publicationToast, setPublicationToast] = useState<{
     saving?: boolean; savedAt?: string; error?: string; undo?: boolean;
   } | null>(null);
-  const shellRef = useRef<HTMLDivElement>(null);
-  const headerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
-  }, []);
-
-  useEffect(() => {
-    const observer = new ResizeObserver(() => {
-      shellRef.current?.style.setProperty("--event-header-height", `${headerRef.current?.offsetHeight ?? 0}px`);
-    });
-    if (headerRef.current) observer.observe(headerRef.current);
-    return () => observer.disconnect();
   }, []);
 
   const leaveDirty = eventDirty || webDirty || questionnaireDirty || singlePeriodExplicitDirty;
@@ -401,39 +391,51 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
     }
   };
 
-  return (
-    <div className="page-stack event-editor" ref={shellRef}>
-      <header className="event-editor-header" ref={headerRef}>
-        <div className="event-editor-header__title">
-          <div><span className="event-editor-kicker">Редактирование</span><h1>{currentEvent.title}</h1></div>
-          <Button variant="ghost" onClick={onBackToList}>К списку</Button>
+  const publicationControls = (
+    <div className="event-publication-controls">
+      <div className="event-publication-control">
+        <span className="event-publication-label">Статус</span>
+        <div className="event-publication-segment" role="group" aria-label="Статус события">
+          {(["draft", "published"] as const).map((status) => <button type="button" key={status}
+            disabled={submitting} aria-pressed={currentEvent.status === status}
+            onClick={() => savePublication({ status })}>
+            {status === "draft" ? "Черновик" : "Опубликовано"}
+          </button>)}
         </div>
-        <div className="event-publication-controls">
-          <div className="event-publication-segment" role="group" aria-label="Статус события">
-            {(["draft", "published"] as const).map((status) => <button type="button" key={status}
+      </div>
+      {currentEvent.status === "cancelled" || currentEvent.status === "archived"
+        ? <span className="event-publication-lifecycle">{getEventStatusLabel(currentEvent.status)}</span> : null}
+      <div className="event-publication-control">
+        <span className="event-publication-label">Видимость</span>
+        <div className="event-publication-segment" role="group" aria-label="Видимость события">
+          {([ ["public", "Публично"], ["members_only", "Участники"], ["hidden", "Скрыто"] ] as const).map(([visibility, label]) =>
+            <button type="button" key={visibility} disabled={submitting} aria-pressed={currentEvent.visibility === visibility}
+              onClick={() => savePublication({ visibility })}>{label}</button>)}
+        </div>
+      </div>
+      <details className="event-publication-more">
+          <summary aria-label="Другие статусы события">⋯</summary>
+          <div className="event-publication-menu">
+            {(["cancelled", "archived"] as const).map((status) => <button type="button" key={status}
               disabled={submitting} aria-pressed={currentEvent.status === status}
-              onClick={() => savePublication({ status })}>
-              {status === "draft" ? "Черновик" : "Опубликовано"}
-            </button>)}
-            <details className="event-publication-more">
-              <summary aria-label="Другие статусы события">⋯</summary>
-              <div className="event-publication-menu">
-                {(["cancelled", "archived"] as const).map((status) => <button type="button" key={status}
-                  disabled={submitting} aria-pressed={currentEvent.status === status}
-                  onClick={(event) => {
-                    event.currentTarget.closest("details")?.removeAttribute("open");
-                    savePublication({ status });
-                  }}>{getEventStatusLabel(status)}</button>)}
-              </div>
-            </details>
+              onClick={(event) => {
+                event.currentTarget.closest("details")?.removeAttribute("open");
+                savePublication({ status });
+              }}>{getEventStatusLabel(status)}</button>)}
           </div>
-          {currentEvent.status === "cancelled" || currentEvent.status === "archived"
-            ? <span className="event-publication-lifecycle">{getEventStatusLabel(currentEvent.status)}</span> : null}
-          <div className="event-publication-segment" role="group" aria-label="Видимость события">
-            {([ ["public", "Публично"], ["members_only", "Участники"], ["hidden", "Скрыто"] ] as const).map(([visibility, label]) =>
-              <button type="button" key={visibility} disabled={submitting} aria-pressed={currentEvent.visibility === visibility}
-                onClick={() => savePublication({ visibility })}>{label}</button>)}
-          </div>
+      </details>
+    </div>
+  );
+
+  return (
+    <div className="page-stack event-editor">
+      <header className="event-editor-header">
+        <div className="event-editor-kicker"><button type="button" onClick={onBackToList}>События</button> / Редактирование</div>
+        <h1>{currentEvent.title}</h1>
+        <div className="event-editor-meta">
+          <span className={`event-editor-chip event-editor-chip--${currentEvent.status === "published" ? "green" : "muted"}`}>{getEventStatusLabel(currentEvent.status)}</span>
+          <span className="event-editor-chip">{getEventVisibilityLabel(currentEvent.visibility)}</span>
+          {currentEvent.category ? <span className="event-editor-chip event-editor-chip--blue">{categories.find((category) => category.slug === currentEvent.category)?.title ?? currentEvent.category}</span> : null}
         </div>
       </header>
       {publicationToast ? <div className="event-publication-toast">
@@ -448,6 +450,7 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
           event: <GlassCard className="event-create-card event-create-card--sticky-actions" elevated>
             <EventForm
               actionsPlacement="stickyTop"
+              publicationControls={publicationControls}
               initialEvent={currentEvent}
               confirmedContentEvent={confirmedContentEvent}
               publicationControlled
@@ -480,12 +483,12 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
           tickets: <EventTicketsCapacityModule key={currentEvent.id} eventId={currentEvent.id}
             defaultPriceCurrency={currentEvent.priceCurrency} eventCapacity={currentEvent.capacity}
             active={activeTab === "tickets" && registrationMode === "internal_paid"} onDirtyChange={setTicketsDirty} />,
-          web: <>
+          web: <div className="event-editor-web-grid">
             <EventWebRegistrationCard key={`web-${currentEvent.id}`} eventId={currentEvent.id} eventTitle={currentEvent.title}
               onDirtyChange={setWebDirty} />
             {isAdmin === true ? <EventQuestionnaireCard key={`questionnaire-${currentEvent.id}`} eventId={currentEvent.id}
               onDirtyChange={setQuestionnaireDirty} /> : null}
-          </>,
+          </div>,
           period: <GlassCard className="event-occurrences-card" elevated>
             <EventOccurrencesConstructor key={currentEvent.id} defaultTimezone={currentEvent.timezone}
               eventStartsAt={currentEvent.startsAt} eventEndsAt={currentEvent.endsAt} eventStatus={currentEvent.status}

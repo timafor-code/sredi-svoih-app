@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -239,13 +239,15 @@ function PublishedQuestionnaire({ form }: { form: EventQuestionnaireForm }) {
         </div>
         <Badge tone="blue">Опубликовано</Badge>
       </div>
+      <details className="event-questionnaire-card__published-details">
+      <summary>{form.fields.length} вопросов · Подробнее</summary>
       <dl className="event-questionnaire-card__facts">
         <div>
           <dt>Дата публикации</dt>
           <dd>{formatPublishedAt(form.publishedAt)}</dd>
         </div>
         <div>
-          <dt>Purpose</dt>
+          <dt>Цель анкеты</dt>
           <dd>{form.purpose}</dd>
         </div>
         <div>
@@ -263,7 +265,20 @@ function PublishedQuestionnaire({ form }: { form: EventQuestionnaireForm }) {
           </li>
         ))}
       </ol>
+      </details>
     </section>
+  );
+}
+
+// Disclosure state survives saves and tab switches without changing draft state.
+function DraftDisclosure({ children, initiallyOpen }: { children: ReactNode; initiallyOpen: boolean }) {
+  const [expanded, setExpanded] = useState(initiallyOpen);
+  return (
+    <details className="event-questionnaire-editor__disclosure" open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}>
+      <summary>Редактировать черновик</summary>
+      <div className="event-questionnaire-editor__body">{children}</div>
+    </details>
   );
 }
 
@@ -570,6 +585,7 @@ export function EventQuestionnaireCard({ eventId, onDirtyChange }: EventQuestion
             </div>
           </div>
 
+          <DraftDisclosure initiallyOpen={editor.version === null}>
           <label className="event-form-field event-form-field--wide">
             <span>Цель анкеты</span>
             <textarea
@@ -809,16 +825,9 @@ export function EventQuestionnaireCard({ eventId, onDirtyChange }: EventQuestion
               >
                 {saving ? "Сохраняем…" : "Сохранить черновик"}
               </Button>
-              {questionnaire?.draft ? (
-                <Button
-                  disabled={busy || dirty || Boolean(validationIssue)}
-                  onClick={() => void handlePublish()}
-                  variant="success"
-                >
-                  {publishing ? "Публикуем…" : "Опубликовать версию"}
-                </Button>
-              ) : null}
             </div>
+          </div>
+          </DraftDisclosure>
             {validationIssue ? (
               <p className="event-questionnaire-editor__validation" role="status">
                 {validationIssue}
@@ -829,7 +838,17 @@ export function EventQuestionnaireCard({ eventId, onDirtyChange }: EventQuestion
                 Сохраните изменения перед публикацией.
               </p>
             ) : null}
-          </div>
+          {questionnaire?.draft ? (
+            <div className="event-questionnaire-editor__publish">
+              <Button
+                disabled={busy || dirty || Boolean(validationIssue)}
+                onClick={() => void handlePublish()}
+                variant="success"
+              >
+                {publishing ? "Публикуем…" : "Опубликовать версию"}
+              </Button>
+            </div>
+          ) : null}
         </section>
       )}
 

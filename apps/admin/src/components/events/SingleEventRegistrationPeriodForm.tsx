@@ -40,6 +40,7 @@ export function SingleEventRegistrationPeriodForm({
         </div>
       </header>
 
+      <div className="single-event-period__panel">
       <div className="single-event-period__date">
         <span>Дата события</span>
         <strong>{eventDateSummary}</strong>
@@ -55,7 +56,7 @@ export function SingleEventRegistrationPeriodForm({
           <span>Регистрация открывается с момента публикации</span>
         </label>
         {values.opensOnPublication && eventStatus === "published" ? (
-          <p className="single-event-period__note">
+          <p className="single-event-period__note single-event-period__note--published">
             Событие уже опубликовано. После сохранения начало регистрации будет считаться наступившим.
           </p>
         ) : null}
@@ -88,6 +89,7 @@ export function SingleEventRegistrationPeriodForm({
         <Button disabled={saving} type="submit" variant="success">Сохранить период регистрации</Button>
         <SaveStatusView error={saveError} saving={saving} unsaved={unsaved} />
       </footer>
+      </div>
     </form>
   );
 }
