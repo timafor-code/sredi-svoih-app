@@ -453,17 +453,17 @@ export function EventCapacityUnitsConstructor({ eventId, onPersisted, active = t
   const disabled = loading || Boolean(loadError);
 
   return (
-    <section className="tickets-capacity-panel" aria-label="Слоты мест">
-      <h3>Слоты мест</h3>
-      <p>Лимит слота ограничивает регистрации. Он не задаёт число физических мест на схеме рассадки.</p>
+    <section className="tickets-capacity-panel" aria-label="Слоты регистраций">
+      <h3>Слоты регистраций</h3>
+      <p>Общие лимиты для связанных вариантов участия.</p>
       {loadError ? <p className="form-error" role="alert">{loadError}</p> : null}
       {loading ? <p>Загружаем слоты…</p> : !drafts.length ? <p>Добавьте слот или выберите готовый набор.</p> : (
         <ul className="tickets-capacity-list">
           {ordered.map((draft, index) => (
             <li key={draft.draftId} className={`tickets-capacity-row${draft.isActive ? "" : " tickets-capacity-row--inactive"}`}>
               <button type="button" className="tickets-capacity-row__body" onClick={() => openEditor(draft)}>
-                <strong>{draft.title}</strong>
-                <span>{draft.capacity ? `Лимит: ${draft.capacity}` : "Без лимита"} · {draft.isActive ? "Активен" : "Неактивен"}</span>
+                <span className="tickets-capacity-row__name"><strong>{draft.title}</strong><span>{draft.isActive ? "Активен" : "Неактивен"}</span></span>
+                <span className="tickets-capacity-row__limit">{draft.capacity ? `Лимит: ${draft.capacity}` : "Без лимита"}</span>
               </button>
               <div className="participation-option-row__actions">
                 <button type="button" className="participation-option-row__action" aria-label={`Редактировать слот «${draft.title}»`} title="Редактировать слот" onClick={() => openEditor(draft)}><Pencil aria-hidden size={16} /></button>
@@ -474,12 +474,13 @@ export function EventCapacityUnitsConstructor({ eventId, onPersisted, active = t
           ))}
         </ul>
       )}
-      <Button variant="gold" disabled={disabled} onClick={() => openEditor(buildEmptyDraft(drafts.length), true)}>Добавить слот</Button>
+      <Button className="tickets-capacity-add" variant="gold" disabled={disabled} onClick={() => openEditor(buildEmptyDraft(drafts.length), true)}>+ Добавить слот</Button>
       <div className="tickets-capacity-presets">
         <Button size="sm" variant="gold" disabled={disabled} onClick={() => addPreset(SHABBAT_UNIT_TEMPLATES)}>+ Шабат</Button>
         <Button size="sm" variant="gold" disabled={disabled} onClick={() => addPreset(YOM_TOV_ONE_DAY_UNIT_TEMPLATES)}>+ Йом Тов 1 день</Button>
         <Button size="sm" variant="gold" disabled={disabled} onClick={() => addPreset(YOM_TOV_TWO_DAYS_UNIT_TEMPLATES)}>+ Йом Тов 2 дня</Button>
       </div>
+      <p className="tickets-capacity-invariant">Лимит слота ограничивает регистрации, а не число физических мест на схеме рассадки.</p>
       {feedback}
       {status.error ? <Button size="sm" onClick={() => { if (completeEdit()) void queue.save(); }}>Повторить сохранение</Button> : null}
       {editor ? createPortal(

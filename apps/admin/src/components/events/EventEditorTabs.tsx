@@ -5,8 +5,8 @@ export type EventEditorTab = "event" | "tickets" | "web" | "period";
 const tabs: Array<{ id: EventEditorTab; label: string }> = [
   { id: "event", label: "Событие" },
   { id: "tickets", label: "Билеты и места" },
-  { id: "web", label: "Веб-страница" },
   { id: "period", label: "Период регистрации" },
+  { id: "web", label: "Веб-страница" },
 ];
 
 export function EventEditorTabs({ activeTab, onTabChange, registrationMode, dirty, panels }: {
@@ -25,6 +25,7 @@ export function EventEditorTabs({ activeTab, onTabChange, registrationMode, dirt
   return <>
     <div className="event-editor-tabs" role="tablist" aria-label="Редактор события">
       {tabs.map((tab) => <button key={tab.id} type="button" role="tab"
+        data-editor-tab={tab.id}
         ref={(element) => { buttons.current[tab.id] = element; }}
         id={`${id}-tab-${tab.id}`} aria-controls={`${id}-panel-${tab.id}`}
         aria-selected={selected === tab.id} disabled={!enabled(tab.id)}

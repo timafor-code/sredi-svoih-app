@@ -442,7 +442,18 @@ export function EventWebRegistrationCard({
               <option value="unlisted">Только по ссылке</option>
             </select>
           </label>
-          <Button
+        </div>
+      )}
+
+      <div className="event-web-registration-card__save-row">
+          <SaveStatusView
+            saving={visibilitySaving}
+            error={visibilitySaveError}
+            savedAt={visibilitySavedAt}
+            unsaved={registration.webVisibility !== "listed" && selectedVisibility !== registration.webVisibility}
+            recovery="Повторите сохранение режима."
+          />
+          {!isListed ? <Button
             disabled={
               visibilitySaving || selectedVisibility === registration.webVisibility
             }
@@ -450,17 +461,8 @@ export function EventWebRegistrationCard({
             variant="success"
           >
             {visibilitySaving ? "Сохраняем…" : "Сохранить режим"}
-          </Button>
-        </div>
-      )}
-
-      <SaveStatusView
-        saving={visibilitySaving}
-        error={visibilitySaveError}
-        savedAt={visibilitySavedAt}
-        unsaved={registration.webVisibility !== "listed" && selectedVisibility !== registration.webVisibility}
-        recovery="Повторите сохранение режима."
-      />
+          </Button> : null}
+      </div>
 
       <div className="event-web-registration-card__slug-editor">
         <div className="event-web-registration-card__slug-heading">
@@ -544,6 +546,13 @@ export function EventWebRegistrationCard({
           ) : null}
         </div>
         <div className="event-web-registration-card__slug-actions">
+          <SaveStatusView
+            saving={slugSaving}
+            error={slugSaveError}
+            savedAt={slugSavedAt}
+            unsaved={slugSuffix !== registration.publicSlug}
+            recovery="Проверьте адрес и повторите сохранение."
+          />
           <Button
             disabled={!canSaveSlug}
             onClick={() => void handleSlugSave()}
@@ -552,13 +561,6 @@ export function EventWebRegistrationCard({
             {slugSaving ? "Сохраняем…" : "Сохранить адрес"}
           </Button>
         </div>
-        <SaveStatusView
-          saving={slugSaving}
-          error={slugSaveError}
-          savedAt={slugSavedAt}
-          unsaved={slugSuffix !== registration.publicSlug}
-          recovery="Проверьте адрес и повторите сохранение."
-        />
       </div>
 
       <div className="event-web-registration-card__availability">

@@ -33,11 +33,15 @@ export function EventTicketsCapacityModule(props: EventTicketsCapacityModuleProp
 
   return (
     <section className="event-tickets-capacity">
-      <header className="event-tickets-capacity__head">
+      <ParticipationOptionsConstructor {...props} onDirtyChange={setOptionsDirty} capacityUnits={capacityUnits} selectionMode={selectionMode}
+        deletedCapacityUnitIds={deletedCapacityUnitIds}
+        heading={
         <div>
           <h2>Билеты и места</h2>
           <p>Варианты участия, цены и общие лимиты регистрации.</p>
         </div>
+        }
+        settings={
         <label className="tickets-selection-mode">
           <span>Выбор:</span>
           <select className="participation-setting-select" value={selectionMode}
@@ -46,9 +50,7 @@ export function EventTicketsCapacityModule(props: EventTicketsCapacityModuleProp
             <option value="multiple">Можно выбрать несколько</option>
           </select>
         </label>
-      </header>
-      <ParticipationOptionsConstructor {...props} onDirtyChange={setOptionsDirty} capacityUnits={capacityUnits} selectionMode={selectionMode}
-        deletedCapacityUnitIds={deletedCapacityUnitIds}
+        }
         capacityPanel={<EventCapacityUnitsConstructor eventId={props.eventId} active={props.active} onDirtyChange={setSlotsDirty} onPersisted={updateCapacityUnits} />} />
     </section>
   );

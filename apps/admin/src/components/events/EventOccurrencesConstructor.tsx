@@ -1510,13 +1510,13 @@ export function EventOccurrencesConstructor({
     <section className="event-occurrences-constructor">
       <header className="event-occurrences-constructor__head">
         <div>
-          <h2>Даты и сеансы</h2>
+          <h2>Период регистрации</h2>
           <p>
-            Это даты внутри одного события. Варианты участия и оплаты остаются
-            общими, а лимит мест можно задать отдельно для каждой даты.
+            Даты, окна записи и лимиты. Варианты участия и оплаты общие для всех дат.
           </p>
         </div>
         <div className="event-occurrences-constructor__head-actions">
+          <SaveStatusView saving={saving} savedAt={saveError ? null : savedAt} />
           {hasPastActiveDrafts ? (
             <Button disabled={disabled} onClick={openArchivePastConfirm} variant="secondary">
               Архивировать прошедшие
@@ -1570,7 +1570,6 @@ export function EventOccurrencesConstructor({
       ) : null}
 
       <div className="event-occurrences-constructor__layout">
-        <SummaryPanel summary={summary} />
         <div
           aria-label="Список дат и сеансов"
           className="event-occurrences-constructor__main"
@@ -1639,11 +1638,8 @@ export function EventOccurrencesConstructor({
             </div>
           )}
         </div>
+        <SummaryPanel summary={summary} />
       </div>
-
-      <footer className="event-occurrences-constructor__footer">
-        <SaveStatusView saving={saving} savedAt={saveError ? null : savedAt} />
-      </footer>
 
       {modalState.kind !== "closed"
         ? createPortal(
@@ -1735,6 +1731,26 @@ function OccurrenceGenerator({
         <div>
           <h3>Генератор дат</h3>
           <p>{generatorSummary}</p>
+        </div>
+        <div className="event-occurrence-generator__preview-head">
+          <span>Предпросмотр</span>
+          <strong>
+            {preview.error
+              ? "Проверьте настройки"
+              : `${preview.creatableCount} будет создано, ${
+                  preview.items.length - preview.creatableCount
+                } пропущено`}
+          </strong>
+          <Button
+            aria-controls={previewId}
+            aria-expanded={previewExpanded}
+            disabled={Boolean(preview.error)}
+            onClick={onTogglePreview}
+            size="sm"
+            variant="ghost"
+          >
+            {previewExpanded ? "Скрыть даты" : "Показать даты"}
+          </Button>
         </div>
         <div className="event-occurrence-generator__actions">
           <Button
@@ -1930,27 +1946,6 @@ function OccurrenceGenerator({
       </div>
 
       <div className="event-occurrence-generator__preview">
-        <div className="event-occurrence-generator__preview-head">
-          <span>Предпросмотр</span>
-          <strong>
-            {preview.error
-              ? "Проверьте настройки"
-              : `${preview.creatableCount} будет создано, ${
-                  preview.items.length - preview.creatableCount
-                } пропущено`}
-          </strong>
-          <Button
-            aria-controls={previewId}
-            aria-expanded={previewExpanded}
-            disabled={Boolean(preview.error)}
-            onClick={onTogglePreview}
-            size="sm"
-            variant="ghost"
-          >
-            {previewExpanded ? "Скрыть даты" : "Показать даты"}
-          </Button>
-        </div>
-
         {preview.error ? (
           <div className="event-occurrence-generator__error" role="alert">
             {preview.error}

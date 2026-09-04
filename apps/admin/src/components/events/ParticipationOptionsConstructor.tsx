@@ -74,6 +74,8 @@ type ParticipationOptionsConstructorProps = {
   capacityUnits: AdminEventCapacityUnit[];
   deletedCapacityUnitIds: string[];
   capacityPanel: React.ReactNode;
+  heading: React.ReactNode;
+  settings: React.ReactNode;
   selectionMode: SelectionMode;
 };
 
@@ -344,6 +346,8 @@ export function ParticipationOptionsConstructor({
   capacityUnits,
   deletedCapacityUnitIds,
   capacityPanel,
+  heading,
+  settings,
   selectionMode,
   active = true,
   onDirtyChange,
@@ -745,6 +749,15 @@ export function ParticipationOptionsConstructor({
 
   return (
     <section className="participation-constructor">
+      <header className="event-tickets-capacity__head">
+        {heading}
+        <SaveStatusView
+          saving={saving}
+          error={saveError}
+          savedAt={savedAt}
+          recovery="Обновите страницу, проверьте сохранённые варианты и повторите изменение."
+        />
+      </header>
       {loadError ? (
         <div className="form-error" role="alert">
           {loadError}
@@ -753,6 +766,7 @@ export function ParticipationOptionsConstructor({
 
       <div className="participation-constructor__layout">
         <div className="participation-constructor__main">
+          {settings}
           <div className="participation-constructor__list-label">Варианты</div>
 
           {loading ? (
@@ -816,15 +830,6 @@ export function ParticipationOptionsConstructor({
           </details>
         </aside>
       </div>
-
-      <footer className="participation-constructor__footer">
-        <SaveStatusView
-          saving={saving}
-          error={saveError}
-          savedAt={savedAt}
-          recovery="Обновите страницу, проверьте сохранённые варианты и повторите изменение."
-        />
-      </footer>
 
       {modalState.kind !== "closed"
         ? createPortal(
