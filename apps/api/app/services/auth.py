@@ -215,6 +215,17 @@ def _invalid_or_expired_code_error(purpose_label: str) -> HTTPException:
     )
 
 
+def _email_verification_required_error() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Email not confirmed",
+    )
+
+
+def _requires_email_verification(user: AppUser) -> bool:
+    return user.account_origin == "password_signup" and user.email_verified_at is None
+
+
 def _email_request_response() -> AuthCodeRequestResponse:
     return AuthCodeRequestResponse()
 
@@ -865,6 +876,8 @@ async def register_password_user(
     await session.refresh(user)
     await session.refresh(profile)
 
+    await create_email_verification_code(session, email=normalized_email)
+
     return RegisterResponse(
         user=_user_summary(user),
         profile=_profile_summary(profile),
@@ -888,6 +901,9 @@ async def login_password_user(
         or not verify_password(password, user.password_hash)
     ):
         raise _authentication_error("Invalid email or password")
+
+    if _requires_email_verification(user):
+        raise _email_verification_required_error()
 
     now = _now()
     refresh_token = create_refresh_token()
@@ -937,6 +953,9 @@ async def refresh_session(
     user = await session.get(AppUser, auth_session.user_id)
     if user is None or user.status != authorization_service.ACTIVE_STATUS:
         raise _authentication_error("Invalid refresh token")
+
+    if _requires_email_verification(user):
+        raise _email_verification_required_error()
 
     new_refresh_token = create_refresh_token()
     auth_session.revoked_at = now

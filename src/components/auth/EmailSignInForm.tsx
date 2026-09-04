@@ -7,6 +7,12 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { colors } from '@/theme/colors';
 
 import { AUTH_ERROR_MESSAGES, getAuthErrorMessage } from './authErrorMessages';
+import { EmailVerificationCodeForm } from './EmailVerificationCodeForm';
+
+type PendingVerification = {
+  email: string;
+  password: string;
+};
 
 type EmailSignInFormProps = {
   initialEmail?: string;
@@ -25,6 +31,7 @@ export function EmailSignInForm({
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingVerification, setPendingVerification] = useState<PendingVerification | null>(null);
 
   const signIn = useAuthStore((state) => state.signIn);
 
@@ -54,11 +61,36 @@ export function EmailSignInForm({
       setPassword('');
       await onSignedIn();
     } catch (error) {
-      setLocalError(getAuthErrorMessage(error, AUTH_ERROR_MESSAGES.signIn));
+      const message = getAuthErrorMessage(error, AUTH_ERROR_MESSAGES.signIn);
+
+      if (message === AUTH_ERROR_MESSAGES.emailNotConfirmed) {
+        setPendingVerification({ email: normalizedEmail, password });
+        return;
+      }
+
+      setLocalError(message);
     } finally {
       setIsSubmitting(false);
     }
   }, [email, onSignedIn, password, signIn]);
+
+  const handleVerified = useCallback(async () => {
+    setPassword('');
+    setPendingVerification(null);
+    await onSignedIn();
+  }, [onSignedIn]);
+
+  if (pendingVerification) {
+    return (
+      <EmailVerificationCodeForm
+        backLabel="Назад ко входу"
+        email={pendingVerification.email}
+        onBack={() => setPendingVerification(null)}
+        onVerified={handleVerified}
+        password={pendingVerification.password}
+      />
+    );
+  }
 
   return (
     <View style={styles.form}>
