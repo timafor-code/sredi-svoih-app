@@ -313,6 +313,28 @@ Email not confirmed` until `/auth/confirm-email-verification` sets
 "password_signup"`; invite, migration, and admin-created accounts are
 unaffected.
 
+`/auth/register` requires successful verification-email delivery before the
+new account is durable. The verification-email rate limit is consumed before
+the user/profile are created; if it rejects the request, no user, profile, or
+verification code is persisted. If the configured email delivery layer does
+not report the verification message as sent (disabled delivery, a failed
+send, or an unexpected delivery error), `/auth/register` returns a generic
+`503 email_delivery_unavailable` and rolls back the transaction, so no
+password-signup user, profile, or verification code remains. `201` is
+returned only once the account transaction has committed with a verification
+code created and delivery reported as sent.
+
+`/auth/request-email-verification` (resend) stages a replacement code and
+requires successful delivery before committing, but its public response
+stays enumeration-safe: on delivery failure it rolls back the replacement
+code, preserves the previously issued unconsumed code, and returns the same
+generic `200` response used for an unknown, already-verified, or otherwise
+inapplicable email — it never returns `503` for an applicable account, since
+that would let a delivery outage reveal account existence. Fresh
+`/auth/register` is unaffected by this and still returns `503
+email_delivery_unavailable` on mandatory verification-email delivery
+failure, since that path has no pre-existing account to protect.
+
 Auth response `data` may include:
 
 ```json
