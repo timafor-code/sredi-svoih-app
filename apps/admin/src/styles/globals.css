@@ -14136,7 +14136,7 @@ a {
 }
 
 /* Four-tab event authoring workspace; other admin pages retain their layout. */
-.event-form-layout-contents, .event-form-sticky-actions__left { display: contents; }
+.event-form-layout-contents, .event-form-sticky-actions__left, .event-form-primary-actions { display: contents; }
 .event-editor {
   --bg: #0d0d18;
   --editor-inset: #080811;
@@ -14274,7 +14274,8 @@ a {
 .event-editor .event-form-sticky-actions__left { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-width: 0; }
 .event-editor .event-form-sticky-actions__left .save-status { max-width: 240px; }
 .event-editor .event-form-sticky-actions__back { padding-inline: 0; border-color: transparent; background: transparent; }
-.event-editor .event-form-sticky-actions__submit { min-width: 0; margin-left: auto; }
+/* Keep publication between the back/status group and save on desktop. */
+.event-editor .event-form-sticky-actions__submit { min-width: 0; margin-left: auto; order: 1; }
 .event-editor .event-create-form > .form-error { margin: 12px 20px; }
 .event-publication-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; min-width: 0; margin-inline: auto; }
 .event-publication-control { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
@@ -14507,4 +14508,226 @@ a {
   .event-editor .participation-option-row__badge { grid-column: 1 / -1; justify-self: start; }
   .event-editor .event-image-uploader__compact-actions { justify-content: flex-start; margin-left: 0; }
   .event-editor .single-event-period__panel { padding: 12px; }
+}
+
+/* Mobile event editor: the existing container queries above own workspace stacking. */
+@media (max-width: 960px) {
+  .event-editor {
+    gap: 14px;
+    overflow-wrap: anywhere;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .event-editor :where(div, section, article, aside, header, footer, fieldset, label, li, details) {
+    min-width: 0;
+  }
+
+  .event-editor :is(button, .button, summary) {
+    min-width: 44px;
+    min-height: 44px;
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .event-editor .button { font-size: 14px; }
+  .event-editor summary { align-content: center; }
+  .event-editor-kicker button { padding-inline: 8px; }
+
+  /* Two rows retain tab order, keyboard handling, disabled labels and dirty dots. */
+  .event-editor-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    border: 0;
+  }
+
+  .event-editor-tabs > button {
+    min-width: 0;
+    padding: 10px;
+    gap: 4px 6px;
+    border: 1px solid var(--editor-line);
+    border-radius: 8px;
+    text-align: left;
+    font-size: 13px;
+  }
+
+  .event-editor-tabs > button > span:first-child { flex: 1 1 80px; }
+  .event-editor-tabs small { flex-basis: 100%; font-size: 11px; }
+  .event-editor-tabs > button:disabled { opacity: 0.75; }
+  .event-editor-tabs > button[aria-selected="true"] { background: var(--editor-panel); border-color: var(--tab-accent); }
+  .event-editor-tabs > button[aria-selected="true"]::after { bottom: 0; }
+  .event-editor-dirty { flex: none; }
+
+  /* The shell header sits outside the content scroller, so its height is not
+     added to top. Only content save stays sticky; publication scrolls normally. */
+  .event-editor .event-form-sticky-actions { display: contents; }
+  .event-editor .event-form-primary-actions {
+    position: sticky;
+    top: 0;
+    z-index: 35;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 10px 12px;
+    max-height: 40dvh;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--editor-line);
+    border-radius: 14px 14px 0 0;
+    background: var(--editor-surface);
+  }
+
+  .event-editor .event-form-sticky-actions__left { flex: 1 1 120px; }
+  /* The header's Events link provides the same back action on phones. */
+  .event-editor .event-form-sticky-actions__back { display: none; }
+  .event-editor .event-form-sticky-actions__left .save-status { max-width: none; }
+  .event-editor .event-form-sticky-actions__submit { flex: 1 1 180px; margin: 0; }
+
+  .event-editor .event-publication-controls {
+    order: 0;
+    margin: 0;
+    padding: 12px;
+    justify-content: flex-start;
+    border-bottom: 1px solid var(--editor-line-soft);
+  }
+
+  .event-editor .event-publication-control { flex: 1 1 260px; }
+  .event-editor .event-publication-label { flex-basis: 100%; font-size: 12px; }
+  .event-editor .event-publication-segment { flex: 1; border-radius: 12px; }
+  .event-editor .event-publication-segment button { flex: 1; padding: 6px; font-size: 13px; }
+  .event-editor .event-publication-more { margin-left: auto; }
+  .event-editor .event-publication-more summary { display: grid; place-items: center; }
+  .event-editor .event-publication-menu { z-index: 36; }
+  .event-editor .event-publication-toast {
+    left: max(12px, env(safe-area-inset-left, 0px));
+    right: max(12px, env(safe-area-inset-right, 0px));
+    bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    max-width: none;
+    max-height: 45dvh;
+    overflow-y: auto;
+    padding: 10px 12px;
+  }
+
+  /* Explicit widths also constrain WebKit's intrinsic date/time input sizing. */
+  .event-editor :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea) {
+    width: 100%;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .event-editor .event-form-field > span,
+  .event-editor .event-occurrence-generator__field > span { font-size: 13px; }
+  .event-editor .event-registration-mode { min-height: 44px; padding: 12px; }
+  .event-editor .event-registration-mode strong { font-size: 14px; }
+  .event-editor .event-registration-mode small { font-size: 13px; }
+  .event-editor :is(.event-form-check, .single-event-period__checkbox, .event-questionnaire-question__required,
+    .event-occurrence-generator__checkbox-label) { min-height: 44px; }
+  .event-editor .event-form-check__tooltip-popover { left: 0; max-width: 100%; transform: none; }
+  .event-editor .event-form-selected-location :is(span, strong) { white-space: normal; }
+  .event-editor .event-edit-form :is(input, select, textarea, .event-image-uploader__message) { scroll-margin-top: 120px; }
+
+  .event-editor .event-image-uploader__compact-copy { flex-basis: 150px; }
+  .event-editor .event-image-uploader__compact-actions { width: 100%; }
+  .event-editor .event-image-uploader__compact-actions > .button { flex: 1 1 150px; }
+
+  .event-editor .participation-option-row__actions { gap: 6px; }
+  .event-editor .participation-option-row__action,
+  .event-editor .event-occurrence-row__action {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .event-editor .participation-option-row__action:not(:disabled) { opacity: 1; }
+
+  .event-editor .tickets-capacity-presets .button { min-height: 44px; font-size: 13px; }
+  .event-editor .participation-preview-row { grid-template-columns: 44px minmax(0, 1fr); }
+  .event-editor .participation-preview-row__input { width: 24px; height: 24px; margin: 10px; }
+  .event-editor .participation-preview-row__price { grid-column: 2; white-space: normal; }
+  .event-editor .participation-preview-stepper button { width: 44px; height: 44px; }
+  .event-editor .participation-preview-total { flex-wrap: wrap; gap: 8px; }
+  .event-editor .participation-option-row__price { white-space: normal; overflow-wrap: anywhere; }
+
+  .event-editor .event-occurrences-constructor__head,
+  .event-editor .event-occurrence-group__head { flex-wrap: wrap; }
+  .event-editor .event-occurrences-constructor__head-actions { flex-wrap: wrap; justify-content: flex-start; }
+  .event-editor .event-occurrence-generator__inline-fields,
+  .event-editor .event-occurrence-generator__preview-item { grid-template-columns: minmax(0, 1fr); }
+  .event-editor .event-occurrence-generator__preview-item strong { white-space: normal; overflow: visible; }
+  .event-editor .event-occurrence-generator__preview-badge { justify-self: start; white-space: normal; }
+  .event-editor .event-occurrence-row__status-select { width: 100%; }
+  .event-editor .event-occurrence-row__actions { max-width: none; }
+  .event-editor .event-occurrence-row__title { white-space: normal; overflow: visible; }
+  .event-editor .event-occurrences-toast { flex-wrap: wrap; }
+  .event-editor .single-event-period__actions { align-items: stretch; flex-direction: column; }
+
+  .event-editor .event-questionnaire-card__published-list li,
+  .event-editor .event-questionnaire-option { grid-template-columns: minmax(0, 1fr); }
+  .event-editor .event-questionnaire-option { padding-bottom: 12px; border-bottom: 1px solid var(--editor-line-soft); }
+  .event-editor .event-questionnaire-question__reorder { width: 100%; }
+  .event-editor .event-questionnaire-editor__disclosure > summary { width: 100%; margin: 0; }
+  .event-editor .event-web-registration-card__slug-field input { flex-basis: 100%; }
+  .event-editor .event-web-registration-card__slug-prefix { width: 100%; border-right: 0; }
+  .event-editor .event-web-registration-card__actions { flex-wrap: wrap; }
+
+  /* Portalled ticket/slot/period dialogs cannot inherit .event-editor styles. */
+  body:has(.event-editor) .participation-modal-overlay {
+    padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
+      max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+    height: 100dvh;
+  }
+
+  body:has(.event-editor) .participation-modal {
+    min-width: 0;
+    max-height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    grid-template-rows: auto auto auto;
+  }
+
+  body:has(.event-editor) .participation-modal :where(div, header, footer, label, details, fieldset) { min-width: 0; }
+  body:has(.event-editor) .participation-modal__body { overflow: visible; }
+  body:has(.event-editor) .participation-modal :is(.participation-modal__head, .participation-modal__body, .participation-modal__footer) { padding: 12px; }
+  body:has(.event-editor) .participation-modal__grid { grid-template-columns: minmax(0, 1fr); }
+  body:has(.event-editor) .participation-modal { overflow-wrap: anywhere; }
+  body:has(.event-editor) .participation-modal__footer { flex-wrap: wrap; }
+  body:has(.event-editor) .participation-modal__footer .button { flex: 1 1 160px; }
+  body:has(.event-editor) .participation-modal :is(button, .button, summary, .participation-modal__toggle, .tickets-capacity-active) {
+    min-height: 44px;
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  body:has(.event-editor) .participation-modal__close { width: 44px; height: 44px; flex: none; }
+  body:has(.event-editor) .participation-modal__field :is(input, select) {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  body:has(.event-editor) .participation-modal__field > span { font-size: 13px; text-transform: none; letter-spacing: normal; }
+  body:has(.event-editor) .participation-modal__field input::placeholder { font-size: 14px; }
+  body:has(.event-editor) .participation-modal-capacity__item { min-height: 44px; }
+
+  .event-editor .event-image-uploader__dialog {
+    width: calc(100% - max(12px, env(safe-area-inset-left, 0px)) - max(12px, env(safe-area-inset-right, 0px)));
+    max-width: 920px;
+    max-height: calc(100dvh - max(12px, env(safe-area-inset-top, 0px)) - max(12px, env(safe-area-inset-bottom, 0px)));
+    border-radius: 12px;
+    padding: 12px;
+    overscroll-behavior: contain;
+  }
+
+  .event-editor .event-image-uploader__dialog-head { flex-direction: row; }
+  .event-editor .event-image-uploader__dialog-head h2 { font-size: 18px; }
+  .event-editor .event-image-uploader__dialog-head .button { flex: none; }
+  .event-editor .event-image-uploader__metadata div { flex-wrap: wrap; }
+}
+
+/* A short viewport (including a software keyboard) needs room for the fields. */
+@media (max-width: 960px) and (max-height: 600px) {
+  .event-editor .event-form-primary-actions { position: static; }
 }
