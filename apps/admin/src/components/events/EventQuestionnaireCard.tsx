@@ -318,7 +318,7 @@ export function EventQuestionnaireCard({ eventId, onDirtyChange }: EventQuestion
   }, [eventId, reloadKey]);
 
   const currentSnapshot = useMemo(() => editorSnapshot(editor), [editor]);
-  const dirty = baselineSnapshot !== null && currentSnapshot !== baselineSnapshot;
+  const dirty = currentSnapshot !== baselineSnapshot;
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange?.(false), [eventId, onDirtyChange]);
 
