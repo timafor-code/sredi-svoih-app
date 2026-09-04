@@ -324,13 +324,16 @@ password-signup user, profile, or verification code remains. `201` is
 returned only once the account transaction has committed with a verification
 code created and delivery reported as sent.
 
-`/auth/request-email-verification` (resend) is fail-closed the same way for
-an applicable unverified account: it stages the replacement code and
-requires successful delivery before committing. On delivery failure it
-returns `503 email_delivery_unavailable`, rolls back the replacement code,
-and preserves the previously issued unconsumed code. The existing
-unknown-email / already-verified / inapplicable-account responses are
-unchanged.
+`/auth/request-email-verification` (resend) stages a replacement code and
+requires successful delivery before committing, but its public response
+stays enumeration-safe: on delivery failure it rolls back the replacement
+code, preserves the previously issued unconsumed code, and returns the same
+generic `200` response used for an unknown, already-verified, or otherwise
+inapplicable email — it never returns `503` for an applicable account, since
+that would let a delivery outage reveal account existence. Fresh
+`/auth/register` is unaffected by this and still returns `503
+email_delivery_unavailable` on mandatory verification-email delivery
+failure, since that path has no pre-existing account to protect.
 
 Auth response `data` may include:
 

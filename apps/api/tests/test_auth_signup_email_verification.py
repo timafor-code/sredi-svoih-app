@@ -262,6 +262,29 @@ class AuthSignupEmailVerificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("synthetic provider detail", response.text)
         self.assertEqual(await self._table_counts(), before)
 
+    async def test_registration_unexpected_send_exception_returns_503_and_rolls_back(
+        self,
+    ) -> None:
+        email = self._email()
+        before = await self._table_counts()
+
+        with self.assertLogs("app.services.auth", level="WARNING") as captured:
+            with patch(
+                "app.services.auth.send_email_verification_email",
+                side_effect=ValueError("synthetic template detail"),
+            ):
+                response = await self._post(
+                    "/auth/register", {"email": email, "password": TEST_PASSWORD},
+                )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("email_delivery_unavailable", response.text)
+        self.assertNotIn("synthetic template detail", response.text)
+        self.assertEqual(await self._table_counts(), before)
+
+        log_text = "\n".join(captured.output)
+        self.assertNotIn("synthetic template detail", log_text)
+
     async def test_registration_successful_delivery_still_returns_201(self) -> None:
         email = self._email()
         response, user_id, verify_email = await self._register(email)
@@ -300,8 +323,10 @@ class AuthSignupEmailVerificationTests(unittest.IsolatedAsyncioTestCase):
                 "/auth/request-email-verification", {"email": email},
             )
 
-        self.assertEqual(response.status_code, 503)
-        self.assertIn("email_delivery_unavailable", response.text)
+        # Fail-open on the public response: a resend delivery failure must not
+        # be distinguishable from the generic response for an unknown email.
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"ok": True})
 
         user = await self._get_user(user_id)
         self.assertIsNone(user.email_verified_at)
@@ -310,6 +335,41 @@ class AuthSignupEmailVerificationTests(unittest.IsolatedAsyncioTestCase):
             "/auth/confirm-email-verification", {"code": original_code},
         )
         self.assertEqual(confirm.status_code, 200)
+
+    async def test_resend_delivery_failure_matches_unknown_email_response(
+        self,
+    ) -> None:
+        email = self._email()
+        _, user_id, first_send = await self._register(email)
+        original_code = first_send.call_args.kwargs["code"]
+
+        with self.assertLogs("app.services.auth", level="WARNING"):
+            with patch(
+                "app.services.auth.send_email_verification_email",
+                side_effect=AuthEmailDeliveryError("synthetic detail"),
+            ):
+                existing_unverified_response = await self._post(
+                    "/auth/request-email-verification", {"email": email},
+                )
+
+        unknown_response = await self._post(
+            "/auth/request-email-verification", {"email": self._email()},
+        )
+
+        self.assertEqual(existing_unverified_response.status_code, 200)
+        self.assertEqual(unknown_response.status_code, 200)
+        self.assertEqual(
+            existing_unverified_response.json(), unknown_response.json(),
+        )
+
+        # The previously valid code must still confirm despite the failed resend.
+        confirm = await self._post(
+            "/auth/confirm-email-verification", {"code": original_code},
+        )
+        self.assertEqual(confirm.status_code, 200)
+
+        user = await self._get_user(user_id)
+        self.assertIsNotNone(user.email_verified_at)
 
     async def test_expired_code_returns_400_and_stays_unverified(self) -> None:
         email = self._email()

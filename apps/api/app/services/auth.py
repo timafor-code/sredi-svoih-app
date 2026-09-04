@@ -363,11 +363,18 @@ def _send_email_verification_code(to_address: str, code: str) -> None:
 
 def _send_required_email_verification_code(to_address: str, code: str) -> None:
     """Raise AuthEmailDeliveryError unless the code was actually sent."""
-    result = send_email_verification_email(
-        to_address=to_address,
-        code=code,
-        expiration_minutes=_auth_code_expiration_minutes(),
-    )
+    try:
+        result = send_email_verification_email(
+            to_address=to_address,
+            code=code,
+            expiration_minutes=_auth_code_expiration_minutes(),
+        )
+    except AuthEmailDeliveryError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - hide rendering/config details from callers.
+        raise AuthEmailDeliveryError(
+            "Email verification delivery unavailable",
+        ) from exc
     if not result.sent:
         raise AuthEmailDeliveryError("Email verification delivery unavailable")
 
@@ -639,9 +646,12 @@ async def create_email_verification_code(
     try:
         _send_required_email_verification_code(user.email, code)
     except AuthEmailDeliveryError:
+        # Fail-open on the response to avoid leaking account existence via
+        # delivery outages; the staged replacement code is still rolled back
+        # so the previous valid code stays usable.
         _log_auth_email_delivery_failure(_EMAIL_VERIFICATION_PURPOSE)
         await session.rollback()
-        raise _email_delivery_unavailable_error() from None
+        return _email_request_response()
 
     await session.commit()
     return _email_request_response()
