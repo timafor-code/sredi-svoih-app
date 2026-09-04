@@ -5035,10 +5035,6 @@ a {
   padding: 0;
 }
 
-.participation-option-row__action--danger:not(:disabled) {
-  opacity: 1;
-}
-
 @media (max-width: 820px) {
   .participation-option-row {
     grid-template-columns: auto minmax(0, 1fr);
