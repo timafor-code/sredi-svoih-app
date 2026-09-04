@@ -18,12 +18,21 @@ class EmailConfigurationError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class InlineEmailImage:
+    data: bytes
+    subtype: str
+    content_id: str
+
+
+@dataclass(frozen=True)
 class EmailMessage:
     to_address: str
     subject: str
     text_body: str
     to_name: str | None = None
     reply_to: str | None = None
+    html_body: str | None = None
+    inline_images: tuple[InlineEmailImage, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -112,6 +121,8 @@ def _build_stdlib_message(
         raise EmailConfigurationError("email subject must not be empty")
     if not message.text_body:
         raise EmailConfigurationError("email text body must not be empty")
+    if message.inline_images and not message.html_body:
+        raise EmailConfigurationError("inline images require an HTML body")
 
     stdlib_message = StdlibEmailMessage()
     stdlib_message["From"] = _format_address(
@@ -125,6 +136,17 @@ def _build_stdlib_message(
         stdlib_message["Reply-To"] = message.reply_to
 
     stdlib_message.set_content(message.text_body)
+    if message.html_body:
+        stdlib_message.add_alternative(message.html_body, subtype="html")
+        html_part = stdlib_message.get_payload()[-1]
+        for image in message.inline_images:
+            html_part.add_related(
+                image.data,
+                maintype="image",
+                subtype=image.subtype,
+                cid=f"<{image.content_id}>",
+                disposition="inline",
+            )
     return stdlib_message
 
 
