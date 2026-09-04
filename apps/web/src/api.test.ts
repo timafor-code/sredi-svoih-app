@@ -26,6 +26,7 @@ import {
   responseWithOccurrences,
   responseWithQuestionnaire,
 } from "./test/fixtures";
+import type { WebEventSchedule } from "./types";
 
 function fetchResponse(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return Promise.resolve({
@@ -46,6 +47,87 @@ const SLUG_REFERENCE = { kind: "slug", value: "shabbat-dlya-druzey" } as const;
 function envelope<T>(data: T) {
   return { data, error: null, meta: {} };
 }
+
+function scheduleDocument(): WebEventSchedule {
+  return { version: 1, days: [{
+    date: "2026-09-25", label: "Канун Суккота и Шаббата", note: null,
+    items: [{ time: "09:05", title: "Минха", option_id: null }],
+  }] };
+}
+
+describe("public schedule response contract", () => {
+  beforeEach(() => vi.stubGlobal("fetch", vi.fn()));
+
+  it.each([undefined, null, scheduleDocument()])("accepts omitted, null, or valid schedule: %j", async (schedule) => {
+    const response = eventResponse();
+    if (schedule !== undefined) response.event.schedule = schedule;
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(envelope(response)));
+    await expect(getWebEventRegistrationForm(UUID_REFERENCE)).resolves.toEqual(response);
+  });
+
+  it("accepts exact limits, leap day, time boundaries and dangling UUIDs", async () => {
+    const response = eventResponse();
+    const schedule = scheduleDocument();
+    const day = schedule.days[0];
+    day.date = "2000-02-29";
+    day.label = "😀".repeat(200);
+    day.note = "x".repeat(200);
+    day.items = Array.from({ length: 60 }, (_, index) => ({
+      time: index % 2 === 0 ? "00:00" : "23:59",
+      title: "x".repeat(200),
+      option_id: "00000000-0000-0000-0000-000000000001",
+    }));
+    schedule.days = Array.from({ length: 30 }, () => day);
+    response.event.schedule = schedule;
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(envelope(response)));
+    await expect(getWebEventRegistrationForm(UUID_REFERENCE)).resolves.toEqual(response);
+  });
+
+  const invalidFields: Array<["schedule" | "day" | "item", string, unknown]> = [
+    ["schedule", "version", 2], ["schedule", "version", "1"],
+    ["schedule", "version", true], ["schedule", "version", undefined],
+    ["schedule", "days", null], ["schedule", "days", {}],
+    ["schedule", "days", [null]],
+    ["schedule", "days", Array(31).fill(scheduleDocument().days[0])],
+    ["schedule", "extra", true],
+    ...["25.09.2026", "2026/09/25", "2026-9-25", "2026-02-31", "2026-02-29",
+      "1900-02-29", "0000-01-01", "2026-00-01", "2026-13-01", "2026-09-00", "2026-09-25\n"]
+      .map((value): ["day", string, unknown] => ["day", "date", value]),
+    ["day", "items", {}], ["day", "items", null], ["day", "items", [null]],
+    ["day", "items", Array(61).fill(scheduleDocument().days[0].items[0])],
+    ["day", "label", "x".repeat(201)], ["day", "note", "x".repeat(201)],
+    ["day", "label", 1], ["day", "note", false], ["day", "extra", true],
+    ...["6:30", "24:00", "12:90", "09:05\n", "09:05:00"]
+      .map((value): ["item", string, unknown] => ["item", "time", value]),
+    ["item", "title", "x".repeat(201)], ["item", "title", null],
+    ["item", "option_id", "invalid"], ["item", "option_id", 1],
+    ["item", "option_id", "11111111-1111-4111-8111-111111111111\n"],
+    ["item", "extra", true],
+    ["day", "label", undefined], ["day", "note", undefined],
+    ["item", "option_id", undefined],
+  ];
+
+  it.each(invalidFields)("rejects malformed %s.%s", async (target, field, value) => {
+    const response = eventResponse();
+    const schedule = scheduleDocument();
+    const node = target === "schedule" ? schedule
+      : target === "day" ? schedule.days[0] : schedule.days[0].items[0];
+    if (value === undefined) delete (node as unknown as Record<string, unknown>)[field];
+    else (node as unknown as Record<string, unknown>)[field] = value;
+    response.event.schedule = schedule;
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(envelope(response)));
+    await expect(getWebEventRegistrationForm(UUID_REFERENCE)).rejects.toMatchObject({
+      code: "invalid_response",
+    });
+  });
+
+  it.each([[], "invalid", 1, true])("rejects a malformed schedule document: %j", async (schedule) => {
+    const response = eventResponse();
+    (response.event as unknown as Record<string, unknown>).schedule = schedule;
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(envelope(response)));
+    await expect(getWebEventRegistrationForm(UUID_REFERENCE)).rejects.toMatchObject({ code: "invalid_response" });
+  });
+});
 
 describe("public event API", () => {
   beforeEach(() => vi.stubGlobal("fetch", vi.fn()));

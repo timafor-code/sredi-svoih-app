@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
+import re
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.common import (
     ApiResponse,
@@ -40,6 +41,45 @@ WebRegistrationState = Literal[
 ]
 OccurrenceSelectionMode = Literal["none", "user_select", "nearest"]
 WebRegistrationMode = Literal["internal_free", "internal_paid"]
+
+
+class EventScheduleItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    time: str = Field(strict=True, pattern=r"\A(?:[01][0-9]|2[0-3]):[0-5][0-9]\z")
+    title: str = Field(strict=True, max_length=200)
+    option_id: UUID | None = None
+
+
+class EventScheduleDay(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    date: str = Field(strict=True)
+    label: str | None = Field(default=None, strict=True, max_length=200)
+    note: str | None = Field(default=None, strict=True, max_length=200)
+    items: list[EventScheduleItem] = Field(strict=True, max_length=60)
+
+    @field_validator("date")
+    @classmethod
+    def validate_calendar_date(cls, value: str) -> str:
+        if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value) is None:
+            raise ValueError("date must use YYYY-MM-DD")
+        date.fromisoformat(value)
+        return value
+
+
+class EventSchedule(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1]
+    days: list[EventScheduleDay] = Field(strict=True, max_length=30)
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def validate_version(cls, value: object) -> object:
+        if type(value) is not int or value != 1:
+            raise ValueError("schedule version must be 1")
+        return value
 
 
 def _require_timezone(value: datetime | None) -> datetime | None:
@@ -160,6 +200,7 @@ class EventCapacityUnitResponse(BaseModel):
 
 
 class WebRegistrationEventResponse(BaseModel):
+    schedule: EventSchedule | None = None
     id: UUID
     title: str
     subtitle: str | None
