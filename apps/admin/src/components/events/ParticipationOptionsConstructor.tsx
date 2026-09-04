@@ -9,7 +9,6 @@ import {
   replaceAdminEventParticipationOptions,
 } from "../../services/adminParticipationOptionsService";
 import {
-  listAdminEventCapacityUnits,
   listAdminOptionCapacityUnitMappings,
   replaceAdminOptionCapacityUnitMappings,
 } from "../../services/adminEventCapacityUnitsService";
@@ -24,8 +23,6 @@ import {
   type ParticipationOptionInput,
   type ParticipationOptionType,
 } from "../../types/participationOptions";
-
-const CAPACITY_UNITS_UPDATED_EVENT = "admin-event-capacity-units-updated";
 
 const DEFAULT_PRICE_CURRENCY = "RUB";
 
@@ -72,6 +69,10 @@ type ParticipationOptionsConstructorProps = {
   eventId: string;
   eventCapacity: number | null;
   defaultPriceCurrency?: string | null;
+  capacityUnits: AdminEventCapacityUnit[];
+  deletedCapacityUnitIds: string[];
+  capacityPanel: React.ReactNode;
+  selectionMode: SelectionMode;
 };
 
 type DraftOption = {
@@ -338,6 +339,10 @@ export function ParticipationOptionsConstructor({
   eventId,
   eventCapacity,
   defaultPriceCurrency,
+  capacityUnits,
+  deletedCapacityUnitIds,
+  capacityPanel,
+  selectionMode,
 }: ParticipationOptionsConstructorProps) {
   const fallbackCurrency =
     defaultPriceCurrency && defaultPriceCurrency.trim()
@@ -350,13 +355,29 @@ export function ParticipationOptionsConstructor({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [capacityUnits, setCapacityUnits] = useState<AdminEventCapacityUnit[]>([]);
   const [modalState, setModalState] = useState<ModalState>({ kind: "closed" });
-  const [selectionMode, setSelectionMode] = useState<SelectionMode>("multiple");
   const [previewQuantities, setPreviewQuantities] = useState<Record<string, number>>(
     {},
   );
   const saveInFlightRef = useRef(false);
+  const deletedUnitIdsRef = useRef(deletedCapacityUnitIds);
+  deletedUnitIdsRef.current = deletedCapacityUnitIds;
+
+  const withoutDeletedSlots = (draft: DraftOption): DraftOption => ({
+    ...draft,
+    capacityUnitIds: draft.capacityUnitIds.filter((id) => !deletedUnitIdsRef.current.includes(id)),
+  });
+
+  useEffect(() => {
+    if (!deletedCapacityUnitIds.length) return;
+    // Reflect only explicit, server-confirmed slot deletions (the API cascades
+    // their mappings). An unresolved or inactive slot is never discarded here.
+    setDrafts((current) => current.map(withoutDeletedSlots));
+    setModalState((current) => current.kind === "closed" ? current : {
+      ...current, form: withoutDeletedSlots(current.form),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deletedCapacityUnitIds]);
 
   const loadOptions = () => {
     setLoading(true);
@@ -367,28 +388,15 @@ export function ParticipationOptionsConstructor({
     let cancelled = false;
     Promise.all([
       listAdminEventParticipationOptions(eventId),
-      listAdminEventCapacityUnits(eventId),
       listAdminOptionCapacityUnitMappings(eventId),
     ])
-      .then(([options, units, mappings]) => {
+      .then(([options, mappings]) => {
         if (cancelled) return;
         const mappingsByOptionId = buildMappingsByOptionId(mappings);
-        const activeUnitIds = new Set(
-          units.filter((unit) => unit.isActive).map((unit) => unit.id),
-        );
-        setCapacityUnits(units);
-        setDrafts(
-          options.map((option) => ({
-            ...buildDraftFromOption(option, mappingsByOptionId),
-            capacityUnitIds: (mappingsByOptionId.get(option.id) ?? []).filter(
-              (unitId) => activeUnitIds.has(unitId),
-            ),
-          })),
-        );
+        setDrafts(options.map((option) => withoutDeletedSlots(buildDraftFromOption(option, mappingsByOptionId))));
       })
       .catch((error) => {
         if (cancelled) return;
-        setCapacityUnits([]);
         setDrafts([]);
         setLoadError(
           error instanceof Error
@@ -408,26 +416,6 @@ export function ParticipationOptionsConstructor({
 
   useEffect(() => {
     return loadOptions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventId]);
-
-  useEffect(() => {
-    const handleCapacityUnitsUpdated = (event: Event) => {
-      const detail = (event as CustomEvent<{ eventId?: string }>).detail;
-      if (!detail?.eventId || detail.eventId === eventId) {
-        loadOptions();
-      }
-    };
-
-    window.addEventListener(
-      CAPACITY_UNITS_UPDATED_EVENT,
-      handleCapacityUnitsUpdated,
-    );
-    return () =>
-      window.removeEventListener(
-        CAPACITY_UNITS_UPDATED_EVENT,
-        handleCapacityUnitsUpdated,
-      );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
@@ -452,22 +440,17 @@ export function ParticipationOptionsConstructor({
     });
   }, [drafts, selectionMode]);
 
-  const activeCapacityUnits = useMemo(
-    () =>
-      capacityUnits
-        .filter((unit) => unit.isActive)
-        .sort((left, right) => left.sortOrder - right.sortOrder),
-    [capacityUnits],
-  );
-
-  const activeCapacityUnitIds = useMemo(
-    () => new Set(activeCapacityUnits.map((unit) => unit.id)),
-    [activeCapacityUnits],
-  );
-
   const persistDrafts = async (nextDrafts: DraftOption[]) => {
     setSaveError(null);
     setSavedAt(null);
+
+    // The option PUT precedes the mapping PUT. Do not start either write when a
+    // referenced slot cannot be resolved: the first write would clear mappings.
+    const knownUnitIds = new Set(capacityUnits.map((unit) => unit.id));
+    if (nextDrafts.some((draft) => draft.capacityUnitIds.some((id) => !knownUnitIds.has(id)))) {
+      setSaveError("Связанный слот недоступен. Обновите данные перед сохранением; связи не изменены.");
+      return;
+    }
 
     const validations = nextDrafts.map((draft, index) => ({
       draft,
@@ -495,18 +478,17 @@ export function ParticipationOptionsConstructor({
       const saved = await replaceAdminEventParticipationOptions(eventId, inputs);
       const mappingInputs: AdminOptionCapacityUnitMappingInput[] = [];
 
-      saved.forEach((option, index) => {
-        const sourceDraft = validations[index]?.draft;
+      saved.forEach((option) => {
+        // Match existing IDs even when sort order changes the response order.
+        // Each create/duplicate operation introduces exactly one new option.
+        const sourceDraft = nextDrafts.find((draft) => draft.remoteId === option.id)
+          ?? nextDrafts.find((draft) => draft.remoteId === null);
         if (!sourceDraft || option.isDonation || !option.countsTowardCapacity) {
           return;
         }
 
         const uniqueUnitIds = Array.from(new Set(sourceDraft.capacityUnitIds));
         uniqueUnitIds.forEach((capacityUnitId) => {
-          if (!activeCapacityUnitIds.has(capacityUnitId)) {
-            return;
-          }
-
           mappingInputs.push({
             optionId: option.id,
             capacityUnitId,
@@ -521,7 +503,7 @@ export function ParticipationOptionsConstructor({
       );
       const mappingsByOptionId = buildMappingsByOptionId(savedMappings);
       setDrafts(
-        saved.map((option) => buildDraftFromOption(option, mappingsByOptionId)),
+        saved.map((option) => withoutDeletedSlots(buildDraftFromOption(option, mappingsByOptionId))),
       );
       setSaveError(null);
       setSavedAt(new Date().toISOString());
@@ -666,12 +648,7 @@ export function ParticipationOptionsConstructor({
     setModalState({
       kind: "edit",
       draftId,
-      form: {
-        ...target,
-        capacityUnitIds: target.capacityUnitIds.filter((unitId) =>
-          activeCapacityUnitIds.has(unitId),
-        ),
-      },
+      form: { ...target },
       errors: {},
     });
   };
@@ -753,13 +730,6 @@ export function ParticipationOptionsConstructor({
 
   return (
     <section className="participation-constructor">
-      <header className="participation-constructor__head">
-        <div>
-          <h2>Варианты участия и оплаты</h2>
-          <p>Настройте, что пользователь сможет выбрать при записи на событие.</p>
-        </div>
-      </header>
-
       {loadError ? (
         <div className="form-error" role="alert">
           {loadError}
@@ -768,32 +738,6 @@ export function ParticipationOptionsConstructor({
 
       <div className="participation-constructor__layout">
         <div className="participation-constructor__main">
-          <div className="participation-settings-grid">
-            <div className="participation-setting-item">
-              <ToggleSwitch checked disabled label="Использовать варианты участия" />
-              <span>Использовать варианты участия</span>
-            </div>
-            <div className="participation-setting-item participation-setting-item--muted">
-              <ToggleSwitch checked={false} disabled label="Разрешить комментарий" />
-              <span>Разрешить комментарий</span>
-            </div>
-            <label className="participation-setting-item participation-setting-item--wide">
-              <span className="participation-setting-item__prefix">Выбор:</span>
-              <select
-                className="participation-setting-select"
-                onChange={(event) =>
-                  setSelectionMode(
-                    event.target.value === "single" ? "single" : "multiple",
-                  )
-                }
-                value={selectionMode}
-              >
-                <option value="single">Только один вариант</option>
-                <option value="multiple">Можно выбрать несколько</option>
-              </select>
-            </label>
-          </div>
-
           <div className="participation-constructor__list-label">Варианты</div>
 
           {loading ? (
@@ -808,6 +752,7 @@ export function ParticipationOptionsConstructor({
             <ul className="participation-option-rows">
               {drafts.map((draft, index) => (
                 <OptionRow
+                  capacityUnits={capacityUnits}
                   disabled={saving}
                   draft={draft}
                   index={index}
@@ -834,11 +779,10 @@ export function ParticipationOptionsConstructor({
           </button>
         </div>
 
-        <aside className="participation-preview-panel">
-          <header>
-            <span aria-hidden>◎</span>
-            <span>Предпросмотр для пользователя</span>
-          </header>
+        <aside className="tickets-capacity-rail">
+          {capacityPanel}
+          <details className="participation-preview-panel tickets-preview">
+          <summary>Предпросмотр для пользователя</summary>
           <div className="participation-preview-panel__body">
             <PreviewPanel
               capacityWarning={
@@ -854,6 +798,7 @@ export function ParticipationOptionsConstructor({
               selectionMode={selectionMode}
             />
           </div>
+          </details>
         </aside>
       </div>
 
@@ -869,7 +814,7 @@ export function ParticipationOptionsConstructor({
       {modalState.kind !== "closed"
         ? createPortal(
             <OptionModal
-              activeCapacityUnits={activeCapacityUnits}
+              capacityUnits={capacityUnits}
               onChange={updateModalForm}
               onClose={closeModal}
               onSubmit={submitModal}
@@ -884,6 +829,7 @@ export function ParticipationOptionsConstructor({
 }
 
 type OptionRowProps = {
+  capacityUnits: AdminEventCapacityUnit[];
   disabled: boolean;
   draft: DraftOption;
   index: number;
@@ -897,6 +843,7 @@ type OptionRowProps = {
 };
 
 function OptionRow({
+  capacityUnits,
   disabled,
   draft,
   index,
@@ -913,7 +860,6 @@ function OptionRow({
     ? draft.optionType
     : "other";
   const title = draft.title.trim() || "Без названия";
-  const description = draft.description.trim();
 
   return (
     <li
@@ -925,18 +871,25 @@ function OptionRow({
         .filter(Boolean)
         .join(" ")}
     >
-      <span
-        className={`participation-option-row__badge participation-option-row__badge--${typeKey}`}
-      >
-        {typeLabelFor(draft.optionType)}
-      </span>
-      <div className="participation-option-row__title">
-        <strong>{title}</strong>
-        {description ? <span>{description}</span> : null}
-      </div>
-      <span className="participation-option-row__price">
-        {formatPrice(price, draft.priceCurrency || DEFAULT_PRICE_CURRENCY)}
-      </span>
+      <button type="button" className="tickets-option-body" disabled={disabled} onClick={onEdit} aria-label={`Редактировать вариант «${title}»`}>
+        <span className={`participation-option-row__badge participation-option-row__badge--${typeKey}`}>
+          {typeLabelFor(draft.optionType)}
+        </span>
+        <span className="participation-option-row__title">
+          <strong>{title}</strong>
+          <span className="tickets-option-slots">
+            {draft.capacityUnitIds.map((id) => {
+              const unit = capacityUnits.find((candidate) => candidate.id === id);
+              return <span className="tickets-slot-tag" key={id}>{unit
+                ? `${unit.title}${unit.capacity && unit.capacity > 0 ? ` · ${unit.capacity}` : " · без лимита"}${unit.isActive ? "" : " · неактивен"}`
+                : "Связанный слот недоступен"}</span>;
+            })}
+          </span>
+        </span>
+        <span className="participation-option-row__price">
+          {formatPrice(price, draft.priceCurrency || DEFAULT_PRICE_CURRENCY)}
+        </span>
+      </button>
       <div className="participation-option-row__actions">
         <button
           aria-label="Редактировать вариант"
@@ -1175,7 +1128,7 @@ function PreviewRow({
 }
 
 type OptionModalProps = {
-  activeCapacityUnits: AdminEventCapacityUnit[];
+  capacityUnits: AdminEventCapacityUnit[];
   onChange: (updater: (form: DraftOption) => DraftOption) => void;
   onClose: () => void;
   onSubmit: () => void;
@@ -1184,7 +1137,7 @@ type OptionModalProps = {
 };
 
 function OptionModal({
-  activeCapacityUnits,
+  capacityUnits,
   onChange,
   onClose,
   onSubmit,
@@ -1216,7 +1169,8 @@ function OptionModal({
     >
       <div
         aria-modal="true"
-        className="participation-modal"
+        className="participation-modal tickets-option-modal"
+        aria-label={title}
         onClick={(event) => event.stopPropagation()}
         role="dialog"
       >
@@ -1382,7 +1336,7 @@ function OptionModal({
           ) : null}
 
           <CapacityUnitsPicker
-            activeCapacityUnits={activeCapacityUnits}
+            capacityUnits={capacityUnits}
             form={form}
             onChange={onChange}
           />
@@ -1424,7 +1378,7 @@ function OptionModal({
               />
             </div>
             <div className="participation-modal__grid participation-modal__grid--two">
-              <ModalField label="Group key">
+              <ModalField label="Код группы">
                 <input
                   onChange={(event) =>
                     onChange((current) => ({
@@ -1449,7 +1403,7 @@ function OptionModal({
                   value={form.sortOrder}
                 />
               </ModalField>
-              <ModalField label="Conflicts with (UUID через запятую)">
+              <ModalField label="Несовместимые варианты (UUID через запятую)">
                 <input
                   onChange={(event) =>
                     onChange((current) => ({
@@ -1480,11 +1434,11 @@ function OptionModal({
 }
 
 function CapacityUnitsPicker({
-  activeCapacityUnits,
+  capacityUnits,
   form,
   onChange,
 }: {
-  activeCapacityUnits: AdminEventCapacityUnit[];
+  capacityUnits: AdminEventCapacityUnit[];
   form: DraftOption;
   onChange: (updater: (form: DraftOption) => DraftOption) => void;
 }) {
@@ -1528,13 +1482,13 @@ function CapacityUnitsPicker({
         <p className="participation-modal-capacity__empty">
           Этот вариант места не занимает.
         </p>
-      ) : activeCapacityUnits.length === 0 ? (
+      ) : capacityUnits.length === 0 && form.capacityUnitIds.length === 0 ? (
         <p className="participation-modal-capacity__empty">
-          Сначала добавьте слоты мест ниже: + Шабат или + Слот.
+          Добавьте слот или готовый набор в панели «Слоты мест».
         </p>
       ) : (
         <div className="participation-modal-capacity__list">
-          {activeCapacityUnits.map((unit) => (
+          {capacityUnits.filter((unit) => unit.isActive || form.capacityUnitIds.includes(unit.id)).map((unit) => (
             <label className="participation-modal-capacity__item" key={unit.id}>
               <input
                 checked={form.capacityUnitIds.includes(unit.id)}
@@ -1542,37 +1496,17 @@ function CapacityUnitsPicker({
                 type="checkbox"
               />
               <span>
-                <strong>{unit.key}</strong>
-                <small>{unit.title}</small>
+                <strong>{unit.title}</strong>
+                <small>{unit.capacity && unit.capacity > 0 ? `Лимит: ${unit.capacity}` : "Без лимита"}{unit.isActive ? "" : " · Неактивен"}</small>
               </span>
             </label>
+          ))}
+          {form.capacityUnitIds.filter((id) => !capacityUnits.some((unit) => unit.id === id)).map((id) => (
+            <p className="participation-modal-capacity__empty" key={id}>Связанный слот недоступен. Связь сохранена.</p>
           ))}
         </div>
       )}
     </section>
-  );
-}
-
-function ToggleSwitch({
-  checked,
-  disabled = false,
-  label,
-  onChange,
-}: {
-  checked: boolean;
-  disabled?: boolean;
-  label: string;
-  onChange?: (value: boolean) => void;
-}) {
-  return (
-    <button
-      aria-label={label}
-      aria-pressed={checked}
-      className={`participation-setting-toggle${checked ? " participation-setting-toggle--on" : ""}`}
-      disabled={disabled}
-      onClick={() => onChange?.(!checked)}
-      type="button"
-    />
   );
 }
 

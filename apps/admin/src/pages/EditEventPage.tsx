@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { EventCapacityUnitsConstructor } from "../components/events/EventCapacityUnitsConstructor";
+import { EventTicketsCapacityModule } from "../components/events/EventTicketsCapacityModule";
 import { EventForm } from "../components/events/EventForm";
 import { EventOccurrencesConstructor } from "../components/events/EventOccurrencesConstructor";
 import { EventQuestionnaireCard } from "../components/events/EventQuestionnaireCard";
 import { EventWebRegistrationCard } from "../components/events/EventWebRegistrationCard";
-import { ParticipationOptionsConstructor } from "../components/events/ParticipationOptionsConstructor";
 import type { EventImageUploadStage } from "../components/events/EventImageUploader";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -350,12 +349,12 @@ export function EditEventPage({ event, onBackToList, onSaved }: EditEventPagePro
           registrationModeSlot={({ registrationMode }) =>
             registrationMode === "internal_paid" ? (
               <div className="event-form-participation-slot">
-                <ParticipationOptionsConstructor
+                <EventTicketsCapacityModule
+                  key={currentEvent.id}
                   defaultPriceCurrency={currentEvent.priceCurrency}
                   eventCapacity={currentEvent.capacity}
                   eventId={currentEvent.id}
                 />
-                <EventCapacityUnitsConstructor eventId={currentEvent.id} />
               </div>
             ) : null
           }
