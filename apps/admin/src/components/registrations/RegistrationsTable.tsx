@@ -60,9 +60,17 @@ export function RegistrationsTable({
     };
 
     document.addEventListener("keydown", handleKeyDown);
+    const mobileViewport = window.matchMedia("(max-width: 960px)");
+    const closeOnMobile = () => {
+      if (mobileViewport.matches) {
+        setOpenActionMenu(null);
+      }
+    };
+    mobileViewport.addEventListener("change", closeOnMobile);
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
+      mobileViewport.removeEventListener("change", closeOnMobile);
     };
   }, [openActionMenu]);
 
@@ -103,6 +111,14 @@ export function RegistrationsTable({
   );
 
   return (
+    <>
+    <RegistrationsMobileList
+      actionInFlight={actionInFlight}
+      event={event}
+      onSelectRegistration={onSelectRegistration}
+      registrations={registrations}
+      selectedRegistrationId={selectedRegistrationId}
+    />
     <div className="registrations-table-scroll">
       <div
         aria-label="Регистрации события"
@@ -242,6 +258,91 @@ export function RegistrationsTable({
         ) : null}
       </div>
     </div>
+    </>
+  );
+}
+
+function RegistrationsMobileList({
+  actionInFlight,
+  event,
+  onSelectRegistration,
+  registrations,
+  selectedRegistrationId,
+}: {
+  actionInFlight: ActionInFlight | null;
+  event: AdminRegistrationEventSummary;
+  onSelectRegistration: (registrationId: string) => void;
+  registrations: AdminEventRegistrationRow[];
+  selectedRegistrationId: string | null;
+}) {
+  return (
+    <ul aria-label={`Регистрации: ${event.title}`} className="registrations-mobile-list">
+      {registrations.map((registration) => (
+        <li key={registration.id}>
+          <RegistrationMobileCard
+            isBusy={actionInFlight?.registrationId === registration.id}
+            isSelected={selectedRegistrationId === registration.id}
+            onSelectRegistration={onSelectRegistration}
+            registration={registration}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function RegistrationMobileCard({
+  isBusy,
+  isSelected,
+  onSelectRegistration,
+  registration,
+}: {
+  isBusy: boolean;
+  isSelected: boolean;
+  onSelectRegistration: (registrationId: string) => void;
+  registration: AdminEventRegistrationRow;
+}) {
+  return (
+    <button
+      aria-busy={isBusy}
+      aria-haspopup="dialog"
+      className={`registration-mobile-card${isSelected ? " registration-mobile-card--selected" : ""}`}
+      onClick={() => onSelectRegistration(registration.id)}
+      type="button"
+    >
+      <strong className="registration-mobile-card__name">{registration.participantDisplayName}</strong>
+      <span className="badge-row">
+        <Badge tone={getRegistrationStatusTone(registration.status)}>
+          {getRegistrationStatusLabel(registration.status)}
+        </Badge>
+        <Badge tone={getRegistrationSourceTone(registration.sourceChannel)}>
+          {getRegistrationSourceLabel(registration.sourceChannel)}
+        </Badge>
+      </span>
+      <span className="registration-mobile-card__contacts">
+        {registration.email ? <span>{registration.email}</span> : null}
+        {registration.phone ? <span>{registration.phone}</span> : null}
+        {!registration.email && !registration.phone ? <span>Контакты не указаны</span> : null}
+      </span>
+      <span>
+        Мест: {registration.seatsCount}
+        {registration.guestNames.length > 0 ? ` · Гостей: ${registration.guestNames.length}` : ""}
+      </span>
+      {registration.selectedOptions.length > 0 ? (
+        <span className="registration-mobile-card__options">
+          {formatOptionsCompact(registration.selectedOptions)}
+          {registration.selectedOptions.length > 2 ? ` · +${registration.selectedOptions.length - 2} ещё` : ""}
+        </span>
+      ) : null}
+      <span className="registration-mobile-card__payment">
+        <span>{formatPaymentStatus(registration.paymentStatus)} · {formatRegistrationAmount(registration)}</span>
+        {isSimulatedPaymentId(registration.paymentId) ? <Badge tone="gold">Тестовая оплата</Badge> : null}
+      </span>
+      <span className="registration-mobile-card__footer">
+        <span>Заявка: {formatDateTime(registration.registeredAt)}</span>
+        <span>Подробнее →</span>
+      </span>
+    </button>
   );
 }
 
@@ -267,7 +368,7 @@ function RegistrationOverflowMenu({
   }
 
   return createPortal(
-    <div className="event-overflow-layer" onClick={onClose}>
+    <div className="event-overflow-layer registration-overflow-layer" onClick={onClose}>
       <div
         className="event-overflow-menu registration-action-menu"
         onClick={(clickEvent) => clickEvent.stopPropagation()}

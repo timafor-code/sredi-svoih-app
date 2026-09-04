@@ -1,4 +1,4 @@
-import { Badge } from "../ui/Badge";
+import { useId, useRef, useState } from "react";
 import { Button } from "../ui/Button";
 import { GlassCard } from "../ui/GlassCard";
 import type { AdminBadgeTone } from "../../types/admin";
@@ -31,8 +31,34 @@ export function RegistrationEventsPanel({
   onSelectEvent,
   selectedEventId,
 }: RegistrationEventsPanelProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const chooserId = useId();
+  const chooserButtonRef = useRef<HTMLButtonElement>(null);
+  const selectedEvent = events.find((event) => event.eventId === selectedEventId);
+
   return (
         <GlassCard className="registrations-events-panel" elevated>
+          <button
+            aria-controls={chooserId}
+            aria-expanded={isExpanded}
+            className="registration-event-chooser"
+            onClick={() => setIsExpanded((current) => !current)}
+            ref={chooserButtonRef}
+            type="button"
+          >
+            <span>
+              <small>Событие</small>
+              <strong>{selectedEvent?.title ?? "Выбрать событие"}</strong>
+              {eventsLoading ? <small>Загрузка событий…</small> : eventsError ? (
+                <small>Список не обновлён — откройте, чтобы повторить</small>
+              ) : selectedEvent ? <small>{formatDateTime(selectedEvent.startsAt)}</small> : null}
+            </span>
+            <span aria-hidden="true">{isExpanded ? "▴" : "▾"}</span>
+          </button>
+          <div
+            className={`registration-event-chooser-content${isExpanded ? " registration-event-chooser-content--expanded" : ""}`}
+            id={chooserId}
+          >
           <div className="registrations-panel__head">
             <div>
               <span>События</span>
@@ -83,10 +109,17 @@ export function RegistrationEventsPanel({
                   event={event}
                   isSelected={event.eventId === selectedEventId}
                   key={event.eventId}
-                  onSelect={onSelectEvent}
+                  onSelect={(eventId) => {
+                    onSelectEvent(eventId);
+                    setIsExpanded(false);
+                    if (window.matchMedia("(max-width: 960px)").matches) {
+                      chooserButtonRef.current?.focus();
+                    }
+                  }}
                 />
               ))
             )}
+          </div>
           </div>
         </GlassCard>
   );

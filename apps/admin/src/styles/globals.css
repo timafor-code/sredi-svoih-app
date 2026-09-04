@@ -8759,6 +8759,16 @@ a {
   min-height: 160px;
 }
 
+.registration-event-chooser,
+.registrations-mobile-list {
+  display: none;
+}
+
+/* Keep the existing desktop events grid while sharing its search/list with mobile. */
+.registration-event-chooser-content {
+  display: contents;
+}
+
 .page-stack--registrations {
   width: min(100%, 1540px);
 }
@@ -14730,4 +14740,199 @@ a {
 /* A short viewport (including a software keyboard) needs room for the fields. */
 @media (max-width: 960px) and (max-height: 600px) {
   .event-editor .event-form-primary-actions { position: static; }
+}
+
+/* Mobile registrations shares the desktop event, filters, pagination and detail actions. */
+@media (max-width: 960px) {
+  body:has(.registration-detail-modal-overlay, .registration-action-dialog-backdrop) {
+    overflow: hidden;
+  }
+
+  .page-stack--registrations {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .registrations-page-header > :is(.badge, p),
+  .page-stack--registrations .registration-capacity-overview,
+  .page-stack--registrations .web-registration-operations,
+  .page-stack--registrations .registrations-export-group,
+  .page-stack--registrations .registrations-table-panel__divider,
+  .registrations-table-scroll,
+  .registration-overflow-layer {
+    display: none;
+  }
+
+  .registrations-workspace { min-height: 0; }
+  .registrations-main-panel { padding: 12px; }
+  .registrations-events-panel { display: block; }
+
+  .registration-event-chooser {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    min-height: 44px;
+    border: 0;
+    padding: 14px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .registration-event-chooser > span:first-child {
+    display: grid;
+    min-width: 0;
+    gap: 5px;
+  }
+
+  .registration-event-chooser small { color: var(--text-soft); font-size: 12px; }
+  .registration-event-chooser strong { font-size: 16px; line-height: 1.4; }
+  .registration-event-chooser-content { display: none; }
+  .registration-event-chooser-content--expanded {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    border-top: 1px solid var(--glass-border);
+  }
+
+  .registration-event-list { max-height: 50dvh; }
+  .registration-event-card { min-height: 44px; }
+  .registration-event-card__title :is(strong, span) { white-space: normal; }
+  .registration-event-card__title strong { font-size: 15px; }
+  .registration-event-card__title span { font-size: 12px; }
+
+  .registrations-main-head {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 12px;
+  }
+
+  .registrations-main-head > div:first-child > .badge-row { display: none; }
+  .registrations-main-head h2 { font-size: 17px; }
+  .registrations-main-head > .registrations-main-actions { flex: 0 0 auto; }
+  .registration-controls { grid-template-columns: minmax(0, 1fr); }
+  .registration-occurrence-bar { min-width: 0; gap: 8px; padding: 10px; }
+  .registration-occurrence-field { min-width: 0; max-width: 100%; flex-basis: 100%; }
+  .registration-occurrence-toggle { min-height: 44px; font-size: 14px; }
+  .registration-occurrence-toggle input { width: 20px; height: 20px; }
+
+  .page-stack--registrations :is(.registration-search-field input, .registration-source-field select, .registration-occurrence-field select) {
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .page-stack--registrations .button,
+  .registration-detail-modal .button,
+  .registration-action-dialog .button {
+    min-height: 44px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .registration-capacity-tabs { max-width: 100%; }
+  .registration-capacity-tabs__button { min-height: 44px; max-width: 100%; overflow-wrap: anywhere; }
+  .registrations-table-panel { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+  .registrations-table-panel__head { flex-direction: column; align-items: stretch; gap: 10px; }
+  .registrations-pagination { width: 100%; }
+  .registrations-pagination .button { flex: 1; }
+
+  .registrations-mobile-list {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    min-width: 0;
+    margin: 0;
+    padding: 10px;
+    list-style: none;
+  }
+
+  .registrations-mobile-list > li { min-width: 0; }
+  .registration-mobile-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    padding: 14px;
+    background: var(--surface-strong);
+    color: var(--text-soft);
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.45;
+    text-align: left;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+
+  .registration-mobile-card--selected { border-color: var(--gold); }
+  .registration-mobile-card__name { color: var(--text); font-size: 17px; }
+  .registration-mobile-card__contacts,
+  .registration-mobile-card__payment { display: grid; min-width: 0; gap: 4px; }
+  .registration-mobile-card__payment { justify-items: start; font-size: 13px; }
+  .registration-mobile-card__footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 6px 12px;
+    border-top: 1px solid var(--glass-border);
+    padding-top: 10px;
+    font-size: 12px;
+  }
+  .registration-mobile-card__footer > span:last-child { color: var(--gold); }
+
+  .registration-mobile-card .badge,
+  .registration-detail-modal .badge,
+  .registration-action-dialog .badge { max-width: 100%; white-space: normal; }
+
+  .registration-event-chooser:focus-visible,
+  .registration-mobile-card:focus-visible,
+  .registration-detail-modal :is(button, a):focus-visible,
+  .registration-action-dialog button:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: -3px;
+  }
+
+  .registration-detail-modal-overlay,
+  .registration-action-dialog-backdrop {
+    padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  }
+
+  .registration-detail-modal,
+  .registration-action-dialog {
+    min-width: 0;
+    max-height: calc(100dvh - max(12px, env(safe-area-inset-top, 0px)) - max(12px, env(safe-area-inset-bottom, 0px)));
+    border-radius: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  .registration-detail-modal__head { align-items: flex-start; padding: 12px; }
+  .registration-detail-modal__head > div { max-height: 20dvh; overflow-y: auto; }
+  .registration-detail-modal__close { width: 44px; height: 44px; }
+  .registration-detail-modal__body { min-width: 0; overscroll-behavior-y: contain; }
+  .registration-detail { min-width: 0; padding: 12px; }
+  .registration-detail :is(.registration-detail-section, .registration-detail__profile, .registration-options-list, .badge-row) { min-width: 0; }
+  .registration-detail-row,
+  .registration-option-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .registration-option-row div:last-child { justify-items: start; text-align: left; }
+  .registration-detail-actions .button { flex: 1 1 140px; }
+  .registration-guest-list span { min-width: 0; max-width: 100%; }
+  .registration-action-dialog { overscroll-behavior-y: contain; }
+  .registration-action-dialog .event-action-dialog__head { flex-wrap: wrap; }
+
+  .registration-toast-stack {
+    z-index: 1120;
+    right: max(12px, env(safe-area-inset-right, 0px));
+    bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    max-width: calc(100% - max(12px, env(safe-area-inset-left, 0px)) - max(12px, env(safe-area-inset-right, 0px)));
+  }
+  .registration-toast { min-height: 44px; overflow-wrap: anywhere; }
 }
