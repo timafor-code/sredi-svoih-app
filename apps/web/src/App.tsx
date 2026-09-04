@@ -515,8 +515,9 @@ type AuthenticatedAccountState = {
   identity: ExistingAccountIdentity;
 };
 
-function SignInDialog({ initialEmail, onClose, onAuthenticated }: {
+function SignInPanel({ initialEmail, readOnlyEmail = false, onClose, onAuthenticated }: {
   initialEmail: string;
+  readOnlyEmail?: boolean;
   onClose: () => void;
   onAuthenticated: (account: AuthenticatedAccountState) => void;
 }): ReactNode {
@@ -524,26 +525,21 @@ function SignInDialog({ initialEmail, onClose, onAuthenticated }: {
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
   const submittingRef = useRef(false);
   const activeRef = useRef(true);
-  const backdropPressRef = useRef(false);
 
   const closeDialog = () => {
     activeRef.current = false;
-    dialogRef.current?.close();
     onClose();
   };
 
   useEffect(() => {
     activeRef.current = true;
-    const dialog = dialogRef.current;
-    dialog?.showModal();
-    emailRef.current?.focus();
+    (readOnlyEmail ? passwordRef : emailRef).current?.focus();
     return () => {
       activeRef.current = false;
-      dialog?.close();
     };
   }, []);
 
@@ -571,13 +567,12 @@ function SignInDialog({ initialEmail, onClose, onAuthenticated }: {
         }
         return;
       }
-      dialogRef.current?.close();
       onAuthenticated({ tokens, identity });
     } catch (error: unknown) {
       if (activeRef.current) {
         setLoginPassword("");
         setLoginError(safeLoginError(error));
-        emailRef.current?.focus();
+        (readOnlyEmail ? passwordRef : emailRef).current?.focus();
       }
     } finally {
       submittingRef.current = false;
@@ -585,6 +580,42 @@ function SignInDialog({ initialEmail, onClose, onAuthenticated }: {
     }
   };
 
+  return (
+    <form className="login-body" noValidate onSubmit={(event) => { event.preventDefault(); void submitLogin(); }}>
+      <div className="form-field">
+        <label htmlFor="login-email">Email</label>
+        <input ref={emailRef} id="login-email" type="email" autoComplete="email" readOnly={readOnlyEmail} required value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} />
+      </div>
+      <div className="form-field">
+        <label htmlFor="login-password">Пароль</label>
+        <input ref={passwordRef} id="login-password" type="password" autoComplete="current-password" required value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} />
+      </div>
+      {loginError ? <p className="form-error" role="alert">{loginError}</p> : null}
+      <button className={readOnlyEmail ? "primary-button" : "secondary-button"} type="submit" disabled={busy || !loginEmail.trim() || !loginPassword}>
+        {busy ? "Входим…" : "Войти"}
+      </button>
+      <button className="text-button" type="button" onClick={closeDialog}>Отмена</button>
+    </form>
+  );
+}
+
+function SignInDialog({ initialEmail, onClose, onAuthenticated }: {
+  initialEmail: string;
+  onClose: () => void;
+  onAuthenticated: (account: AuthenticatedAccountState) => void;
+}): ReactNode {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const backdropPressRef = useRef(false);
+  const closeDialog = () => {
+    dialogRef.current?.close();
+    onClose();
+  };
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    dialog?.querySelector<HTMLInputElement>("input")?.focus();
+    return () => dialog?.close();
+  }, []);
   return (
     <dialog
       ref={dialogRef}
@@ -607,21 +638,71 @@ function SignInDialog({ initialEmail, onClose, onAuthenticated }: {
         </div>
         <button className="login-close" type="button" aria-label="Закрыть вход" onClick={closeDialog}>×</button>
       </div>
-      <form className="login-body" noValidate onSubmit={(event) => { event.preventDefault(); void submitLogin(); }}>
-        <div className="form-field">
-          <label htmlFor="login-email">Email</label>
-          <input ref={emailRef} id="login-email" type="email" autoComplete="email" required value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} />
+      <SignInPanel initialEmail={initialEmail} onClose={closeDialog} onAuthenticated={(account) => {
+        dialogRef.current?.close();
+        onAuthenticated(account);
+      }} />
+    </dialog>
+  );
+}
+
+function RegistrationFlowDialog({ stage, paymentStatus, accountDone, eventTitle, onClose, children }: {
+  stage: FlowStage;
+  paymentStatus: WebRegistrationResult["payment_status"] | undefined;
+  accountDone: boolean;
+  eventTitle: string;
+  onClose: () => void;
+  children: ReactNode;
+}): ReactNode {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const backdropPressRef = useRef(false);
+  const closeDialog = () => {
+    dialogRef.current?.close();
+    onClose();
+  };
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+    body.scrollTop = 0;
+    body.querySelector<HTMLElement>(stage === "verification" ? "#email-code" : "#success-heading")?.focus();
+  }, [stage]);
+  return (
+    <dialog
+      ref={dialogRef}
+      className="registration-flow-dialog"
+      aria-labelledby="registration-flow-heading"
+      onCancel={(event) => { event.preventDefault(); closeDialog(); }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") { event.preventDefault(); closeDialog(); }
+      }}
+      onPointerDown={(event) => { backdropPressRef.current = event.target === event.currentTarget; }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget && backdropPressRef.current) closeDialog();
+      }}
+    >
+      <header className="registration-flow-head">
+        <div>
+          <h2 id="registration-flow-heading">Оформление регистрации</h2>
+          <p>{eventTitle}</p>
         </div>
-        <div className="form-field">
-          <label htmlFor="login-password">Пароль</label>
-          <input id="login-password" type="password" autoComplete="current-password" required value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} />
-        </div>
-        {loginError ? <p className="form-error" role="alert">{loginError}</p> : null}
-        <button className="secondary-button" type="submit" disabled={busy || !loginEmail.trim() || !loginPassword}>
-          {busy ? "Входим…" : "Войти"}
-        </button>
-        <button className="text-button" type="button" onClick={closeDialog}>Отмена</button>
-      </form>
+        <button className="login-close" type="button" aria-label="Закрыть оформление регистрации" onClick={closeDialog}>×</button>
+      </header>
+      <ol className="registration-flow-progress" aria-label="Этапы регистрации">
+        <li className={stage === "verification" ? "active" : "done"} aria-current={stage === "verification" ? "step" : undefined}>Подтверждение</li>
+        <li className={paymentStatus === "pending" ? "pending" : ""}>
+          Оплата
+          {paymentStatus === "not_required" ? <small>Не требуется</small> : null}
+          {paymentStatus === "pending" ? <small>Ожидается</small> : null}
+        </li>
+        <li className={stage === "success" ? accountDone ? "done" : "active" : ""} aria-current={stage === "success" ? "step" : undefined}>Аккаунт</li>
+      </ol>
+      <div ref={bodyRef} className="registration-flow-body">{children}</div>
     </dialog>
   );
 }
@@ -681,6 +762,18 @@ function RegistrationForm({
   const [notice, setNotice] = useState<string | null>(null);
   const [flowError, setFlowError] = useState<string | null>(null);
   const [stage, setStage] = useState<FlowStage>("form");
+  const [flowOpen, setFlowOpen] = useState(false);
+  const [flowSignIn, setFlowSignIn] = useState(false);
+  const [signInDeclined, setSignInDeclined] = useState(false);
+  const resumeRef = useRef<HTMLButtonElement>(null);
+  const flowOpenerRef = useRef<HTMLElement | null>(null);
+  const closeFlow = () => {
+    setFlowOpen(false);
+    setFlowSignIn(false);
+    const opener = flowOpenerRef.current;
+    if (opener?.isConnected && !opener.matches(":disabled")) opener.focus();
+    else resumeRef.current?.focus();
+  };
   const [flowId, setFlowId] = useState<string | null>(null);
   const [flowExpiresAt, setFlowExpiresAt] = useState<string | null>(null);
   const [emailCode, setEmailCode] = useState("");
@@ -730,6 +823,7 @@ function RegistrationForm({
     setNotice(null);
     setFlowError(null);
     setStage("form");
+    setFlowOpen(false);
     setFlowId(null);
     setFlowExpiresAt(null);
     setRegistration(null);
@@ -741,10 +835,6 @@ function RegistrationForm({
     pendingPasswordlessEmailRef.current = null;
     idempotencyRef.current = null;
   }, [eventId]);
-
-  useEffect(() => {
-    if (stage === "verification") emailCodeRef.current?.focus();
-  }, [stage]);
 
   useEffect(() => {
     onEmailChange(values.email);
@@ -764,8 +854,12 @@ function RegistrationForm({
   }, [existingAccount]);
 
   useEffect(() => {
-    if (passwordRequestSent) passwordCodeRef.current?.focus();
-  }, [passwordRequestSent]);
+    if (flowOpen && passwordRequestSent) passwordCodeRef.current?.focus();
+  }, [passwordRequestSent, flowOpen]);
+
+  useEffect(() => {
+    if (flowOpen && accountCompleted) document.getElementById("success-heading")?.focus();
+  }, [accountCompleted, flowOpen]);
 
   useEffect(() => {
     if (cooldownUntil === null) {
@@ -948,6 +1042,12 @@ function RegistrationForm({
   };
 
   const continueWithAccountChoice = async (accountChoice: AccountChoice) => {
+    if (document.querySelector('[aria-modal="true"], dialog[open]')) return;
+    flowOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : resumeRef.current;
+    if (stage !== "form") {
+      setFlowOpen(true);
+      return;
+    }
     if (submittingRef.current) return;
     const signedInValues = existingAccount ? {
       firstName: existingAccount.first_name,
@@ -1040,9 +1140,13 @@ function RegistrationForm({
       if (created.next_step === "completed") {
         const status = await getWebRegistrationIntentStatus(created.flow_id);
         applyStatus(status);
+        if (status.state === "confirmed" || status.state === "email_verification_required") {
+          setFlowOpen(!document.querySelector('[aria-modal="true"], dialog[open]'));
+        }
       } else {
         setEmailCode("");
         setStage("verification");
+        setFlowOpen(!document.querySelector('[aria-modal="true"], dialog[open]'));
         setNotice(null);
       }
     } catch (error: unknown) {
@@ -1108,6 +1212,7 @@ function RegistrationForm({
   };
 
   const startNewFlow = () => {
+    closeFlow();
     idempotencyRef.current = null;
     setFlowId(null);
     setFlowExpiresAt(null);
@@ -1199,9 +1304,10 @@ function RegistrationForm({
     </div>
   );
 
+  let flowContent: ReactNode = null;
   if (stage === "verification") {
-    return (
-      <section className="surface section-card flow-card" aria-labelledby="verification-heading">
+    flowContent = (
+      <section className="flow-card" aria-labelledby="verification-heading">
         <p className="eyebrow">Подтверждение email</p>
         <h2 id="verification-heading">Введите код из письма</h2>
         <p className="muted-copy">Шестизначный код отправлен на указанный email.</p>
@@ -1255,10 +1361,15 @@ function RegistrationForm({
     const isPaidResult = registrationMode === "internal_paid";
     const showPasswordForm = accountNextStep === "set_password"
       || (accountNextStep === "request_set_password" && passwordRequestSent);
-    return (
-      <section className="surface section-card flow-card success-card" aria-labelledby="success-heading" aria-live="polite">
-        <p className="eyebrow">Готово</p>
-        <h2 id="success-heading">{isPaidResult ? "Заявка создана" : "Регистрация успешно сохранена"}</h2>
+    flowContent = (
+      <section className="flow-card success-card" aria-labelledby="success-heading" aria-live="polite">
+        <p className="eyebrow">Регистрация сохранена</p>
+        <div className="registration-flow-result-heading">
+          <span className={`registration-flow-result-mark result-${registration.status}`} aria-hidden="true">
+            {registration.status === "confirmed" || registration.status === "attended" ? "✓" : "⋯"}
+          </span>
+          <h2 id="success-heading" tabIndex={-1}>{isPaidResult ? "Заявка создана" : "Регистрация успешно сохранена"}</h2>
+        </div>
         <p className={`registration-result result-${registration.status}`}>
           {isPaidResult ? "Заявка создана." : SUCCESS_COPY[registration.status]}
         </p>
@@ -1277,11 +1388,38 @@ function RegistrationForm({
           <div className="account-followup">
             <p className="muted-copy">Оплата на сайте пока не выполнена.</p>
             <p className="muted-copy">Статус оплаты: <strong>ожидается</strong>.</p>
+            <p className="muted-copy">Онлайн-оплата пока недоступна.</p>
           </div>
         ) : null}
 
         {accountNextStep === "none" ? <p className="muted-copy">Регистрация сохранена. Код подтверждения был отправлен на указанный email. Пароль и web-сессия не создавались.</p> : null}
-        {accountNextStep === "sign_in" ? <p className="muted-copy">Регистрация сохранена. Для управления аккаунтом можно войти с существующим паролем.</p> : null}
+        {accountNextStep === "sign_in" && !accountCompleted && !existingAccount ? (
+          <div className="account-followup">
+            <p className="muted-copy">Регистрация уже сохранена. Вход необязателен: войти с существующим паролем для управления аккаунтом можно позже.</p>
+            {flowSignIn ? (
+              <>
+                <h3>Войти в аккаунт</h3>
+                <SignInPanel initialEmail={values.email} readOnlyEmail onClose={() => {
+                  setFlowSignIn(false);
+                  document.getElementById("success-heading")?.focus();
+                }} onAuthenticated={(account) => {
+                  onAuthenticatedAccountChange(account);
+                  setFlowSignIn(false);
+                  setAccountCompleted(true);
+                  document.getElementById("success-heading")?.focus();
+                }} />
+              </>
+            ) : (
+              <button className="primary-button" type="button" onClick={() => { setSignInDeclined(false); setFlowSignIn(true); }}>Войти</button>
+            )}
+            {!signInDeclined ? <button className="secondary-button" type="button" onClick={() => {
+              setFlowSignIn(false);
+              setSignInDeclined(true);
+              document.getElementById("success-heading")?.focus();
+            }}>Продолжить без входа</button> : <p className="muted-copy">Вы продолжили без входа. Регистрация остаётся сохранённой.</p>}
+          </div>
+        ) : null}
+        {accountNextStep === "sign_in" && (accountCompleted || existingAccount) ? <p className="muted-copy">Вход выполнен. Регистрация сохранена в вашем аккаунте.</p> : null}
         {verifiedRegistrationEmail && !passwordlessDeletionPending ? (
           <div className="account-followup">
             <p className="muted-copy">Можно управлять данными этой подтверждённой регистрации без создания пароля.</p>
@@ -1289,7 +1427,7 @@ function RegistrationForm({
               id="passwordless-data-management-button"
               className="secondary-button"
               type="button"
-              onClick={() => setPasswordlessDeletionOpen(true)}
+              onClick={() => { closeFlow(); setPasswordlessDeletionOpen(true); }}
             >
               Управление данными
             </button>
@@ -1340,173 +1478,190 @@ function RegistrationForm({
           {notice ? <p className="form-notice" role="status">{notice}</p> : null}
           {passwordError ? <p className="form-error" role="alert">{passwordError}</p> : null}
         </div>
-        {passwordlessDeletionOpen && verifiedRegistrationEmail ? (
-          <WebDeleteAccountFlow
-            email={verifiedRegistrationEmail}
-            onClose={() => {
-              setPasswordlessDeletionOpen(false);
-              if (!passwordlessDeletionPending) {
-                window.requestAnimationFrame(() => {
-                  document.getElementById("passwordless-data-management-button")?.focus();
-                });
-              }
-            }}
-            onDeletionPending={() => setPasswordlessDeletionPending(true)}
-          />
-        ) : null}
+        <button className="secondary-button" type="button" onClick={closeFlow}>Готово</button>
       </section>
     );
   }
 
   return (
-    <form className="registration-form" noValidate onSubmit={(event) => event.preventDefault()}>
-      {!existingAccount ? (
-        <div className="signin-strip">
-          <p>Уже есть аккаунт?</p>
-          <button type="button" aria-haspopup="dialog" onClick={onSignIn}>Войти</button>
-        </div>
-      ) : null}
-      <ParticipationOptions
-        options={options}
-        selections={selections}
-        onSelectionChange={onOptionSelectionChange}
-        onQuantityChange={onOptionQuantityChange}
-        error={participationError}
-        focusRef={optionsRef}
-      />
-
-      {registrationMode === "internal_paid"
-        && displayTotals.hasSelection
-        && displayTotals.seats > 0
-        && !displayTotals.hasMixedCurrencies
-        && displayTotals.amount !== null
-        && displayTotals.currency ? (
-          <section className="surface registration-summary" aria-label="Итог регистрации" aria-live="polite">
-            <p><span>Итого:</span> <strong>{formatRegistrationTotal(displayTotals.amount, displayTotals.currency)}</strong></p>
-            <p><span>Мест:</span> <strong>{displayTotals.seats}</strong></p>
-          </section>
-        ) : null}
-
-      {!usesCalculatedSeats ? (
-        <section className="surface section-card" aria-labelledby="seats-heading">
-          <h2 id="seats-heading">Количество мест</h2>
-          <div className="form-field seats-field">
-            <label htmlFor="seats-count">Количество мест</label>
-            <input
-              id="seats-count"
-              type="number"
-              min={1}
-              max={1000}
-              step={1}
-              inputMode="numeric"
-              value={values.seatsCount}
-              aria-invalid={Boolean(errors.seatsCount)}
-              aria-describedby={errors.seatsCount ? "seats-count-error" : undefined}
-              onChange={(event) => updateSeatsCount(event.target.value)}
-              onBlur={() => {
-                const error = validateSeatsCount(values.seatsCount);
-                setErrors((current) => ({ ...current, seatsCount: error ?? undefined }));
-              }}
-            />
-            {errors.seatsCount ? (
-              <p className="field-error" id="seats-count-error" role="alert">{errors.seatsCount}</p>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
-
-      <QuestionnaireFields
-        fields={questions}
-        values={questionnaireValues}
-        errors={questionnaireErrors}
-        onChange={onQuestionnaireChange}
-      />
-
-      <section className="surface section-card" aria-labelledby="personal-heading">
-        <h2 id="personal-heading">Ваши данные</h2>
-        {existingAccount ? (
-          <dl className="account-identity" aria-label="Данные аккаунта только для чтения">
-            <div><dt>Имя</dt><dd>{existingAccount.first_name}</dd></div>
-            <div><dt>Фамилия</dt><dd>{existingAccount.last_name}</dd></div>
-            <div><dt>Телефон</dt><dd>{existingAccount.phone}</dd></div>
-            <div><dt>Email</dt><dd>{existingAccount.email}</dd></div>
-          </dl>
-        ) : (
-          <div className="form-grid">
-            {field("first-name", "firstName", "Имя", { autoComplete: "given-name", maxLength: 100 })}
-            {field("last-name", "lastName", "Фамилия", { autoComplete: "family-name", maxLength: 100 })}
-            <PhoneInput
-              value={values.phone}
-              error={errors.phone}
-              onChange={(value) => updateField("phone", value)}
-              onBlur={() => validateField("phone")}
-            />
-            {field("email", "email", "Email", { type: "email", autoComplete: "email", inputMode: "email", maxLength: 254 })}
-          </div>
-        )}
-      </section>
-
-      <section className={`surface consent-card${values.consent ? " checked" : ""}${errors.consent ? " invalid" : ""}`} aria-labelledby="legal-heading">
-        <h2 className="sr-only" id="legal-heading">Согласие на обработку данных</h2>
-        <div className="consent-row">
-          <input
-            id="consent"
-            type="checkbox"
-            checked={values.consent}
-            aria-required="true"
-            aria-invalid={Boolean(errors.consent)}
-            aria-describedby={`consent-meta${errors.consent ? " consent-error" : !values.consent ? " consent-nudge" : ""}`}
-            onChange={(event) => {
-              setValues((current) => ({ ...current, consent: event.target.checked }));
-              setErrors((current) => ({ ...current, consent: undefined }));
-            }}
-          />
-          <div className="consent-text">
-            <label htmlFor="consent">Я ознакомился(-ась) с документом и даю отдельное согласие на обработку персональных данных для регистрации на мероприятие:</label>{" "}
-            <a href={consentDocument.published_url} target="_blank" rel="noopener noreferrer">{consentDocument.title}</a>
-            <p className="consent-meta" id="consent-meta">Версия {consentDocument.version}. Документ откроется в новой вкладке.</p>
-          </div>
-        </div>
-        {errors.consent ? <p className="field-error" id="consent-error" role="alert">{errors.consent}</p> : null}
-      </section>
-
-      <section className="surface continue-card" aria-labelledby="account-actions-heading">
-        <h2 className="sr-only" id="account-actions-heading">Как продолжить</h2>
-        <button
-          className={`registration-confirm${!values.consent ? " consent-incomplete" : ""}`}
-          type="button"
-          aria-describedby={!values.consent ? "consent-nudge" : undefined}
-          disabled={busyAction !== null}
-          onClick={() => void continueWithAccountChoice("without_password")}
-        >
-          {busyAction === "create" && values.accountChoice === "without_password" ? "Отправляем…" : "Записаться на мероприятие"}
-        </button>
-        <p className="registration-caption">{existingAccount
-          ? "Регистрация будет оформлена на данные аккаунта."
-          : "Подтвердите email кодом из письма. Пароль сейчас не нужен."}</p>
+    <>
+      <form className="registration-form" noValidate onSubmit={(event) => event.preventDefault()}>
         {!existingAccount ? (
-          <details className="continue-details">
-            <summary>Что происходит с моими данными</summary>
-            <p>Регистрация не требует пароля. Чтобы ваши записи не дублировались, мы сохраним одну техническую карточку участника. Управлять или удалить данные можно по коду из email.</p>
-            <p>Задайте пароль один раз, чтобы в дальнейшем не вводить данные повторно и видеть свои регистрации в приложении и на сайте.</p>
-            <button
-              className="text-button"
-              type="button"
-              disabled={busyAction !== null}
-              onClick={() => void continueWithAccountChoice("create_account")}
-            >
-              {busyAction === "create" && values.accountChoice === "create_account" ? "Отправляем…" : "Создать аккаунт"}
-            </button>
-          </details>
+          <div className="signin-strip">
+            <p>Уже есть аккаунт?</p>
+            <button type="button" aria-haspopup="dialog" onClick={onSignIn}>Войти</button>
+          </div>
         ) : null}
-        {!values.consent ? <p className="consent-nudge" id="consent-nudge">Отметьте согласие выше, чтобы продолжить.</p> : null}
-      </section>
+        <fieldset className="registration-fields" disabled={stage !== "form"}>
+          <ParticipationOptions
+            options={options}
+            selections={selections}
+            onSelectionChange={onOptionSelectionChange}
+            onQuantityChange={onOptionQuantityChange}
+            error={participationError}
+            focusRef={optionsRef}
+          />
 
-      <div className="flow-live" aria-live="polite" aria-atomic="true">
-        {notice ? <p className="form-notice" role="status">{notice}</p> : null}
-        {flowError ? <p className="form-error" role="alert">{flowError}</p> : null}
-      </div>
-    </form>
+          {registrationMode === "internal_paid"
+            && displayTotals.hasSelection
+            && displayTotals.seats > 0
+            && !displayTotals.hasMixedCurrencies
+            && displayTotals.amount !== null
+            && displayTotals.currency ? (
+              <section className="surface registration-summary" aria-label="Итог регистрации" aria-live="polite">
+                <p><span>Итого:</span> <strong>{formatRegistrationTotal(displayTotals.amount, displayTotals.currency)}</strong></p>
+                <p><span>Мест:</span> <strong>{displayTotals.seats}</strong></p>
+              </section>
+            ) : null}
+
+          {!usesCalculatedSeats ? (
+            <section className="surface section-card" aria-labelledby="seats-heading">
+              <h2 id="seats-heading">Количество мест</h2>
+              <div className="form-field seats-field">
+                <label htmlFor="seats-count">Количество мест</label>
+                <input
+                  id="seats-count"
+                  type="number"
+                  min={1}
+                  max={1000}
+                  step={1}
+                  inputMode="numeric"
+                  value={values.seatsCount}
+                  aria-invalid={Boolean(errors.seatsCount)}
+                  aria-describedby={errors.seatsCount ? "seats-count-error" : undefined}
+                  onChange={(event) => updateSeatsCount(event.target.value)}
+                  onBlur={() => {
+                    const error = validateSeatsCount(values.seatsCount);
+                    setErrors((current) => ({ ...current, seatsCount: error ?? undefined }));
+                  }}
+                />
+                {errors.seatsCount ? (
+                  <p className="field-error" id="seats-count-error" role="alert">{errors.seatsCount}</p>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
+          <QuestionnaireFields
+            fields={questions}
+            values={questionnaireValues}
+            errors={questionnaireErrors}
+            onChange={onQuestionnaireChange}
+          />
+
+          <section className="surface section-card" aria-labelledby="personal-heading">
+            <h2 id="personal-heading">Ваши данные</h2>
+            {existingAccount ? (
+              <dl className="account-identity" aria-label="Данные аккаунта только для чтения">
+                <div><dt>Имя</dt><dd>{existingAccount.first_name}</dd></div>
+                <div><dt>Фамилия</dt><dd>{existingAccount.last_name}</dd></div>
+                <div><dt>Телефон</dt><dd>{existingAccount.phone}</dd></div>
+                <div><dt>Email</dt><dd>{existingAccount.email}</dd></div>
+              </dl>
+            ) : (
+              <div className="form-grid">
+                {field("first-name", "firstName", "Имя", { autoComplete: "given-name", maxLength: 100 })}
+                {field("last-name", "lastName", "Фамилия", { autoComplete: "family-name", maxLength: 100 })}
+                <PhoneInput
+                  value={values.phone}
+                  error={errors.phone}
+                  onChange={(value) => updateField("phone", value)}
+                  onBlur={() => validateField("phone")}
+                />
+                {field("email", "email", "Email", { type: "email", autoComplete: "email", inputMode: "email", maxLength: 254 })}
+              </div>
+            )}
+          </section>
+
+          <section className={`surface consent-card${values.consent ? " checked" : ""}${errors.consent ? " invalid" : ""}`} aria-labelledby="legal-heading">
+            <h2 className="sr-only" id="legal-heading">Согласие на обработку данных</h2>
+            <div className="consent-row">
+              <input
+                id="consent"
+                type="checkbox"
+                checked={values.consent}
+                aria-required="true"
+                aria-invalid={Boolean(errors.consent)}
+                aria-describedby={`consent-meta${errors.consent ? " consent-error" : !values.consent ? " consent-nudge" : ""}`}
+                onChange={(event) => {
+                  setValues((current) => ({ ...current, consent: event.target.checked }));
+                  setErrors((current) => ({ ...current, consent: undefined }));
+                }}
+              />
+              <div className="consent-text">
+                <label htmlFor="consent">Я ознакомился(-ась) с документом и даю отдельное согласие на обработку персональных данных для регистрации на мероприятие:</label>{" "}
+                <a href={consentDocument.published_url} target="_blank" rel="noopener noreferrer">{consentDocument.title}</a>
+                <p className="consent-meta" id="consent-meta">Версия {consentDocument.version}. Документ откроется в новой вкладке.</p>
+              </div>
+            </div>
+            {errors.consent ? <p className="field-error" id="consent-error" role="alert">{errors.consent}</p> : null}
+          </section>
+
+        </fieldset>
+        <section className="surface continue-card" aria-labelledby="account-actions-heading">
+          <h2 className="sr-only" id="account-actions-heading">Как продолжить</h2>
+          <button
+            ref={resumeRef}
+            aria-haspopup="dialog"
+            className={`registration-confirm${!values.consent ? " consent-incomplete" : ""}`}
+            type="button"
+            aria-describedby={!values.consent ? "consent-nudge" : undefined}
+            disabled={stage === "form" && busyAction !== null}
+            onClick={() => void continueWithAccountChoice("without_password")}
+          >
+            {stage === "verification" ? "Продолжить подтверждение" : stage === "success" ? "Посмотреть регистрацию" : busyAction === "create" && values.accountChoice === "without_password" ? "Отправляем…" : "Записаться на мероприятие"}
+          </button>
+          <p className="registration-caption">{existingAccount
+            ? "Регистрация будет оформлена на данные аккаунта."
+            : "Подтвердите email кодом из письма. Пароль сейчас не нужен."}</p>
+          {!existingAccount ? (
+            <details className="continue-details">
+              <summary>Что происходит с моими данными</summary>
+              <p>Регистрация не требует пароля. Чтобы ваши записи не дублировались, мы сохраним одну техническую карточку участника. Управлять или удалить данные можно по коду из email.</p>
+              <p>Задайте пароль один раз, чтобы в дальнейшем не вводить данные повторно и видеть свои регистрации в приложении и на сайте.</p>
+              <button
+                className="text-button"
+                type="button"
+                disabled={busyAction !== null}
+                onClick={() => void continueWithAccountChoice("create_account")}
+              >
+                {busyAction === "create" && values.accountChoice === "create_account" ? "Отправляем…" : "Создать аккаунт"}
+              </button>
+            </details>
+          ) : null}
+          {!values.consent ? <p className="consent-nudge" id="consent-nudge">Отметьте согласие выше, чтобы продолжить.</p> : null}
+        </section>
+
+        <div className="flow-live" aria-live="polite" aria-atomic="true">
+          {stage === "form" && notice ? <p className="form-notice" role="status">{notice}</p> : null}
+          {stage === "form" && flowError ? <p className="form-error" role="alert">{flowError}</p> : null}
+        </div>
+      </form>
+      {flowOpen ? (
+        <RegistrationFlowDialog
+          stage={stage}
+          paymentStatus={registration?.payment_status}
+          accountDone={accountNextStep === "none" || accountCompleted || signInDeclined || existingAccount !== null}
+          eventTitle={eventTitle}
+          onClose={closeFlow}
+        >
+          {flowContent}
+        </RegistrationFlowDialog>
+      ) : null}
+      {passwordlessDeletionOpen && verifiedRegistrationEmail ? (
+        <WebDeleteAccountFlow
+          email={verifiedRegistrationEmail}
+          onClose={() => {
+            setPasswordlessDeletionOpen(false);
+            resumeRef.current?.focus();
+          }}
+          onDeletionPending={() => setPasswordlessDeletionPending(true)}
+        />
+      ) : null}
+      {passwordlessDeletionPending && !flowOpen && !passwordlessDeletionOpen ? (
+        <p className="registration-result">Запрос на удаление подтверждён. Доступ остановлен, удаление будет завершено по правилам хранения данных.</p>
+      ) : null}
+    </>
   );
 }
 
