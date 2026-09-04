@@ -13795,6 +13795,18 @@ a {
   padding-top: 10px;
 }
 
+.single-event-period { max-width: 680px; }
+.single-event-period__date { display: grid; gap: 6px; padding: 16px; border-radius: 12px; background: var(--surface-strong); overflow-wrap: anywhere; }
+.single-event-period__date > span, .single-event-period__note { color: var(--text-muted); font-size: 13px; line-height: 1.5; }
+.single-event-period__fields { display: grid; gap: 16px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.single-event-period__checkbox { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; line-height: 1.5; cursor: pointer; }
+.single-event-period__checkbox input { flex-shrink: 0; margin-top: 4px; accent-color: var(--green); }
+.single-event-period .participation-modal__field > span { font-size: 13px; text-transform: none; letter-spacing: normal; }
+.single-event-period__note { margin: 0; }
+.single-event-period__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.single-event-period__actions .button { max-width: 100%; white-space: normal; }
+.single-event-period input:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+
 .save-status {
   display: block;
   min-width: 0;

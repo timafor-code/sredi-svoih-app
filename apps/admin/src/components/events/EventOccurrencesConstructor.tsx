@@ -4,6 +4,10 @@ import { createPortal } from "react-dom";
 import { Button } from "../ui/Button";
 import { SaveStatusView } from "../ui/SaveStatusView";
 import {
+  SingleEventRegistrationPeriodForm,
+  type SingleEventRegistrationPeriodValues,
+} from "./SingleEventRegistrationPeriodForm";
+import {
   buildOccurrencePayloadFields,
   normalizeOccurrenceCapacityForDraft,
 } from "../../lib/eventOccurrenceDrafts";
@@ -96,11 +100,15 @@ const SHABBAT_START_DAY_OPTIONS = WEEKDAY_OPTIONS.filter((option) =>
 
 type EventOccurrencesConstructorProps = {
   defaultTimezone?: string | null;
+  eventStartsAt?: string | null;
+  eventEndsAt?: string | null;
+  eventStatus?: string | null;
   eventKind?: string | null;
   eventCapacity: number | null;
   eventId: string;
   active?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
+  onExplicitDirtyChange?: (dirty: boolean) => void;
 };
 
 type DraftOccurrence = {
@@ -168,6 +176,13 @@ type DraftValidation =
 
 type PersistDraftsOptions = {
   failureMessage?: string;
+  requireFirstOccurrence?: boolean;
+};
+
+const INITIAL_SINGLE_PERIOD: SingleEventRegistrationPeriodValues = {
+  opensOnPublication: true,
+  registrationOpensAt: "",
+  registrationClosesAt: "",
 };
 
 let draftIdCounter = 0;
@@ -882,11 +897,15 @@ function formatGeneratorCapacity(
 
 export function EventOccurrencesConstructor({
   defaultTimezone,
+  eventStartsAt,
+  eventEndsAt,
+  eventStatus,
   eventKind,
   eventCapacity,
   eventId,
   active = true,
   onDirtyChange,
+  onExplicitDirtyChange,
 }: EventOccurrencesConstructorProps) {
   const fallbackTimezone =
     defaultTimezone && defaultTimezone.trim()
@@ -911,14 +930,22 @@ export function EventOccurrencesConstructor({
   );
   const [generatorExpanded, setGeneratorExpanded] = useState(false);
   const [previewExpanded, setPreviewExpanded] = useState(false);
+  const [singlePeriod, setSinglePeriod] = useState(INITIAL_SINGLE_PERIOD);
+  const [singlePeriodErrors, setSinglePeriodErrors] = useState<DraftErrors>({});
+  const singlePeriodMode = !loading && !loadError && remoteDraftsLoadToken > 0
+    && confirmedDrafts.length === 0;
+  const singlePeriodDirty = singlePeriodMode
+    && JSON.stringify(singlePeriod) !== JSON.stringify(INITIAL_SINGLE_PERIOD);
   const [generatorBaseline, setGeneratorBaseline] = useState(() => JSON.stringify(generatorForm));
   const modalDirty = modalState.kind === "add" || (modalState.kind === "edit"
     && JSON.stringify(modalState.form) !== JSON.stringify(drafts.find((draft) => draft.draftId === modalState.draftId)));
-  const dirty = modalDirty || JSON.stringify(generatorForm) !== generatorBaseline
+  const dirty = singlePeriodDirty || modalDirty || JSON.stringify(generatorForm) !== generatorBaseline
     || JSON.stringify(drafts) !== JSON.stringify(confirmedDrafts);
 
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange?.(false), [eventId, onDirtyChange]);
+  useEffect(() => { onExplicitDirtyChange?.(singlePeriodDirty); }, [singlePeriodDirty, onExplicitDirtyChange]);
+  useEffect(() => () => onExplicitDirtyChange?.(false), [eventId, onExplicitDirtyChange]);
 
   const occurrenceListRef = useRef<HTMLDivElement>(null);
   const saveInFlightRef = useRef(false);
@@ -956,6 +983,8 @@ export function EventOccurrencesConstructor({
     setArchiveExpanded(false);
     setGeneratorExpanded(false);
     setPreviewExpanded(false);
+    setSinglePeriod(INITIAL_SINGLE_PERIOD);
+    setSinglePeriodErrors({});
 
     listAdminEventOccurrences(eventId)
       .then((occurrences) => {
@@ -1039,6 +1068,9 @@ export function EventOccurrencesConstructor({
 
     try {
       const saved = await replaceAdminEventOccurrences(eventId, inputs);
+      if (options.requireFirstOccurrence && (saved.length !== 1 || !saved[0].id)) {
+        throw new Error("Сервер не подтвердил период регистрации. Обновите страницу и проверьте результат.");
+      }
       const confirmed = sortDrafts(saved.map(buildDraftFromOccurrence));
       setDrafts(confirmed);
       setConfirmedDrafts(confirmed);
@@ -1397,6 +1429,82 @@ export function EventOccurrencesConstructor({
       total={drafts.length}
     />
   );
+
+  const eventStart = formatDateTimeForForm(eventStartsAt ?? null, fallbackTimezone);
+  const eventEnd = formatDateTimeForForm(eventEndsAt ?? null, fallbackTimezone);
+  const eventDateError = !eventStart.date || !eventStart.time
+    ? "Сначала укажите дату и время события во вкладке «Событие»."
+    : (eventEndsAt && (!eventEnd.date || !eventEnd.time))
+      || singlePeriodErrors.startDate || singlePeriodErrors.startTime
+      || singlePeriodErrors.endDate || singlePeriodErrors.endTime || singlePeriodErrors.timezone
+      ? "Проверьте дату, время и часовой пояс во вкладке «Событие»."
+      : null;
+
+  const saveSinglePeriod = async () => {
+    if (!singlePeriodMode || disabled || saveInFlightRef.current) return;
+
+    const draft: DraftOccurrence = {
+      ...buildEmptyDraft(0, fallbackTimezone),
+      startDate: eventStart.date,
+      startTime: eventStart.time,
+      endDate: eventEnd.date,
+      endTime: eventEnd.time,
+      registrationOpensAt: singlePeriod.opensOnPublication ? "" : singlePeriod.registrationOpensAt,
+      registrationClosesAt: singlePeriod.registrationClosesAt,
+    };
+    const validation = validateDraft(draft, 0);
+    const errors: DraftErrors = validation.ok ? {} : { ...validation.errors };
+    if (!singlePeriod.opensOnPublication && !singlePeriod.registrationOpensAt.trim()) {
+      errors.registrationOpensAt = "Укажите начало регистрации.";
+    }
+    if (!singlePeriod.registrationClosesAt.trim()) {
+      errors.registrationClosesAt = "Укажите окончание регистрации.";
+    }
+    if (eventEndsAt && (!eventEnd.date || !eventEnd.time)) {
+      errors.endDate = "Проверьте окончание события.";
+    }
+    setSinglePeriodErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setSaveError("Проверьте поля периода регистрации и дату события.");
+      return;
+    }
+
+    const persisted = await persistDrafts([draft], { requireFirstOccurrence: true });
+    if (persisted) {
+      setSinglePeriod(INITIAL_SINGLE_PERIOD);
+      setSinglePeriodErrors({});
+    }
+  };
+
+  if (singlePeriodMode) {
+    const eventDateSummary = eventStart.date && eventStartsAt
+      ? `${formatDate(eventStartsAt, fallbackTimezone)}, ${formatTime(eventStartsAt, fallbackTimezone)}`
+        + (eventEnd.date && eventEndsAt
+          ? ` — ${formatDate(eventEndsAt, fallbackTimezone)}, ${formatTime(eventEndsAt, fallbackTimezone)}`
+          : "")
+      : "Дата события не задана";
+
+    return (
+      <SingleEventRegistrationPeriodForm
+        eventDateError={eventDateError}
+        eventDateSummary={eventDateSummary}
+        eventStatus={eventStatus}
+        onChange={(values) => {
+          setSinglePeriod(values);
+          setSinglePeriodErrors({});
+          setSaveError(null);
+        }}
+        onSave={() => { void saveSinglePeriod(); }}
+        openingError={singlePeriodErrors.registrationOpensAt}
+        closingError={singlePeriodErrors.registrationClosesAt}
+        saveError={saveError}
+        saving={saving}
+        timezone={fallbackTimezone}
+        unsaved={singlePeriodDirty}
+        values={singlePeriod}
+      />
+    );
+  }
 
   return (
     <section className="event-occurrences-constructor">

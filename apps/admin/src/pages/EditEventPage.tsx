@@ -45,6 +45,7 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
   const [webDirty, setWebDirty] = useState(false);
   const [questionnaireDirty, setQuestionnaireDirty] = useState(false);
   const [periodDirty, setPeriodDirty] = useState(false);
+  const [singlePeriodExplicitDirty, setSinglePeriodExplicitDirty] = useState(false);
   const [publicationPending, setPublicationPending] = useState(0);
   const publicationCountRef = useRef(0);
   const publicationErrorRef = useRef<string | null>(null);
@@ -69,7 +70,7 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
     return () => observer.disconnect();
   }, []);
 
-  const leaveDirty = eventDirty || webDirty || questionnaireDirty;
+  const leaveDirty = eventDirty || webDirty || questionnaireDirty || singlePeriodExplicitDirty;
   useEffect(() => { onLeaveGuardChange?.(leaveDirty); }, [leaveDirty, onLeaveGuardChange]);
   useEffect(() => () => onLeaveGuardChange?.(false), [onLeaveGuardChange]);
   useEffect(() => {
@@ -487,8 +488,10 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
           </>,
           period: <GlassCard className="event-occurrences-card" elevated>
             <EventOccurrencesConstructor key={currentEvent.id} defaultTimezone={currentEvent.timezone}
+              eventStartsAt={currentEvent.startsAt} eventEndsAt={currentEvent.endsAt} eventStatus={currentEvent.status}
               eventKind={currentEvent.eventKind} eventCapacity={currentEvent.capacity} eventId={currentEvent.id}
-              active={activeTab === "period"} onDirtyChange={setPeriodDirty} />
+              active={activeTab === "period"} onDirtyChange={setPeriodDirty}
+              onExplicitDirtyChange={setSinglePeriodExplicitDirty} />
           </GlassCard>,
         }} />
     </div>
