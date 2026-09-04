@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
+import { SaveStatusView } from "../ui/SaveStatusView";
 import { GlassCard } from "../ui/GlassCard";
 import {
   getAdminEventQuestionnaire,
@@ -275,6 +276,8 @@ export function EventQuestionnaireCard({ eventId }: EventQuestionnaireCardProps)
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveErrorLabel, setSaveErrorLabel] = useState("Ошибка сохранения");
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const applyLoadedQuestionnaire = (next: AdminEventQuestionnaire) => {
@@ -289,6 +292,7 @@ export function EventQuestionnaireCard({ eventId }: EventQuestionnaireCardProps)
     setQuestionnaire(null);
     setEditor(null);
     setBaselineSnapshot(null);
+    setSavedAt(null);
     setLoading(true);
     setLoadError(null);
     setSaveError(null);
@@ -428,6 +432,7 @@ export function EventQuestionnaireCard({ eventId }: EventQuestionnaireCardProps)
 
   const handleSave = async () => {
     if (!editor || validationIssue || saving || publishing) return;
+    setSaveErrorLabel("Ошибка сохранения");
     setSaving(true);
     setSaveError(null);
     setFeedback(null);
@@ -435,7 +440,7 @@ export function EventQuestionnaireCard({ eventId }: EventQuestionnaireCardProps)
     try {
       const next = await saveAdminEventQuestionnaireDraft(eventId, draftInput(editor));
       applyLoadedQuestionnaire(next);
-      setFeedback("Черновик сохранён.");
+      setSavedAt(new Date().toISOString());
     } catch (error) {
       setSaveError(errorMessage(error, "Не удалось сохранить черновик анкеты."));
     } finally {
@@ -452,6 +457,8 @@ export function EventQuestionnaireCard({ eventId }: EventQuestionnaireCardProps)
     );
     if (!confirmed) return;
 
+    setSavedAt(null);
+    setSaveErrorLabel("Ошибка публикации");
     setPublishing(true);
     setSaveError(null);
     setFeedback(null);
@@ -462,6 +469,7 @@ export function EventQuestionnaireCard({ eventId }: EventQuestionnaireCardProps)
         applyLoadedQuestionnaire(refreshed);
         setFeedback("Версия опубликована.");
       } catch (refreshError) {
+        setSaveErrorLabel("Ошибка обновления после публикации");
         applyLoadedQuestionnaire(publishedResult);
         setSaveError(
           errorMessage(
@@ -539,7 +547,7 @@ export function EventQuestionnaireCard({ eventId }: EventQuestionnaireCardProps)
               ? "Новая версия может быть подготовлена как копия опубликованной анкеты."
               : "Черновика пока нет."}
           </p>
-          <Button disabled={busy} onClick={handleStartDraft} variant="primary">
+          <Button disabled={busy} onClick={handleStartDraft} variant="gold">
             Создать новую версию
           </Button>
         </section>
@@ -556,7 +564,6 @@ export function EventQuestionnaireCard({ eventId }: EventQuestionnaireCardProps)
                     : "Черновик синхронизирован с сервером."}
               </p>
             </div>
-            <Badge tone={dirty ? "gold" : "blue"}>{dirty ? "Не сохранено" : "Сохранено"}</Badge>
           </div>
 
           <label className="event-form-field event-form-field--wide">
@@ -754,7 +761,7 @@ export function EventQuestionnaireCard({ eventId }: EventQuestionnaireCardProps)
                             });
                           }}
                           size="sm"
-                          variant="ghost"
+                          variant="destructive"
                         >
                           Удалить вариант
                         </Button>
@@ -764,7 +771,7 @@ export function EventQuestionnaireCard({ eventId }: EventQuestionnaireCardProps)
                       disabled={busy}
                       onClick={() => handleAddOption(questionIndex)}
                       size="sm"
-                      variant="secondary"
+                      variant="gold"
                     >
                       Добавить вариант
                     </Button>
@@ -776,7 +783,7 @@ export function EventQuestionnaireCard({ eventId }: EventQuestionnaireCardProps)
                     disabled={busy}
                     onClick={() => handleRemoveQuestion(questionIndex)}
                     size="sm"
-                    variant="ghost"
+                    variant="destructive"
                   >
                     Удалить вопрос
                   </Button>
@@ -785,7 +792,7 @@ export function EventQuestionnaireCard({ eventId }: EventQuestionnaireCardProps)
             ))}
           </div>
 
-          <Button disabled={busy} onClick={handleAddQuestion} variant="secondary">
+          <Button disabled={busy} onClick={handleAddQuestion} variant="gold">
             Добавить вопрос
           </Button>
 
@@ -794,7 +801,7 @@ export function EventQuestionnaireCard({ eventId }: EventQuestionnaireCardProps)
               <Button
                 disabled={busy || !dirty || Boolean(validationIssue)}
                 onClick={() => void handleSave()}
-                variant="primary"
+                variant="success"
               >
                 {saving ? "Сохраняем…" : "Сохранить черновик"}
               </Button>
@@ -823,7 +830,14 @@ export function EventQuestionnaireCard({ eventId }: EventQuestionnaireCardProps)
       )}
 
       {feedback ? <p className="event-questionnaire-feedback event-questionnaire-feedback--success" role="status">{feedback}</p> : null}
-      {saveError ? <p className="event-questionnaire-feedback event-questionnaire-feedback--error" role="alert">{saveError}</p> : null}
+      <SaveStatusView
+        saving={busy}
+        unsaved={Boolean(editor) && dirty}
+        savedAt={savedAt}
+        error={saveError}
+        errorLabel={saveErrorLabel}
+        recovery="Проверьте данные; для загрузки состояния с сервера нажмите «Обновить»."
+      />
     </GlassCard>
   );
 }

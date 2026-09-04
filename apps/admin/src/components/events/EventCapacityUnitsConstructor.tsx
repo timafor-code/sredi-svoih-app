@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import { Button } from "../ui/Button";
+import { SaveStatusView } from "../ui/SaveStatusView";
 import {
   listAdminEventCapacityUnits,
   replaceAdminEventCapacityUnits,
@@ -158,9 +159,9 @@ function validateUnitDrafts(drafts: DraftUnit[]): ValidationResult {
     const normalizedKey = key.toLowerCase();
 
     if (!key) {
-      draftErrors.key = "Укажите key.";
+      draftErrors.key = "Укажите код слота.";
     } else if (seenKeys.has(normalizedKey)) {
-      draftErrors.key = "Key должен быть уникальным.";
+      draftErrors.key = "Код слота должен быть уникальным.";
     } else {
       seenKeys.add(normalizedKey);
     }
@@ -216,6 +217,7 @@ export function EventCapacityUnitsConstructor({
 }: EventCapacityUnitsConstructorProps) {
   const [unitDrafts, setUnitDrafts] = useState<DraftUnit[]>([]);
   const [unitErrors, setUnitErrors] = useState<Record<string, DraftUnitErrors>>({});
+  const [savedDraftSnapshot, setSavedDraftSnapshot] = useState("[]");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savingUnits, setSavingUnits] = useState(false);
@@ -236,14 +238,16 @@ export function EventCapacityUnitsConstructor({
       .then((units) => {
         if (cancelled) return;
 
-        setUnitDrafts(units.map(buildDraftFromUnit));
+        const drafts = units.map(buildDraftFromUnit);
+        setUnitDrafts(drafts);
+        setSavedDraftSnapshot(JSON.stringify(drafts));
       })
       .catch((error) => {
         if (cancelled) return;
         setLoadError(
           error instanceof Error
             ? error.message
-            : "Не удалось загрузить настройки capacity units.",
+            : "Не удалось загрузить настройки слотов мест.",
         );
         setUnitDrafts([]);
       })
@@ -257,7 +261,8 @@ export function EventCapacityUnitsConstructor({
     };
   }, [eventId]);
 
-  const hasUnsavedUnits = unitDrafts.some((unit) => !unit.remoteId);
+  const currentDraftSnapshot = useMemo(() => JSON.stringify(unitDrafts), [unitDrafts]);
+  const hasUnsavedUnits = !loading && !loadError && currentDraftSnapshot !== savedDraftSnapshot;
   const disabled = loading || savingUnits;
 
   const updateUnitDraft = (
@@ -334,7 +339,7 @@ export function EventCapacityUnitsConstructor({
     if (!validation.ok) {
       setUnitErrors(validation.errors);
       setUnitsStatus({
-        error: "Проверьте поля capacity units перед сохранением.",
+        error: "Проверьте поля слотов мест перед сохранением.",
         savedAt: null,
       });
       return;
@@ -344,7 +349,9 @@ export function EventCapacityUnitsConstructor({
     try {
       await replaceAdminEventCapacityUnits(eventId, validation.inputs);
       const nextUnits = await listAdminEventCapacityUnits(eventId);
-      setUnitDrafts(nextUnits.map(buildDraftFromUnit));
+      const savedDrafts = nextUnits.map(buildDraftFromUnit);
+      setUnitDrafts(savedDrafts);
+      setSavedDraftSnapshot(JSON.stringify(savedDrafts));
       window.dispatchEvent(
         new CustomEvent(CAPACITY_UNITS_UPDATED_EVENT, {
           detail: { eventId },
@@ -356,7 +363,7 @@ export function EventCapacityUnitsConstructor({
         error:
           error instanceof Error
             ? error.message
-            : "Не удалось сохранить capacity units.",
+            : "Не удалось сохранить слоты мест.",
         savedAt: null,
       });
     } finally {
@@ -375,17 +382,17 @@ export function EventCapacityUnitsConstructor({
           </p>
         </div>
         <div className="capacity-units-constructor__head-actions">
-          <Button disabled={disabled} onClick={addShabbatTemplate} size="sm">
+          <Button disabled={disabled} onClick={addShabbatTemplate} size="sm" variant="gold">
             + Шабат
           </Button>
-          <Button disabled={disabled} onClick={addYomTovOneDayTemplate} size="sm">
+          <Button disabled={disabled} onClick={addYomTovOneDayTemplate} size="sm" variant="gold">
             + Йом Тов 1 день
           </Button>
-          <Button disabled={disabled} onClick={addYomTovTwoDaysTemplate} size="sm">
+          <Button disabled={disabled} onClick={addYomTovTwoDaysTemplate} size="sm" variant="gold">
             + Йом Тов 2 дня
           </Button>
           <Button disabled={disabled} onClick={addUnit} size="sm" variant="gold">
-            + Unit
+            + Слот
           </Button>
         </div>
       </header>
@@ -400,7 +407,6 @@ export function EventCapacityUnitsConstructor({
         <section className="capacity-units-panel">
           <div className="capacity-units-panel__head">
             <span>Слоты мест</span>
-            {hasUnsavedUnits ? <strong>Есть новые unsaved units</strong> : null}
           </div>
 
           {loading ? (
@@ -423,13 +429,15 @@ export function EventCapacityUnitsConstructor({
           )}
 
           <footer className="capacity-units-footer">
-            <Button disabled={disabled} onClick={saveUnits} variant="primary">
-              {savingUnits ? "Сохраняем..." : "Сохранить units"}
+            <Button disabled={disabled} onClick={saveUnits} variant="success">
+              {savingUnits ? "Сохраняем…" : "Сохранить слоты"}
             </Button>
             <SaveStatusView
               error={unitsStatus.error}
               savedAt={unitsStatus.savedAt}
               saving={savingUnits}
+              unsaved={hasUnsavedUnits}
+              recovery="Проверьте поля и повторите сохранение."
             />
           </footer>
         </section>
@@ -455,7 +463,7 @@ function CapacityUnitRow({
     <li
       className={`capacity-unit-row${unit.isActive ? "" : " capacity-unit-row--inactive"}`}
     >
-      <UnitField error={errors.key} label="Key">
+      <UnitField error={errors.key} label="Код слота">
         <input
           disabled={disabled}
           onChange={(event) =>
@@ -520,10 +528,12 @@ function CapacityUnitRow({
             }
             type="checkbox"
           />
-          <span>{unit.isActive ? "active" : "inactive"}</span>
+          <span>{unit.isActive ? "Активен" : "Неактивен"}</span>
         </label>
-        <button
-          aria-label="Удалить capacity unit"
+        <Button
+          variant="destructive"
+          size="sm"
+          aria-label="Удалить слот"
           className="capacity-unit-row__delete"
           disabled={disabled}
           onClick={onDelete}
@@ -531,7 +541,7 @@ function CapacityUnitRow({
           type="button"
         >
           ✕
-        </button>
+        </Button>
       </div>
     </li>
   );
@@ -553,36 +563,4 @@ function UnitField({
       {error ? <small>{error}</small> : null}
     </label>
   );
-}
-
-function SaveStatusView({
-  error,
-  savedAt,
-  saving,
-}: {
-  error: string | null;
-  savedAt: string | null;
-  saving: boolean;
-}) {
-  if (saving) {
-    return <span className="capacity-units-status capacity-units-status--saving">Сохраняем...</span>;
-  }
-
-  if (error) {
-    return (
-      <span className="capacity-units-status capacity-units-status--error">
-        Ошибка сохранения: {error}
-      </span>
-    );
-  }
-
-  if (savedAt) {
-    return (
-      <span className="capacity-units-status capacity-units-status--saved">
-        Сохранено в {new Date(savedAt).toLocaleTimeString("ru-RU")}
-      </span>
-    );
-  }
-
-  return null;
 }

@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { Button } from "../ui/Button";
+import { SaveStatusView } from "../ui/SaveStatusView";
 import {
   EventImageUploader,
   type EventImageUploadStage,
@@ -184,6 +185,7 @@ export function EventForm(props: EventFormProps) {
   );
   const [errors, setErrors] = useState<FormErrors>({});
   const [isDirty, setIsDirty] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   const [hasSuccessfulEditSave, setHasSuccessfulEditSave] = useState(false);
   const [hasImageValidationError, setHasImageValidationError] = useState(false);
   const previousEventIdRef = useRef<string | null>(initialEvent?.id ?? null);
@@ -200,6 +202,7 @@ export function EventForm(props: EventFormProps) {
 
     if (mode === "create" || isDifferentEvent) {
       setHasSuccessfulEditSave(false);
+      setSavedAt(null);
     }
 
     previousEventIdRef.current = nextEventId;
@@ -232,9 +235,8 @@ export function EventForm(props: EventFormProps) {
     || hasImageValidationError
     || isSavedEditState
     || (mode === "edit" && !isDirty && !hasPendingImageChange);
-  const hasActiveEditSave =
-    mode === "edit" && (isDirty || hasPendingImageChange) && !isSubmitDisabled;
-  const submitButtonVariant = hasActiveEditSave ? "success" : "secondary";
+  const submitButtonVariant = mode === "create" && !(effectiveStatus === "draft" && effectiveVisibility === "hidden")
+    ? "gold" : "success";
 
   const currentCategorySlug = form.category.trim();
 
@@ -500,10 +502,21 @@ export function EventForm(props: EventFormProps) {
       : await props.onSubmit(validation.input);
 
     if (mode === "edit" && isSaved) {
+      setSavedAt(new Date().toISOString());
       setIsDirty(false);
       setHasSuccessfulEditSave(true);
     }
   };
+
+  const saveStatus = (
+    <SaveStatusView
+      error={submitError}
+      recovery="Проверьте данные и повторите сохранение."
+      saving={submitting}
+      savedAt={savedAt}
+      unsaved={isDirty || hasPendingImageChange}
+    />
+  );
 
   return (
     <form className="event-create-form" noValidate onSubmit={handleSubmit} ref={formRef}>
@@ -517,6 +530,7 @@ export function EventForm(props: EventFormProps) {
           >
             {resolvedCancelLabel}
           </Button>
+          {saveStatus}
           <Button
             className="event-form-sticky-actions__submit"
             disabled={isSubmitDisabled}
@@ -537,12 +551,6 @@ export function EventForm(props: EventFormProps) {
       {disabledMessage ? (
         <div className="form-error" role="alert">
           {disabledMessage}
-        </div>
-      ) : null}
-
-      {submitError ? (
-        <div className="form-error" role="alert">
-          {submitError}
         </div>
       ) : null}
 
@@ -792,7 +800,8 @@ export function EventForm(props: EventFormProps) {
           <Button disabled={submitting} onClick={onCancel} variant="ghost">
             {resolvedCancelLabel}
           </Button>
-          <Button disabled={isSubmitDisabled} type="submit" variant="primary">
+          {saveStatus}
+          <Button disabled={isSubmitDisabled} type="submit" variant={submitButtonVariant}>
             {submitButtonLabel}
           </Button>
         </div>
