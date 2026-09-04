@@ -41,6 +41,7 @@ export function AdminLayout({
   const mobileItems = getVisibleNavigationGroups(role)
     .flatMap((group) => group.items)
     .filter((item) => item.section === "events" || item.section === "registrations");
+  const canOpenMobileEvents = mobileItems.some((item) => item.section === "events");
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const mobileDrawerId = useId();
   const mobileDrawerTitleId = useId();
@@ -65,11 +66,17 @@ export function AdminLayout({
     const handleLayoutChange = () => {
       if (!media.matches) {
         closeMobileDrawer();
+        return;
+      }
+      if (activeSection !== "events" && activeSection !== "registrations" && canOpenMobileEvents) {
+        // Preserve the existing section-change flow, including the editor leave guard.
+        onSectionChange("events");
       }
     };
+    handleLayoutChange();
     media.addEventListener("change", handleLayoutChange);
     return () => media.removeEventListener("change", handleLayoutChange);
-  }, [closeMobileDrawer]);
+  }, [activeSection, canOpenMobileEvents, closeMobileDrawer, onSectionChange]);
 
   useEffect(() => {
     const dialog = mobileDrawerRef.current;
