@@ -155,6 +155,7 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
   const [registrationModeFilter, setRegistrationModeFilter] =
     useState<RegistrationModeFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingEventAction | null>(null);
   const [actionInFlight, setActionInFlight] = useState<PendingEventAction | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -261,6 +262,21 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
     visibilityFilter !== "all" ||
     registrationModeFilter !== "all" ||
     categoryFilter !== "all";
+
+  const activeFilterCount = [
+    statusFilter,
+    visibilityFilter,
+    registrationModeFilter,
+    categoryFilter,
+  ].filter((value) => value !== "all").length;
+
+  const resetFilters = () => {
+    setQuery("");
+    setStatusFilter("all");
+    setVisibilityFilter("all");
+    setRegistrationModeFilter("all");
+    setCategoryFilter("all");
+  };
 
   const requestStatusAction = useCallback((event: AdminEvent, action: EventStatusAction) => {
     setPendingAction({ action, event });
@@ -391,66 +407,88 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
             />
           </label>
 
-          <label className="filter-field">
-            <span>Статус</span>
-            <select
-              onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-              value={statusFilter}
+          <div className="events-mobile-filter-actions">
+            <Button
+              aria-controls="events-filter-options"
+              aria-expanded={filtersExpanded}
+              onClick={() => setFiltersExpanded((expanded) => !expanded)}
             >
-              {STATUS_FILTERS.map((filter) => (
-                <option key={filter.value} value={filter.value}>
-                  {filter.label}
-                </option>
-              ))}
-            </select>
-          </label>
+              {filtersExpanded ? "Скрыть фильтры" : "Фильтры"}
+              {activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+            </Button>
+            {hasActiveFilters ? (
+              <Button onClick={resetFilters} variant="ghost">
+                Сбросить фильтры
+              </Button>
+            ) : null}
+          </div>
 
-          <label className="filter-field">
-            <span>Видимость</span>
-            <select
-              onChange={(event) =>
-                setVisibilityFilter(event.target.value as VisibilityFilter)
-              }
-              value={visibilityFilter}
-            >
-              {VISIBILITY_FILTERS.map((filter) => (
-                <option key={filter.value} value={filter.value}>
-                  {filter.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div
+            className="events-filter-options"
+            data-expanded={filtersExpanded}
+            id="events-filter-options"
+          >
+            <label className="filter-field">
+              <span>Статус</span>
+              <select
+                onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+                value={statusFilter}
+              >
+                {STATUS_FILTERS.map((filter) => (
+                  <option key={filter.value} value={filter.value}>
+                    {filter.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label className="filter-field">
-            <span>Регистрация</span>
-            <select
-              onChange={(event) =>
-                setRegistrationModeFilter(event.target.value as RegistrationModeFilter)
-              }
-              value={registrationModeFilter}
-            >
-              {REGISTRATION_MODE_FILTERS.map((filter) => (
-                <option key={filter.value} value={filter.value}>
-                  {filter.label}
-                </option>
-              ))}
-            </select>
-          </label>
+            <label className="filter-field">
+              <span>Видимость</span>
+              <select
+                onChange={(event) =>
+                  setVisibilityFilter(event.target.value as VisibilityFilter)
+                }
+                value={visibilityFilter}
+              >
+                {VISIBILITY_FILTERS.map((filter) => (
+                  <option key={filter.value} value={filter.value}>
+                    {filter.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label className="filter-field">
-            <span>Категория</span>
-            <select
-              onChange={(event) => setCategoryFilter(event.target.value)}
-              value={categoryFilter}
-            >
-              <option value="all">Все</option>
-              {categoryOptions.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-          </label>
+            <label className="filter-field">
+              <span>Регистрация</span>
+              <select
+                onChange={(event) =>
+                  setRegistrationModeFilter(event.target.value as RegistrationModeFilter)
+                }
+                value={registrationModeFilter}
+              >
+                {REGISTRATION_MODE_FILTERS.map((filter) => (
+                  <option key={filter.value} value={filter.value}>
+                    {filter.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="filter-field">
+              <span>Категория</span>
+              <select
+                onChange={(event) => setCategoryFilter(event.target.value)}
+                value={categoryFilter}
+              >
+                <option value="all">Все</option>
+                {categoryOptions.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
       </GlassCard>
 
@@ -492,28 +530,23 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
             title={events.length === 0 ? "События не найдены" : "Нет совпадений"}
           >
             {hasActiveFilters ? (
-              <Button
-                onClick={() => {
-                  setQuery("");
-                  setStatusFilter("all");
-                  setVisibilityFilter("all");
-                  setRegistrationModeFilter("all");
-                  setCategoryFilter("all");
-                }}
-              >
+              <Button onClick={resetFilters}>
                 Сбросить фильтры
               </Button>
             ) : null}
           </EventsState>
         ) : (
-          <EventsTable
-            actionInFlight={actionInFlight}
-            deleteInFlightEvent={deleteInFlightEvent}
-            events={filteredEvents}
-            onEditEvent={onEditEvent}
-            onRequestDeleteEvent={requestDeleteEvent}
-            onRequestStatusAction={requestStatusAction}
-          />
+          <>
+            <EventsTable
+              actionInFlight={actionInFlight}
+              deleteInFlightEvent={deleteInFlightEvent}
+              events={filteredEvents}
+              onEditEvent={onEditEvent}
+              onRequestDeleteEvent={requestDeleteEvent}
+              onRequestStatusAction={requestStatusAction}
+            />
+            <EventsMobileList events={filteredEvents} onEditEvent={onEditEvent} />
+          </>
         )}
       </GlassCard>
 
@@ -537,6 +570,51 @@ export function EventsPage({ onCreateEvent, onEditEvent, refreshSignal }: Events
         />
       ) : null}
     </div>
+  );
+}
+
+function EventsMobileList({
+  events,
+  onEditEvent,
+}: {
+  events: AdminEvent[];
+  onEditEvent: (event: AdminEvent) => void;
+}) {
+  return (
+    <ul className="events-mobile-list" aria-label="События" role="list">
+      {events.map((event) => {
+        const eventPlace = formatEventPlace(event);
+
+        return (
+          <li key={event.id}>
+            <button
+              className="event-mobile-card"
+              onClick={() => onEditEvent(event)}
+              type="button"
+            >
+              <EventThumb event={event} />
+              <span className="event-mobile-card__body">
+                <strong className="event-mobile-card__title">{event.title}</strong>
+                <span className="event-mobile-card__date">{formatEventDateRange(event)}</span>
+                {eventPlace ? (
+                  <span className="event-mobile-card__place">{eventPlace}</span>
+                ) : null}
+              </span>
+              <span className="event-mobile-card__badges">
+                <Badge tone={getStatusTone(event.status)}>{formatStatusLabel(event.status)}</Badge>
+                <Badge tone={getVisibilityTone(event.visibility)}>
+                  {formatVisibilityLabel(event.visibility)}
+                </Badge>
+                <Badge tone={getRegistrationModeTone(event.registrationMode)}>
+                  {formatRegistrationModeLabel(event.registrationMode)}
+                </Badge>
+              </span>
+              <span className="event-mobile-card__open">Открыть событие →</span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -758,7 +836,7 @@ function EventOverflowMenu({
   }
 
   return createPortal(
-    <div className="event-overflow-layer" onClick={onClose}>
+    <div className="event-overflow-layer event-overflow-layer--events" onClick={onClose}>
       <div
         className="event-overflow-menu"
         onClick={(clickEvent) => {
@@ -1144,7 +1222,7 @@ function getMobileVisibilityNotice(status: string, visibility: string): string {
 
 function EventThumb({ event }: { event: AdminEvent }) {
   return (
-    <div className="event-thumb" aria-hidden="true">
+    <span className="event-thumb" aria-hidden="true">
       <span>{event.title.trim().slice(0, 1).toLocaleUpperCase("ru") || "С"}</span>
       {event.imageUrl ? (
         <img
@@ -1157,7 +1235,7 @@ function EventThumb({ event }: { event: AdminEvent }) {
           src={event.imageUrl}
         />
       ) : null}
-    </div>
+    </span>
   );
 }
 
