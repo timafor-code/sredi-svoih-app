@@ -15,6 +15,7 @@
     "validate:app-capabilities": "node ./scripts/validateAppCapabilities.mjs",
     "validate:mobile-iphone-local-runtime": "node ./scripts/validateMobileIphoneLocalRuntime.mjs",
     "validate:mobile-account-deletion": "node ./scripts/validateMobileAccountDeletion.mjs",
+    "validate:mobile-signup-email-verification": "node ./scripts/validateMobileSignupEmailVerification.mjs",
     "validate:blessings": "node ./scripts/validateBlessingsCatalog.mjs",
     "validate:local-data-foundation": "node ./scripts/validateLocalDataFoundation.mjs",
     "validate:guest-prayer-actions": "node ./scripts/validateGuestPrayerActions.mjs",

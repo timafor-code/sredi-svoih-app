@@ -291,9 +291,9 @@ production API auth.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/auth/register` | Public | Create an API password user and profile. |
-| POST | `/auth/login` | Public | Exchange email/password credentials for an access token and refresh session. |
-| POST | `/auth/refresh` | Public/session | Rotate a refresh session and return a new access token. |
+| POST | `/auth/register` | Public | Create an API password user and profile with `email_verified_at` unset, and send an email verification code. Does not return auth tokens. |
+| POST | `/auth/login` | Public | Exchange email/password credentials for an access token and refresh session. Rejected for a `password_signup` user until email verification completes. |
+| POST | `/auth/refresh` | Public/session | Rotate a refresh session and return a new access token. Rejected for a `password_signup` user whose email is not yet verified. |
 | POST | `/auth/logout` | Public/session | Revoke the submitted refresh session when present. |
 | GET | `/auth/me` | Authenticated | Return the current API user, complete editable profile, and active memberships. |
 | POST | `/auth/request-password-reset` | Public | Request password reset delivery. |
@@ -304,6 +304,14 @@ production API auth.
 | POST | `/auth/confirm-set-password` | Public | Confirm set-password code and create the first password hash. |
 | POST | `/auth/register-with-invite` | Public | Create an API password user from an invite and return auth tokens plus user/profile/membership summaries. |
 | POST | `/auth/accept-invite` | Authenticated | Accept an invite for the current API user without creating a new user or rotating tokens. |
+
+A standard `/auth/register` (`account_origin: "password_signup"`) account is
+created with `email_verified_at` unset and does not receive a session at
+registration. `/auth/login` and `/auth/refresh` reject that account with `403
+Email not confirmed` until `/auth/confirm-email-verification` sets
+`email_verified_at`. This guard is scoped to `account_origin ==
+"password_signup"`; invite, migration, and admin-created accounts are
+unaffected.
 
 Auth response `data` may include:
 
@@ -496,6 +504,7 @@ Stable flow errors:
 | 400 | `Invalid or expired password reset code` | Reset code is missing, unknown, consumed, expired, wrong-purpose, or no longer usable. |
 | 400 | `Invalid or expired email verification code` | Verification code is missing, unknown, consumed, expired, wrong-purpose, or no longer usable. |
 | 400 | `Invalid or expired set-password code` | Set-password code is missing, unknown, consumed, expired, wrong-purpose, or no longer usable. |
+| 403 | `Email not confirmed` | `/auth/login` or `/auth/refresh` was called for a `password_signup` account with `email_verified_at` unset. |
 | 409 | `Password is already set` | A valid set-password code was presented after the user already became password-capable. |
 | 429 | `Too many auth email requests` | Request rate limit was exceeded for the auth email flow. |
 

@@ -158,6 +158,7 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
                         account_origin="password_signup",
                         claim_state="claimed",
                         claimed_at=self.now,
+                        email_verified_at=self.now,
                         status=status,
                     ),
                 )

@@ -10,6 +10,7 @@ import {
   getAuthErrorMessage,
 } from '@/services/authErrorMessages';
 import {
+  confirmEmailVerification as confirmEmailVerificationService,
   getSession,
   loadProfile as loadProfileService,
   resendConfirmationEmail as resendConfirmationEmailService,
@@ -58,6 +59,7 @@ type AuthState = {
   signInWithApple: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signUpWithEmail: (email: string, password: string) => Promise<EmailSignUpResult>;
+  confirmEmailVerification: (code: string) => Promise<void>;
   resendConfirmationEmail: (email: string) => Promise<void>;
   resetPasswordForEmail: (email: string) => Promise<void>;
   clearLocalSessionAfterAccountDeletion: () => Promise<void>;
@@ -946,6 +948,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ loading: false, error: message });
       }
 
+      throw new Error(message);
+    }
+  },
+
+  confirmEmailVerification: async (code: string) => {
+    assertAccountFeaturesAvailable();
+
+    set({ loading: true, error: null });
+
+    try {
+      await confirmEmailVerificationService(code);
+
+      set({ loading: false, error: null });
+    } catch (error) {
+      const message = friendlyAuthError(error);
+
+      set({ loading: false, error: message });
       throw new Error(message);
     }
   },

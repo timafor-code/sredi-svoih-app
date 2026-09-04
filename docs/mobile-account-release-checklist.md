@@ -22,11 +22,19 @@ For local Expo Go testing, put these non-secret values in the owner's uncommitte
 
 ## New account
 
+New account manual flow: register → receive verification email → enter code → authenticated → onboarding.
+
 - [ ] Create an account with email and password.
-- [ ] The session becomes authenticated.
+- [ ] The app does not become authenticated immediately after registration.
+- [ ] The verification-code screen appears and a verification email arrives.
+- [ ] An invalid code does not authenticate the app.
+- [ ] Entering the correct code logs in and the session becomes authenticated.
 - [ ] Profile onboarding opens and can be completed.
 - [ ] Restart the app and confirm that the API session is restored.
 - [ ] Sign out, then sign in again with the same account.
+- [ ] Resending the verification email works.
+- [ ] For a pre-existing unverified account: sign-in is blocked, the recovery verification screen is offered, and signing in succeeds after entering the code.
+- [ ] Wrong password on sign-in still shows a normal invalid-credentials error, not the verification screen.
 
 ## Existing account
 

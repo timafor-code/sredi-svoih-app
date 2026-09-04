@@ -166,6 +166,10 @@ export type ApiAuthEmailRequest = {
   email: string;
 };
 
+export type ApiConfirmEmailVerificationRequest = {
+  code: string;
+};
+
 export type ApiOkResponse = {
   ok: boolean;
 };

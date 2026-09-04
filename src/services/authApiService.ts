@@ -2,6 +2,7 @@ import type { AppAuthSession, AppAuthUser } from '@/types/auth';
 import type {
   ApiAuthEmailRequest,
   ApiAuthTokenResponse,
+  ApiConfirmEmailVerificationRequest,
   ApiCurrentUserResponse,
   ApiLoginRequest,
   ApiLogoutRequest,
@@ -252,25 +253,28 @@ export async function signUpWithEmail(email: string, password: string): Promise<
     { includeAuthToken: false },
   );
 
-  const tokenResponse = await apiClient.post<ApiAuthTokenResponse, ApiLoginRequest>(
-    '/auth/login',
-    {
-      email: normalizedEmail,
-      password,
-    },
-    { includeAuthToken: false },
-  );
-  await setApiAuthTokens(tokenResponse);
-  const session = apiTokensToSession(tokenResponse, tokenResponse.user);
-
   return {
-    session,
-    user: session.user,
+    session: null,
+    user: apiUserToAppAuthUser(registerResponse.user),
     profile: registerResponse.profile
       ? apiProfileToProfile(registerResponse.profile)
       : null,
-    needsEmailConfirmation: false,
+    needsEmailConfirmation: true,
   };
+}
+
+export async function confirmEmailVerification(code: string): Promise<void> {
+  const trimmedCode = code.trim();
+
+  if (!trimmedCode) {
+    throw new Error('Enter the verification code.');
+  }
+
+  await apiClient.post<ApiOkResponse, ApiConfirmEmailVerificationRequest>(
+    '/auth/confirm-email-verification',
+    { code: trimmedCode },
+    { includeAuthToken: false },
+  );
 }
 
 export async function resendConfirmationEmail(email: string): Promise<void> {
