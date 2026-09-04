@@ -108,6 +108,7 @@ type EventOccurrencesConstructorProps = {
   eventId: string;
   active?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
+  onExplicitDirtyChange?: (dirty: boolean) => void;
 };
 
 type DraftOccurrence = {
@@ -904,6 +905,7 @@ export function EventOccurrencesConstructor({
   eventId,
   active = true,
   onDirtyChange,
+  onExplicitDirtyChange,
 }: EventOccurrencesConstructorProps) {
   const fallbackTimezone =
     defaultTimezone && defaultTimezone.trim()
@@ -942,6 +944,8 @@ export function EventOccurrencesConstructor({
 
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange?.(false), [eventId, onDirtyChange]);
+  useEffect(() => { onExplicitDirtyChange?.(singlePeriodDirty); }, [singlePeriodDirty, onExplicitDirtyChange]);
+  useEffect(() => () => onExplicitDirtyChange?.(false), [eventId, onExplicitDirtyChange]);
 
   const occurrenceListRef = useRef<HTMLDivElement>(null);
   const saveInFlightRef = useRef(false);
