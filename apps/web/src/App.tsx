@@ -1,5 +1,6 @@
 import {
   type ReactNode,
+  type MouseEventHandler,
   useEffect,
   useMemo,
   useRef,
@@ -150,23 +151,25 @@ type PageState =
   | { kind: "network_error"; routeKey: string }
   | { kind: "server_error"; routeKey: string };
 
-function BrandHeader(): ReactNode {
+function BrandHeader({ onSignIn }: { onSignIn?: MouseEventHandler<HTMLButtonElement> }): ReactNode {
   return (
     <header className="brand-header">
       <a className="brand-link" href="#main-content" aria-label="Среди Своих — к содержимому">
         <img src="/logo.png" alt="Среди Своих" width="184" height="74" />
       </a>
+      {onSignIn ? <button id="header-signin" className="header-signin" type="button" aria-haspopup="dialog" onClick={onSignIn}>Войти</button> : null}
     </header>
   );
 }
 
-function PageFrame({ children, privacyDocument }: {
+function PageFrame({ children, privacyDocument, onSignIn }: {
   children: ReactNode;
   privacyDocument?: WebRegistrationLegalDocument;
+  onSignIn?: MouseEventHandler<HTMLButtonElement>;
 }): ReactNode {
   return (
     <div className="page-shell">
-      <BrandHeader />
+      <BrandHeader onSignIn={onSignIn} />
       {children}
       <footer className="site-footer">
         <span>Местная иудейская религиозная организация «Среди Своих»</span>
@@ -410,7 +413,7 @@ function ParticipationOptionCard({
           {option.description ? <small className="option-description">{option.description}</small> : null}
         </span>
       </label>
-      {option.allow_quantity ? (
+      {option.allow_quantity && selection.selected ? (
         <div className="quantity-control">
           <span className="quantity-label" id={`quantity-label-${option.id}`}>Количество</span>
           <div className="quantity-stepper" aria-labelledby={`quantity-label-${option.id}`}>
@@ -512,6 +515,117 @@ type AuthenticatedAccountState = {
   identity: ExistingAccountIdentity;
 };
 
+function SignInDialog({ initialEmail, onClose, onAuthenticated }: {
+  initialEmail: string;
+  onClose: () => void;
+  onAuthenticated: (account: AuthenticatedAccountState) => void;
+}): ReactNode {
+  const [loginEmail, setLoginEmail] = useState(initialEmail.trim());
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const submittingRef = useRef(false);
+  const activeRef = useRef(true);
+  const backdropPressRef = useRef(false);
+
+  const closeDialog = () => {
+    activeRef.current = false;
+    dialogRef.current?.close();
+    onClose();
+  };
+
+  useEffect(() => {
+    activeRef.current = true;
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    emailRef.current?.focus();
+    return () => {
+      activeRef.current = false;
+      dialog?.close();
+    };
+  }, []);
+
+  const submitLogin = async () => {
+    if (submittingRef.current || !loginEmail.trim() || !loginPassword) return;
+    submittingRef.current = true;
+    setBusy(true);
+    setLoginError(null);
+    try {
+      const tokens = await loginExistingAccount(loginEmail.trim(), loginPassword);
+      const identity = await getExistingAccount(tokens.access_token);
+      if (!activeRef.current
+        || !identity.email
+        || !identity.first_name.trim()
+        || !identity.last_name.trim()
+        || !normalizeInternationalPhone(identity.phone)) {
+        try {
+          await logoutExistingAccount(tokens.refresh_token);
+        } catch {
+          // Best-effort cleanup after dismissal or an incomplete canonical profile.
+        }
+        if (activeRef.current) {
+          setLoginPassword("");
+          setLoginError("В аккаунте не заполнены данные, необходимые для регистрации. Вы можете продолжить регистрацию без входа.");
+        }
+        return;
+      }
+      dialogRef.current?.close();
+      onAuthenticated({ tokens, identity });
+    } catch (error: unknown) {
+      if (activeRef.current) {
+        setLoginPassword("");
+        setLoginError(safeLoginError(error));
+        emailRef.current?.focus();
+      }
+    } finally {
+      submittingRef.current = false;
+      if (activeRef.current) setBusy(false);
+    }
+  };
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="login-dialog"
+      aria-labelledby="login-heading"
+      aria-describedby="login-description"
+      onCancel={(event) => { event.preventDefault(); closeDialog(); }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") { event.preventDefault(); closeDialog(); }
+      }}
+      onPointerDown={(event) => { backdropPressRef.current = event.target === event.currentTarget; }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget && backdropPressRef.current) closeDialog();
+      }}
+    >
+      <div className="login-head">
+        <div>
+          <h2 id="login-heading">Войти в аккаунт</h2>
+          <p id="login-description">Введите email и пароль вашего аккаунта.</p>
+        </div>
+        <button className="login-close" type="button" aria-label="Закрыть вход" onClick={closeDialog}>×</button>
+      </div>
+      <form className="login-body" noValidate onSubmit={(event) => { event.preventDefault(); void submitLogin(); }}>
+        <div className="form-field">
+          <label htmlFor="login-email">Email</label>
+          <input ref={emailRef} id="login-email" type="email" autoComplete="email" required value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} />
+        </div>
+        <div className="form-field">
+          <label htmlFor="login-password">Пароль</label>
+          <input id="login-password" type="password" autoComplete="current-password" required value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} />
+        </div>
+        {loginError ? <p className="form-error" role="alert">{loginError}</p> : null}
+        <button className="secondary-button" type="submit" disabled={busy || !loginEmail.trim() || !loginPassword}>
+          {busy ? "Входим…" : "Войти"}
+        </button>
+        <button className="text-button" type="button" onClick={closeDialog}>Отмена</button>
+      </form>
+    </dialog>
+  );
+}
+
 const SUCCESS_COPY: Record<WebRegistrationResult["status"], string> = {
   confirmed: "Регистрация подтверждена.",
   pending: "Заявка отправлена и ожидает подтверждения организатора.",
@@ -529,7 +643,8 @@ function RegistrationForm({
   questionnaireFormId,
   questions,
   consentDocument,
-  privacyDocument,
+  onSignIn,
+  onEmailChange,
   authenticatedAccount,
   onAuthenticatedAccountChange,
   onAuthenticatedRegistrationCompleted,
@@ -543,7 +658,8 @@ function RegistrationForm({
   questionnaireFormId: string | null;
   questions: WebQuestionnaireField[];
   consentDocument: WebRegistrationLegalDocument;
-  privacyDocument?: WebRegistrationLegalDocument;
+  onSignIn: MouseEventHandler<HTMLButtonElement>;
+  onEmailChange: (email: string) => void;
   authenticatedAccount: AuthenticatedAccountState | null;
   onAuthenticatedAccountChange: (account: AuthenticatedAccountState | null) => void;
   onAuthenticatedRegistrationCompleted: () => void;
@@ -563,16 +679,12 @@ function RegistrationForm({
   const [questionnaireValues, setQuestionnaireValues] = useState<QuestionnaireValues>({});
   const [questionnaireErrors, setQuestionnaireErrors] = useState<QuestionnaireErrors>({});
   const [notice, setNotice] = useState<string | null>(null);
-  const [loginPanelOpen, setLoginPanelOpen] = useState(false);
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [loginError, setLoginError] = useState<string | null>(null);
   const [flowError, setFlowError] = useState<string | null>(null);
   const [stage, setStage] = useState<FlowStage>("form");
   const [flowId, setFlowId] = useState<string | null>(null);
   const [flowExpiresAt, setFlowExpiresAt] = useState<string | null>(null);
   const [emailCode, setEmailCode] = useState("");
-  const [busyAction, setBusyAction] = useState<"create" | "confirm" | "resend" | "status" | "request_password" | "password" | "login" | null>(null);
+  const [busyAction, setBusyAction] = useState<"create" | "confirm" | "resend" | "status" | "request_password" | "password" | null>(null);
   const [confirmationUnknown, setConfirmationUnknown] = useState(false);
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
@@ -591,8 +703,6 @@ function RegistrationForm({
   const [passwordlessDeletionPending, setPasswordlessDeletionPending] = useState(false);
   const optionsRef = useRef<HTMLFieldSetElement>(null);
   const emailCodeRef = useRef<HTMLInputElement>(null);
-  const loginEmailRef = useRef<HTMLInputElement>(null);
-  const loginEntryRef = useRef<HTMLButtonElement>(null);
   const wasAuthenticatedRef = useRef(authenticatedAccount !== null);
   const passwordCodeRef = useRef<HTMLInputElement>(null);
   const newPasswordRef = useRef<HTMLInputElement>(null);
@@ -618,10 +728,6 @@ function RegistrationForm({
     setQuestionnaireValues({});
     setQuestionnaireErrors({});
     setNotice(null);
-    setLoginPanelOpen(false);
-    setLoginEmail("");
-    setLoginPassword("");
-    setLoginError(null);
     setFlowError(null);
     setStage("form");
     setFlowId(null);
@@ -641,14 +747,19 @@ function RegistrationForm({
   }, [stage]);
 
   useEffect(() => {
-    if (loginPanelOpen) loginEmailRef.current?.focus();
-  }, [loginPanelOpen]);
+    onEmailChange(values.email);
+    return () => onEmailChange("");
+  }, [values.email, onEmailChange]);
 
   useEffect(() => {
     const wasAuthenticated = wasAuthenticatedRef.current;
     wasAuthenticatedRef.current = existingAccount !== null;
+    idempotencyRef.current = null;
+    if (!wasAuthenticated && existingAccount) {
+      setNotice("Вход выполнен. Для регистрации будут использованы данные вашего аккаунта.");
+    }
     if (wasAuthenticated && !existingAccount) {
-      window.requestAnimationFrame(() => loginEntryRef.current?.focus());
+      window.requestAnimationFrame(() => document.getElementById("header-signin")?.focus());
     }
   }, [existingAccount]);
 
@@ -830,54 +941,6 @@ function RegistrationForm({
       applyStatus(await getWebRegistrationIntentStatus(currentFlowId));
     } catch (error: unknown) {
       setFlowError(safeApiError(error, "status"));
-    } finally {
-      submittingRef.current = false;
-      setBusyAction(null);
-    }
-  };
-
-  const cancelExistingAccountLogin = () => {
-    setLoginPanelOpen(false);
-    setLoginEmail("");
-    setLoginPassword("");
-    setLoginError(null);
-    setNotice(null);
-    setFlowError(null);
-    idempotencyRef.current = null;
-  };
-
-  const submitExistingAccountLogin = async () => {
-    if (submittingRef.current) return;
-    submittingRef.current = true;
-    setBusyAction("login");
-    setLoginError(null);
-    try {
-      const tokens = await loginExistingAccount(loginEmail.trim(), loginPassword);
-      const identity = await getExistingAccount(tokens.access_token);
-      if (
-        !identity.email
-        || !identity.first_name.trim()
-        || !identity.last_name.trim()
-        || !normalizeInternationalPhone(identity.phone)
-      ) {
-        try {
-          await logoutExistingAccount(tokens.refresh_token);
-        } catch {
-          // Best-effort cleanup after rejecting an incomplete canonical profile.
-        }
-        setLoginPassword("");
-        setLoginError("В аккаунте не заполнены данные, необходимые для регистрации. Вы можете продолжить регистрацию без входа.");
-        return;
-      }
-      onAuthenticatedAccountChange({ tokens, identity });
-      setLoginPassword("");
-      setLoginPanelOpen(false);
-      setNotice("Вход выполнен. Для регистрации будут использованы данные вашего аккаунта.");
-      idempotencyRef.current = null;
-    } catch (error: unknown) {
-      setLoginPassword("");
-      setLoginError(safeLoginError(error));
-      window.requestAnimationFrame(() => loginEmailRef.current?.focus());
     } finally {
       submittingRef.current = false;
       setBusyAction(null);
@@ -1297,6 +1360,12 @@ function RegistrationForm({
 
   return (
     <form className="registration-form" noValidate onSubmit={(event) => event.preventDefault()}>
+      {!existingAccount ? (
+        <div className="signin-strip">
+          <p>Уже есть аккаунт?</p>
+          <button type="button" aria-haspopup="dialog" onClick={onSignIn}>Войти</button>
+        </div>
+      ) : null}
       <ParticipationOptions
         options={options}
         selections={selections}
@@ -1377,114 +1446,60 @@ function RegistrationForm({
         )}
       </section>
 
-      <section className="surface section-card legal-section" aria-labelledby="legal-heading">
-        <h2 id="legal-heading">Согласие на обработку данных</h2>
-        <p>
-          <a href={consentDocument.published_url} target="_blank" rel="noopener noreferrer">
-            {consentDocument.title} · версия {consentDocument.version}
-          </a>
-        </p>
-        {privacyDocument ? (
-          <p>
-            <a href={privacyDocument.published_url} target="_blank" rel="noopener noreferrer">
-              {privacyDocument.title} · версия {privacyDocument.version}
-            </a>
-          </p>
-        ) : null}
-        <label className="consent-control">
+      <section className={`surface consent-card${values.consent ? " checked" : ""}${errors.consent ? " invalid" : ""}`} aria-labelledby="legal-heading">
+        <h2 className="sr-only" id="legal-heading">Согласие на обработку данных</h2>
+        <div className="consent-row">
           <input
             id="consent"
             type="checkbox"
             checked={values.consent}
+            aria-required="true"
             aria-invalid={Boolean(errors.consent)}
-            aria-describedby={errors.consent ? "consent-error" : undefined}
+            aria-describedby={`consent-meta${errors.consent ? " consent-error" : !values.consent ? " consent-nudge" : ""}`}
             onChange={(event) => {
               setValues((current) => ({ ...current, consent: event.target.checked }));
               setErrors((current) => ({ ...current, consent: undefined }));
             }}
           />
-          <span>Я ознакомился(-ась) с документом и даю отдельное согласие на обработку персональных данных для регистрации на мероприятие.</span>
-        </label>
+          <div className="consent-text">
+            <label htmlFor="consent">Я ознакомился(-ась) с документом и даю отдельное согласие на обработку персональных данных для регистрации на мероприятие:</label>{" "}
+            <a href={consentDocument.published_url} target="_blank" rel="noopener noreferrer">{consentDocument.title}</a>
+            <p className="consent-meta" id="consent-meta">Версия {consentDocument.version}. Документ откроется в новой вкладке.</p>
+          </div>
+        </div>
         {errors.consent ? <p className="field-error" id="consent-error" role="alert">{errors.consent}</p> : null}
       </section>
 
-      <section className="surface section-card" aria-labelledby="account-actions-heading">
-        <h2 id="account-actions-heading">Как продолжить</h2>
-        {existingAccount ? (
-          <div className="signed-in-card" aria-live="polite" aria-atomic="true">
-            <p>Регистрация будет оформлена на данные аккаунта.</p>
-            <button
-              className="primary-button"
-              type="button"
-              disabled={busyAction !== null}
-              onClick={() => void continueWithAccountChoice("without_password")}
-            >
-              {busyAction === "create" ? "Отправляем…" : "Продолжить регистрацию"}
-            </button>
-          </div>
-        ) : loginPanelOpen ? (
-          <div className="login-card">
-            <h3>Войти в аккаунт</h3>
-            <div className="form-field">
-              <label htmlFor="login-email">Email</label>
-              <input ref={loginEmailRef} id="login-email" type="email" autoComplete="email" value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} />
-            </div>
-            <div className="form-field">
-              <label htmlFor="login-password">Пароль</label>
-              <input id="login-password" type="password" autoComplete="current-password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} />
-            </div>
-            {loginError ? <p className="form-error" role="alert">{loginError}</p> : null}
-            <div className="flow-actions">
-              <button className="primary-button" type="button" disabled={busyAction !== null || !loginEmail.trim() || !loginPassword} onClick={() => void submitExistingAccountLogin()}>
-                {busyAction === "login" ? "Входим…" : "Войти"}
-              </button>
-              <button className="text-button" type="button" disabled={busyAction !== null} onClick={cancelExistingAccountLogin}>Отмена</button>
-            </div>
-          </div>
-        ) : (
-          <>
-          <div className="account-action-grid">
-          <div className="account-action-card">
-            <p>Подтвердите email и запишитесь на мероприятие. Пароль не нужен. Чтобы ваши записи не дублировались, мы сохраним одну техническую карточку. Управлять или удалить данные можно по коду из email.</p>
-            <button
-              className="primary-button"
-              type="button"
-              aria-pressed={values.accountChoice === "without_password"}
-              disabled={busyAction !== null}
-              onClick={() => void continueWithAccountChoice("without_password")}
-            >
-              {busyAction === "create" && values.accountChoice === "without_password" ? "Отправляем…" : "Продолжить без пароля"}
-            </button>
-          </div>
-          <div className="account-action-card">
+      <section className="surface continue-card" aria-labelledby="account-actions-heading">
+        <h2 className="sr-only" id="account-actions-heading">Как продолжить</h2>
+        <button
+          className={`registration-confirm${!values.consent ? " consent-incomplete" : ""}`}
+          type="button"
+          aria-describedby={!values.consent ? "consent-nudge" : undefined}
+          disabled={busyAction !== null}
+          onClick={() => void continueWithAccountChoice("without_password")}
+        >
+          {busyAction === "create" && values.accountChoice === "without_password" ? "Отправляем…" : "Записаться на мероприятие"}
+        </button>
+        <p className="registration-caption">{existingAccount
+          ? "Регистрация будет оформлена на данные аккаунта."
+          : "Подтвердите email кодом из письма. Пароль сейчас не нужен."}</p>
+        {!existingAccount ? (
+          <details className="continue-details">
+            <summary>Что происходит с моими данными</summary>
+            <p>Регистрация не требует пароля. Чтобы ваши записи не дублировались, мы сохраним одну техническую карточку участника. Управлять или удалить данные можно по коду из email.</p>
             <p>Задайте пароль один раз, чтобы в дальнейшем не вводить данные повторно и видеть свои регистрации в приложении и на сайте.</p>
             <button
-              className="secondary-button"
+              className="text-button"
               type="button"
-              aria-pressed={values.accountChoice === "create_account"}
               disabled={busyAction !== null}
               onClick={() => void continueWithAccountChoice("create_account")}
             >
               {busyAction === "create" && values.accountChoice === "create_account" ? "Отправляем…" : "Создать аккаунт"}
             </button>
-          </div>
-          </div>
-          <button
-            ref={loginEntryRef}
-            className="text-button existing-account-button"
-            type="button"
-            disabled={busyAction !== null}
-            onClick={() => {
-              setLoginPanelOpen(true);
-              setLoginEmail(values.email.trim());
-              setLoginError(null);
-              setNotice(null);
-            }}
-          >
-            Уже есть аккаунт? Войти
-          </button>
-          </>
-        )}
+          </details>
+        ) : null}
+        {!values.consent ? <p className="consent-nudge" id="consent-nudge">Отметьте согласие выше, чтобы продолжить.</p> : null}
       </section>
 
       <div className="flow-live" aria-live="polite" aria-atomic="true">
@@ -1529,6 +1544,15 @@ function EventPage({
   ]);
   const [selectedOccurrenceId, setSelectedOccurrenceId] = useState(initialOccurrenceId);
   const [dateStepComplete, setDateStepComplete] = useState(!dateStepRequired);
+  const [registrationEmail, setRegistrationEmail] = useState("");
+  const [loginOpener, setLoginOpener] = useState<HTMLButtonElement | null>(null);
+  const openSignIn: MouseEventHandler<HTMLButtonElement> = (event) => {
+    if (!document.querySelector('[aria-modal="true"], dialog[open]')) setLoginOpener(event.currentTarget);
+  };
+  const closeSignIn = () => {
+    setLoginOpener(null);
+    loginOpener?.focus();
+  };
   const [ticketsOpen, setTicketsOpen] = useState(false);
   const [ticketsRevision, setTicketsRevision] = useState(0);
   const [accountDeletionEmail, setAccountDeletionEmail] = useState<string | null>(null);
@@ -1636,7 +1660,17 @@ function EventPage({
   };
 
   return (
-    <PageFrame privacyDocument={privacyDocument}>
+    <PageFrame privacyDocument={privacyDocument} onSignIn={!authenticatedAccount ? openSignIn : undefined}>
+      {loginOpener && !authenticatedAccount ? (
+        <SignInDialog
+          initialEmail={registrationEmail}
+          onClose={closeSignIn}
+          onAuthenticated={(account) => {
+            setLoginOpener(null);
+            onAuthenticatedAccountChange(account);
+          }}
+        />
+      ) : null}
       {stickyRegistrationVisible ? (
         <div className="sticky-registration">
           <div className="sticky-registration-inner">
@@ -1753,7 +1787,8 @@ function EventPage({
                   questionnaireFormId={data.questionnaire_form_id}
                   questions={data.questions}
                   consentDocument={consentDocument}
-                  privacyDocument={privacyDocument}
+                  onSignIn={openSignIn}
+                  onEmailChange={setRegistrationEmail}
                   authenticatedAccount={authenticatedAccount}
                   onAuthenticatedAccountChange={onAuthenticatedAccountChange}
                   onAuthenticatedRegistrationCompleted={() => {
