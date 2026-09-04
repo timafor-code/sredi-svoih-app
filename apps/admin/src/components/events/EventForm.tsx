@@ -567,26 +567,28 @@ export function EventForm(props: EventFormProps) {
     <form className={`event-create-form${externalPublication ? " event-edit-form" : ""}`} noValidate onSubmit={handleSubmit} ref={formRef}>
       {actionsPlacement === "stickyTop" ? (
         <div className="event-form-sticky-actions">
-          <div className="event-form-sticky-actions__left">
-          <Button
-            className="event-form-sticky-actions__back"
-            disabled={submitting}
-            onClick={onCancel}
-            variant="secondary"
-          >
-            {resolvedCancelLabel}
-          </Button>
-          {saveStatus}
+          <div className="event-form-primary-actions">
+            <div className="event-form-sticky-actions__left">
+              <Button
+                className="event-form-sticky-actions__back"
+                disabled={submitting}
+                onClick={onCancel}
+                variant="secondary"
+              >
+                {resolvedCancelLabel}
+              </Button>
+              {saveStatus}
+            </div>
+            <Button
+              className="event-form-sticky-actions__submit"
+              disabled={isSubmitDisabled}
+              type="submit"
+              variant={submitButtonVariant}
+            >
+              {submitButtonLabel}
+            </Button>
           </div>
           {publicationControls}
-          <Button
-            className="event-form-sticky-actions__submit"
-            disabled={isSubmitDisabled}
-            type="submit"
-            variant={submitButtonVariant}
-          >
-            {submitButtonLabel}
-          </Button>
         </div>
       ) : null}
 
