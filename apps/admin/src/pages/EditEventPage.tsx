@@ -46,6 +46,7 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
   const [questionnaireDirty, setQuestionnaireDirty] = useState(false);
   const [periodDirty, setPeriodDirty] = useState(false);
   const [singlePeriodExplicitDirty, setSinglePeriodExplicitDirty] = useState(false);
+  const [participationOptionsRevision, setParticipationOptionsRevision] = useState(0);
   const [publicationPending, setPublicationPending] = useState(0);
   const publicationCountRef = useRef(0);
   const publicationErrorRef = useRef<string | null>(null);
@@ -170,6 +171,7 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
     setImageStage(null);
     setImageError(null);
     setImageSuccessMessage(null);
+    setParticipationOptionsRevision(0);
   }, [event.id]);
 
   const handleSelectedImageFileChange = useCallback((file: File | null) => {
@@ -457,6 +459,7 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
               onDirtyChange={setEventDirty}
               onRegistrationModeChange={setRegistrationMode}
               onOpenTickets={() => setActiveTab("tickets")}
+              participationOptionsRevision={participationOptionsRevision}
               mode="edit"
               categories={categories}
               categoriesError={categoriesError}
@@ -481,8 +484,9 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
             />
           </GlassCard>,
           tickets: <EventTicketsCapacityModule key={currentEvent.id} eventId={currentEvent.id}
-            defaultPriceCurrency={currentEvent.priceCurrency} eventCapacity={currentEvent.capacity}
-            active={activeTab === "tickets" && registrationMode === "internal_paid"} onDirtyChange={setTicketsDirty} />,
+             defaultPriceCurrency={currentEvent.priceCurrency} eventCapacity={currentEvent.capacity}
+            active={activeTab === "tickets" && registrationMode === "internal_paid"} onDirtyChange={setTicketsDirty}
+            onParticipationOptionsPersisted={() => setParticipationOptionsRevision((current) => current + 1)} />,
           web: <div className="event-editor-web-grid">
             <EventWebRegistrationCard key={`web-${currentEvent.id}`} eventId={currentEvent.id} eventTitle={currentEvent.title}
               onDirtyChange={setWebDirty} />

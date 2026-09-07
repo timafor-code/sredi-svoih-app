@@ -96,6 +96,7 @@ type EventFormSharedProps = {
   onRegistrationModeChange?: (mode: string) => void;
   onDirtyChange?: (dirty: boolean) => void;
   onOpenTickets?: () => void;
+  participationOptionsRevision?: number;
   publicationControlled?: boolean;
   confirmedContentEvent?: AdminEvent;
   onSelectedImageFileChange?: (file: File | null) => void;
@@ -186,6 +187,7 @@ export function EventForm(props: EventFormProps) {
   onRegistrationModeChange,
   onDirtyChange,
   onOpenTickets,
+  participationOptionsRevision = 0,
   publicationControlled = false,
   confirmedContentEvent,
   onSelectedImageFileChange = ignoreSelectedImageFileChange,
@@ -211,6 +213,7 @@ export function EventForm(props: EventFormProps) {
   const [participationOptions, setParticipationOptions] = useState<ParticipationOption[]>([]);
   const [participationOptionsLoading, setParticipationOptionsLoading] = useState(false);
   const [participationOptionsError, setParticipationOptionsError] = useState<string | null>(null);
+  const [participationOptionsLoadedRevision, setParticipationOptionsLoadedRevision] = useState<number | null>(null);
   const externalPublication = mode === "edit" && publicationControlled;
   const formDirty = mode === "edit" && Object.keys(form).some((key) => {
     const field = key as keyof EventFormState;
@@ -275,6 +278,7 @@ export function EventForm(props: EventFormProps) {
       setParticipationOptions([]);
       setParticipationOptionsLoading(false);
       setParticipationOptionsError(null);
+      setParticipationOptionsLoadedRevision(participationOptionsRevision);
       return;
     }
 
@@ -283,7 +287,9 @@ export function EventForm(props: EventFormProps) {
     setParticipationOptionsError(null);
     void listAdminEventParticipationOptions(eventId)
       .then((options) => {
-        if (active) setParticipationOptions(options);
+        if (!active) return;
+        setParticipationOptions(options);
+        setParticipationOptionsLoadedRevision(participationOptionsRevision);
       })
       .catch(() => {
         if (!active) return;
@@ -295,7 +301,7 @@ export function EventForm(props: EventFormProps) {
       });
 
     return () => { active = false; };
-  }, [initialEvent?.id]);
+  }, [initialEvent?.id, participationOptionsRevision]);
 
   useEffect(() => {
     onRegistrationModeChange?.(form.registrationMode);
@@ -580,7 +586,9 @@ export function EventForm(props: EventFormProps) {
 
     const scheduleValidation = validateEventSchedule(
       schedule,
-      participationOptionsLoading || participationOptionsError
+      participationOptionsLoading
+        || participationOptionsError
+        || participationOptionsLoadedRevision !== participationOptionsRevision
         ? null
         : participationOptions.map((option) => option.id),
     );
@@ -776,7 +784,10 @@ export function EventForm(props: EventFormProps) {
         onChange={handleScheduleChange}
         options={participationOptions}
         optionsError={participationOptionsError}
-        optionsLoading={participationOptionsLoading}
+        optionsLoading={
+          participationOptionsLoading
+          || participationOptionsLoadedRevision !== participationOptionsRevision
+        }
         schedule={schedule}
       />
 

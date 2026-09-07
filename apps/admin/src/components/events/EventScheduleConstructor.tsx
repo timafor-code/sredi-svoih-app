@@ -47,7 +47,6 @@ export function EventScheduleConstructor({
       : left.sortOrder - right.sortOrder
   ));
   const optionsById = new Map(sortedOptions.map((option) => [option.id, option]));
-  const selectDisabled = disabled || optionsLoading || sortedOptions.length === 0;
 
   const updateSchedule = (updater: (current: AdminEventSchedule) => AdminEventSchedule) => {
     onChange(updater(schedule ?? { version: 1, days: [] }));
@@ -209,6 +208,8 @@ export function EventScheduleConstructor({
                     const missingOptionLabel = optionsLoading || optionsError
                       ? `Недоступный вариант (${item.optionId})`
                       : `Удалённый вариант (${item.optionId})`;
+                    const selectDisabled = disabled || optionsLoading || Boolean(optionsError)
+                      || (item.optionId === null && sortedOptions.length === 0);
                     return (
                       <div className="event-schedule-item" key={`${itemIndex}-${item.optionId ?? "none"}`}>
                         <ScheduleField error={itemErrors.time} label="Время *">
@@ -226,7 +227,7 @@ export function EventScheduleConstructor({
                             {sortedOptions.map((option) => <option key={option.id} value={option.id}>{formatOption(option)}</option>)}
                           </select>
                           {optionsLoading ? <small>Загружаем варианты участия…</small> : null}
-                          {!optionsLoading && sortedOptions.length === 0 ? <small>Для этого события ещё нет вариантов участия.</small> : null}
+                          {!optionsLoading && !optionsError && sortedOptions.length === 0 ? <small>Для этого события ещё нет вариантов участия.</small> : null}
                         </ScheduleField>
                         <div className="event-schedule-item__actions event-schedule-actions">
                           <button aria-label="Переместить пункт выше" disabled={disabled || itemIndex === 0}
