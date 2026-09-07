@@ -6,13 +6,16 @@ import {
   confirmWebRegistrationEmail,
   createDeletionPrivacyRequest,
   createWebRegistrationIntent,
+  deleteWebParticipantSession,
   getExistingAccount,
+  getWebParticipantSession,
   getMyRegistrations,
   getWebEventRegistrationForm,
   getWebRegistrationIntentStatus,
   isSafePublicUrl,
   PublicApiError,
   loginExistingAccount,
+  issueWebParticipantSession,
   logoutExistingAccount,
   requestSetPassword,
   requestPrivacyAccessCode,
@@ -181,6 +184,42 @@ describe("public event API", () => {
     expect(fetch).toHaveBeenNthCalledWith(3, "/api/auth/logout", expect.objectContaining({
       body: JSON.stringify({ refresh_token: "temporary-refresh" }),
     }));
+  });
+
+  it("uses browser credentials only for the remembered participant flow", async () => {
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => fetchResponse(envelope({ state: "anonymous", participant: null })))
+      .mockImplementationOnce(() => fetchResponse(envelope({ state: "remembered" })))
+      .mockImplementationOnce(() => Promise.resolve({ ok: true, status: 204, headers: new Headers() } as unknown as Response))
+      .mockImplementationOnce(() => fetchResponse(envelope({ flow_id: FLOW_ID, next_step: "confirm_email", expires_at: EXPIRES_AT }), 201))
+      .mockImplementationOnce(() => fetchResponse(envelope({
+        intent_status: "confirmed",
+        registration: {
+          id: REGISTRATION_ID, event_id: EVENT_ID, occurrence_id: null,
+          status: "confirmed", seats_count: 1, payment_status: "not_required",
+          total_amount: 0, total_currency: "RUB",
+        },
+        account_next_step: "none", set_password_code: null, set_password_expires_at: null,
+      })));
+
+    await expect(getWebParticipantSession()).resolves.toEqual({ state: "anonymous", participant: null });
+    await issueWebParticipantSession("real-memory-access-token");
+    await deleteWebParticipantSession();
+    await createWebRegistrationIntent({
+      event_id: EVENT_ID, occurrence_id: null, first_name: "Анна", last_name: "Иванова",
+      phone: "+79991234567", email: "anna@example.ru", seats_count: 1,
+      option_selections: [], questionnaire_form_id: null, answers: [], legal_acceptances: [],
+      account_choice: "without_password", idempotency_key: "opaque-idempotency",
+    });
+    await confirmWebRegistrationEmail(FLOW_ID, "123456");
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "/api/web/participant-session", expect.objectContaining({ method: "GET", credentials: "include" }));
+    expect(fetch).toHaveBeenNthCalledWith(2, "/api/web/participant-session", expect.objectContaining({
+      method: "POST", credentials: "include", headers: expect.objectContaining({ Authorization: "Bearer real-memory-access-token" }),
+    }));
+    expect(fetch).toHaveBeenNthCalledWith(3, "/api/web/participant-session", expect.objectContaining({ method: "DELETE", credentials: "include" }));
+    expect(fetch).toHaveBeenNthCalledWith(4, "/api/web/registration-intents", expect.objectContaining({ method: "POST", credentials: "include" }));
+    expect(fetch).toHaveBeenNthCalledWith(5, `/api/web/registration-intents/${FLOW_ID}/confirm-email`, expect.objectContaining({ method: "POST", credentials: "include" }));
   });
 
   it("loads My Tickets only from the canonical authenticated endpoint", async () => {

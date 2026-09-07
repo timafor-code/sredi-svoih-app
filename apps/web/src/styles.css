@@ -134,6 +134,59 @@ a {
   font-weight: 700;
 }
 
+.remembered-participant,
+.participant-session-state {
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.remembered-participant h2 {
+  margin: 3px 0 0;
+  font-size: 1.05rem;
+}
+
+.remembered-participant .account-identity {
+  margin: 14px 0;
+}
+
+.remembered-participant .text-button {
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.participant-session-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--text-secondary);
+}
+
+.participant-session-state p {
+  margin: 0;
+}
+
+.participant-identity-pending,
+.participant-identity-retry {
+  margin: 14px 0 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.participant-identity-retry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.participant-identity-retry p { margin: 0; }
+
 .login-dialog {
   width: min(calc(100% - 28px), 420px);
   max-height: calc(100dvh - 28px);

@@ -162,6 +162,17 @@ export type ExistingAccountIdentity = {
   phone: string;
 };
 
+export type RememberedParticipantIdentity = {
+  first_name: string;
+  last_name: string;
+  phone: string;
+  email: string;
+};
+
+export type WebParticipantSession =
+  | { state: "anonymous"; participant: null }
+  | { state: "remembered"; participant: RememberedParticipantIdentity };
+
 export type PrivacyAccessAccepted = {
   accepted: true;
 };

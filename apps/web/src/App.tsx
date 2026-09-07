@@ -10,11 +10,14 @@ import {
   confirmSetPassword,
   confirmWebRegistrationEmail,
   createWebRegistrationIntent,
+  deleteWebParticipantSession,
   getExistingAccount,
+  getWebParticipantSession,
   getWebRegistrationIntentStatus,
   getWebEventRegistrationForm,
   loginExistingAccount,
   logoutExistingAccount,
+  issueWebParticipantSession,
   PublicApiError,
   RegistrationUnavailableError,
   requestSetPassword,
@@ -46,6 +49,7 @@ import type {
   AccountNextStep,
   ExistingAccountIdentity,
   TemporaryAuthTokens,
+  RememberedParticipantIdentity,
   WebEventRegistrationFormResponse,
   WebEventSchedule,
   WebRegistrationConfirmResult,
@@ -638,6 +642,12 @@ type AuthenticatedAccountState = {
   identity: ExistingAccountIdentity;
 };
 
+type ParticipantSessionState =
+  | { status: "checking" }
+  | { status: "error" }
+  | { status: "anonymous" }
+  | { status: "remembered"; participant: RememberedParticipantIdentity };
+
 function SignInPanel({ initialEmail, readOnlyEmail = false, onClose, onAuthenticated }: {
   initialEmail: string;
   readOnlyEmail?: boolean;
@@ -689,6 +699,15 @@ function SignInPanel({ initialEmail, readOnlyEmail = false, onClose, onAuthentic
           setLoginError("В аккаунте не заполнены данные, необходимые для регистрации. Вы можете продолжить регистрацию без входа.");
         }
         return;
+      }
+      // A remembered participant is deliberately separate from account auth. A
+      // failure here must not make the successful bearer-authenticated account
+      // session look less real, nor fabricate remembered browser state.
+      try {
+        await issueWebParticipantSession(tokens.access_token);
+      } catch {
+        // The account remains authenticated in memory; a later public visit
+        // will only be remembered if the server actually issued the cookie.
       }
       onAuthenticated({ tokens, identity });
     } catch (error: unknown) {
@@ -850,6 +869,11 @@ function RegistrationForm({
   onSignIn,
   onEmailChange,
   authenticatedAccount,
+  rememberedParticipant,
+  participantSessionStatus,
+  onRetryParticipantSession,
+  onForgetParticipant,
+  onParticipantSessionRefresh,
   onAuthenticatedAccountChange,
   onAuthenticatedRegistrationCompleted,
   onProgrammeOptionSelect,
@@ -866,6 +890,11 @@ function RegistrationForm({
   onSignIn: MouseEventHandler<HTMLButtonElement>;
   onEmailChange: (email: string) => void;
   authenticatedAccount: AuthenticatedAccountState | null;
+  rememberedParticipant: RememberedParticipantIdentity | null;
+  participantSessionStatus: ParticipantSessionState["status"];
+  onRetryParticipantSession: () => void;
+  onForgetParticipant: () => Promise<void>;
+  onParticipantSessionRefresh: () => Promise<void>;
   onAuthenticatedAccountChange: (account: AuthenticatedAccountState | null) => void;
   onAuthenticatedRegistrationCompleted: () => void;
   onProgrammeOptionSelect?: (handler: ((optionId: string) => void) | null) => void;
@@ -919,6 +948,8 @@ function RegistrationForm({
   const [verifiedRegistrationEmail, setVerifiedRegistrationEmail] = useState<string | null>(null);
   const [passwordlessDeletionOpen, setPasswordlessDeletionOpen] = useState(false);
   const [passwordlessDeletionPending, setPasswordlessDeletionPending] = useState(false);
+  const [forgetBusy, setForgetBusy] = useState(false);
+  const [forgetError, setForgetError] = useState<string | null>(null);
   const optionsRef = useRef<HTMLFieldSetElement>(null);
   const emailCodeRef = useRef<HTMLInputElement>(null);
   const wasAuthenticatedRef = useRef(authenticatedAccount !== null);
@@ -928,6 +959,7 @@ function RegistrationForm({
   const submittingRef = useRef(false);
   const idempotencyRef = useRef<{ signature: string; key: string } | null>(null);
   const pendingPasswordlessEmailRef = useRef<string | null>(null);
+  const previousRememberedParticipantRef = useRef<RememberedParticipantIdentity | null>(rememberedParticipant);
   const displayTotals = useMemo(
     () => calculateRegistrationDisplayTotals(options, selections),
     [options, selections],
@@ -935,6 +967,8 @@ function RegistrationForm({
   const usesCalculatedSeats = registrationMode === "internal_paid" && options.length > 0;
   const temporaryAuth = authenticatedAccount?.tokens ?? null;
   const existingAccount = authenticatedAccount?.identity ?? null;
+  const registrationIdentity = existingAccount ?? rememberedParticipant;
+  const identityReady = participantSessionStatus === "anonymous" || participantSessionStatus === "remembered";
   const passwordlessAccountChoiceAvailable = accountNextStep === "none"
     && verifiedRegistrationEmail !== null && !existingAccount && !passwordlessDeletionPending;
   const showPasswordlessChoice = passwordlessAccountChoiceAvailable && !accountCompleted && !passwordlessDeclined;
@@ -964,6 +998,19 @@ function RegistrationForm({
     pendingPasswordlessEmailRef.current = null;
     idempotencyRef.current = null;
   }, [eventId]);
+
+  useEffect(() => {
+    // Never retain manually entered values beside canonical remembered data.
+    // On a successful forget, start the anonymous identity fields empty.
+    const wasRemembered = previousRememberedParticipantRef.current !== null;
+    previousRememberedParticipantRef.current = rememberedParticipant;
+    if (rememberedParticipant !== null || wasRemembered) {
+      setValues((current) => ({ ...current, firstName: "", lastName: "", phone: "", email: "" }));
+      setErrors((current) => ({ ...current, firstName: undefined, lastName: undefined, phone: undefined, email: undefined }));
+    }
+    setForgetError(null);
+    if (rememberedParticipant !== null || wasRemembered) idempotencyRef.current = null;
+  }, [rememberedParticipant]);
 
   useEffect(() => {
     onEmailChange(values.email);
@@ -1186,11 +1233,11 @@ function RegistrationForm({
       return;
     }
     if (submittingRef.current) return;
-    const signedInValues = existingAccount ? {
-      firstName: existingAccount.first_name,
-      lastName: existingAccount.last_name,
-      phone: existingAccount.phone,
-      email: existingAccount.email,
+    const signedInValues = registrationIdentity ? {
+      firstName: registrationIdentity.first_name,
+      lastName: registrationIdentity.last_name,
+      phone: registrationIdentity.phone,
+      email: registrationIdentity.email,
     } : null;
     const normalizedValues = {
       ...values,
@@ -1311,6 +1358,7 @@ function RegistrationForm({
         confirmed.set_password_code,
         confirmed.set_password_expires_at,
       );
+      void onParticipantSessionRefresh().catch(() => undefined);
     } catch (error: unknown) {
       const ambiguous = !(error instanceof PublicApiError);
       setConfirmationUnknown(ambiguous);
@@ -1440,6 +1488,20 @@ function RegistrationForm({
       {errors[key] ? <p className="field-error" id={`${id}-error`} role="alert">{errors[key]}</p> : null}
     </div>
   );
+
+  const forgetParticipant = async () => {
+    if (forgetBusy) return;
+    setForgetBusy(true);
+    setForgetError(null);
+    try {
+      await onForgetParticipant();
+    } catch {
+      setForgetError("Не удалось сменить данные. Попробуйте ещё раз.");
+    } finally {
+      setForgetBusy(false);
+    }
+    if (!identityReady) return;
+  };
 
   let flowContent: ReactNode = null;
   if (stage === "verification") {
@@ -1645,7 +1707,26 @@ function RegistrationForm({
   return (
     <>
       <form className="registration-form" noValidate onSubmit={(event) => event.preventDefault()}>
-        {!existingAccount ? (
+        {rememberedParticipant && !existingAccount ? (
+          <section className="remembered-participant" aria-labelledby="remembered-participant-heading">
+            <div>
+              <p className="eyebrow">Для регистрации</p>
+              <h2 id="remembered-participant-heading">Ваши сохранённые данные</h2>
+              <dl className="account-identity">
+                <div><dt>Имя</dt><dd>{rememberedParticipant.first_name}</dd></div>
+                <div><dt>Фамилия</dt><dd>{rememberedParticipant.last_name}</dd></div>
+                <div><dt>Телефон</dt><dd>{rememberedParticipant.phone}</dd></div>
+                <div><dt>Email</dt><dd>{rememberedParticipant.email}</dd></div>
+              </dl>
+            </div>
+            <button className="text-button" type="button" disabled={forgetBusy} onClick={() => { void forgetParticipant(); }}>
+              {forgetBusy ? "Меняем данные…" : "Не я / Сменить данные"}
+            </button>
+            <div aria-live="polite" aria-atomic="true">
+              {forgetError ? <p className="form-error" role="alert">{forgetError}</p> : null}
+            </div>
+          </section>
+        ) : participantSessionStatus === "anonymous" && !existingAccount ? (
           <div className="signin-strip">
             <p>Уже есть аккаунт?</p>
             <button type="button" aria-haspopup="dialog" onClick={onSignIn}>Войти</button>
@@ -1710,12 +1791,19 @@ function RegistrationForm({
 
           <section className="surface section-card" aria-labelledby="personal-heading">
             <h2 id="personal-heading">Ваши данные</h2>
-            {existingAccount ? (
+            {participantSessionStatus === "checking" ? (
+              <p className="participant-identity-pending" aria-live="polite">Проверяем данные для регистрации…</p>
+            ) : participantSessionStatus === "error" ? (
+              <div className="participant-identity-retry" aria-live="polite">
+                <p>Не удалось проверить данные для регистрации.</p>
+                <button className="secondary-button" type="button" onClick={onRetryParticipantSession}>Повторить</button>
+              </div>
+            ) : registrationIdentity ? (
               <dl className="account-identity" aria-label="Данные аккаунта только для чтения">
-                <div><dt>Имя</dt><dd>{existingAccount.first_name}</dd></div>
-                <div><dt>Фамилия</dt><dd>{existingAccount.last_name}</dd></div>
-                <div><dt>Телефон</dt><dd>{existingAccount.phone}</dd></div>
-                <div><dt>Email</dt><dd>{existingAccount.email}</dd></div>
+                <div><dt>Имя</dt><dd>{registrationIdentity.first_name}</dd></div>
+                <div><dt>Фамилия</dt><dd>{registrationIdentity.last_name}</dd></div>
+                <div><dt>Телефон</dt><dd>{registrationIdentity.phone}</dd></div>
+                <div><dt>Email</dt><dd>{registrationIdentity.email}</dd></div>
               </dl>
             ) : (
               <div className="form-grid">
@@ -1765,7 +1853,7 @@ function RegistrationForm({
             className={`registration-confirm${!values.consent ? " consent-incomplete" : ""}`}
             type="button"
             aria-describedby={!values.consent ? "consent-nudge" : undefined}
-            disabled={stage === "form" && busyAction !== null}
+            disabled={(stage === "form" && busyAction !== null) || (stage === "form" && !identityReady)}
             onClick={() => void continueRegistration()}
           >
             {stage === "verification" ? "Продолжить подтверждение" : stage === "success" ? "Посмотреть регистрацию" : busyAction === "create" ? "Отправляем…" : "Записаться на мероприятие"}
@@ -1829,6 +1917,7 @@ function EventPage({
   onAuthenticatedAccountChange: (account: AuthenticatedAccountState | null) => void;
   onSignOut: () => void;
 }): ReactNode {
+  const [participantSession, setParticipantSession] = useState<ParticipantSessionState>({ status: "checking" });
   const availableOccurrences = useMemo(
     () => data.occurrences.filter((item) => item.registration_state === "open"),
     [data.occurrences],
@@ -1868,6 +1957,41 @@ function EventPage({
   const eventColumnRef = useRef<HTMLDivElement>(null);
   const formColumnRef = useRef<HTMLDivElement>(null);
   const programmeOptionSelectRef = useRef<((optionId: string) => void) | null>(null);
+
+  const resolveParticipantSession = (showChecking = false) => {
+    if (showChecking) setParticipantSession({ status: "checking" });
+    return getWebParticipantSession()
+      .then((session) => {
+        setParticipantSession(session.state === "remembered"
+          ? { status: "remembered", participant: session.participant }
+          : { status: "anonymous" });
+      })
+      .catch(() => {
+        if (showChecking) setParticipantSession({ status: "error" });
+        throw new Error("participant session unavailable");
+      });
+  };
+
+  useEffect(() => {
+    let active = true;
+    setParticipantSession({ status: "checking" });
+    getWebParticipantSession()
+      .then((session) => {
+        if (!active) return;
+        setParticipantSession(session.state === "remembered"
+          ? { status: "remembered", participant: session.participant }
+          : { status: "anonymous" });
+      })
+      .catch(() => {
+        if (active) setParticipantSession({ status: "error" });
+      });
+    return () => { active = false; };
+  }, [data.event.id]);
+
+  const forgetParticipant = async () => {
+    await deleteWebParticipantSession();
+    setParticipantSession({ status: "anonymous" });
+  };
 
   useEffect(() => {
     let frame: number | null = null;
@@ -2112,6 +2236,11 @@ function EventPage({
                   onSignIn={openSignIn}
                   onEmailChange={setRegistrationEmail}
                   authenticatedAccount={authenticatedAccount}
+                  rememberedParticipant={participantSession.status === "remembered" ? participantSession.participant : null}
+                  participantSessionStatus={participantSession.status}
+                  onRetryParticipantSession={() => { void resolveParticipantSession(true).catch(() => undefined); }}
+                  onForgetParticipant={forgetParticipant}
+                  onParticipantSessionRefresh={resolveParticipantSession}
                   onAuthenticatedAccountChange={onAuthenticatedAccountChange}
                   onAuthenticatedRegistrationCompleted={() => {
                     setTicketsRevision((value) => value + 1);

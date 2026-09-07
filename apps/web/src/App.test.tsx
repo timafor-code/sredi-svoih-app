@@ -130,7 +130,9 @@ function apiError(code: string, message = "hidden backend detail") {
 }
 
 function successfulFetch(data = eventResponse()) {
-  vi.mocked(fetch).mockImplementation(() => response({ data, error: null, meta: {} }));
+  vi.mocked(fetch).mockImplementation((input) => response(String(input).endsWith("/web/participant-session")
+    ? envelope({ state: "anonymous", participant: null })
+    : { data, error: null, meta: {} }));
 }
 
 function paidEventResponse() {
@@ -181,6 +183,17 @@ async function renderEvent(data = eventResponse(), search = "", pathValue = EVEN
   window.history.replaceState(null, "", `/events/${pathValue}${search}`);
   render(<App />);
   await screen.findByRole("heading", { level: 1, name: data.event.title });
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+    "/api/web/participant-session",
+    expect.objectContaining({ method: "GET", credentials: "include" }),
+  ));
+  // Existing scenario assertions address the event and registration requests by
+  // position. The bootstrap contract has focused tests below, so keep this
+  // legacy helper's request ledger scoped to the scenario under test.
+  const participantSessionCall = vi.mocked(fetch).mock.calls.findIndex(
+    ([input]) => String(input).endsWith("/web/participant-session"),
+  );
+  if (participantSessionCall >= 0) vi.mocked(fetch).mock.calls.splice(participantSessionCall, 1);
 }
 
 function optionCard(title: string): HTMLElement {
@@ -259,7 +272,9 @@ async function openSignedInDeletion(user: ReturnType<typeof userEvent.setup>) {
 
 describe("public event page", () => {
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn());
+    vi.stubGlobal("fetch", vi.fn((input) => response(String(input).endsWith("/web/participant-session")
+      ? envelope({ state: "anonymous", participant: null })
+      : envelope(eventResponse()))));
   });
 
   it("renders not found and makes no request for malformed and unknown routes", () => {
@@ -287,6 +302,103 @@ describe("public event page", () => {
     expect(screen.getByText(/Полное описание/)).toHaveClass("description");
     expect(document.title).toBe("Шаббат для друзей — Среди Своих");
     expect(window.location.pathname).toBe(`/events/${PUBLIC_SLUG}`);
+  });
+
+  it("keeps anonymous registration unchanged after participant-session bootstrap", async () => {
+    await renderEvent();
+    expect(screen.getByText("Уже есть аккаунт?")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Войти" })).toHaveLength(2);
+    expect(screen.getByLabelText("Имя")).not.toHaveAttribute("readonly");
+  });
+
+  it("renders remembered identity read-only without account controls", async () => {
+    vi.mocked(fetch).mockImplementation((input) => response(String(input).endsWith("/web/participant-session")
+      ? envelope({ state: "remembered", participant: {
+        first_name: "Иван", last_name: "Иванов", phone: "+79000000001", email: "ivan@example.ru",
+      } })
+      : envelope(eventResponse())));
+    window.history.replaceState(null, "", `/events/${EVENT_ID}`);
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Ваши сохранённые данные" })).toBeInTheDocument();
+    expect(screen.getAllByText("Иван").length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Аккаунт" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Мои билеты|Управление аккаунтом|Выйти/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps non-identity registration controls visible but fails closed when participant-session bootstrap fails", async () => {
+    vi.mocked(fetch).mockImplementation((input) => String(input).endsWith("/web/participant-session")
+      ? Promise.reject(new Error("temporary failure"))
+      : response(envelope(eventResponse())));
+    window.history.replaceState(null, "", `/events/${EVENT_ID}`);
+    render(<App />);
+
+    expect(await screen.findByText("Не удалось проверить данные для регистрации.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Основное участие/ })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Я ознакомился/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Записаться на мероприятие" })).toBeDisabled();
+  });
+
+  it.each([
+    ["anonymous", { state: "anonymous", participant: null }],
+    ["remembered", { state: "remembered", participant: {
+      first_name: "Иван", last_name: "Иванов", phone: "+79000000001", email: "ivan@example.ru",
+    } }],
+  ] as const)("restores the correct %s identity state after retry", async (_state, session) => {
+    let sessionRequests = 0;
+    vi.mocked(fetch).mockImplementation((input) => {
+      if (String(input).endsWith("/web/participant-session")) {
+        sessionRequests += 1;
+        return sessionRequests === 1
+          ? Promise.reject(new Error("temporary failure"))
+          : response(envelope(session));
+      }
+      return response(envelope(eventResponse()));
+    });
+    window.history.replaceState(null, "", `/events/${EVENT_ID}`);
+    render(<App />);
+    await screen.findByRole("button", { name: "Повторить" });
+    await userEvent.setup().click(screen.getByRole("button", { name: "Повторить" }));
+
+    if (session.state === "anonymous") {
+      expect(await screen.findByLabelText("Имя")).toBeInTheDocument();
+      expect(screen.getByText("Уже есть аккаунт?")).toBeInTheDocument();
+    } else {
+      expect(await screen.findByText("Ваши сохранённые данные")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+    }
+  });
+
+  it("forgets the remembered participant only after the cookie session is deleted", async () => {
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/web/participant-session") && init?.method === "DELETE") {
+        return Promise.resolve({ ok: true, status: 204, headers: new Headers() } as unknown as Response);
+      }
+      return response(url.endsWith("/web/participant-session")
+        ? envelope({ state: "remembered", participant: {
+          first_name: "Иван", last_name: "Иванов", phone: "+79000000001", email: "ivan@example.ru",
+        } })
+        : envelope(eventResponse()));
+    });
+    window.history.replaceState(null, "", `/events/${EVENT_ID}`);
+    render(<App />);
+    await screen.findByRole("button", { name: "Не я / Сменить данные" });
+    await userEvent.setup().click(screen.getByRole("button", { name: "Не я / Сменить данные" }));
+
+    expect(await screen.findByLabelText("Имя")).not.toHaveAttribute("readonly");
+    expect(fetch).toHaveBeenCalledWith("/api/web/participant-session", expect.objectContaining({ method: "DELETE", credentials: "include" }));
+  });
+
+  it("issues a remembered session after a real account sign-in", async () => {
+    const user = userEvent.setup();
+    await renderEvent();
+    await signInExistingAccount(user);
+    expect(fetch).toHaveBeenCalledWith("/api/web/participant-session", expect.objectContaining({
+      method: "POST", credentials: "include", headers: expect.objectContaining({ Authorization: "Bearer temporary-access-token" }),
+    }));
   });
 
   it("keeps an already canonical slug path without replaceState", async () => {
@@ -489,7 +601,7 @@ describe("public event page", () => {
     render(<App />);
     await userEvent.click(await screen.findByRole("button", { name: "Попробовать снова" }));
     expect(await screen.findByRole("heading", { name: "Шаббат для друзей" })).toBeInTheDocument();
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 
   it("handles malformed successful JSON as a generic application error", async () => {
@@ -723,6 +835,7 @@ describe("registration state and occurrences", () => {
     let resolveRefresh!: (value: Response) => void;
     vi.mocked(fetch)
       .mockImplementationOnce(() => response(envelope(beforeOpening)))
+      .mockImplementationOnce(() => response(envelope({ state: "anonymous", participant: null })))
       .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve; }));
     window.history.replaceState(null, "", `/events/${PUBLIC_SLUG}`);
     render(<App />);
@@ -730,7 +843,7 @@ describe("registration state and occurrences", () => {
     expect(screen.getByText("Регистрация ещё не открыта")).toBeInTheDocument();
 
     await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(3);
     expect(screen.getByText("Регистрация ещё не открыта")).toBeInTheDocument();
     expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
 
@@ -748,6 +861,7 @@ describe("registration state and occurrences", () => {
     const opened = eventResponse("open");
     vi.mocked(fetch)
       .mockImplementationOnce(() => response(envelope(beforeOpening)))
+      .mockImplementationOnce(() => response(envelope({ state: "anonymous", participant: null })))
       .mockImplementationOnce(() => response(envelope(opened)));
     window.history.replaceState(null, "", `/events/${PUBLIC_SLUG}`);
     render(<App />);
@@ -759,7 +873,7 @@ describe("registration state and occurrences", () => {
     });
     fireEvent(document, new Event("visibilitychange"));
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
     expect(await screen.findByText("Регистрация открыта")).toBeInTheDocument();
   });
 });
@@ -1104,12 +1218,16 @@ describe("local form shell", () => {
     secondData.event.title = "Другое мероприятие";
     secondData.participation_options.forEach((option) => { option.event_id = secondEventId; });
     vi.mocked(fetch).mockImplementation((input) => {
+      if (String(input).endsWith("/web/participant-session")) {
+        return response(envelope({ state: "anonymous", participant: null }));
+      }
       const data = String(input).includes(secondEventId) ? secondData : firstData;
       return response({ data, error: null, meta: {} });
     });
     window.history.replaceState(null, "", `/events/${EVENT_ID}`);
     render(<App />);
     await screen.findByRole("heading", { level: 1, name: firstData.event.title });
+    await screen.findByRole("spinbutton", { name: "Количество мест" });
     await user.clear(screen.getByRole("spinbutton", { name: "Количество мест" }));
     await user.type(screen.getByRole("spinbutton", { name: "Количество мест" }), "12");
     expect(screen.getByRole("spinbutton", { name: "Количество мест" })).toHaveValue(12);
@@ -1357,7 +1475,10 @@ describe("local form shell", () => {
     await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Аккаунт" })).toBeInTheDocument();
-    const request = JSON.parse(String(vi.mocked(fetch).mock.calls[3][1]?.body));
+    const registrationCall = vi.mocked(fetch).mock.calls.find(
+      ([url]) => String(url) === "/api/web/registration-intents",
+    );
+    const request = JSON.parse(String(registrationCall?.[1]?.body));
     expect(request).toMatchObject({
       first_name: "Иван",
       last_name: "Иванов",
@@ -1366,7 +1487,7 @@ describe("local form shell", () => {
       account_choice: "without_password",
     });
     expect(vi.mocked(fetch).mock.calls[3][1]?.headers).toMatchObject({ Authorization: "Bearer temporary-access-token" });
-    expect(fetch).toHaveBeenCalledTimes(5);
+    expect(fetch).toHaveBeenCalledTimes(6);
     const resultDialog = screen.getByRole("dialog", { name: "Оформление регистрации" });
     expect(within(resultDialog).queryByRole("button", { name: "Задать пароль" })).not.toBeInTheDocument();
     expect(within(resultDialog).queryByRole("button", { name: "Продолжить без пароля" })).not.toBeInTheDocument();
@@ -2092,7 +2213,7 @@ describe("registration intent and account claim flow", () => {
     const originalDialog = flowDialog();
     await confirmIntent(user, registrationResult("confirmed", nextStep));
     expect(flowDialog()).toBe(originalDialog);
-    expect(screen.getByRole("heading", { name: "Регистрация успешно сохранена" })).toHaveFocus();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Регистрация успешно сохранена" })).toHaveFocus());
     if (nextStep === "set_password") {
       await user.type(screen.getByLabelText("Новый пароль"), "preserved-password");
       await user.type(screen.getByLabelText("Повтор нового пароля"), "preserved-password");
@@ -2283,7 +2404,7 @@ describe("registration intent and account claim flow", () => {
     const skip = within(dialog).getByRole("button", { name: "Продолжить без пароля" });
     expect(skip).toHaveClass("secondary-button");
     expect(skip).toBeEnabled();
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch).toHaveBeenCalledTimes(4);
     if (requestCode) {
       vi.mocked(fetch).mockImplementationOnce(() => response({ ok: true }));
       await user.click(within(dialog).getByRole("button", { name: "Задать пароль" }));
@@ -2374,7 +2495,7 @@ describe("registration intent and account claim flow", () => {
     await user.click(within(flowDialog()).getByRole("button", { name: "Задать пароль" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Пароли не совпадают.");
     expect(screen.getByLabelText("Повтор нового пароля")).toHaveFocus();
-    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(fetch).toHaveBeenCalledTimes(5);
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Посмотреть регистрацию" }));
     expectOneFlowDialog();
@@ -2382,7 +2503,7 @@ describe("registration intent and account claim flow", () => {
     expect(screen.getByLabelText("Новый пароль")).toHaveValue("short-password");
     expect(screen.getByLabelText("Повтор нового пароля")).toHaveValue("mismatched-password");
     expect(within(flowDialog()).getByText("Аккаунт", { selector: "li" })).toHaveClass("active");
-    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(fetch).toHaveBeenCalledTimes(5);
   });
 
   it("deletes passwordless registration data through the current verified email without creating account auth", async () => {
@@ -2473,7 +2594,7 @@ describe("registration intent and account claim flow", () => {
     const dialog = expectOneFlowDialog();
     const savedDetails = within(dialog).getByText("Мероприятие").closest("dl")?.textContent;
     expect(within(dialog).getByText("Аккаунт", { selector: "li" })).toHaveClass("active");
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch).toHaveBeenCalledTimes(4);
     expect(screen.queryByLabelText("Код из письма")).not.toBeInTheDocument();
     vi.mocked(fetch).mockImplementationOnce(() => response({ ok: true }));
     await user.click(within(dialog).getByRole("button", { name: nextStep === "none" ? "Задать пароль" : "Запросить код задания пароля" }));
@@ -2496,7 +2617,7 @@ describe("registration intent and account claim flow", () => {
       "/api/auth/confirm-set-password",
     ]);
     expect(authCalls[1][1]?.body).toBe(JSON.stringify({ code: "emailed-set-password-code", new_password: "strong-pass-123" }));
-    expect(fetch).toHaveBeenCalledTimes(5);
+    expect(fetch).toHaveBeenCalledTimes(6);
     expect(flowDialog()).toBe(dialog);
     expect(within(dialog).getByText("Мероприятие").closest("dl")?.textContent).toBe(savedDetails);
     expect(within(dialog).getByText("Регистрация подтверждена.")).toBeInTheDocument();
@@ -2508,7 +2629,7 @@ describe("registration intent and account claim flow", () => {
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Посмотреть регистрацию" }));
     expect(within(flowDialog()).getByText("Аккаунт", { selector: "li" })).toHaveClass("done");
-    expect(fetch).toHaveBeenCalledTimes(5);
+    expect(fetch).toHaveBeenCalledTimes(6);
     expect(storageSpy).not.toHaveBeenCalled();
     expect(window.localStorage).toHaveLength(0);
     expect(window.sessionStorage).toHaveLength(0);
