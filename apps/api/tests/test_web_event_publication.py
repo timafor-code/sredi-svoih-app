@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
 import httpx
@@ -297,6 +297,34 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
                 setattr(event, field_name, value)
             await session.commit()
 
+    async def _create_admin_event(self, registration_mode: str) -> UUID:
+        payload = AdminEventCreateRequest(
+            title=f"Created {registration_mode} {uuid4().hex}",
+            starts_at=self.now + timedelta(days=20),
+            category="community",
+            registration_mode=registration_mode,
+            registration_url=(
+                "https://example.invalid/register"
+                if registration_mode == "external_link" else None
+            ),
+        )
+        async with AsyncSessionLocal() as session:
+            actor = await session.get(AppUser, self.actor_id)
+            assert actor is not None
+            created = await admin_events.create_admin_event(session, actor, payload)
+            return created.id
+
+    async def _update_admin_event(self, **updates: object) -> None:
+        async with AsyncSessionLocal() as session:
+            actor = await session.get(AppUser, self.actor_id)
+            assert actor is not None
+            await admin_events.update_admin_event(
+                session,
+                actor,
+                self.event_id,
+                AdminEventUpdateRequest.model_validate(updates),
+            )
+
     def _intent_payload(self, *, key: str | None = None) -> WebRegistrationIntentRequest:
         return WebRegistrationIntentRequest.model_validate(
             {
@@ -439,6 +467,75 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
             token=self.actor_token,
         )
         self.assertEqual(unknown.status_code, 404)
+
+    async def test_admin_create_uses_registration_mode_aware_web_visibility_default(self) -> None:
+        expected_visibility = {
+            "internal_free": "unlisted",
+            "internal_paid": "unlisted",
+            "none": "disabled",
+            "external_link": "disabled",
+        }
+        for registration_mode, expected in expected_visibility.items():
+            created_id = await self._create_admin_event(registration_mode)
+            async with AsyncSessionLocal() as session:
+                created = await session.get(Event, created_id)
+            assert created is not None
+            self.assertEqual(created.web_visibility, expected)
+
+    async def test_admin_registration_mode_transitions_are_server_owned_and_audited(self) -> None:
+        async def transition(
+            old_mode: str,
+            old_visibility: str,
+            new_mode: str,
+            expected_visibility: str,
+        ) -> None:
+            await self._set_event(
+                registration_mode=old_mode,
+                web_visibility=old_visibility,
+            )
+            updates: dict[str, object] = {"registration_mode": new_mode}
+            if new_mode == "external_link":
+                updates["registration_url"] = "https://example.invalid/register"
+            await self._update_admin_event(**updates)
+            async with AsyncSessionLocal() as session:
+                stored = await session.get(Event, self.event_id)
+            assert stored is not None
+            self.assertEqual(stored.web_visibility, expected_visibility)
+
+        await transition("none", "disabled", "internal_free", "unlisted")
+        await transition("external_link", "disabled", "internal_paid", "unlisted")
+        await transition("internal_free", "unlisted", "internal_paid", "unlisted")
+        await transition("internal_free", "disabled", "internal_paid", "disabled")
+        await transition("internal_free", "listed", "internal_paid", "listed")
+        await transition("internal_free", "unlisted", "none", "disabled")
+        await transition("internal_paid", "listed", "external_link", "disabled")
+
+        await self._set_event(
+            registration_mode="internal_free",
+            web_visibility="disabled",
+        )
+        await self._update_admin_event(title="Unrelated edit preserves disabled")
+        async with AsyncSessionLocal() as session:
+            stored = await session.get(Event, self.event_id)
+            transitions = list(
+                await session.scalars(
+                    select(AdminEventAuditEntry).where(
+                        AdminEventAuditEntry.event_id == self.event_id,
+                        AdminEventAuditEntry.action == "event_web_visibility_changed",
+                    ),
+                ),
+            )
+        assert stored is not None
+        self.assertEqual(stored.web_visibility, "disabled")
+        self.assertTrue(transitions)
+        self.assertTrue(
+            any(
+                entry.actor_user_id == self.actor_id
+                and entry.old_state == "disabled"
+                and entry.new_state == "unlisted"
+                for entry in transitions
+            ),
+        )
 
     async def test_admin_patch_is_narrow_idempotent_and_audited(self) -> None:
         path = f"/admin/events/{self.event_id}/web-registration"
@@ -597,6 +694,143 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
         assert event is not None
         self.assertEqual(event.web_visibility, "disabled")
         self.assertEqual(count, 0)
+
+    async def test_registration_mode_transition_audit_and_event_rollback_together(self) -> None:
+        await self._set_event(registration_mode="none", web_visibility="disabled")
+        payload = AdminEventUpdateRequest(registration_mode="internal_free")
+        async with AsyncSessionLocal() as session:
+            actor = await session.get(AppUser, self.actor_id)
+            assert actor is not None
+            with patch(
+                "app.services.admin_events.record_event_web_visibility_change",
+                side_effect=RuntimeError("synthetic transition audit failure"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "synthetic transition audit failure"):
+                    await admin_events.update_admin_event(session, actor, self.event_id, payload)
+
+        async with AsyncSessionLocal() as session:
+            event = await session.get(Event, self.event_id)
+            count = await session.scalar(
+                select(func.count()).select_from(AdminEventAuditEntry).where(
+                    AdminEventAuditEntry.event_id == self.event_id,
+                ),
+            )
+        assert event is not None
+        self.assertEqual(event.registration_mode, "none")
+        self.assertEqual(event.web_visibility, "disabled")
+        self.assertEqual(count, 0)
+
+    def test_default_web_registration_migration_backfill_is_narrow_and_irreversible(self) -> None:
+        script = ScriptDirectory.from_config(Config("alembic.ini"))
+        revision = script.get_revision("20260907200000")
+        self.assertIsNotNone(revision)
+        assert revision is not None
+        self.assertEqual(revision.down_revision, "20260907190000")
+
+        migration_op = MagicMock()
+        with patch.object(revision.module, "op", migration_op):
+            revision.module.upgrade()
+        statement = str(migration_op.execute.call_args.args[0])
+        self.assertIn("registration_mode IN ('internal_free', 'internal_paid')", statement)
+        self.assertIn("web_visibility = 'disabled'", statement)
+        self.assertIn("SET web_visibility = 'unlisted'", statement)
+
+        migration_op.reset_mock()
+        with patch.object(revision.module, "op", migration_op):
+            revision.module.downgrade()
+        migration_op.execute.assert_not_called()
+
+    async def test_default_web_registration_migration_backfills_only_eligible_disabled_rows(self) -> None:
+        event_ids = {
+            "free_disabled": uuid4(),
+            "paid_disabled": uuid4(),
+            "free_unlisted": uuid4(),
+            "paid_listed": uuid4(),
+            "none_disabled": uuid4(),
+        }
+        async with AsyncSessionLocal() as session:
+            session.add_all(
+                [
+                    Event(
+                        id=event_ids["free_disabled"],
+                        community_id=self.community_id,
+                        title="Migration free disabled",
+                        starts_at=self.now + timedelta(days=30),
+                        category="community",
+                        registration_mode="internal_free",
+                        web_visibility="disabled",
+                    ),
+                    Event(
+                        id=event_ids["paid_disabled"],
+                        community_id=self.community_id,
+                        title="Migration paid disabled",
+                        starts_at=self.now + timedelta(days=31),
+                        category="community",
+                        registration_mode="internal_paid",
+                        web_visibility="disabled",
+                    ),
+                    Event(
+                        id=event_ids["free_unlisted"],
+                        community_id=self.community_id,
+                        title="Migration free unlisted",
+                        starts_at=self.now + timedelta(days=32),
+                        category="community",
+                        registration_mode="internal_free",
+                        web_visibility="unlisted",
+                    ),
+                    Event(
+                        id=event_ids["paid_listed"],
+                        community_id=self.community_id,
+                        title="Migration paid listed",
+                        starts_at=self.now + timedelta(days=33),
+                        category="community",
+                        registration_mode="internal_paid",
+                        web_visibility="listed",
+                    ),
+                    Event(
+                        id=event_ids["none_disabled"],
+                        community_id=self.community_id,
+                        title="Migration none disabled",
+                        starts_at=self.now + timedelta(days=34),
+                        category="community",
+                        registration_mode="none",
+                        web_visibility="disabled",
+                    ),
+                ],
+            )
+            await session.commit()
+
+        revision = ScriptDirectory.from_config(Config("alembic.ini")).get_revision(
+            "20260907200000",
+        )
+        assert revision is not None
+
+        class BoundMigrationOp:
+            def __init__(self, connection) -> None:
+                self.connection = connection
+
+            def execute(self, statement: str) -> None:
+                self.connection.execute(text(statement))
+
+        def run_upgrade(sync_connection) -> None:
+            with patch.object(revision.module, "op", BoundMigrationOp(sync_connection)):
+                revision.module.upgrade()
+
+        async with engine.begin() as connection:
+            await connection.run_sync(run_upgrade)
+
+        async with AsyncSessionLocal() as session:
+            stored = {
+                event.id: event.web_visibility
+                for event in await session.scalars(
+                    select(Event).where(Event.id.in_(tuple(event_ids.values()))),
+                )
+            }
+        self.assertEqual(stored[event_ids["free_disabled"]], "unlisted")
+        self.assertEqual(stored[event_ids["paid_disabled"]], "unlisted")
+        self.assertEqual(stored[event_ids["free_unlisted"]], "unlisted")
+        self.assertEqual(stored[event_ids["paid_listed"]], "listed")
+        self.assertEqual(stored[event_ids["none_disabled"]], "disabled")
 
     async def test_public_form_filters_data_and_preserves_closed_and_full_pages(self) -> None:
         path = f"/events/{self.event_id}/registration-form?channel=web"

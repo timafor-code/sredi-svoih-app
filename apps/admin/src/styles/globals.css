@@ -6209,6 +6209,11 @@ a {
   line-height: 1.45;
 }
 
+.event-web-registration-card__canonical-url--disabled {
+  color: var(--text-faint);
+  opacity: 0.72;
+}
+
 .event-web-registration-feedback {
   margin: 0;
   color: var(--text-soft);
@@ -14170,6 +14175,23 @@ a {
 .event-editor-kicker button { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .event-editor-kicker button:hover { color: var(--text); }
 .event-editor-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.event-editor-web-link { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; min-width: 0; color: var(--text-soft); font-size: 12px; }
+.event-editor-web-link__label { color: var(--text-faint); font-weight: 700; }
+.event-editor-web-link__url { min-width: 0; color: var(--gold); overflow-wrap: anywhere; word-break: break-word; }
+.event-editor-web-link__url--disabled { color: var(--text-faint); text-decoration: none; opacity: 0.76; }
+.event-editor-web-link__icon { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--editor-line); border-radius: 7px; background: var(--editor-inset); color: var(--text-soft); cursor: pointer; }
+.event-editor-web-link__icon:hover:not(:disabled) { color: var(--gold); border-color: rgba(242, 184, 75, 0.5); }
+.event-editor-web-link__icon:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.event-editor-web-link__icon:disabled { cursor: not-allowed; opacity: 0.55; }
+.event-editor-web-link__edit { display: flex; flex: 1 1 420px; flex-wrap: wrap; align-items: center; gap: 7px; min-width: 0; }
+.event-editor-web-link__prefix { max-width: 100%; color: var(--text-faint); overflow-wrap: anywhere; }
+.event-editor-web-link__edit input { flex: 1 1 130px; min-width: 100px; }
+.event-editor-web-link__success { color: var(--green); }
+.event-editor-web-link__error { color: #ff9ca2; }
+.event-editor-web-link__feedback { flex-basis: 100%; font-weight: 700; }
+.event-editor-web-link__feedback--success { color: var(--green); }
+.event-editor-web-link__feedback--error { color: #ff9ca2; }
+@media (max-width: 720px) { .event-editor-web-link__edit { flex-basis: 100%; } .event-editor-web-link__edit input { flex-basis: 100%; } }
 .event-editor-chip {
   display: inline-flex;
   align-items: center;
