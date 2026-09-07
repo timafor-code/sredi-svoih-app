@@ -33,8 +33,9 @@ const MONTHS: Readonly<Record<string, number>> = {
   декабря: 11,
 };
 
-const DAY_HEADING = /^(\d{1,2})\s+([а-яё]+)(?:\s*(?:—|–|-)\s*(.+?))?\s*$/i;
-const PROGRAMME_ITEM = /^((?:[01]\d|2[0-3]):[0-5]\d)\s*(?:—|–|-)\s*(\S(?:.*\S)?)\s*$/;
+const DAY_HEADING = /^(\d{1,2})\s+([а-яё]+)(?:\s*(?:,|—|–|-)\s*(.+?))?$/i;
+const PROGRAMME_ITEM = /^(\d{1,2}):([0-5]\d)(?:\s*(?:—|–|-)\s*|\s+)(\S(?:.*\S)?)$/;
+const TEHILLIM = /^теилим\s*:?[\s(]*(\d{1,3})\s*(?:—|–|-)\s*(\d{1,3})\s*\)?$/i;
 
 /** Parses the small, deliberately constrained programme notation used in event descriptions. */
 export function parseEventScheduleDescription({
@@ -48,7 +49,7 @@ export function parseEventScheduleDescription({
   let currentDay: AdminEventSchedule["days"][number] | null = null;
 
   for (const sourceLine of description.split(/\r?\n/)) {
-    const line = sourceLine.trim();
+    const line = cleanSourceLine(sourceLine);
     if (!line) continue;
 
     const heading = DAY_HEADING.exec(line);
@@ -68,12 +69,24 @@ export function parseEventScheduleDescription({
       }
     }
 
+    const tehillim = TEHILLIM.exec(line);
+    if (tehillim && currentDay) {
+      const note = `Теилим ${tehillim[1]}–${tehillim[2]}`;
+      if (appendNote(currentDay, note)) continue;
+    }
+
     const item = PROGRAMME_ITEM.exec(line);
     if (item && currentDay) {
+      const hour = Number(item[1]);
+      if (hour > 23) {
+        remainder.push(line);
+        continue;
+      }
+      const title = item[3].trim();
       currentDay.items.push({
-        time: item[1],
-        title: item[2].trim(),
-        optionId: findUnambiguousOptionId(item[2], participationOptions),
+        time: `${String(hour).padStart(2, "0")}:${item[2]}`,
+        title,
+        optionId: findUnambiguousOptionId(title, participationOptions),
       });
       continue;
     }
@@ -85,6 +98,26 @@ export function parseEventScheduleDescription({
     schedule: days.length > 0 ? { version: 1, days } : null,
     remainder,
   };
+}
+
+function cleanSourceLine(value: string): string {
+  let line = value.replace(/\u00a0/g, " ").trim().replace(/\s+/g, " ");
+  if (/^\*\*.+\*\*$/.test(line)) {
+    line = line.slice(2, -2).trim().replace(/\s+/g, " ");
+  }
+  return line;
+}
+
+function appendNote(day: AdminEventSchedule["days"][number], note: string): boolean {
+  if (!day.note) {
+    day.note = note;
+    return true;
+  }
+
+  const combined = `${day.note} · ${note}`;
+  if (combined.length > 200) return false;
+  day.note = combined;
+  return true;
 }
 
 function getYear(startDate: string): number | null {
