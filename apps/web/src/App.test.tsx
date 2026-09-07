@@ -401,6 +401,141 @@ describe("public event page", () => {
     }));
   });
 
+  it("reconciles remembered identity before exposing sign-out registration state", async () => {
+    const user = userEvent.setup();
+    const remembered = { first_name: "Пётр", last_name: "Петров", phone: "+79000000002", email: "petr@example.ru" };
+    let participantSessionGets = 0;
+    let resolveSignOutSession!: (value: Response) => void;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/web/participant-session")) {
+        if (init?.method === "POST") return response(envelope({ state: "remembered" }));
+        participantSessionGets += 1;
+        if (participantSessionGets === 1) return response(envelope({ state: "anonymous", participant: null }));
+        if (participantSessionGets === 2) return response(envelope({ state: "remembered", participant: remembered }));
+        return new Promise((resolve) => { resolveSignOutSession = resolve; });
+      }
+      if (url.endsWith("/auth/logout")) return response({ ok: true });
+      return response(envelope(eventResponse()));
+    });
+    window.history.replaceState(null, "", `/events/${EVENT_ID}`);
+    render(<App />);
+    await screen.findByLabelText("Имя");
+
+    const accountPanel = await signInExistingAccount(user);
+    await waitFor(() => expect(participantSessionGets).toBe(2));
+    await user.click(within(accountPanel).getByRole("button", { name: "Выйти" }));
+
+    expect(screen.getByText("Проверяем данные для регистрации…")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+    resolveSignOutSession(await response(envelope({ state: "remembered", participant: remembered })));
+
+    expect(await screen.findByRole("heading", { name: "Ваши сохранённые данные" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Сохранённые данные для регистрации, только для чтения")).toHaveTextContent("Пётр");
+    expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+  });
+
+  it("shows anonymous fields only after sign-out reconciliation confirms anonymous", async () => {
+    const user = userEvent.setup();
+    const remembered = { first_name: "Пётр", last_name: "Петров", phone: "+79000000002", email: "petr@example.ru" };
+    let participantSessionGets = 0;
+    let resolveSignOutSession!: (value: Response) => void;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/web/participant-session")) {
+        if (init?.method === "POST") return response(envelope({ state: "remembered" }));
+        participantSessionGets += 1;
+        if (participantSessionGets === 1) return response(envelope({ state: "anonymous", participant: null }));
+        if (participantSessionGets === 2) return response(envelope({ state: "remembered", participant: remembered }));
+        return new Promise((resolve) => { resolveSignOutSession = resolve; });
+      }
+      if (url.endsWith("/auth/logout")) return response({ ok: true });
+      return response(envelope(eventResponse()));
+    });
+    window.history.replaceState(null, "", `/events/${EVENT_ID}`);
+    render(<App />);
+    await screen.findByLabelText("Имя");
+
+    const accountPanel = await signInExistingAccount(user);
+    await waitFor(() => expect(participantSessionGets).toBe(2));
+    await user.click(within(accountPanel).getByRole("button", { name: "Выйти" }));
+
+    expect(screen.getByText("Проверяем данные для регистрации…")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+    resolveSignOutSession(await response(envelope({ state: "anonymous", participant: null })));
+
+    expect(await screen.findByLabelText("Имя")).toBeInTheDocument();
+    expect(screen.getByText("Уже есть аккаунт?")).toBeInTheDocument();
+  });
+
+  it("fails closed when sign-out participant-session reconciliation fails", async () => {
+    const user = userEvent.setup();
+    const remembered = { first_name: "Пётр", last_name: "Петров", phone: "+79000000002", email: "petr@example.ru" };
+    let participantSessionGets = 0;
+    let rejectSignOutSession!: (reason: Error) => void;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/web/participant-session")) {
+        if (init?.method === "POST") return response(envelope({ state: "remembered" }));
+        participantSessionGets += 1;
+        if (participantSessionGets === 1) return response(envelope({ state: "anonymous", participant: null }));
+        if (participantSessionGets === 2) return response(envelope({ state: "remembered", participant: remembered }));
+        return new Promise((_resolve, reject) => { rejectSignOutSession = reject; });
+      }
+      if (url.endsWith("/auth/logout")) return response({ ok: true });
+      return response(envelope(eventResponse()));
+    });
+    window.history.replaceState(null, "", `/events/${EVENT_ID}`);
+    render(<App />);
+    await screen.findByLabelText("Имя");
+
+    const accountPanel = await signInExistingAccount(user);
+    await waitFor(() => expect(participantSessionGets).toBe(2));
+    await user.click(within(accountPanel).getByRole("button", { name: "Выйти" }));
+    rejectSignOutSession(new Error("temporary failure"));
+
+    expect(await screen.findByText("Не удалось проверить данные для регистрации.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+  });
+
+  it("keeps a real account authoritative after participant-session bootstrap and refresh failures", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/web/participant-session")) {
+        if (init?.method === "POST") return response(envelope({ state: "remembered" }));
+        return Promise.reject(new Error("temporary failure"));
+      }
+      return response(envelope(eventResponse()));
+    });
+    window.history.replaceState(null, "", `/events/${EVENT_ID}`);
+    render(<App />);
+    expect(await screen.findByText("Не удалось проверить данные для регистрации.")).toBeInTheDocument();
+
+    await signInExistingAccount(user);
+    expect(await screen.findByRole("region", { name: "Аккаунт" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Данные аккаунта только для чтения")).toHaveTextContent("Иван");
+    expect(screen.queryByText("Не удалось проверить данные для регистрации.")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: /Основное участие/ }));
+    await user.click(screen.getByLabelText(/Я ознакомился/));
+    expect(screen.getByRole("button", { name: "Записаться на мероприятие" })).toBeEnabled();
+  });
+
+  it("fails closed after email confirmation when participant-session refresh fails", async () => {
+    const user = userEvent.setup();
+    await renderEvent();
+    await fillValidForm(user);
+    await createIntent(user);
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response(registrationResult()))
+      .mockImplementationOnce(() => Promise.reject(new Error("temporary failure")));
+    await user.type(screen.getByLabelText("Код подтверждения"), "123456");
+    await user.click(screen.getByRole("button", { name: "Подтвердить email" }));
+
+    expect(await screen.findByText("Не удалось проверить данные для регистрации.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+  });
+
   it("keeps an already canonical slug path without replaceState", async () => {
     const replaceSpy = vi.spyOn(window.history, "replaceState");
     await renderEvent(eventResponse(), "", PUBLIC_SLUG);
@@ -1843,14 +1978,16 @@ describe("local form shell", () => {
     await user.click(within(screen.getByRole("dialog", { name: "Войти в аккаунт" })).getByRole("button", { name: "Войти" }));
 
     const accountPanel = await screen.findByRole("region", { name: "Аккаунт" });
-    vi.mocked(fetch).mockImplementationOnce(() => response({ ok: true }));
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response(envelope({ state: "anonymous", participant: null })))
+      .mockImplementationOnce(() => response({ ok: true }));
     await user.click(within(accountPanel).getByRole("button", { name: "Выйти" }));
 
     expect(screen.queryByRole("region", { name: "Аккаунт" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Записаться на мероприятие" })).toBeInTheDocument();
     expect(screen.getByText("Что происходит с моими данными")).toBeInTheDocument();
     expect(within(screen.getByRole("banner")).getByRole("button", { name: "Войти" })).toHaveFocus();
-    expect(screen.getByLabelText("Имя")).toHaveValue("Анна Мария");
+    expect(await screen.findByLabelText("Имя")).toHaveValue("Анна Мария");
     expect(screen.getByLabelText("Email", { selector: "#email" })).toHaveValue("anna@example.ru");
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/auth/logout", expect.objectContaining({
       method: "POST",
