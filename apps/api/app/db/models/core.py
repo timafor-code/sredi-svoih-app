@@ -549,6 +549,9 @@ class Event(Base):
     subtitle: Mapped[str | None] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
     short_description: Mapped[str | None] = mapped_column(Text)
+    schedule: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True,
+    )
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_permanent: Mapped[bool] = mapped_column(

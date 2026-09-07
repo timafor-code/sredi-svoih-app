@@ -8,6 +8,8 @@ from uuid import UUID
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from pydantic import model_validator
 
+from app.schemas.events import EventSchedule
+
 AdminEventKind = Literal[
     "single",
     "course",
@@ -66,6 +68,7 @@ def _require_timezone(value: datetime | None) -> datetime | None:
 
 
 class AdminEventCreateRequest(BaseModel):
+    schedule: EventSchedule | None = None
     community_id: UUID | None = Field(
         default=None,
         validation_alias=AliasChoices("community_id", "communityId"),
@@ -183,6 +186,7 @@ class AdminEventCreateRequest(BaseModel):
 
 
 class AdminEventUpdateRequest(BaseModel):
+    schedule: EventSchedule | None = None
     event_kind: AdminEventKind | None = Field(
         default=None,
         validation_alias=AliasChoices("event_kind", "eventKind"),
@@ -301,6 +305,7 @@ class AdminEventUpdateRequest(BaseModel):
 
 
 class AdminEventResponse(BaseModel):
+    schedule: EventSchedule | None = None
     id: UUID
     community_id: UUID
     event_kind: str

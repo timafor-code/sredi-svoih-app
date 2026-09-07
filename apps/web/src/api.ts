@@ -11,6 +11,7 @@ import type {
   PrivacyErasureLifecycle,
   PrivacySession,
   WebEventRegistrationFormResponse,
+  WebEventSchedule,
   WebRegistrationConfirmResult,
   WebRegistrationIntentCreated,
   WebRegistrationIntentRequest,
@@ -146,6 +147,43 @@ const POSTGRESQL_UUID_SHAPE_PATTERN =
 
 function isPostgresqlUuid(value: unknown): value is string {
   return typeof value === "string" && POSTGRESQL_UUID_SHAPE_PATTERN.test(value);
+}
+
+function isScheduleText(value: unknown): value is string {
+  // Count Unicode code points, matching the server's 200-character limit.
+  return typeof value === "string" && [...value].length <= 200;
+}
+
+function isScheduleDate(value: unknown): value is string {
+  if (typeof value !== "string" || value.length !== 10
+    || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  if (year < 1 || month < 1 || month > 12) return false;
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day >= 1 && day <= daysInMonth[month - 1];
+}
+
+function isSchedule(value: unknown): value is WebEventSchedule {
+  return isRecord(value)
+    && Object.keys(value).every((key) => ["version", "days"].includes(key))
+    && value.version === 1
+    && Array.isArray(value.days)
+    && value.days.length <= 30
+    && value.days.every((day: unknown) => isRecord(day)
+      && Object.keys(day).every((key) => ["date", "label", "note", "items"].includes(key))
+      && isScheduleDate(day.date)
+      && (day.label === null || isScheduleText(day.label))
+      && (day.note === null || isScheduleText(day.note))
+      && Array.isArray(day.items)
+      && day.items.length <= 60
+      && day.items.every((item: unknown) => isRecord(item)
+        && Object.keys(item).every((key) => ["time", "title", "option_id"].includes(key))
+        && typeof item.time === "string" && item.time.length === 5
+        && /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(item.time)
+        && isScheduleText(item.title)
+        && (item.option_id === null
+          || (isPostgresqlUuid(item.option_id) && item.option_id.length === 36))));
 }
 
 function isDateTime(value: unknown): value is string {
@@ -473,6 +511,7 @@ export function isWebEventRegistrationFormResponse(
     && isNullableString(event.subtitle)
     && isNullableString(event.description)
     && isNullableString(event.short_description)
+    && (event.schedule === undefined || event.schedule === null || isSchedule(event.schedule))
     && isDateTime(event.starts_at)
     && isNullableDateTime(event.ends_at)
     && isNullableString(event.timezone)
