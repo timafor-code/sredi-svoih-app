@@ -14368,7 +14368,7 @@ a {
 .event-programme-editor { display: grid; gap: 14px; }
 .event-programme-editor__head h2 { margin: 0; font-size: 15.5px; font-weight: 800; }
 .event-programme-editor__head p { margin: 5px 0 0; color: var(--text-muted); font-size: 12.5px; line-height: 1.45; }
-.event-programme-editor__source { display: grid; gap: 6px; }
+.event-programme-editor__source { display: grid; gap: 6px; margin-inline: 20px; }
 .event-programme-editor__source > span { color: var(--text-soft); font-size: 12px; font-weight: 700; }
 .event-programme-editor__source textarea { box-sizing: border-box; width: 100%; min-height: 116px; resize: vertical; padding: 9px 10px; border: 1px solid var(--editor-line); border-radius: 8px; background: var(--editor-inset); color: var(--text); font: inherit; font-size: 13px; line-height: 1.45; }
 .event-programme-editor__source small { color: var(--text-muted); font-size: 11.5px; line-height: 1.4; }
@@ -14566,6 +14566,7 @@ a {
   .event-editor .event-form-grid, .event-registration-modes,
   .event-editor .event-occurrence-generator__grid, .event-editor .event-occurrences-summary dl { grid-template-columns: minmax(0, 1fr); }
   .event-editor .event-schedule-day__fields, .event-editor .event-schedule-item { grid-template-columns: minmax(0, 1fr); }
+  .event-programme-editor__source { margin-inline: 12px; }
   .event-editor .event-schedule-item__actions { padding-top: 0; justify-content: flex-start; }
   .event-editor .event-occurrence-generator__field { grid-column: auto; }
   .event-editor .event-occurrence-row { grid-template-columns: minmax(0, 1fr) auto; }
