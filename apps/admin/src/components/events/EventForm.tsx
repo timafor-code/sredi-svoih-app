@@ -16,6 +16,10 @@ import {
   type EventImageUploadStage,
 } from "./EventImageUploader";
 import {
+  EventScheduleConstructor,
+  validateEventSchedule,
+} from "./EventScheduleConstructor";
+import {
   buildEventUpdateInput,
   type EventUpdateFormState,
 } from "../../lib/eventUpdatePatch";
@@ -28,6 +32,7 @@ import type {
   AdminEventKind,
   AdminEventMutationInput,
   AdminEventRegistrationMode,
+  AdminEventSchedule,
   AdminEventStatus,
   AdminEventVisibility,
   UpdateAdminEventInput,
@@ -41,8 +46,10 @@ import {
   EVENT_VISIBILITY_LABELS,
   REGISTRATION_MODE_LABELS,
 } from "../../types/events";
+import { listAdminEventParticipationOptions } from "../../services/adminParticipationOptionsService";
 import type { AdminCommunityLocation } from "../../types/communityLocations";
 import type { AdminEventCategory } from "../../types/eventCategories";
+import type { ParticipationOption } from "../../types/participationOptions";
 
 const DEFAULT_TIMEZONE = "Europe/Moscow";
 const DEFAULT_PRICE_CURRENCY = "RUB";
@@ -62,7 +69,7 @@ type StringFormField = {
   [Field in keyof EventFormState]: EventFormState[Field] extends string ? Field : never;
 }[keyof EventFormState];
 
-type FormErrorKey = StringFormField | "isPermanent" | "form";
+type FormErrorKey = StringFormField | "isPermanent" | "schedule" | "form";
 type FormErrors = Partial<Record<FormErrorKey, string>>;
 
 type EventFormSharedProps = {
@@ -195,19 +202,31 @@ export function EventForm(props: EventFormProps) {
   );
   const [errors, setErrors] = useState<FormErrors>({});
   const [baseline, setBaseline] = useState(() => buildInitialForm(initialEvent, forceDraftHidden));
+  const [schedule, setSchedule] = useState<AdminEventSchedule | null>(() =>
+    cloneSchedule(initialEvent?.schedule ?? null),
+  );
+  const [scheduleBaseline, setScheduleBaseline] = useState<AdminEventSchedule | null>(() =>
+    cloneSchedule(initialEvent?.schedule ?? null),
+  );
+  const [participationOptions, setParticipationOptions] = useState<ParticipationOption[]>([]);
+  const [participationOptionsLoading, setParticipationOptionsLoading] = useState(false);
+  const [participationOptionsError, setParticipationOptionsError] = useState<string | null>(null);
   const externalPublication = mode === "edit" && publicationControlled;
-  const isDirty = mode === "edit" && Object.keys(form).some((key) => {
+  const formDirty = mode === "edit" && Object.keys(form).some((key) => {
     const field = key as keyof EventFormState;
     if (externalPublication && (field === "status" || field === "visibility")) return false;
     if (imageAuthoringMode === "file" && field === "imageUrl") return false;
     return form[field] !== baseline[field];
   });
+  const scheduleDirty = mode === "edit" && !sameSchedule(schedule, scheduleBaseline);
+  const isDirty = formDirty || scheduleDirty;
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [hasSuccessfulEditSave, setHasSuccessfulEditSave] = useState(false);
   const [hasImageValidationError, setHasImageValidationError] = useState(false);
   const previousEventIdRef = useRef<string | null>(initialEvent?.id ?? null);
   const formRef = useRef<HTMLFormElement>(null);
   const submittedFormRef = useRef(form);
+  const submittedScheduleRef = useRef(schedule);
   const previousContentEventRef = useRef(confirmedContentEvent);
 
   useEffect(() => {
@@ -217,12 +236,17 @@ export function EventForm(props: EventFormProps) {
     if (externalPublication && !isDifferentEvent) {
       if (confirmedContentEvent !== previousContentEventRef.current && confirmedContentEvent) {
         const confirmed = buildInitialForm(confirmedContentEvent, forceDraftHidden);
+        const confirmedSchedule = cloneSchedule(confirmedContentEvent.schedule ?? null);
         setBaseline(confirmed);
+        setScheduleBaseline(confirmedSchedule);
         // Preserve edits made while the submitted content was being saved.
         setForm((current) => Object.fromEntries(Object.entries(current).map(([key, value]) => [
           key, value === submittedFormRef.current[key as keyof EventFormState]
             ? confirmed[key as keyof EventFormState] : value,
         ])) as EventFormState);
+        setSchedule((current) => (
+          sameSchedule(current, submittedScheduleRef.current) ? confirmedSchedule : current
+        ));
       }
       previousContentEventRef.current = confirmedContentEvent;
       return;
@@ -230,6 +254,9 @@ export function EventForm(props: EventFormProps) {
     const nextForm = buildInitialForm(initialEvent, forceDraftHidden);
     setForm(nextForm);
     setBaseline(nextForm);
+    const nextSchedule = cloneSchedule(initialEvent?.schedule ?? null);
+    setSchedule(nextSchedule);
+    setScheduleBaseline(nextSchedule);
     setErrors({});
     setHasImageValidationError(false);
 
@@ -241,6 +268,34 @@ export function EventForm(props: EventFormProps) {
     previousEventIdRef.current = nextEventId;
     previousContentEventRef.current = confirmedContentEvent;
   }, [forceDraftHidden, initialEvent, mode, externalPublication, confirmedContentEvent]);
+
+  useEffect(() => {
+    const eventId = initialEvent?.id;
+    if (!eventId) {
+      setParticipationOptions([]);
+      setParticipationOptionsLoading(false);
+      setParticipationOptionsError(null);
+      return;
+    }
+
+    let active = true;
+    setParticipationOptionsLoading(true);
+    setParticipationOptionsError(null);
+    void listAdminEventParticipationOptions(eventId)
+      .then((options) => {
+        if (active) setParticipationOptions(options);
+      })
+      .catch(() => {
+        if (!active) return;
+        setParticipationOptions([]);
+        setParticipationOptionsError("Не удалось загрузить варианты участия. Повторите попытку позже.");
+      })
+      .finally(() => {
+        if (active) setParticipationOptionsLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [initialEvent?.id]);
 
   useEffect(() => {
     onRegistrationModeChange?.(form.registrationMode);
@@ -493,6 +548,12 @@ export function EventForm(props: EventFormProps) {
     }
   };
 
+  const handleScheduleChange = (nextSchedule: AdminEventSchedule | null) => {
+    setSchedule(nextSchedule);
+    setErrors((current) => clearFormErrors(current, ["schedule", "form"]));
+    if (mode === "edit") setHasSuccessfulEditSave(false);
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitting) return;
@@ -517,20 +578,42 @@ export function EventForm(props: EventFormProps) {
       return;
     }
 
+    const scheduleValidation = validateEventSchedule(
+      schedule,
+      participationOptionsLoading || participationOptionsError
+        ? null
+        : participationOptions.map((option) => option.id),
+    );
+    if ((mode === "create" || scheduleDirty) && !scheduleValidation.valid) {
+      setErrors((current) => ({ ...current, schedule: "Проверьте программу события." }));
+      focusFirstInvalidField(formRef.current);
+      return;
+    }
+
+    const inputWithSchedule: AdminEventMutationInput = {
+      ...validation.input,
+      schedule,
+    };
+
     const updateInput = mode === "edit" && initialEvent
       ? buildEventUpdateInput(
           initialEvent,
           buildInitialForm(initialEvent, forceDraftHidden),
           formForValidation,
-          validation.input,
+          inputWithSchedule,
         )
-      : validation.input;
+      : inputWithSchedule;
+
+    if (mode === "edit" && scheduleDirty) {
+      (updateInput as UpdateAdminEventInput).schedule = schedule;
+    }
 
     if (externalPublication) {
       delete (updateInput as UpdateAdminEventInput).status;
       delete (updateInput as UpdateAdminEventInput).visibility;
     }
     submittedFormRef.current = form;
+    submittedScheduleRef.current = schedule;
 
     if (
       mode === "edit"
@@ -544,11 +627,14 @@ export function EventForm(props: EventFormProps) {
 
     const isSaved = props.mode === "edit"
       ? await props.onSubmit(updateInput as UpdateAdminEventInput)
-      : await props.onSubmit(validation.input);
+      : await props.onSubmit(inputWithSchedule);
 
     if (mode === "edit" && isSaved) {
       setSavedAt(new Date().toISOString());
-      if (!externalPublication || Object.keys(updateInput).length === 0) setBaseline(form);
+      if (!externalPublication || Object.keys(updateInput).length === 0) {
+        setBaseline(form);
+        setScheduleBaseline(cloneSchedule(schedule));
+      }
       setHasSuccessfulEditSave(true);
     }
   };
@@ -684,6 +770,15 @@ export function EventForm(props: EventFormProps) {
           />
         ) : null}
       </section>
+
+      <EventScheduleConstructor
+        disabled={disabled || submitting}
+        onChange={handleScheduleChange}
+        options={participationOptions}
+        optionsError={participationOptionsError}
+        optionsLoading={participationOptionsLoading}
+        schedule={schedule}
+      />
 
       <section className={externalPublication ? "event-form-section" : "event-form-layout-contents"}>
       <div className={externalPublication ? "event-form-layout-contents" : "event-form-section"}>
@@ -1222,6 +1317,7 @@ function firstValidationError(errors: FormErrors): string | null {
     registrationMode: "Тип регистрации",
     registrationUrl: "Ссылка регистрации",
     capacity: "Лимит мест",
+    schedule: "Программа",
   };
   const key = firstActiveFormErrorKey(errors, ["form"]);
   return key ? labels[key] ?? "Поле формы" : null;
@@ -1253,6 +1349,25 @@ function normalizeLocationText(value: string): string {
 function cleanString(value: string): string | null {
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+function cloneSchedule(schedule: AdminEventSchedule | null): AdminEventSchedule | null {
+  return schedule === null ? null : {
+    version: 1,
+    days: schedule.days.map((day) => ({
+      date: day.date,
+      label: day.label,
+      note: day.note,
+      items: day.items.map((item) => ({ ...item })),
+    })),
+  };
+}
+
+function sameSchedule(
+  left: AdminEventSchedule | null,
+  right: AdminEventSchedule | null,
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function parseIntegerField(

@@ -8,6 +8,7 @@ import type {
 import type {
   AdminEvent,
   AdminEventApiMutationInput,
+  AdminEventSchedule,
   CreateAdminEventInput,
   UpdateAdminEventInput,
 } from "../types/events";
@@ -38,6 +39,21 @@ type AdminEventApiMutationPayload = {
   requires_approval?: boolean;
   price_amount?: number | null;
   price_currency?: string;
+  schedule?: AdminEventSchedulePayload | null;
+};
+
+type AdminEventSchedulePayload = {
+  version: 1;
+  days: Array<{
+    date: string;
+    label: string | null;
+    note: string | null;
+    items: Array<{
+      time: string;
+      title: string;
+      option_id: string | null;
+    }>;
+  }>;
 };
 
 type AdminEventStatusAction = "publish" | "archive" | "cancel";
@@ -85,7 +101,30 @@ function buildAdminEventApiPayload(
     requires_approval: input.requiresApproval,
     price_amount: input.priceAmount,
     price_currency: input.priceCurrency,
+    schedule: input.schedule === undefined ? undefined : toAdminEventSchedulePayload(input.schedule),
   });
+}
+
+function toAdminEventSchedulePayload(
+  schedule: AdminEventSchedule | null,
+): AdminEventSchedulePayload | null {
+  if (schedule === null) {
+    return null;
+  }
+
+  return {
+    version: 1,
+    days: schedule.days.map((day) => ({
+      date: day.date,
+      label: day.label,
+      note: day.note,
+      items: day.items.map((item) => ({
+        time: item.time,
+        title: item.title,
+        option_id: item.optionId,
+      })),
+    })),
+  };
 }
 
 function isApiStatusActionPayload(input: UpdateAdminEventInput): boolean {
