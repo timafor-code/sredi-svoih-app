@@ -396,8 +396,8 @@ legend,
   border-color: rgba(240, 122, 42, 0.28);
   background: rgba(240, 122, 42, 0.09);
   color: var(--text);
-  cursor: pointer;
 }
+button.programme-timeline-item--linked { cursor: pointer; }
 .programme-timeline-item--linked > span { font-weight: 650; }
 .programme-timeline-item--linked em {
   padding: 2px 9px;

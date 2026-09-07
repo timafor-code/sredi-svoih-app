@@ -389,11 +389,17 @@ function formatProgrammeDay(value: string): { date: string; weekday: string } {
 function EventProgramme({
   schedule,
   options,
+  registrationReady,
+  requiresDateSelection,
   onLinkedOptionActivate,
+  onDateSelectionRequested,
 }: {
   schedule: WebEventSchedule;
   options: WebRegistrationParticipationOption[];
+  registrationReady: boolean;
+  requiresDateSelection: boolean;
   onLinkedOptionActivate: (optionId: string) => void;
+  onDateSelectionRequested: () => void;
 }): ReactNode {
   const [activeDayIndex, setActiveDayIndex] = useState(0);
   const optionsById = useMemo(() => new Map(options.map((option) => [option.id, option])), [options]);
@@ -454,7 +460,8 @@ function EventProgramme({
           {activeDay.items.map((item, index) => {
             const option = item.option_id ? optionsById.get(item.option_id) : undefined;
             const content = <><time>{item.time}</time><span>{item.title}</span></>;
-            return option ? (
+            const price = formatOptionPrice(option?.price_amount ?? 0, option?.price_currency ?? "RUB") ?? "Бесплатно";
+            return option && registrationReady ? (
               <button
                 className="programme-timeline-item programme-timeline-item--linked"
                 key={`${item.time}-${item.title}-${index}`}
@@ -462,8 +469,23 @@ function EventProgramme({
                 type="button"
               >
                 {content}
-                <em>{`${formatOptionPrice(option.price_amount, option.price_currency) ?? "Бесплатно"} · записаться`}</em>
+                <em>{`${price} · записаться`}</em>
               </button>
+            ) : option && requiresDateSelection ? (
+              <button
+                className="programme-timeline-item programme-timeline-item--linked"
+                key={`${item.time}-${item.title}-${index}`}
+                onClick={onDateSelectionRequested}
+                type="button"
+              >
+                {content}
+                <em>{`${price} · выбрать дату`}</em>
+              </button>
+            ) : option ? (
+              <div className="programme-timeline-item programme-timeline-item--linked" key={`${item.time}-${item.title}-${index}`}>
+                {content}
+                <em>{price}</em>
+              </div>
             ) : (
               <div className="programme-timeline-item" key={`${item.time}-${item.title}-${index}`}>
                 {content}
@@ -2013,7 +2035,10 @@ function EventPage({
                 <EventProgramme
                   schedule={data.event.schedule}
                   options={data.participation_options}
+                  registrationReady={!dateSelectionPending && effectiveState === "open" && Boolean(consentDocument)}
+                  requiresDateSelection={dateSelectionPending}
                   onLinkedOptionActivate={activateProgrammeOption}
+                  onDateSelectionRequested={jumpToRegistration}
                 />
               ) : null}
             </div>

@@ -434,13 +434,43 @@ describe("public event page", () => {
   it("keeps programme day selection independent from occurrence selection", async () => {
     const user = userEvent.setup();
     const data = recurringOpenEvent();
-    data.event.schedule = programmeEventResponse().event.schedule;
+    const programmeData = programmeEventResponse();
+    data.event.schedule = programmeData.event.schedule;
+    data.participation_options = programmeData.participation_options;
     await renderEvent(data);
 
-    await user.click(screen.getByRole("tab", { name: /26 сент/i }));
-    expect(screen.getByRole("tab", { name: /26 сент/i })).toHaveAttribute("aria-selected", "true");
+    const linkedItem = screen.getByRole("button", { name: /Общая трапеза.*выбрать дату/i });
+    expect(screen.queryByRole("button", { name: /Общая трапеза.*записаться/i })).not.toBeInTheDocument();
+    await user.click(linkedItem);
+    expect(document.querySelector(".form-column")).toHaveFocus();
     expect(screen.getAllByRole<HTMLInputElement>("radio", { name: /Пятница|Суббота/ }).every((radio) => !radio.checked)).toBe(true);
     expect(screen.getByRole("button", { name: "Продолжить" })).toBeDisabled();
+  });
+
+  it("activates a linked programme option only after required occurrence selection", async () => {
+    const user = userEvent.setup();
+    const data = recurringOpenEvent();
+    const programmeData = programmeEventResponse();
+    data.event.schedule = programmeData.event.schedule;
+    data.participation_options = programmeData.participation_options;
+    await renderEvent(data);
+
+    await user.click(screen.getByRole("radio", { name: /Пятница/ }));
+    await user.click(screen.getByRole("button", { name: "Продолжить" }));
+    const linkedItem = screen.getByRole("button", { name: /Общая трапеза.*записаться/i });
+    await user.click(linkedItem);
+
+    expect(screen.getByRole("checkbox", { name: /Общая трапеза/ })).toBeChecked();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["not_yet_open", "closed", "full"] as const)("does not expose a false programme registration action when %s", async (state) => {
+    const data = programmeEventResponse();
+    data.registration_state = state;
+    await renderEvent(data);
+
+    expect(document.querySelectorAll(".programme-timeline-item")[1]).toHaveTextContent(/600.*₽/);
+    expect(screen.queryByRole("button", { name: /Общая трапеза.*(записаться|выбрать дату)/i })).not.toBeInTheDocument();
   });
 
   it("renders the same neutral unavailable page for a 404", async () => {
