@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { EventTicketsCapacityModule } from "../components/events/EventTicketsCapacityModule";
 import { EventForm } from "../components/events/EventForm";
 import { EventOccurrencesConstructor } from "../components/events/EventOccurrencesConstructor";
+import { EventProgrammeEditor } from "../components/events/EventProgrammeEditor";
 import { EventQuestionnaireCard } from "../components/events/EventQuestionnaireCard";
 import { EventWebRegistrationCard } from "../components/events/EventWebRegistrationCard";
 import type { EventImageUploadStage } from "../components/events/EventImageUploader";
@@ -21,7 +22,7 @@ import { getAdminEvent, updateAdminEvent } from "../services/adminEventsService"
 import { listAdminCommunityLocations } from "../services/communityLocationsService";
 import { listAdminEventCategories } from "../services/eventCategoriesService";
 import { getEventStatusLabel, getEventVisibilityLabel } from "../types/events";
-import type { AdminEvent, UpdateAdminEventInput } from "../types/events";
+import type { AdminEvent, AdminEventSchedule, UpdateAdminEventInput } from "../types/events";
 import type { AdminCommunityLocation } from "../types/communityLocations";
 import type { AdminEventCategory } from "../types/eventCategories";
 
@@ -42,6 +43,7 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
   const [registrationMode, setRegistrationMode] = useState<string>(event.registrationMode);
   const [eventDirty, setEventDirty] = useState(false);
   const [ticketsDirty, setTicketsDirty] = useState(false);
+  const [programmeDirty, setProgrammeDirty] = useState(false);
   const [webDirty, setWebDirty] = useState(false);
   const [questionnaireDirty, setQuestionnaireDirty] = useState(false);
   const [periodDirty, setPeriodDirty] = useState(false);
@@ -61,7 +63,7 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
     return () => { mountedRef.current = false; };
   }, []);
 
-  const leaveDirty = eventDirty || webDirty || questionnaireDirty || singlePeriodExplicitDirty;
+  const leaveDirty = eventDirty || programmeDirty || webDirty || questionnaireDirty || singlePeriodExplicitDirty;
   useEffect(() => { onLeaveGuardChange?.(leaveDirty); }, [leaveDirty, onLeaveGuardChange]);
   useEffect(() => () => onLeaveGuardChange?.(false), [onLeaveGuardChange]);
   useEffect(() => {
@@ -171,6 +173,7 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
     setImageStage(null);
     setImageError(null);
     setImageSuccessMessage(null);
+    setProgrammeDirty(false);
     setParticipationOptionsRevision(0);
   }, [event.id]);
 
@@ -300,6 +303,21 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
     } finally {
       mutationActiveRef.current = false;
       setSubmitting(false);
+    }
+  };
+
+  const saveProgramme = async (schedule: AdminEventSchedule | null): Promise<AdminEvent | null> => {
+    if (mutationActiveRef.current || publicationCountRef.current > 0) {
+      return null;
+    }
+
+    mutationActiveRef.current = true;
+    try {
+      const confirmed = await updateAdminEvent(currentEvent.id, { schedule });
+      storeConfirmedEvent(confirmed);
+      return confirmed;
+    } finally {
+      mutationActiveRef.current = false;
     }
   };
 
@@ -447,7 +465,7 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
         {!publicationPending ? <button type="button" aria-label="Закрыть уведомление" onClick={() => setPublicationToast(null)}>×</button> : null}
       </div> : null}
       <EventEditorTabs activeTab={activeTab} onTabChange={setActiveTab} registrationMode={registrationMode}
-        dirty={{ event: eventDirty, tickets: ticketsDirty, web: webDirty || questionnaireDirty, period: periodDirty }}
+        dirty={{ event: eventDirty, tickets: ticketsDirty, programme: programmeDirty, web: webDirty || questionnaireDirty, period: periodDirty }}
         panels={{
           event: <GlassCard className="event-create-card event-create-card--sticky-actions" elevated>
             <EventForm
@@ -459,7 +477,6 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
               onDirtyChange={setEventDirty}
               onRegistrationModeChange={setRegistrationMode}
               onOpenTickets={() => setActiveTab("tickets")}
-              participationOptionsRevision={participationOptionsRevision}
               mode="edit"
               categories={categories}
               categoriesError={categoriesError}
@@ -487,6 +504,15 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
              defaultPriceCurrency={currentEvent.priceCurrency} eventCapacity={currentEvent.capacity}
             active={activeTab === "tickets" && registrationMode === "internal_paid"} onDirtyChange={setTicketsDirty}
             onParticipationOptionsPersisted={() => setParticipationOptionsRevision((current) => current + 1)} />,
+          programme: <GlassCard className="event-programme-card" elevated>
+            <EventProgrammeEditor
+              event={currentEvent}
+              onDirtyChange={setProgrammeDirty}
+              onSave={saveProgramme}
+              participationOptionsRevision={participationOptionsRevision}
+              saveDisabled={submitting || publicationPending > 0}
+            />
+          </GlassCard>,
           web: <div className="event-editor-web-grid">
             <EventWebRegistrationCard key={`web-${currentEvent.id}`} eventId={currentEvent.id} eventTitle={currentEvent.title}
               onDirtyChange={setWebDirty} />

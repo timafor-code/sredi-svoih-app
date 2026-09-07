@@ -1,10 +1,11 @@
 import { useId, useRef, type ReactNode } from "react";
 
-export type EventEditorTab = "event" | "tickets" | "web" | "period";
+export type EventEditorTab = "event" | "tickets" | "programme" | "web" | "period";
 
 const tabs: Array<{ id: EventEditorTab; label: string }> = [
   { id: "event", label: "Событие" },
   { id: "tickets", label: "Билеты и места" },
+  { id: "programme", label: "Программа" },
   { id: "period", label: "Период регистрации" },
   { id: "web", label: "Веб-страница" },
 ];

@@ -14364,6 +14364,20 @@ a {
 .event-editor .event-schedule-parser-remainder p,
 .event-editor .event-schedule-parser-remainder li { color: var(--text-soft); font-size: 12px; line-height: 1.45; }
 .event-editor .event-schedule-parser-remainder ul { display: grid; gap: 3px; margin: 0; padding-left: 20px; }
+.event-editor .event-programme-card { --section-accent: var(--gold); padding: 16px 20px 18px; }
+.event-programme-editor { display: grid; gap: 14px; }
+.event-programme-editor__head h2 { margin: 0; font-size: 15.5px; font-weight: 800; }
+.event-programme-editor__head p { margin: 5px 0 0; color: var(--text-muted); font-size: 12.5px; line-height: 1.45; }
+.event-programme-editor__source { display: grid; gap: 6px; }
+.event-programme-editor__source > span { color: var(--text-soft); font-size: 12px; font-weight: 700; }
+.event-programme-editor__source textarea { box-sizing: border-box; width: 100%; min-height: 116px; resize: vertical; padding: 9px 10px; border: 1px solid var(--editor-line); border-radius: 8px; background: var(--editor-inset); color: var(--text); font: inherit; font-size: 13px; line-height: 1.45; }
+.event-programme-editor__source small { color: var(--text-muted); font-size: 11.5px; line-height: 1.4; }
+.event-programme-editor__notice, .event-programme-editor__error { margin: 0; padding: 9px 10px; border-radius: 8px; font-size: 12px; line-height: 1.4; }
+.event-programme-editor__notice { border: 1px solid rgba(242, 184, 75, 0.3); background: var(--gold-soft); color: var(--text-soft); }
+.event-programme-editor__error { border: 1px solid rgba(229, 44, 54, 0.38); background: rgba(229, 44, 54, 0.08); color: var(--red); }
+.event-programme-editor__save { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; padding-top: 2px; }
+.event-programme-editor__save .save-status { flex: 1 1 180px; }
+.event-programme-editor > .event-schedule-constructor { padding-inline: 0; }
 .event-editor .event-form-section__head h2::before,
 .event-editor :is(.event-tickets-capacity__head, .event-occurrences-constructor__head, .event-web-registration-card__head, .event-questionnaire-card__head) h2::before {
   content: ''; display: block; width: 22px; height: 3px; margin-bottom: 8px; border-radius: 2px; background: var(--section-accent, var(--red));
@@ -14547,7 +14561,7 @@ a {
   .event-editor-header h1 { font-size: 20px; }
   .event-editor-tabs > button { padding: 10px; font-size: 12px; }
   .event-editor .event-form-sticky-actions { padding: 10px 12px; }
-  .event-editor .event-form-section, .event-editor .event-tickets-capacity,
+  .event-editor .event-form-section, .event-editor .event-tickets-capacity, .event-editor .event-programme-card,
   .event-editor .event-occurrences-constructor, .event-editor .event-web-registration-card,
   .event-editor .event-questionnaire-card { padding: 14px 12px; }
   .event-editor .event-form-grid, .event-registration-modes,
