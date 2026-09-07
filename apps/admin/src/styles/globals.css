@@ -14323,12 +14323,16 @@ a {
 .event-editor .event-schedule-constructor { display: grid; gap: 14px; }
 .event-editor .event-schedule-constructor__head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; }
 .event-editor .event-schedule-constructor__head p { margin: 5px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.45; }
+.event-editor .event-schedule-constructor__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .event-editor .event-schedule-constructor__add,
+.event-editor .event-schedule-constructor__parse,
 .event-editor .event-schedule-items__add,
 .event-editor .event-schedule-constructor__empty button { min-height: 34px; padding: 7px 11px; border: 1px solid rgba(242, 184, 75, 0.42); border-radius: 8px; background: rgba(242, 184, 75, 0.08); color: var(--editor-gold); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 .event-editor .event-schedule-constructor__add:disabled,
+.event-editor .event-schedule-constructor__parse:disabled,
 .event-editor .event-schedule-items__add:disabled,
 .event-editor .event-schedule-constructor__empty button:disabled { cursor: not-allowed; opacity: 0.55; }
+.event-editor .event-schedule-constructor__parse { border-color: var(--editor-line); background: var(--editor-inset); color: var(--text-soft); }
 .event-editor .event-schedule-constructor__empty { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 13px 14px; border: 1px dashed var(--editor-line); border-radius: 10px; background: var(--editor-inset); }
 .event-editor .event-schedule-constructor__empty p { margin: 0; color: var(--text-muted); font-size: 12px; }
 .event-editor .event-schedule-constructor__days { display: grid; gap: 12px; }
@@ -14353,6 +14357,13 @@ a {
 .event-editor .event-schedule-actions > .event-schedule-actions__danger { color: var(--red); }
 .event-editor .event-schedule-item__actions { justify-content: flex-end; padding-top: 18px; }
 .event-editor .event-schedule-constructor__notice { margin: 0; padding: 9px 10px; border: 1px solid rgba(229, 44, 54, 0.38); border-radius: 8px; background: rgba(229, 44, 54, 0.08); color: var(--red); font-size: 12px; line-height: 1.4; }
+.event-editor .event-schedule-parser-remainder { display: grid; gap: 7px; padding: 11px 12px; border: 1px solid rgba(242, 184, 75, 0.3); border-radius: 8px; background: var(--gold-soft); }
+.event-editor .event-schedule-parser-remainder h3,
+.event-editor .event-schedule-parser-remainder p { margin: 0; }
+.event-editor .event-schedule-parser-remainder h3 { color: var(--editor-gold); font-size: 12px; }
+.event-editor .event-schedule-parser-remainder p,
+.event-editor .event-schedule-parser-remainder li { color: var(--text-soft); font-size: 12px; line-height: 1.45; }
+.event-editor .event-schedule-parser-remainder ul { display: grid; gap: 3px; margin: 0; padding-left: 20px; }
 .event-editor .event-form-section__head h2::before,
 .event-editor :is(.event-tickets-capacity__head, .event-occurrences-constructor__head, .event-web-registration-card__head, .event-questionnaire-card__head) h2::before {
   content: ''; display: block; width: 22px; height: 3px; margin-bottom: 8px; border-radius: 2px; background: var(--section-accent, var(--red));

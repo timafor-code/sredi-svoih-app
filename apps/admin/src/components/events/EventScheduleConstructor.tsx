@@ -27,6 +27,8 @@ type EventScheduleConstructorProps = {
   options: ParticipationOption[];
   optionsError?: string | null;
   optionsLoading?: boolean;
+  parseControl?: ReactNode;
+  parseRemainder?: string[];
   onChange: (schedule: AdminEventSchedule | null) => void;
   schedule: AdminEventSchedule | null;
 };
@@ -36,6 +38,8 @@ export function EventScheduleConstructor({
   options,
   optionsError = null,
   optionsLoading = false,
+  parseControl,
+  parseRemainder = [],
   onChange,
   schedule,
 }: EventScheduleConstructorProps) {
@@ -148,14 +152,17 @@ export function EventScheduleConstructor({
           <h2 id="event-schedule-heading">Программа</h2>
           <p>Дни и пункты программы. Описание события остаётся отдельным полем.</p>
         </div>
-        <button
-          className="event-schedule-constructor__add"
-          disabled={disabled || (schedule?.days.length ?? 0) >= MAX_DAYS}
-          onClick={addDay}
-          type="button"
-        >
-          + Добавить день
-        </button>
+        <div className="event-schedule-constructor__actions">
+          {parseControl}
+          <button
+            className="event-schedule-constructor__add"
+            disabled={disabled || (schedule?.days.length ?? 0) >= MAX_DAYS}
+            onClick={addDay}
+            type="button"
+          >
+            + Добавить день
+          </button>
+        </div>
       </header>
 
       {schedule === null ? (
@@ -250,6 +257,13 @@ export function EventScheduleConstructor({
       )}
       {optionsError ? <p className="event-schedule-constructor__notice" role="alert">{optionsError}</p> : null}
       {validation.form ? <p className="event-schedule-constructor__notice" role="alert">{validation.form}</p> : null}
+      {parseRemainder.length > 0 ? (
+        <section className="event-schedule-parser-remainder" aria-labelledby="event-schedule-parser-remainder-heading">
+          <h3 id="event-schedule-parser-remainder-heading">Не удалось разобрать</h3>
+          <p>Эти строки не изменены и не будут сохранены отдельно. Проверьте их вручную.</p>
+          <ul>{parseRemainder.map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ul>
+        </section>
+      ) : null}
     </section>
   );
 }

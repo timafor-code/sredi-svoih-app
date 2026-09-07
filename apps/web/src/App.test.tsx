@@ -139,6 +139,33 @@ function paidEventResponse() {
   return data;
 }
 
+function programmeEventResponse() {
+  const data = paidEventResponse();
+  const mealOption = data.participation_options.find((option) => option.title === "Общая трапеза");
+  if (!mealOption) throw new Error("Programme fixture requires the meal option.");
+  data.event.schedule = {
+    version: 1,
+    days: [
+      {
+        date: "2026-09-25",
+        label: "Канун Суккота и Шаббата",
+        note: "Теилим: 72–76",
+        items: [
+          { time: "18:00", title: "Минха", option_id: null },
+          { time: "20:30", title: "Общая трапеза", option_id: mealOption.id },
+        ],
+      },
+      {
+        date: "2026-09-26",
+        label: "Первый день Суккота",
+        note: null,
+        items: [{ time: "10:00", title: "Шахарит", option_id: null }],
+      },
+    ],
+  };
+  return data;
+}
+
 function recurringOpenEvent() {
   const data = responseWithOccurrences();
   data.registration_state = "open";
@@ -356,6 +383,94 @@ describe("public event page", () => {
     data.event.image_url = null;
     await renderEvent(data);
     expect(screen.getByRole("img", { name: /Изображение мероприятия/ })).toBeInTheDocument();
+  });
+
+  it("keeps the legacy description and omits the programme section when schedule is null", async () => {
+    const data = eventResponse();
+    data.event.schedule = null;
+    await renderEvent(data);
+    expect(screen.getByText(/Полное описание/)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Программа" })).not.toBeInTheDocument();
+  });
+
+  it("renders programme days, notes, and switches the active day without changing registration", async () => {
+    const user = userEvent.setup();
+    await renderEvent(programmeEventResponse());
+
+    expect(screen.getByRole("heading", { name: "Программа" })).toBeInTheDocument();
+    expect(screen.getByText("Канун Суккота и Шаббата")).toBeInTheDocument();
+    expect(screen.getByText("Теилим: 72–76")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /25 сент/i })).toHaveAttribute("aria-selected", "true");
+    await user.click(screen.getByRole("tab", { name: /26 сент/i }));
+    expect(screen.getByRole("tab", { name: /26 сент/i })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("Первый день Суккота")).toBeInTheDocument();
+    expect(screen.queryByText("Канун Суккота и Шаббата")).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Платное участие/ })).not.toBeChecked();
+  });
+
+  it("selects the existing linked participation option without submitting registration", async () => {
+    const user = userEvent.setup();
+    await renderEvent(programmeEventResponse());
+    const linkedItem = screen.getByRole("button", { name: /Общая трапеза.*записаться/i });
+    expect(linkedItem).toHaveTextContent(/600.*₽/);
+    await user.click(linkedItem);
+
+    expect(screen.getByRole("checkbox", { name: /Общая трапеза/ })).toBeChecked();
+    expect(document.querySelector(".form-column")).toHaveFocus();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog", { name: "Оформление регистрации" })).not.toBeInTheDocument();
+  });
+
+  it("renders a dangling programme option as a plain line", async () => {
+    const data = programmeEventResponse();
+    data.event.schedule!.days[0].items[1].option_id = "99999999-9999-4999-8999-999999999999";
+    await renderEvent(data);
+
+    expect(document.querySelectorAll(".programme-timeline-item")[1]).toHaveTextContent("Общая трапеза");
+    expect(screen.queryByRole("button", { name: /Общая трапеза.*записаться/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/99999999-9999/)).not.toBeInTheDocument();
+  });
+
+  it("keeps programme day selection independent from occurrence selection", async () => {
+    const user = userEvent.setup();
+    const data = recurringOpenEvent();
+    const programmeData = programmeEventResponse();
+    data.event.schedule = programmeData.event.schedule;
+    data.participation_options = programmeData.participation_options;
+    await renderEvent(data);
+
+    const linkedItem = screen.getByRole("button", { name: /Общая трапеза.*выбрать дату/i });
+    expect(screen.queryByRole("button", { name: /Общая трапеза.*записаться/i })).not.toBeInTheDocument();
+    await user.click(linkedItem);
+    expect(document.querySelector(".form-column")).toHaveFocus();
+    expect(screen.getAllByRole<HTMLInputElement>("radio", { name: /Пятница|Суббота/ }).every((radio) => !radio.checked)).toBe(true);
+    expect(screen.getByRole("button", { name: "Продолжить" })).toBeDisabled();
+  });
+
+  it("activates a linked programme option only after required occurrence selection", async () => {
+    const user = userEvent.setup();
+    const data = recurringOpenEvent();
+    const programmeData = programmeEventResponse();
+    data.event.schedule = programmeData.event.schedule;
+    data.participation_options = programmeData.participation_options;
+    await renderEvent(data);
+
+    await user.click(screen.getByRole("radio", { name: /Пятница/ }));
+    await user.click(screen.getByRole("button", { name: "Продолжить" }));
+    const linkedItem = screen.getByRole("button", { name: /Общая трапеза.*записаться/i });
+    await user.click(linkedItem);
+
+    expect(screen.getByRole("checkbox", { name: /Общая трапеза/ })).toBeChecked();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["not_yet_open", "closed", "full"] as const)("does not expose a false programme registration action when %s", async (state) => {
+    const data = programmeEventResponse();
+    data.registration_state = state;
+    await renderEvent(data);
+
+    expect(document.querySelectorAll(".programme-timeline-item")[1]).toHaveTextContent(/600.*₽/);
+    expect(screen.queryByRole("button", { name: /Общая трапеза.*(записаться|выбрать дату)/i })).not.toBeInTheDocument();
   });
 
   it("renders the same neutral unavailable page for a 404", async () => {

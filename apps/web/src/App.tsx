@@ -47,6 +47,7 @@ import type {
   ExistingAccountIdentity,
   TemporaryAuthTokens,
   WebEventRegistrationFormResponse,
+  WebEventSchedule,
   WebRegistrationConfirmResult,
   WebRegistrationIntentRequest,
   WebRegistrationLegalDocument,
@@ -371,6 +372,130 @@ function formatRegistrationTotal(amount: number, currency: string): string {
   } catch {
     return `${new Intl.NumberFormat("ru-RU").format(amount)} ${currency}`.trim();
   }
+}
+
+function formatProgrammeDay(value: string): { date: string; weekday: string } {
+  const date = new Date(`${value}T12:00:00Z`);
+  if (Number.isNaN(date.getTime())) return { date: value, weekday: "" };
+
+  return {
+    date: new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" })
+      .format(date)
+      .replace(".", ""),
+    weekday: new Intl.DateTimeFormat("ru-RU", { weekday: "long", timeZone: "UTC" }).format(date),
+  };
+}
+
+function EventProgramme({
+  schedule,
+  options,
+  registrationReady,
+  requiresDateSelection,
+  onLinkedOptionActivate,
+  onDateSelectionRequested,
+}: {
+  schedule: WebEventSchedule;
+  options: WebRegistrationParticipationOption[];
+  registrationReady: boolean;
+  requiresDateSelection: boolean;
+  onLinkedOptionActivate: (optionId: string) => void;
+  onDateSelectionRequested: () => void;
+}): ReactNode {
+  const [activeDayIndex, setActiveDayIndex] = useState(0);
+  const optionsById = useMemo(() => new Map(options.map((option) => [option.id, option])), [options]);
+  const activeDay = schedule.days[activeDayIndex] ?? schedule.days[0];
+
+  useEffect(() => {
+    setActiveDayIndex((current) => Math.min(current, Math.max(schedule.days.length - 1, 0)));
+  }, [schedule.days.length]);
+
+  if (!activeDay || schedule.days.length === 0) return null;
+
+  const selectDay = (index: number) => setActiveDayIndex(index);
+  const onDayKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const nextIndex = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? schedule.days.length - 1
+        : (index + (event.key === 'ArrowRight' ? 1 : -1) + schedule.days.length) % schedule.days.length;
+    selectDay(nextIndex);
+    document.getElementById(`programme-day-tab-${nextIndex}`)?.focus();
+  };
+
+  return (
+    <section className="event-programme" aria-labelledby="programme-heading">
+      <h2 id="programme-heading">Программа</h2>
+      <div className="programme-day-tabs" role="tablist" aria-label="Дни программы">
+        {schedule.days.map((day, index) => {
+          const formattedDay = formatProgrammeDay(day.date);
+          return (
+            <button
+              aria-controls={`programme-day-panel-${index}`}
+              aria-selected={index === activeDayIndex}
+              id={`programme-day-tab-${index}`}
+              key={`${day.date}-${index}`}
+              onClick={() => selectDay(index)}
+              onKeyDown={(event) => onDayKeyDown(event, index)}
+              role="tab"
+              tabIndex={index === activeDayIndex ? 0 : -1}
+              type="button"
+            >
+              <strong>{formattedDay.date}</strong>
+              {formattedDay.weekday ? <span>{formattedDay.weekday}</span> : null}
+            </button>
+          );
+        })}
+      </div>
+      <div
+        aria-labelledby={`programme-day-tab-${activeDayIndex}`}
+        className="programme-day-panel"
+        id={`programme-day-panel-${activeDayIndex}`}
+        role="tabpanel"
+      >
+        {activeDay.label ? <p className="programme-day-label">{activeDay.label}</p> : null}
+        {activeDay.note ? <p className="programme-day-note">{activeDay.note}</p> : null}
+        <div className="programme-timeline">
+          {activeDay.items.map((item, index) => {
+            const option = item.option_id ? optionsById.get(item.option_id) : undefined;
+            const content = <><time>{item.time}</time><span>{item.title}</span></>;
+            const price = formatOptionPrice(option?.price_amount ?? 0, option?.price_currency ?? "RUB") ?? "Бесплатно";
+            return option && registrationReady ? (
+              <button
+                className="programme-timeline-item programme-timeline-item--linked"
+                key={`${item.time}-${item.title}-${index}`}
+                onClick={() => onLinkedOptionActivate(option.id)}
+                type="button"
+              >
+                {content}
+                <em>{`${price} · записаться`}</em>
+              </button>
+            ) : option && requiresDateSelection ? (
+              <button
+                className="programme-timeline-item programme-timeline-item--linked"
+                key={`${item.time}-${item.title}-${index}`}
+                onClick={onDateSelectionRequested}
+                type="button"
+              >
+                {content}
+                <em>{`${price} · выбрать дату`}</em>
+              </button>
+            ) : option ? (
+              <div className="programme-timeline-item programme-timeline-item--linked" key={`${item.time}-${item.title}-${index}`}>
+                {content}
+                <em>{price}</em>
+              </div>
+            ) : (
+              <div className="programme-timeline-item" key={`${item.time}-${item.title}-${index}`}>
+                {content}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function ParticipationOptionCard({
@@ -727,6 +852,7 @@ function RegistrationForm({
   authenticatedAccount,
   onAuthenticatedAccountChange,
   onAuthenticatedRegistrationCompleted,
+  onProgrammeOptionSelect,
 }: {
   eventId: string;
   eventTitle: string;
@@ -742,6 +868,7 @@ function RegistrationForm({
   authenticatedAccount: AuthenticatedAccountState | null;
   onAuthenticatedAccountChange: (account: AuthenticatedAccountState | null) => void;
   onAuthenticatedRegistrationCompleted: () => void;
+  onProgrammeOptionSelect?: (handler: ((optionId: string) => void) | null) => void;
 }): ReactNode {
   const emptyValues: FormValues = {
     firstName: "",
@@ -940,6 +1067,14 @@ function RegistrationForm({
     setNotice(null);
     setFlowError(null);
   };
+
+  useEffect(() => {
+    onProgrammeOptionSelect?.((optionId) => {
+      const option = options.find((candidate) => candidate.id === optionId);
+      if (option) onOptionSelectionChange(option, true);
+    });
+    return () => onProgrammeOptionSelect?.(null);
+  }, [onProgrammeOptionSelect, options]);
 
   const onQuestionnaireChange = (fieldId: string, value: WebQuestionnaireAnswerValue) => {
     setQuestionnaireValues((current) => ({ ...current, [fieldId]: value }));
@@ -1732,6 +1867,7 @@ function EventPage({
   const [stickyRegistrationVisible, setStickyRegistrationVisible] = useState(false);
   const eventColumnRef = useRef<HTMLDivElement>(null);
   const formColumnRef = useRef<HTMLDivElement>(null);
+  const programmeOptionSelectRef = useRef<((optionId: string) => void) | null>(null);
 
   useEffect(() => {
     let frame: number | null = null;
@@ -1771,7 +1907,12 @@ function EventPage({
     if (!formColumn) return;
     const smoothScroll = window.matchMedia?.("(prefers-reduced-motion: no-preference)").matches;
     formColumn.focus({ preventScroll: true });
-    formColumn.scrollIntoView({ behavior: smoothScroll ? "smooth" : "auto", block: "start" });
+    formColumn.scrollIntoView?.({ behavior: smoothScroll ? "smooth" : "auto", block: "start" });
+  };
+
+  const activateProgrammeOption = (optionId: string) => {
+    programmeOptionSelectRef.current?.(optionId);
+    jumpToRegistration();
   };
 
   const occurrenceContractKey = availableOccurrences.map((item) => item.id).join(":");
@@ -1890,6 +2031,16 @@ function EventPage({
                   </button>
                 </>
               ) : null}
+              {data.event.schedule ? (
+                <EventProgramme
+                  schedule={data.event.schedule}
+                  options={data.participation_options}
+                  registrationReady={!dateSelectionPending && effectiveState === "open" && Boolean(consentDocument)}
+                  requiresDateSelection={dateSelectionPending}
+                  onLinkedOptionActivate={activateProgrammeOption}
+                  onDateSelectionRequested={jumpToRegistration}
+                />
+              ) : null}
             </div>
           </article>
         </div>
@@ -1964,6 +2115,9 @@ function EventPage({
                   onAuthenticatedAccountChange={onAuthenticatedAccountChange}
                   onAuthenticatedRegistrationCompleted={() => {
                     setTicketsRevision((value) => value + 1);
+                  }}
+                  onProgrammeOptionSelect={(handler) => {
+                    programmeOptionSelectRef.current = handler;
                   }}
                 />
               ) : null}

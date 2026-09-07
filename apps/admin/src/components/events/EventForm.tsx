@@ -23,6 +23,7 @@ import {
   buildEventUpdateInput,
   type EventUpdateFormState,
 } from "../../lib/eventUpdatePatch";
+import { parseEventScheduleDescription } from "../../lib/eventScheduleParser";
 import {
   clearFormErrors,
   firstActiveFormErrorKey,
@@ -210,6 +211,7 @@ export function EventForm(props: EventFormProps) {
   const [scheduleBaseline, setScheduleBaseline] = useState<AdminEventSchedule | null>(() =>
     cloneSchedule(initialEvent?.schedule ?? null),
   );
+  const [scheduleParseRemainder, setScheduleParseRemainder] = useState<string[]>([]);
   const [participationOptions, setParticipationOptions] = useState<ParticipationOption[]>([]);
   const [participationOptionsLoading, setParticipationOptionsLoading] = useState(false);
   const [participationOptionsError, setParticipationOptionsError] = useState<string | null>(null);
@@ -260,6 +262,7 @@ export function EventForm(props: EventFormProps) {
     const nextSchedule = cloneSchedule(initialEvent?.schedule ?? null);
     setSchedule(nextSchedule);
     setScheduleBaseline(nextSchedule);
+    setScheduleParseRemainder([]);
     setErrors({});
     setHasImageValidationError(false);
 
@@ -560,6 +563,25 @@ export function EventForm(props: EventFormProps) {
     if (mode === "edit") setHasSuccessfulEditSave(false);
   };
 
+  const handleParseSchedule = () => {
+    if (!form.description.trim() || !form.startDate) return;
+    if (hasMeaningfulSchedule(schedule) && !window.confirm(
+      "Заменить несохранённый черновик программы результатом разбора описания?",
+    )) {
+      return;
+    }
+
+    const result = parseEventScheduleDescription({
+      description: form.description,
+      startDate: form.startDate,
+      participationOptions: participationOptions.map((option) => ({ id: option.id, title: option.title })),
+    });
+    setSchedule(result.schedule);
+    setScheduleParseRemainder(result.remainder);
+    setErrors((current) => clearFormErrors(current, ["schedule", "form"]));
+    if (mode === "edit") setHasSuccessfulEditSave(false);
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitting) return;
@@ -788,6 +810,18 @@ export function EventForm(props: EventFormProps) {
           participationOptionsLoading
           || participationOptionsLoadedRevision !== participationOptionsRevision
         }
+        parseControl={(
+          <button
+            className="event-schedule-constructor__parse"
+            disabled={disabled || submitting || !form.description.trim() || !form.startDate}
+            onClick={handleParseSchedule}
+            title={!form.startDate ? "Сначала укажите дату начала события." : undefined}
+            type="button"
+          >
+            Разобрать из описания
+          </button>
+        )}
+        parseRemainder={scheduleParseRemainder}
         schedule={schedule}
       />
 
@@ -1379,6 +1413,13 @@ function sameSchedule(
   right: AdminEventSchedule | null,
 ): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function hasMeaningfulSchedule(schedule: AdminEventSchedule | null): boolean {
+  return Boolean(schedule?.days.some((day) => (
+    Boolean(day.date.trim() || day.label || day.note)
+    || day.items.some((item) => Boolean(item.time.trim() || item.title.trim() || item.optionId))
+  )));
 }
 
 function parseIntegerField(
