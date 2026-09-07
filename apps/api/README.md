@@ -104,8 +104,12 @@ API_AUTH_CODE_TTL_MINUTES=30
 
 ## Web event publication
 
-`events.web_visibility` is a separate publication switch with database values
-`disabled`, `unlisted`, and `listed`. Existing and new events default to
+`events.web_visibility` is a separate direct-link switch with database values
+`disabled`, `unlisted`, and `listed`. Admin-created `internal_free` and
+`internal_paid` events default to `unlisted`; `none` and `external_link` default
+to `disabled`. Changing from a non-web mode to an internal mode enables only a
+currently disabled event, while an explicit disabled state is preserved across
+internal free/paid changes. Changing away from an internal mode fails closed to
 `disabled`. It does not replace event `status`, `visibility`, or
 `registration_mode`, and the `events` table stores neither a public URL nor a
 slug.
@@ -119,9 +123,10 @@ request headers or put this setting in mobile, Expo, Vite, or `apps/admin`.
 PUBLIC_WEB_BASE_URL=http://localhost:5174
 ```
 
-The one URL builder produces `{base}/events/{event_id}` and, for an occurrence,
-`{base}/events/{event_id}?occurrence={occurrence_id}`. Links are computed and
-read-only, so renaming an event does not change them.
+The one URL builder produces `{base}/events/{public_slug}` and, for an
+occurrence, `{base}/events/{public_slug}?occurrence={occurrence_id}`. Links are
+computed and read-only except for the canonical slug managed through the
+dedicated admin resource.
 
 Authenticated, community-scoped administrators use:
 
@@ -130,22 +135,26 @@ GET   /admin/events/{event_id}/web-registration
 PATCH /admin/events/{event_id}/web-registration
 ```
 
-GET returns the link even while disabled and includes only active occurrence
-links. PATCH accepts only `disabled` or `unlisted`; `listed` exists for the
-future catalog but is intentionally rejected by the MVP write contract.
-Enabling requires `registration_mode=internal_free`. A row lock, event update,
+GET returns the canonical link even while disabled. PATCH accepts only
+`disabled` or `unlisted`; `listed` exists for the future catalog but is
+intentionally rejected by the MVP write contract. Enabling requires
+`registration_mode=internal_free` or `internal_paid`. A row lock, event update,
 and PII-free `admin_event_audit_entries` insert share one caller-owned
-transaction, so both commit or both roll back. Idempotent PATCH creates no
-additional audit row.
+transaction, so both commit or both roll back. The same audit mechanism records
+automatic actor-triggered visibility transitions during ordinary admin event
+updates. Idempotent PATCH creates no additional audit row.
 
 The unauthenticated
 `GET /events/{event_id}/registration-form?channel=web` endpoint is available
-only when the event is published, public, `internal_free`, and `unlisted` or
-`listed`. It returns a minimized event contract, active occurrences, active
-free non-donation options, one current event-registration consent, an optional
-current privacy policy, and canonical registration state. Closed, not-yet-open,
-and full registrations keep the already-published page readable; the read does
-not reserve capacity. There is no public UI or events catalog in this PR.
+only when the event is published, public, `internal_free` or `internal_paid`,
+and `unlisted` or `listed`. `unlisted` alone never publishes an event: status,
+event visibility, registration windows, occurrence state, capacity, legal
+documents, and questionnaire requirements remain independent server-side
+guards. The endpoint returns a minimized event contract, active occurrences,
+the applicable active options, current legal documents, and canonical
+registration state. Closed, not-yet-open, and full registrations keep the
+already-published page readable; the read does not reserve capacity. There is
+no public catalog management in this PR.
 
 ## Public web registration intents
 

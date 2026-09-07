@@ -82,8 +82,8 @@ with origin/claim semantics.
 The stable public URL contract is:
 
 ```text
-/events/{event_id}
-/events/{event_id}?occurrence={occurrence_id}
+/events/{public_slug}
+/events/{public_slug}?occurrence={occurrence_id}
 ```
 
 The occurrence query only preselects a date; the backend must verify that the
@@ -91,12 +91,12 @@ occurrence belongs to the event. The URL contains no PII or secret and is not
 an authorization mechanism.
 
 The backend derives the absolute URL from the backend-only
-`PUBLIC_WEB_BASE_URL` configuration and the stable event UUID. The setting is
+`PUBLIC_WEB_BASE_URL` configuration and the canonical public slug. The setting is
 normalized without a trailing slash and rejects credentials, query strings,
 fragments, and non-loopback HTTP. Host, Origin, Referer, and forwarded headers
 never influence the canonical link. The API returns the URL to web-admin as a
 read-only value. Administrators never enter, edit, or persist a full public
-URL. Renaming an event must not invalidate its UUID URL. Disabling and later
+URL. Renaming an event must not invalidate its canonical URL. Disabling and later
 re-enabling web publication must restore the same URL.
 
 Implemented `web_visibility` values are:
@@ -107,13 +107,18 @@ Implemented `web_visibility` values are:
 - `listed`: also eligible for the future public events directory when the
   event satisfies the normal publication rules.
 
-Existing and new events default to `disabled`. The value is a constrained,
-non-null event column, but neither the full URL nor a slug is stored in the
-database. `listed` is not enabled by the MVP admin PATCH, although direct form
-reads support fixtures/future data using it. The MVP operator may explicitly switch an event
-to `unlisted`; no event becomes web-visible merely because it exists or is
-renamed. The future directory is a separate, paginated event-card surface and
-must never list `unlisted` events.
+The value is a constrained, non-null event column, but neither the full URL nor
+a slug is stored on the event itself. New admin events using `internal_free` or
+`internal_paid` default to `unlisted`; `none` and `external_link` default to
+`disabled`. A non-web to internal transition enables an otherwise disabled event
+to `unlisted`, internal free/paid changes preserve the current visibility, and
+an internal-to-non-web transition disables it. `listed` is not enabled by the
+MVP admin PATCH, although direct form reads support fixtures/future data using
+it. Explicit disabling remains supported. `unlisted` enables direct-link
+registration only; it never bypasses status, event visibility, registration
+window, occurrence, capacity, legal-document, or questionnaire guards. The
+future directory is a separate, paginated event-card surface and must never list
+`unlisted` events.
 
 ## Public Page And Data Minimization
 

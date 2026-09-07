@@ -55,6 +55,7 @@ from app.services.event_public_slugs import (
     get_canonical_public_slug,
 )
 from app.services.events import (
+    WEB_REGISTRATION_MODES,
     build_public_event_url,
     decode_events_cursor,
     encode_events_cursor,
@@ -64,6 +65,9 @@ DEFAULT_PAGE_LIMIT = 50
 MAX_PAGE_LIMIT = 100
 
 MANUAL_SOURCE_TYPE = "manual"
+
+_WEB_VISIBILITY_DISABLED = "disabled"
+_WEB_VISIBILITY_UNLISTED = "unlisted"
 
 _PATCH_REQUIRED_FIELDS = frozenset(
     {
@@ -255,6 +259,35 @@ def _validate_event_state(
     return price_currency
 
 
+def _default_web_visibility(registration_mode: str) -> str:
+    return (
+        _WEB_VISIBILITY_UNLISTED
+        if registration_mode in WEB_REGISTRATION_MODES
+        else _WEB_VISIBILITY_DISABLED
+    )
+
+
+def _registration_mode_web_visibility_transition(
+    *,
+    old_registration_mode: str,
+    new_registration_mode: str,
+    current_web_visibility: str,
+) -> str:
+    """Return the server-owned visibility after a registration-mode change."""
+    was_web_registerable = old_registration_mode in WEB_REGISTRATION_MODES
+    is_web_registerable = new_registration_mode in WEB_REGISTRATION_MODES
+
+    if not was_web_registerable and is_web_registerable:
+        return (
+            _WEB_VISIBILITY_UNLISTED
+            if current_web_visibility == _WEB_VISIBILITY_DISABLED
+            else current_web_visibility
+        )
+    if was_web_registerable and not is_web_registerable:
+        return _WEB_VISIBILITY_DISABLED
+    return current_web_visibility
+
+
 async def list_admin_events(
     session: AsyncSession,
     current_user: AppUser,
@@ -417,6 +450,7 @@ async def create_admin_event(
             manual_override=True,
             registration_mode=payload.registration_mode,
             registration_url=payload.registration_url,
+            web_visibility=_default_web_visibility(payload.registration_mode),
             capacity=payload.capacity,
             waitlist_enabled=payload.waitlist_enabled,
             requires_approval=payload.requires_approval,
@@ -515,8 +549,26 @@ async def update_admin_event(
             )
 
         now = _now()
+        old_registration_mode = event.registration_mode
+        old_web_visibility = event.web_visibility
         for field_name, value in updates.items():
             setattr(event, field_name, value)
+
+        if "registration_mode" in updates:
+            next_web_visibility = _registration_mode_web_visibility_transition(
+                old_registration_mode=old_registration_mode,
+                new_registration_mode=event.registration_mode,
+                current_web_visibility=old_web_visibility,
+            )
+            if next_web_visibility != old_web_visibility:
+                event.web_visibility = next_web_visibility
+                await record_event_web_visibility_change(
+                    session,
+                    actor_user_id=current_user.id,
+                    event_id=event.id,
+                    old_visibility=old_web_visibility,
+                    new_visibility=next_web_visibility,
+                )
 
         if updates.get("status") == "published" and event.published_at is None:
             event.published_at = now

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Copy, Pencil, X } from "lucide-react";
 
 import { EventTicketsCapacityModule } from "../components/events/EventTicketsCapacityModule";
 import { EventForm } from "../components/events/EventForm";
@@ -6,6 +7,7 @@ import { EventOccurrencesConstructor } from "../components/events/EventOccurrenc
 import { EventProgrammeEditor } from "../components/events/EventProgrammeEditor";
 import { EventQuestionnaireCard } from "../components/events/EventQuestionnaireCard";
 import { EventWebRegistrationCard } from "../components/events/EventWebRegistrationCard";
+import { useEventWebRegistrationEditor } from "../components/events/useEventWebRegistrationEditor";
 import type { EventImageUploadStage } from "../components/events/EventImageUploader";
 import { EventEditorTabs, type EventEditorTab } from "../components/events/EventEditorTabs";
 import { SaveStatusView } from "../components/ui/SaveStatusView";
@@ -41,6 +43,7 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
   const [confirmedContentEvent, setConfirmedContentEvent] = useState(event);
   const [activeTab, setActiveTab] = useState<EventEditorTab>("event");
   const [registrationMode, setRegistrationMode] = useState<string>(event.registrationMode);
+  const webRegistrationEditor = useEventWebRegistrationEditor(event.id, currentEvent.title);
   const [eventDirty, setEventDirty] = useState(false);
   const [ticketsDirty, setTicketsDirty] = useState(false);
   const [programmeDirty, setProgrammeDirty] = useState(false);
@@ -280,6 +283,8 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
         try {
           eventForImage = await updateAdminEvent(currentEvent.id, input);
           storeConfirmedEvent(eventForImage);
+          setRegistrationMode(eventForImage.registrationMode);
+          webRegistrationEditor.refresh();
           if (mountedRef.current) setConfirmedContentEvent(eventForImage);
         } catch (error) {
           setSubmitError(
@@ -447,17 +452,57 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
     </div>
   );
 
+  const savedWebRegistrationMode = ["internal_free", "internal_paid"].includes(
+    currentEvent.registrationMode,
+  );
+  const headerRegistration = webRegistrationEditor.registration;
+  const headerUrl = headerRegistration?.publicRegistrationUrl;
+  const headerDisabled = headerRegistration?.webVisibility === "disabled";
+  const headerSlugStatus = webRegistrationEditor.slugStatus;
+
   return (
     <div className="page-stack event-editor">
       <header className="event-editor-header">
         <div className="event-editor-kicker"><button type="button" onClick={onBackToList}>События</button> / Редактирование</div>
         <h1>{currentEvent.title}</h1>
-        <div className="event-editor-meta">
+         <div className="event-editor-meta">
           <span className={`event-editor-chip event-editor-chip--${currentEvent.status === "published" ? "green" : "muted"}`}>{getEventStatusLabel(currentEvent.status)}</span>
           <span className="event-editor-chip">{getEventVisibilityLabel(currentEvent.visibility)}</span>
-          {currentEvent.category ? <span className="event-editor-chip event-editor-chip--blue">{categories.find((category) => category.slug === currentEvent.category)?.title ?? currentEvent.category}</span> : null}
-        </div>
-      </header>
+           {currentEvent.category ? <span className="event-editor-chip event-editor-chip--blue">{categories.find((category) => category.slug === currentEvent.category)?.title ?? currentEvent.category}</span> : null}
+         </div>
+         {savedWebRegistrationMode ? <div className="event-editor-web-link" aria-busy={webRegistrationEditor.loading}>
+           {webRegistrationEditor.loading ? <span className="event-editor-web-link__loading" role="status">Загружаем адрес веб-регистрации…</span>
+             : webRegistrationEditor.loadError || !headerRegistration || !headerUrl ? <span className="event-editor-web-link__error" role="status">Адрес веб-регистрации недоступен.</span>
+             : <>
+               <span className="event-editor-web-link__label">Веб-регистрация</span>
+               {webRegistrationEditor.headerEditing ? <div className="event-editor-web-link__edit">
+                 <span aria-hidden="true" className="event-editor-web-link__prefix">{webRegistrationEditor.publicUrl?.prefix ?? "Адрес недоступен"}</span>
+                 <input aria-label="Суффикс адреса веб-регистрации" autoComplete="off"
+                   disabled={!webRegistrationEditor.publicUrl || webRegistrationEditor.slugSaving}
+                   onBlur={webRegistrationEditor.checkSlugNow}
+                   onChange={(input) => webRegistrationEditor.changeSlug(input.target.value)}
+                   spellCheck={false} type="text" value={webRegistrationEditor.slugSuffix} />
+                 <Button disabled={!webRegistrationEditor.canSaveSlug} onClick={() => void webRegistrationEditor.saveSlug()} size="sm" variant="success">
+                   {webRegistrationEditor.slugSaving ? "Сохраняем…" : "Сохранить"}
+                 </Button>
+                 <button aria-label="Отменить редактирование адреса веб-регистрации" className="event-editor-web-link__icon" disabled={webRegistrationEditor.slugSaving}
+                   onClick={webRegistrationEditor.cancelSlugEdit} type="button"><X aria-hidden="true" size={16} /></button>
+                 {headerSlugStatus === "checking" ? <span role="status">Проверяем…</span>
+                   : headerSlugStatus === "available" ? <span className="event-editor-web-link__success" role="status">Адрес свободен</span>
+                   : headerSlugStatus === "taken" ? <span className="event-editor-web-link__error" role="alert">Адрес уже занят</span>
+                   : headerSlugStatus === "invalid" ? <span className="event-editor-web-link__error" role="alert">Недопустимый формат</span>
+                   : headerSlugStatus === "error" ? <span className="event-editor-web-link__error" role="alert">Не удалось проверить адрес</span>
+                   : webRegistrationEditor.slugSaveError ? <span className="event-editor-web-link__error" role="alert">{webRegistrationEditor.slugSaveError}</span> : null}
+               </div> : <>
+                 {headerDisabled ? <span className="event-editor-web-link__url event-editor-web-link__url--disabled">{headerUrl}</span>
+                   : <a className="event-editor-web-link__url" href={headerUrl} rel="noopener noreferrer" target="_blank">{headerUrl}</a>}
+                 <button aria-label="Скопировать адрес веб-регистрации" className="event-editor-web-link__icon" onClick={() => void webRegistrationEditor.copyCanonicalUrl()} type="button"><Copy aria-hidden="true" size={16} /></button>
+                 <button aria-label="Редактировать адрес веб-регистрации" className="event-editor-web-link__icon" onClick={webRegistrationEditor.startHeaderEdit} type="button"><Pencil aria-hidden="true" size={16} /></button>
+               </>}
+               {webRegistrationEditor.copyFeedback ? <span className={`event-editor-web-link__feedback event-editor-web-link__feedback--${webRegistrationEditor.copyFeedback.kind}`} role={webRegistrationEditor.copyFeedback.kind === "error" ? "alert" : "status"}>{webRegistrationEditor.copyFeedback.message}</span> : null}
+             </>}
+         </div> : null}
+       </header>
       {publicationToast ? <div className="event-publication-toast">
         <SaveStatusView {...publicationToast} saving={publicationPending > 0} />
         {publicationToast.undo && publicationPending === 0 ? <Button variant="ghost" size="sm"
@@ -515,7 +560,7 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
           </GlassCard>,
           web: <div className="event-editor-web-grid">
             <EventWebRegistrationCard key={`web-${currentEvent.id}`} eventId={currentEvent.id} eventTitle={currentEvent.title}
-              onDirtyChange={setWebDirty} />
+              editor={webRegistrationEditor} onDirtyChange={setWebDirty} />
             {isAdmin === true ? <EventQuestionnaireCard key={`questionnaire-${currentEvent.id}`} eventId={currentEvent.id}
               onDirtyChange={setQuestionnaireDirty} /> : null}
           </div>,
