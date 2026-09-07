@@ -27,6 +27,7 @@ from app.db.models.core import (
 )
 from app.schemas.privacy import PrivacyErasureLifecycleResponse
 from app.services import registrations as registrations_service
+from app.services import web_participant_sessions
 from app.services.privacy_erasure_email_service import (
     PrivacyErasureEmailDeliveryError,
     send_privacy_erasure_accepted,
@@ -129,6 +130,11 @@ async def _revoke_credentials(
         )
         .values(revoked_at=now)
         .execution_options(synchronize_session=False),
+    )
+    await web_participant_sessions.revoke_all_for_user(
+        session,
+        user_id=user_id,
+        now=now,
     )
     for model in (
         AuthEmailVerificationCode,

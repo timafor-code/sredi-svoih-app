@@ -34,6 +34,23 @@ The API is available locally at `http://127.0.0.1:8000`. The API database is a
 separate PostgreSQL service on `localhost:55432`, not the Supabase local
 database.
 
+## Remembered public-web participant sessions
+
+After a public registration email is successfully confirmed, the API can set a
+project-specific opaque, HTTP-only remembered-participant cookie. It is not an
+account login and is accepted only by the narrow `/web/participant-session`
+and public registration-intent contracts. PostgreSQL stores only its keyed
+hash, user reference, lifecycle timestamps, and revocation state.
+
+The server owns the 30-day default lifetime through
+`API_WEB_PARTICIPANT_SESSION_TTL_DAYS` (bounded to 1–365 days). Set
+`API_WEB_PARTICIPANT_SESSION_COOKIE_DOMAIN` only for an intentionally shared,
+environment-specific domain; leave it blank for host-only cookies. Cookie
+transport is derived from `PUBLIC_WEB_BASE_URL`: loopback development may use
+an insecure cookie, while non-loopback public-web configuration requires HTTPS
+and produces a `Secure` cookie. The cookie is always `HttpOnly`, `SameSite=Lax`,
+and scoped to `/`.
+
 Host Windows Python is not the required backend runtime for this PR. The API
 target is Python 3.12+ inside the `api_backend` Docker container, and the
 Docker container is the normal local runtime/check path.

@@ -1317,6 +1317,35 @@ class LegalAcceptance(Base):
     created_at: Mapped[datetime] = timestamptz_now()
 
 
+class WebParticipantSession(Base):
+    __tablename__ = "web_participant_sessions"
+    __table_args__ = (
+        CheckConstraint(
+            "btrim(token_hash) <> ''",
+            name="web_participant_sessions_token_hash_not_empty",
+        ),
+        CheckConstraint(
+            "expires_at > created_at",
+            name="web_participant_sessions_expiry_check",
+        ),
+        UniqueConstraint("token_hash", name="web_participant_sessions_token_hash_key"),
+        Index("web_participant_sessions_user_id_idx", "user_id"),
+        Index("web_participant_sessions_expires_at_idx", "expires_at"),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    token_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = timestamptz_now()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class WebRegistrationIntent(Base):
     __tablename__ = "web_registration_intents"
     __table_args__ = (
