@@ -50,6 +50,7 @@ from app.services import auth as auth_service
 from app.services import events as events_service
 from app.services import registrations as registrations_service
 from app.services.auth_tokens import hash_token
+from app.services import web_participant_sessions
 from app.services.web_registration_email_service import (
     WebRegistrationEmailDeliveryError,
     send_web_registration_result,
@@ -1262,7 +1263,14 @@ async def _confirm_once(
     flow_id: str,
     code: str,
     ip: str | None,
-) -> tuple[WebRegistrationConfirmResult, str | None, str | None]:
+    *,
+    issue_participant_session: bool,
+) -> tuple[
+    WebRegistrationConfirmResult,
+    str | None,
+    str | None,
+    web_participant_sessions.IssuedWebParticipantSession | None,
+]:
     token_hash = _flow_hash(flow_id)
     if token_hash is None:
         raise _invalid_code()
@@ -1276,7 +1284,7 @@ async def _confirm_once(
         await session.rollback()
         raise _invalid_code()
     if intent.status == CONFIRMED:
-        return await _confirmed_replay(session, intent), None, None
+        return await _confirmed_replay(session, intent), None, None, None
     if intent.status != EMAIL_REQUIRED or intent.expires_at <= now:
         await session.rollback()
         raise _invalid_code()
@@ -1384,8 +1392,13 @@ async def _confirm_once(
         else None
     )
     registration_status = registration.status if recipient is not None else None
+    issued = (
+        await web_participant_sessions.issue(session, user=user, now=now)
+        if issue_participant_session
+        else None
+    )
     await session.commit()
-    return result, recipient, registration_status
+    return result, recipient, registration_status, issued
 
 
 async def confirm_email(
@@ -1394,13 +1407,54 @@ async def confirm_email(
     code: str,
     ip: str | None,
 ) -> WebRegistrationConfirmResult:
+    result, _ = await _confirm_email(
+        session,
+        flow_id,
+        code,
+        ip,
+        issue_participant_session=False,
+    )
+    return result
+
+
+async def confirm_email_with_participant_session(
+    session: AsyncSession,
+    flow_id: str,
+    code: str,
+    ip: str | None,
+) -> tuple[
+    WebRegistrationConfirmResult,
+    web_participant_sessions.IssuedWebParticipantSession | None,
+]:
+    result, issued = await _confirm_email(
+        session,
+        flow_id,
+        code,
+        ip,
+        issue_participant_session=True,
+    )
+    return result, issued
+
+
+async def _confirm_email(
+    session: AsyncSession,
+    flow_id: str,
+    code: str,
+    ip: str | None,
+    *,
+    issue_participant_session: bool,
+) -> tuple[
+    WebRegistrationConfirmResult,
+    web_participant_sessions.IssuedWebParticipantSession | None,
+]:
     for attempt in range(2):
         try:
-            result, recipient, registration_status = await _confirm_once(
+            result, recipient, registration_status, issued = await _confirm_once(
                 session,
                 flow_id,
                 code,
                 ip,
+                issue_participant_session=issue_participant_session,
             )
             break
         except IntegrityError:
@@ -1418,7 +1472,7 @@ async def confirm_email(
             )
         except WebRegistrationEmailDeliveryError:
             logger.warning("Web registration result email delivery failed")
-    return result
+    return result, issued
 
 
 async def get_intent_status(

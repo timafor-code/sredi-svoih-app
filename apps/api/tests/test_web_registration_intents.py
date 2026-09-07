@@ -30,12 +30,14 @@ from app.db.models.core import (
     Profile,
     WebRegistrationIdentityConflict,
     WebRegistrationIntent,
+    WebParticipantSession,
 )
 from app.core.tokens import create_access_token
 from app.db.session import AsyncSessionLocal, engine
 from app.main import app
 from app.schemas.web_registration import WebRegistrationIntentRequest
 from app.services import web_registration as service
+from app.services import web_participant_sessions
 from app.services.email_delivery import EmailSendResult
 
 
@@ -243,6 +245,42 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(registration.user_id, user.id)
         self.assertEqual((profile.first_name, profile.last_name, profile.phone), ("Каноническое", "Имя", user.phone))
         self.assertEqual((legal.acceptance_method, legal.evidence_version), ("authenticated_action", "web-registration-authenticated-v1"))
+
+    async def test_remembered_cookie_uses_canonical_identity_for_intent(self) -> None:
+        user = await self._add_authenticated_user(
+            email="intent-remembered@example.invalid",
+            phone="+79000000035",
+        )
+        async with AsyncSessionLocal() as session:
+            current_user = await session.get(AppUser, user.id)
+            issued = await web_participant_sessions.issue(session, user=current_user)
+            await session.commit()
+        payload = self.payload(
+            first_name="Подмена",
+            last_name="Личности",
+            email="intent-spoofed@example.invalid",
+            phone="+79000000099",
+            idempotency_key="remembered-canonical-user",
+        ).model_dump(mode="json")
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            client.cookies.set(web_participant_sessions.COOKIE_NAME, issued.token)
+            response = await client.post("/web/registration-intents", json=payload)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["data"]["next_step"], "completed")
+        async with AsyncSessionLocal() as session:
+            intent = await session.scalar(
+                select(WebRegistrationIntent).where(
+                    WebRegistrationIntent.idempotency_key_hash == service._idempotency_hash("remembered-canonical-user"),
+                ),
+            )
+            remembered_row = await session.scalar(select(WebParticipantSession))
+        self.assertEqual(intent.matched_user_id, user.id)
+        self.assertEqual(
+            (intent.first_name, intent.last_name, intent.phone_normalized, intent.email_normalized),
+            ("Каноническое", "Имя", user.phone, user.email),
+        )
+        self.assertIsNotNone(remembered_row.last_used_at)
 
     async def test_authenticated_incomplete_profile_fails_without_intent(self) -> None:
         user = await self._add_authenticated_user(

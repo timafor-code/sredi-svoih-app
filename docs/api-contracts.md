@@ -1281,6 +1281,30 @@ Public flow:
 | POST | `/web/registration-intents/{flow_id}/confirm-email` | Consume a hash-only code, resolve identity safely, re-check capacity transactionally, then create the registration. |
 | GET | `/web/registration-intents/{flow_id}/status` | Return flow-authorized state without exposing identity matches. |
 
+### Remembered public-web participant session
+
+The remembered-participant browser state is deliberately separate from account
+authentication. `GET /web/participant-session` reads only the opaque,
+HTTP-only project cookie and returns either `{ "state": "anonymous" }` or
+`{ "state": "remembered", "participant": { "first_name", "last_name",
+"phone", "email" } }` using canonical server identity. It does not grant
+account, membership, registration-list, deletion, or password-management APIs.
+
+`DELETE /web/participant-session` is idempotent and revokes only the current
+browser's server row while clearing the compatible cookie. It does not delete
+an account, registrations, or full-auth sessions. `POST /web/participant-session`
+requires normal account authentication and is the narrow web issuance path
+after a real account sign-in.
+
+On a first successful email-code confirmation, the API issues the cookie only
+after the registration transaction commits. A confirmed-flow replay does not
+issue another cookie. A valid remembered cookie may bind a later public
+registration intent to its canonical user and replaces conflicting editable
+identity fields; an anonymous browser keeps the ordinary email-verification
+flow. Cookie rows store a keyed token hash only, and deletion-pending/erased/
+inactive users fail closed. Privacy erasure revokes every remembered-browser
+session for its target user.
+
 Intent creation normalizes email case-insensitively (including a lowercase
 IDNA domain), Russian phones to `+7XXXXXXXXXX`, and collapsed/trimmed names.
 Opaque flow credentials and client idempotency keys are stored only as hashes.

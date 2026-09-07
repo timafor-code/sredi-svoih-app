@@ -33,6 +33,7 @@ from app.db.models.core import (
     Profile,
     WebRegistrationIdentityConflict,
     WebRegistrationIntent,
+    WebParticipantSession,
 )
 from app.db.session import AsyncSessionLocal, engine
 from app.main import app
@@ -236,6 +237,42 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                 form.status = "published"
                 form.published_at = self.now
             return form.id, field.id
+
+    async def test_first_verified_confirmation_issues_remembered_cookie(self) -> None:
+        created, code = await self.create()
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.post(
+                f"/web/registration-intents/{created.flow_id}/confirm-email",
+                json={"code": code},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("sredi_web_participant_session=", response.headers["set-cookie"])
+        self.assertIn("HttpOnly", response.headers["set-cookie"])
+        self.assertIn("SameSite=lax", response.headers["set-cookie"])
+        async with AsyncSessionLocal() as session:
+            rows = list(await session.scalars(select(WebParticipantSession)))
+        self.assertEqual(len(rows), 1)
+        self.assertNotIn("sredi_web_participant_session=", response.json().__repr__())
+
+    async def test_confirmed_flow_replay_does_not_mint_another_remembered_session(self) -> None:
+        created, code = await self.create()
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            first = await client.post(
+                f"/web/registration-intents/{created.flow_id}/confirm-email",
+                json={"code": code},
+            )
+            replay = await client.post(
+                f"/web/registration-intents/{created.flow_id}/confirm-email",
+                json={"code": code},
+            )
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(replay.status_code, 200)
+        self.assertNotIn("set-cookie", replay.headers)
+        async with AsyncSessionLocal() as session:
+            count = await session.scalar(select(func.count()).select_from(WebParticipantSession))
+        self.assertEqual(count, 1)
 
     async def test_schema_is_hash_only_constrained_and_cascades(self) -> None:
         created, plaintext = await self.create()

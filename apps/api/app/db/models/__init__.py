@@ -31,6 +31,7 @@ from app.db.models.core import (
     SyncedContact,
     WebRegistrationIdentityConflict,
     WebRegistrationIntent,
+    WebParticipantSession,
 )
 from app.db.models.imports import (
     EventImportItem,
@@ -105,5 +106,6 @@ __all__ = [
     "SyncedContact",
     "WebRegistrationIdentityConflict",
     "WebRegistrationIntent",
+    "WebParticipantSession",
     "WebRegistrationVerificationCode",
 ]

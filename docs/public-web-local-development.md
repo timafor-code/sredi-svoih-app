@@ -90,6 +90,21 @@ The relevant local timing controls are
 delivery produces a safe temporary-unavailable response; the browser must not
 pretend that a code was sent.
 
+## Remembered participant browser state
+
+Successful first-time email confirmation also sets an opaque, HTTP-only
+remembered-participant cookie. The raw token is not present in the response
+body, browser storage, or application JavaScript. Its server lifetime defaults
+to 30 days through `API_WEB_PARTICIPANT_SESSION_TTL_DAYS`; leave
+`API_WEB_PARTICIPANT_SESSION_COOKIE_DOMAIN` blank for the local host-only
+cookie. The API derives the `Secure` attribute from the configured trusted
+`PUBLIC_WEB_BASE_URL`, not browser-provided forwarding headers.
+
+`GET /web/participant-session` returns either anonymous state or the canonical
+registration identity for this browser. `DELETE /web/participant-session`
+forgets only this browser by revoking its one server session and clearing the
+matching cookie. Neither endpoint is an account-login API.
+
 ## Public registration flow
 
 The browser performs this sequence:

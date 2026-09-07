@@ -83,6 +83,8 @@ class Settings(BaseSettings):
         ge=1,
         le=3600,
     )
+    api_web_participant_session_ttl_days: int = Field(default=30, ge=1, le=365)
+    api_web_participant_session_cookie_domain: str = ""
     public_web_base_url: str = "http://localhost:5174"
     api_public_app_base_url: str = "http://localhost:8081"
     api_cors_allowed_origins: str = ",".join(_LOCAL_CORS_ALLOWED_ORIGINS)
@@ -129,6 +131,19 @@ class Settings(BaseSettings):
             if origin.strip()
         ]
 
+    @property
+    def web_participant_session_cookie_secure(self) -> bool:
+        """Derive cookie transport policy from trusted public-web configuration."""
+        parsed = urlsplit(self.public_web_base_url)
+        hostname = (parsed.hostname or "").lower()
+        is_loopback = hostname == "localhost"
+        if not is_loopback:
+            try:
+                is_loopback = ip_address(hostname).is_loopback
+            except ValueError:
+                is_loopback = False
+        return not is_loopback
+
     @field_validator("public_web_base_url")
     @classmethod
     def validate_public_web_base_url(cls, value: str) -> str:
@@ -168,6 +183,23 @@ class Settings(BaseSettings):
                 "",
             ),
         )
+
+    @field_validator("api_web_participant_session_cookie_domain")
+    @classmethod
+    def validate_web_participant_session_cookie_domain(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized:
+            return ""
+        if normalized.startswith("."):
+            normalized = normalized[1:]
+        if (
+            "/" in normalized
+            or ":" in normalized
+            or any(character.isspace() for character in normalized)
+            or not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", normalized)
+        ):
+            raise ValueError("API_WEB_PARTICIPANT_SESSION_COOKIE_DOMAIN is invalid")
+        return normalized
 
     @field_validator("api_object_storage_event_images_bucket")
     @classmethod
