@@ -25,6 +25,7 @@ import type {
   WebRegistrationResult,
   WebRegistrationMode,
   WebRegistrationState,
+  WebParticipantSession,
 } from "./types";
 import type { ExistingAccountIdentity, TemporaryAuthTokens } from "./types";
 import {
@@ -292,6 +293,24 @@ function isIntentStatus(value: unknown): value is WebRegistrationIntentStatus {
 
 function isAuthCodeResult(value: unknown): value is AuthCodeResult {
   return isRecord(value) && value.ok === true;
+}
+
+function isRememberedParticipant(value: unknown): boolean {
+  return isRecord(value)
+    && typeof value.first_name === "string"
+    && typeof value.last_name === "string"
+    && typeof value.phone === "string"
+    && typeof value.email === "string";
+}
+
+function isWebParticipantSession(value: unknown): value is WebParticipantSession {
+  return isRecord(value)
+    && ((value.state === "anonymous" && value.participant === null)
+      || (value.state === "remembered" && isRememberedParticipant(value.participant)));
+}
+
+function isParticipantSessionIssued(value: unknown): value is { state: "remembered" } {
+  return isRecord(value) && value.state === "remembered";
 }
 
 function isPrivacyAccessAccepted(value: unknown): value is PrivacyAccessAccepted {
@@ -631,6 +650,7 @@ async function publicJsonRequest<T>(
   path: string,
   init: RequestInit,
   validator: (value: unknown) => value is T,
+  credentials: RequestCredentials = "omit",
 ): Promise<T> {
   const response = await fetch(`${normalizedBaseUrl()}${path}`, {
     ...init,
@@ -639,7 +659,7 @@ async function publicJsonRequest<T>(
       ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
       ...init.headers,
     },
-    credentials: "omit",
+    credentials,
   });
   const body = await readJson(response);
   if (!response.ok) {
@@ -863,7 +883,37 @@ export function createWebRegistrationIntent(
       headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
     },
     isIntentCreated,
+    "include",
   );
+}
+
+export function getWebParticipantSession(): Promise<WebParticipantSession> {
+  return publicJsonRequest(
+    "/web/participant-session",
+    { method: "GET" },
+    isWebParticipantSession,
+    "include",
+  );
+}
+
+export function issueWebParticipantSession(accessToken: string): Promise<void> {
+  return publicJsonRequest(
+    "/web/participant-session",
+    { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } },
+    isParticipantSessionIssued,
+    "include",
+  ).then(() => undefined);
+}
+
+export async function deleteWebParticipantSession(): Promise<void> {
+  const response = await fetch(`${normalizedBaseUrl()}/web/participant-session`, {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+  if (response.status !== 204) {
+    throw new PublicApiError("participant_session_delete_failed", response.status);
+  }
 }
 
 export function loginExistingAccount(email: string, password: string): Promise<TemporaryAuthTokens> {
@@ -991,6 +1041,7 @@ export function confirmWebRegistrationEmail(
     `/web/registration-intents/${encodeURIComponent(flowId)}/confirm-email`,
     { method: "POST", body: JSON.stringify({ code }) },
     isConfirmResult,
+    "include",
   );
 }
 
