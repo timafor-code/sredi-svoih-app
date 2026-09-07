@@ -801,6 +801,7 @@ class PrivacySelfServiceAccessTests(unittest.IsolatedAsyncioTestCase):
                 "registration_options",
                 "questionnaire_answers",
                 "legal_acceptances",
+                "lineage_declaration",
                 "privacy_requests",
                 "device_metadata",
                 "synced_contacts_summary",
@@ -869,6 +870,7 @@ class PrivacySelfServiceAccessTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         self.assertEqual(len(data["legal_acceptances"]), 1)
+        self.assertIsNone(data["lineage_declaration"])
         self.assertEqual(data["synced_contacts_summary"], {"record_count": 1})
         serialized = response.text
         for forbidden in (

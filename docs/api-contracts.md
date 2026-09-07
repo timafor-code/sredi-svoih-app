@@ -1351,6 +1351,51 @@ the temporary payload is cleared. Failed code, capacity, publication,
 identity, or transaction checks create no final rows; confirmed replay creates
 no duplicates.
 
+### Participant lineage declaration
+
+```text
+GET    /web/participant-profile/lineage
+PUT    /web/participant-profile/lineage
+DELETE /web/participant-profile/lineage
+```
+
+This is a community-level participant declaration for special-category
+attributes (Jewish lineage / giyur), entirely separate from event
+questionnaires (always `ordinary`) and from `event_registration_consent`. It
+uses its own dedicated, separately versioned `special_category_consent` legal
+document. There is no admin, event, registration, seating, export, or mobile
+surface for this data in this PR, and no UI. Identity is resolved only through
+the existing remembered-participant cookie (`web_participant_sessions`); the
+client never supplies a user id or community id.
+
+`GET` returns `{ "state": "none" }` or `{ "state": "declared", "values": [...],
+"declared_at", "updated_at" }`. When no remembered-participant cookie resolves,
+the response is `{ "state": "none" }` — identical to an identified participant
+with no declaration — so this endpoint cannot be used to probe whether an
+account exists.
+
+`PUT` requires a resolved identity (401 `identity_required` otherwise) and
+body `{ "values": [...], "legal_acceptance": { "document_id", "content_hash" }
+}`. `values` is a non-empty, duplicate-free array drawn only from
+`maternal_grandmother`, `maternal_grandfather`, `paternal_grandmother`,
+`paternal_grandfather`, `father`, `mother`, `giyur`, `unknown`; `unknown`
+cannot be combined with any other value. `legal_acceptance` must reference the
+currently effective, non-retired `special_category_consent` document with a
+matching `content_hash`, or the request fails with 422 `validation_error`
+without echoing submitted values. A valid write creates the acceptance
+evidence row and the declaration row in one transaction, or neither; writing
+again replaces the stored values and records a fresh acceptance.
+
+`DELETE` requires a resolved identity and is idempotent: it deletes the
+declaration row (if any) and always returns 204. It preserves the
+`legal_acceptances` evidence row for the withdrawn declaration, matching the
+existing account-level acceptance-evidence retention pattern.
+
+Own-data summary and export include a `lineage_declaration` category (see
+`docs/privacy-erasure-retention.md`); irreversible erasure deletes the
+declaration row before bulk-deleting `legal_acceptances`, since
+`consent_acceptance_id` references it with `ON DELETE RESTRICT`.
+
 Each canonical answer has a unique registration/field pair and indexed
 `purge_at`. Retention is anchored to occurrence `ends_at` (fallback
 `starts_at`) or, for non-occurrence registration, event `ends_at` (fallback
@@ -2717,17 +2762,22 @@ endpoints. Stable authorization errors are `privacy_session_required`,
 `GET /privacy/data-summary` returns `generated_at` and only category
 `record_count`/presence plus `available_for_export`. Category codes are
 `account`, `profile`, `memberships`, `event_registrations`,
-`registration_options`, `questionnaire_answers`, `legal_acceptances`, `privacy_requests`,
-`device_metadata`, `synced_contacts_summary`, and `avatar_metadata`.
+`registration_options`, `questionnaire_answers`, `legal_acceptances`,
+`lineage_declaration`, `privacy_requests`, `device_metadata`,
+`synced_contacts_summary`, and `avatar_metadata`.
 
 `POST /privacy/data-export` accepts only `{"format":"json"}`. Its standard JSON
 response contains `export_version = privacy-self-service-v1`, `generated_at`,
 `included_categories`, `excluded_categories`, and only the verified subject's
 explicitly allowlisted account/profile/membership/registration/option/questionnaire/legal/
-privacy-request/device/synced-contact-count/avatar metadata. `device_id` is
-included because the existing current-user device contract already returns it;
-`expo_push_token` is never included. No ZIP, CSV, PDF, file, S3 object,
-background job, attachment, or download link is created.
+lineage-declaration/privacy-request/device/synced-contact-count/avatar
+metadata. `device_id` is included because the existing current-user device
+contract already returns it; `expo_push_token` is never included. No ZIP, CSV,
+PDF, file, S3 object, background job, attachment, or download link is created.
+
+`lineage_declaration` is `null` when the subject has no declaration, otherwise
+`{ "values", "declared_at", "updated_at", "consent_document_version" }` — see
+"Participant lineage declaration" above.
 
 `questionnaire_answers` is scoped through the verified subject's own canonical
 registrations. Each exported row includes `registration_id`, `field_id`, stable

@@ -146,6 +146,23 @@ versions are shown read-only and cannot be edited, deleted, unpublished, or
 retired from the UI. Starting a new local version may copy the published
 definition without changing it.
 
+## Two-tier data boundary
+
+Event questionnaires (`event_registration_form_fields`,
+`event_registration_answers`) remain `ordinary`-only, enforced by a database
+CHECK on `data_category` and the `QuestionnaireDataCategory` literal in code.
+They must never carry a special-category attribute, per-event or otherwise.
+
+Jewish-lineage/giyur origin and status attributes live entirely outside this
+system, in the community-level `participant_lineage_declarations` table with
+its own dedicated, separately versioned `special_category_consent` legal
+document and acceptance evidence — never an `event_registration_consent`
+acceptance and never a questionnaire answer. That declaration is set once per
+account (optionally scoped to the participant's community), not per event
+registration, and is covered separately in `docs/privacy-erasure-retention.md`
+and `docs/api-contracts.md`. Nothing in this document's field types, checks,
+or UI is a vehicle for that data.
+
 ## Explicit boundaries
 
 The completed end-to-end slice retains these boundaries:
@@ -154,7 +171,8 @@ The completed end-to-end slice retains these boundaries:
   fingerprint mechanism;
 - no special-category fields, including health, allergy or dietary data,
   religious or Jewish status, conversion/giyur, nationality, child data,
-  passport/migration data, disability, documents, photos, or biometrics;
+  passport/migration data, disability, documents, photos, or biometrics — see
+  "Two-tier data boundary" above for where that data actually lives;
 - no relationship to prayer tracking.
 
 Questionnaire publication changes neither capacity nor identity matching and

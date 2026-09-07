@@ -27,6 +27,7 @@ from app.db.models.core import (
     EventRegistrationAnswer,
     Invite,
     LegalAcceptance,
+    ParticipantLineageDeclaration,
     PrivacyRequest,
     Profile,
     ProfileContactVisibility,
@@ -147,6 +148,21 @@ async def _delete_personal_surfaces(
             categories.add("contact")
 
 
+async def _delete_lineage_declaration(
+    session: AsyncSession,
+    user_id: UUID,
+    categories: set[str],
+) -> None:
+    # Must run before LegalAcceptance deletion below: consent_acceptance_id
+    # references legal_acceptances ON DELETE RESTRICT.
+    if await _delete_rows(
+        session,
+        ParticipantLineageDeclaration,
+        ParticipantLineageDeclaration.user_id == user_id,
+    ):
+        categories.add("lineage_declaration")
+
+
 async def _delete_registrations_and_memberships(
     session: AsyncSession,
     user_id: UUID,
@@ -221,6 +237,7 @@ async def apply_privacy_erasure_deletion_manifest(
 
     await _delete_credentials_and_sessions(session, user.id, categories)
     await _delete_personal_surfaces(session, user, categories)
+    await _delete_lineage_declaration(session, user.id, categories)
     await _delete_registrations_and_memberships(session, user.id, categories)
 
     prayer_result = await session.execute(

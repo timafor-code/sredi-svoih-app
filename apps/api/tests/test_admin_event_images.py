@@ -1016,10 +1016,10 @@ class AdminEventImageLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored_url, legacy_url)
 
         script = ScriptDirectory.from_config(Config("alembic.ini"))
-        self.assertEqual(script.get_heads(), ["20260907200000"])
+        self.assertEqual(script.get_heads(), ["20260907210000"])
         self.assertEqual(
-            script.get_revision("20260907200000").down_revision,
-            "20260907190000",
+            script.get_revision("20260907210000").down_revision,
+            "20260907200000",
         )
         async with AsyncSessionLocal() as session:
             active_count = await session.scalar(

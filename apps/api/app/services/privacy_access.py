@@ -32,6 +32,7 @@ from app.db.models.core import (
     EventRegistrationOptionSelection,
     LegalAcceptance,
     LegalDocument,
+    ParticipantLineageDeclaration,
     PrivacyRequest,
     Profile,
     SyncedContact,
@@ -474,6 +475,10 @@ async def build_data_summary(
                 .where(LegalAcceptance.user_id == user_id)
                 .scalar_subquery()
                 .label("legal_acceptances"),
+                select(func.count(ParticipantLineageDeclaration.id))
+                .where(ParticipantLineageDeclaration.user_id == user_id)
+                .scalar_subquery()
+                .label("lineage_declaration"),
                 select(func.count(PrivacyRequest.id))
                 .where(PrivacyRequest.user_id == user_id)
                 .scalar_subquery()
@@ -505,6 +510,7 @@ async def build_data_summary(
         "registration_options": counts.registration_options,
         "questionnaire_answers": counts.questionnaire_answers,
         "legal_acceptances": counts.legal_acceptances,
+        "lineage_declaration": counts.lineage_declaration,
         "privacy_requests": counts.privacy_requests,
         "device_metadata": counts.device_metadata,
         "synced_contacts_summary": counts.synced_contacts_summary,
@@ -604,6 +610,21 @@ async def build_data_export(
                 .order_by(LegalAcceptance.accepted_at, LegalAcceptance.id),
             )
         ).all()
+        lineage_row = (
+            await session.execute(
+                select(ParticipantLineageDeclaration, LegalDocument.version)
+                .join(
+                    LegalAcceptance,
+                    LegalAcceptance.id
+                    == ParticipantLineageDeclaration.consent_acceptance_id,
+                )
+                .join(
+                    LegalDocument,
+                    LegalDocument.id == LegalAcceptance.legal_document_id,
+                )
+                .where(ParticipantLineageDeclaration.user_id == user_id),
+            )
+        ).first()
         privacy_requests = list(
             await session.scalars(
                 select(PrivacyRequest)
@@ -651,6 +672,7 @@ async def build_data_export(
         "registration_options",
         "questionnaire_answers",
         "legal_acceptances",
+        "lineage_declaration",
         "privacy_requests",
         "device_metadata",
         "synced_contacts_summary",
@@ -789,6 +811,16 @@ async def build_data_export(
             }
             for acceptance, document in acceptance_rows
         ],
+        lineage_declaration=(
+            {
+                "values": lineage_row[0].values,
+                "declared_at": lineage_row[0].declared_at,
+                "updated_at": lineage_row[0].updated_at,
+                "consent_document_version": lineage_row[1],
+            }
+            if lineage_row is not None
+            else None
+        ),
         privacy_requests=[
             {
                 "id": item.id,
