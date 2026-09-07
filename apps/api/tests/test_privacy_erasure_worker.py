@@ -42,6 +42,7 @@ from app.db.models.core import (
     EventRegistrationOptionSelection,
     LegalAcceptance,
     LegalDocument,
+    ParticipantLineageDeclaration,
     PrayerActivityLog,
     PrivacyDestructionEvidence,
     PrivacyErasureNotificationOutbox,
@@ -142,6 +143,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.community_id = uuid4()
         self.event_id = uuid4()
         self.legal_document_id = uuid4()
+        self.lineage_document_id = uuid4()
         self.questionnaire_form_id = uuid4()
         self.questionnaire_field_id = uuid4()
         self.other_user_id = uuid4()
@@ -210,6 +212,15 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                             published_url="https://example.invalid/legal",
                             effective_at=self.now - timedelta(days=1),
                         ),
+                        LegalDocument(
+                            id=self.lineage_document_id,
+                            document_type="special_category_consent",
+                            version=f"worker-lineage-{self.marker}",
+                            title="Synthetic worker lineage consent",
+                            content_hash=f"sha256:lineage-{self.marker}",
+                            published_url="https://example.invalid/lineage-consent",
+                            effective_at=self.now - timedelta(days=1),
+                        ),
                     ],
                 )
                 await session.flush()
@@ -271,13 +282,28 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                         ),
                     )
                     await session.execute(
+                        delete(ParticipantLineageDeclaration).where(
+                            ParticipantLineageDeclaration.consent_acceptance_id.in_(
+                                select(LegalAcceptance.id).where(
+                                    LegalAcceptance.legal_document_id.in_(
+                                        (self.legal_document_id, self.lineage_document_id),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    )
+                    await session.execute(
                         delete(LegalAcceptance).where(
-                            LegalAcceptance.legal_document_id == self.legal_document_id,
+                            LegalAcceptance.legal_document_id.in_(
+                                (self.legal_document_id, self.lineage_document_id),
+                            ),
                         ),
                     )
                     await session.execute(
                         delete(LegalDocument).where(
-                            LegalDocument.id == self.legal_document_id,
+                            LegalDocument.id.in_(
+                                (self.legal_document_id, self.lineage_document_id),
+                            ),
                         ),
                     )
                     await session.execute(
@@ -501,6 +527,8 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
             "conflict": uuid4(),
             "other_request": uuid4(),
             "audit": uuid4(),
+            "lineage_acceptance": uuid4(),
+            "lineage_declaration": uuid4(),
         }
         self.request_ids.add(ids["other_request"])
         avatar_key = f"synthetic/avatar/{uuid4().hex}"
@@ -644,7 +672,30 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                             source_channel="mobile",
                             evidence_version="synthetic-v1",
                         ),
+                        LegalAcceptance(
+                            id=ids["lineage_acceptance"],
+                            user_id=user_id,
+                            registration_id=None,
+                            legal_document_id=self.lineage_document_id,
+                            accepted_at=self.now,
+                            acceptance_method="checkbox_plus_email_verification",
+                            source_channel="public_web",
+                            evidence_version="participant-lineage-declaration-v1",
+                        ),
                     ],
+                )
+                await session.flush()
+                session.add(
+                    ParticipantLineageDeclaration(
+                        id=ids["lineage_declaration"],
+                        user_id=user_id,
+                        community_id=self.community_id,
+                        values=["giyur"],
+                        consent_acceptance_id=ids["lineage_acceptance"],
+                        source_channel="public_web",
+                        declared_at=self.now,
+                        updated_at=self.now,
+                    ),
                 )
                 await session.flush()
                 session.add(
@@ -847,6 +898,14 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                     ids["assignment"],
                 ),
                 "intent": await session.get(WebRegistrationIntent, ids["intent"]),
+                "lineage_declaration": await session.get(
+                    ParticipantLineageDeclaration,
+                    ids["lineage_declaration"],
+                ),
+                "lineage_acceptance": await session.get(
+                    LegalAcceptance,
+                    ids["lineage_acceptance"],
+                ),
                 "verification": await session.get(
                     WebRegistrationVerificationCode,
                     ids["verification"],
@@ -892,6 +951,7 @@ class PrivacyErasureWorkerTests(unittest.IsolatedAsyncioTestCase):
                 "device",
                 "feedback",
                 "legal_acceptance",
+                "lineage_declaration",
                 "membership",
                 "prayer_activity",
                 "privacy_request_content",

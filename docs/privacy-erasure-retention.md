@@ -31,10 +31,10 @@ The worker preserves the immediate `deletion_pending` access termination while
 physical erasure is being processed. On successful physical erasure it deletes
 credentials, sessions, codes, profile and contact fields, private avatar object
 and metadata, device state and tokens, synced contacts and visibility,
-memberships, questionnaire answers, web registration intents, registrations
-and their option/capacity/seating graph, legal acceptances, feedback,
-privacy-request text, and the live `app_users` identity row. The identity row is
-deleted last.
+memberships, the participant lineage declaration, questionnaire answers, web
+registration intents, registrations and their option/capacity/seating graph,
+legal acceptances, feedback, privacy-request text, and the live `app_users`
+identity row. The identity row is deleted last.
 
 `deletion_pending` is a processing state, not an account-retention state. A
 financial-classification checkpoint must not become an indefinite reason to
@@ -169,6 +169,29 @@ Automatic execution does not relax the retention prerequisite above. If a
 request contains financial evidence that requires retention and
 `API_PRIVACY_ERASURE_FINANCIAL_RETENTION_DAYS` is unavailable, it fails closed
 and remains retryable after an approved duration is configured.
+
+## Participant lineage declaration
+
+`participant_lineage_declarations` holds the community-level special-category
+declaration (Jewish lineage / giyur) and its own `special_category_consent`
+acceptance evidence, entirely separate from event questionnaires and from
+`event_registration_consent`. There is exactly one row per account.
+
+Retention is membership-based, not time-based: the row lives as long as the
+account exists, with no independent expiry. A participant can withdraw at any
+time through the self-service API; withdrawal deletes the declaration row
+immediately but preserves the `legal_acceptances` evidence row, matching the
+existing evidence-preservation pattern used elsewhere (e.g. registration
+deletion leaving account-level acceptance evidence in place).
+
+Irreversible privacy erasure deletes the declaration row under the
+`lineage_declaration` category, and it does so before bulk-deleting
+`legal_acceptances`: `consent_acceptance_id` references `legal_acceptances` with
+`ON DELETE RESTRICT`, so deleting the acceptance graph first would fail closed
+with a foreign-key violation. Both the worker and the restore-replay path
+delete through the same shared deletion manifest, so this ordering is not
+duplicated per code path. Categories deleted therefore always allow
+`lineage_declaration` alongside the existing allowlisted values.
 
 ## Prayer privacy boundary
 

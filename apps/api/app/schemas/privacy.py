@@ -130,6 +130,7 @@ class PrivacyDataExportResponse(BaseModel):
     registration_options: list[dict[str, Any]]
     questionnaire_answers: list[dict[str, Any]]
     legal_acceptances: list[dict[str, Any]]
+    lineage_declaration: dict[str, Any] | None
     privacy_requests: list[dict[str, Any]]
     device_metadata: list[dict[str, Any]]
     synced_contacts_summary: dict[str, int]

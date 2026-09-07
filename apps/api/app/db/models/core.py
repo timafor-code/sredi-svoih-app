@@ -1234,7 +1234,8 @@ class LegalDocument(Base):
     __tablename__ = "legal_documents"
     __table_args__ = (
         CheckConstraint(
-            "document_type IN ('privacy_policy', 'event_registration_consent', 'marketing_consent')",
+            "document_type IN ('privacy_policy', 'event_registration_consent', "
+            "'marketing_consent', 'special_category_consent')",
             name="legal_documents_document_type_check",
         ),
         CheckConstraint("btrim(version) <> ''", name="legal_documents_version_not_empty"),
@@ -1344,6 +1345,58 @@ class WebParticipantSession(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ParticipantLineageDeclaration(Base):
+    __tablename__ = "participant_lineage_declarations"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            name="participant_lineage_declarations_user_id_key",
+        ),
+        CheckConstraint(
+            "source_channel IN ('mobile', 'public_web', 'admin')",
+            name="participant_lineage_declarations_source_channel_check",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(\"values\") = 'array' "
+            "AND jsonb_array_length(\"values\") > 0 "
+            "AND \"values\" <@ '[\"maternal_grandmother\", \"maternal_grandfather\", "
+            "\"paternal_grandmother\", \"paternal_grandfather\", \"father\", \"mother\", "
+            "\"giyur\", \"unknown\"]'::jsonb",
+            name="participant_lineage_declarations_values_allowlist_check",
+        ),
+        CheckConstraint(
+            "NOT (\"values\" @> '[\"unknown\"]'::jsonb AND jsonb_array_length(\"values\") > 1)",
+            name="participant_lineage_declarations_unknown_exclusive_check",
+        ),
+        Index(
+            "participant_lineage_declarations_community_id_idx",
+            "community_id",
+        ),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    # One declaration per canonical user; erased with the account.
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    community_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("communities.id", ondelete="SET NULL"),
+    )
+    values: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    # Declaration evidence cannot be deleted while this row references it.
+    consent_acceptance_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("legal_acceptances.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    source_channel: Mapped[str] = mapped_column(Text, nullable=False)
+    declared_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class WebRegistrationIntent(Base):
@@ -1836,7 +1889,8 @@ class PrivacyDestructionEvidence(Base):
             "\"registration\", \"credential\", \"session\", \"device\", "
             "\"synced_contact\", \"avatar\", \"privacy_request_content\", "
             "\"prayer_activity\", \"legal_acceptance\", \"feedback\", "
-            "\"web_registration_intent\", \"questionnaire_answer\"]'::jsonb",
+            "\"web_registration_intent\", \"questionnaire_answer\", "
+            "\"lineage_declaration\"]'::jsonb",
             name="privacy_destruction_evidence_categories_deleted_check",
         ),
         CheckConstraint(

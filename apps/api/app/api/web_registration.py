@@ -18,11 +18,16 @@ from app.schemas.web_registration import (
     WebRegistrationIntentStatus,
     WebRegistrationResendResult,
 )
+from app.schemas.participant_profile import (
+    ParticipantLineageDeclarationRequest,
+    ParticipantLineageDeclarationResponse,
+)
 from app.schemas.web_participant_sessions import (
     RememberedParticipantIdentity,
     WebParticipantSessionIssued,
     WebParticipantSessionResponse,
 )
+from app.services import participant_lineage
 from app.services import web_registration as service
 from app.services import web_participant_sessions
 from app.services.authorization import AuthenticationRequiredError
@@ -110,6 +115,50 @@ async def delete_participant_session(
     )
     clear_remembered_participant_cookie(response)
     return Response(status_code=status.HTTP_204_NO_CONTENT, headers=dict(response.headers))
+
+
+@router.get(
+    "/participant-profile/lineage",
+    response_model=ApiResponse[ParticipantLineageDeclarationResponse],
+)
+async def get_lineage_declaration(
+    request: Request,
+    session: DbSession,
+) -> ApiResponse[ParticipantLineageDeclarationResponse]:
+    result = await participant_lineage.get_declaration(
+        session,
+        token=request.cookies.get(web_participant_sessions.COOKIE_NAME),
+    )
+    return ApiResponse[ParticipantLineageDeclarationResponse](data=result)
+
+
+@router.put(
+    "/participant-profile/lineage",
+    response_model=ApiResponse[ParticipantLineageDeclarationResponse],
+)
+async def put_lineage_declaration(
+    payload: ParticipantLineageDeclarationRequest,
+    request: Request,
+    session: DbSession,
+) -> ApiResponse[ParticipantLineageDeclarationResponse]:
+    result = await participant_lineage.put_declaration(
+        session,
+        token=request.cookies.get(web_participant_sessions.COOKIE_NAME),
+        payload=payload,
+    )
+    return ApiResponse[ParticipantLineageDeclarationResponse](data=result)
+
+
+@router.delete("/participant-profile/lineage", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_lineage_declaration(
+    request: Request,
+    session: DbSession,
+) -> Response:
+    await participant_lineage.withdraw_declaration(
+        session,
+        token=request.cookies.get(web_participant_sessions.COOKIE_NAME),
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/registration-intents", response_model=ApiResponse[WebRegistrationIntentCreated], status_code=status.HTTP_201_CREATED)
