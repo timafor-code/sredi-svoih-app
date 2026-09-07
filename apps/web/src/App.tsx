@@ -878,6 +878,7 @@ function RegistrationForm({
   onParticipantSessionRefresh,
   onAuthenticatedAccountChange,
   onAuthenticatedRegistrationCompleted,
+  onRepeatRegistration,
   onProgrammeOptionSelect,
 }: {
   eventId: string;
@@ -899,6 +900,7 @@ function RegistrationForm({
   onParticipantSessionRefresh: () => Promise<void>;
   onAuthenticatedAccountChange: (account: AuthenticatedAccountState | null, rememberedSessionIssued?: boolean) => void;
   onAuthenticatedRegistrationCompleted: () => void;
+  onRepeatRegistration: () => void;
   onProgrammeOptionSelect?: (handler: ((optionId: string) => void) | null) => void;
 }): ReactNode {
   const emptyValues: FormValues = {
@@ -1417,6 +1419,48 @@ function RegistrationForm({
     setStage("form");
   };
 
+  const resetCompletedAttempt = () => {
+    // A repeat is deliberately a UI-only reset. It must not reuse a flow or
+    // idempotency key, and it must not create a registration on its own.
+    setValues(emptyValues);
+    setErrors({});
+    setSelections({});
+    setQuestionnaireValues({});
+    setQuestionnaireErrors({});
+    setNotice(null);
+    setFlowError(null);
+    setStage("form");
+    setFlowOpen(false);
+    setFlowSignIn(false);
+    setSignInDeclined(false);
+    setFlowId(null);
+    setFlowExpiresAt(null);
+    setEmailCode("");
+    setBusyAction(null);
+    setConfirmationUnknown(false);
+    setCooldownUntil(null);
+    setCooldownSeconds(0);
+    setRegistration(null);
+    setAccountNextStep(null);
+    setSetPasswordCode(null);
+    setSetPasswordExpiresAt(null);
+    setRequestedPasswordCode("");
+    setPasswordRequestSent(false);
+    setNewPassword("");
+    setRepeatPassword("");
+    setPasswordError(null);
+    setAccountCompleted(false);
+    setPasswordlessDeclined(false);
+    setVerifiedRegistrationEmail(null);
+    setPasswordlessDeletionOpen(false);
+    setPasswordlessDeletionPending(false);
+    setForgetError(null);
+    submittingRef.current = false;
+    idempotencyRef.current = null;
+    pendingPasswordlessEmailRef.current = null;
+    onRepeatRegistration();
+  };
+
   const sendPasswordCode = async () => {
     if (submittingRef.current) return;
     submittingRef.current = true;
@@ -1562,8 +1606,28 @@ function RegistrationForm({
   if (stage === "success" && registration) {
     const resultOccurrence = occurrences.find((item) => item.id === registration.occurrence_id);
     const isPaidResult = registrationMode === "internal_paid";
-    const showPasswordForm = accountNextStep === "set_password"
+    const showPasswordForm = (accountNextStep === "set_password" && !passwordlessDeclined)
       || ((accountNextStep === "request_set_password" || showPasswordlessChoice) && passwordRequestSent);
+    const canSkipPassword = showPasswordlessChoice || accountNextStep === "set_password";
+    const repeatRegistrationAvailable = !passwordlessDeletionPending && (
+      passwordlessDeclined
+      || accountCompleted
+      || signInDeclined
+      || existingAccount !== null
+      || (accountNextStep === "none" && !passwordlessAccountChoiceAvailable)
+    );
+    const continueWithoutPassword = () => {
+      setPasswordlessDeclined(true);
+      setSetPasswordCode(null);
+      setSetPasswordExpiresAt(null);
+      setRequestedPasswordCode("");
+      setPasswordRequestSent(false);
+      setNewPassword("");
+      setRepeatPassword("");
+      setPasswordError(null);
+      setNotice(null);
+      document.getElementById("success-heading")?.focus();
+    };
     flowContent = (
       <section className="flow-card success-card" aria-labelledby="success-heading" aria-live="polite">
         <p className="eyebrow">Регистрация сохранена</p>
@@ -1595,7 +1659,7 @@ function RegistrationForm({
           </div>
         ) : null}
 
-        {accountNextStep === "none" && !accountCompleted ? <p className="muted-copy">Регистрация уже сохранена. {existingAccount ? "Регистрация сохранена в вашем аккаунте." : "Код подтверждения был отправлен на указанный email. Пароль и web-сессия не создавались."}</p> : null}
+        {accountNextStep === "none" && !accountCompleted ? <p className="muted-copy">Регистрация уже сохранена. {existingAccount ? "Регистрация сохранена в вашем аккаунте." : "Пароль пока не задан."}</p> : null}
         {passwordlessDeclined ? <p className="muted-copy">Регистрация сохранена без пароля.</p> : null}
         {accountNextStep === "sign_in" && !accountCompleted && !existingAccount ? (
           <div className="account-followup">
@@ -1640,14 +1704,20 @@ function RegistrationForm({
         {passwordlessDeletionPending ? (
           <p className="registration-result">Запрос на удаление подтверждён. Доступ остановлен, удаление будет завершено по правилам хранения данных.</p>
         ) : null}
-        {showPasswordlessChoice ? (
-          <div className="account-followup">
-            <p className="muted-copy">По желанию можно задать пароль, чтобы входить в приложение и на сайт и видеть свои регистрации. Продолжение без пароля не влияет на сохранённую регистрацию.</p>
+        {showPasswordlessChoice && !passwordRequestSent ? (
+          <div className="account-followup password-setup-card" aria-labelledby="password-setup-heading">
+            <h3 id="password-setup-heading">Задать пароль</h3>
+            <p className="muted-copy">Пароль нужно задать только один раз — затем его можно использовать для входа в приложение и на сайт.</p>
             {!passwordRequestSent ? (
               <button className="primary-button" type="button" disabled={busyAction !== null} onClick={sendPasswordCode}>
                 {busyAction === "request_password" ? "Отправляем…" : "Задать пароль"}
               </button>
             ) : null}
+            {!passwordRequestSent ? <>
+              <div className="completion-divider" aria-hidden="true">или</div>
+              <button className="secondary-button" type="button" disabled={busyAction !== null} onClick={continueWithoutPassword}>Продолжить без пароля</button>
+              <p className="muted-copy">Регистрация останется действительной без пароля. Управлять данными можно через подтверждение email и код.</p>
+            </> : null}
           </div>
         ) : null}
         {accountNextStep === "request_set_password" && !passwordRequestSent ? (
@@ -1659,8 +1729,9 @@ function RegistrationForm({
           </div>
         ) : null}
         {showPasswordForm && !accountCompleted ? (
-          <div className="account-followup" aria-labelledby="password-heading">
+          <div className="account-followup password-setup-card" aria-labelledby="password-heading">
             <h3 id="password-heading">Задать пароль</h3>
+            <p className="muted-copy">Пароль нужно задать только один раз — затем его можно использовать для входа в приложение и на сайт.</p>
             {accountNextStep === "request_set_password" || showPasswordlessChoice ? (
               <div className="form-field">
                 <label htmlFor="set-password-email-code">Код из письма</label>
@@ -1675,34 +1746,30 @@ function RegistrationForm({
               </div>
             ) : null}
             <div className="form-field">
-              <label htmlFor="new-password">Новый пароль</label>
-              <input ref={newPasswordRef} id="new-password" type="password" minLength={8} maxLength={1024} autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+              <label htmlFor="new-password">Пароль</label>
+              <input ref={newPasswordRef} id="new-password" type="password" required aria-required="true" minLength={8} maxLength={1024} autoComplete="new-password" value={newPassword} aria-invalid={Boolean(passwordError)} aria-describedby={`password-minimum${passwordError ? " password-error" : ""}`} onChange={(event) => { setNewPassword(event.target.value); setPasswordError(null); }} />
             </div>
             <div className="form-field">
-              <label htmlFor="repeat-password">Повтор нового пароля</label>
-              <input ref={repeatPasswordRef} id="repeat-password" type="password" minLength={8} maxLength={1024} autoComplete="new-password" value={repeatPassword} onChange={(event) => setRepeatPassword(event.target.value)} />
+              <label htmlFor="repeat-password">Повторите пароль</label>
+              <input ref={repeatPasswordRef} id="repeat-password" type="password" required aria-required="true" minLength={8} maxLength={1024} autoComplete="new-password" value={repeatPassword} aria-invalid={Boolean(passwordError)} aria-describedby={`password-minimum${passwordError ? " password-error" : ""}`} onChange={(event) => { setRepeatPassword(event.target.value); setPasswordError(null); }} />
             </div>
+            <p className="password-minimum" id="password-minimum">Минимальная длина пароля — 8 символов.</p>
             {setPasswordExpiresAt ? <p className="flow-expiry">Код действует до {formatExpiry(setPasswordExpiresAt)}.</p> : null}
             <button className="primary-button" type="button" disabled={busyAction !== null} onClick={submitPassword}>
-              {busyAction === "password" ? "Сохраняем…" : "Задать пароль"}
+              {busyAction === "password" ? "Сохраняем…" : "Сохранить пароль"}
             </button>
+            {canSkipPassword ? <>
+              <div className="completion-divider" aria-hidden="true">или</div>
+              <button className="secondary-button" type="button" disabled={busyAction !== null} onClick={continueWithoutPassword}>Продолжить без пароля</button>
+              <p className="muted-copy">Регистрация останется действительной без пароля. Управлять данными можно через подтверждение email и код.</p>
+            </> : null}
           </div>
-        ) : null}
-        {showPasswordlessChoice ? (
-          <button className="secondary-button" type="button" disabled={busyAction !== null} onClick={() => {
-            setPasswordlessDeclined(true);
-            setRequestedPasswordCode("");
-            setNewPassword("");
-            setRepeatPassword("");
-            setPasswordError(null);
-            setNotice(null);
-            document.getElementById("success-heading")?.focus();
-          }}>Продолжить без пароля</button>
         ) : null}
         <div className="flow-live" aria-live="polite" aria-atomic="true">
           {notice ? <p className="form-notice" role="status">{notice}</p> : null}
-          {passwordError ? <p className="form-error" role="alert">{passwordError}</p> : null}
+          {passwordError ? <p className="form-error" id="password-error" role="alert">{passwordError}</p> : null}
         </div>
+        {repeatRegistrationAvailable ? <button className="secondary-button" type="button" onClick={resetCompletedAttempt}>Записаться ещё раз</button> : null}
         <button className="secondary-button" type="button" onClick={closeFlow}>Готово</button>
       </section>
     );
@@ -2109,6 +2176,22 @@ function EventPage({
     if (selectedOccurrence?.registration_state === "open") setDateStepComplete(true);
   };
 
+  const repeatRegistration = () => {
+    if (dateStepRequired) {
+      // Do not silently reuse the occurrence from the completed registration.
+      setSelectedOccurrenceId(null);
+      setDateStepComplete(false);
+      window.requestAnimationFrame(() => {
+        document.getElementById("occurrence-select")?.focus()
+          ?? document.querySelector<HTMLInputElement>('input[name="occurrence"]')?.focus();
+      });
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(".registration-form input:not(:disabled), .registration-form select:not(:disabled)")?.focus();
+    });
+  };
+
   const closeTickets = () => {
     setTicketsOpen(false);
     window.requestAnimationFrame(() => {
@@ -2266,6 +2349,7 @@ function EventPage({
                   onAuthenticatedRegistrationCompleted={() => {
                     setTicketsRevision((value) => value + 1);
                   }}
+                  onRepeatRegistration={repeatRegistration}
                   onProgrammeOptionSelect={(handler) => {
                     programmeOptionSelectRef.current = handler;
                   }}

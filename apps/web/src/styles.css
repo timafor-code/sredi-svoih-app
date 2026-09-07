@@ -1735,6 +1735,32 @@ select {
   font-size: 1.1rem;
 }
 
+.password-setup-card {
+  gap: 14px;
+}
+
+.password-minimum {
+  margin: -4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.completion-divider {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.completion-divider::before,
+.completion-divider::after {
+  content: "";
+  height: 1px;
+  background: var(--border);
+}
+
 .site-footer {
   display: flex;
   flex-wrap: wrap;
