@@ -1205,8 +1205,6 @@ async def _registration_result(
 def _replay_account_next_step(intent: WebRegistrationIntent, user: AppUser) -> str:
     if user.password_hash is not None:
         return "sign_in"
-    if intent.account_choice == "without_password":
-        return "none"
     return "request_set_password"
 
 
@@ -1358,8 +1356,6 @@ async def _confirm_once(
     set_password_expires_at: datetime | None = None
     if user.password_hash is not None:
         account_next_step = "sign_in"
-    elif intent.account_choice == "without_password":
-        account_next_step = "none"
     else:
         account_next_step = "set_password"
         set_password_code, set_password_expires_at = (

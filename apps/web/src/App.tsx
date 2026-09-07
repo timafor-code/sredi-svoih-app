@@ -1606,7 +1606,7 @@ function RegistrationForm({
   if (stage === "success" && registration) {
     const resultOccurrence = occurrences.find((item) => item.id === registration.occurrence_id);
     const isPaidResult = registrationMode === "internal_paid";
-    const showPasswordForm = accountNextStep === "set_password"
+    const showPasswordForm = (accountNextStep === "set_password" && !passwordlessDeclined)
       || ((accountNextStep === "request_set_password" || showPasswordlessChoice) && passwordRequestSent);
     const canSkipPassword = showPasswordlessChoice || accountNextStep === "set_password";
     const repeatRegistrationAvailable = !passwordlessDeletionPending && (
@@ -1659,7 +1659,7 @@ function RegistrationForm({
           </div>
         ) : null}
 
-        {accountNextStep === "none" && !accountCompleted ? <p className="muted-copy">Регистрация уже сохранена. {existingAccount ? "Регистрация сохранена в вашем аккаунте." : "Код подтверждения был отправлен на указанный email. Пароль и web-сессия не создавались."}</p> : null}
+        {accountNextStep === "none" && !accountCompleted ? <p className="muted-copy">Регистрация уже сохранена. {existingAccount ? "Регистрация сохранена в вашем аккаунте." : "Пароль пока не задан."}</p> : null}
         {passwordlessDeclined ? <p className="muted-copy">Регистрация сохранена без пароля.</p> : null}
         {accountNextStep === "sign_in" && !accountCompleted && !existingAccount ? (
           <div className="account-followup">

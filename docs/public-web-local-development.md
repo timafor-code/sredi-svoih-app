@@ -126,13 +126,20 @@ The browser performs this sequence:
 5. Use `GET .../{flow_id}/status` only for a completed create replay or an
    ambiguous confirmation result. There is no background polling.
 6. Display the canonical `confirmed`, `pending`, or `waitlisted` registration
-   result. A password is not required to finish registration.
-7. When the result returns a one-time `set_password` handoff, send it to
-   `POST /auth/confirm-set-password`. For a replay that returns
-   `request_set_password`, first call `POST /auth/request-set-password`, then
-   confirm the delivered code through the same confirm endpoint. `sign_in`
-   only explains that the existing password can be used later; this flow does
-   not create a web login session.
+   result. The registration is saved before optional password creation, so
+   skipping password always leaves the registration intact.
+7. On a fresh successful email confirmation for a participant without a
+   password, the result includes a one-time direct `set_password` handoff for
+   `POST /auth/confirm-set-password`. The participant may use it immediately
+   or continue without a password. Confirmed-flow and status replays never
+   return that handoff; they return `request_set_password`, which first calls
+   `POST /auth/request-set-password` and then confirms the delivered code
+   through the same confirm endpoint. `sign_in` only explains that the
+   existing password can be used later; this flow does not create a web login
+   session.
+8. `Записаться ещё раз` is a browser UI reset only. It clears the completed
+   attempt and returns to occurrence selection when required, but never
+   creates a registration until the participant submits a new form.
 
 When no published questionnaire exists, the registration-form response and
 intent request use `questionnaire_form_id = null` and `answers = []`. When a

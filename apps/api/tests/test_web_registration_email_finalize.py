@@ -694,7 +694,9 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                 code,
                 "192.0.2.5",
             )
-        self.assertEqual(result.account_next_step, "none")
+        self.assertEqual(result.account_next_step, "set_password")
+        self.assertIsNotNone(result.set_password_code)
+        self.assertIsNotNone(result.set_password_expires_at)
         self.assertEqual(result.registration.status, "confirmed")
         self.assertEqual(result.registration.payment_status, "not_required")
         self.assertIsNone(result.registration.total_amount)
@@ -741,6 +743,24 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                 await session.scalar(select(func.count()).select_from(CommunityMembership)),
                 before_memberships,
             )
+            handoff = await session.scalar(
+                select(AuthSetPasswordCode).where(AuthSetPasswordCode.user_id == user.id),
+            )
+            self.assertIsNotNone(handoff)
+            self.assertTrue(verify_token_hash(result.set_password_code, handoff.code_hash))
+
+        async with AsyncSessionLocal() as session:
+            replay = await service.confirm_email(
+                session,
+                created.flow_id,
+                code,
+                "192.0.2.5",
+            )
+            status = await service.get_intent_status(session, created.flow_id)
+        self.assertEqual(replay.registration.id, result.registration.id)
+        self.assertEqual(replay.account_next_step, "request_set_password")
+        self.assertIsNone(replay.set_password_code)
+        self.assertEqual(status.account_next_step, "request_set_password")
 
     async def test_paid_confirmation_uses_current_server_price_and_replays_one_pending_result(self) -> None:
         option = EventParticipationOption(

@@ -2515,13 +2515,16 @@ describe("registration intent and account claim flow", () => {
     expect(within(flowDialog()).getByRole("button", { name: "Управление данными" })).toBeInTheDocument();
   });
 
-  it("completes the without-password flow without creating a web session", async () => {
+  it("shows the direct optional password handoff after fresh passwordless confirmation", async () => {
     const user = await setupValidForm();
     await createIntent(user);
-    await confirmIntent(user);
+    await confirmIntent(user, registrationResult("confirmed", "set_password"));
     expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
     expect(screen.getByText("Регистрация подтверждена.")).toBeInTheDocument();
-    expect(screen.getByText(/Код подтверждения был отправлен.*Пароль и web-сессия не создавались/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Пароль")).toBeInTheDocument();
+    expect(screen.getByLabelText("Повторите пароль")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Код из письма")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Пароль и web-сессия не создавались/)).not.toBeInTheDocument();
     expect(within(screen.getByRole("dialog", { name: "Оформление регистрации" })).getByText("Мероприятие").closest("div")).toHaveTextContent("Шаббат для друзей");
     expect(within(flowDialog()).getByText("1")).toBeInTheDocument();
     expect(screen.queryByText(REGISTRATION_ID)).not.toBeInTheDocument();
@@ -2799,6 +2802,28 @@ describe("registration intent and account claim flow", () => {
     expect(window.location.href).not.toContain(SET_PASSWORD_CODE);
     expect(window.location.href).not.toContain("strong-pass-123");
     expect(screen.queryByRole("button", { name: "Мои билеты" })).not.toBeInTheDocument();
+  });
+
+  it("continues without password from a direct handoff without changing the saved registration", async () => {
+    const user = await setupValidForm();
+    await createIntent(user);
+    await confirmIntent(user, registrationResult("confirmed", "set_password"));
+    const dialog = expectOneFlowDialog();
+    const savedDetails = within(dialog).getByText("Мероприятие").closest("dl")?.textContent;
+    const registrationPostsBeforeSkip = vi.mocked(fetch).mock.calls.filter(([input, init]) => (
+      String(input).endsWith("/registration-intents") && init?.method === "POST"
+    )).length;
+
+    await user.click(within(dialog).getByRole("button", { name: "Продолжить без пароля" }));
+
+    expect(within(dialog).getByText("Регистрация сохранена без пароля.")).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Пароль")).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Повторите пароль")).not.toBeInTheDocument();
+    expect(within(dialog).getByText("Мероприятие").closest("dl")?.textContent).toBe(savedDetails);
+    expect(within(dialog).getByRole("button", { name: "Записаться ещё раз" })).toBeInTheDocument();
+    expect(vi.mocked(fetch).mock.calls.filter(([input, init]) => (
+      String(input).endsWith("/registration-intents") && init?.method === "POST"
+    ))).toHaveLength(registrationPostsBeforeSkip);
   });
 
   it("shows the neutral sign-in next step without forcing authentication", async () => {
