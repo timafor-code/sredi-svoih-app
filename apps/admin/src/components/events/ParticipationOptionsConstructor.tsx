@@ -69,6 +69,7 @@ type ParticipationOptionsConstructorProps = {
   eventId: string;
   active?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
+  onPersisted?: () => void;
   eventCapacity: number | null;
   defaultPriceCurrency?: string | null;
   capacityUnits: AdminEventCapacityUnit[];
@@ -351,6 +352,7 @@ export function ParticipationOptionsConstructor({
   selectionMode,
   active = true,
   onDirtyChange,
+  onPersisted,
 }: ParticipationOptionsConstructorProps) {
   const fallbackCurrency =
     defaultPriceCurrency && defaultPriceCurrency.trim()
@@ -495,6 +497,7 @@ export function ParticipationOptionsConstructor({
     setSaving(true);
     try {
       const saved = await replaceAdminEventParticipationOptions(eventId, inputs);
+      onPersisted?.();
       const mappingInputs: AdminOptionCapacityUnitMappingInput[] = [];
 
       saved.forEach((option) => {

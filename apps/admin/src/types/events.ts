@@ -22,6 +22,38 @@ export type AdminEventRegistrationMode = (typeof ADMIN_EVENT_REGISTRATION_MODES)
 export type AdminEventWebVisibility = "disabled" | "unlisted" | "listed";
 export type AdminEventWebVisibilityUpdate = Exclude<AdminEventWebVisibility, "listed">;
 
+export type AdminEventScheduleItem = {
+  time: string;
+  title: string;
+  optionId: string | null;
+};
+
+export type AdminEventScheduleDay = {
+  date: string;
+  label: string | null;
+  note: string | null;
+  items: AdminEventScheduleItem[];
+};
+
+export type AdminEventSchedule = {
+  version: 1;
+  days: AdminEventScheduleDay[];
+};
+
+export type AdminEventScheduleRow = {
+  version: 1;
+  days: Array<{
+    date: string;
+    label: string | null;
+    note: string | null;
+    items: Array<{
+      time: string;
+      title: string;
+      option_id: string | null;
+    }>;
+  }>;
+};
+
 export const EVENT_STATUS_LABELS: Record<AdminEventStatus, string> = {
   draft: "Черновик",
   published: "Опубликовано",
@@ -129,6 +161,7 @@ export type AdminEventRow = {
   requires_approval: boolean;
   price_amount: number | null;
   price_currency: string | null;
+  schedule?: AdminEventScheduleRow | null;
   created_at: string;
   updated_at: string;
   published_at: string | null;
@@ -164,6 +197,7 @@ export type AdminEvent = {
   requiresApproval: boolean;
   priceAmount: number | null;
   priceCurrency: string | null;
+  schedule?: AdminEventSchedule | null;
   createdAt: string;
   updatedAt: string;
   publishedAt: string | null;
@@ -193,6 +227,7 @@ export type AdminEventMutationInput = {
   requiresApproval: boolean;
   priceAmount: number | null;
   priceCurrency: string;
+  schedule?: AdminEventSchedule | null;
 };
 
 export type AdminEventApiMutationInput = Omit<AdminEventMutationInput, "imageUrl">;

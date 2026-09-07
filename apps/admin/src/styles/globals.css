@@ -14320,6 +14320,39 @@ a {
 .event-editor .event-form-section:last-child { border-bottom: 0; }
 .event-editor .event-form-section__head h2 { margin: 0; font-size: 14px; font-weight: 800; }
 .event-editor .event-form-section__head h3 { margin: 4px 0 0; font-size: 13px; }
+.event-editor .event-schedule-constructor { display: grid; gap: 14px; }
+.event-editor .event-schedule-constructor__head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; }
+.event-editor .event-schedule-constructor__head p { margin: 5px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.45; }
+.event-editor .event-schedule-constructor__add,
+.event-editor .event-schedule-items__add,
+.event-editor .event-schedule-constructor__empty button { min-height: 34px; padding: 7px 11px; border: 1px solid rgba(242, 184, 75, 0.42); border-radius: 8px; background: rgba(242, 184, 75, 0.08); color: var(--editor-gold); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.event-editor .event-schedule-constructor__add:disabled,
+.event-editor .event-schedule-items__add:disabled,
+.event-editor .event-schedule-constructor__empty button:disabled { cursor: not-allowed; opacity: 0.55; }
+.event-editor .event-schedule-constructor__empty { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 13px 14px; border: 1px dashed var(--editor-line); border-radius: 10px; background: var(--editor-inset); }
+.event-editor .event-schedule-constructor__empty p { margin: 0; color: var(--text-muted); font-size: 12px; }
+.event-editor .event-schedule-constructor__days { display: grid; gap: 12px; }
+.event-editor .event-schedule-day { display: grid; gap: 12px; min-width: 0; padding: 13px 14px; border: 1px solid var(--editor-line-soft); border-radius: 10px; background: var(--editor-panel); }
+.event-editor .event-schedule-day__head,
+.event-editor .event-schedule-items__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.event-editor .event-schedule-day__head h3,
+.event-editor .event-schedule-items__head h4 { margin: 0; font-size: 13px; }
+.event-editor .event-schedule-items__head span { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.event-editor .event-schedule-day__fields { display: grid; grid-template-columns: 150px minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.event-editor .event-schedule-field { display: grid; min-width: 0; gap: 5px; color: var(--text-soft); font-size: 11px; }
+.event-editor .event-schedule-field > span { color: var(--text-soft); font-size: 11px; font-weight: 650; }
+.event-editor .event-schedule-field :is(input, select) { box-sizing: border-box; min-width: 0; width: 100%; min-height: 34px; padding: 6px 8px; border: 1px solid var(--editor-line); border-radius: 7px; background: var(--editor-inset); color: var(--text); font: inherit; font-size: 12px; }
+.event-editor .event-schedule-field :is(input, select)[aria-invalid="true"] { border-color: var(--red); }
+.event-editor .event-schedule-field small { color: var(--red); font-size: 11px; line-height: 1.35; }
+.event-editor .event-schedule-items { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--editor-line-soft); }
+.event-editor .event-schedule-items__empty { margin: 0; color: var(--text-muted); font-size: 12px; }
+.event-editor .event-schedule-item { display: grid; grid-template-columns: 105px minmax(150px, 1fr) minmax(190px, 1fr) auto; align-items: start; gap: 8px; min-width: 0; padding: 9px 10px; border: 1px solid var(--editor-line-soft); border-radius: 8px; background: var(--editor-inset); }
+.event-editor .event-schedule-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.event-editor .event-schedule-actions > button { display: grid; width: 30px; height: 30px; place-items: center; padding: 0; border: 1px solid var(--editor-line); border-radius: 6px; background: transparent; color: var(--text-soft); font: inherit; cursor: pointer; }
+.event-editor .event-schedule-actions > button:disabled { cursor: not-allowed; opacity: 0.4; }
+.event-editor .event-schedule-actions > .event-schedule-actions__danger { color: var(--red); }
+.event-editor .event-schedule-item__actions { justify-content: flex-end; padding-top: 18px; }
+.event-editor .event-schedule-constructor__notice { margin: 0; padding: 9px 10px; border: 1px solid rgba(229, 44, 54, 0.38); border-radius: 8px; background: rgba(229, 44, 54, 0.08); color: var(--red); font-size: 12px; line-height: 1.4; }
 .event-editor .event-form-section__head h2::before,
 .event-editor :is(.event-tickets-capacity__head, .event-occurrences-constructor__head, .event-web-registration-card__head, .event-questionnaire-card__head) h2::before {
   content: ''; display: block; width: 22px; height: 3px; margin-bottom: 8px; border-radius: 2px; background: var(--section-accent, var(--red));
@@ -14508,6 +14541,8 @@ a {
   .event-editor .event-questionnaire-card { padding: 14px 12px; }
   .event-editor .event-form-grid, .event-registration-modes,
   .event-editor .event-occurrence-generator__grid, .event-editor .event-occurrences-summary dl { grid-template-columns: minmax(0, 1fr); }
+  .event-editor .event-schedule-day__fields, .event-editor .event-schedule-item { grid-template-columns: minmax(0, 1fr); }
+  .event-editor .event-schedule-item__actions { padding-top: 0; justify-content: flex-start; }
   .event-editor .event-occurrence-generator__field { grid-column: auto; }
   .event-editor .event-occurrence-row { grid-template-columns: minmax(0, 1fr) auto; }
   .event-editor .event-occurrence-row__date { grid-column: 1; grid-row: 1; }

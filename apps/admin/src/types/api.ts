@@ -1,5 +1,23 @@
 import type { AdminRegistrationSourceChannel } from "./registrations";
 
+export type AdminApiEventScheduleItem = {
+  time: string;
+  title: string;
+  option_id: string | null;
+};
+
+export type AdminApiEventScheduleDay = {
+  date: string;
+  label: string | null;
+  note: string | null;
+  items: AdminApiEventScheduleItem[];
+};
+
+export type AdminApiEventSchedule = {
+  version: 1;
+  days: AdminApiEventScheduleDay[];
+};
+
 export type ApiErrorDetail = {
   field?: string;
   code: string;
@@ -133,6 +151,7 @@ export type AdminApiCurrentUserResponse = {
 };
 
 export type AdminApiEventResponse = {
+  schedule: AdminApiEventSchedule | null;
   id: string;
   community_id: string;
   event_kind: string;

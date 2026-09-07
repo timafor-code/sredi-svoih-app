@@ -8,6 +8,7 @@ type EventTicketsCapacityModuleProps = {
   eventId: string;
   active?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
+  onParticipationOptionsPersisted?: () => void;
   eventCapacity: number | null;
   defaultPriceCurrency?: string | null;
 };
@@ -33,7 +34,7 @@ export function EventTicketsCapacityModule(props: EventTicketsCapacityModuleProp
 
   return (
     <section className="event-tickets-capacity">
-      <ParticipationOptionsConstructor {...props} onDirtyChange={setOptionsDirty} capacityUnits={capacityUnits} selectionMode={selectionMode}
+      <ParticipationOptionsConstructor {...props} onDirtyChange={setOptionsDirty} onPersisted={props.onParticipationOptionsPersisted} capacityUnits={capacityUnits} selectionMode={selectionMode}
         deletedCapacityUnitIds={deletedCapacityUnitIds}
         heading={
         <div>
