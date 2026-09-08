@@ -27,6 +27,7 @@ import { AccountPanel } from "./components/AccountPanel";
 import { MyTicketsPanel } from "./components/MyTicketsPanel";
 import { WebDeleteAccountFlow } from "./components/WebDeleteAccountFlow";
 import { formatDate, formatDateTimeRange, formatTime } from "./format";
+import { LineageDeclarationPanel } from "./LineageDeclaration";
 import { PhoneInput } from "./PhoneInput";
 import { normalizeInternationalPhone } from "./phone";
 import { QuestionnaireFields } from "./QuestionnaireFields";
@@ -868,6 +869,7 @@ function RegistrationForm({
   questionnaireFormId,
   questions,
   consentDocument,
+  lineageConsentDocument,
   onSignIn,
   onEmailChange,
   authenticatedAccount,
@@ -890,6 +892,7 @@ function RegistrationForm({
   questionnaireFormId: string | null;
   questions: WebQuestionnaireField[];
   consentDocument: WebRegistrationLegalDocument;
+  lineageConsentDocument: WebRegistrationLegalDocument | null;
   onSignIn: MouseEventHandler<HTMLButtonElement>;
   onEmailChange: (email: string) => void;
   authenticatedAccount: AuthenticatedAccountState | null;
@@ -1765,6 +1768,7 @@ function RegistrationForm({
             </> : null}
           </div>
         ) : null}
+        <LineageDeclarationPanel consentDocument={lineageConsentDocument} />
         <div className="flow-live" aria-live="polite" aria-atomic="true">
           {notice ? <p className="form-notice" role="status">{notice}</p> : null}
           {passwordError ? <p className="form-error" id="password-error" role="alert">{passwordError}</p> : null}
@@ -1802,6 +1806,9 @@ function RegistrationForm({
             <p>Уже есть аккаунт?</p>
             <button type="button" aria-haspopup="dialog" onClick={onSignIn}>Войти</button>
           </div>
+        ) : null}
+        {existingAccount !== null || participantSessionStatus === "remembered" ? (
+          <LineageDeclarationPanel consentDocument={lineageConsentDocument} />
         ) : null}
         <fieldset className="registration-fields" disabled={stage !== "form"}>
           <ParticipationOptions
@@ -2167,6 +2174,7 @@ function EventPage({
   const endsAt = selectedOccurrence?.ends_at ?? data.event.ends_at;
   const consentDocument = data.legal_documents.find((item) => item.document_type === "event_registration_consent");
   const privacyDocument = data.legal_documents.find((item) => item.document_type === "privacy_policy");
+  const lineageConsentDocument = data.legal_documents.find((item) => item.document_type === "special_category_consent") ?? null;
 
   const changeOccurrence = (id: string) => {
     setSelectedOccurrenceId(id);
@@ -2337,6 +2345,7 @@ function EventPage({
                   questionnaireFormId={data.questionnaire_form_id}
                   questions={data.questions}
                   consentDocument={consentDocument}
+                  lineageConsentDocument={lineageConsentDocument}
                   onSignIn={openSignIn}
                   onEmailChange={setRegistrationEmail}
                   authenticatedAccount={authenticatedAccount}

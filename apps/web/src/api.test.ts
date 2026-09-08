@@ -6,8 +6,10 @@ import {
   confirmWebRegistrationEmail,
   createDeletionPrivacyRequest,
   createWebRegistrationIntent,
+  deleteLineageDeclaration,
   deleteWebParticipantSession,
   getExistingAccount,
+  getLineageDeclaration,
   getWebParticipantSession,
   getMyRegistrations,
   getWebEventRegistrationForm,
@@ -17,6 +19,7 @@ import {
   loginExistingAccount,
   issueWebParticipantSession,
   logoutExistingAccount,
+  putLineageDeclaration,
   requestSetPassword,
   requestPrivacyAccessCode,
   resendWebRegistrationCode,
@@ -708,6 +711,98 @@ describe("public event API", () => {
     await expect(requestPrivacyAccessCode("ivan@example.invalid")).rejects.toMatchObject({
       code: "network_error",
       message: "Public API request failed",
+    });
+  });
+});
+
+describe("participant lineage declaration client", () => {
+  beforeEach(() => vi.stubGlobal("fetch", vi.fn()));
+
+  function lineageBody(overrides: Record<string, unknown> = {}) {
+    return envelope({
+      state: "none",
+      values: [],
+      declared_at: null,
+      updated_at: null,
+      ...overrides,
+    });
+  }
+
+  it("reads the declaration with cookie credentials", async () => {
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(lineageBody({
+      state: "declared",
+      values: ["giyur", "mother"],
+      declared_at: EXPIRES_AT,
+      updated_at: EXPIRES_AT,
+    })));
+    await expect(getLineageDeclaration()).resolves.toMatchObject({ state: "declared" });
+    expect(fetch).toHaveBeenCalledWith("/api/web/participant-profile/lineage", expect.objectContaining({
+      method: "GET",
+      credentials: "include",
+    }));
+  });
+
+  it("rejects a declaration payload with an unknown lineage value", async () => {
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(lineageBody({
+      state: "declared",
+      values: ["some_other_relative"],
+    })));
+    await expect(getLineageDeclaration()).rejects.toMatchObject({ code: "invalid_response" });
+  });
+
+  it("submits the declaration with the legal acceptance and cookie credentials", async () => {
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(lineageBody({
+      state: "declared",
+      values: ["giyur"],
+      declared_at: EXPIRES_AT,
+      updated_at: EXPIRES_AT,
+    })));
+    await putLineageDeclaration(["giyur"], {
+      document_id: "55555555-5555-4555-8555-555555555555",
+      content_hash: "lineage-consent-hash",
+    });
+    expect(fetch).toHaveBeenCalledWith("/api/web/participant-profile/lineage", expect.objectContaining({
+      method: "PUT",
+      credentials: "include",
+      body: JSON.stringify({
+        values: ["giyur"],
+        legal_acceptance: {
+          document_id: "55555555-5555-4555-8555-555555555555",
+          content_hash: "lineage-consent-hash",
+        },
+      }),
+    }));
+  });
+
+  it("maps a validation_error response to a typed rejection", async () => {
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse({
+      data: null,
+      error: { code: "validation_error", message: "consent document mismatch" },
+      meta: {},
+    }, 422));
+    await expect(putLineageDeclaration(["giyur"], {
+      document_id: "55555555-5555-4555-8555-555555555555",
+      content_hash: "stale-hash",
+    })).rejects.toMatchObject({ code: "validation_error" });
+  });
+
+  it("withdraws the declaration on a 204 response with cookie credentials", async () => {
+    vi.mocked(fetch).mockImplementationOnce(() => Promise.resolve({
+      ok: true, status: 204, headers: new Headers(),
+    } as unknown as Response));
+    await deleteLineageDeclaration();
+    expect(fetch).toHaveBeenCalledWith("/api/web/participant-profile/lineage", expect.objectContaining({
+      method: "DELETE",
+      credentials: "include",
+    }));
+  });
+
+  it("rejects withdrawal when the endpoint does not confirm with 204", async () => {
+    vi.mocked(fetch).mockImplementationOnce(() => Promise.resolve({
+      ok: false, status: 401, headers: new Headers(),
+    } as unknown as Response));
+    await expect(deleteLineageDeclaration()).rejects.toMatchObject({
+      code: "lineage_declaration_delete_failed",
     });
   });
 });

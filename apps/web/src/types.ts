@@ -98,7 +98,10 @@ export type WebRegistrationParticipationOption = {
 
 export type WebRegistrationLegalDocument = {
   id: string;
-  document_type: "event_registration_consent" | "privacy_policy";
+  document_type:
+    | "event_registration_consent"
+    | "privacy_policy"
+    | "special_category_consent";
   version: string;
   title: string;
   content_hash: string;
@@ -172,6 +175,28 @@ export type RememberedParticipantIdentity = {
 export type WebParticipantSession =
   | { state: "anonymous"; participant: null }
   | { state: "remembered"; participant: RememberedParticipantIdentity };
+
+export type LineageValue =
+  | "maternal_grandmother"
+  | "maternal_grandfather"
+  | "paternal_grandmother"
+  | "paternal_grandfather"
+  | "father"
+  | "mother"
+  | "giyur"
+  | "unknown";
+
+export type LineageDeclaration = {
+  state: "none" | "declared";
+  values: LineageValue[];
+  declared_at: string | null;
+  updated_at: string | null;
+};
+
+export type LineageLegalAcceptance = {
+  document_id: string;
+  content_hash: string;
+};
 
 export type PrivacyAccessAccepted = {
   accepted: true;

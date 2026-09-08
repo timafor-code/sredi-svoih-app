@@ -12,6 +12,7 @@ import {
   QUESTION_IDS,
   eventResponse,
   myRegistration,
+  responseWithLineageConsent,
   responseWithOccurrences,
   responseWithPaidOptions,
   responseWithQuestionnaire,
@@ -3117,5 +3118,180 @@ describe("registration intent and account claim flow", () => {
     expect(window.location.href).toBe(originalUrl);
     expect(window.location.href).not.toContain(FLOW_ID);
     expect(window.location.href).not.toContain("123456");
+  });
+});
+
+describe("participant lineage declaration", () => {
+  const REMEMBERED_PARTICIPANT = {
+    first_name: "Иван", last_name: "Иванов", phone: "+79000000001", email: "ivan@example.ru",
+  };
+
+  function lineageDeclaration(overrides: {
+    state?: "none" | "declared";
+    values?: string[];
+    declared_at?: string | null;
+    updated_at?: string | null;
+  } = {}) {
+    return envelope({
+      state: "none",
+      values: [],
+      declared_at: null,
+      updated_at: null,
+      ...overrides,
+    });
+  }
+
+  function mockLineageFetch(data: ReturnType<typeof eventResponse>, options: {
+    participantSession?: unknown;
+    lineageGet?: unknown;
+    onLineagePut?: (values: string[]) => Promise<Response>;
+    onLineageDelete?: () => Promise<Response>;
+  } = {}) {
+    const participantSession = options.participantSession
+      ?? envelope({ state: "anonymous", participant: null });
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/web/participant-session")) return response(participantSession);
+      if (url.endsWith("/web/participant-profile/lineage")) {
+        if (init?.method === "DELETE") {
+          return options.onLineageDelete
+            ? options.onLineageDelete()
+            : Promise.resolve({ ok: true, status: 204, headers: new Headers() } as unknown as Response);
+        }
+        if (init?.method === "PUT") {
+          const body = JSON.parse(String(init.body)) as { values: string[] };
+          return options.onLineagePut
+            ? options.onLineagePut(body.values)
+            : response(lineageDeclaration({ state: "declared", values: body.values }));
+        }
+        return response(options.lineageGet ?? lineageDeclaration());
+      }
+      return response(envelope(data));
+    }));
+  }
+
+  async function renderWithLineage(
+    data: ReturnType<typeof eventResponse> = responseWithLineageConsent(),
+    options: Parameters<typeof mockLineageFetch>[1] = {},
+  ) {
+    mockLineageFetch(data, options);
+    window.history.replaceState(null, "", `/events/${EVENT_ID}`);
+    render(<App />);
+    await screen.findByRole("heading", { level: 1, name: data.event.title });
+    await waitFor(() => expect(
+      screen.queryByText("Проверяем данные для регистрации…"),
+    ).not.toBeInTheDocument());
+  }
+
+  it("hides the lineage question and reveals no declaration state for an unidentified browser", async () => {
+    await renderWithLineage();
+    await screen.findByText("Уже есть аккаунт?");
+    expect(screen.queryByText(/Есть ли у кого-то из ваших близких родственников/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Вы уже указывали/)).not.toBeInTheDocument();
+    expect(vi.mocked(fetch).mock.calls.some(
+      ([input]) => String(input).endsWith("/web/participant-profile/lineage"),
+    )).toBe(false);
+  });
+
+  it("shows the lineage question to a remembered participant with no declaration", async () => {
+    await renderWithLineage(responseWithLineageConsent(), {
+      participantSession: envelope({ state: "remembered", participant: REMEMBERED_PARTICIPANT }),
+      lineageGet: lineageDeclaration({ state: "none" }),
+    });
+    expect(await screen.findByRole("heading", { name: "Еврейское происхождение" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Гиюр" })).toBeInTheDocument();
+    expect(screen.getByText("возможно несколько вариантов ответа")).toBeInTheDocument();
+  });
+
+  it("shows the collapsed summary instead of the question when a declaration exists", async () => {
+    await renderWithLineage(responseWithLineageConsent(), {
+      participantSession: envelope({ state: "remembered", participant: REMEMBERED_PARTICIPANT }),
+      lineageGet: lineageDeclaration({ state: "declared", values: ["giyur", "mother"] }),
+    });
+    expect(await screen.findByText("Вы уже указывали: Гиюр, Мать")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: /Есть ли у кого-то из ваших близких родственников/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Изменить" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Отменить ответ" })).toBeInTheDocument();
+  });
+
+  it("clears other selections when unknown is chosen and clears unknown when another option is chosen", async () => {
+    const user = userEvent.setup();
+    await renderWithLineage(responseWithLineageConsent(), {
+      participantSession: envelope({ state: "remembered", participant: REMEMBERED_PARTICIPANT }),
+      lineageGet: lineageDeclaration({ state: "none" }),
+    });
+    await screen.findByRole("heading", { name: "Еврейское происхождение" });
+    const giyur = screen.getByRole("checkbox", { name: "Гиюр" });
+    const unknown = screen.getByRole("checkbox", { name: "Я не знаю" });
+    await user.click(giyur);
+    await user.click(unknown);
+    expect(giyur).not.toBeChecked();
+    expect(unknown).toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: "Мать" }));
+    expect(unknown).not.toBeChecked();
+  });
+
+  it("supports editing and withdrawing an existing declaration", async () => {
+    const user = userEvent.setup();
+    let putCalled = false;
+    let deleteCalled = false;
+    await renderWithLineage(responseWithLineageConsent(), {
+      participantSession: envelope({ state: "remembered", participant: REMEMBERED_PARTICIPANT }),
+      lineageGet: lineageDeclaration({ state: "declared", values: ["giyur"] }),
+      onLineagePut: (values) => {
+        putCalled = true;
+        return response(lineageDeclaration({ state: "declared", values }));
+      },
+      onLineageDelete: () => {
+        deleteCalled = true;
+        return Promise.resolve({ ok: true, status: 204, headers: new Headers() } as unknown as Response);
+      },
+    });
+    await screen.findByText("Вы уже указывали: Гиюр");
+    await user.click(screen.getByRole("button", { name: "Изменить" }));
+    expect(await screen.findByRole("heading", { name: "Еврейское происхождение" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Гиюр" })).toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: "Мать" }));
+    await user.click(screen.getByLabelText(/Я даю отдельное согласие/));
+    await user.click(screen.getByRole("button", { name: "Сохранить ответ" }));
+    expect(await screen.findByText("Вы уже указывали: Гиюр, Мать")).toBeInTheDocument();
+    expect(putCalled).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: "Отменить ответ" }));
+    await waitFor(() => expect(deleteCalled).toBe(true));
+    expect(await screen.findByRole("heading", { name: "Еврейское происхождение" })).toBeInTheDocument();
+  });
+
+  it("completes registration normally when the lineage declaration is skipped", async () => {
+    const user = userEvent.setup();
+    const data = responseWithLineageConsent();
+    await renderWithLineage(data, { lineageGet: lineageDeclaration({ state: "none" }) });
+    await fillValidForm(user);
+    await createIntent(user);
+    await confirmIntent(user);
+    expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
+    await user.click(within(screen.getByRole("dialog", { name: "Оформление регистрации" })).getByRole("button", { name: "Продолжить без пароля" }));
+    expect(screen.getByRole("button", { name: "Готово" })).toBeInTheDocument();
+  });
+
+  it("keeps the completed registration intact when saving the lineage declaration fails", async () => {
+    const user = userEvent.setup();
+    const data = responseWithLineageConsent();
+    await renderWithLineage(data, {
+      lineageGet: lineageDeclaration({ state: "none" }),
+      onLineagePut: () => response(apiError("validation_error"), 422),
+    });
+    await fillValidForm(user);
+    await createIntent(user);
+    await confirmIntent(user);
+    const dialog = await screen.findByRole("dialog", { name: "Оформление регистрации" });
+    expect(await screen.findByRole("heading", { name: "Еврейское происхождение" })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("checkbox", { name: "Гиюр" }));
+    await user.click(within(dialog).getByLabelText(/Я даю отдельное согласие/));
+    await user.click(within(dialog).getByRole("button", { name: "Сохранить ответ" }));
+    expect(await within(dialog).findByText("Не удалось сохранить ответ. Попробуйте ещё раз позже.")).toBeInTheDocument();
+    expect(within(dialog).getByText("Регистрация подтверждена.")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Продолжить без пароля" }));
+    expect(within(dialog).getByRole("button", { name: "Готово" })).toBeInTheDocument();
   });
 });

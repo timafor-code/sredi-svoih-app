@@ -54,6 +54,12 @@ The event fixture must have all of these values and related data:
 - `web_visibility = unlisted` or `listed`;
 - one active `event_registration_consent` legal document.
 
+An active `special_category_consent` legal document is optional. When present,
+the registration-form response includes it and the browser offers the
+participant-lineage question (see "Participant lineage declaration" below).
+Its absence never blocks the registration form; only `event_registration_consent`
+is mandatory.
+
 Both registration modes are available simultaneously after this ordinary API
 start. `internal_free` accepts only free non-donation options. `internal_paid`
 supports the existing free, paid, and donation option contract; confirmation
@@ -104,6 +110,36 @@ cookie. The API derives the `Secure` attribute from the configured trusted
 registration identity for this browser. `DELETE /web/participant-session`
 forgets only this browser by revoking its one server session and clearing the
 matching cookie. Neither endpoint is an account-login API.
+
+## Participant lineage declaration
+
+`GET/PUT/DELETE /web/participant-profile/lineage` are cookie-authenticated
+(`credentials: "include"`) and let a browser with a resolved identity —
+a remembered-participant session or a signed-in account — see, change, or
+withdraw its Jewish-lineage/giyur declaration once, independent of any single
+event registration. The browser never shows this question to an unidentified
+browser and never learns whether a declaration exists until identity is
+resolved.
+
+The public web renders one shared component (`LineageDeclarationPanel`) in two
+places:
+
+- on the registration page, next to the remembered-participant block, once
+  identity is already resolved and no declaration exists yet;
+- in the post-registration flow dialog's success step, alongside the optional
+  password creation, because the remembered-participant cookie is only issued
+  after email confirmation — this is the first point a first-time participant
+  is identified.
+
+When a declaration already exists, both placements render the same compact
+`Вы уже указывали: …` summary with `Изменить` and withdrawal actions instead of
+the question. The declaration's own consent checkbox is entirely separate from
+the `event_registration_consent` checkbox: it links the current
+`special_category_consent` document and is submitted only through
+`PUT .../lineage`, never inside `POST /web/registration-intents`. Saving or
+withdrawing the declaration is unrelated to registration submission — a
+missing consent document, a skipped question, or a failed save never blocks or
+rolls back the registration.
 
 ## Public registration flow
 
@@ -180,7 +216,14 @@ owner should manually verify:
 - absence of participant data and all flow/password credentials from URLs,
   browser storage, and console output;
 - mobile and desktop layouts, visible loading states, keyboard order, and focus
-  movement to the first invalid field and email-code field.
+  movement to the first invalid field and email-code field;
+- the lineage question is absent for a fresh/unidentified browser, appears for
+  a remembered participant with no declaration, and is replaced by the
+  collapsed summary once a declaration exists;
+- `Я не знаю` clears other lineage selections and vice versa;
+- `Изменить` and withdrawal on an existing lineage declaration;
+- a skipped or failed lineage save never blocks or rolls back the completed
+  registration.
 
 Browser smoke is performed manually by the project owner on the pushed PR
 branch before merge.

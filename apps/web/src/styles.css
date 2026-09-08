@@ -1356,6 +1356,13 @@ select {
 .consent-meta { margin: 6px 0 0; color: var(--text-muted); font-size: 0.78rem; }
 .consent-card > .field-error { margin: 0 16px 14px; }
 
+.lineage-card { display: grid; gap: 16px; }
+.lineage-card .consent-card { margin: 0; }
+.lineage-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.lineage-summary p { margin: 0; color: var(--text-secondary); }
+.lineage-summary-actions,
+.lineage-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+
 .continue-card { display: grid; gap: 16px; padding: 22px 24px; }
 .registration-confirm {
   width: 100%;
