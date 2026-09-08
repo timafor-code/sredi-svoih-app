@@ -406,7 +406,12 @@ describe("public event page", () => {
     window.history.replaceState(null, "", `/events/${EVENT_ID}`);
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Ваши сохранённые данные" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Записываем вас как Иван Иванов" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Проверить данные" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByLabelText("Сохранённые данные в карточке")).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Проверить данные" }));
+    expect(screen.getByRole("button", { name: "Скрыть данные" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText("Сохранённые данные в карточке")).toHaveTextContent("+79000000001");
     expect(screen.getAllByText("Иван").length).toBeGreaterThan(0);
     expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Аккаунт" })).not.toBeInTheDocument();
@@ -452,7 +457,7 @@ describe("public event page", () => {
       expect(await screen.findByLabelText("Имя")).toBeInTheDocument();
       expect(screen.getByText("Уже есть аккаунт?")).toBeInTheDocument();
     } else {
-      expect(await screen.findByText("Ваши сохранённые данные")).toBeInTheDocument();
+      expect(await screen.findByText("Записываем вас как Иван Иванов")).toBeInTheDocument();
       expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
     }
   });
@@ -471,8 +476,8 @@ describe("public event page", () => {
     });
     window.history.replaceState(null, "", `/events/${EVENT_ID}`);
     render(<App />);
-    await screen.findByRole("button", { name: "Не я / Сменить данные" });
-    await userEvent.setup().click(screen.getByRole("button", { name: "Не я / Сменить данные" }));
+    await screen.findByRole("button", { name: "Не я" });
+    await userEvent.setup().click(screen.getByRole("button", { name: "Не я" }));
 
     expect(await screen.findByLabelText("Имя")).not.toHaveAttribute("readonly");
     expect(fetch).toHaveBeenCalledWith("/api/web/participant-session", expect.objectContaining({ method: "DELETE", credentials: "include" }));
@@ -516,7 +521,7 @@ describe("public event page", () => {
     expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
     resolveSignOutSession(await response(envelope({ state: "remembered", participant: remembered })));
 
-    expect(await screen.findByRole("heading", { name: "Ваши сохранённые данные" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Записываем вас как Пётр Петров" })).toBeInTheDocument();
     expect(screen.getByLabelText("Сохранённые данные для регистрации, только для чтения")).toHaveTextContent("Пётр");
     expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
   });
@@ -2851,7 +2856,7 @@ describe("registration intent and account claim flow", () => {
     const user = userEvent.setup();
     window.history.replaceState(null, "", `/events/${EVENT_ID}`);
     render(<App />);
-    await screen.findByRole("heading", { name: "Ваши сохранённые данные" });
+    await screen.findByRole("heading", { name: "Записываем вас как Пётр Петров" });
     await user.click(screen.getByRole("checkbox", { name: /Основное участие/ }));
     await user.click(screen.getByLabelText(/Я ознакомился/));
     await createIntent(user);
@@ -2859,10 +2864,10 @@ describe("registration intent and account claim flow", () => {
     await user.click(within(flowDialog()).getByRole("button", { name: "Продолжить без пароля" }));
     await user.click(within(flowDialog()).getByRole("button", { name: "Записаться ещё раз" }));
 
-    expect(await screen.findByRole("heading", { name: "Ваши сохранённые данные" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Записываем вас как Пётр Петров" })).toBeInTheDocument();
     expect(screen.getByLabelText("Сохранённые данные для регистрации, только для чтения")).toHaveTextContent("Пётр");
     expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Не я / Сменить данные" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Не я" })).toBeInTheDocument();
   });
 
   it("keeps authenticated account identity after a repeat reset", async () => {
