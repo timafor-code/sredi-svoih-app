@@ -35,6 +35,7 @@ from app.schemas.admin_import import (
     AdminImportRunResponse,
 )
 from app.services.admin_events import resolve_manageable_community_ids
+from app.services.event_kind_consistency import get_consistent_event_kind
 from app.services.event_public_slugs import assign_automatic_public_slug
 
 DEFAULT_PAGE_LIMIT = 50
@@ -811,11 +812,14 @@ async def _build_event_values(
     )
     return {
         "community_id": source.community_id,
-        "event_kind": _payload_value(
-            payload,
-            "event_kind",
-            existing_event.event_kind if existing_event is not None else "single",
-            allow_none=False,
+        "event_kind": get_consistent_event_kind(
+            category,
+            _payload_value(
+                payload,
+                "event_kind",
+                existing_event.event_kind if existing_event is not None else "single",
+                allow_none=False,
+            ),
         ),
         "title": title,
         "subtitle": _payload_value(

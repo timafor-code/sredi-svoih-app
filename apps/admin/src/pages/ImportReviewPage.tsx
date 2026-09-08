@@ -20,6 +20,7 @@ import {
 import { listAdminImportRuns } from "../services/adminWebsiteImportService";
 import type { AdminBadgeTone } from "../types/admin";
 import { getEventStatusLabel, getEventVisibilityLabel } from "../types/events";
+import { getConsistentEventKind } from "../lib/eventKindConsistency";
 import type { AdminEvent, AdminEventMutationInput } from "../types/events";
 import type { AdminEventCategory } from "../types/eventCategories";
 import {
@@ -2057,7 +2058,7 @@ function getImportItemSourceDomain(item: AdminImportReviewItem): string | null {
   }
 }
 
-function buildImportDraftPrefill(item: AdminImportReviewItem): ImportDraftPrefill {
+export function buildImportDraftPrefill(item: AdminImportReviewItem): ImportDraftPrefill {
   const rawDetails = getRawPayloadDetails(item.rawPayload);
   const title = cleanString(item.parsedTitle) ?? rawDetails.title ?? "Без названия";
   const startsAt =
@@ -2069,10 +2070,11 @@ function buildImportDraftPrefill(item: AdminImportReviewItem): ImportDraftPrefil
     : item.sourceUrl
       ? "sourceUrl"
       : null;
+  const category = inferImportCategory(title);
   const event: AdminEvent = {
     id: `import-draft-${item.id}`,
     communityId: item.communityId ?? "",
-    eventKind: "single",
+    eventKind: getConsistentEventKind(category, "single"),
     title,
     subtitle: rawDetails.subtitle,
     description: rawDetails.description,
@@ -2084,7 +2086,7 @@ function buildImportDraftPrefill(item: AdminImportReviewItem): ImportDraftPrefil
     locationName: cleanString(item.parsedLocation) ?? rawDetails.location,
     address: rawDetails.address,
     imageUrl: rawDetails.imageUrl,
-    category: inferImportCategory(title),
+    category,
     audience: null,
     visibility: "hidden",
     status: "draft",
@@ -2112,11 +2114,15 @@ function buildImportDraftPrefill(item: AdminImportReviewItem): ImportDraftPrefil
   };
 }
 
-function inferImportCategory(title: string): string {
+export function inferImportCategory(title: string): string {
   const normalizedTitle = title.toLocaleLowerCase("ru");
 
   if (/шаб+ат/.test(normalizedTitle)) {
     return "shabbat";
+  }
+
+  if (/праздник|суккот|песах|рош[\s-]?ха?шана|йом[\s-]?кипур|швуот|пурим|ханук/.test(normalizedTitle)) {
+    return "holiday";
   }
 
   if (/лекци|урок|курс/.test(normalizedTitle)) {
