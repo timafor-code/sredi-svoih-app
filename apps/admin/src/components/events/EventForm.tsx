@@ -25,6 +25,7 @@ import {
 } from "../../lib/eventUpdatePatch";
 import { parseEventScheduleDescription } from "../../lib/eventScheduleParser";
 import { applyJewishProgrammeAutomation } from "../../lib/jewishProgrammeAutomation";
+import { getConsistentEventKind } from "../../lib/eventKindConsistency";
 import {
   clearFormErrors,
   firstActiveFormErrorKey,
@@ -130,7 +131,7 @@ const defaultForm: EventFormState = {
   eventKind: "single",
   shortDescription: "",
   description: "",
-  category: "",
+  category: "community",
   startDate: "",
   startTime: "",
   isPermanent: false,
@@ -503,7 +504,13 @@ export function EventForm(props: EventFormProps) {
     }
 
     setForm((current) => {
-      const next = { ...current, [field]: value };
+      const next = field === "category"
+        ? {
+            ...current,
+            category: value as string,
+            eventKind: getConsistentEventKind(value as string, current.eventKind),
+          }
+        : { ...current, [field]: value };
 
       if (
         field === "registrationMode" &&
@@ -526,8 +533,10 @@ export function EventForm(props: EventFormProps) {
       return clearFormErrors(current, keysToClear);
     });
 
-    if (mode === "create" && (field === "eventKind" || field === "startDate")) {
-      const nextEventKind = field === "eventKind" ? value as string : form.eventKind;
+    if (mode === "create" && (field === "eventKind" || field === "category" || field === "startDate")) {
+      const nextEventKind = field === "category"
+        ? getConsistentEventKind(value as string, form.eventKind)
+        : field === "eventKind" ? value as string : form.eventKind;
       const nextStartDate = field === "startDate" ? value as string : form.startDate;
       setSchedule((current) => automateCreateProgramme(nextEventKind, nextStartDate, current));
     }

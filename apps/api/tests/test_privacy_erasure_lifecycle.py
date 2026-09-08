@@ -391,7 +391,7 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_migration_metadata_constraints_queue_index_and_defaults(self) -> None:
         script = ScriptDirectory.from_config(Config("alembic.ini"))
         expected_head = script.get_current_head()
-        self.assertEqual(expected_head, "20260907210000")
+        self.assertEqual(expected_head, "20260908120000")
         self.assertEqual(
             script.get_revision("20260907210000").down_revision,
             "20260907200000",

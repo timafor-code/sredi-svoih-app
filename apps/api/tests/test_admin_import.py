@@ -52,15 +52,18 @@ class AdminImportTests(unittest.IsolatedAsyncioTestCase):
                             role="admin",
                             status="active",
                         ),
-                        EventCategory(
-                            community_id=self.community_id,
-                            slug="community",
-                            title="Community",
-                            color="#123456",
-                            icon="*",
-                            created_by=self.actor_id,
-                            updated_by=self.actor_id,
-                        ),
+                        *[
+                            EventCategory(
+                                community_id=self.community_id,
+                                slug=slug,
+                                title=slug.title(),
+                                color="#123456",
+                                icon="*",
+                                created_by=self.actor_id,
+                                updated_by=self.actor_id,
+                            )
+                            for slug in ("community", "holiday", "shabbat")
+                        ],
                         EventImportSource(
                             id=self.source_id,
                             community_id=self.community_id,
@@ -458,6 +461,41 @@ class AdminImportTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(updated.title, "Renamed legacy event")
         self.assertEqual(updated.category, "legacy_category")
+
+    async def test_import_publish_canonicalizes_jewish_category_event_kinds(self) -> None:
+        expectations = {
+            "holiday": "holiday",
+            "shabbat": "shabbat",
+            "community": "course",
+        }
+
+        for category, expected_event_kind in expectations.items():
+            run = await self._run_import([
+                self._parsed_item(
+                    external_id=f"event-kind-{category}",
+                    source_url=f"https://sredisvoih.com/events/event-kind-{category}",
+                    title=f"Imported {category}",
+                ),
+            ])
+            async with AsyncSessionLocal() as session:
+                item = await session.scalar(
+                    select(EventImportItem).where(EventImportItem.run_id == run.id),
+                )
+                actor = await self._actor(session)
+                assert item is not None
+                result = await admin_import_service.publish_admin_import_item(
+                    session,
+                    actor,
+                    item.id,
+                    AdminImportItemPublishRequest(
+                        category=category,
+                        event_kind="single" if category != "community" else "course",
+                    ),
+                )
+
+            assert result.event is not None
+            self.assertEqual(result.event.category, category)
+            self.assertEqual(result.event.event_kind, expected_event_kind)
 
 
 if __name__ == "__main__":

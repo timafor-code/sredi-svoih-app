@@ -54,6 +54,7 @@ from app.services.event_public_slugs import (
     check_public_slug_availability,
     get_canonical_public_slug,
 )
+from app.services.event_kind_consistency import get_consistent_event_kind
 from app.services.events import (
     WEB_REGISTRATION_MODES,
     build_public_event_url,
@@ -423,7 +424,7 @@ async def create_admin_event(
         now = _now()
         event = Event(
             community_id=community_id,
-            event_kind=payload.event_kind,
+            event_kind=get_consistent_event_kind(payload.category, payload.event_kind),
             title=payload.title,
             subtitle=payload.subtitle,
             description=payload.description,
@@ -487,6 +488,8 @@ def _combined_event_values(
     updates: dict[str, object],
 ) -> dict[str, object]:
     return {
+        "category": updates.get("category", event.category),
+        "event_kind": updates.get("event_kind", event.event_kind),
         "starts_at": updates.get("starts_at", event.starts_at),
         "ends_at": updates.get("ends_at", event.ends_at),
         "registration_mode": updates.get("registration_mode", event.registration_mode),
@@ -526,6 +529,12 @@ async def update_admin_event(
             )
 
         combined = _combined_event_values(event, updates)
+        consistent_event_kind = get_consistent_event_kind(
+            combined["category"],
+            combined["event_kind"],
+        )
+        if consistent_event_kind != combined["event_kind"]:
+            updates["event_kind"] = consistent_event_kind
         price_currency = _validate_event_state(
             starts_at=combined["starts_at"],
             ends_at=combined["ends_at"],
