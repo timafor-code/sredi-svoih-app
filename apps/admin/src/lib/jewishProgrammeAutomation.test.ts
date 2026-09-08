@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  getDelayedYomTovCandleLightingTime,
   getMoscowJewishProgrammeCalendar,
   parseProgrammeGregorianDate,
 } from "../../../../src/lib/jewishProgrammeCalendar";
@@ -237,20 +238,20 @@ describe("applyJewishProgrammeAutomation", () => {
       .map(({ date, systemKey, time }) => ({ date, systemKey, time }))).toEqual(saturday);
   });
 
-  it("retains the Saturday Yom Tov candle boundary while generating the canonical Shabbat end", () => {
+  it("aligns the delayed Saturday Yom Tov candle boundary with canonical tzeit", () => {
     const calendar = getMoscowJewishProgrammeCalendar({ eventKind: "shabbat", referenceDate: "2026-09-12" });
     const saturday = calendar.markers.filter((marker) => marker.date === "2026-09-12");
 
     expect(saturday).toEqual([
       { date: "2026-09-12", systemKey: "sunset_moscow", time: "18:55" },
+      { date: "2026-09-12", systemKey: "tzeit_moscow", time: "19:52" },
+      { date: "2026-09-12", systemKey: "havdalah_moscow", time: "19:52" },
       {
         date: "2026-09-12",
         systemKey: "candle_lighting_moscow",
-        time: "19:37",
+        time: "19:52",
         title: "Зажигание свечей на праздник · Москва",
       },
-      { date: "2026-09-12", systemKey: "tzeit_moscow", time: "19:52" },
-      { date: "2026-09-12", systemKey: "havdalah_moscow", time: "19:52" },
     ]);
 
     const first = applyJewishProgrammeAutomation({
@@ -266,18 +267,29 @@ describe("applyJewishProgrammeAutomation", () => {
     expect(generatedItems(first).filter((item) => item.date === "2026-09-12")
       .map(({ date, systemKey, time, title }) => ({ date, systemKey, time, title }))).toEqual([
         { date: "2026-09-12", systemKey: "sunset_moscow", time: "18:55", title: "Закат" },
+        { date: "2026-09-12", systemKey: "tzeit_moscow", time: "19:52", title: "Выход звезд" },
+        { date: "2026-09-12", systemKey: "havdalah_moscow", time: "19:52", title: "Исход Шабата" },
         {
           date: "2026-09-12",
           systemKey: "candle_lighting_moscow",
-          time: "19:37",
+          time: "19:52",
           title: "Зажигание свечей на праздник · Москва",
         },
-        { date: "2026-09-12", systemKey: "tzeit_moscow", time: "19:52", title: "Выход звезд" },
-        { date: "2026-09-12", systemKey: "havdalah_moscow", time: "19:52", title: "Исход Шабата" },
       ]);
     expect(generatedItems(first).filter((item) => item.date === "2026-09-12" && item.systemKey === "havdalah_moscow"))
       .toHaveLength(1);
     expect(second).toEqual(first);
+  });
+
+  it("keeps a delayed candle candidate that is later than canonical tzeit", () => {
+    const hdate = parseProgrammeGregorianDate("2026-09-12");
+    const tzeit = getDailyZmanim({ city: "Москва", date: hdate! }).times.tzeitHakochavimAngle;
+    const candidateAt = new Date(tzeit.at.getTime() + 60_000);
+
+    expect(getDelayedYomTovCandleLightingTime("2026-09-12", {
+      eventTime: candidateAt,
+      eventTimeStr: "19:53",
+    })).toBe("19:53");
   });
 
   it("removes generated rows and restores Torah reading to a manual base item when leaving Shabbat", () => {

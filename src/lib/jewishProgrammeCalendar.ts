@@ -144,12 +144,13 @@ function addBoundaryMarkers(
     if (event instanceof CandleLightingEvent) {
       const date = dateKeyInMoscow(event.eventTime);
       addDailyMarker(markers, date, 'sunset_moscow');
+      const isDelayedYomTovCandleLighting = isYomTovCandleLighting(event);
       addMarker(
         markers,
         date,
         'candle_lighting_moscow',
-        event.eventTimeStr,
-        isYomTovCandleLighting(event) ? 'Зажигание свечей на праздник · Москва' : undefined,
+        isDelayedYomTovCandleLighting ? getDelayedYomTovCandleLightingTime(date, event) : event.eventTimeStr,
+        isDelayedYomTovCandleLighting ? 'Зажигание свечей на праздник · Москва' : undefined,
       );
     }
     if (event instanceof HavdalahEvent) {
@@ -163,6 +164,23 @@ function addBoundaryMarkers(
 
 function isYomTovCandleLighting(event: CandleLightingEvent): boolean {
   return ((event.linkedEvent?.getFlags() ?? 0) & flags.LIGHT_CANDLES_TZEIS) !== 0;
+}
+
+/**
+ * A delayed Yom-Tov candle boundary cannot precede the community's canonical
+ * 8.5-degree tzeit. Compare instants, then return the matching display value.
+ */
+export function getDelayedYomTovCandleLightingTime(
+  date: string,
+  candidate: Readonly<{ eventTime: Date; eventTimeStr: string }>,
+): string {
+  const hdate = parseProgrammeGregorianDate(date);
+  if (!hdate) return candidate.eventTimeStr;
+  const tzeit = getDailyZmanim({ city: 'Москва', date: hdate }).times.tzeitHakochavimAngle;
+  if (!Number.isFinite(tzeit.at.getTime()) || candidate.eventTime.getTime() >= tzeit.at.getTime()) {
+    return candidate.eventTimeStr;
+  }
+  return tzeit.time;
 }
 
 function addDailyMarker(
@@ -257,10 +275,10 @@ export function getJewishProgrammeMarkerTitle(marker: Pick<JewishProgrammeCalend
 
 function sortMarkers(markers: Iterable<JewishProgrammeCalendarMarker>): JewishProgrammeCalendarMarker[] {
   const keyOrder: Record<JewishProgrammeMarkerKey, number> = {
-    candle_lighting_moscow: 0,
-    sunset_moscow: 1,
-    tzeit_moscow: 2,
-    havdalah_moscow: 3,
+    sunset_moscow: 0,
+    tzeit_moscow: 1,
+    havdalah_moscow: 2,
+    candle_lighting_moscow: 3,
   };
   return [...markers].sort((left, right) => (
     left.date.localeCompare(right.date)

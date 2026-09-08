@@ -161,14 +161,14 @@ describe("projectJewishProgrammeForOccurrence", () => {
 
     expect(saturdayCalendarRows).toEqual([
       { date: "2026-09-12", time: "18:55", title: "Закат", system_key: "sunset_moscow" },
+      { date: "2026-09-12", time: "19:52", title: "Выход звезд", system_key: "tzeit_moscow" },
+      { date: "2026-09-12", time: "19:52", title: "Исход Шабата", system_key: "havdalah_moscow" },
       {
         date: "2026-09-12",
-        time: "19:37",
+        time: "19:52",
         title: "Зажигание свечей на праздник · Москва",
         system_key: "candle_lighting_moscow",
       },
-      { date: "2026-09-12", time: "19:52", title: "Выход звезд", system_key: "tzeit_moscow" },
-      { date: "2026-09-12", time: "19:52", title: "Исход Шабата", system_key: "havdalah_moscow" },
     ]);
     expect(result?.days.find((day) => day.date === "2026-09-12")?.items)
       .toContainEqual({ time: "20:15", title: "Авдала", option_id: null });
@@ -193,7 +193,7 @@ describe("projectJewishProgrammeForOccurrence", () => {
       { date: "2026-09-11", time: "18:39", title: "Зажигание свечей · Москва", system_key: "candle_lighting_moscow" },
       { date: "2026-09-11", time: "18:58", title: "Закат", system_key: "sunset_moscow" },
       { date: "2026-09-12", time: "18:55", title: "Закат", system_key: "sunset_moscow" },
-      { date: "2026-09-12", time: "19:37", title: "Зажигание свечей на праздник · Москва", system_key: "candle_lighting_moscow" },
+      { date: "2026-09-12", time: "19:52", title: "Зажигание свечей на праздник · Москва", system_key: "candle_lighting_moscow" },
       { date: "2026-09-13", time: "18:53", title: "Закат", system_key: "sunset_moscow" },
       { date: "2026-09-13", time: "19:49", title: "Выход звезд", system_key: "tzeit_moscow" },
       { date: "2026-09-13", time: "19:49", title: "Исход праздника", system_key: "havdalah_moscow" },
