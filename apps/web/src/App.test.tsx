@@ -169,6 +169,52 @@ function programmeEventResponse() {
   return data;
 }
 
+function shabbatProgrammeEventResponse() {
+  const data = programmeEventResponse();
+  data.event.event_kind = "shabbat";
+  data.occurrence_selection_mode = "nearest";
+  data.default_occurrence_id = OCCURRENCE_ONE_ID;
+  data.registration_state = "open";
+  data.occurrences = [{
+    id: OCCURRENCE_ONE_ID,
+    event_id: EVENT_ID,
+    title: "Ближайший Шабат",
+    starts_at: "2026-07-17T18:00:00+03:00",
+    ends_at: "2026-07-18T22:00:00+03:00",
+    timezone: "Europe/Moscow",
+    registration_opens_at: null,
+    registration_closes_at: null,
+    capacity: 20,
+    waitlist_enabled: false,
+    requires_approval: false,
+    registration_state: "open",
+  }];
+  data.event.schedule = {
+    version: 1,
+    days: [
+      {
+        date: "2026-07-10", label: "Пятница", note: "Ручная заметка",
+        items: [
+          { time: "18:30", title: "Закат", option_id: null },
+          { time: "19:00", title: "Общая трапеза", option_id: data.participation_options[2].id },
+          { time: "00:01", title: "Старое зажигание", option_id: null, system_key: "candle_lighting_moscow" },
+          { time: "00:02", title: "Старый закат", option_id: null, system_key: "sunset_moscow" },
+        ],
+      },
+      {
+        date: "2026-07-11", label: "Шабат", note: null,
+        items: [
+          { time: "11:30", title: "Старое чтение", option_id: null, system_key: "torah_reading_parsha" },
+          { time: "00:03", title: "Старый закат", option_id: null, system_key: "sunset_moscow" },
+          { time: "00:04", title: "Старый исход", option_id: null, system_key: "havdalah_moscow" },
+          { time: "00:05", title: "Старые звезды", option_id: null, system_key: "tzeit_moscow" },
+        ],
+      },
+    ],
+  };
+  return data;
+}
+
 function recurringOpenEvent() {
   const data = responseWithOccurrences();
   data.registration_state = "open";
@@ -667,6 +713,19 @@ describe("public event page", () => {
     expect(document.querySelector(".form-column")).toHaveFocus();
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog", { name: "Оформление регистрации" })).not.toBeInTheDocument();
+  });
+
+  it("renders public-only system icons for an occurrence-projected Shabbat while preserving manual linked items", async () => {
+    const user = userEvent.setup();
+    await renderEvent(shabbatProgrammeEventResponse());
+
+    expect(document.querySelector('[data-system-icon="candle_lighting_moscow"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-system-icon="sunset_moscow"]')).toBeInTheDocument();
+    expect(screen.getAllByText("Закат", { exact: true })[0].parentElement)
+      .not.toContainElement(document.querySelector('[data-system-icon="sunset_moscow"]'));
+    const linkedItem = screen.getByRole("button", { name: /Общая трапеза.*записаться/i });
+    await user.click(linkedItem);
+    expect(screen.getByRole("checkbox", { name: /Общая трапеза/ })).toBeChecked();
   });
 
   it("renders a dangling programme option as a plain line", async () => {

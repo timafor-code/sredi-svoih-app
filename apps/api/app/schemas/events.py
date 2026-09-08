@@ -210,6 +210,7 @@ class EventCapacityUnitResponse(BaseModel):
 class WebRegistrationEventResponse(BaseModel):
     schedule: EventSchedule | None = None
     id: UUID
+    event_kind: str
     title: str
     subtitle: str | None
     description: str | None

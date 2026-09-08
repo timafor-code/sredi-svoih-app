@@ -443,6 +443,8 @@ legend,
   font-weight: 700;
 }
 .programme-timeline-item > span { line-height: 1.45; }
+.programme-item-title { display: inline-flex; align-items: baseline; gap: 7px; min-width: 0; }
+.programme-system-icon { color: var(--gold); font-size: 1.05em; line-height: 1; }
 .programme-timeline-item--linked {
   grid-template-columns: 58px minmax(0, 1fr) auto;
   margin: 3px 0;

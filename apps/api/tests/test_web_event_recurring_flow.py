@@ -253,6 +253,7 @@ class WebEventRecurringFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_none_without_occurrences_and_never_exposes_foreign_event(self) -> None:
         data = await self._form()
+        self.assertEqual(data["event"]["event_kind"], "course")
         self.assertEqual(data["occurrence_selection_mode"], "none")
         self.assertIsNone(data["default_occurrence_id"])
         self.assertIsNone(data["next_registration_state_check_at"])

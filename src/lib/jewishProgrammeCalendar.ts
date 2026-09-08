@@ -183,14 +183,32 @@ function toGregorianDateKey(date: HDate): string {
 }
 
 function dateKeyInMoscow(date: Date): string {
+  return dateKeyInTimeZone(date, MOSCOW_TIME_ZONE) ?? '';
+}
+
+/**
+ * Resolves an ISO instant to its Moscow civil day. Programme projection uses
+ * this for concrete occurrences so it never depends on the browser timezone.
+ */
+export function getMoscowCivilDate(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const instant = new Date(value);
+  if (Number.isNaN(instant.getTime())) return null;
+  return dateKeyInTimeZone(instant, MOSCOW_TIME_ZONE);
+}
+
+function dateKeyInTimeZone(date: Date, timeZone: string): string | null {
   const parts = new Intl.DateTimeFormat('en-CA', {
     day: '2-digit',
     month: '2-digit',
-    timeZone: MOSCOW_TIME_ZONE,
+    timeZone,
     year: 'numeric',
   }).formatToParts(date);
   const values = new Map(parts.map((part) => [part.type, part.value]));
-  return `${values.get('year')}-${values.get('month')}-${values.get('day')}`;
+  const year = values.get('year');
+  const month = values.get('month');
+  const day = values.get('day');
+  return year && month && day ? `${year}-${month}-${day}` : null;
 }
 
 function isProgrammeTime(value: string): boolean {

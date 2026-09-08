@@ -563,6 +563,8 @@ export function isWebEventRegistrationFormResponse(
   return isCanonicalPublicPath(value.canonical_public_path)
     && typeof value.resolved_from_alias === "boolean"
     && isUuid(event.id)
+    && typeof event.event_kind === "string"
+    && event.event_kind.length > 0
     && typeof event.title === "string"
     && isNullableString(event.subtitle)
     && isNullableString(event.description)
