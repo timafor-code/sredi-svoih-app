@@ -75,8 +75,8 @@ describe("projectJewishProgrammeForOccurrence", () => {
       { date: "2026-07-17", time: "20:43", system_key: "candle_lighting_moscow" },
       { date: "2026-07-17", time: "21:02", system_key: "sunset_moscow" },
       { date: "2026-07-18", time: "21:00", system_key: "sunset_moscow" },
-      { date: "2026-07-18", time: "21:42", system_key: "havdalah_moscow" },
-      { date: "2026-07-18", time: "21:54", system_key: "tzeit_moscow" },
+      { date: "2026-07-18", time: "22:25", system_key: "tzeit_moscow" },
+      { date: "2026-07-18", time: "22:25", system_key: "havdalah_moscow" },
     ]);
     expect(template).toEqual(scheduleFixture());
   });
@@ -101,8 +101,8 @@ describe("projectJewishProgrammeForOccurrence", () => {
     expect(saturday?.items.filter((item) => item.system_key && item.system_key !== "torah_reading_parsha")
       .map((item) => [item.system_key, item.time])).toEqual([
         ["sunset_moscow", "21:00"],
-        ["havdalah_moscow", "21:42"],
-        ["tzeit_moscow", "21:54"],
+        ["tzeit_moscow", "22:25"],
+        ["havdalah_moscow", "22:25"],
       ]);
     expect(saturday?.items.filter((item) => !item.system_key).map((item) => item.title))
       .toEqual(["Чтение Торы", "Кидуш"]);
@@ -113,6 +113,30 @@ describe("projectJewishProgrammeForOccurrence", () => {
     expect(systemRows(result)).toContainEqual(expect.objectContaining({
       system_key: "torah_reading_parsha", title: "Чтение Торы",
     }));
+  });
+
+  it("projects the Saturday Yom Tov candle boundary and canonical Shabbat end without touching manual Авдала", () => {
+    const template = scheduleFixture();
+    template.days[1].items.push({ time: "20:15", title: "Авдала", option_id: null });
+    const result = projection("2026-09-12T12:00:00+03:00", template);
+    const saturdayCalendarRows = systemRows(result)
+      .filter((item) => item.date === "2026-09-12" && item.system_key !== "torah_reading_parsha");
+
+    expect(saturdayCalendarRows).toEqual([
+      { date: "2026-09-12", time: "18:55", title: "Закат", system_key: "sunset_moscow" },
+      {
+        date: "2026-09-12",
+        time: "19:37",
+        title: "Зажигание свечей на праздник · Москва",
+        system_key: "candle_lighting_moscow",
+      },
+      { date: "2026-09-12", time: "19:52", title: "Выход звезд", system_key: "tzeit_moscow" },
+      { date: "2026-09-12", time: "19:52", title: "Исход Шабата", system_key: "havdalah_moscow" },
+    ]);
+    expect(result?.days.find((day) => day.date === "2026-09-12")?.items)
+      .toContainEqual({ time: "20:15", title: "Авдала", option_id: null });
+    expect(saturdayCalendarRows.filter((item) => item.system_key === "havdalah_moscow")).toHaveLength(1);
+    expect(template.days[1].items).toContainEqual({ time: "20:15", title: "Авдала", option_id: null });
   });
 
   it("leaves non-Shabbat schedules unchanged and fails closed without an occurrence", () => {

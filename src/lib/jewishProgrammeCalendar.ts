@@ -21,6 +21,8 @@ export type JewishProgrammeCalendarMarker = Readonly<{
   date: string;
   systemKey: JewishProgrammeMarkerKey;
   time: string;
+  /** Present only for a deterministic Hebrew-calendar transition context. */
+  title?: string;
 }>;
 
 export type MoscowJewishProgrammeCalendar = Readonly<{
@@ -73,7 +75,8 @@ export function getMoscowJewishProgrammeCalendar(input: {
         addDailyMarker(markerMap, date, 'sunset_moscow');
       }
       addDailyMarker(markerMap, toGregorianDateKey(shabbat), 'tzeit_moscow');
-      addBoundaryMarkers(markerMap, boundaryEvents);
+      addCanonicalShabbatEndMarker(markerMap, toGregorianDateKey(shabbat));
+      addBoundaryMarkers(markerMap, boundaryEvents, true);
 
       return {
         markers: sortMarkers(markerMap.values()),
@@ -85,7 +88,7 @@ export function getMoscowJewishProgrammeCalendar(input: {
     if (!holiday) return { markers: [], parshaRu: null };
 
     const markerMap = new Map<string, JewishProgrammeCalendarMarker>();
-    addBoundaryMarkers(markerMap, getBoundaryEvents(addDays(holiday.start, -1), holiday.end));
+    addBoundaryMarkers(markerMap, getBoundaryEvents(addDays(holiday.start, -1), holiday.end), false);
 
     return { markers: sortMarkers(markerMap.values()), parshaRu: null };
   } catch {
@@ -135,20 +138,33 @@ function getBoundaryEvents(start: HDate, end: HDate) {
 function addBoundaryMarkers(
   markers: Map<string, JewishProgrammeCalendarMarker>,
   events: ReturnType<typeof getBoundaryEvents>,
+  isShabbatProgramme: boolean,
 ) {
   for (const event of events) {
     if (event instanceof CandleLightingEvent) {
       const date = dateKeyInMoscow(event.eventTime);
       addDailyMarker(markers, date, 'sunset_moscow');
-      addMarker(markers, date, 'candle_lighting_moscow', event.eventTimeStr);
+      addMarker(
+        markers,
+        date,
+        'candle_lighting_moscow',
+        event.eventTimeStr,
+        isSaturdayYomTovCandleLighting(event, date) ? 'Зажигание свечей на праздник · Москва' : undefined,
+      );
     }
     if (event instanceof HavdalahEvent) {
       const date = dateKeyInMoscow(event.eventTime);
       addDailyMarker(markers, date, 'sunset_moscow');
       addDailyMarker(markers, date, 'tzeit_moscow');
-      addMarker(markers, date, 'havdalah_moscow', event.eventTimeStr);
+      if (isShabbatProgramme) addCanonicalShabbatEndMarker(markers, date);
+      else addMarker(markers, date, 'havdalah_moscow', event.eventTimeStr);
     }
   }
+}
+
+function isSaturdayYomTovCandleLighting(event: CandleLightingEvent, date: string): boolean {
+  return getWeekday(date) === 6
+    && ((event.linkedEvent?.getFlags() ?? 0) & flags.LIGHT_CANDLES_TZEIS) !== 0;
 }
 
 function addDailyMarker(
@@ -159,8 +175,20 @@ function addDailyMarker(
   const hdate = parseProgrammeGregorianDate(date);
   if (!hdate) return;
   const daily = getDailyZmanim({ city: 'Москва', date: hdate });
-  const time = systemKey === 'sunset_moscow' ? daily.times.sunset.time : daily.times.tzeit.time;
+  const time = systemKey === 'sunset_moscow'
+    ? daily.times.sunset.time
+    : daily.times.tzeitHakochavimAngle.time;
   addMarker(markers, date, systemKey, time);
+}
+
+function addCanonicalShabbatEndMarker(
+  markers: Map<string, JewishProgrammeCalendarMarker>,
+  date: string,
+) {
+  const hdate = parseProgrammeGregorianDate(date);
+  if (!hdate) return;
+  const daily = getDailyZmanim({ city: 'Москва', date: hdate });
+  addMarker(markers, date, 'havdalah_moscow', daily.times.tzeitHakochavimAngle.time);
 }
 
 function addMarker(
@@ -168,9 +196,12 @@ function addMarker(
   date: string,
   systemKey: JewishProgrammeMarkerKey,
   time: string,
+  title?: string,
 ) {
   if (!isProgrammeTime(time)) return;
-  markers.set(`${date}:${systemKey}`, { date, systemKey, time });
+  markers.set(`${date}:${systemKey}`, title
+    ? { date, systemKey, time, title }
+    : { date, systemKey, time });
 }
 
 function addDays(date: HDate, offset: number): HDate {
@@ -213,6 +244,25 @@ function dateKeyInTimeZone(date: Date, timeZone: string): string | null {
 
 function isProgrammeTime(value: string): boolean {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function getWeekday(date: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) return null;
+  const civilDate = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return civilDate.getUTCFullYear() === Number(match[1])
+    && civilDate.getUTCMonth() === Number(match[2]) - 1
+    && civilDate.getUTCDate() === Number(match[3]) ? civilDate.getUTCDay() : null;
+}
+
+export function getJewishProgrammeMarkerTitle(marker: Pick<JewishProgrammeCalendarMarker, 'systemKey' | 'title'>): string {
+  if (marker.title) return marker.title;
+  return {
+    candle_lighting_moscow: 'Зажигание свечей · Москва',
+    sunset_moscow: 'Закат',
+    tzeit_moscow: 'Выход звезд',
+    havdalah_moscow: 'Исход Шабата',
+  }[marker.systemKey];
 }
 
 function sortMarkers(markers: Iterable<JewishProgrammeCalendarMarker>): JewishProgrammeCalendarMarker[] {
