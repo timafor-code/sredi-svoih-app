@@ -9,6 +9,15 @@ export type OccurrenceSelectionMode = "none" | "user_select" | "nearest";
 
 export type WebRegistrationMode = "internal_free" | "internal_paid";
 
+export const WEB_EVENT_SYSTEM_KEYS = [
+  "candle_lighting_moscow",
+  "sunset_moscow",
+  "tzeit_moscow",
+  "havdalah_moscow",
+  "torah_reading_parsha",
+] as const;
+export type WebEventSystemKey = (typeof WEB_EVENT_SYSTEM_KEYS)[number];
+
 export type ApiResponse<T> = {
   data: T;
   error: null;
@@ -29,6 +38,7 @@ export type WebEventScheduleItem = {
   time: string;
   title: string;
   option_id: string | null;
+  system_key?: WebEventSystemKey | null;
 };
 
 export type WebEventScheduleDay = {

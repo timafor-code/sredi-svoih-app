@@ -41,6 +41,13 @@ WebRegistrationState = Literal[
 ]
 OccurrenceSelectionMode = Literal["none", "user_select", "nearest"]
 WebRegistrationMode = Literal["internal_free", "internal_paid"]
+EventScheduleSystemKey = Literal[
+    "candle_lighting_moscow",
+    "sunset_moscow",
+    "tzeit_moscow",
+    "havdalah_moscow",
+    "torah_reading_parsha",
+]
 
 
 class EventScheduleItem(BaseModel):
@@ -49,6 +56,7 @@ class EventScheduleItem(BaseModel):
     time: str = Field(strict=True, pattern=r"\A(?:[01][0-9]|2[0-3]):[0-5][0-9]\z")
     title: str = Field(strict=True, max_length=200)
     option_id: UUID | None = None
+    system_key: EventScheduleSystemKey | None = None
 
 
 class EventScheduleDay(BaseModel):

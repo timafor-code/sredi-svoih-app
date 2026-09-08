@@ -52,6 +52,7 @@ type AdminEventSchedulePayload = {
       time: string;
       title: string;
       option_id: string | null;
+      system_key?: "candle_lighting_moscow" | "sunset_moscow" | "tzeit_moscow" | "havdalah_moscow" | "torah_reading_parsha" | null;
     }>;
   }>;
 };
@@ -105,7 +106,7 @@ function buildAdminEventApiPayload(
   });
 }
 
-function toAdminEventSchedulePayload(
+export function toAdminEventSchedulePayload(
   schedule: AdminEventSchedule | null,
 ): AdminEventSchedulePayload | null {
   if (schedule === null) {
@@ -122,6 +123,7 @@ function toAdminEventSchedulePayload(
         time: item.time,
         title: item.title,
         option_id: item.optionId,
+        system_key: item.systemKey ?? null,
       })),
     })),
   };

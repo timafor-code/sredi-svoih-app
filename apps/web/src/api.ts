@@ -15,6 +15,7 @@ import type {
   PrivacySession,
   WebEventRegistrationFormResponse,
   WebEventSchedule,
+  WebEventSystemKey,
   WebRegistrationConfirmResult,
   WebRegistrationIntentCreated,
   WebRegistrationIntentRequest,
@@ -54,6 +55,14 @@ const OCCURRENCE_SELECTION_MODES = new Set<OccurrenceSelectionMode>([
 const REGISTRATION_MODES = new Set<WebRegistrationMode>([
   "internal_free",
   "internal_paid",
+]);
+
+const EVENT_SCHEDULE_SYSTEM_KEYS = new Set<WebEventSystemKey>([
+  "candle_lighting_moscow",
+  "sunset_moscow",
+  "tzeit_moscow",
+  "havdalah_moscow",
+  "torah_reading_parsha",
 ]);
 
 const LINEAGE_VALUES = new Set<LineageValue>([
@@ -193,12 +202,15 @@ function isSchedule(value: unknown): value is WebEventSchedule {
       && Array.isArray(day.items)
       && day.items.length <= 60
       && day.items.every((item: unknown) => isRecord(item)
-        && Object.keys(item).every((key) => ["time", "title", "option_id"].includes(key))
+        && Object.keys(item).every((key) => ["time", "title", "option_id", "system_key"].includes(key))
         && typeof item.time === "string" && item.time.length === 5
         && /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(item.time)
         && isScheduleText(item.title)
         && (item.option_id === null
-          || (isPostgresqlUuid(item.option_id) && item.option_id.length === 36))));
+          || (isPostgresqlUuid(item.option_id) && item.option_id.length === 36))
+        && (item.system_key === undefined
+          || item.system_key === null
+          || (typeof item.system_key === "string" && EVENT_SCHEDULE_SYSTEM_KEYS.has(item.system_key as WebEventSystemKey)))));
 }
 
 function isDateTime(value: unknown): value is string {

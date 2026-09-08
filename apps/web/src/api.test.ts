@@ -89,6 +89,30 @@ describe("public schedule response contract", () => {
     await expect(getWebEventRegistrationForm(UUID_REFERENCE)).resolves.toEqual(response);
   });
 
+  it.each([
+    "candle_lighting_moscow",
+    "sunset_moscow",
+    "tzeit_moscow",
+    "havdalah_moscow",
+    "torah_reading_parsha",
+  ] as const)("accepts allowlisted system_key %s", async (systemKey) => {
+    const response = eventResponse();
+    const schedule = scheduleDocument();
+    schedule.days[0].items[0].system_key = systemKey;
+    response.event.schedule = schedule;
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(envelope(response)));
+    await expect(getWebEventRegistrationForm(UUID_REFERENCE)).resolves.toEqual(response);
+  });
+
+  it.each([undefined, null])("accepts missing or null system_key", async (systemKey) => {
+    const response = eventResponse();
+    const schedule = scheduleDocument();
+    if (systemKey !== undefined) schedule.days[0].items[0].system_key = systemKey;
+    response.event.schedule = schedule;
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(envelope(response)));
+    await expect(getWebEventRegistrationForm(UUID_REFERENCE)).resolves.toEqual(response);
+  });
+
   const invalidFields: Array<["schedule" | "day" | "item", string, unknown]> = [
     ["schedule", "version", 2], ["schedule", "version", "1"],
     ["schedule", "version", true], ["schedule", "version", undefined],
@@ -108,6 +132,8 @@ describe("public schedule response contract", () => {
     ["item", "title", "x".repeat(201)], ["item", "title", null],
     ["item", "option_id", "invalid"], ["item", "option_id", 1],
     ["item", "option_id", "11111111-1111-4111-8111-111111111111\n"],
+    ["item", "system_key", "some_future_unknown_type"],
+    ["item", "system_key", 1],
     ["item", "extra", true],
     ["day", "label", undefined], ["day", "note", undefined],
     ["item", "option_id", undefined],
