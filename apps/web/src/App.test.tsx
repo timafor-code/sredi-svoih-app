@@ -408,7 +408,7 @@ describe("public event page", () => {
 
     expect(await screen.findByRole("heading", { name: "Записываем вас как Иван Иванов" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Проверить данные" })).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByLabelText("Сохранённые данные в карточке")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Сохранённые данные в карточке")).not.toBeVisible();
     await userEvent.setup().click(screen.getByRole("button", { name: "Проверить данные" }));
     expect(screen.getByRole("button", { name: "Скрыть данные" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByLabelText("Сохранённые данные в карточке")).toHaveTextContent("+79000000001");
@@ -2826,6 +2826,41 @@ describe("registration intent and account claim flow", () => {
     await createIntent(user);
     const nextIntent = JSON.parse(String(vi.mocked(fetch).mock.calls.at(-1)?.[1]?.body));
     expect(nextIntent.idempotency_key).not.toBe(firstIntent.idempotency_key);
+  });
+
+  it("shows completed page actions and resets a repeat locally", async () => {
+    const user = await setupValidForm();
+    const registrationButton = screen.getByRole("button", { name: "Записаться на мероприятие" });
+    expect(registrationButton).toHaveClass("registration-confirm");
+    expect(registrationButton).not.toHaveClass("completed-registration-action");
+    expect(screen.queryByRole("button", { name: "Записаться ещё раз" })).not.toBeInTheDocument();
+
+    await createIntent(user);
+    await confirmIntent(user);
+    await user.click(within(flowDialog()).getByRole("button", { name: "Продолжить без пароля" }));
+    await user.click(within(flowDialog()).getByRole("button", { name: "Готово" }));
+
+    const viewRegistrationButton = screen.getByRole("button", { name: "Посмотреть регистрацию" });
+    expect(viewRegistrationButton).toHaveClass("completed-registration-action");
+    const registrationPostsBeforePageActions = vi.mocked(fetch).mock.calls.filter(([input, init]) => (
+      String(input).endsWith("/registration-intents") && init?.method === "POST"
+    )).length;
+
+    await user.click(viewRegistrationButton);
+    expectOneFlowDialog();
+    expect(vi.mocked(fetch).mock.calls.filter(([input, init]) => (
+      String(input).endsWith("/registration-intents") && init?.method === "POST"
+    ))).toHaveLength(registrationPostsBeforePageActions);
+    await user.click(within(flowDialog()).getByRole("button", { name: "Готово" }));
+
+    await user.click(screen.getByRole("button", { name: "Записаться ещё раз" }));
+    expect(screen.queryByRole("dialog", { name: "Оформление регистрации" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Имя")).toHaveValue("");
+    expect(screen.getByRole("checkbox", { name: /Основное участие/ })).not.toBeChecked();
+    expect(screen.getByLabelText(/Я ознакомился/)).not.toBeChecked();
+    expect(vi.mocked(fetch).mock.calls.filter(([input, init]) => (
+      String(input).endsWith("/registration-intents") && init?.method === "POST"
+    ))).toHaveLength(registrationPostsBeforePageActions);
   });
 
   it("returns a recurring completed attempt to an unselected date step", async () => {

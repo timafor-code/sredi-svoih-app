@@ -1582,6 +1582,14 @@ function RegistrationForm({
     if (!identityReady) return;
   };
 
+  const repeatRegistrationAvailable = !passwordlessDeletionPending && (
+    passwordlessDeclined
+    || accountCompleted
+    || signInDeclined
+    || existingAccount !== null
+    || (accountNextStep === "none" && !passwordlessAccountChoiceAvailable)
+  );
+
   let flowContent: ReactNode = null;
   if (stage === "verification") {
     flowContent = (
@@ -1640,13 +1648,6 @@ function RegistrationForm({
     const showPasswordForm = (accountNextStep === "set_password" && !passwordlessDeclined)
       || ((accountNextStep === "request_set_password" || showPasswordlessChoice) && passwordRequestSent);
     const canSkipPassword = showPasswordlessChoice || accountNextStep === "set_password";
-    const repeatRegistrationAvailable = !passwordlessDeletionPending && (
-      passwordlessDeclined
-      || accountCompleted
-      || signInDeclined
-      || existingAccount !== null
-      || (accountNextStep === "none" && !passwordlessAccountChoiceAvailable)
-    );
     const continueWithoutPassword = () => {
       setPasswordlessDeclined(true);
       setSetPasswordCode(null);
@@ -1979,7 +1980,7 @@ function RegistrationForm({
           <button
             ref={resumeRef}
             aria-haspopup="dialog"
-            className={`registration-confirm${!values.consent ? " consent-incomplete" : ""}`}
+            className={`registration-confirm${stage === "success" ? " completed-registration-action" : ""}${!values.consent ? " consent-incomplete" : ""}`}
             type="button"
             aria-describedby={!values.consent ? "consent-nudge" : undefined}
             disabled={(stage === "form" && busyAction !== null) || (stage === "form" && !identityReady)}
@@ -1987,6 +1988,7 @@ function RegistrationForm({
           >
             {stage === "verification" ? "Продолжить подтверждение" : stage === "success" ? "Посмотреть регистрацию" : busyAction === "create" ? "Отправляем…" : "Записаться на мероприятие"}
           </button>
+          {stage === "success" && repeatRegistrationAvailable ? <button className="secondary-button" type="button" onClick={resetCompletedAttempt}>Записаться ещё раз</button> : null}
           <p className="registration-caption">{existingAccount
             ? "Регистрация будет оформлена на данные аккаунта."
             : "Подтвердите email кодом из письма. Пароль сейчас не нужен."}</p>
