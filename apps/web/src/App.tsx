@@ -977,6 +977,7 @@ function RegistrationForm({
   const [passwordlessDeletionPending, setPasswordlessDeletionPending] = useState(false);
   const [forgetBusy, setForgetBusy] = useState(false);
   const [forgetError, setForgetError] = useState<string | null>(null);
+  const [rememberedParticipantExpanded, setRememberedParticipantExpanded] = useState(false);
   const optionsRef = useRef<HTMLFieldSetElement>(null);
   const emailCodeRef = useRef<HTMLInputElement>(null);
   const wasAuthenticatedRef = useRef(authenticatedAccount !== null);
@@ -995,6 +996,13 @@ function RegistrationForm({
   const temporaryAuth = authenticatedAccount?.tokens ?? null;
   const existingAccount = authenticatedAccount?.identity ?? null;
   const registrationIdentity = existingAccount ?? rememberedParticipant;
+  const rememberedParticipantInitials = rememberedParticipant
+    ? [rememberedParticipant.first_name, rememberedParticipant.last_name]
+      .map((name) => name.trim().charAt(0).toLocaleUpperCase())
+      .filter(Boolean)
+      .join("")
+      .slice(0, 2)
+    : "";
   const identityReady = existingAccount !== null
     || participantSessionStatus === "anonymous"
     || participantSessionStatus === "remembered";
@@ -1804,19 +1812,37 @@ function RegistrationForm({
       <form className="registration-form" noValidate onSubmit={(event) => event.preventDefault()}>
         {rememberedParticipant && !existingAccount ? (
           <section className="remembered-participant" aria-labelledby="remembered-participant-heading">
-            <div>
-              <p className="eyebrow">Для регистрации</p>
-              <h2 id="remembered-participant-heading">Ваши сохранённые данные</h2>
-              <dl className="account-identity">
-                <div><dt>Имя</dt><dd>{rememberedParticipant.first_name}</dd></div>
-                <div><dt>Фамилия</dt><dd>{rememberedParticipant.last_name}</dd></div>
-                <div><dt>Телефон</dt><dd>{rememberedParticipant.phone}</dd></div>
-                <div><dt>Email</dt><dd>{rememberedParticipant.email}</dd></div>
-              </dl>
+            <div className="remembered-participant-summary">
+              <div className="remembered-participant-initials" aria-hidden="true">{rememberedParticipantInitials}</div>
+              <div className="remembered-participant-copy">
+                <h2 id="remembered-participant-heading">Записываем вас как {rememberedParticipant.first_name} {rememberedParticipant.last_name}</h2>
+                <p>{rememberedParticipant.email}</p>
+              </div>
+              <button className="remembered-participant-forget" type="button" disabled={forgetBusy} onClick={() => { void forgetParticipant(); }}>
+                {forgetBusy ? "Меняем данные…" : "Не я"}
+              </button>
             </div>
-            <button className="text-button" type="button" disabled={forgetBusy} onClick={() => { void forgetParticipant(); }}>
-              {forgetBusy ? "Меняем данные…" : "Не я / Сменить данные"}
+            <button
+              className="remembered-participant-toggle"
+              type="button"
+              aria-expanded={rememberedParticipantExpanded}
+              aria-controls="remembered-participant-details"
+              onClick={() => { setRememberedParticipantExpanded((expanded) => !expanded); }}
+            >
+              <span>{rememberedParticipantExpanded ? "Скрыть данные" : "Проверить данные"}</span>
+              <span className="remembered-participant-chevron" aria-hidden="true">{rememberedParticipantExpanded ? "▴" : "▾"}</span>
             </button>
+            <dl
+              className="remembered-participant-details"
+              id="remembered-participant-details"
+              aria-label="Сохранённые данные в карточке"
+              hidden={!rememberedParticipantExpanded}
+            >
+              <div><dt>Имя</dt><dd>{rememberedParticipant.first_name}</dd></div>
+              <div><dt>Фамилия</dt><dd>{rememberedParticipant.last_name}</dd></div>
+              <div><dt>Телефон</dt><dd>{rememberedParticipant.phone}</dd></div>
+              <div><dt>Email</dt><dd>{rememberedParticipant.email}</dd></div>
+            </dl>
             <div aria-live="polite" aria-atomic="true">
               {forgetError ? <p className="form-error" role="alert">{forgetError}</p> : null}
             </div>
