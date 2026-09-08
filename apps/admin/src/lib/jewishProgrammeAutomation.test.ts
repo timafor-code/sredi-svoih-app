@@ -54,8 +54,8 @@ describe("applyJewishProgrammeAutomation", () => {
       { date: "2026-07-10", systemKey: "candle_lighting_moscow", time: "20:52" },
       { date: "2026-07-10", systemKey: "sunset_moscow", time: "21:10" },
       { date: "2026-07-11", systemKey: "sunset_moscow", time: "21:09" },
-      { date: "2026-07-11", systemKey: "tzeit_moscow", time: "22:06" },
       { date: "2026-07-11", systemKey: "havdalah_moscow", time: "21:51" },
+      { date: "2026-07-11", systemKey: "tzeit_moscow", time: "22:06" },
     ]);
     expect(generatedItems(result).map(({ date, systemKey, time }) => ({ date, systemKey, time }))).toEqual(expected.markers);
     expect(result?.days[0].items).toContainEqual({ time: "18:30", title: "Закат", optionId: null });
@@ -96,6 +96,101 @@ describe("applyJewishProgrammeAutomation", () => {
       optionId: MANUAL_OPTION_ID,
       systemKey: "torah_reading_parsha",
     });
+    expect(moved?.days).toHaveLength(2);
+    expect(moved?.days.map((day) => day.date)).toEqual(["2026-07-17", "2026-07-18"]);
+    expect(moved?.days[0].items).toEqual(expect.arrayContaining([
+      { time: "18:30", title: "Закат", optionId: null },
+      { time: "19:00", title: "Минха", optionId: MANUAL_OPTION_ID },
+      expect.objectContaining({ systemKey: "candle_lighting_moscow" }),
+      expect.objectContaining({ systemKey: "sunset_moscow" }),
+    ]));
+    expect(moved?.days[1].items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ systemKey: "sunset_moscow" }),
+      expect.objectContaining({ systemKey: "havdalah_moscow" }),
+      expect.objectContaining({ systemKey: "tzeit_moscow" }),
+      { time: "11:30", title: "Чтение Торы — Дварим", optionId: MANUAL_OPTION_ID, systemKey: "torah_reading_parsha" },
+      { time: "13:00", title: "Кидуш", optionId: null },
+    ]));
+  });
+
+  it("reuses a prior Friday/Saturday pair and places generated rows by their times", () => {
+    const moved = applyJewishProgrammeAutomation({
+      eventKind: "shabbat",
+      referenceDate: "2026-07-17",
+      schedule: scheduleFixture(),
+    });
+
+    expect(moved?.days).toHaveLength(2);
+    expect(moved?.days.map((day) => day.date)).toEqual(["2026-07-17", "2026-07-18"]);
+    expect(moved?.days[0].items.map((item) => item.systemKey)).toEqual([
+      undefined,
+      undefined,
+      "candle_lighting_moscow",
+      "sunset_moscow",
+    ]);
+    expect(moved?.days[1].items.filter((item) => item.systemKey && item.systemKey !== "torah_reading_parsha")
+      .map((item) => [item.systemKey, item.time]))
+      .toEqual([
+        ["sunset_moscow", "21:00"],
+        ["havdalah_moscow", "21:42"],
+        ["tzeit_moscow", "21:54"],
+      ]);
+    expect(applyJewishProgrammeAutomation({
+      eventKind: "shabbat",
+      referenceDate: "2026-07-17",
+      schedule: moved,
+    })).toEqual(moved);
+  });
+
+  it("creates deterministic Shabbat days for an empty Programme", () => {
+    const result = applyJewishProgrammeAutomation({
+      eventKind: "shabbat",
+      referenceDate: "2026-07-10",
+      schedule: null,
+    });
+
+    expect(result?.days.map((day) => day.date)).toEqual(["2026-07-10", "2026-07-11"]);
+    expect(generatedItems(result).map((item) => item.systemKey)).toEqual([
+      "candle_lighting_moscow",
+      "sunset_moscow",
+      "sunset_moscow",
+      "havdalah_moscow",
+      "tzeit_moscow",
+    ]);
+  });
+
+  it("fails closed for ambiguous existing Friday/Saturday pairs", () => {
+    const ambiguous: AdminEventSchedule = {
+      version: 1,
+      days: [
+        ...scheduleFixture().days,
+        {
+          date: "2026-07-17",
+          label: null,
+          note: null,
+          items: [{ time: "18:00", title: "Другая пятница", optionId: null }],
+        },
+        {
+          date: "2026-07-18",
+          label: null,
+          note: null,
+          items: [{ time: "12:00", title: "Другая суббота", optionId: null }],
+        },
+      ],
+    };
+
+    const result = applyJewishProgrammeAutomation({
+      eventKind: "shabbat",
+      referenceDate: "2026-07-24",
+      schedule: ambiguous,
+    });
+
+    expect(result?.days.map((day) => day.date)).toEqual(ambiguous.days.map((day) => day.date));
+    expect(result?.days[0].items).toContainEqual({ time: "18:30", title: "Закат", optionId: null });
+    expect(result?.days[1].items).toContainEqual({ time: "13:00", title: "Кидуш", optionId: null });
+    expect(result?.days[2].items).toEqual(ambiguous.days[2].items);
+    expect(result?.days[3].items).toEqual(ambiguous.days[3].items);
+    expect(generatedItems(result)).toEqual([]);
   });
 
   it("fails closed for a Yom Tov Shabbat and retains the system-owned Torah slot without a guessed portion", () => {

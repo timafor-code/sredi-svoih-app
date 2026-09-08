@@ -206,6 +206,7 @@ function sortMarkers(markers: Iterable<JewishProgrammeCalendarMarker>): JewishPr
   };
   return [...markers].sort((left, right) => (
     left.date.localeCompare(right.date)
+    || left.time.localeCompare(right.time)
     || keyOrder[left.systemKey] - keyOrder[right.systemKey]
   ));
 }
