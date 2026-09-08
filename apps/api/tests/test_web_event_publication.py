@@ -917,6 +917,44 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(full.json()["data"]["registration_state"], "full")
         self.assertEqual(await self._registration_count(), before)
 
+    async def test_public_form_includes_special_category_consent_when_available(
+        self,
+    ) -> None:
+        path = f"/events/{self.event_id}/registration-form?channel=web"
+        await self._set_event(web_visibility="unlisted")
+        special_category_id = uuid4()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(
+                    LegalDocument(
+                        id=special_category_id,
+                        document_type="special_category_consent",
+                        version=f"publication-special-{self.marker}",
+                        title="Synthetic special category consent",
+                        content_hash=f"sha256:special-{self.marker}",
+                        published_url="https://example.invalid/special-category",
+                        effective_at=self.now - timedelta(hours=1),
+                    ),
+                )
+        try:
+            response = await self._request("GET", path)
+            self.assertEqual(response.status_code, 200)
+            data = response.json()["data"]
+            self.assertEqual(
+                [item["document_type"] for item in data["legal_documents"]],
+                [
+                    "event_registration_consent",
+                    "privacy_policy",
+                    "special_category_consent",
+                ],
+            )
+        finally:
+            async with AsyncSessionLocal() as session:
+                async with session.begin():
+                    await session.execute(
+                        delete(LegalDocument).where(LegalDocument.id == special_category_id),
+                    )
+
     async def test_free_and_paid_forms_are_available_together_and_filter_options(self) -> None:
         path = f"/events/{self.event_id}/registration-form?channel=web"
         await self._set_event(

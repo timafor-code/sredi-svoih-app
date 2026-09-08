@@ -10,6 +10,7 @@ export const OCCURRENCE_ONE_ID = "22222222-2222-4222-8222-222222222222";
 export const OCCURRENCE_TWO_ID = "33333333-3333-4333-8333-333333333333";
 export const OPTION_ID = "44444444-4444-4444-8444-444444444444";
 export const QUESTIONNAIRE_FORM_ID = "77777777-7777-4777-8777-777777777777";
+export const LINEAGE_CONSENT_ID = "99999999-9999-4999-8999-999999999999";
 export const QUESTION_IDS = {
   short: "88888888-8888-4888-8888-888888888881",
   long: "88888888-8888-4888-8888-888888888882",
@@ -209,6 +210,23 @@ export function eventResponse(
     questionnaire_form_id: null,
     questions: [],
   };
+}
+
+export function responseWithLineageConsent(): WebEventRegistrationFormResponse {
+  const data = eventResponse();
+  data.legal_documents = [
+    ...data.legal_documents,
+    {
+      id: LINEAGE_CONSENT_ID,
+      document_type: "special_category_consent",
+      version: "1.0",
+      title: "Согласие на обработку данных о происхождении",
+      content_hash: "lineage-consent-hash",
+      published_url: "https://legal.example.test/lineage-consent",
+      effective_at: "2026-08-01T00:00:00+03:00",
+    },
+  ];
+  return data;
 }
 
 export function responseWithPaidOptions(): WebEventRegistrationFormResponse {

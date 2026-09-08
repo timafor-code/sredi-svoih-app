@@ -403,7 +403,11 @@ async def _build_web_registration_form(
             select(LegalDocument)
             .where(
                 LegalDocument.document_type.in_(
-                    ("event_registration_consent", "privacy_policy"),
+                    (
+                        "event_registration_consent",
+                        "privacy_policy",
+                        "special_category_consent",
+                    ),
                 ),
                 LegalDocument.effective_at <= now,
                 or_(LegalDocument.retired_at.is_(None), LegalDocument.retired_at > now),
@@ -426,6 +430,9 @@ async def _build_web_registration_form(
     privacy_policy = current_documents.get("privacy_policy")
     if privacy_policy is not None:
         selected_documents.append(privacy_policy)
+    special_category_consent = current_documents.get("special_category_consent")
+    if special_category_consent is not None:
+        selected_documents.append(special_category_consent)
 
     published_form_id = await session.scalar(
         select(EventRegistrationForm.id).where(

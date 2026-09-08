@@ -273,7 +273,9 @@ class WebRegistrationParticipationOptionResponse(BaseModel):
 
 class WebRegistrationLegalDocumentResponse(BaseModel):
     id: UUID
-    document_type: Literal["event_registration_consent", "privacy_policy"]
+    document_type: Literal[
+        "event_registration_consent", "privacy_policy", "special_category_consent"
+    ]
     version: str
     title: str
     content_hash: str

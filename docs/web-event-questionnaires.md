@@ -163,6 +163,12 @@ registration, and is covered separately in `docs/privacy-erasure-retention.md`
 and `docs/api-contracts.md`. Nothing in this document's field types, checks,
 or UI is a vehicle for that data.
 
+The public web's own ask-once lineage UI (a shared `LineageDeclarationPanel`,
+documented in `docs/public-web-local-development.md`) is a completely separate
+component from the questionnaire renderer, uses its own dedicated
+`special_category_consent` acceptance, and is never submitted alongside
+questionnaire answers or the event-registration consent.
+
 ## Explicit boundaries
 
 The completed end-to-end slice retains these boundaries:

@@ -3,6 +3,9 @@ import type {
   ApiResponse,
   AuthCodeResult,
   DeletionPrivacyRequest,
+  LineageDeclaration,
+  LineageLegalAcceptance,
+  LineageValue,
   MyRegistration,
   MyRegistrationPaymentStatus,
   MyRegistrationStatus,
@@ -51,6 +54,17 @@ const OCCURRENCE_SELECTION_MODES = new Set<OccurrenceSelectionMode>([
 const REGISTRATION_MODES = new Set<WebRegistrationMode>([
   "internal_free",
   "internal_paid",
+]);
+
+const LINEAGE_VALUES = new Set<LineageValue>([
+  "maternal_grandmother",
+  "maternal_grandfather",
+  "paternal_grandmother",
+  "paternal_grandfather",
+  "father",
+  "mother",
+  "giyur",
+  "unknown",
 ]);
 
 const PAYMENT_STATUSES = new Set<WebRegistrationPaymentStatus>([
@@ -317,6 +331,15 @@ function isPrivacyAccessAccepted(value: unknown): value is PrivacyAccessAccepted
   return isRecord(value) && value.accepted === true;
 }
 
+function isLineageDeclaration(value: unknown): value is LineageDeclaration {
+  return isRecord(value)
+    && (value.state === "none" || value.state === "declared")
+    && Array.isArray(value.values)
+    && value.values.every((item) => LINEAGE_VALUES.has(item as LineageValue))
+    && isNullableDateTime(value.declared_at)
+    && isNullableDateTime(value.updated_at);
+}
+
 function isPrivacySession(value: unknown): value is PrivacySession {
   return isRecord(value)
     && isOpaqueCredential(value.privacy_session_token)
@@ -426,7 +449,9 @@ function isOption(value: unknown): value is WebRegistrationParticipationOption {
 function isLegalDocument(value: unknown): value is WebRegistrationLegalDocument {
   if (!isRecord(value)) return false;
   return isUuid(value.id)
-    && (value.document_type === "event_registration_consent" || value.document_type === "privacy_policy")
+    && (value.document_type === "event_registration_consent"
+      || value.document_type === "privacy_policy"
+      || value.document_type === "special_category_consent")
     && typeof value.version === "string"
     && typeof value.title === "string"
     && typeof value.content_hash === "string"
@@ -913,6 +938,41 @@ export async function deleteWebParticipantSession(): Promise<void> {
   });
   if (response.status !== 204) {
     throw new PublicApiError("participant_session_delete_failed", response.status);
+  }
+}
+
+export function getLineageDeclaration(): Promise<LineageDeclaration> {
+  return publicJsonRequest(
+    "/web/participant-profile/lineage",
+    { method: "GET" },
+    isLineageDeclaration,
+    "include",
+  );
+}
+
+export function putLineageDeclaration(
+  values: LineageValue[],
+  legalAcceptance: LineageLegalAcceptance,
+): Promise<LineageDeclaration> {
+  return publicJsonRequest(
+    "/web/participant-profile/lineage",
+    {
+      method: "PUT",
+      body: JSON.stringify({ values, legal_acceptance: legalAcceptance }),
+    },
+    isLineageDeclaration,
+    "include",
+  );
+}
+
+export async function deleteLineageDeclaration(): Promise<void> {
+  const response = await fetch(`${normalizedBaseUrl()}/web/participant-profile/lineage`, {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+  if (response.status !== 204) {
+    throw new PublicApiError("lineage_declaration_delete_failed", response.status);
   }
 }
 
