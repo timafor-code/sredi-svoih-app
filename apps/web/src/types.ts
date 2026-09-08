@@ -56,6 +56,7 @@ export type WebEventSchedule = {
 export type WebRegistrationEvent = {
   schedule?: WebEventSchedule | null;
   id: string;
+  event_kind: string;
   title: string;
   subtitle: string | null;
   description: string | null;

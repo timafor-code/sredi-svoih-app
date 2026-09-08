@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  getDelayedYomTovCandleLightingTime,
   getMoscowJewishProgrammeCalendar,
   parseProgrammeGregorianDate,
 } from "../../../../src/lib/jewishProgrammeCalendar";
+import { getDailyZmanim } from "../../../../src/lib/zmanim";
 import type { AdminEventSchedule } from "../types/events";
 import { applyJewishProgrammeAutomation } from "./jewishProgrammeAutomation";
 
@@ -54,8 +56,8 @@ describe("applyJewishProgrammeAutomation", () => {
       { date: "2026-07-10", systemKey: "candle_lighting_moscow", time: "20:52" },
       { date: "2026-07-10", systemKey: "sunset_moscow", time: "21:10" },
       { date: "2026-07-11", systemKey: "sunset_moscow", time: "21:09" },
-      { date: "2026-07-11", systemKey: "havdalah_moscow", time: "21:51" },
-      { date: "2026-07-11", systemKey: "tzeit_moscow", time: "22:06" },
+      { date: "2026-07-11", systemKey: "tzeit_moscow", time: "22:40" },
+      { date: "2026-07-11", systemKey: "havdalah_moscow", time: "22:40" },
     ]);
     expect(generatedItems(result).map(({ date, systemKey, time }) => ({ date, systemKey, time }))).toEqual(expected.markers);
     expect(result?.days[0].items).toContainEqual({ time: "18:30", title: "Закат", optionId: null });
@@ -132,8 +134,8 @@ describe("applyJewishProgrammeAutomation", () => {
       .map((item) => [item.systemKey, item.time]))
       .toEqual([
         ["sunset_moscow", "21:00"],
-        ["havdalah_moscow", "21:42"],
-        ["tzeit_moscow", "21:54"],
+        ["tzeit_moscow", "22:25"],
+        ["havdalah_moscow", "22:25"],
       ]);
     expect(applyJewishProgrammeAutomation({
       eventKind: "shabbat",
@@ -154,8 +156,8 @@ describe("applyJewishProgrammeAutomation", () => {
       "candle_lighting_moscow",
       "sunset_moscow",
       "sunset_moscow",
-      "havdalah_moscow",
       "tzeit_moscow",
+      "havdalah_moscow",
     ]);
   });
 
@@ -209,6 +211,87 @@ describe("applyJewishProgrammeAutomation", () => {
     });
   });
 
+  it("uses the shared 8.5-degree tzeit as the Moscow Shabbat-end threshold", () => {
+    const calendar = getMoscowJewishProgrammeCalendar({ eventKind: "shabbat", referenceDate: "2026-09-05" });
+    const saturday = calendar.markers.filter((marker) => marker.date === "2026-09-05");
+    const hdate = parseProgrammeGregorianDate("2026-09-05");
+    const daily = getDailyZmanim({ city: "Москва", date: hdate! });
+    const tzeit = daily.times.tzeitHakochavimAngle.time;
+
+    expect(daily.times.sunset.time).toBe("19:14");
+    expect(daily.times.tzeit.time).toBe("19:52");
+    expect(tzeit).toBe("20:11");
+    expect(saturday).toEqual([
+      { date: "2026-09-05", systemKey: "sunset_moscow", time: "19:14" },
+      { date: "2026-09-05", systemKey: "tzeit_moscow", time: tzeit },
+      { date: "2026-09-05", systemKey: "havdalah_moscow", time: tzeit },
+    ]);
+    expect(saturday.find((marker) => marker.systemKey === "tzeit_moscow")?.time).not.toBe(daily.times.tzeit.time);
+    expect(saturday.find((marker) => marker.systemKey === "havdalah_moscow")?.time).not.toBe("19:56");
+
+    const automated = applyJewishProgrammeAutomation({
+      eventKind: "shabbat",
+      referenceDate: "2026-09-05",
+      schedule: scheduleFixture(),
+    });
+    expect(generatedItems(automated).filter((item) => item.date === "2026-09-05")
+      .map(({ date, systemKey, time }) => ({ date, systemKey, time }))).toEqual(saturday);
+  });
+
+  it("aligns the delayed Saturday Yom Tov candle boundary with canonical tzeit", () => {
+    const calendar = getMoscowJewishProgrammeCalendar({ eventKind: "shabbat", referenceDate: "2026-09-12" });
+    const saturday = calendar.markers.filter((marker) => marker.date === "2026-09-12");
+
+    expect(saturday).toEqual([
+      { date: "2026-09-12", systemKey: "sunset_moscow", time: "18:55" },
+      { date: "2026-09-12", systemKey: "tzeit_moscow", time: "19:52" },
+      { date: "2026-09-12", systemKey: "havdalah_moscow", time: "19:52" },
+      {
+        date: "2026-09-12",
+        systemKey: "candle_lighting_moscow",
+        time: "19:52",
+        title: "Зажигание свечей на праздник · Москва",
+      },
+    ]);
+
+    const first = applyJewishProgrammeAutomation({
+      eventKind: "shabbat",
+      referenceDate: "2026-09-12",
+      schedule: scheduleFixture(),
+    });
+    const second = applyJewishProgrammeAutomation({
+      eventKind: "shabbat",
+      referenceDate: "2026-09-12",
+      schedule: first,
+    });
+    expect(generatedItems(first).filter((item) => item.date === "2026-09-12")
+      .map(({ date, systemKey, time, title }) => ({ date, systemKey, time, title }))).toEqual([
+        { date: "2026-09-12", systemKey: "sunset_moscow", time: "18:55", title: "Закат" },
+        { date: "2026-09-12", systemKey: "tzeit_moscow", time: "19:52", title: "Выход звезд" },
+        { date: "2026-09-12", systemKey: "havdalah_moscow", time: "19:52", title: "Исход Шабата" },
+        {
+          date: "2026-09-12",
+          systemKey: "candle_lighting_moscow",
+          time: "19:52",
+          title: "Зажигание свечей на праздник · Москва",
+        },
+      ]);
+    expect(generatedItems(first).filter((item) => item.date === "2026-09-12" && item.systemKey === "havdalah_moscow"))
+      .toHaveLength(1);
+    expect(second).toEqual(first);
+  });
+
+  it("keeps a delayed candle candidate that is later than canonical tzeit", () => {
+    const hdate = parseProgrammeGregorianDate("2026-09-12");
+    const tzeit = getDailyZmanim({ city: "Москва", date: hdate! }).times.tzeitHakochavimAngle;
+    const candidateAt = new Date(tzeit.at.getTime() + 60_000);
+
+    expect(getDelayedYomTovCandleLightingTime("2026-09-12", {
+      eventTime: candidateAt,
+      eventTimeStr: "19:53",
+    })).toBe("19:53");
+  });
+
   it("removes generated rows and restores Torah reading to a manual base item when leaving Shabbat", () => {
     const shabbat = applyJewishProgrammeAutomation({
       eventKind: "shabbat",
@@ -247,7 +330,8 @@ describe("applyJewishProgrammeAutomation", () => {
     expect(expected.markers.some((marker) => marker.systemKey === "candle_lighting_moscow")).toBe(true);
     expect(expected.markers.some((marker) => marker.systemKey === "sunset_moscow")).toBe(true);
     expect(expected.markers.some((marker) => marker.systemKey === "havdalah_moscow")).toBe(true);
-    expect(generatedItems(holiday).map(({ date, systemKey, time }) => ({ date, systemKey, time }))).toEqual(expected.markers);
+    expect(generatedItems(holiday).map(({ date, systemKey, time }) => ({ date, systemKey, time })))
+      .toEqual(expected.markers.map(({ date, systemKey, time }) => ({ date, systemKey, time })));
     expect(holiday?.days[1].items).toContainEqual({
       time: "11:30",
       title: "Чтение Торы",

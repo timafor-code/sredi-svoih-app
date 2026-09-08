@@ -71,6 +71,13 @@ describe("public schedule response contract", () => {
     await expect(getWebEventRegistrationForm(UUID_REFERENCE)).resolves.toEqual(response);
   });
 
+  it("requires the public event_kind discriminator", async () => {
+    const response = eventResponse();
+    delete (response.event as unknown as Record<string, unknown>).event_kind;
+    vi.mocked(fetch).mockImplementationOnce(() => fetchResponse(envelope(response)));
+    await expect(getWebEventRegistrationForm(UUID_REFERENCE)).rejects.toMatchObject({ code: "invalid_response" });
+  });
+
   it("accepts exact limits, leap day, time boundaries and dangling UUIDs", async () => {
     const response = eventResponse();
     const schedule = scheduleDocument();

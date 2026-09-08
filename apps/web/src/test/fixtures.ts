@@ -147,6 +147,7 @@ export function eventResponse(
     resolved_from_alias: false,
     event: {
       id: EVENT_ID,
+      event_kind: "course",
       title: "Шаббат для друзей",
       subtitle: "Тёплая встреча общины",
       description: "Полное описание\nсо второй строкой.",

@@ -29,6 +29,7 @@ import { WebDeleteAccountFlow } from "./components/WebDeleteAccountFlow";
 import { formatDate, formatDateTimeRange, formatTime } from "./format";
 import { LineageDeclarationPanel } from "./LineageDeclaration";
 import { PhoneInput } from "./PhoneInput";
+import { projectJewishProgrammeForOccurrence } from "./jewishProgrammeProjection";
 import { normalizeInternationalPhone } from "./phone";
 import { QuestionnaireFields } from "./QuestionnaireFields";
 import {
@@ -53,6 +54,7 @@ import type {
   RememberedParticipantIdentity,
   WebEventRegistrationFormResponse,
   WebEventSchedule,
+  WebEventScheduleItem,
   WebRegistrationConfirmResult,
   WebRegistrationIntentRequest,
   WebRegistrationLegalDocument,
@@ -391,6 +393,24 @@ function formatProgrammeDay(value: string): { date: string; weekday: string } {
   };
 }
 
+const PROGRAMME_SYSTEM_ICONS: Partial<Record<Exclude<WebEventScheduleItem["system_key"], null | undefined>, string>> = {
+  candle_lighting_moscow: "🕯",
+  sunset_moscow: "◒",
+  tzeit_moscow: "✦",
+  havdalah_moscow: "◐",
+  torah_reading_parsha: "▤",
+};
+
+function ProgrammeItemTitle({ item }: { item: WebEventScheduleItem }): ReactNode {
+  const icon = item.system_key ? PROGRAMME_SYSTEM_ICONS[item.system_key] : undefined;
+  return (
+    <span className="programme-item-title">
+      {icon ? <span aria-hidden="true" className="programme-system-icon" data-system-icon={item.system_key}>{icon}</span> : null}
+      <span>{item.title}</span>
+    </span>
+  );
+}
+
 function EventProgramme({
   schedule,
   options,
@@ -464,7 +484,7 @@ function EventProgramme({
         <div className="programme-timeline">
           {activeDay.items.map((item, index) => {
             const option = item.option_id ? optionsById.get(item.option_id) : undefined;
-            const content = <><time>{item.time}</time><span>{item.title}</span></>;
+            const content = <><time>{item.time}</time><ProgrammeItemTitle item={item} /></>;
             const price = formatOptionPrice(option?.price_amount ?? 0, option?.price_currency ?? "RUB") ?? "Бесплатно";
             return option && registrationReady ? (
               <button
@@ -2167,6 +2187,12 @@ function EventPage({
   const selectedOccurrence = data.occurrences.find(
     (item) => item.id === effectiveOccurrenceId,
   ) ?? null;
+  const projectedProgramme = useMemo(() => projectJewishProgrammeForOccurrence({
+    eventKind: data.event.event_kind,
+    eventStartsAt: data.event.starts_at,
+    occurrence: selectedOccurrence,
+    schedule: data.event.schedule,
+  }), [data.event.event_kind, data.event.schedule, data.event.starts_at, selectedOccurrence]);
   const dateSelectionPending = dateStepRequired && !dateStepComplete;
   const effectiveState = selectedOccurrence?.registration_state ?? data.registration_state;
   const timeZone = selectedOccurrence?.timezone ?? data.event.timezone;
@@ -2267,9 +2293,9 @@ function EventPage({
                   </button>
                 </>
               ) : null}
-              {data.event.schedule ? (
+              {projectedProgramme ? (
                 <EventProgramme
-                  schedule={data.event.schedule}
+                  schedule={projectedProgramme}
                   options={data.participation_options}
                   registrationReady={!dateSelectionPending && effectiveState === "open" && Boolean(consentDocument)}
                   requiresDateSelection={dateSelectionPending}

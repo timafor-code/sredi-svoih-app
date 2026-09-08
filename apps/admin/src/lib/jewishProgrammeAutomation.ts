@@ -1,5 +1,7 @@
 import {
+  getJewishProgrammeMarkerTitle,
   getMoscowJewishProgrammeCalendar,
+  type JewishProgrammeCalendarMarker,
   type JewishProgrammeMarkerKey,
 } from "../../../../src/lib/jewishProgrammeCalendar";
 import type {
@@ -17,13 +19,6 @@ const CALENDAR_SYSTEM_KEYS = new Set<JewishProgrammeMarkerKey>([
 
 const TORAH_READING_SYSTEM_KEY: AdminEventSystemKey = "torah_reading_parsha";
 const TORAH_READING_TITLE = "Чтение Торы";
-
-const SYSTEM_TITLES: Record<JewishProgrammeMarkerKey, string> = {
-  candle_lighting_moscow: "Зажигание свечей · Москва",
-  sunset_moscow: "Закат",
-  tzeit_moscow: "Выход звезд",
-  havdalah_moscow: "Исход Шабата",
-};
 
 export type JewishProgrammeAutomationInput = Readonly<{
   eventKind: string;
@@ -99,7 +94,7 @@ function enrichTorahReading(
 
 function appendCalendarRows(
   schedule: AdminEventSchedule | null,
-  markers: ReadonlyArray<{ date: string; systemKey: JewishProgrammeMarkerKey; time: string }>,
+  markers: ReadonlyArray<JewishProgrammeCalendarMarker>,
   isShabbat: boolean,
 ): AdminEventSchedule | null {
   if (markers.length === 0) return schedule;
@@ -130,7 +125,7 @@ function appendCalendarRows(
       optionId: null,
       systemKey: marker.systemKey,
       time: marker.time,
-      title: SYSTEM_TITLES[marker.systemKey],
+      title: getJewishProgrammeMarkerTitle(marker),
     });
   }
 
@@ -139,7 +134,7 @@ function appendCalendarRows(
 
 function retargetShabbatDays(
   days: AdminEventSchedule["days"],
-  markers: ReadonlyArray<{ date: string; systemKey: JewishProgrammeMarkerKey; time: string }>,
+  markers: ReadonlyArray<JewishProgrammeCalendarMarker>,
 ): boolean {
   const targetDates = [...new Set(markers.map((marker) => marker.date))];
   if (targetDates.length !== 2 || targetDates.some((date) => getWeekday(date) === null)) return false;
