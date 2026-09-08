@@ -215,6 +215,45 @@ function shabbatProgrammeEventResponse() {
   return data;
 }
 
+function holidayProgrammeEventResponse() {
+  const data = programmeEventResponse();
+  data.event.event_kind = "holiday";
+  data.event.starts_at = "2026-09-11T18:00:00+03:00";
+  data.event.ends_at = "2026-09-13T20:00:00+03:00";
+  data.occurrence_selection_mode = "none";
+  data.default_occurrence_id = null;
+  data.occurrences = [];
+  data.event.schedule = {
+    version: 1,
+    days: [
+      {
+        date: "2026-09-11", label: "Канун Рош ха-Шана", note: "Ручная заметка пятницы",
+        items: [
+          { time: "18:00", title: "Общая трапеза", option_id: data.participation_options[2].id },
+          { time: "18:20", title: "Зажигание свечей", option_id: null },
+          { time: "00:01", title: "Старые свечи", option_id: null, system_key: "candle_lighting_moscow" },
+        ],
+      },
+      {
+        date: "2026-09-12", label: "Первый день Рош ха-Шана", note: "Ручная заметка субботы",
+        items: [
+          { time: "10:00", title: "Шахарит", option_id: null },
+          { time: "19:00", title: "Выход звезд", option_id: null },
+          { time: "00:02", title: "Старый закат", option_id: null, system_key: "sunset_moscow" },
+        ],
+      },
+      {
+        date: "2026-09-13", label: "Второй день Рош ха-Шана", note: "Ручная заметка воскресенья",
+        items: [
+          { time: "10:00", title: "Шахарит второго дня", option_id: null },
+          { time: "00:03", title: "Старый исход", option_id: null, system_key: "havdalah_moscow" },
+        ],
+      },
+    ],
+  };
+  return data;
+}
+
 function recurringOpenEvent() {
   const data = responseWithOccurrences();
   data.registration_state = "open";
@@ -726,6 +765,23 @@ describe("public event page", () => {
     const linkedItem = screen.getByRole("button", { name: /Общая трапеза.*записаться/i });
     await user.click(linkedItem);
     expect(screen.getByRole("checkbox", { name: /Общая трапеза/ })).toBeChecked();
+  });
+
+  it("projects a fixed Holiday Programme from the event start and preserves manual linked rows", async () => {
+    const user = userEvent.setup();
+    await renderEvent(holidayProgrammeEventResponse());
+
+    expect(screen.getByText("Зажигание свечей · Москва")).toBeInTheDocument();
+    expect(screen.getByText("Зажигание свечей", { exact: true })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Общая трапеза.*записаться/i }));
+    expect(screen.getByRole("checkbox", { name: /Общая трапеза/ })).toBeChecked();
+
+    await user.click(screen.getByRole("tab", { name: /12 сент/i }));
+    expect(screen.getByText("Зажигание свечей на праздник · Москва")).toBeInTheDocument();
+    expect(screen.getByText("Выход звезд", { exact: true })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /13 сент/i }));
+    expect(screen.getByText("Исход праздника")).toBeInTheDocument();
   });
 
   it("refreshes the projected Shabbat Programme when the backend rolls the nearest occurrence forward", async () => {

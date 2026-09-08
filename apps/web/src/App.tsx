@@ -2189,9 +2189,10 @@ function EventPage({
   ) ?? null;
   const projectedProgramme = useMemo(() => projectJewishProgrammeForOccurrence({
     eventKind: data.event.event_kind,
+    eventStartsAt: data.event.starts_at,
     occurrence: selectedOccurrence,
     schedule: data.event.schedule,
-  }), [data.event.event_kind, data.event.schedule, selectedOccurrence]);
+  }), [data.event.event_kind, data.event.schedule, data.event.starts_at, selectedOccurrence]);
   const dateSelectionPending = dateStepRequired && !dateStepComplete;
   const effectiveState = selectedOccurrence?.registration_state ?? data.registration_state;
   const timeZone = selectedOccurrence?.timezone ?? data.event.timezone;

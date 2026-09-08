@@ -41,6 +41,43 @@ function scheduleFixture(): WebEventSchedule {
   };
 }
 
+function holidayScheduleFixture(): WebEventSchedule {
+  return {
+    version: 1,
+    days: [
+      {
+        date: "2026-09-11",
+        label: "Канун Рош ха-Шана",
+        note: "Ручная заметка пятницы",
+        items: [
+          { time: "18:00", title: "Минха", option_id: OPTION_ID },
+          { time: "18:20", title: "Зажигание свечей", option_id: null },
+          { time: "00:01", title: "Старые свечи", option_id: null, system_key: "candle_lighting_moscow" },
+        ],
+      },
+      {
+        date: "2026-09-12",
+        label: "Первый день Рош ха-Шана",
+        note: "Ручная заметка субботы",
+        items: [
+          { time: "10:00", title: "Шахарит", option_id: null },
+          { time: "19:00", title: "Выход звезд", option_id: null },
+          { time: "00:02", title: "Старый закат", option_id: null, system_key: "sunset_moscow" },
+        ],
+      },
+      {
+        date: "2026-09-13",
+        label: "Второй день Рош ха-Шана",
+        note: "Ручная заметка воскресенья",
+        items: [
+          { time: "10:00", title: "Шахарит второго дня", option_id: null },
+          { time: "00:03", title: "Старый исход", option_id: null, system_key: "havdalah_moscow" },
+        ],
+      },
+    ],
+  };
+}
+
 function projection(startsAt: string, schedule = scheduleFixture()) {
   return projectJewishProgrammeForOccurrence({
     eventKind: "shabbat",
@@ -137,6 +174,47 @@ describe("projectJewishProgrammeForOccurrence", () => {
       .toContainEqual({ time: "20:15", title: "Авдала", option_id: null });
     expect(saturdayCalendarRows.filter((item) => item.system_key === "havdalah_moscow")).toHaveLength(1);
     expect(template.days[1].items).toContainEqual({ time: "20:15", title: "Авдала", option_id: null });
+  });
+
+  it("projects a fixed Rosh Hashana Programme from the event start without retargeting manual days", () => {
+    const template = holidayScheduleFixture();
+    const input = {
+      eventKind: "holiday",
+      eventStartsAt: "2026-09-11T18:00:00+03:00",
+      occurrence: null,
+      schedule: template,
+    } as const;
+    const first = projectJewishProgrammeForOccurrence(input);
+    const second = projectJewishProgrammeForOccurrence({ ...input, schedule: first });
+
+    expect(first?.days.map((day) => day.date)).toEqual(["2026-09-11", "2026-09-12", "2026-09-13"]);
+    expect(first?.days.map(({ label, note }) => ({ label, note }))).toEqual(template.days.map(({ label, note }) => ({ label, note })));
+    expect(systemRows(first).filter((item) => item.system_key !== "torah_reading_parsha")).toEqual([
+      { date: "2026-09-11", time: "18:39", title: "Зажигание свечей · Москва", system_key: "candle_lighting_moscow" },
+      { date: "2026-09-11", time: "18:58", title: "Закат", system_key: "sunset_moscow" },
+      { date: "2026-09-12", time: "18:55", title: "Закат", system_key: "sunset_moscow" },
+      { date: "2026-09-12", time: "19:37", title: "Зажигание свечей на праздник · Москва", system_key: "candle_lighting_moscow" },
+      { date: "2026-09-13", time: "18:53", title: "Закат", system_key: "sunset_moscow" },
+      { date: "2026-09-13", time: "19:49", title: "Выход звезд", system_key: "tzeit_moscow" },
+      { date: "2026-09-13", time: "19:49", title: "Исход праздника", system_key: "havdalah_moscow" },
+    ]);
+    expect(first?.days[0].items).toContainEqual({ time: "18:00", title: "Минха", option_id: OPTION_ID });
+    expect(first?.days[1].items).toContainEqual({ time: "19:00", title: "Выход звезд", option_id: null });
+    expect(template).toEqual(holidayScheduleFixture());
+    expect(second).toEqual(first);
+  });
+
+  it("prefers the effective Holiday occurrence over the event start", () => {
+    const result = projectJewishProgrammeForOccurrence({
+      eventKind: "holiday",
+      eventStartsAt: "2026-08-01T18:00:00+03:00",
+      occurrence: occurrence("2026-09-11T18:00:00+03:00"),
+      schedule: holidayScheduleFixture(),
+    });
+
+    expect(systemRows(result)).toContainEqual(expect.objectContaining({
+      date: "2026-09-12", system_key: "candle_lighting_moscow", title: "Зажигание свечей на праздник · Москва",
+    }));
   });
 
   it("leaves non-Shabbat schedules unchanged and fails closed without an occurrence", () => {

@@ -23,34 +23,39 @@ const TORAH_READING_TITLE = "Чтение Торы";
 
 export type JewishProgrammeProjectionInput = Readonly<{
   eventKind: string;
+  eventStartsAt?: string | null;
   occurrence: Pick<WebRegistrationOccurrence, "starts_at"> | null;
   schedule: WebEventSchedule | null | undefined;
 }>;
 
 /**
- * Produces a public-only Shabbat Programme view for one concrete occurrence.
+ * Produces a public-only Jewish Programme view for the effective occurrence
+ * or, for fixed holidays, the event's own start.
  * It never mutates the saved event template or an earlier projection.
  */
 export function projectJewishProgrammeForOccurrence({
   eventKind,
+  eventStartsAt,
   occurrence,
   schedule,
 }: JewishProgrammeProjectionInput): WebEventSchedule | null {
   if (!schedule) return null;
-  if (eventKind !== "shabbat") return schedule;
+  const isShabbat = eventKind === "shabbat";
+  const isHoliday = eventKind === "holiday";
+  if (!isShabbat && !isHoliday) return schedule;
 
-  const failClosedSchedule = removeSystemRows(schedule);
-  const referenceDate = getMoscowCivilDate(occurrence?.starts_at);
+  const failClosedSchedule = isShabbat ? removeSystemRows(schedule) : removeCalendarRows(schedule);
+  const referenceDate = getMoscowCivilDate(isShabbat ? occurrence?.starts_at : occurrence?.starts_at ?? eventStartsAt);
   if (!referenceDate) return failClosedSchedule;
 
   const calendar = getMoscowJewishProgrammeCalendar({
-    eventKind: "shabbat",
+    eventKind: isShabbat ? "shabbat" : "holiday",
     referenceDate,
   });
   if (calendar.markers.length === 0) return failClosedSchedule;
 
   const days = removeCalendarRows(schedule).days.map(cloneDay);
-  if (!retargetShabbatDays(days, calendar.markers)) return failClosedSchedule;
+  if (isShabbat && !retargetShabbatDays(days, calendar.markers)) return failClosedSchedule;
 
   for (const marker of calendar.markers) {
     const day = days.find((candidate) => candidate.date === marker.date);
@@ -75,6 +80,8 @@ export function projectJewishProgrammeForOccurrence({
       });
     }
   }
+
+  if (isHoliday) return { version: 1, days };
 
   const parshaTitle = calendar.parshaRu
     ? `${TORAH_READING_TITLE} — ${calendar.parshaRu}`
