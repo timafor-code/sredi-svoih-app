@@ -728,6 +728,40 @@ describe("public event page", () => {
     expect(screen.getByRole("checkbox", { name: /Общая трапеза/ })).toBeChecked();
   });
 
+  it("refreshes the projected Shabbat Programme when the backend rolls the nearest occurrence forward", async () => {
+    const user = userEvent.setup();
+    const occurrenceA = shabbatProgrammeEventResponse();
+    const occurrenceB = {
+      ...occurrenceA,
+      default_occurrence_id: OCCURRENCE_TWO_ID,
+      occurrences: [{
+        ...occurrenceA.occurrences[0],
+        id: OCCURRENCE_TWO_ID,
+        starts_at: "2026-07-24T18:00:00+03:00",
+        ends_at: "2026-07-25T22:00:00+03:00",
+      }],
+    };
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response(envelope(occurrenceA)))
+      .mockImplementationOnce(() => response(envelope({ state: "anonymous", participant: null })))
+      .mockImplementationOnce(() => response(envelope(occurrenceB)));
+    window.history.replaceState(null, "", `/events/${PUBLIC_SLUG}`);
+    render(<App />);
+    await screen.findByRole("tab", { name: /17 июл/i });
+    await user.click(screen.getByRole("tab", { name: /18 июл/i }));
+    expect(screen.getByText("Чтение Торы — Дварим")).toBeInTheDocument();
+
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    fireEvent(document, new Event("visibilitychange"));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    expect(await screen.findByRole("tab", { name: /24 июл/i })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /17 июл/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /25 июл/i }));
+    expect(screen.getByText("Чтение Торы — Ваэтханан")).toBeInTheDocument();
+    expect(screen.queryByText("Чтение Торы — Дварим")).not.toBeInTheDocument();
+  });
+
   it("renders a dangling programme option as a plain line", async () => {
     const data = programmeEventResponse();
     data.event.schedule!.days[0].items[1].option_id = "99999999-9999-4999-8999-999999999999";
