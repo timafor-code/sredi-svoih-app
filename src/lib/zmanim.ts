@@ -1,11 +1,15 @@
-import { CandleLightingEvent, HavdalahEvent, HebrewCalendar, Location, Zmanim } from '@hebcal/core';
+import { CandleLightingEvent, HavdalahEvent, HDate, HebrewCalendar, Location, Zmanim } from '@hebcal/core';
 
 import { addDays, daysUntil, formatDurationRu, progressBetween } from './dates';
 import { getHebrewDateLabel } from './hebcal';
 
 export interface ZmanimRequest {
   city?: string;
-  date?: Date;
+  /**
+   * `HDate` lets callers retain an intended civil date without asking the
+   * runtime time zone to interpret a YYYY-MM-DD string first.
+   */
+  date?: Date | HDate;
   location?: ZmanimLocationInput;
   source?: 'manual' | 'gps';
   useElevation?: boolean;
@@ -136,6 +140,7 @@ export const SUPPORTED_ZMANIM_CITIES = [
 export type SupportedZmanimCity = (typeof SUPPORTED_ZMANIM_CITIES)[number];
 
 export const FALLBACK_ZMANIM_CITY: SupportedZmanimCity = 'Москва';
+export const HEBCAL_HAVDALAH_MINUTES = 42;
 
 const CITY_TO_HEBCAL: Record<SupportedZmanimCity, string> = {
   'Алматы': 'Almaty',
@@ -617,7 +622,7 @@ export function getUpcomingCandleLighting(date: Date = new Date(), location = ge
   const events = HebrewCalendar.calendar({
     candlelighting: true,
     end: addDays(date, 14),
-    havdalahMins: 42,
+    havdalahMins: HEBCAL_HAVDALAH_MINUTES,
     location,
     start: date,
   });
@@ -638,7 +643,7 @@ export function getUpcomingHavdalah(date: Date = new Date(), location = getHebca
   const events = HebrewCalendar.calendar({
     candlelighting: true,
     end: addDays(date, 14),
-    havdalahMins: 42,
+    havdalahMins: HEBCAL_HAVDALAH_MINUTES,
     location,
     start: date,
   });

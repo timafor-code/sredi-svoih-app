@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { parseEventScheduleDescription } from "../../lib/eventScheduleParser";
+import { applyJewishProgrammeAutomation } from "../../lib/jewishProgrammeAutomation";
 import { listAdminEventParticipationOptions } from "../../services/adminParticipationOptionsService";
 import type { AdminEvent, AdminEventSchedule } from "../../types/events";
 import type { ParticipationOption } from "../../types/participationOptions";
@@ -26,7 +27,9 @@ export function EventProgrammeEditor({
   onDirtyChange,
   onSave,
 }: EventProgrammeEditorProps) {
-  const [schedule, setSchedule] = useState<AdminEventSchedule | null>(() => cloneSchedule(event.schedule ?? null));
+  const [schedule, setSchedule] = useState<AdminEventSchedule | null>(() => (
+    automateProgramme(event, event.schedule ?? null)
+  ));
   const [baseline, setBaseline] = useState<AdminEventSchedule | null>(() => cloneSchedule(event.schedule ?? null));
   const [sourceText, setSourceText] = useState("");
   const [parseRemainder, setParseRemainder] = useState<string[]>([]);
@@ -39,7 +42,7 @@ export function EventProgrammeEditor({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
-  const startDate = useMemo(() => getEventStartDate(event), [event.startsAt, event.timezone]);
+  const startDate = useMemo(() => getEventStartDate(event), [event.startsAt]);
   const scheduleDirty = !sameSchedule(schedule, baseline);
   const optionsAreCurrent = !optionsLoading
     && !optionsError
@@ -49,7 +52,7 @@ export function EventProgrammeEditor({
 
   useEffect(() => {
     const nextSchedule = cloneSchedule(event.schedule ?? null);
-    setSchedule(nextSchedule);
+    setSchedule(automateProgramme(event, nextSchedule));
     setBaseline(nextSchedule);
     setSourceText("");
     setParseRemainder([]);
@@ -62,6 +65,12 @@ export function EventProgrammeEditor({
     setLoadedOptionsRevision(null);
     setSaving(false);
   }, [event.id]);
+
+  useEffect(() => {
+    // This reacts only to persisted event context. Its pure transform does not
+    // depend on the Programme draft, so normal edits cannot create a loop.
+    setSchedule((current) => automateProgramme(event, current));
+  }, [event.eventKind, event.startsAt]);
 
   useEffect(() => {
     let active = true;
@@ -92,7 +101,7 @@ export function EventProgrammeEditor({
   useEffect(() => () => onDirtyChange(false), [onDirtyChange, event.id]);
 
   const changeSchedule = (nextSchedule: AdminEventSchedule | null) => {
-    setSchedule(nextSchedule);
+    setSchedule(automateProgramme(event, nextSchedule));
     setSaveError(null);
     setValidationError(null);
     setSavedAt(null);
@@ -111,7 +120,7 @@ export function EventProgrammeEditor({
       startDate,
       participationOptions: participationOptions.map((option) => ({ id: option.id, title: option.title })),
     });
-    setSchedule(result.schedule);
+    setSchedule(automateProgramme(event, result.schedule));
     setParseRemainder(result.remainder);
     setSaveError(null);
     setValidationError(null);
@@ -139,7 +148,7 @@ export function EventProgrammeEditor({
         return;
       }
       const confirmedSchedule = cloneSchedule(confirmed.schedule ?? null);
-      setSchedule(confirmedSchedule);
+      setSchedule(automateProgramme(event, confirmedSchedule));
       setBaseline(confirmedSchedule);
       setSavedAt(new Date().toISOString());
     } catch (error) {
@@ -239,10 +248,18 @@ function getEventStartDate(event: AdminEvent): string | null {
   if (Number.isNaN(date.getTime())) return null;
 
   try {
-    return formatDate(date, event.timezone ?? "Europe/Moscow");
+    return formatDate(date, "Europe/Moscow");
   } catch {
     return formatDate(date);
   }
+}
+
+function automateProgramme(event: AdminEvent, schedule: AdminEventSchedule | null): AdminEventSchedule | null {
+  return applyJewishProgrammeAutomation({
+    eventKind: event.eventKind,
+    referenceDate: getEventStartDate(event),
+    schedule,
+  });
 }
 
 function formatDate(date: Date, timezone?: string): string | null {

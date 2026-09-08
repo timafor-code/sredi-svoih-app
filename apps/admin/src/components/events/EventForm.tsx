@@ -24,6 +24,7 @@ import {
   type EventUpdateFormState,
 } from "../../lib/eventUpdatePatch";
 import { parseEventScheduleDescription } from "../../lib/eventScheduleParser";
+import { applyJewishProgrammeAutomation } from "../../lib/jewishProgrammeAutomation";
 import {
   clearFormErrors,
   firstActiveFormErrorKey,
@@ -207,9 +208,12 @@ export function EventForm(props: EventFormProps) {
   const [baseline, setBaseline] = useState(() => buildInitialForm(initialEvent, forceDraftHidden));
   // Programme authoring is intentionally create-only here. Existing events use
   // the dedicated Programme tab so ordinary content saves never own schedule.
-  const [schedule, setSchedule] = useState<AdminEventSchedule | null>(() =>
-    mode === "create" ? cloneSchedule(initialEvent?.schedule ?? null) : null,
-  );
+  const [schedule, setSchedule] = useState<AdminEventSchedule | null>(() => {
+    const initialForm = buildInitialForm(initialEvent, forceDraftHidden);
+    return mode === "create"
+      ? automateCreateProgramme(initialForm.eventKind, initialForm.startDate, initialEvent?.schedule ?? null)
+      : null;
+  });
   const [scheduleBaseline, setScheduleBaseline] = useState<AdminEventSchedule | null>(() =>
     mode === "create" ? cloneSchedule(initialEvent?.schedule ?? null) : null,
   );
@@ -255,7 +259,9 @@ export function EventForm(props: EventFormProps) {
     const nextForm = buildInitialForm(initialEvent, forceDraftHidden);
     setForm(nextForm);
     setBaseline(nextForm);
-    const nextSchedule = mode === "create" ? cloneSchedule(initialEvent?.schedule ?? null) : null;
+    const nextSchedule = mode === "create"
+      ? automateCreateProgramme(nextForm.eventKind, nextForm.startDate, initialEvent?.schedule ?? null)
+      : null;
     setSchedule(nextSchedule);
     setScheduleBaseline(nextSchedule);
     setScheduleParseRemainder([]);
@@ -520,6 +526,12 @@ export function EventForm(props: EventFormProps) {
       return clearFormErrors(current, keysToClear);
     });
 
+    if (mode === "create" && (field === "eventKind" || field === "startDate")) {
+      const nextEventKind = field === "eventKind" ? value as string : form.eventKind;
+      const nextStartDate = field === "startDate" ? value as string : form.startDate;
+      setSchedule((current) => automateCreateProgramme(nextEventKind, nextStartDate, current));
+    }
+
     if (mode === "edit") {
       setHasSuccessfulEditSave(false);
     }
@@ -554,7 +566,7 @@ export function EventForm(props: EventFormProps) {
   };
 
   const handleScheduleChange = (nextSchedule: AdminEventSchedule | null) => {
-    setSchedule(nextSchedule);
+    setSchedule(automateCreateProgramme(form.eventKind, form.startDate, nextSchedule));
     setErrors((current) => clearFormErrors(current, ["schedule", "form"]));
     if (mode === "edit") setHasSuccessfulEditSave(false);
   };
@@ -572,7 +584,7 @@ export function EventForm(props: EventFormProps) {
       startDate: form.startDate,
       participationOptions: participationOptions.map((option) => ({ id: option.id, title: option.title })),
     });
-    setSchedule(result.schedule);
+    setSchedule(automateCreateProgramme(form.eventKind, form.startDate, result.schedule));
     setScheduleParseRemainder(result.remainder);
     setErrors((current) => clearFormErrors(current, ["schedule", "form"]));
     if (mode === "edit") setHasSuccessfulEditSave(false);
@@ -602,9 +614,13 @@ export function EventForm(props: EventFormProps) {
       return;
     }
 
+    const scheduleForSubmit = mode === "create"
+      ? automateCreateProgramme(form.eventKind, form.startDate, schedule)
+      : schedule;
+
     if (mode === "create") {
       const scheduleValidation = validateEventSchedule(
-        schedule,
+        scheduleForSubmit,
         participationOptionsLoading
           || participationOptionsError
           || participationOptionsLoadedRevision !== participationOptionsRevision
@@ -619,7 +635,7 @@ export function EventForm(props: EventFormProps) {
     }
 
     const inputWithSchedule: AdminEventMutationInput = mode === "create"
-      ? { ...validation.input, schedule }
+      ? { ...validation.input, schedule: scheduleForSubmit }
       : validation.input;
 
     const updateInput = mode === "edit" && initialEvent
@@ -1397,6 +1413,14 @@ function cloneSchedule(schedule: AdminEventSchedule | null): AdminEventSchedule 
       items: day.items.map((item) => ({ ...item })),
     })),
   };
+}
+
+function automateCreateProgramme(
+  eventKind: string,
+  referenceDate: string,
+  schedule: AdminEventSchedule | null,
+): AdminEventSchedule | null {
+  return applyJewishProgrammeAutomation({ eventKind, referenceDate, schedule });
 }
 
 function sameSchedule(
