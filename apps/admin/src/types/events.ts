@@ -22,10 +22,24 @@ export type AdminEventRegistrationMode = (typeof ADMIN_EVENT_REGISTRATION_MODES)
 export type AdminEventWebVisibility = "disabled" | "unlisted" | "listed";
 export type AdminEventWebVisibilityUpdate = Exclude<AdminEventWebVisibility, "listed">;
 
+export const ADMIN_EVENT_SYSTEM_KEYS = [
+  "candle_lighting_moscow",
+  "sunset_moscow",
+  "tzeit_moscow",
+  "havdalah_moscow",
+  "torah_reading_parsha",
+] as const;
+export type AdminEventSystemKey = (typeof ADMIN_EVENT_SYSTEM_KEYS)[number];
+
+export function isAdminEventSystemKey(value: unknown): value is AdminEventSystemKey {
+  return typeof value === "string" && (ADMIN_EVENT_SYSTEM_KEYS as readonly string[]).includes(value);
+}
+
 export type AdminEventScheduleItem = {
   time: string;
   title: string;
   optionId: string | null;
+  systemKey?: AdminEventSystemKey | null;
 };
 
 export type AdminEventScheduleDay = {
@@ -50,6 +64,7 @@ export type AdminEventScheduleRow = {
       time: string;
       title: string;
       option_id: string | null;
+      system_key?: AdminEventSystemKey | null;
     }>;
   }>;
 };

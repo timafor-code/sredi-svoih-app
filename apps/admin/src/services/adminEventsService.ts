@@ -5,6 +5,7 @@ import type {
   AdminEventScheduleDay,
   AdminEventScheduleItem,
 } from "../types/events";
+import { isAdminEventSystemKey } from "../types/events";
 
 function string(value: unknown, fallback = ""): string {
   return value == null || String(value).trim() === "" ? fallback : String(value);
@@ -28,6 +29,9 @@ function normalizeScheduleItem(value: unknown): AdminEventScheduleItem | null {
     time: value.time,
     title: value.title,
     optionId: typeof value.option_id === "string" ? value.option_id : null,
+    systemKey: value.system_key === undefined || value.system_key === null
+      ? null
+      : isAdminEventSystemKey(value.system_key) ? value.system_key : null,
   };
 }
 

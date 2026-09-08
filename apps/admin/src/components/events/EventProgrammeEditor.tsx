@@ -210,7 +210,7 @@ export function EventProgrammeEditor({
   );
 }
 
-function cloneSchedule(schedule: AdminEventSchedule | null): AdminEventSchedule | null {
+export function cloneSchedule(schedule: AdminEventSchedule | null): AdminEventSchedule | null {
   return schedule === null ? null : {
     version: 1,
     days: schedule.days.map((day) => ({

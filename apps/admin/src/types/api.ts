@@ -1,9 +1,19 @@
 import type { AdminRegistrationSourceChannel } from "./registrations";
 
+export const ADMIN_API_EVENT_SYSTEM_KEYS = [
+  "candle_lighting_moscow",
+  "sunset_moscow",
+  "tzeit_moscow",
+  "havdalah_moscow",
+  "torah_reading_parsha",
+] as const;
+export type AdminApiEventSystemKey = (typeof ADMIN_API_EVENT_SYSTEM_KEYS)[number];
+
 export type AdminApiEventScheduleItem = {
   time: string;
   title: string;
   option_id: string | null;
+  system_key?: AdminApiEventSystemKey | null;
 };
 
 export type AdminApiEventScheduleDay = {

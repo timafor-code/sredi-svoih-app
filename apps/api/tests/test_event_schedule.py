@@ -27,7 +27,10 @@ def schedule_document() -> dict:
             "date": "2026-09-25",
             "label": "Канун Суккота и Шаббата",
             "note": "Теилим: 72–76",
-            "items": [{"time": "18:00", "title": "Минха", "option_id": None}],
+            "items": [{
+                "time": "18:00", "title": "Минха", "option_id": None,
+                "system_key": None,
+            }],
         }],
     }
 
@@ -44,7 +47,8 @@ def invalid_documents() -> list[tuple[str, dict]]:
         }),
         ("item", {
             "time": ["6:30", "24:00", "12:90", "09:05\n", "09:05:00", 630],
-            "title": ["x" * 201, None, 1], "option_id": ["invalid", 1], "extra": [1],
+            "title": ["x" * 201, None, 1], "option_id": ["invalid", 1],
+            "system_key": ["some_future_unknown_type", 1, True], "extra": [1],
         }),
     ):
         for field, values in changes.items():
@@ -99,8 +103,21 @@ def test_optional_text_and_option_serialize_as_null() -> None:
     assert saved["days"][0]["label"] is None
     assert saved["days"][0]["note"] is None
     assert saved["days"][0]["items"][0] == {
-        "time": "09:05", "title": "  ", "option_id": None,
+        "time": "09:05", "title": "  ", "option_id": None, "system_key": None,
     }
+
+
+@pytest.mark.parametrize("system_key", [
+    "candle_lighting_moscow",
+    "sunset_moscow",
+    "tzeit_moscow",
+    "havdalah_moscow",
+    "torah_reading_parsha",
+])
+def test_schedule_accepts_allowlisted_system_keys(system_key: str) -> None:
+    document = schedule_document()
+    document["days"][0]["items"][0]["system_key"] = system_key
+    assert EventSchedule.model_validate(document).model_dump(mode="json") == document
 
 
 class EventScheduleApiTests(unittest.IsolatedAsyncioTestCase):
@@ -219,6 +236,21 @@ class EventScheduleApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["data"]["schedule"], document)
         self.assertEqual(await self._stored(event_id), document)
         self.assertEqual((await self._admin_get(event_id))["schedule"], document)
+
+    async def test_system_key_round_trips_through_create_update_and_public_read(self) -> None:
+        document = schedule_document()
+        document["days"][0]["items"][0]["system_key"] = "candle_lighting_moscow"
+        created = await self._create(schedule=document)
+        self.assertEqual(created.status_code, 201, created.text)
+        created_id = UUID(created.json()["data"]["id"])
+        self.assertEqual(created.json()["data"]["schedule"], document)
+        replacement = schedule_document()
+        replacement["days"][0]["items"][0]["system_key"] = "torah_reading_parsha"
+        updated = await self._patch(schedule=replacement)
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual((await self._admin_get())["schedule"], replacement)
+        self.assertEqual((await self._public_get())["event"]["schedule"], replacement)
+        self.assertEqual(await self._stored(created_id), document)
 
     async def test_patch_replace_preserve_and_clear(self) -> None:
         document = schedule_document()
