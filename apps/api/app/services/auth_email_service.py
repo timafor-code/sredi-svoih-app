@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from urllib.parse import urlencode
-
 from app.core.config import Settings, get_settings
 from app.services.auth_email_templates import (
     RenderedAuthEmail,
@@ -25,11 +23,6 @@ def send_password_reset_email(
 ) -> EmailSendResult:
     resolved_settings = settings or get_settings()
     rendered = render_password_reset_email(
-        reset_link=_build_auth_link(
-            resolved_settings,
-            "/auth/confirm-password-reset",
-            code,
-        ),
         reset_code=code,
         expiration_minutes=expiration_minutes,
     )
@@ -49,11 +42,6 @@ def send_email_verification_email(
 ) -> EmailSendResult:
     resolved_settings = settings or get_settings()
     rendered = render_email_verification_email(
-        verification_link=_build_auth_link(
-            resolved_settings,
-            "/auth/confirm-email-verification",
-            code,
-        ),
         verification_code=code,
         expiration_minutes=expiration_minutes,
     )
@@ -73,11 +61,6 @@ def send_set_password_email(
 ) -> EmailSendResult:
     resolved_settings = settings or get_settings()
     rendered = render_set_password_email(
-        set_password_link=_build_auth_link(
-            resolved_settings,
-            "/auth/confirm-set-password",
-            code,
-        ),
         set_password_code=code,
         expiration_minutes=expiration_minutes,
     )
@@ -86,13 +69,6 @@ def send_set_password_email(
         rendered=rendered,
         settings=resolved_settings,
     )
-
-
-def _build_auth_link(settings: Settings, path: str, code: str) -> str:
-    base_url = settings.api_public_app_base_url.rstrip("/")
-    normalized_path = path if path.startswith("/") else f"/{path}"
-    return f"{base_url}{normalized_path}?{urlencode({'code': code})}"
-
 
 def _send_auth_email(
     *,

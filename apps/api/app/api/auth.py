@@ -164,6 +164,7 @@ async def confirm_password_reset_endpoint(
 ) -> AuthCodeConfirmResponse:
     return await confirm_password_reset(
         session,
+        email=payload.email,
         code=payload.code,
         new_password=payload.new_password,
     )
@@ -182,7 +183,11 @@ async def confirm_email_verification_endpoint(
     payload: ConfirmEmailVerificationRequest,
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AuthCodeConfirmResponse:
-    return await confirm_email_verification(session, code=payload.code)
+    return await confirm_email_verification(
+        session,
+        email=payload.email,
+        code=payload.code,
+    )
 
 
 @router.post("/request-set-password", response_model=AuthCodeRequestResponse)
@@ -200,6 +205,7 @@ async def confirm_set_password_endpoint(
 ) -> AuthCodeConfirmResponse:
     return await confirm_set_password(
         session,
+        email=payload.email,
         code=payload.code,
         new_password=payload.new_password,
     )

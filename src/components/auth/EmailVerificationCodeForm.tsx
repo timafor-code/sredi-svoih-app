@@ -38,17 +38,15 @@ export function EmailVerificationCodeForm({
     setLocalError(null);
     setSuccessMessage(null);
 
-    const trimmedCode = code.trim();
-
-    if (!trimmedCode) {
-      setLocalError('Введите код из письма.');
+    if (!/^[0-9]{6}$/.test(code)) {
+      setLocalError('Введите шестизначный код из письма.');
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      await confirmEmailVerification(trimmedCode);
+      await confirmEmailVerification(email, code);
       await signIn(email, password);
       setCode('');
       await onVerified();
@@ -89,8 +87,10 @@ export function EmailVerificationCodeForm({
       <FormField
         label="Код из письма"
         value={code}
-        onChangeText={setCode}
-        placeholder="Вставьте код подтверждения"
+        onChangeText={(value) => setCode(value.replace(/[^0-9]/g, '').slice(0, 6))}
+        keyboardType="number-pad"
+        maxLength={6}
+        placeholder="Шесть цифр"
       />
       <PrimaryButton
         title={isSubmitting ? 'Подтверждаем...' : 'Подтвердить email'}

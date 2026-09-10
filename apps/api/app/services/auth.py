@@ -54,6 +54,9 @@ from app.services.auth_tokens import hash_token, verify_token_hash
 logger = logging.getLogger(__name__)
 
 _AUTH_CODE_BYTES = 32
+_EMAIL_CODE_DIGITS = 6
+_EMAIL_CODE_MAX_ATTEMPTS = 5
+_EMAIL_CODE_HASH_PREFIX = "auth-email-code-v1:"
 _PASSWORD_RESET_PURPOSE = "password_reset"
 _EMAIL_VERIFICATION_PURPOSE = "email_verification"
 _SET_PASSWORD_PURPOSE = "set_password"
@@ -189,7 +192,22 @@ def _refresh_token_hash_or_auth_error(refresh_token: str) -> str:
 
 
 def _new_auth_code() -> str:
+    """Create an opaque credential for the direct set-password handoff."""
     return secrets.token_urlsafe(_AUTH_CODE_BYTES)
+
+
+def _new_manual_email_code() -> str:
+    return f"{secrets.randbelow(10**_EMAIL_CODE_DIGITS):0{_EMAIL_CODE_DIGITS}d}"
+
+
+def _email_code_hash(
+    *,
+    purpose: str,
+    user_id: UUID,
+    code: str,
+) -> str:
+    scoped_credential = f"{purpose}:{user_id}:{code}"
+    return f"{_EMAIL_CODE_HASH_PREFIX}{hash_token(scoped_credential)}"
 
 
 def _auth_email_rate_limit_key(purpose: str, normalized_email: str) -> str:
@@ -275,12 +293,16 @@ async def _stage_auth_code_for_user(
 ) -> str:
     """Invalidate prior codes and add a new one without committing."""
     now = _now()
-    code = _new_auth_code()
+    code = _new_manual_email_code()
     await _invalidate_user_auth_codes(session, model, user_id=user.id, now=now)
     session.add(
         model(
             user_id=user.id,
-            code_hash=hash_token(code),
+            code_hash=_email_code_hash(
+                purpose=_purpose_for_model(model),
+                user_id=user.id,
+                code=code,
+            ),
             expires_at=now + _auth_code_ttl(),
         ),
     )
@@ -299,32 +321,81 @@ async def _create_auth_code_for_user(
     return code
 
 
-async def _usable_auth_code(
+async def _usable_email_auth_code(
     session: AsyncSession,
     model: AuthCodeModel,
     *,
+    email: str,
     code: str,
 ) -> AuthEmailVerificationCode | AuthSetPasswordCode | PasswordResetCode:
     now = _now()
     purpose_label = _purpose_label_for_model(model)
-    try:
-        code_hash = hash_token(code)
-    except ValueError as exc:
-        raise _invalid_or_expired_code_error(purpose_label) from exc
-
+    user = await _find_user_by_normalized_email(session, email)
+    if user is None:
+        raise _invalid_or_expired_code_error(purpose_label)
     code_row = await session.scalar(
         select(model)
         .where(
-            model.code_hash == code_hash,
+            model.user_id == user.id,
             model.consumed_at.is_(None),
-            model.expires_at > now,
+            model.code_hash.like(f"{_EMAIL_CODE_HASH_PREFIX}%"),
+        )
+        .order_by(model.created_at.desc())
+        .with_for_update(),
+    )
+    if (
+        code_row is None
+        or code_row.expires_at <= now
+        or code_row.attempt_count >= _EMAIL_CODE_MAX_ATTEMPTS
+    ):
+        raise _invalid_or_expired_code_error(purpose_label)
+
+    expected_hash = _email_code_hash(
+        purpose=_purpose_for_model(model),
+        user_id=user.id,
+        code=code,
+    )
+    if secrets.compare_digest(expected_hash, code_row.code_hash):
+        return code_row
+
+    code_row.attempt_count += 1
+    code_row.updated_at = now
+    if code_row.attempt_count >= _EMAIL_CODE_MAX_ATTEMPTS:
+        code_row.consumed_at = now
+    await session.commit()
+    raise _invalid_or_expired_code_error(purpose_label)
+
+
+async def _usable_direct_set_password_handoff(
+    session: AsyncSession,
+    *,
+    code: str,
+) -> AuthSetPasswordCode:
+    try:
+        code_hash = hash_token(code)
+    except ValueError as exc:
+        raise _invalid_or_expired_code_error("set-password") from exc
+
+    code_row = await session.scalar(
+        select(AuthSetPasswordCode)
+        .where(
+            AuthSetPasswordCode.code_hash == code_hash,
+            AuthSetPasswordCode.consumed_at.is_(None),
+            AuthSetPasswordCode.expires_at > _now(),
         )
         .with_for_update(),
     )
     if code_row is None or not verify_token_hash(code, code_row.code_hash):
-        raise _invalid_or_expired_code_error(purpose_label)
-
+        raise _invalid_or_expired_code_error("set-password")
     return code_row
+
+
+def _purpose_for_model(model: AuthCodeModel) -> str:
+    if model is PasswordResetCode:
+        return _PASSWORD_RESET_PURPOSE
+    if model is AuthEmailVerificationCode:
+        return _EMAIL_VERIFICATION_PURPOSE
+    return _SET_PASSWORD_PURPOSE
 
 
 def _purpose_label_for_model(model: AuthCodeModel) -> str:
@@ -596,10 +667,16 @@ async def create_password_reset_code(
 async def confirm_password_reset(
     session: AsyncSession,
     *,
+    email: str,
     code: str,
     new_password: str,
 ) -> AuthCodeConfirmResponse:
-    code_row = await _usable_auth_code(session, PasswordResetCode, code=code)
+    code_row = await _usable_email_auth_code(
+        session,
+        PasswordResetCode,
+        email=email,
+        code=code,
+    )
     user = await session.get(AppUser, code_row.user_id, with_for_update=True)
     if (
         user is None
@@ -660,9 +737,15 @@ async def create_email_verification_code(
 async def confirm_email_verification(
     session: AsyncSession,
     *,
+    email: str,
     code: str,
 ) -> AuthCodeConfirmResponse:
-    code_row = await _usable_auth_code(session, AuthEmailVerificationCode, code=code)
+    code_row = await _usable_email_auth_code(
+        session,
+        AuthEmailVerificationCode,
+        email=email,
+        code=code,
+    )
     user = await session.get(AppUser, code_row.user_id, with_for_update=True)
     if user is None or user.status != authorization_service.ACTIVE_STATUS:
         raise _invalid_or_expired_code_error("email verification")
@@ -735,10 +818,19 @@ async def issue_set_password_handoff(
 async def confirm_set_password(
     session: AsyncSession,
     *,
+    email: str | None = None,
     code: str,
     new_password: str,
 ) -> AuthCodeConfirmResponse:
-    code_row = await _usable_auth_code(session, AuthSetPasswordCode, code=code)
+    if email is None:
+        code_row = await _usable_direct_set_password_handoff(session, code=code)
+    else:
+        code_row = await _usable_email_auth_code(
+            session,
+            AuthSetPasswordCode,
+            email=email,
+            code=code,
+        )
     user = await session.get(AppUser, code_row.user_id, with_for_update=True)
     if user is None or user.status != authorization_service.ACTIVE_STATUS:
         raise _invalid_or_expired_code_error("set-password")

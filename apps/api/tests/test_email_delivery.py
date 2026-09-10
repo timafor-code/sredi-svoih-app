@@ -236,6 +236,26 @@ def test_auth_and_privacy_callers_stay_text_only(sender, smtp_transport):
     assert not sent.is_multipart()
 
 
+@pytest.mark.parametrize("sender", [
+    auth_email_service.send_email_verification_email,
+    auth_email_service.send_password_reset_email,
+    auth_email_service.send_set_password_email,
+])
+def test_auth_email_codes_do_not_include_confirmation_links(sender, smtp_transport):
+    sender(
+        to_address=TEST_ADDRESS,
+        code=TEST_CODE,
+        expiration_minutes=7,
+        settings=email_settings(),
+    )
+    sent = smtp_transport.return_value.__enter__.return_value.send_message.call_args.args[0]
+    body = sent.get_content()
+    assert TEST_CODE in body
+    assert "http://" not in body
+    assert "https://" not in body
+    assert "?code=" not in body
+
+
 @pytest.mark.parametrize("target,error", [
     ("render_verification_code_email", ValueError("synthetic formatting detail")),
     ("_load_verification_logo", FileNotFoundError("synthetic filesystem detail")),

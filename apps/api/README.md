@@ -80,9 +80,11 @@ secrets in mobile, Expo, Vite, `apps/admin`, or committed env files.
 ## Auth email flows
 
 The API includes backend-only password reset, email verification, and
-set-password endpoints under `/auth/*`. These endpoints store only hashed
-one-time codes in the API database. Plaintext codes and links are used only
-while rendering the outbound auth email.
+set-password endpoints under `/auth/*`. Manually entered email codes are exactly
+six digits, bound to their email/user and purpose, hash-only at rest, and burn
+after five failed confirmations. The direct post-registration set-password
+handoff remains a separate high-entropy hash-only credential. Plaintext codes
+exist only while rendering the outbound auth email.
 
 Email sending is disabled by default:
 

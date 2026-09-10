@@ -49,8 +49,8 @@ function validateConfirmWiring() {
 }
 
 function validateStoreWiring() {
-  assertIncludes(files.authStore, 'confirmEmailVerification: async (code: string)', 'store exposes a confirmEmailVerification action');
-  assertIncludes(files.authStore, 'confirmEmailVerificationService(code)', 'store action calls the confirm service');
+  assertIncludes(files.authStore, 'confirmEmailVerification: async (email: string, code: string)', 'store exposes a confirmEmailVerification action');
+  assertIncludes(files.authStore, 'confirmEmailVerificationService(email, code)', 'store action calls the confirm service');
 }
 
 function validateRecoveryWiring() {
@@ -60,9 +60,10 @@ function validateRecoveryWiring() {
     '}, [code, confirmEmailVerification, email, onVerified, password, signIn]);',
   );
 
-  assertIncludes(verificationSubmit, 'await confirmEmailVerification(trimmedCode)', 'code is confirmed before login');
+  assertIncludes(verificationSubmit, 'await confirmEmailVerification(email, code)', 'email-bound code is confirmed before login');
   assertIncludes(verificationSubmit, 'await signIn(email, password)', 'verification logs in with the held credentials');
-  assertBefore(verificationSubmit, 'await confirmEmailVerification(trimmedCode)', 'await signIn(email, password)', 'confirmation happens before login');
+  assertBefore(verificationSubmit, 'await confirmEmailVerification(email, code)', 'await signIn(email, password)', 'confirmation happens before login');
+  assertIncludes(files.verificationForm, "replace(/[^0-9]/g, '').slice(0, 6)", 'verification input preserves only six numeric digits');
   assertIncludes(verificationSubmit, "setCode('')", 'verification code is cleared from memory after use');
 
   assertIncludes(files.signInForm, 'AUTH_ERROR_MESSAGES.emailNotConfirmed', 'sign-in recovers specifically on the email-not-confirmed error');
@@ -149,9 +150,9 @@ async function validateServiceRequests() {
     assertEqual(calls[0].path, '/auth/register', 'signup calls only register');
     assertEqual(storedTokenCalls.length, 0, 'signup stores no tokens before verification');
 
-    await api.confirmEmailVerification('a-verification-code');
+    await api.confirmEmailVerification('signup@example.invalid', '012345');
     assertEqual(calls[1].path, '/auth/confirm-email-verification', 'confirm calls the confirm endpoint');
-    assertDeepEqual(calls[1].body, { code: 'a-verification-code' }, 'confirm sends only the code');
+    assertDeepEqual(calls[1].body, { email: 'signup@example.invalid', code: '012345' }, 'confirm sends email and the six-digit code');
 
     await api.resendConfirmationEmail('signup@example.invalid');
     assertEqual(calls[2].path, '/auth/request-email-verification', 'resend uses the existing request endpoint');
