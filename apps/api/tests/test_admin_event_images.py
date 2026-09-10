@@ -1016,7 +1016,7 @@ class AdminEventImageLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored_url, legacy_url)
 
         script = ScriptDirectory.from_config(Config("alembic.ini"))
-        self.assertEqual(script.get_heads(), ["20260908120000"])
+        self.assertEqual(script.get_heads(), ["20260910190000"])
         self.assertEqual(
             script.get_revision("20260907210000").down_revision,
             "20260907200000",
