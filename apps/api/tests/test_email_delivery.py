@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import smtplib
 import unittest
 from email import policy
@@ -21,6 +22,12 @@ from app.main import app
 from app.services import auth_email_service, privacy_email_service
 from app.services import email_delivery as delivery
 from app.services import web_registration_email_service as service
+from app.services.auth_email_templates import (
+    render_email_verification_email,
+    render_password_reset_email,
+    render_set_password_email,
+)
+from app.services.privacy_email_templates import render_privacy_access_code_email
 from app.services.web_registration_email_templates import (
     render_registration_result_email,
     render_verification_code_email,
@@ -166,6 +173,14 @@ def test_verification_copy_has_dynamic_code_and_ttl_without_remote_resources(min
     assert "display:none; max-height:0; overflow:hidden; mso-hide:all;" in html
 
 
+def test_registration_verification_html_output_is_unchanged():
+    rendered = render_verification_code_email(code="012345", expiration_minutes=7)
+    assert rendered.subject == "Подтверждение регистрации"
+    assert hashlib.sha256(rendered.html_body.encode()).hexdigest() == (
+        "a7284834fc9a81300498887646ba5ef3d736e46ae4888d904c53d6c2e681cb13"
+    )
+
+
 def test_verification_code_is_html_escaped():
     rendered = render_verification_code_email(code="<synthetic&>", expiration_minutes=7)
     assert "&lt;synthetic&amp;&gt;" in rendered.html_body
@@ -220,20 +235,76 @@ def test_registration_result_stays_text_only(status):
     ).text_body
 
 
-@pytest.mark.parametrize("sender", [
-    auth_email_service.send_email_verification_email,
-    auth_email_service.send_password_reset_email,
-    auth_email_service.send_set_password_email,
-    privacy_email_service.send_privacy_access_code,
+@pytest.mark.parametrize(("sender", "subject", "primary_copy"), [
+    (
+        auth_email_service.send_email_verification_email,
+        "Подтверждение email",
+        "Введите этот код, чтобы подтвердить адрес электронной почты в «Среди своих».",
+    ),
+    (
+        auth_email_service.send_password_reset_email,
+        "Сброс пароля",
+        "Введите этот код, чтобы подтвердить сброс пароля в «Среди своих».",
+    ),
+    (
+        auth_email_service.send_set_password_email,
+        "Создание пароля",
+        "Введите этот код, чтобы задать пароль для вашего аккаунта в «Среди своих».",
+    ),
+    (
+        privacy_email_service.send_privacy_access_code,
+        "Код доступа к вашим данным",
+        "Введите этот код, чтобы получить доступ к информации о ваших персональных данных в «Среди своих».",
+    ),
 ])
-def test_auth_and_privacy_callers_stay_text_only(sender, smtp_transport):
+def test_auth_and_privacy_code_emails_are_branded_multipart(
+    sender, subject, primary_copy, smtp_transport,
+):
     sender(
-        to_address=TEST_ADDRESS, code=TEST_CODE, expiration_minutes=7,
+        to_address=TEST_ADDRESS, code="012345", expiration_minutes=7,
         settings=email_settings(),
     )
     sent = smtp_transport.return_value.__enter__.return_value.send_message.call_args.args[0]
-    assert sent.get_content_type() == "text/plain"
-    assert not sent.is_multipart()
+    parsed = BytesParser(policy=policy.default).parsebytes(sent.as_bytes())
+    assert parsed["Subject"] == subject
+    assert parsed.get_content_type() == "multipart/alternative"
+    plain, related = list(parsed.iter_parts())
+    assert plain.get_content_type() == "text/plain"
+    assert "012345" in plain.get_content()
+    assert "Код действует 7 минут." in plain.get_content()
+    assert primary_copy in plain.get_content()
+    assert related.get_content_type() == "multipart/related"
+    html, logo = list(related.iter_parts())
+    assert html.get_content_type() == "text/html"
+    assert "012345" in html.get_content()
+    assert "Код действует 7 минут." in html.get_content()
+    assert primary_copy in html.get_content()
+    assert 'src="cid:sredi-svoih-logo"' in html.get_content()
+    assert logo.get_content_type() == "image/png"
+    assert logo["Content-ID"] == "<sredi-svoih-logo>"
+    assert logo.get_content_disposition() == "inline"
+    assert logo.get_payload(decode=True) == service._load_verification_logo()
+    assert all(part.get_content_disposition() != "attachment" for part in parsed.walk())
+    html_lower = html.get_content().lower()
+    for forbidden in ("http://", "https://", "<script", "<link", "<style", "url(", "<a "):
+        assert forbidden not in html_lower
+
+
+@pytest.mark.parametrize("renderer", [
+    lambda code: render_email_verification_email(
+        verification_code=code, expiration_minutes=7,
+    ),
+    lambda code: render_password_reset_email(reset_code=code, expiration_minutes=7),
+    lambda code: render_set_password_email(
+        set_password_code=code, expiration_minutes=7,
+    ),
+    lambda code: render_privacy_access_code_email(code=code, expiration_minutes=7),
+])
+def test_branded_code_html_escapes_synthetic_code(renderer):
+    rendered = renderer("<synthetic&>")
+    assert "&lt;synthetic&amp;&gt;" in rendered.html_body
+    assert "<synthetic&>" not in rendered.html_body
+    assert "<synthetic&>" in rendered.text_body
 
 
 @pytest.mark.parametrize("sender", [
@@ -249,11 +320,43 @@ def test_auth_email_codes_do_not_include_confirmation_links(sender, smtp_transpo
         settings=email_settings(),
     )
     sent = smtp_transport.return_value.__enter__.return_value.send_message.call_args.args[0]
-    body = sent.get_content()
+    body = next(part.get_content() for part in sent.walk() if part.get_content_type() == "text/plain")
     assert TEST_CODE in body
     assert "http://" not in body
     assert "https://" not in body
     assert "?code=" not in body
+
+
+@pytest.mark.parametrize(("target", "sender", "error_type"), [
+    (
+        "render_email_verification_email",
+        auth_email_service.send_email_verification_email,
+        auth_email_service.AuthEmailDeliveryError,
+    ),
+    (
+        "render_privacy_access_code_email",
+        privacy_email_service.send_privacy_access_code,
+        privacy_email_service.PrivacyEmailDeliveryError,
+    ),
+])
+def test_auth_and_privacy_rendering_failures_stay_inside_delivery_boundaries(
+    target, sender, error_type, smtp_transport,
+):
+    module = (
+        auth_email_service
+        if target == "render_email_verification_email"
+        else privacy_email_service
+    )
+    with patch.object(module, target, side_effect=ValueError("synthetic template detail")):
+        with pytest.raises(error_type) as caught:
+            sender(
+                to_address=TEST_ADDRESS,
+                code=TEST_CODE,
+                expiration_minutes=7,
+                settings=email_settings(),
+            )
+    assert "synthetic" not in str(caught.value)
+    smtp_transport.assert_not_called()
 
 
 @pytest.mark.parametrize("target,error", [

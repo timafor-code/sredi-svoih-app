@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from app.core.config import Settings, get_settings
 from app.services.auth_email_templates import (
     RenderedAuthEmail,
@@ -8,6 +10,7 @@ from app.services.auth_email_templates import (
     render_set_password_email,
 )
 from app.services.email_delivery import EmailMessage, EmailSendResult, send_email
+from app.services.transactional_email_branding import branded_logo_image
 
 
 class AuthEmailDeliveryError(RuntimeError):
@@ -22,13 +25,12 @@ def send_password_reset_email(
     settings: Settings | None = None,
 ) -> EmailSendResult:
     resolved_settings = settings or get_settings()
-    rendered = render_password_reset_email(
-        reset_code=code,
-        expiration_minutes=expiration_minutes,
-    )
     return _send_auth_email(
         to_address=to_address,
-        rendered=rendered,
+        render=lambda: render_password_reset_email(
+            reset_code=code,
+            expiration_minutes=expiration_minutes,
+        ),
         settings=resolved_settings,
     )
 
@@ -41,13 +43,12 @@ def send_email_verification_email(
     settings: Settings | None = None,
 ) -> EmailSendResult:
     resolved_settings = settings or get_settings()
-    rendered = render_email_verification_email(
-        verification_code=code,
-        expiration_minutes=expiration_minutes,
-    )
     return _send_auth_email(
         to_address=to_address,
-        rendered=rendered,
+        render=lambda: render_email_verification_email(
+            verification_code=code,
+            expiration_minutes=expiration_minutes,
+        ),
         settings=resolved_settings,
     )
 
@@ -60,28 +61,30 @@ def send_set_password_email(
     settings: Settings | None = None,
 ) -> EmailSendResult:
     resolved_settings = settings or get_settings()
-    rendered = render_set_password_email(
-        set_password_code=code,
-        expiration_minutes=expiration_minutes,
-    )
     return _send_auth_email(
         to_address=to_address,
-        rendered=rendered,
+        render=lambda: render_set_password_email(
+            set_password_code=code,
+            expiration_minutes=expiration_minutes,
+        ),
         settings=resolved_settings,
     )
 
 def _send_auth_email(
     *,
     to_address: str,
-    rendered: RenderedAuthEmail,
+    render: Callable[[], RenderedAuthEmail],
     settings: Settings,
 ) -> EmailSendResult:
     try:
+        rendered = render()
         return send_email(
             EmailMessage(
                 to_address=to_address,
                 subject=rendered.subject,
                 text_body=rendered.text_body,
+                html_body=rendered.html_body,
+                inline_images=(branded_logo_image(),),
             ),
             settings=settings,
         )
