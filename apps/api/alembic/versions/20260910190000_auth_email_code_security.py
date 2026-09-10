@@ -41,9 +41,19 @@ def upgrade() -> None:
             "attempt_count >= 0",
         )
         op.drop_constraint(f"{table_name}_code_hash_key", table_name, type_="unique")
+    op.create_index(
+        "auth_set_password_codes_code_hash_idx",
+        "auth_set_password_codes",
+        ["code_hash"],
+        unique=False,
+    )
 
 
 def downgrade() -> None:
+    op.drop_index(
+        "auth_set_password_codes_code_hash_idx",
+        table_name="auth_set_password_codes",
+    )
     for table_name in _TABLES:
         op.execute(
             sa.text(

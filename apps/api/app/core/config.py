@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     supabase_jwt_issuer: str = ""
     supabase_jwt_audience: str = ""
     api_auth_code_ttl_minutes: int = Field(default=30, gt=0)
+    api_auth_code_max_attempts: int = Field(default=5, ge=1, le=20)
     api_email_enabled: bool = False
     api_email_from_address: str = "dev-null@example.invalid"
     api_email_from_name: str = "Sredi Svoih"

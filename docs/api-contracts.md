@@ -477,7 +477,8 @@ already verified, already password-capable, or otherwise unsuitable for the
 requested flow. If a code is created, the API stores only `code_hash`, expiry,
 attempt, and consumed metadata in the purpose-specific auth code table. The
 plaintext code exists only while rendering the outbound auth email. New requests
-invalidate older unconsumed codes for the same user and purpose.
+serialize on the canonical user row and invalidate older unconsumed codes for the
+same user and purpose.
 
 Confirm password reset request:
 
@@ -500,8 +501,9 @@ Confirm email verification request:
 
 Manual-entry confirmation requests use the normalized target email plus exactly six
 ASCII decimal digits. Codes are hash-only at rest, domain-separated by purpose and
-user, and a fifth failed confirmation consumes the active code without changing the
-generic invalid/expired response.
+user, and failed confirmation consumes the active code at the backend-only
+`API_AUTH_CODE_MAX_ATTEMPTS` limit (default 5) without changing the generic
+invalid/expired response.
 
 The emailed set-password mode uses the same `email`, `code`, and
 `new_password` shape as password reset.

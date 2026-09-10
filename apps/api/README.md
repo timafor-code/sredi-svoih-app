@@ -82,7 +82,7 @@ secrets in mobile, Expo, Vite, `apps/admin`, or committed env files.
 The API includes backend-only password reset, email verification, and
 set-password endpoints under `/auth/*`. Manually entered email codes are exactly
 six digits, bound to their email/user and purpose, hash-only at rest, and burn
-after five failed confirmations. The direct post-registration set-password
+after the configured number of failed confirmations. The direct post-registration set-password
 handoff remains a separate high-entropy hash-only credential. Plaintext codes
 exist only while rendering the outbound auth email.
 
@@ -102,6 +102,7 @@ the backend API environment:
 
 ```powershell
 API_AUTH_CODE_TTL_MINUTES=30
+API_AUTH_CODE_MAX_ATTEMPTS=5
 ```
 
 ## Web event publication

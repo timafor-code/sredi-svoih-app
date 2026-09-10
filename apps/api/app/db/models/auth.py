@@ -161,6 +161,7 @@ class AuthSetPasswordCode(Base):
             name="auth_set_password_codes_attempt_count_check",
         ),
         Index("auth_set_password_codes_user_id_idx", "user_id"),
+        Index("auth_set_password_codes_code_hash_idx", "code_hash"),
         Index("auth_set_password_codes_expires_at_idx", "expires_at"),
         Index("auth_set_password_codes_consumed_at_idx", "consumed_at"),
     )

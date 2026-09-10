@@ -55,7 +55,6 @@ logger = logging.getLogger(__name__)
 
 _AUTH_CODE_BYTES = 32
 _EMAIL_CODE_DIGITS = 6
-_EMAIL_CODE_MAX_ATTEMPTS = 5
 _EMAIL_CODE_HASH_PREFIX = "auth-email-code-v1:"
 _PASSWORD_RESET_PURPOSE = "password_reset"
 _EMAIL_VERIFICATION_PURPOSE = "email_verification"
@@ -116,6 +115,10 @@ def _auth_code_ttl() -> timedelta:
 
 def _auth_code_expiration_minutes() -> int:
     return get_settings().api_auth_code_ttl_minutes
+
+
+def _auth_code_max_attempts() -> int:
+    return get_settings().api_auth_code_max_attempts
 
 
 def _issue_access_token(user: AppUser) -> tuple[str, datetime]:
@@ -291,16 +294,20 @@ async def _stage_auth_code_for_user(
     *,
     user: AppUser,
 ) -> str:
-    """Invalidate prior codes and add a new one without committing."""
+    """Lock the user, replace prior codes, and add a new code without committing."""
+    locked_user = await session.get(AppUser, user.id, with_for_update=True)
+    if locked_user is None:
+        raise AuthConflictError("User no longer exists")
+
     now = _now()
     code = _new_manual_email_code()
-    await _invalidate_user_auth_codes(session, model, user_id=user.id, now=now)
+    await _invalidate_user_auth_codes(session, model, user_id=locked_user.id, now=now)
     session.add(
         model(
-            user_id=user.id,
+            user_id=locked_user.id,
             code_hash=_email_code_hash(
                 purpose=_purpose_for_model(model),
-                user_id=user.id,
+                user_id=locked_user.id,
                 code=code,
             ),
             expires_at=now + _auth_code_ttl(),
@@ -346,7 +353,7 @@ async def _usable_email_auth_code(
     if (
         code_row is None
         or code_row.expires_at <= now
-        or code_row.attempt_count >= _EMAIL_CODE_MAX_ATTEMPTS
+        or code_row.attempt_count >= _auth_code_max_attempts()
     ):
         raise _invalid_or_expired_code_error(purpose_label)
 
@@ -360,7 +367,7 @@ async def _usable_email_auth_code(
 
     code_row.attempt_count += 1
     code_row.updated_at = now
-    if code_row.attempt_count >= _EMAIL_CODE_MAX_ATTEMPTS:
+    if code_row.attempt_count >= _auth_code_max_attempts():
         code_row.consumed_at = now
     await session.commit()
     raise _invalid_or_expired_code_error(purpose_label)
