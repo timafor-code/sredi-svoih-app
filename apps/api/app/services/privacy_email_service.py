@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.core.config import Settings, get_settings
 from app.services.email_delivery import EmailMessage, EmailSendResult, send_email
 from app.services.privacy_email_templates import render_privacy_access_code_email
+from app.services.transactional_email_branding import branded_logo_image
 
 
 class PrivacyEmailDeliveryError(RuntimeError):
@@ -17,16 +18,18 @@ def send_privacy_access_code(
     settings: Settings | None = None,
 ) -> EmailSendResult:
     resolved_settings = settings or get_settings()
-    rendered = render_privacy_access_code_email(
-        code=code,
-        expiration_minutes=expiration_minutes,
-    )
     try:
+        rendered = render_privacy_access_code_email(
+            code=code,
+            expiration_minutes=expiration_minutes,
+        )
         return send_email(
             EmailMessage(
                 to_address=to_address,
                 subject=rendered.subject,
                 text_body=rendered.text_body,
+                html_body=rendered.html_body,
+                inline_images=(branded_logo_image(),),
             ),
             settings=resolved_settings,
         )

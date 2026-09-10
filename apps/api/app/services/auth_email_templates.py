@@ -2,94 +2,83 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-_PRODUCT_NAME = "Sredi Svoih"
+from app.services.transactional_email_branding import (
+    render_branded_code_html,
+    render_branded_code_text,
+)
 
 
 @dataclass(frozen=True)
 class RenderedAuthEmail:
     subject: str
     text_body: str
+    html_body: str
 
 
 def _render(
     *,
     subject: str,
-    intro: str,
-    code_label: str,
+    heading: str,
+    primary_copy: str,
     code: str,
-    expiration_minutes: int | None,
-    product_name: str,
+    expiration_minutes: int,
 ) -> RenderedAuthEmail:
-    lines = [
-        intro,
-        "",
-        f"{code_label}: {code}",
-    ]
-    if expiration_minutes is not None:
-        lines.extend(
-            [
-                "",
-                f"This request expires in {expiration_minutes} minutes.",
-            ],
-        )
-
-    lines.extend(
-        [
-            "",
-            "If you did not request this, you can ignore this email.",
-            "",
-            product_name,
-        ],
+    ignored_request_copy = "Если вы не запрашивали это действие, просто проигнорируйте письмо."
+    return RenderedAuthEmail(
+        subject=subject,
+        text_body=render_branded_code_text(
+            primary_copy=primary_copy,
+            code=code,
+            expiration_minutes=expiration_minutes,
+            ignored_request_copy=ignored_request_copy,
+        ),
+        html_body=render_branded_code_html(
+            heading=heading,
+            primary_copy=primary_copy,
+            code=code,
+            expiration_minutes=expiration_minutes,
+            ignored_request_copy=ignored_request_copy,
+        ),
     )
-    return RenderedAuthEmail(subject=subject, text_body="\n".join(lines))
 
 
 def render_email_verification_email(
     *,
     verification_code: str,
-    expiration_minutes: int | None = None,
-    product_name: str = _PRODUCT_NAME,
+    expiration_minutes: int,
 ) -> RenderedAuthEmail:
     return _render(
-        subject="Verify your email address",
-        intro="Use the code below to verify your email address.",
-        code_label="Verification code",
+        subject="Подтверждение email",
+        heading="Подтверждение email",
+        primary_copy="Введите этот код, чтобы подтвердить адрес электронной почты в «Среди своих».",
         code=verification_code,
         expiration_minutes=expiration_minutes,
-        product_name=product_name,
     )
 
 
 def render_password_reset_email(
     *,
     reset_code: str,
-    expiration_minutes: int | None = None,
-    product_name: str = _PRODUCT_NAME,
+    expiration_minutes: int,
 ) -> RenderedAuthEmail:
     return _render(
-        subject="Reset your password",
-        intro="Use the code below to reset your password.",
-        code_label="Password reset code",
+        subject="Сброс пароля",
+        heading="Сброс пароля",
+        primary_copy="Введите этот код, чтобы подтвердить сброс пароля в «Среди своих».",
         code=reset_code,
         expiration_minutes=expiration_minutes,
-        product_name=product_name,
     )
 
 
 def render_set_password_email(
     *,
     set_password_code: str,
-    expiration_minutes: int | None = None,
-    product_name: str = _PRODUCT_NAME,
+    expiration_minutes: int,
 ) -> RenderedAuthEmail:
     return _render(
-        subject="Set your password",
-        intro=(
-            "Use the code below to set a password for your migrated "
-            "account."
-        ),
-        code_label="Set-password code",
+        subject="Создание пароля",
+        heading="Создание пароля",
+        primary_copy="Введите этот код, чтобы задать пароль для вашего аккаунта в «Среди своих».",
         code=set_password_code,
         expiration_minutes=expiration_minutes,
-        product_name=product_name,
     )
