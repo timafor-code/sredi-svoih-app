@@ -45,7 +45,7 @@ def _render(
 def render_email_verification_email(
     *,
     verification_code: str,
-    expiration_minutes: int = 15,
+    expiration_minutes: int,
 ) -> RenderedAuthEmail:
     return _render(
         subject="Подтверждение email",
@@ -59,7 +59,7 @@ def render_email_verification_email(
 def render_password_reset_email(
     *,
     reset_code: str,
-    expiration_minutes: int = 15,
+    expiration_minutes: int,
 ) -> RenderedAuthEmail:
     return _render(
         subject="Сброс пароля",
@@ -73,7 +73,7 @@ def render_password_reset_email(
 def render_set_password_email(
     *,
     set_password_code: str,
-    expiration_minutes: int = 15,
+    expiration_minutes: int,
 ) -> RenderedAuthEmail:
     return _render(
         subject="Создание пароля",
