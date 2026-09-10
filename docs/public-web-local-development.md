@@ -169,8 +169,9 @@ The browser performs this sequence:
    `POST /auth/confirm-set-password`. The participant may use it immediately
    or continue without a password. Confirmed-flow and status replays never
    return that handoff; they return `request_set_password`, which first calls
-   `POST /auth/request-set-password` and then confirms the delivered code
-   through the same confirm endpoint. `sign_in` only explains that the
+   `POST /auth/request-set-password` and then confirms the delivered six-digit
+   code with that email through the same confirm endpoint. The direct handoff is
+   submitted without email and remains opaque. `sign_in` only explains that the
    existing password can be used later; this flow does not create a web login
    session.
 8. `Записаться ещё раз` is a browser UI reset only. It clears the completed

@@ -1123,8 +1123,13 @@ export function requestSetPassword(email: string): Promise<AuthCodeResult> {
   return authCodeRequest("/auth/request-set-password", { email });
 }
 
-export function confirmSetPassword(code: string, newPassword: string): Promise<AuthCodeResult> {
+export function confirmSetPassword(
+  code: string,
+  newPassword: string,
+  email?: string,
+): Promise<AuthCodeResult> {
   return authCodeRequest("/auth/confirm-set-password", {
+    ...(email ? { email } : {}),
     code,
     new_password: newPassword,
   });

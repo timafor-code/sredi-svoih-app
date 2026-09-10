@@ -91,7 +91,7 @@ class AuthSignupEmailVerificationTests(unittest.IsolatedAsyncioTestCase):
 
         verify_email.assert_called_once()
         self.assertEqual(verify_email.call_args.kwargs["to_address"], email)
-        self.assertTrue(verify_email.call_args.kwargs["code"])
+        self.assertRegex(verify_email.call_args.kwargs["code"], r"^[0-9]{6}$")
 
     async def test_login_rejected_before_verification(self) -> None:
         email = self._email()
@@ -120,7 +120,7 @@ class AuthSignupEmailVerificationTests(unittest.IsolatedAsyncioTestCase):
         _, user_id, _ = await self._register(email)
 
         response = await self._post(
-            "/auth/confirm-email-verification", {"code": "not-a-real-code-000000"},
+            "/auth/confirm-email-verification", {"email": email, "code": "000000"},
         )
 
         self.assertEqual(response.status_code, 400)
@@ -132,7 +132,9 @@ class AuthSignupEmailVerificationTests(unittest.IsolatedAsyncioTestCase):
         _, user_id, verify_email = await self._register(email)
         code = verify_email.call_args.kwargs["code"]
 
-        confirm = await self._post("/auth/confirm-email-verification", {"code": code})
+        confirm = await self._post(
+            "/auth/confirm-email-verification", {"email": email, "code": code},
+        )
         self.assertEqual(confirm.status_code, 200)
         self.assertTrue(confirm.json()["ok"])
 
@@ -332,7 +334,7 @@ class AuthSignupEmailVerificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(user.email_verified_at)
 
         confirm = await self._post(
-            "/auth/confirm-email-verification", {"code": original_code},
+            "/auth/confirm-email-verification", {"email": email, "code": original_code},
         )
         self.assertEqual(confirm.status_code, 200)
 
@@ -364,7 +366,7 @@ class AuthSignupEmailVerificationTests(unittest.IsolatedAsyncioTestCase):
 
         # The previously valid code must still confirm despite the failed resend.
         confirm = await self._post(
-            "/auth/confirm-email-verification", {"code": original_code},
+            "/auth/confirm-email-verification", {"email": email, "code": original_code},
         )
         self.assertEqual(confirm.status_code, 200)
 
@@ -387,7 +389,7 @@ class AuthSignupEmailVerificationTests(unittest.IsolatedAsyncioTestCase):
                 )
 
         response = await self._post(
-            "/auth/confirm-email-verification", {"code": code},
+            "/auth/confirm-email-verification", {"email": email, "code": code},
         )
 
         self.assertEqual(response.status_code, 400)

@@ -59,7 +59,7 @@ type AuthState = {
   signInWithApple: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signUpWithEmail: (email: string, password: string) => Promise<EmailSignUpResult>;
-  confirmEmailVerification: (code: string) => Promise<void>;
+  confirmEmailVerification: (email: string, code: string) => Promise<void>;
   resendConfirmationEmail: (email: string) => Promise<void>;
   resetPasswordForEmail: (email: string) => Promise<void>;
   clearLocalSessionAfterAccountDeletion: () => Promise<void>;
@@ -952,13 +952,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  confirmEmailVerification: async (code: string) => {
+  confirmEmailVerification: async (email: string, code: string) => {
     assertAccountFeaturesAvailable();
 
     set({ loading: true, error: null });
 
     try {
-      await confirmEmailVerificationService(code);
+      await confirmEmailVerificationService(email, code);
 
       set({ loading: false, error: null });
     } catch (error) {

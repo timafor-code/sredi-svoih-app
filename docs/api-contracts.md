@@ -297,11 +297,11 @@ production API auth.
 | POST | `/auth/logout` | Public/session | Revoke the submitted refresh session when present. |
 | GET | `/auth/me` | Authenticated | Return the current API user, complete editable profile, and active memberships. |
 | POST | `/auth/request-password-reset` | Public | Request password reset delivery. |
-| POST | `/auth/confirm-password-reset` | Public | Confirm password reset code and set a new password. |
+| POST | `/auth/confirm-password-reset` | Public | Confirm the email-bound six-digit password-reset code and set a new password. |
 | POST | `/auth/request-email-verification` | Public | Request email verification delivery. |
-| POST | `/auth/confirm-email-verification` | Public | Confirm email verification code. |
+| POST | `/auth/confirm-email-verification` | Public | Confirm the email-bound six-digit verification code. |
 | POST | `/auth/request-set-password` | Public | Request set-password delivery for migrated OAuth-only users with no password hash. |
-| POST | `/auth/confirm-set-password` | Public | Confirm set-password code and create the first password hash. |
+| POST | `/auth/confirm-set-password` | Public | Confirm either an email-bound six-digit set-password code or an opaque direct handoff, then create the first password hash. |
 | POST | `/auth/register-with-invite` | Public | Create an API password user from an invite and return auth tokens plus user/profile/membership summaries. |
 | POST | `/auth/accept-invite` | Authenticated | Accept an invite for the current API user without creating a new user or rotating tokens. |
 
@@ -475,15 +475,17 @@ Request responses are intentionally generic to avoid account enumeration:
 The same success response is returned when the email is absent, inactive,
 already verified, already password-capable, or otherwise unsuitable for the
 requested flow. If a code is created, the API stores only `code_hash`, expiry,
-and consumed metadata in the purpose-specific auth code table. The plaintext
-code and generated link exist only while rendering the outbound auth email.
-New requests invalidate older unconsumed codes for the same user and purpose.
+attempt, and consumed metadata in the purpose-specific auth code table. The
+plaintext code exists only while rendering the outbound auth email. New requests
+serialize on the canonical user row and invalidate older unconsumed codes for the
+same user and purpose.
 
 Confirm password reset request:
 
 ```json
 {
-  "code": "one-time-reset-code",
+  "email": "user@example.com",
+  "code": "012345",
   "new_password": "new-password"
 }
 ```
@@ -492,11 +494,22 @@ Confirm email verification request:
 
 ```json
 {
-  "code": "one-time-verification-code"
+  "email": "user@example.com",
+  "code": "012345"
 }
 ```
 
-Confirm set-password request:
+Manual-entry confirmation requests use the normalized target email plus exactly six
+ASCII decimal digits. Codes are hash-only at rest, domain-separated by purpose and
+user, and failed confirmation consumes the active code at the backend-only
+`API_AUTH_CODE_MAX_ATTEMPTS` limit (default 5) without changing the generic
+invalid/expired response.
+
+The emailed set-password mode uses the same `email`, `code`, and
+`new_password` shape as password reset.
+
+The direct set-password handoff remains a separate high-entropy credential. It is
+only accepted when email is absent:
 
 ```json
 {

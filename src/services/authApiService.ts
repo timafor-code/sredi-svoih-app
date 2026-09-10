@@ -263,16 +263,16 @@ export async function signUpWithEmail(email: string, password: string): Promise<
   };
 }
 
-export async function confirmEmailVerification(code: string): Promise<void> {
-  const trimmedCode = code.trim();
+export async function confirmEmailVerification(email: string, code: string): Promise<void> {
+  const normalizedEmail = normalizeEmail(email);
 
-  if (!trimmedCode) {
-    throw new Error('Enter the verification code.');
+  if (!normalizedEmail || !/^[0-9]{6}$/.test(code)) {
+    throw new Error('Enter the six-digit verification code.');
   }
 
   await apiClient.post<ApiOkResponse, ApiConfirmEmailVerificationRequest>(
     '/auth/confirm-email-verification',
-    { code: trimmedCode },
+    { email: normalizedEmail, code },
     { includeAuthToken: false },
   );
 }

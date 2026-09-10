@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+import re
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.current_user_profile import CurrentUserProfileResponse
 
@@ -38,6 +40,12 @@ def normalize_required_token(value: str) -> str:
 
 def normalize_auth_code(value: str) -> str:
     return normalize_required_secret(value, "code")
+
+
+def normalize_manual_auth_code(value: str) -> str:
+    if not re.fullmatch(r"[0-9]{6}", value):
+        raise ValueError("code must be exactly six digits")
+    return value
 
 
 def normalize_invite_code(value: str) -> str:
@@ -124,15 +132,21 @@ class RequestPasswordResetRequest(BaseModel):
 
 
 class ConfirmPasswordResetRequest(BaseModel):
-    code: str = Field(min_length=16, max_length=512)
+    email: str = Field(min_length=3, max_length=320)
+    code: str = Field(min_length=6, max_length=6)
     new_password: str = Field(min_length=8, max_length=1024)
 
     model_config = ConfigDict(extra="forbid")
 
+    @field_validator("email")
+    @classmethod
+    def normalize_email_field(cls, value: str) -> str:
+        return normalize_email(value)
+
     @field_validator("code")
     @classmethod
     def normalize_code_field(cls, value: str) -> str:
-        return normalize_auth_code(value)
+        return normalize_manual_auth_code(value)
 
 
 class RequestEmailVerificationRequest(BaseModel):
@@ -147,14 +161,20 @@ class RequestEmailVerificationRequest(BaseModel):
 
 
 class ConfirmEmailVerificationRequest(BaseModel):
-    code: str = Field(min_length=16, max_length=512)
+    email: str = Field(min_length=3, max_length=320)
+    code: str = Field(min_length=6, max_length=6)
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email_field(cls, value: str) -> str:
+        return normalize_email(value)
 
     @field_validator("code")
     @classmethod
     def normalize_code_field(cls, value: str) -> str:
-        return normalize_auth_code(value)
+        return normalize_manual_auth_code(value)
 
 
 class RequestSetPasswordRequest(BaseModel):
@@ -169,15 +189,22 @@ class RequestSetPasswordRequest(BaseModel):
 
 
 class ConfirmSetPasswordRequest(BaseModel):
-    code: str = Field(min_length=16, max_length=512)
+    email: str | None = Field(default=None, min_length=3, max_length=320)
+    code: str = Field(min_length=1, max_length=512)
     new_password: str = Field(min_length=8, max_length=1024)
 
     model_config = ConfigDict(extra="forbid")
 
-    @field_validator("code")
-    @classmethod
-    def normalize_code_field(cls, value: str) -> str:
-        return normalize_auth_code(value)
+    @model_validator(mode="after")
+    def validate_credential_mode(self) -> "ConfirmSetPasswordRequest":
+        if self.email is not None:
+            self.email = normalize_email(self.email)
+            self.code = normalize_manual_auth_code(self.code)
+        else:
+            self.code = normalize_auth_code(self.code)
+            if len(self.code) < 16:
+                raise ValueError("direct set-password code is invalid")
+        return self
 
 
 class RegisterWithInviteProfileInput(BaseModel):

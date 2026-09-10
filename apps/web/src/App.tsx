@@ -1513,8 +1513,16 @@ function RegistrationForm({
   const submitPassword = async () => {
     if (submittingRef.current) return;
     const code = setPasswordCode ?? requestedPasswordCode.trim();
+    const email = setPasswordCode === null
+      ? (verifiedRegistrationEmail ?? values.email)
+      : undefined;
     if (!code) {
       setPasswordError("Введите код из письма.");
+      passwordCodeRef.current?.focus();
+      return;
+    }
+    if (email && !/^[0-9]{6}$/.test(code)) {
+      setPasswordError("Введите шестизначный код из письма.");
       passwordCodeRef.current?.focus();
       return;
     }
@@ -1532,7 +1540,7 @@ function RegistrationForm({
     setBusyAction("password");
     setPasswordError(null);
     try {
-      await confirmSetPassword(code, newPassword);
+      await confirmSetPassword(code, newPassword, email);
       setAccountCompleted(true);
       setSetPasswordCode(null);
       setRequestedPasswordCode("");
@@ -1772,8 +1780,12 @@ function RegistrationForm({
                   id="set-password-email-code"
                   value={requestedPasswordCode}
                   autoComplete="one-time-code"
-                  maxLength={512}
-                  onChange={(event) => setRequestedPasswordCode(event.target.value)}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  onChange={(event) => setRequestedPasswordCode(
+                    event.target.value.replace(/[^0-9]/g, "").slice(0, 6),
+                  )}
                 />
               </div>
             ) : null}

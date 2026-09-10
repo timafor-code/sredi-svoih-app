@@ -88,8 +88,8 @@ export async function signUpWithEmail(email: string, password: string): Promise<
   return authApiService.signUpWithEmail(email, password);
 }
 
-export async function confirmEmailVerification(code: string): Promise<void> {
-  return authApiService.confirmEmailVerification(code);
+export async function confirmEmailVerification(email: string, code: string): Promise<void> {
+  return authApiService.confirmEmailVerification(email, code);
 }
 
 export async function resendConfirmationEmail(email: string): Promise<void> {

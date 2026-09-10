@@ -2780,7 +2780,7 @@ describe("registration intent and account claim flow", () => {
     await user.click(within(flowDialog()).getByRole("button", { name: "Сохранить пароль" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Введите код из письма.");
     expect(screen.getByLabelText("Код из письма")).toHaveFocus();
-    await user.type(screen.getByLabelText("Код из письма"), "requested-code");
+    await user.type(screen.getByLabelText("Код из письма"), "012345");
     await user.type(screen.getByLabelText("Пароль"), "short");
     await user.click(within(flowDialog()).getByRole("button", { name: "Сохранить пароль" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Пароль должен содержать минимум 8 символов.");
@@ -2794,7 +2794,7 @@ describe("registration intent and account claim flow", () => {
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Посмотреть регистрацию" }));
     expectOneFlowDialog();
-    expect(screen.getByLabelText("Код из письма")).toHaveValue("requested-code");
+    expect(screen.getByLabelText("Код из письма")).toHaveValue("012345");
     expect(screen.getByLabelText("Пароль")).toHaveValue("short-password");
     expect(screen.getByLabelText("Повторите пароль")).toHaveValue("mismatched-password");
     expect(within(flowDialog()).getByText("Аккаунт", { selector: "li" })).toHaveClass("active");
@@ -3044,7 +3044,7 @@ describe("registration intent and account claim flow", () => {
     expect(flowDialog()).toBe(dialog);
     const code = await screen.findByLabelText("Код из письма");
     expect(code).toHaveFocus();
-    await user.type(code, "emailed-set-password-code");
+    await user.type(code, "012345");
     await user.type(screen.getByLabelText("Пароль"), "strong-pass-123");
     await user.type(screen.getByLabelText("Повторите пароль"), "strong-pass-123");
     vi.mocked(fetch).mockImplementationOnce(() => response({ ok: true }));
@@ -3055,7 +3055,7 @@ describe("registration intent and account claim flow", () => {
       "/api/auth/request-set-password",
       "/api/auth/confirm-set-password",
     ]);
-    expect(authCalls[1][1]?.body).toBe(JSON.stringify({ code: "emailed-set-password-code", new_password: "strong-pass-123" }));
+    expect(authCalls[1][1]?.body).toBe(JSON.stringify({ email: "anna@example.ru", code: "012345", new_password: "strong-pass-123" }));
     expect(fetch).toHaveBeenCalledTimes(6);
     expect(flowDialog()).toBe(dialog);
     expect(within(dialog).getByText("Мероприятие").closest("dl")?.textContent).toBe(savedDetails);

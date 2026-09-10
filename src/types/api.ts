@@ -167,6 +167,7 @@ export type ApiAuthEmailRequest = {
 };
 
 export type ApiConfirmEmailVerificationRequest = {
+  email: string;
   code: string;
 };
 

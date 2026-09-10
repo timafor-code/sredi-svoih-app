@@ -72,9 +72,9 @@ class AuthEmailVerificationCode(Base):
             "consumed_at IS NULL OR consumed_at >= created_at",
             name="auth_email_verification_codes_consumed_after_created_check",
         ),
-        UniqueConstraint(
-            "code_hash",
-            name="auth_email_verification_codes_code_hash_key",
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="auth_email_verification_codes_attempt_count_check",
         ),
         Index("auth_email_verification_codes_user_id_idx", "user_id"),
         Index("auth_email_verification_codes_expires_at_idx", "expires_at"),
@@ -90,6 +90,11 @@ class AuthEmailVerificationCode(Base):
     code_hash: Mapped[str] = mapped_column(Text, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
     created_at: Mapped[datetime] = timestamptz_now()
     updated_at: Mapped[datetime] = timestamptz_now()
 
@@ -109,7 +114,10 @@ class PasswordResetCode(Base):
             "consumed_at IS NULL OR consumed_at >= created_at",
             name="password_reset_codes_consumed_after_created_check",
         ),
-        UniqueConstraint("code_hash", name="password_reset_codes_code_hash_key"),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="password_reset_codes_attempt_count_check",
+        ),
         Index("password_reset_codes_user_id_idx", "user_id"),
         Index("password_reset_codes_expires_at_idx", "expires_at"),
         Index("password_reset_codes_consumed_at_idx", "consumed_at"),
@@ -124,6 +132,11 @@ class PasswordResetCode(Base):
     code_hash: Mapped[str] = mapped_column(Text, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
     created_at: Mapped[datetime] = timestamptz_now()
     updated_at: Mapped[datetime] = timestamptz_now()
 
@@ -143,8 +156,12 @@ class AuthSetPasswordCode(Base):
             "consumed_at IS NULL OR consumed_at >= created_at",
             name="auth_set_password_codes_consumed_after_created_check",
         ),
-        UniqueConstraint("code_hash", name="auth_set_password_codes_code_hash_key"),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="auth_set_password_codes_attempt_count_check",
+        ),
         Index("auth_set_password_codes_user_id_idx", "user_id"),
+        Index("auth_set_password_codes_code_hash_idx", "code_hash"),
         Index("auth_set_password_codes_expires_at_idx", "expires_at"),
         Index("auth_set_password_codes_consumed_at_idx", "consumed_at"),
     )
@@ -158,6 +175,11 @@ class AuthSetPasswordCode(Base):
     code_hash: Mapped[str] = mapped_column(Text, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
     created_at: Mapped[datetime] = timestamptz_now()
     updated_at: Mapped[datetime] = timestamptz_now()
 
