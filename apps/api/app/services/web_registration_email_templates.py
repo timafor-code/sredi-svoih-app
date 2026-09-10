@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from html import escape
 
+from app.services.transactional_email_branding import (
+    render_branded_informational_html,
+)
+
 
 @dataclass(frozen=True)
 class RenderedWebRegistrationEmail:
@@ -42,20 +46,27 @@ def render_registration_result_email(
 ) -> RenderedWebRegistrationEmail:
     if registration_status == "confirmed":
         outcome = "Ваша регистрация подтверждена."
+        heading = "Регистрация подтверждена"
     elif registration_status == "pending":
         outcome = "Ваша заявка получена и ожидает решения организатора."
+        heading = "Заявка получена"
     else:
         raise ValueError("unsupported web registration status")
 
+    paragraphs = (
+        "Ваш email подтверждён.",
+        outcome,
+        "Пароль не требуется, чтобы регистрация сохранилась.",
+        "Это транзакционное уведомление, а не маркетинговая рассылка.",
+    )
+
     return RenderedWebRegistrationEmail(
         subject="Результат регистрации",
-        text_body="\n".join(
-            (
-                "Ваш email подтверждён.",
-                outcome,
-                "Пароль не требуется, чтобы регистрация сохранилась.",
-                "Это транзакционное уведомление, а не маркетинговая рассылка.",
-            ),
+        text_body="\n".join(paragraphs),
+        html_body=render_branded_informational_html(
+            heading=heading,
+            paragraphs=paragraphs,
+            preheader=outcome,
         ),
     )
 

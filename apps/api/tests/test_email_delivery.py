@@ -19,7 +19,11 @@ from app.db.models.auth import WebRegistrationVerificationCode
 from app.db.models.core import WebRegistrationIntent
 from app.db.session import AsyncSessionLocal
 from app.main import app
-from app.services import auth_email_service, privacy_email_service
+from app.services import (
+    auth_email_service,
+    privacy_email_service,
+    privacy_erasure_email_service,
+)
 from app.services import email_delivery as delivery
 from app.services import web_registration_email_service as service
 from app.services.auth_email_templates import (
@@ -28,6 +32,15 @@ from app.services.auth_email_templates import (
     render_set_password_email,
 )
 from app.services.privacy_email_templates import render_privacy_access_code_email
+from app.services.privacy_erasure_email_templates import (
+    render_privacy_erasure_accepted_email,
+    render_privacy_erasure_completed_email,
+    render_privacy_erasure_completed_with_retention_email,
+)
+from app.services.transactional_email_branding import (
+    branded_logo_image,
+    render_branded_informational_html,
+)
 from app.services.web_registration_email_templates import (
     render_registration_result_email,
     render_verification_code_email,
@@ -181,6 +194,34 @@ def test_registration_verification_html_output_is_unchanged():
     )
 
 
+@pytest.mark.parametrize(("renderer", "expected_hash"), [
+    (
+        lambda: render_email_verification_email(
+            verification_code="012345", expiration_minutes=7,
+        ),
+        "7fafeb885e35c0a93f5b016d5538e2e69d7a08c242faa9b9044567397265e398",
+    ),
+    (
+        lambda: render_password_reset_email(
+            reset_code="012345", expiration_minutes=7,
+        ),
+        "03a17eeb40ffa77d60a1970dae776d6dacb1cc122f187b66a188337bf9f59561",
+    ),
+    (
+        lambda: render_set_password_email(
+            set_password_code="012345", expiration_minutes=7,
+        ),
+        "dd1d0d4d37b98af52407795782de625155f59d9a4c8dd0e9d2ba043a48420856",
+    ),
+    (
+        lambda: render_privacy_access_code_email(code="012345", expiration_minutes=7),
+        "c28dae87b417f2bf6b60118915302a72c514ec27fc024fa0f85cad9049e26c98",
+    ),
+])
+def test_pr_472_branded_code_email_html_output_is_unchanged(renderer, expected_hash):
+    assert hashlib.sha256(renderer().html_body.encode()).hexdigest() == expected_hash
+
+
 def test_verification_code_is_html_escaped():
     rendered = render_verification_code_email(code="<synthetic&>", expiration_minutes=7)
     assert "&lt;synthetic&amp;&gt;" in rendered.html_body
@@ -219,20 +260,146 @@ def test_committed_logo_is_small_transparent_png():
         assert logo.getextrema()[3][1] == 255
 
 
-@pytest.mark.parametrize("status", ["confirmed", "pending"])
-def test_registration_result_stays_text_only(status):
-    with patch.object(service, "_load_verification_logo") as read:
-        with patch.object(service, "send_email", return_value=delivery.EmailSendResult(True, False)) as send:
-            service.send_web_registration_result(
-                to_address=TEST_ADDRESS, registration_status=status, settings=email_settings(),
-            )
-        read.assert_not_called()
-    message = send.call_args.args[0]
-    assert message.html_body is None
-    assert message.inline_images == ()
-    assert message.text_body == render_registration_result_email(
-        registration_status=status,
-    ).text_body
+@pytest.mark.parametrize(("status", "heading", "text_body"), [
+    (
+        "confirmed",
+        "Регистрация подтверждена",
+        "\n".join((
+            "Ваш email подтверждён.",
+            "Ваша регистрация подтверждена.",
+            "Пароль не требуется, чтобы регистрация сохранилась.",
+            "Это транзакционное уведомление, а не маркетинговая рассылка.",
+        )),
+    ),
+    (
+        "pending",
+        "Заявка получена",
+        "\n".join((
+            "Ваш email подтверждён.",
+            "Ваша заявка получена и ожидает решения организатора.",
+            "Пароль не требуется, чтобы регистрация сохранилась.",
+            "Это транзакционное уведомление, а не маркетинговая рассылка.",
+        )),
+    ),
+])
+def test_registration_result_is_branded_multipart(
+    status, heading, text_body, smtp_transport,
+):
+    rendered = render_registration_result_email(registration_status=status)
+    result = service.send_web_registration_result(
+        to_address=TEST_ADDRESS, registration_status=status, settings=email_settings(),
+    )
+    sent = smtp_transport.return_value.__enter__.return_value.send_message.call_args.args[0]
+    parsed = BytesParser(policy=policy.default).parsebytes(sent.as_bytes())
+    assert result.sent
+    assert rendered.subject == "Результат регистрации"
+    assert rendered.text_body == text_body
+    assert parsed.get_content_type() == "multipart/alternative"
+    plain, related = list(parsed.iter_parts())
+    assert plain.get_content() == text_body + "\n"
+    html, logo = list(related.iter_parts())
+    assert heading in html.get_content()
+    for paragraph in text_body.split("\n"):
+        assert paragraph in html.get_content()
+    assert 'src="cid:sredi-svoih-logo"' in html.get_content()
+    assert logo.get_content_type() == "image/png"
+    assert logo["Content-ID"] == "<sredi-svoih-logo>"
+    assert logo.get_content_disposition() == "inline"
+    assert logo.get_payload(decode=True) == branded_logo_image().data
+    _assert_informational_html_is_safe(html.get_content())
+
+
+@pytest.mark.parametrize(("sender", "renderer", "subject", "heading", "text_body"), [
+    (
+        privacy_erasure_email_service.send_privacy_erasure_accepted,
+        render_privacy_erasure_accepted_email,
+        "Запрос на удаление данных принят",
+        "Запрос на удаление данных принят",
+        "\n".join((
+            "Ваш запрос на удаление персональных данных принят.",
+            "Новая обработка данных остановлена, а будущие бесплатные "
+            "регистрации на мероприятия отменены.",
+            "Отменить запрос можно только до начала необратимого исполнения.",
+            "Отменённые регистрации автоматически не восстанавливаются.",
+            "Это письмо не подтверждает окончательное удаление данных.",
+        )),
+    ),
+    (
+        privacy_erasure_email_service.send_privacy_erasure_completed,
+        render_privacy_erasure_completed_email,
+        "Удаление персональных данных завершено",
+        "Удаление персональных данных завершено",
+        "\n".join((
+            "Ваш запрос на удаление персональных данных выполнен.",
+            "Применимые персональные данные удалены либо необратимо обезличены.",
+            "Активные доступы прекращены.",
+            "Прежние регистрации и учётная запись не восстанавливаются.",
+            "При повторном использовании сервиса потребуется новая регистрация "
+            "или новая техническая запись.",
+            "Вопросы можно направить оператору по контактам, указанным в "
+            "политике обработки персональных данных.",
+        )),
+    ),
+    (
+        privacy_erasure_email_service.send_privacy_erasure_completed_with_retention,
+        render_privacy_erasure_completed_with_retention_email,
+        "Основная обработка персональных данных прекращена",
+        "Основная обработка персональных данных прекращена",
+        "\n".join((
+            "Основная обработка ваших персональных данных прекращена.",
+            "Применимые персональные данные удалены.",
+            "Отдельные сведения могут ограниченно сохраняться только при "
+            "наличии законного основания.",
+            "Это письмо не перечисляет конкретные сохраняемые сведения.",
+            "Подробности можно запросить у оператора по контактам, указанным "
+            "в политике обработки персональных данных.",
+        )),
+    ),
+])
+def test_privacy_erasure_email_is_branded_multipart(
+    sender, renderer, subject, heading, text_body, smtp_transport,
+):
+    rendered = renderer()
+    result = sender(to_address=TEST_ADDRESS, settings=email_settings())
+    sent = smtp_transport.return_value.__enter__.return_value.send_message.call_args.args[0]
+    parsed = BytesParser(policy=policy.default).parsebytes(sent.as_bytes())
+    assert result.sent
+    assert rendered.subject == subject
+    assert rendered.text_body == text_body
+    assert parsed["Subject"] == subject
+    plain, related = list(parsed.iter_parts())
+    assert plain.get_content() == text_body + "\n"
+    html, logo = list(related.iter_parts())
+    assert heading in html.get_content()
+    assert logo.get_content_type() == "image/png"
+    assert logo["Content-ID"] == "<sredi-svoih-logo>"
+    assert logo.get_content_disposition() == "inline"
+    assert logo.get_filename() is None
+    assert logo.get_payload(decode=True) == branded_logo_image().data
+    _assert_informational_html_is_safe(html.get_content())
+
+
+def _assert_informational_html_is_safe(html):
+    html_lower = html.lower()
+    for forbidden in (
+        "http://", "https://", "<script", "<link", "<style", "url(",
+        "@font", "<a ", "код действует", "введите этот код",
+        "letter-spacing:10px", "<button",
+    ):
+        assert forbidden not in html_lower
+    assert 'src="cid:sredi-svoih-logo"' in html
+
+
+def test_branded_informational_html_escapes_dynamic_content():
+    html = render_branded_informational_html(
+        heading="<synthetic&heading>",
+        paragraphs=("<synthetic&paragraph>",),
+        preheader="<synthetic&preheader>",
+    )
+    assert "&lt;synthetic&amp;heading&gt;" in html
+    assert "&lt;synthetic&amp;paragraph&gt;" in html
+    assert "&lt;synthetic&amp;preheader&gt;" in html
+    assert "<synthetic&" not in html
 
 
 @pytest.mark.parametrize(("sender", "subject", "primary_copy"), [
@@ -391,6 +558,27 @@ def test_transport_failures_stay_inside_delivery_boundary(failure, smtp_transpor
                 settings=email_settings(api_email_enabled=failure != "disabled"),
             )
     assert "synthetic" not in str(caught.value)
+
+
+@pytest.mark.parametrize("sender", [
+    privacy_erasure_email_service.send_privacy_erasure_accepted,
+    privacy_erasure_email_service.send_privacy_erasure_completed,
+    privacy_erasure_email_service.send_privacy_erasure_completed_with_retention,
+])
+def test_privacy_erasure_delivery_failures_stay_inside_delivery_boundary(
+    sender, smtp_transport,
+):
+    with patch.object(
+        privacy_erasure_email_service,
+        "send_email",
+        side_effect=ValueError("synthetic provider detail"),
+    ):
+        with pytest.raises(
+            privacy_erasure_email_service.PrivacyErasureEmailDeliveryError,
+        ) as caught:
+            sender(to_address=TEST_ADDRESS, settings=email_settings())
+    assert str(caught.value) == "Privacy erasure email delivery failed"
+    smtp_transport.assert_not_called()
 
 
 class VerificationLogoRollbackTests(unittest.IsolatedAsyncioTestCase):

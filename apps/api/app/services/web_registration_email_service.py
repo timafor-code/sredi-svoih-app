@@ -16,6 +16,7 @@ from app.services.web_registration_email_templates import (
     render_registration_result_email,
     render_verification_code_email,
 )
+from app.services.transactional_email_branding import branded_logo_image
 
 
 class WebRegistrationEmailDeliveryError(RuntimeError):
@@ -56,6 +57,7 @@ def send_web_registration_result(
             registration_status=registration_status,
         ),
         settings=settings or get_settings(),
+        logo_factory=branded_logo_image,
     )
 
 
@@ -64,20 +66,19 @@ def _send_required(
     to_address: str,
     render: Callable[[], RenderedWebRegistrationEmail],
     settings: Settings,
+    logo_factory: Callable[[], InlineEmailImage] | None = None,
 ) -> EmailSendResult:
     try:
         rendered = render()
-        inline_images = (
-            (
-                InlineEmailImage(
+        inline_images = ()
+        if rendered.html_body:
+            inline_images = (
+                (logo_factory() if logo_factory else InlineEmailImage(
                     data=_load_verification_logo(),
                     subtype="png",
                     content_id="sredi-svoih-logo",
-                ),
+                )),
             )
-            if rendered.html_body
-            else ()
-        )
         result = send_email(
             EmailMessage(
                 to_address=to_address,

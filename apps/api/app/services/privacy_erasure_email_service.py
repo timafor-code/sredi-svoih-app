@@ -8,6 +8,7 @@ from app.services.privacy_erasure_email_templates import (
     render_privacy_erasure_completed_email,
     render_privacy_erasure_completed_with_retention_email,
 )
+from app.services.transactional_email_branding import branded_logo_image
 
 
 class PrivacyErasureEmailDeliveryError(RuntimeError):
@@ -19,25 +20,11 @@ def send_privacy_erasure_accepted(
     to_address: str,
     settings: Settings | None = None,
 ) -> EmailSendResult:
-    rendered = render_privacy_erasure_accepted_email()
-    try:
-        result = send_email(
-            EmailMessage(
-                to_address=to_address,
-                subject=rendered.subject,
-                text_body=rendered.text_body,
-            ),
-            settings=settings or get_settings(),
-        )
-    except Exception as exc:  # noqa: BLE001 - provider details remain internal.
-        raise PrivacyErasureEmailDeliveryError(
-            "Privacy erasure email delivery failed",
-        ) from exc
-    if not result.sent:
-        raise PrivacyErasureEmailDeliveryError(
-            "Privacy erasure email delivery unavailable",
-        )
-    return result
+    return _send_rendered(
+        to_address=to_address,
+        rendered=render_privacy_erasure_accepted_email(),
+        settings=settings,
+    )
 
 
 def send_privacy_erasure_completed(
@@ -76,6 +63,8 @@ def _send_rendered(
                 to_address=to_address,
                 subject=rendered.subject,
                 text_body=rendered.text_body,
+                html_body=rendered.html_body,
+                inline_images=(branded_logo_image(),) if rendered.html_body else (),
             ),
             settings=settings or get_settings(),
         )
