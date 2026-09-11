@@ -48,7 +48,11 @@ function validateSignupLegalDocumentWiring() {
   assertIncludes(files.authApiService, "'/auth/signup-legal-documents'", 'legal documents are loaded from the API');
   assertIncludes(files.signUpForm, 'const [accountConsentAccepted, setAccountConsentAccepted] = useState(false);', 'account consent starts unchecked');
   assertIncludes(files.signUpForm, 'const [userAgreementAccepted, setUserAgreementAccepted] = useState(false);', 'user agreement starts unchecked');
-  assertIncludes(files.signUpForm, 'accessibilityRole="checkbox"', 'signup uses accessible checkbox controls');
+  assertIncludes(files.signUpForm, 'const [privacyPolicy, setPrivacyPolicy] = useState<ApiSignupLegalDocument | null>(null);', 'privacy policy is held only in screen state');
+  assertIncludes(files.signUpForm, "policy.document_type === 'privacy_policy'", 'privacy policy comes from the API response');
+  assertIncludes(files.signUpForm, '&& privacyPolicy', 'privacy policy loading is required before signup');
+  assertIncludes(files.signUpForm, 'privacyPolicy.title} · версия {privacyPolicy.version}', 'privacy policy link renders its server-provided title and version');
+  assertEqual(countOccurrences(files.signUpForm, 'accessibilityRole="checkbox"'), 2, 'signup keeps exactly two checkbox controls');
   assertIncludes(files.signUpForm, 'account_personal_data_consent:', 'signup sends account consent evidence');
   assertIncludes(files.signUpForm, 'user_agreement:', 'signup sends agreement evidence');
   assertIncludes(files.signUpForm, 'document_id: accountConsentDocument.id', 'signup uses the server-provided account consent id');
@@ -60,6 +64,7 @@ function validateSignupLegalDocumentWiring() {
   assertIncludes(files.signUpForm, 'setUserAgreementAccepted(false);', 'reloading documents clears agreement consent');
   assertIncludes(files.signUpForm, '&& accountConsentAccepted', 'account consent is required before signup');
   assertIncludes(files.signUpForm, '&& userAgreementAccepted', 'user agreement is required before signup');
+  assertExcludes(files.signUpForm, 'privacy_policy: {', 'privacy policy is not sent as acceptance evidence');
   assertExcludes(files.signUpForm, '34721bfa-d04b-59c0-b341-d42c1bf56e48', 'mobile form does not hardcode production document ids');
   assertExcludes(files.signUpForm, '1bfbd4bb-2d47-55c0-9b57-80f0d14667ee', 'mobile form does not hardcode production document ids');
   assertExcludes(files.signUpForm, 'sha256:42c7e863e18a99dfb1753967ed8151c163a4a9770fa96b6c8390c6d4fffd33bc', 'mobile form does not hardcode production document hashes');
@@ -137,6 +142,14 @@ async function validateServiceRequests() {
           published_url: 'https://example.invalid/user-agreement',
         },
       ],
+      privacy_policy: {
+        id: 'privacy-policy-id',
+        document_type: 'privacy_policy',
+        version: '2.0',
+        title: 'Политика обработки персональных данных',
+        content_hash: 'sha256:privacy-policy',
+        published_url: 'https://example.invalid/privacy-policy',
+      },
     },
     '/auth/confirm-email-verification': { ok: true },
     '/auth/request-email-verification': { ok: true },
@@ -295,6 +308,10 @@ function assertDeepEqual(actual, expected, description) {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     fail(`${description}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
   }
+}
+
+function countOccurrences(value, expected) {
+  return value.split(expected).length - 1;
 }
 
 function fail(message) {

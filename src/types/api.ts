@@ -152,7 +152,7 @@ export type ApiSignupLegalAcceptances = {
 
 export type ApiSignupLegalDocument = {
   id: string;
-  document_type: 'account_personal_data_consent' | 'user_agreement';
+  document_type: 'account_personal_data_consent' | 'user_agreement' | 'privacy_policy';
   version: string;
   title: string;
   content_hash: string;
@@ -160,7 +160,10 @@ export type ApiSignupLegalDocument = {
 };
 
 export type ApiSignupLegalDocumentsResponse = {
-  documents: ApiSignupLegalDocument[];
+  documents: Array<ApiSignupLegalDocument & {
+    document_type: 'account_personal_data_consent' | 'user_agreement';
+  }>;
+  privacy_policy: ApiSignupLegalDocument & { document_type: 'privacy_policy' };
 };
 
 export type ApiRegisterWithInviteProfileInput = {

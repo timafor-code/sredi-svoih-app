@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 import re
@@ -318,8 +319,17 @@ class SignupLegalDocumentResponse(BaseModel):
     published_url: str
 
 
+class SignupRequiredLegalDocumentResponse(SignupLegalDocumentResponse):
+    document_type: Literal["account_personal_data_consent", "user_agreement"]
+
+
+class SignupPrivacyPolicyResponse(SignupLegalDocumentResponse):
+    document_type: Literal["privacy_policy"]
+
+
 class SignupLegalDocumentsResponse(BaseModel):
-    documents: list[SignupLegalDocumentResponse]
+    documents: list[SignupRequiredLegalDocumentResponse]
+    privacy_policy: SignupPrivacyPolicyResponse
 
 
 class AuthTokenResponse(BaseModel):

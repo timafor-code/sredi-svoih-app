@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 import httpx
 from fastapi import HTTPException
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects import postgresql
 
 from app.core.hashids import hash_invite_code
 from app.db.models.core import AppUser, Community, Invite, LegalAcceptance, LegalDocument
@@ -73,13 +74,18 @@ class AuthSignupLegalAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                 select(LegalAcceptance).where(LegalAcceptance.user_id == user_id),
             ))
 
-    async def test_get_returns_exactly_the_two_active_v2_documents(self) -> None:
+    async def test_get_returns_acceptance_documents_and_current_privacy_policy(self) -> None:
         documents = await self._documents()
         self.assertEqual(set(documents), {"account_personal_data_consent", "user_agreement"})
         self.assertEqual(documents["account_personal_data_consent"]["version"], "2.0")
         self.assertEqual(documents["user_agreement"]["version"], "2.0")
         self.assertTrue(documents["account_personal_data_consent"]["published_url"].startswith("https://"))
         self.assertTrue(documents["user_agreement"]["published_url"].startswith("https://"))
+        response = await self._request("GET", "/auth/signup-legal-documents")
+        privacy_policy = response.json()["privacy_policy"]
+        self.assertEqual(privacy_policy["document_type"], "privacy_policy")
+        self.assertEqual(privacy_policy["version"], "2.0")
+        self.assertTrue(privacy_policy["published_url"].startswith("https://"))
 
     async def test_missing_current_document_fails_closed(self) -> None:
         async with AsyncSessionLocal() as session:
@@ -92,6 +98,61 @@ class AuthSignupLegalAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                 await auth_service.get_signup_legal_documents(session)
             self.assertEqual(raised.exception.status_code, 503)
             await session.rollback()
+
+    async def test_missing_or_invalid_current_privacy_policy_fails_closed(self) -> None:
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(LegalDocument)
+                .where(LegalDocument.document_type == "privacy_policy", LegalDocument.retired_at.is_(None))
+                .values(retired_at=datetime.now(UTC)),
+            )
+            with self.assertRaises(HTTPException) as raised:
+                await auth_service.get_signup_legal_documents(session)
+            self.assertEqual(raised.exception.status_code, 503)
+            await session.rollback()
+
+            await session.execute(
+                update(LegalDocument)
+                .where(LegalDocument.document_type == "privacy_policy", LegalDocument.retired_at.is_(None))
+                .values(published_url="http://example.invalid/privacy"),
+            )
+            with self.assertRaises(HTTPException) as raised:
+                await auth_service.get_signup_legal_documents(session)
+            self.assertEqual(raised.exception.status_code, 503)
+            await session.rollback()
+
+    async def test_signup_validation_uses_shared_legal_document_locks(self) -> None:
+        now = datetime.now(UTC)
+        documents = [
+            LegalDocument(
+                document_type=document_type,
+                version="test",
+                title="Test",
+                content_hash="sha256:test",
+                published_url="https://example.invalid/legal/test",
+                effective_at=now,
+            )
+            for document_type in (
+                "account_personal_data_consent",
+                "user_agreement",
+                "privacy_policy",
+            )
+        ]
+
+        class CapturingSession:
+            query = None
+
+            async def scalars(self, query):
+                self.query = query
+                return documents
+
+        session = CapturingSession()
+        await auth_service._current_signup_legal_documents(session, lock=True)
+        assert session.query is not None
+        self.assertIn(
+            "FOR SHARE",
+            str(session.query.compile(dialect=postgresql.dialect())),
+        )
 
     async def test_register_rejects_missing_or_partial_legal_acceptance(self) -> None:
         missing = await self._register()
@@ -151,6 +212,7 @@ class AuthSignupLegalAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                     content_hash="sha256:historical",
                     published_url="https://example.invalid/legal/historical",
                     effective_at=datetime.now(UTC) - timedelta(days=2),
+                    retired_at=datetime.now(UTC) - timedelta(days=1),
                 ))
                 await session.flush()
                 session.add(LegalAcceptance(
@@ -169,6 +231,10 @@ class AuthSignupLegalAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({row.acceptance_method for row in rows}, {"checkbox"})
         self.assertEqual({row.source_channel for row in rows}, {"mobile"})
         self.assertEqual({row.evidence_version for row in rows}, {"mobile-account-signup-v1"})
+        privacy_policy_id = UUID(
+            (await self._request("GET", "/auth/signup-legal-documents")).json()["privacy_policy"]["id"],
+        )
+        self.assertNotIn(privacy_policy_id, {row.legal_document_id for row in rows})
         historical_rows = await self._acceptance_rows_for(historical_user_id)
         self.assertEqual(len(historical_rows), 1)
         self.assertEqual(historical_rows[0].legal_document_id, historical_document_id)

@@ -41,6 +41,7 @@ export function EmailSignUpForm({
   const [localError, setLocalError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [legalDocuments, setLegalDocuments] = useState<ApiSignupLegalDocument[] | null>(null);
+  const [privacyPolicy, setPrivacyPolicy] = useState<ApiSignupLegalDocument | null>(null);
   const [isLoadingLegalDocuments, setIsLoadingLegalDocuments] = useState(true);
   const [accountConsentAccepted, setAccountConsentAccepted] = useState(false);
   const [userAgreementAccepted, setUserAgreementAccepted] = useState(false);
@@ -50,6 +51,7 @@ export function EmailSignUpForm({
   const loadSignupLegalDocuments = useCallback(async () => {
     setIsLoadingLegalDocuments(true);
     setLegalDocuments(null);
+    setPrivacyPolicy(null);
     setAccountConsentAccepted(false);
     setUserAgreementAccepted(false);
 
@@ -57,18 +59,23 @@ export function EmailSignUpForm({
       const { getSignupLegalDocuments } = await import('@/services/authService');
       const response = await getSignupLegalDocuments();
       const documents = response.documents;
+      const policy = response.privacy_policy;
       const hasRequiredDocuments = documents.length === 2
         && documents.some((document) => document.document_type === 'account_personal_data_consent')
         && documents.some((document) => document.document_type === 'user_agreement')
-        && documents.every((document) => isHttpsDocumentUrl(document.published_url));
+        && documents.every((document) => isHttpsDocumentUrl(document.published_url))
+        && policy.document_type === 'privacy_policy'
+        && isHttpsDocumentUrl(policy.published_url);
 
       if (!hasRequiredDocuments) {
         throw new Error('Документы для регистрации временно недоступны. Попробуйте ещё раз.');
       }
 
       setLegalDocuments(documents);
+      setPrivacyPolicy(policy);
     } catch {
       setLegalDocuments(null);
+      setPrivacyPolicy(null);
       setLocalError('Не удалось загрузить документы для регистрации. Создание аккаунта недоступно.');
     } finally {
       setIsLoadingLegalDocuments(false);
@@ -136,7 +143,7 @@ export function EmailSignUpForm({
       (document) => document.document_type === 'user_agreement',
     );
 
-    if (!accountConsentDocument || !userAgreementDocument || isLoadingLegalDocuments) {
+    if (!accountConsentDocument || !userAgreementDocument || !privacyPolicy || isLoadingLegalDocuments) {
       setLocalError('Не удалось загрузить документы для регистрации. Создание аккаунта недоступно.');
       return;
     }
@@ -189,6 +196,7 @@ export function EmailSignUpForm({
     onEmailChange,
     onSignedIn,
     password,
+    privacyPolicy,
     signUpWithEmail,
     userAgreementAccepted,
     validate,
@@ -235,6 +243,7 @@ export function EmailSignUpForm({
   const canSubmit = Boolean(
     accountConsentDocument
     && userAgreementDocument
+    && privacyPolicy
     && accountConsentAccepted
     && userAgreementAccepted
     && !isLoadingLegalDocuments
@@ -352,6 +361,15 @@ export function EmailSignUpForm({
               <Text style={styles.documentLink}>{userAgreementDocument.title} · версия {userAgreementDocument.version}</Text>
             </Pressable>
           </View>
+        ) : null}
+        {privacyPolicy ? (
+          <Pressable
+            accessibilityLabel={`Открыть ${privacyPolicy.title}, версия ${privacyPolicy.version}`}
+            accessibilityRole="link"
+            onPress={() => void openDocument(privacyPolicy)}
+          >
+            <Text style={styles.documentLink}>{privacyPolicy.title} · версия {privacyPolicy.version}</Text>
+          </Pressable>
         ) : null}
       </View>
       <PrimaryButton

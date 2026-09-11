@@ -46,8 +46,9 @@ from app.schemas.auth import (
     ProfileSummary,
     RegisterResponse,
     SignupLegalAcceptances,
-    SignupLegalDocumentResponse,
     SignupLegalDocumentsResponse,
+    SignupPrivacyPolicyResponse,
+    SignupRequiredLegalDocumentResponse,
     RegisterWithInviteProfileInput,
     RegisterWithInviteResponse,
     normalize_device_name,
@@ -76,10 +77,11 @@ _INVITE_USED_STATUS = "used"
 _MEMBERSHIP_PENDING_STATUS = "pending"
 _MEMBERSHIP_SUSPENDED_STATUS = "suspended"
 _MEMBERSHIP_LEFT_STATUS = "left"
-_SIGNUP_LEGAL_DOCUMENT_TYPES = (
+_REQUIRED_SIGNUP_LEGAL_DOCUMENT_TYPES = (
     "account_personal_data_consent",
     "user_agreement",
 )
+_SIGNUP_LEGAL_DOCUMENT_TYPES = (*_REQUIRED_SIGNUP_LEGAL_DOCUMENT_TYPES, "privacy_policy")
 _MOBILE_SIGNUP_EVIDENCE_VERSION = "mobile-account-signup-v1"
 _auth_email_rate_limiter = InMemoryAuthEmailRateLimiter()
 
@@ -515,7 +517,7 @@ async def _current_signup_legal_documents(
         LegalDocument.retired_at.is_(None),
     )
     if lock:
-        query = query.with_for_update()
+        query = query.with_for_update(read=True)
     documents = list(await session.scalars(query))
     by_type = {document.document_type: document for document in documents}
     if len(documents) != len(_SIGNUP_LEGAL_DOCUMENT_TYPES) or set(by_type) != set(
@@ -535,7 +537,7 @@ async def get_signup_legal_documents(
     documents = await _current_signup_legal_documents(session, lock=False)
     return SignupLegalDocumentsResponse(
         documents=[
-            SignupLegalDocumentResponse(
+            SignupRequiredLegalDocumentResponse(
                 id=documents[document_type].id,
                 document_type=documents[document_type].document_type,
                 version=documents[document_type].version,
@@ -543,8 +545,16 @@ async def get_signup_legal_documents(
                 content_hash=documents[document_type].content_hash,
                 published_url=documents[document_type].published_url,
             )
-            for document_type in _SIGNUP_LEGAL_DOCUMENT_TYPES
+            for document_type in _REQUIRED_SIGNUP_LEGAL_DOCUMENT_TYPES
         ],
+        privacy_policy=SignupPrivacyPolicyResponse(
+            id=documents["privacy_policy"].id,
+            document_type=documents["privacy_policy"].document_type,
+            version=documents["privacy_policy"].version,
+            title=documents["privacy_policy"].title,
+            content_hash=documents["privacy_policy"].content_hash,
+            published_url=documents["privacy_policy"].published_url,
+        ),
     )
 
 
@@ -565,7 +575,10 @@ async def _validated_signup_legal_documents(
             or document.content_hash != acceptance.content_hash
         ):
             raise _legal_documents_changed_error()
-    return [current_documents[document_type] for document_type in _SIGNUP_LEGAL_DOCUMENT_TYPES]
+    return [
+        current_documents[document_type]
+        for document_type in _REQUIRED_SIGNUP_LEGAL_DOCUMENT_TYPES
+    ]
 
 
 def _create_mobile_signup_legal_acceptances(

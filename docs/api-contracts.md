@@ -327,13 +327,18 @@ code created and delivery reported as sent.
 
 ### Account-signup legal acceptance
 
-`GET /auth/signup-legal-documents` returns exactly the current effective
-`account_personal_data_consent` and `user_agreement` documents. Every document
-contains `id`, `document_type`, `version`, `title`, `content_hash`, and
-HTTPS `published_url`. The server selects only documents with `effective_at <=
-now` and `retired_at IS NULL`; if either required type is unavailable or more
-than one effective row exists for a required type, it fails closed with `503
+`GET /auth/signup-legal-documents` returns `documents`, containing exactly the
+current effective `account_personal_data_consent` and `user_agreement`, plus a
+separate `privacy_policy` field containing the current effective Privacy
+Policy. Every document contains `id`, `document_type`, `version`, `title`,
+`content_hash`, and HTTPS `published_url`. The server selects only documents
+with `effective_at <= now` and `retired_at IS NULL`; if any of the three
+required signup-display documents is unavailable, has an invalid HTTPS URL, or
+has more than one effective row, it fails closed with `503
 legal_documents_unavailable`.
+
+The Privacy Policy is an informational signup link only: it is not part of the
+acceptance payload and never creates a `legal_acceptances` row in this flow.
 
 Both public account-creation paths require this strict keyed evidence shape;
 the client supplies only the current document id and content hash, never a
