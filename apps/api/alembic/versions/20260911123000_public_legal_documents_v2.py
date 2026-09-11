@@ -6,6 +6,7 @@ Create Date: 2026-09-11 12:30:00.000000
 """
 
 from collections.abc import Sequence
+from datetime import datetime
 
 from alembic import op
 import sqlalchemy as sa
@@ -16,7 +17,7 @@ down_revision: str | Sequence[str] | None = "20260910190000"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-_EFFECTIVE_AT = "2026-09-11T00:00:00+03:00"
+_EFFECTIVE_AT = datetime.fromisoformat("2026-09-11T00:00:00+03:00")
 _DOCUMENTS = (
     {
         "id": "26956e9e-ce82-5f92-8bb4-408ce2a10a54",
