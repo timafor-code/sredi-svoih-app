@@ -292,7 +292,7 @@ production API auth.
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | POST | `/auth/register` | Public | Create an API password user and profile with `email_verified_at` unset, and send an email verification code. Does not return auth tokens. |
-| GET | `/auth/signup-legal-documents` | Public | Return the two currently effective account-signup legal documents. |
+| GET | `/auth/signup-legal-documents` | Public | Return the currently effective account-signup legal documents and Privacy Policy. |
 | POST | `/auth/login` | Public | Exchange email/password credentials for an access token and refresh session. Rejected for a `password_signup` user until email verification completes. |
 | POST | `/auth/refresh` | Public/session | Rotate a refresh session and return a new access token. Rejected for a `password_signup` user whose email is not yet verified. |
 | POST | `/auth/logout` | Public/session | Revoke the submitted refresh session when present. |
@@ -330,7 +330,10 @@ code created and delivery reported as sent.
 `GET /auth/signup-legal-documents` returns `documents`, containing exactly the
 current effective `account_personal_data_consent` and `user_agreement`, plus a
 separate `privacy_policy` field containing the current effective Privacy
-Policy. Every document contains `id`, `document_type`, `version`, `title`,
+Policy. The account-consent version may change when its declared processing
+purpose materially changes; clients must use the version currently returned by
+this endpoint rather than assuming a fixed version. Every document contains
+`id`, `document_type`, `version`, `title`,
 `content_hash`, and HTTPS `published_url`. The server selects only documents
 with `effective_at <= now` and `retired_at IS NULL`; if any of the three
 required signup-display documents is unavailable, has an invalid HTTPS URL, or
