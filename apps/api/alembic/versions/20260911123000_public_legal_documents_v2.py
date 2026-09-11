@@ -23,7 +23,7 @@ _DOCUMENTS = (
         "document_type": "privacy_policy",
         "version": "2.0",
         "title": "Политика обработки персональных данных",
-        "content_hash": "sha256:2dfd592eaa4f9cbedfe2c6e5674fbebae6632c591600e8f33e0411d4280a174e",
+        "content_hash": "sha256:1631054c13ed0cc4dc46d85e4fa61579ef02fa77a7682a7041a2990ea4ce5aef",
         "published_url": "https://reg.sredisvoihapp.ru/legal/privacy-policy-v2.0.html",
     },
     {
@@ -31,7 +31,7 @@ _DOCUMENTS = (
         "document_type": "event_registration_consent",
         "version": "2.0",
         "title": "Согласие на обработку персональных данных для регистрации на мероприятие",
-        "content_hash": "sha256:49dff7092243b8b64ef69d1f9f71083f6805ce4f4d9de5ed3ab5f4aae23dd768",
+        "content_hash": "sha256:a44b4a28940e7a1d021a747d0f30024d6b98f49032267a85cb44e41f2f0ac16a",
         "published_url": "https://reg.sredisvoihapp.ru/legal/event-registration-personal-data-consent-v2.0.html",
     },
 )
