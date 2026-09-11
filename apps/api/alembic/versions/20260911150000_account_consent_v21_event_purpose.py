@@ -24,7 +24,7 @@ _DOCUMENTS = (
         "document_type": "account_personal_data_consent",
         "version": "2.1",
         "title": "Согласие на обработку персональных данных для аккаунта и регистрации на мероприятия",
-        "content_hash": "sha256:b5ba8495f45027d77d1c6155d0159ab1425164d8f3126972c935b6c0f48a222d",
+        "content_hash": "sha256:0b3a6539fc08269604b026466d74722c54ff879fbebd5dba5d27cf4aea838477",
         "published_url": "https://reg.sredisvoihapp.ru/legal/account-personal-data-consent-v2.1.html",
     },
     {
@@ -32,7 +32,7 @@ _DOCUMENTS = (
         "document_type": "privacy_policy",
         "version": "2.1",
         "title": "Политика обработки персональных данных",
-        "content_hash": "sha256:4052ca4b1411c7498e85dba718e0c2fb7113803d51ca9587c15254845c5fc7c7",
+        "content_hash": "sha256:b4c70e14d3796d9109914e3732665ca5cdc01d854ec6cb6304f13af78e5407a2",
         "published_url": "https://reg.sredisvoihapp.ru/legal/privacy-policy-v2.1.html",
     },
 )
