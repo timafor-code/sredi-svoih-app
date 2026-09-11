@@ -77,15 +77,112 @@ class AuthSignupLegalAcceptanceTests(unittest.IsolatedAsyncioTestCase):
     async def test_get_returns_acceptance_documents_and_current_privacy_policy(self) -> None:
         documents = await self._documents()
         self.assertEqual(set(documents), {"account_personal_data_consent", "user_agreement"})
-        self.assertEqual(documents["account_personal_data_consent"]["version"], "2.0")
+        self.assertEqual(documents["account_personal_data_consent"]["version"], "2.1")
         self.assertEqual(documents["user_agreement"]["version"], "2.0")
-        self.assertTrue(documents["account_personal_data_consent"]["published_url"].startswith("https://"))
+        self.assertEqual(
+            documents["account_personal_data_consent"]["content_hash"],
+            "sha256:0b3a6539fc08269604b026466d74722c54ff879fbebd5dba5d27cf4aea838477",
+        )
+        self.assertEqual(
+            documents["account_personal_data_consent"]["published_url"],
+            "https://reg.sredisvoihapp.ru/legal/account-personal-data-consent-v2.1.html",
+        )
         self.assertTrue(documents["user_agreement"]["published_url"].startswith("https://"))
         response = await self._request("GET", "/auth/signup-legal-documents")
         privacy_policy = response.json()["privacy_policy"]
         self.assertEqual(privacy_policy["document_type"], "privacy_policy")
-        self.assertEqual(privacy_policy["version"], "2.0")
-        self.assertTrue(privacy_policy["published_url"].startswith("https://"))
+        self.assertEqual(privacy_policy["version"], "2.1")
+        self.assertEqual(
+            privacy_policy["content_hash"],
+            "sha256:b4c70e14d3796d9109914e3732665ca5cdc01d854ec6cb6304f13af78e5407a2",
+        )
+        self.assertEqual(
+            privacy_policy["published_url"],
+            "https://reg.sredisvoihapp.ru/legal/privacy-policy-v2.1.html",
+        )
+
+    async def test_v21_current_documents_preserve_v20_documents_and_evidence(self) -> None:
+        historical_user_id = uuid4()
+        self.created_user_ids.append(historical_user_id)
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                account_v20 = await session.scalar(select(LegalDocument).where(
+                    LegalDocument.document_type == "account_personal_data_consent",
+                    LegalDocument.version == "2.0",
+                ))
+                privacy_v20 = await session.scalar(select(LegalDocument).where(
+                    LegalDocument.document_type == "privacy_policy",
+                    LegalDocument.version == "2.0",
+                ))
+                account_v21 = await session.scalar(select(LegalDocument).where(
+                    LegalDocument.document_type == "account_personal_data_consent",
+                    LegalDocument.version == "2.1",
+                    LegalDocument.retired_at.is_(None),
+                ))
+                privacy_v21 = await session.scalar(select(LegalDocument).where(
+                    LegalDocument.document_type == "privacy_policy",
+                    LegalDocument.version == "2.1",
+                    LegalDocument.retired_at.is_(None),
+                ))
+                user_agreement = await session.scalar(select(LegalDocument).where(
+                    LegalDocument.document_type == "user_agreement",
+                    LegalDocument.version == "2.0",
+                    LegalDocument.retired_at.is_(None),
+                ))
+                event_consent = await session.scalar(select(LegalDocument).where(
+                    LegalDocument.document_type == "event_registration_consent",
+                    LegalDocument.version == "2.0",
+                    LegalDocument.retired_at.is_(None),
+                ))
+                self.assertIsNotNone(account_v20)
+                self.assertIsNotNone(privacy_v20)
+                self.assertIsNotNone(account_v21)
+                self.assertIsNotNone(privacy_v21)
+                self.assertIsNotNone(user_agreement)
+                self.assertIsNotNone(event_consent)
+                self.assertIsNotNone(account_v20.retired_at)
+                self.assertIsNotNone(privacy_v20.retired_at)
+                self.assertEqual(
+                    user_agreement.content_hash,
+                    "sha256:0697fae65b9ebc07c239993f5cd908e0ee2278d1d8365f79e4c7fc7b9df16391",
+                )
+                self.assertEqual(
+                    event_consent.content_hash,
+                    "sha256:a44b4a28940e7a1d021a747d0f30024d6b98f49032267a85cb44e41f2f0ac16a",
+                )
+                self.assertEqual(
+                    event_consent.published_url,
+                    "https://reg.sredisvoihapp.ru/legal/event-registration-personal-data-consent-v2.0.html",
+                )
+                session.add(AppUser(
+                    id=historical_user_id,
+                    email=self._email(),
+                    password_hash="test-hash",
+                    account_origin="migration",
+                    claim_state="legacy_external",
+                ))
+                session.add(LegalAcceptance(
+                    user_id=historical_user_id,
+                    legal_document_id=account_v20.id,
+                    accepted_at=datetime.now(UTC) - timedelta(days=1),
+                    acceptance_method="authenticated_action",
+                    source_channel="mobile",
+                    evidence_version="historical-v20-test",
+                ))
+
+        async with AsyncSessionLocal() as session:
+            historical_rows = list(await session.scalars(select(LegalAcceptance).where(
+                LegalAcceptance.user_id == historical_user_id,
+            )))
+            v21_acceptance_count = await session.scalar(
+                select(func.count()).select_from(LegalAcceptance).where(
+                    LegalAcceptance.user_id == historical_user_id,
+                    LegalAcceptance.legal_document_id.in_((account_v21.id, privacy_v21.id)),
+                ),
+            )
+        self.assertEqual(len(historical_rows), 1)
+        self.assertEqual(historical_rows[0].legal_document_id, account_v20.id)
+        self.assertEqual(v21_acceptance_count, 0)
 
     async def test_missing_current_document_fails_closed(self) -> None:
         async with AsyncSessionLocal() as session:
