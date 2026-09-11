@@ -1,8 +1,10 @@
 import type { AppAuthSession, AppAuthUser } from '@/types/auth';
+import type { ApiSignupLegalAcceptances } from '@/types/api';
 import { create } from 'zustand';
 
 import { appCapabilities } from '@/config/appCapabilities';
 import { clearApiAuthTokens, clearGuestApiAuthTokens } from '@/services/apiAuthTokenStore';
+import { ApiClientError } from '@/services/apiClient';
 import {
   APPLE_SIGN_IN_CANCELLED_MESSAGE,
   AUTH_ERROR_MESSAGES,
@@ -58,7 +60,11 @@ type AuthState = {
   signIn: (email: string, password: string) => Promise<void>;
   signInWithApple: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-  signUpWithEmail: (email: string, password: string) => Promise<EmailSignUpResult>;
+  signUpWithEmail: (
+    email: string,
+    password: string,
+    legalAcceptances: ApiSignupLegalAcceptances,
+  ) => Promise<EmailSignUpResult>;
   confirmEmailVerification: (email: string, code: string) => Promise<void>;
   resendConfirmationEmail: (email: string) => Promise<void>;
   resetPasswordForEmail: (email: string) => Promise<void>;
@@ -856,7 +862,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  signUpWithEmail: async (email: string, password: string) => {
+  signUpWithEmail: async (
+    email: string,
+    password: string,
+    legalAcceptances: ApiSignupLegalAcceptances,
+  ) => {
     assertAccountFeaturesAvailable();
 
     const requestRevision = beginAuthOperation();
@@ -865,7 +875,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ loading: true, error: null });
 
     try {
-      const result = await signUpWithEmailService(email, password);
+      const result = await signUpWithEmailService(email, password, legalAcceptances);
       if (!isCurrent()) {
         return result;
       }
@@ -946,6 +956,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (isCurrent()) {
         set({ loading: false, error: message });
+      }
+
+      if (error instanceof ApiClientError && error.code === 'legal_documents_changed') {
+        throw error;
       }
 
       throw new Error(message);

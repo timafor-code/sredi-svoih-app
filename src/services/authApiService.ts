@@ -12,6 +12,8 @@ import type {
   ApiRefreshRequest,
   ApiRegisterRequest,
   ApiRegisterResponse,
+  ApiSignupLegalAcceptances,
+  ApiSignupLegalDocumentsResponse,
   ApiStoredAuthTokens,
   ApiUserSummary,
 } from '@/types/api';
@@ -233,7 +235,18 @@ export async function signIn(email: string, password: string): Promise<AppAuthSe
   return apiTokensToSession(response, response.user);
 }
 
-export async function signUpWithEmail(email: string, password: string): Promise<EmailSignUpResult> {
+export async function getSignupLegalDocuments(): Promise<ApiSignupLegalDocumentsResponse> {
+  return apiClient.get<ApiSignupLegalDocumentsResponse>(
+    '/auth/signup-legal-documents',
+    { includeAuthToken: false },
+  );
+}
+
+export async function signUpWithEmail(
+  email: string,
+  password: string,
+  legalAcceptances: ApiSignupLegalAcceptances,
+): Promise<EmailSignUpResult> {
   const normalizedEmail = normalizeEmail(email);
 
   if (!normalizedEmail || !password.trim()) {
@@ -249,6 +262,7 @@ export async function signUpWithEmail(email: string, password: string): Promise<
     {
       email: normalizedEmail,
       password,
+      legal_acceptances: legalAcceptances,
     },
     { includeAuthToken: false },
   );

@@ -1,4 +1,5 @@
 import type { AppAuthSession, AppAuthUser } from '@/types/auth';
+import type { ApiSignupLegalAcceptances, ApiSignupLegalDocumentsResponse } from '@/types/api';
 import type {
   HebrewBirthDateProfile,
   ProfileBirthTimeContext,
@@ -84,8 +85,16 @@ export async function signInWithApple(): Promise<AppleSignInResult | null> {
   throw new Error(APPLE_SIGN_IN_NOT_CONFIGURED_MESSAGE);
 }
 
-export async function signUpWithEmail(email: string, password: string): Promise<EmailSignUpResult> {
-  return authApiService.signUpWithEmail(email, password);
+export async function getSignupLegalDocuments(): Promise<ApiSignupLegalDocumentsResponse> {
+  return authApiService.getSignupLegalDocuments();
+}
+
+export async function signUpWithEmail(
+  email: string,
+  password: string,
+  legalAcceptances: ApiSignupLegalAcceptances,
+): Promise<EmailSignUpResult> {
+  return authApiService.signUpWithEmail(email, password, legalAcceptances);
 }
 
 export async function confirmEmailVerification(email: string, code: string): Promise<void> {

@@ -47,6 +47,23 @@ class AuthSignupEmailVerificationTests(unittest.IsolatedAsyncioTestCase):
         async with httpx.AsyncClient(
             transport=transport, base_url="http://testserver",
         ) as client:
+            if path == "/auth/register" and "legal_acceptances" not in json:
+                documents_response = await client.get("/auth/signup-legal-documents")
+                self.assertEqual(documents_response.status_code, 200, documents_response.text)
+                documents = {
+                    item["document_type"]: item
+                    for item in documents_response.json()["documents"]
+                }
+                json = {
+                    **json,
+                    "legal_acceptances": {
+                        document_type: {
+                            "document_id": document["id"],
+                            "content_hash": document["content_hash"],
+                        }
+                        for document_type, document in documents.items()
+                    },
+                }
             return await client.post(path, json=json)
 
     async def _register(

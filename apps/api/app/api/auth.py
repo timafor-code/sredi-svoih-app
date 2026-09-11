@@ -30,6 +30,7 @@ from app.schemas.auth import (
     RequestEmailVerificationRequest,
     RequestPasswordResetRequest,
     RequestSetPasswordRequest,
+    SignupLegalDocumentsResponse,
 )
 from app.services.auth import (
     accept_invite_for_current_user,
@@ -40,6 +41,7 @@ from app.services.auth import (
     create_password_reset_code,
     create_set_password_code,
     get_me_summary,
+    get_signup_legal_documents,
     login_password_user,
     logout_session,
     refresh_session,
@@ -74,7 +76,15 @@ async def register(
         session,
         email=payload.email,
         password=payload.password,
+        legal_acceptances=payload.legal_acceptances,
     )
+
+
+@router.get("/signup-legal-documents", response_model=SignupLegalDocumentsResponse)
+async def signup_legal_documents(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> SignupLegalDocumentsResponse:
+    return await get_signup_legal_documents(session)
 
 
 @router.post(
@@ -93,6 +103,7 @@ async def register_with_invite(
         email=payload.email,
         password=payload.password,
         profile=payload.profile,
+        legal_acceptances=payload.legal_acceptances,
         ip_address=_request_ip(request),
         user_agent=_request_user_agent(request),
     )

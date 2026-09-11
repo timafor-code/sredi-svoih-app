@@ -21,6 +21,7 @@ from app.db.models.core import (
 )
 from app.db.session import AsyncSessionLocal, engine
 from app.schemas.registrations import RegisterEventRequest
+from app.schemas.auth import SignupLegalAcceptances
 from app.services import auth as auth_service
 from app.services import registrations as registration_service
 
@@ -115,6 +116,26 @@ class WebRegistrationIdentitySchemaTests(unittest.IsolatedAsyncioTestCase):
                 session.add(row)
                 await session.flush()
 
+    async def _signup_legal_acceptances(self, session) -> SignupLegalAcceptances:
+        documents = list(
+            await session.scalars(
+                select(LegalDocument).where(
+                    LegalDocument.document_type.in_(
+                        ("account_personal_data_consent", "user_agreement"),
+                    ),
+                    LegalDocument.retired_at.is_(None),
+                ),
+            ),
+        )
+        by_type = {document.document_type: document for document in documents}
+        return SignupLegalAcceptances.model_validate({
+            document_type: {
+                "document_id": str(document.id),
+                "content_hash": document.content_hash,
+            }
+            for document_type, document in by_type.items()
+        })
+
     async def test_user_identity_values_and_passwordless_creation(self) -> None:
         async with AsyncSessionLocal() as session:
             async with session.begin():
@@ -165,10 +186,12 @@ class WebRegistrationIdentitySchemaTests(unittest.IsolatedAsyncioTestCase):
         invite_email = f"schema-invite-{uuid4().hex}@example.invalid"
         invite_hash = f"schema-invite-{uuid4().hex}"
         async with AsyncSessionLocal() as session:
+            legal_acceptances = await self._signup_legal_acceptances(session)
             password_response = await auth_service.register_password_user(
                 session,
                 email=password_email,
                 password="test-password",
+                legal_acceptances=legal_acceptances,
             )
         async with AsyncSessionLocal() as session:
             async with session.begin():
@@ -183,12 +206,14 @@ class WebRegistrationIdentitySchemaTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 )
         async with AsyncSessionLocal() as session:
+            legal_acceptances = await self._signup_legal_acceptances(session)
             invite_response = await auth_service.register_password_user_with_invite(
                 session,
                 invite_code_hash=invite_hash,
                 email=invite_email,
                 password="test-password",
                 profile=None,
+                legal_acceptances=legal_acceptances,
             )
         async with AsyncSessionLocal() as session:
             password_user = await session.get(AppUser, password_response.user.id)

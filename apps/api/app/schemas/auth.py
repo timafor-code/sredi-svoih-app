@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 import re
@@ -68,9 +69,29 @@ def normalize_device_name(value: str | None) -> str | None:
     return normalized or None
 
 
+class SignupLegalAcceptance(BaseModel):
+    document_id: UUID
+    content_hash: str = Field(min_length=1, max_length=200)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("content_hash")
+    @classmethod
+    def normalize_content_hash(cls, value: str) -> str:
+        return normalize_required_secret(value, "content_hash")
+
+
+class SignupLegalAcceptances(BaseModel):
+    account_personal_data_consent: SignupLegalAcceptance
+    user_agreement: SignupLegalAcceptance
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class RegisterRequest(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=8, max_length=1024)
+    legal_acceptances: SignupLegalAcceptances
 
     model_config = ConfigDict(extra="forbid")
 
@@ -227,6 +248,7 @@ class RegisterWithInviteRequest(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=8, max_length=1024)
     profile: RegisterWithInviteProfileInput | None = None
+    legal_acceptances: SignupLegalAcceptances
 
     model_config = ConfigDict(extra="forbid")
 
@@ -286,6 +308,28 @@ class CommunitySummary(BaseModel):
 class RegisterResponse(BaseModel):
     user: AppUserSummary
     profile: ProfileSummary | None
+
+
+class SignupLegalDocumentResponse(BaseModel):
+    id: UUID
+    document_type: str
+    version: str
+    title: str
+    content_hash: str
+    published_url: str
+
+
+class SignupRequiredLegalDocumentResponse(SignupLegalDocumentResponse):
+    document_type: Literal["account_personal_data_consent", "user_agreement"]
+
+
+class SignupPrivacyPolicyResponse(SignupLegalDocumentResponse):
+    document_type: Literal["privacy_policy"]
+
+
+class SignupLegalDocumentsResponse(BaseModel):
+    documents: list[SignupRequiredLegalDocumentResponse]
+    privacy_policy: SignupPrivacyPolicyResponse
 
 
 class AuthTokenResponse(BaseModel):
