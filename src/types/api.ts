@@ -137,6 +137,30 @@ export type ApiLoginRequest = {
 export type ApiRegisterRequest = {
   email: string;
   password: string;
+  legal_acceptances: ApiSignupLegalAcceptances;
+};
+
+export type ApiSignupLegalAcceptance = {
+  document_id: string;
+  content_hash: string;
+};
+
+export type ApiSignupLegalAcceptances = {
+  account_personal_data_consent: ApiSignupLegalAcceptance;
+  user_agreement: ApiSignupLegalAcceptance;
+};
+
+export type ApiSignupLegalDocument = {
+  id: string;
+  document_type: 'account_personal_data_consent' | 'user_agreement';
+  version: string;
+  title: string;
+  content_hash: string;
+  published_url: string;
+};
+
+export type ApiSignupLegalDocumentsResponse = {
+  documents: ApiSignupLegalDocument[];
 };
 
 export type ApiRegisterWithInviteProfileInput = {
@@ -152,6 +176,7 @@ export type ApiRegisterWithInviteRequest = {
   email: string;
   password: string;
   profile?: ApiRegisterWithInviteProfileInput | null;
+  legal_acceptances: ApiSignupLegalAcceptances;
 };
 
 export type ApiRefreshRequest = {

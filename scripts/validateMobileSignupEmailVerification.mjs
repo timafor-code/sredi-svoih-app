@@ -21,6 +21,7 @@ const files = {
 };
 
 validateSignupDoesNotAutoLogin();
+validateSignupLegalDocumentWiring();
 validateConfirmWiring();
 validateStoreWiring();
 validateRecoveryWiring();
@@ -40,6 +41,29 @@ function validateSignupDoesNotAutoLogin() {
   assertIncludes(signUpWithEmail, 'session: null', 'signup returns a null session pending confirmation');
   assertIncludes(signUpWithEmail, 'needsEmailConfirmation: true', 'signup reports pending confirmation');
   assertIncludes(signUpWithEmail, "'/auth/register'", 'signup still registers the account');
+}
+
+function validateSignupLegalDocumentWiring() {
+  assertIncludes(files.authApiService, 'export async function getSignupLegalDocuments()', 'authApiService exposes legal document loading');
+  assertIncludes(files.authApiService, "'/auth/signup-legal-documents'", 'legal documents are loaded from the API');
+  assertIncludes(files.signUpForm, 'const [accountConsentAccepted, setAccountConsentAccepted] = useState(false);', 'account consent starts unchecked');
+  assertIncludes(files.signUpForm, 'const [userAgreementAccepted, setUserAgreementAccepted] = useState(false);', 'user agreement starts unchecked');
+  assertIncludes(files.signUpForm, 'accessibilityRole="checkbox"', 'signup uses accessible checkbox controls');
+  assertIncludes(files.signUpForm, 'account_personal_data_consent:', 'signup sends account consent evidence');
+  assertIncludes(files.signUpForm, 'user_agreement:', 'signup sends agreement evidence');
+  assertIncludes(files.signUpForm, 'document_id: accountConsentDocument.id', 'signup uses the server-provided account consent id');
+  assertIncludes(files.signUpForm, 'content_hash: accountConsentDocument.content_hash', 'signup uses the server-provided account consent hash');
+  assertIncludes(files.signUpForm, 'document_id: userAgreementDocument.id', 'signup uses the server-provided agreement id');
+  assertIncludes(files.signUpForm, 'content_hash: userAgreementDocument.content_hash', 'signup uses the server-provided agreement hash');
+  assertIncludes(files.signUpForm, "error.code === 'legal_documents_changed'", 'stale legal documents trigger a refresh');
+  assertIncludes(files.signUpForm, 'setAccountConsentAccepted(false);', 'reloading documents clears account consent');
+  assertIncludes(files.signUpForm, 'setUserAgreementAccepted(false);', 'reloading documents clears agreement consent');
+  assertIncludes(files.signUpForm, '&& accountConsentAccepted', 'account consent is required before signup');
+  assertIncludes(files.signUpForm, '&& userAgreementAccepted', 'user agreement is required before signup');
+  assertExcludes(files.signUpForm, '34721bfa-d04b-59c0-b341-d42c1bf56e48', 'mobile form does not hardcode production document ids');
+  assertExcludes(files.signUpForm, '1bfbd4bb-2d47-55c0-9b57-80f0d14667ee', 'mobile form does not hardcode production document ids');
+  assertExcludes(files.signUpForm, 'sha256:42c7e863e18a99dfb1753967ed8151c163a4a9770fa96b6c8390c6d4fffd33bc', 'mobile form does not hardcode production document hashes');
+  assertExcludes(files.signUpForm, 'sha256:0697fae65b9ebc07c239993f5cd908e0ee2278d1d8365f79e4c7fc7b9df16391', 'mobile form does not hardcode production document hashes');
 }
 
 function validateConfirmWiring() {
@@ -77,6 +101,7 @@ function validateRecoveryWiring() {
 
 async function validateServiceRequests() {
   const calls = [];
+  const getCalls = [];
   const storedTokenCalls = [];
   const responses = {
     '/auth/register': {
@@ -92,6 +117,26 @@ async function validateServiceRequests() {
         updated_at: '2026-01-01T00:00:00Z',
       },
       profile: null,
+    },
+    '/auth/signup-legal-documents': {
+      documents: [
+        {
+          id: 'account-consent-id',
+          document_type: 'account_personal_data_consent',
+          version: '2.0',
+          title: 'Account consent',
+          content_hash: 'sha256:account-consent',
+          published_url: 'https://example.invalid/account-consent',
+        },
+        {
+          id: 'user-agreement-id',
+          document_type: 'user_agreement',
+          version: '2.0',
+          title: 'User agreement',
+          content_hash: 'sha256:user-agreement',
+          published_url: 'https://example.invalid/user-agreement',
+        },
+      ],
     },
     '/auth/confirm-email-verification': { ok: true },
     '/auth/request-email-verification': { ok: true },
@@ -117,6 +162,10 @@ async function validateServiceRequests() {
     if (request === './apiClient' && parent?.filename?.endsWith('authApiService.ts')) {
       return {
         apiClient: {
+          get: async (requestPath, options) => {
+            getCalls.push({ path: requestPath, options });
+            return responses[requestPath] ?? {};
+          },
           post: async (requestPath, body, options) => {
             calls.push({ path: requestPath, body, options });
             return responses[requestPath] ?? {};
@@ -143,11 +192,32 @@ async function validateServiceRequests() {
   try {
     const api = require(path.join(repoRoot, 'src/services/authApiService.ts'));
 
-    const signUpResult = await api.signUpWithEmail('Signup@Example.invalid', 'Synthetic-password-1');
+    const legalDocuments = await api.getSignupLegalDocuments();
+    assertEqual(getCalls[0].path, '/auth/signup-legal-documents', 'signup legal documents load from the API');
+    const signUpResult = await api.signUpWithEmail('Signup@Example.invalid', 'Synthetic-password-1', {
+      account_personal_data_consent: {
+        document_id: legalDocuments.documents[0].id,
+        content_hash: legalDocuments.documents[0].content_hash,
+      },
+      user_agreement: {
+        document_id: legalDocuments.documents[1].id,
+        content_hash: legalDocuments.documents[1].content_hash,
+      },
+    });
     assertEqual(signUpResult.session, null, 'signup returns no session');
     assertEqual(signUpResult.needsEmailConfirmation, true, 'signup reports pending confirmation');
     assertEqual(calls.length, 1, 'signup makes exactly one request');
     assertEqual(calls[0].path, '/auth/register', 'signup calls only register');
+    assertDeepEqual(calls[0].body.legal_acceptances, {
+      account_personal_data_consent: {
+        document_id: 'account-consent-id',
+        content_hash: 'sha256:account-consent',
+      },
+      user_agreement: {
+        document_id: 'user-agreement-id',
+        content_hash: 'sha256:user-agreement',
+      },
+    }, 'signup carries current document ids and hashes');
     assertEqual(storedTokenCalls.length, 0, 'signup stores no tokens before verification');
 
     await api.confirmEmailVerification('signup@example.invalid', '012345');

@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -23,7 +24,15 @@ from app.db.models.auth import (
     AuthSetPasswordCode,
     PasswordResetCode,
 )
-from app.db.models.core import AppUser, Community, CommunityMembership, Invite, Profile
+from app.db.models.core import (
+    AppUser,
+    Community,
+    CommunityMembership,
+    Invite,
+    LegalAcceptance,
+    LegalDocument,
+    Profile,
+)
 from app.schemas.auth import (
     AppUserSummary,
     AcceptInviteResponse,
@@ -36,6 +45,9 @@ from app.schemas.auth import (
     MeResponse,
     ProfileSummary,
     RegisterResponse,
+    SignupLegalAcceptances,
+    SignupLegalDocumentResponse,
+    SignupLegalDocumentsResponse,
     RegisterWithInviteProfileInput,
     RegisterWithInviteResponse,
     normalize_device_name,
@@ -64,6 +76,11 @@ _INVITE_USED_STATUS = "used"
 _MEMBERSHIP_PENDING_STATUS = "pending"
 _MEMBERSHIP_SUSPENDED_STATUS = "suspended"
 _MEMBERSHIP_LEFT_STATUS = "left"
+_SIGNUP_LEGAL_DOCUMENT_TYPES = (
+    "account_personal_data_consent",
+    "user_agreement",
+)
+_MOBILE_SIGNUP_EVIDENCE_VERSION = "mobile-account-signup-v1"
 _auth_email_rate_limiter = InMemoryAuthEmailRateLimiter()
 
 AuthCodeModel = (
@@ -467,6 +484,110 @@ def _email_delivery_unavailable_error() -> HTTPException:
     )
 
 
+def _legal_documents_unavailable_error() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "code": "legal_documents_unavailable",
+            "message": "Required legal documents are temporarily unavailable",
+        },
+    )
+
+
+def _legal_documents_changed_error() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "legal_documents_changed",
+            "message": "Required legal documents have changed",
+        },
+    )
+
+
+async def _current_signup_legal_documents(
+    session: AsyncSession,
+    *,
+    lock: bool,
+) -> dict[str, LegalDocument]:
+    query = select(LegalDocument).where(
+        LegalDocument.document_type.in_(_SIGNUP_LEGAL_DOCUMENT_TYPES),
+        LegalDocument.effective_at <= _now(),
+        LegalDocument.retired_at.is_(None),
+    )
+    if lock:
+        query = query.with_for_update()
+    documents = list(await session.scalars(query))
+    by_type = {document.document_type: document for document in documents}
+    if len(documents) != len(_SIGNUP_LEGAL_DOCUMENT_TYPES) or set(by_type) != set(
+        _SIGNUP_LEGAL_DOCUMENT_TYPES,
+    ) or any(
+        urlsplit(document.published_url).scheme != "https"
+        or not urlsplit(document.published_url).netloc
+        for document in documents
+    ):
+        raise _legal_documents_unavailable_error()
+    return by_type
+
+
+async def get_signup_legal_documents(
+    session: AsyncSession,
+) -> SignupLegalDocumentsResponse:
+    documents = await _current_signup_legal_documents(session, lock=False)
+    return SignupLegalDocumentsResponse(
+        documents=[
+            SignupLegalDocumentResponse(
+                id=documents[document_type].id,
+                document_type=documents[document_type].document_type,
+                version=documents[document_type].version,
+                title=documents[document_type].title,
+                content_hash=documents[document_type].content_hash,
+                published_url=documents[document_type].published_url,
+            )
+            for document_type in _SIGNUP_LEGAL_DOCUMENT_TYPES
+        ],
+    )
+
+
+async def _validated_signup_legal_documents(
+    session: AsyncSession,
+    *,
+    legal_acceptances: SignupLegalAcceptances,
+) -> list[LegalDocument]:
+    current_documents = await _current_signup_legal_documents(session, lock=True)
+    submitted = {
+        "account_personal_data_consent": legal_acceptances.account_personal_data_consent,
+        "user_agreement": legal_acceptances.user_agreement,
+    }
+    for document_type, acceptance in submitted.items():
+        document = current_documents[document_type]
+        if (
+            document.id != acceptance.document_id
+            or document.content_hash != acceptance.content_hash
+        ):
+            raise _legal_documents_changed_error()
+    return [current_documents[document_type] for document_type in _SIGNUP_LEGAL_DOCUMENT_TYPES]
+
+
+def _create_mobile_signup_legal_acceptances(
+    *,
+    user: AppUser,
+    documents: list[LegalDocument],
+    now: datetime,
+) -> list[LegalAcceptance]:
+    return [
+        LegalAcceptance(
+            user_id=user.id,
+            registration_id=None,
+            legal_document_id=document.id,
+            accepted_at=now,
+            acceptance_method="checkbox",
+            source_channel="mobile",
+            evidence_version=_MOBILE_SIGNUP_EVIDENCE_VERSION,
+        )
+        for document in documents
+    ]
+
+
 def _send_set_password_code(to_address: str, code: str) -> None:
     try:
         send_set_password_email(
@@ -866,6 +987,7 @@ async def register_password_user_with_invite(
     email: str,
     password: str,
     profile: RegisterWithInviteProfileInput | None,
+    legal_acceptances: SignupLegalAcceptances,
     ip_address: str | None = None,
     user_agent: str | None = None,
 ) -> RegisterWithInviteResponse:
@@ -875,6 +997,10 @@ async def register_password_user_with_invite(
     try:
         async with _transaction_scope(session):
             now = _now()
+            legal_documents = await _validated_signup_legal_documents(
+                session,
+                legal_acceptances=legal_acceptances,
+            )
             invite, community = await _usable_invite_context_for_update(
                 session,
                 invite_code_hash=invite_code_hash,
@@ -899,6 +1025,14 @@ async def register_password_user_with_invite(
             )
             session.add(user)
             await session.flush()
+
+            session.add_all(
+                _create_mobile_signup_legal_acceptances(
+                    user=user,
+                    documents=legal_documents,
+                    now=now,
+                ),
+            )
 
             user_profile = _profile_from_invite_registration_input(
                 user_id=user.id,
@@ -996,46 +1130,53 @@ async def register_password_user(
     *,
     email: str,
     password: str,
+    legal_acceptances: SignupLegalAcceptances,
 ) -> RegisterResponse:
     normalized_email = normalize_email(email)
-    existing_user = await _find_user_by_normalized_email(session, normalized_email)
-    if existing_user is not None:
-        raise AuthConflictError("Email is already registered")
-
     _consume_auth_email_rate_limit(_EMAIL_VERIFICATION_PURPOSE, normalized_email)
-
-    now = _now()
-    user = AppUser(
-        email=normalized_email,
-        password_hash=hash_password(password),
-        account_origin="password_signup",
-        claim_state="claimed",
-        claimed_at=now,
-        status=authorization_service.ACTIVE_STATUS,
-    )
-    session.add(user)
-
     try:
-        await session.flush()
-        profile = Profile(user_id=user.id)
-        session.add(profile)
-        code = await _stage_auth_code_for_user(
-            session,
-            AuthEmailVerificationCode,
-            user=user,
-        )
+        async with _transaction_scope(session):
+            legal_documents = await _validated_signup_legal_documents(
+                session,
+                legal_acceptances=legal_acceptances,
+            )
+            existing_user = await _find_user_by_normalized_email(session, normalized_email)
+            if existing_user is not None:
+                raise AuthConflictError("Email is already registered")
+
+            now = _now()
+            user = AppUser(
+                email=normalized_email,
+                password_hash=hash_password(password),
+                account_origin="password_signup",
+                claim_state="claimed",
+                claimed_at=now,
+                status=authorization_service.ACTIVE_STATUS,
+            )
+            session.add(user)
+            await session.flush()
+            session.add_all(
+                _create_mobile_signup_legal_acceptances(
+                    user=user,
+                    documents=legal_documents,
+                    now=now,
+                ),
+            )
+            profile = Profile(user_id=user.id)
+            session.add(profile)
+            code = await _stage_auth_code_for_user(
+                session,
+                AuthEmailVerificationCode,
+                user=user,
+            )
+            _send_required_email_verification_code(user.email, code)
     except IntegrityError as exc:
         await session.rollback()
         raise AuthConflictError("Email is already registered") from exc
-
-    try:
-        _send_required_email_verification_code(user.email, code)
     except AuthEmailDeliveryError:
         _log_auth_email_delivery_failure(_EMAIL_VERIFICATION_PURPOSE)
         await session.rollback()
         raise _email_delivery_unavailable_error() from None
-
-    await session.commit()
     await session.refresh(user)
     await session.refresh(profile)
 

@@ -292,6 +292,7 @@ production API auth.
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | POST | `/auth/register` | Public | Create an API password user and profile with `email_verified_at` unset, and send an email verification code. Does not return auth tokens. |
+| GET | `/auth/signup-legal-documents` | Public | Return the two currently effective account-signup legal documents. |
 | POST | `/auth/login` | Public | Exchange email/password credentials for an access token and refresh session. Rejected for a `password_signup` user until email verification completes. |
 | POST | `/auth/refresh` | Public/session | Rotate a refresh session and return a new access token. Rejected for a `password_signup` user whose email is not yet verified. |
 | POST | `/auth/logout` | Public/session | Revoke the submitted refresh session when present. |
@@ -323,6 +324,49 @@ send, or an unexpected delivery error), `/auth/register` returns a generic
 password-signup user, profile, or verification code remains. `201` is
 returned only once the account transaction has committed with a verification
 code created and delivery reported as sent.
+
+### Account-signup legal acceptance
+
+`GET /auth/signup-legal-documents` returns exactly the current effective
+`account_personal_data_consent` and `user_agreement` documents. Every document
+contains `id`, `document_type`, `version`, `title`, `content_hash`, and
+HTTPS `published_url`. The server selects only documents with `effective_at <=
+now` and `retired_at IS NULL`; if either required type is unavailable or more
+than one effective row exists for a required type, it fails closed with `503
+legal_documents_unavailable`.
+
+Both public account-creation paths require this strict keyed evidence shape;
+the client supplies only the current document id and content hash, never a
+title, type, version, or URL:
+
+```json
+{
+  "legal_acceptances": {
+    "account_personal_data_consent": {
+      "document_id": "UUID",
+      "content_hash": "sha256:<current-content-hash>"
+    },
+    "user_agreement": {
+      "document_id": "UUID",
+      "content_hash": "sha256:<current-content-hash>"
+    }
+  }
+}
+```
+
+This object is required by both `POST /auth/register` and `POST
+/auth/register-with-invite`. The server verifies every pair against its current
+document of the expected type. A missing or unavailable required document
+fails closed; a stale, retired, wrong-type, or changed id/hash returns `409
+legal_documents_changed`, and the client must reload both documents and obtain
+fresh separate checkbox acceptance.
+
+On a successful new account, the same transaction writes exactly two
+`legal_acceptances` rows, one per required document, with `registration_id =
+null`, server `accepted_at`, `acceptance_method = "checkbox"`,
+`source_channel = "mobile"`, and `evidence_version =
+"mobile-account-signup-v1"`. Failed validation, invalid invite/account
+creation, and required email-delivery rollback leave no acceptance evidence.
 
 `/auth/request-email-verification` (resend) stages a replacement code and
 requires successful delivery before committing, but its public response
@@ -359,6 +403,16 @@ Register with invite request:
   "invite_code": "<invite-code>",
   "email": "user@example.com",
   "password": "<new-password>",
+  "legal_acceptances": {
+    "account_personal_data_consent": {
+      "document_id": "UUID",
+      "content_hash": "sha256:<current-content-hash>"
+    },
+    "user_agreement": {
+      "document_id": "UUID",
+      "content_hash": "sha256:<current-content-hash>"
+    }
+  },
   "profile": {
     "display_name": "Example User",
     "first_name": "Example",

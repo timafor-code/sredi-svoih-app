@@ -1235,7 +1235,8 @@ class LegalDocument(Base):
     __table_args__ = (
         CheckConstraint(
             "document_type IN ('privacy_policy', 'event_registration_consent', "
-            "'marketing_consent', 'special_category_consent')",
+            "'marketing_consent', 'special_category_consent', "
+            "'account_personal_data_consent', 'user_agreement')",
             name="legal_documents_document_type_check",
         ),
         CheckConstraint("btrim(version) <> ''", name="legal_documents_version_not_empty"),
@@ -1275,7 +1276,8 @@ class LegalAcceptance(Base):
     __tablename__ = "legal_acceptances"
     __table_args__ = (
         CheckConstraint(
-            "acceptance_method IN ('checkbox_plus_email_verification', 'authenticated_action')",
+            "acceptance_method IN ('checkbox_plus_email_verification', 'authenticated_action', "
+            "'checkbox')",
             name="legal_acceptances_acceptance_method_check",
         ),
         CheckConstraint(
