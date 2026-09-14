@@ -311,7 +311,7 @@ export function EmailSignUpForm({
         {accountConsentDocument ? (
           <View style={styles.legalItem}>
             <Pressable
-              accessibilityLabel="Согласие на обработку персональных данных для создания аккаунта"
+              accessibilityLabel="Согласие на обработку персональных данных для использования аккаунта и регистрации через аккаунт на мероприятия"
               accessibilityRole="checkbox"
               accessibilityState={{ checked: accountConsentAccepted, disabled: isSubmitting }}
               disabled={isSubmitting}
@@ -324,7 +324,7 @@ export function EmailSignUpForm({
                 size={24}
               />
               <Text style={styles.legalText}>
-                Я ознакомился(-ась) с документом и даю отдельное согласие на обработку персональных данных для создания аккаунта.
+                Я даю отдельное согласие на обработку моих персональных данных для использования аккаунта и регистрации через аккаунт на мероприятия.
               </Text>
             </Pressable>
             <Pressable

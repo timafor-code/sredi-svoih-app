@@ -12,6 +12,8 @@ from app.db.session import get_db_session
 from app.schemas.auth import (
     AcceptInviteRequest,
     AcceptInviteResponse,
+    AcceptAccountConsentRequest,
+    AccountConsentStatusResponse,
     AuthCodeConfirmResponse,
     AuthCodeRequestResponse,
     AuthTokenResponse,
@@ -47,6 +49,10 @@ from app.services.auth import (
     refresh_session,
     register_password_user,
     register_password_user_with_invite,
+)
+from app.services.account_consent import (
+    accept_current_account_consent,
+    get_account_consent_status,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -85,6 +91,28 @@ async def signup_legal_documents(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> SignupLegalDocumentsResponse:
     return await get_signup_legal_documents(session)
+
+
+@router.get("/account-consent", response_model=AccountConsentStatusResponse)
+async def account_consent_status(
+    current_user: Annotated[AppUser, Depends(require_auth)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AccountConsentStatusResponse:
+    return await get_account_consent_status(session, current_user=current_user)
+
+
+@router.post("/account-consent/accept", response_model=AccountConsentStatusResponse)
+async def accept_account_consent(
+    payload: AcceptAccountConsentRequest,
+    current_user: Annotated[AppUser, Depends(require_auth)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AccountConsentStatusResponse:
+    return await accept_current_account_consent(
+        session,
+        current_user=current_user,
+        document_id=payload.document_id,
+        content_hash=payload.content_hash,
+    )
 
 
 @router.post(

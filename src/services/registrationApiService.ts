@@ -22,7 +22,6 @@ type RegisterForPaidEventSimulatedInput = {
   occurrenceId?: string | null;
   optionSelections: RegisterForEventOccurrenceOptionSelectionInput[];
   seatsCount?: number | null;
-  guestNames?: string[] | null;
   comment?: string | null;
 };
 
@@ -199,27 +198,50 @@ export function normalizeApiRegistration(row: ApiEventRegistrationResponse): Eve
   };
 }
 
+export class RegistrationApiError extends Error {
+  readonly code: string;
+
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = 'RegistrationApiError';
+    this.code = code;
+  }
+}
+
+function registrationError(message: string, code: string): RegistrationApiError {
+  return new RegistrationApiError(message, code);
+}
+
 function normalizeApiRegistrationError(error: ApiClientError, action: RegistrationApiAction): Error {
   const normalizedMessage = error.message.toLowerCase();
 
   if (error.status === 401 || error.code === 'unauthenticated') {
-    return new Error('Auth required');
+    return registrationError('Auth required', 'unauthenticated');
   }
 
   if (error.code === 'capacity_unavailable' || normalizedMessage.includes('capacity')) {
-    return new Error('No seats available for this event');
+    return registrationError('No seats available for this event', 'capacity_unavailable');
   }
 
   if (error.code === 'state_conflict') {
     if (normalizedMessage.includes('cancel')) {
-      return new Error('Registration cannot be cancelled');
+      return registrationError('Registration cannot be cancelled', 'state_conflict');
     }
 
-    return new Error(error.message || 'Registration is not available.');
+    return registrationError(error.message || 'Registration is not available.', 'state_conflict');
+  }
+
+  if (
+    error.code === 'account_consent_required'
+    || error.code === 'legal_documents_changed'
+    || error.code === 'legal_documents_unavailable'
+    || error.code === 'guest_personal_data_not_supported'
+  ) {
+    return registrationError(error.message, error.code);
   }
 
   if (error.status === 409 || error.code === 'conflict') {
-    return new Error('Registration is not available.');
+    return registrationError('Registration is not available.', error.code);
   }
 
   if (error.status === 422 || error.code === 'validation_error') {
@@ -227,21 +249,24 @@ function normalizeApiRegistrationError(error: ApiClientError, action: Registrati
       normalizedMessage.includes('occurrence_id')
       || normalizedMessage.includes('occurrenceid')
     ) {
-      return new Error('occurrenceId is required');
+      return registrationError('occurrenceId is required', 'validation_error');
     }
 
-    return new Error(error.message || 'Request validation failed.');
+    return registrationError(error.message || 'Request validation failed.', error.code);
   }
 
   if (error.status === 403 || error.code === 'forbidden') {
-    return new Error('Registration is not available.');
+    return registrationError('Registration is not available.', error.code);
   }
 
   if (error.status === 404 || error.code === 'not_found') {
-    return new Error(action === 'cancel' ? 'Registration not found' : 'Registration is not available.');
+    return registrationError(
+      action === 'cancel' ? 'Registration not found' : 'Registration is not available.',
+      error.code,
+    );
   }
 
-  return new Error(error.message);
+  return registrationError(error.message, error.code);
 }
 
 async function withRegistrationApiErrors<T>(
@@ -288,7 +313,6 @@ export async function registerForPaidEventSimulated(
     occurrence_id: input.occurrenceId ?? null,
     option_selections: normalizeOptionSelectionPayload(input.optionSelections),
     seats_count: input.seatsCount ?? 1,
-    guest_names: input.guestNames ?? [],
     comment: input.comment ?? null,
   }));
 }

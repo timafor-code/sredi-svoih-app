@@ -166,6 +166,25 @@ export type ApiSignupLegalDocumentsResponse = {
   privacy_policy: ApiSignupLegalDocument & { document_type: 'privacy_policy' };
 };
 
+export type ApiAccountConsentDocument = {
+  id: string;
+  document_type: 'account_personal_data_consent';
+  version: string;
+  title: string;
+  content_hash: string;
+  published_url: string;
+};
+
+export type ApiAccountConsentStatusResponse = {
+  document: ApiAccountConsentDocument;
+  accepted: boolean;
+};
+
+export type ApiAcceptAccountConsentRequest = {
+  document_id: string;
+  content_hash: string;
+};
+
 export type ApiRegisterWithInviteProfileInput = {
   display_name?: string | null;
   first_name?: string | null;
@@ -297,7 +316,6 @@ export type ApiRegistrationOptionSelectionRequest = {
 export type ApiRegisterEventRequest = {
   occurrence_id?: string | null;
   seats_count?: number | null;
-  guest_names?: string[] | null;
   comment?: string | null;
   option_selections?: ApiRegistrationOptionSelectionRequest[] | null;
 };

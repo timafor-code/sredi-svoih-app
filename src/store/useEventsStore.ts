@@ -625,7 +625,7 @@ export const useEventsStore = create<EventsState>((set, get) => ({
         set({ registrationsLoading: false, error: message });
       }
 
-      throw new Error(message);
+      throw error instanceof Error ? error : new Error(message);
     }
   },
 
@@ -707,7 +707,7 @@ export const useEventsStore = create<EventsState>((set, get) => ({
 
       set({ registrationsLoading: false, error: message });
 
-      throw new Error(message);
+      throw error instanceof Error ? error : new Error(message);
     }
   },
 

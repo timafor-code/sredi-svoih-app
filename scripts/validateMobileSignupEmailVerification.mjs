@@ -64,6 +64,7 @@ function validateSignupLegalDocumentWiring() {
   assertIncludes(files.signUpForm, 'setUserAgreementAccepted(false);', 'reloading documents clears agreement consent');
   assertIncludes(files.signUpForm, '&& accountConsentAccepted', 'account consent is required before signup');
   assertIncludes(files.signUpForm, '&& userAgreementAccepted', 'user agreement is required before signup');
+  assertIncludes(files.signUpForm, 'для использования аккаунта и регистрации через аккаунт на мероприятия', 'account consent wording reflects account use and authenticated event registration');
   assertExcludes(files.signUpForm, 'privacy_policy: {', 'privacy policy is not sent as acceptance evidence');
   assertExcludes(files.signUpForm, '34721bfa-d04b-59c0-b341-d42c1bf56e48', 'mobile form does not hardcode production document ids');
   assertExcludes(files.signUpForm, '1bfbd4bb-2d47-55c0-9b57-80f0d14667ee', 'mobile form does not hardcode production document ids');
