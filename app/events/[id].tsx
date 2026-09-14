@@ -571,7 +571,7 @@ export default function EventDetailScreen() {
               )}
               <LinearGradient
                 colors={['transparent', 'rgba(6,8,16,0.92)']}
-                style={StyleSheet.absoluteFillObject}
+                style={StyleSheet.absoluteFill}
               />
               <View style={styles.heroChips}>
                 <Chip>{event.category}</Chip>

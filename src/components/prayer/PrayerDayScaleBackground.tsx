@@ -103,7 +103,7 @@ function AnimatedTwinkleGroup({
   });
 
   return (
-    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { opacity }]}>
+    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity }]}>
       {renderStars(stars, keyPrefix)}
     </Animated.View>
   );
@@ -165,13 +165,13 @@ function AnimatedBreathingBlob({
 function PeriodLayer({ period }: { period: PrayerDayPeriod }) {
   if (period === 'dawn') {
     return (
-      <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
         <LinearGradient
           colors={['#1B2545', '#3A3560', '#7E5A6E', '#D89A82']}
           locations={[0, 0.35, 0.7, 1]}
           start={{ x: 0.5, y: 0 }}
           end={{ x: 0.5, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
         <AnimatedBreathingBlob
           style={[styles.softBlob, styles.dawnGlowLeft]}
@@ -195,20 +195,20 @@ function PeriodLayer({ period }: { period: PrayerDayPeriod }) {
 
   if (period === 'day') {
     return (
-      <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
         <LinearGradient
           colors={['#0E1A3A', '#1B3A6B', '#2A5C9A']}
           locations={[0, 0.55, 1]}
           start={{ x: 0.2, y: 0 }}
           end={{ x: 0.8, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
         <View style={[styles.softBlob, styles.dayLight]} />
         <LinearGradient
           colors={['rgba(120,180,255,0.16)', 'rgba(120,180,255,0)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
         <View style={styles.contentOverlay} />
       </View>
@@ -217,13 +217,13 @@ function PeriodLayer({ period }: { period: PrayerDayPeriod }) {
 
   if (period === 'sunset') {
     return (
-      <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
         <LinearGradient
           colors={['#1A1F4A', '#3D2F6B', '#A04E6E', '#E68A4A']}
           locations={[0, 0.4, 0.75, 1]}
           start={{ x: 0.5, y: 0 }}
           end={{ x: 0.5, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
         <View style={[styles.softBlob, styles.sunsetCloudLeft]} />
         <AnimatedBreathingBlob
@@ -246,13 +246,13 @@ function PeriodLayer({ period }: { period: PrayerDayPeriod }) {
   }
 
   return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       <LinearGradient
         colors={['#04060F', '#0A1228', '#161E3D']}
         locations={[0, 0.55, 1]}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
       />
       {renderStars(STAR_STATIC, 'star-static')}
       <AnimatedTwinkleGroup
@@ -330,13 +330,13 @@ export function PrayerDayScaleBackground({ period }: PrayerDayScaleBackgroundPro
   return (
     <View pointerEvents="none" style={styles.fill}>
       {previousPeriod !== null && previousPeriod !== currentPeriod ? (
-        <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
           <PeriodLayer period={previousPeriod} />
         </View>
       ) : null}
       <Animated.View
         pointerEvents="none"
-        style={[StyleSheet.absoluteFillObject, { opacity: topOpacity }]}
+        style={[StyleSheet.absoluteFill, { opacity: topOpacity }]}
       >
         <PeriodLayer period={currentPeriod} />
       </Animated.View>
@@ -346,7 +346,7 @@ export function PrayerDayScaleBackground({ period }: PrayerDayScaleBackgroundPro
 
 const styles = StyleSheet.create({
   fill: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     overflow: 'hidden',
   },
   horizonStrip: {
@@ -357,7 +357,7 @@ const styles = StyleSheet.create({
     height: '55%',
   },
   contentOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.22)',
   },
   softBlob: {

@@ -163,10 +163,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   eventPhoto: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   eventImageShade: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   personLeft: {
     position: 'absolute',

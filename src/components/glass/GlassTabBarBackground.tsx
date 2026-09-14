@@ -34,12 +34,12 @@ export function GlassTabBarBackground({
       ]}
     >
       {shouldUseBlur ? (
-        <WebSafeBlurView tint="dark" intensity={85} style={StyleSheet.absoluteFillObject} />
+        <WebSafeBlurView tint="dark" intensity={85} style={StyleSheet.absoluteFill} />
       ) : null}
       <LinearGradient
         colors={gradientColors}
         locations={[0, 0.46, 1]}
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
       />
       <View
         style={[
@@ -54,7 +54,7 @@ export function GlassTabBarBackground({
 
 const styles = StyleSheet.create({
   container: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     overflow: 'hidden',
   },
   androidFallback: {
@@ -66,14 +66,14 @@ const styles = StyleSheet.create({
   // Dark tint dialed back from 0.38 → 0.22 so the underlying blur
   // actually reads as glass instead of a near-opaque dark panel.
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(13,13,26,0.22)',
   },
   overlayReducedTransparency: {
     backgroundColor: 'rgba(13,13,26,0.48)',
   },
   border: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.16)',
   },

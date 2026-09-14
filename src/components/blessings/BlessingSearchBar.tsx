@@ -14,13 +14,13 @@ type BlessingSearchBarProps = {
 export function BlessingSearchBar({ onChangeText, value }: BlessingSearchBarProps) {
   return (
     <View style={styles.shell}>
-      <WebSafeBlurView tint="dark" intensity={30} style={StyleSheet.absoluteFillObject} />
+      <WebSafeBlurView tint="dark" intensity={30} style={StyleSheet.absoluteFill} />
       <LinearGradient
         colors={['rgba(255,255,255,0.095)', 'rgba(255,255,255,0.035)']}
         end={{ x: 1, y: 1 }}
         pointerEvents={Platform.OS === 'web' ? 'none' : undefined}
         start={{ x: 0, y: 0 }}
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
       />
       <Ionicons name="search" size={20} color="rgba(255,255,255,0.42)" />
       <TextInput

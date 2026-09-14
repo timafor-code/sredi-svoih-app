@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ComponentProps } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Tabs } from 'expo-router';
-import { Icon, Label, NativeTabs } from 'expo-router/unstable-native-tabs';
+import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import {
   AccessibilityInfo,
   Animated,
@@ -401,7 +401,7 @@ function GlassTabBar({ state, navigation }: BottomTabBarProps) {
                   <WebSafeBlurView
                     tint="light"
                     intensity={34}
-                    style={StyleSheet.absoluteFillObject}
+                    style={StyleSheet.absoluteFill}
                   />
                   <LinearGradient
                     colors={[
@@ -413,7 +413,7 @@ function GlassTabBar({ state, navigation }: BottomTabBarProps) {
                     locations={[0, 0.32, 0.66, 1]}
                     start={{ x: 0, y: 0.08 }}
                     end={{ x: 1, y: 0.9 }}
-                    style={StyleSheet.absoluteFillObject}
+                    style={StyleSheet.absoluteFill}
                   />
                 </Animated.View>
                 <Animated.View
@@ -442,7 +442,7 @@ function GlassTabBar({ state, navigation }: BottomTabBarProps) {
                     locations={[0, 0.2, 0.43, 0.7, 1]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    style={StyleSheet.absoluteFillObject}
+                    style={StyleSheet.absoluteFill}
                   />
                 </Animated.View>
                 <Animated.View
@@ -470,7 +470,7 @@ function GlassTabBar({ state, navigation }: BottomTabBarProps) {
                     locations={[0, 0.36, 0.66, 1]}
                     start={{ x: 0, y: 0.1 }}
                     end={{ x: 1, y: 0.9 }}
-                    style={StyleSheet.absoluteFillObject}
+                    style={StyleSheet.absoluteFill}
                   />
                 </Animated.View>
               </>
@@ -493,7 +493,7 @@ function GlassTabBar({ state, navigation }: BottomTabBarProps) {
                 <WebSafeBlurView
                   tint="light"
                   intensity={55}
-                  style={StyleSheet.absoluteFillObject}
+                  style={StyleSheet.absoluteFill}
                 />
                 <LinearGradient
                   colors={[
@@ -504,7 +504,7 @@ function GlassTabBar({ state, navigation }: BottomTabBarProps) {
                   locations={[0, 0.55, 1]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 0, y: 1 }}
-                  style={StyleSheet.absoluteFillObject}
+                  style={StyleSheet.absoluteFill}
                 />
                 <Animated.View
                   pointerEvents="none"
@@ -525,7 +525,7 @@ function GlassTabBar({ state, navigation }: BottomTabBarProps) {
                     locations={[0, 0.58, 1]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 0.8, y: 1 }}
-                    style={StyleSheet.absoluteFillObject}
+                    style={StyleSheet.absoluteFill}
                   />
                 </Animated.View>
                 <Animated.View
@@ -548,7 +548,7 @@ function GlassTabBar({ state, navigation }: BottomTabBarProps) {
                     locations={[0, 0.38, 0.58, 1]}
                     start={{ x: 0, y: 0.15 }}
                     end={{ x: 1, y: 0.85 }}
-                    style={StyleSheet.absoluteFillObject}
+                    style={StyleSheet.absoluteFill}
                   />
                 </Animated.View>
                 <View style={styles.indicatorTint} />
@@ -674,8 +674,8 @@ export default function TabsLayout() {
       >
         {Object.entries(NATIVE_TAB_CONFIG).map(([name, config]) => (
           <NativeTabs.Trigger key={name} name={name}>
-            <Icon sf={config.sf} selectedColor={ACTIVE_COLOR} />
-            <Label>{config.label}</Label>
+            <NativeTabs.Trigger.Icon sf={config.sf} selectedColor={ACTIVE_COLOR} />
+            <NativeTabs.Trigger.Label>{config.label}</NativeTabs.Trigger.Label>
           </NativeTabs.Trigger>
         ))}
       </NativeTabs>
@@ -763,7 +763,7 @@ const styles = StyleSheet.create({
   },
   // Inner clip rounds and contains the BlurView + gradient layers.
   indicatorClip: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: INDICATOR_RADIUS,
     overflow: 'hidden',
   },
@@ -784,11 +784,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   indicatorTint: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(246,164,0,0.10)',
   },
   indicatorBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: INDICATOR_RADIUS,
     borderWidth: 1,
     borderColor: 'rgba(246,164,0,0.34)',

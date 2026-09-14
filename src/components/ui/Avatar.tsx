@@ -25,13 +25,13 @@ export function Avatar({ bg = '#1a3a5c', initials, size = 72, uri }: AvatarProps
           onError={() => setImageFailed(true)}
           resizeMode="cover"
           source={{ uri: imageUri }}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
       ) : (
         <>
           <LinearGradient
             colors={[bg, 'rgba(0,0,0,0.28)']}
-            style={[StyleSheet.absoluteFillObject, { borderRadius: size / 2 }]}
+            style={[StyleSheet.absoluteFill, { borderRadius: size / 2 }]}
           />
           <Text style={[styles.initials, { fontSize: Math.round(size * 0.32) }]}>
             {initials}

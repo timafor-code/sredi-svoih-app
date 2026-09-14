@@ -263,7 +263,7 @@ export default function BlessingsScreen() {
         <View style={styles.heroIcon}>
           <LinearGradient
             colors={['rgba(255,200,50,0.20)', 'rgba(240,122,42,0.08)']}
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
           />
           <Ionicons name="book-outline" size={27} color={colors.goldAccent} />
         </View>

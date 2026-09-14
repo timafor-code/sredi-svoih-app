@@ -131,7 +131,7 @@ function SegmentView({ segment }: { segment: PrayerDaySegment }) {
         colors={gradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
       />
       {segment.active && segment.kind === 'prayer' && segment.accent ? (
         <>
@@ -139,7 +139,7 @@ function SegmentView({ segment }: { segment: PrayerDaySegment }) {
             colors={[hexToRgba(segment.accent, 0.12), 'rgba(255,255,255,0)']}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
           />
           <View style={styles.segmentTopSheen} />
         </>
@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.25,
   },
   segmentActiveSheen: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(255,255,255,0.08)',
   },
   segmentTopSheen: {
@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   markerLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   markerLabel: {
     position: 'absolute',

@@ -65,7 +65,7 @@ export function HomeJewishCalendarInfoModal({
           accessibilityLabel="Закрыть описание календарной даты"
           accessibilityRole="button"
           onPress={onClose}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
 
         {event ? (

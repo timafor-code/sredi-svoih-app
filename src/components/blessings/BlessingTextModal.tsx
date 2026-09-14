@@ -497,7 +497,7 @@ export function BlessingTextOverlay({
           accessibilityLabel="Закрыть текст благословения"
           accessibilityRole="button"
           onPress={onClose}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
 
         <GlassCard

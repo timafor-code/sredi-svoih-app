@@ -60,7 +60,7 @@ export function BlessingItemSchemeModal({
           accessibilityLabel="Закрыть схему"
           accessibilityRole="button"
           onPress={onClose}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
 
         <View
@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
     maxWidth: WEB_MOBILE_FRAME_MAX_WIDTH,
   },
   overlayLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 10,
     elevation: 10,
   },
