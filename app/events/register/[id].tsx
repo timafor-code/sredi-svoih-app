@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -28,6 +29,10 @@ import {
 } from '@/lib/registrationWindow';
 import { listEventOccurrences } from '@/services/eventOccurrencesService';
 import { listEventParticipationOptions } from '@/services/participationOptionsService';
+import {
+  acceptAccountConsent,
+  getAccountConsentStatus,
+} from '@/services/accountConsentApiService';
 import { useAuthStore } from '@/store/useAuthStore';
 import {
   findActiveRegistrationForTarget,
@@ -37,6 +42,7 @@ import { colors } from '@/theme/colors';
 import type { EventItem } from '@/types/event';
 import type { EventOccurrence } from '@/types/eventOccurrence';
 import type { EventParticipationOption } from '@/types/participationOption';
+import type { ApiAccountConsentStatusResponse } from '@/types/api';
 
 type Quantities = Record<string, number>;
 
@@ -56,6 +62,23 @@ const optionTypeLabels: Record<string, string> = {
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function isHttpsDocumentUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function errorCode(error: unknown): string | null {
+  return typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && typeof error.code === 'string'
+    ? error.code
+    : null;
 }
 
 function formatDate(value: string, timeZone?: string | null): string {
@@ -437,6 +460,13 @@ export default function EventRegistrationScreen() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [accountConsentStatus, setAccountConsentStatus] = useState<
+    ApiAccountConsentStatusResponse | null
+  >(null);
+  const [accountConsentUnavailable, setAccountConsentUnavailable] = useState(false);
+  const [accountConsentGateVisible, setAccountConsentGateVisible] = useState(false);
+  const [accountConsentGateChecked, setAccountConsentGateChecked] = useState(false);
+  const [acceptingAccountConsent, setAcceptingAccountConsent] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!appCapabilities.canUseInternalAccountEventRegistration) {
@@ -519,6 +549,31 @@ export default function EventRegistrationScreen() {
 
     void loadMyRegistrations().catch(() => undefined);
   }, [authUser, loadMyRegistrations]);
+
+  const refreshAccountConsent = useCallback(async () => {
+    if (!authUser) {
+      setAccountConsentStatus(null);
+      return null;
+    }
+
+    setAccountConsentUnavailable(false);
+    try {
+      const status = await getAccountConsentStatus();
+      if (!isHttpsDocumentUrl(status.document.published_url)) {
+        throw new Error('Account consent document URL is unavailable');
+      }
+      setAccountConsentStatus(status);
+      return status;
+    } catch (accountConsentError) {
+      setAccountConsentStatus(null);
+      setAccountConsentUnavailable(true);
+      return null;
+    }
+  }, [authUser]);
+
+  useEffect(() => {
+    void refreshAccountConsent();
+  }, [refreshAccountConsent]);
 
   useEffect(() => {
     setImageFailed(false);
@@ -627,7 +682,8 @@ export default function EventRegistrationScreen() {
   const canContinue = totals.seats > 0
     && !submitting
     && !registrationTargetBlocked
-    && !registrationWindowBlocked;
+    && !registrationWindowBlocked
+    && !accountConsentUnavailable;
   const showImage = Boolean(event?.imageUrl && !imageFailed);
 
   const handleBack = useCallback(() => {
@@ -689,6 +745,53 @@ export default function EventRegistrationScreen() {
     setQuantities({});
   }, []);
 
+  const openAccountConsentDocument = useCallback(async () => {
+    const document = accountConsentStatus?.document;
+    if (!document || !isHttpsDocumentUrl(document.published_url)) {
+      Alert.alert('Документ недоступен', 'Ссылка на согласие временно недоступна.');
+      return;
+    }
+
+    try {
+      await Linking.openURL(document.published_url);
+    } catch {
+      Alert.alert('Не удалось открыть документ', 'Попробуйте ещё раз.');
+    }
+  }, [accountConsentStatus]);
+
+  const acceptCurrentAccountConsent = useCallback(async () => {
+    const document = accountConsentStatus?.document;
+    if (!document || !accountConsentGateChecked) {
+      return;
+    }
+
+    setAcceptingAccountConsent(true);
+    try {
+      const status = await acceptAccountConsent({
+        document_id: document.id,
+        content_hash: document.content_hash,
+      });
+      setAccountConsentStatus(status);
+      setAccountConsentGateChecked(false);
+      setAccountConsentGateVisible(false);
+    } catch (acceptError) {
+      setAccountConsentGateChecked(false);
+      if (errorCode(acceptError) === 'legal_documents_changed') {
+        await refreshAccountConsent();
+        return;
+      }
+      if (errorCode(acceptError) === 'legal_documents_unavailable') {
+        setAccountConsentUnavailable(true);
+      }
+      Alert.alert(
+        'Согласие временно недоступно',
+        'Не удалось подтвердить текущее согласие. Регистрация пока недоступна.',
+      );
+    } finally {
+      setAcceptingAccountConsent(false);
+    }
+  }, [accountConsentGateChecked, accountConsentStatus, refreshAccountConsent]);
+
   const submitRegistration = useCallback(async () => {
     if (!appCapabilities.canUseInternalAccountEventRegistration) {
       Alert.alert('Регистрация недоступна', INTERNAL_EVENT_REGISTRATION_UNAVAILABLE_TEXT);
@@ -732,6 +835,20 @@ export default function EventRegistrationScreen() {
         },
       ]);
     } catch (submitError) {
+      if (errorCode(submitError) === 'account_consent_required') {
+        setAccountConsentGateChecked(false);
+        await refreshAccountConsent();
+        setAccountConsentGateVisible(true);
+        return;
+      }
+      if (errorCode(submitError) === 'legal_documents_unavailable') {
+        setAccountConsentUnavailable(true);
+        Alert.alert(
+          'Согласие временно недоступно',
+          'Регистрация пока недоступна. Попробуйте позже.',
+        );
+        return;
+      }
       Alert.alert(
         'Не удалось создать запись',
         submitError instanceof Error ? submitError.message : 'Попробуйте ещё раз.',
@@ -747,12 +864,13 @@ export default function EventRegistrationScreen() {
     registrationWindowBlocked,
     registrationWindowHint,
     router,
+    refreshAccountConsent,
     selectedOccurrence,
     selectedOptions,
     totals.seats,
   ]);
 
-  const handleContinue = useCallback(() => {
+  const handleContinue = useCallback(async () => {
     if (!appCapabilities.canUseInternalAccountEventRegistration) {
       Alert.alert('Регистрация недоступна', INTERNAL_EVENT_REGISTRATION_UNAVAILABLE_TEXT);
       return;
@@ -776,6 +894,29 @@ export default function EventRegistrationScreen() {
       return;
     }
 
+    if (accountConsentUnavailable) {
+      Alert.alert(
+        'Согласие временно недоступно',
+        'Регистрация пока недоступна. Попробуйте позже.',
+      );
+      return;
+    }
+
+    const consentStatus = accountConsentStatus ?? await refreshAccountConsent();
+    if (!consentStatus) {
+      Alert.alert(
+        'Согласие временно недоступно',
+        'Регистрация пока недоступна. Попробуйте позже.',
+      );
+      return;
+    }
+
+    if (!consentStatus.accepted) {
+      setAccountConsentGateChecked(false);
+      setAccountConsentGateVisible(true);
+      return;
+    }
+
     if (existingRegistrationForTarget) {
       Alert.alert(
         'Создать ещё одну запись?',
@@ -796,10 +937,13 @@ export default function EventRegistrationScreen() {
       { text: 'Продолжить', onPress: () => { void submitRegistration(); } },
     ]);
   }, [
+    accountConsentStatus?.accepted,
+    accountConsentUnavailable,
     existingRegistrationForTarget,
     occurrenceChoiceBlocked,
     registrationWindowBlocked,
     registrationWindowHint,
+    refreshAccountConsent,
     submitRegistration,
     totals.seats,
   ]);
@@ -960,6 +1104,58 @@ export default function EventRegistrationScreen() {
                   )}
                 </GlassCard>
 
+                {accountConsentGateVisible && accountConsentStatus && !accountConsentStatus.accepted ? (
+                  <GlassCard>
+                    <View style={styles.accountConsentGate}>
+                      <Text style={styles.sectionTitle}>Нужно обновить согласие</Text>
+                      <Text style={styles.accountConsentText}>
+                        Обновлённое согласие распространяется на использование аккаунта и
+                        регистрацию через аккаунт на мероприятия сообщества.
+                      </Text>
+                      <Pressable
+                        accessibilityLabel={`Открыть ${accountConsentStatus.document.title}, версия ${accountConsentStatus.document.version}`}
+                        accessibilityRole="link"
+                        onPress={() => void openAccountConsentDocument()}
+                      >
+                        <Text style={styles.accountConsentLink}>
+                          {accountConsentStatus.document.title} · версия {accountConsentStatus.document.version}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityLabel="Согласие на обработку персональных данных для использования аккаунта и регистрации через аккаунт на мероприятия"
+                        accessibilityRole="checkbox"
+                        accessibilityState={{
+                          checked: accountConsentGateChecked,
+                          disabled: acceptingAccountConsent,
+                        }}
+                        disabled={acceptingAccountConsent}
+                        onPress={() => setAccountConsentGateChecked((value) => !value)}
+                        style={styles.accountConsentCheckboxRow}
+                      >
+                        <Ionicons
+                          color={accountConsentGateChecked ? colors.orange : colors.textDim}
+                          name={accountConsentGateChecked ? 'checkbox' : 'square-outline'}
+                          size={24}
+                        />
+                        <Text style={styles.accountConsentText}>
+                          Я даю отдельное согласие на обработку моих персональных данных.
+                        </Text>
+                      </Pressable>
+                      <PrimaryButton
+                        title={acceptingAccountConsent ? 'Сохраняем...' : 'Принять согласие'}
+                        disabled={!accountConsentGateChecked || acceptingAccountConsent}
+                        onPress={acceptCurrentAccountConsent}
+                      />
+                    </View>
+                  </GlassCard>
+                ) : null}
+
+                {accountConsentUnavailable ? (
+                  <Text style={styles.accountConsentUnavailable}>
+                    Текущее согласие временно недоступно. Регистрация пока недоступна.
+                  </Text>
+                ) : null}
+
                 <GlassCard>
                   <View style={styles.totalRow}>
                     <View style={styles.totalIcon}>
@@ -986,7 +1182,7 @@ export default function EventRegistrationScreen() {
                           ? getRegistrationWindowActionTitle(registrationWindowInfo)
                           : 'Продолжить'}
                     disabled={!canContinue}
-                    onPress={handleContinue}
+                    onPress={() => { void handleContinue(); }}
                     buttonStyle={styles.continueButton}
                   />
                 </GlassCard>
@@ -1378,6 +1574,32 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     textAlign: 'center',
+  },
+  accountConsentGate: {
+    gap: 12,
+  },
+  accountConsentText: {
+    color: colors.text,
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  accountConsentLink: {
+    color: colors.orange,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+    textDecorationLine: 'underline',
+  },
+  accountConsentCheckboxRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  accountConsentUnavailable: {
+    color: colors.danger,
+    fontSize: 13,
+    lineHeight: 19,
   },
   pressed: {
     opacity: 0.84,

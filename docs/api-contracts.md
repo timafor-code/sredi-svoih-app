@@ -1602,13 +1602,40 @@ the shared error envelope, so a capacity failure returns:
 }
 ```
 
+### Current account consent for authenticated registration
+
+`GET /auth/account-consent` and `POST /auth/account-consent/accept` both require
+the current authenticated user. They resolve exactly one current
+`account_personal_data_consent` document, where current means effective and
+non-retired; no version is hardcoded. A current document must have a valid HTTPS
+`published_url`, otherwise both routes fail closed with
+`legal_documents_unavailable`.
+
+`GET /auth/account-consent` does not create evidence and returns the current
+document plus `accepted`. `accepted` is true only when the authenticated user has
+existing `LegalAcceptance` evidence for that exact document. `POST
+/auth/account-consent/accept` accepts `document_id` and `content_hash`, validates
+them against the shared-locked current document, and is idempotent. A stale id or
+hash returns `409 legal_documents_changed`; unavailable, ambiguous, or invalid
+current documents return `503 legal_documents_unavailable`.
+
+`POST /events/{event_id}/register` is authenticated account-mode registration and
+requires acceptance of the exact current account-consent document in the same
+transaction before registration, capacity, option, or payment-simulation state
+is created. Missing current acceptance returns `409 account_consent_required`.
+Signup-created acceptance for that same document counts; historical acceptance of
+an earlier version does not. Authenticated native registration accepts no guest
+personal data: non-empty `guest_names` returns
+`422 guest_personal_data_not_supported` without creating a registration. Existing
+historical response data is unchanged. Public web/guest registration remains on
+its separate `event_registration_consent` flow.
+
 `POST /events/{event_id}/register` accepts an optional JSON body:
 
 ```json
 {
   "occurrence_id": "00000000-0000-0000-0000-000000000000",
   "seats_count": 1,
-  "guest_names": [],
   "comment": "optional note",
   "option_selections": [
     {
@@ -1620,8 +1647,10 @@ the shared error envelope, so a capacity failure returns:
 ```
 
 For compatibility with the current mobile model, the request parser also
-accepts camelCase aliases such as `occurrenceId`, `seatsCount`, `guestNames`,
-`optionSelections`, and `optionId`. Responses remain snake_case.
+accepts camelCase aliases such as `occurrenceId`, `seatsCount`,
+`optionSelections`, and `optionId`. The backend retains a `guest_names` parser
+only to fail closed for non-empty authenticated native input. Responses remain
+snake_case.
 
 The register endpoint only accepts visible `published` events: public events
 or member-only events in a community where the actor has active membership.

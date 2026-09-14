@@ -332,6 +332,32 @@ class SignupLegalDocumentsResponse(BaseModel):
     privacy_policy: SignupPrivacyPolicyResponse
 
 
+class AccountConsentDocumentResponse(BaseModel):
+    id: UUID
+    document_type: Literal["account_personal_data_consent"]
+    version: str
+    title: str
+    content_hash: str
+    published_url: str
+
+
+class AccountConsentStatusResponse(BaseModel):
+    document: AccountConsentDocumentResponse
+    accepted: bool
+
+
+class AcceptAccountConsentRequest(BaseModel):
+    document_id: UUID
+    content_hash: str = Field(min_length=1, max_length=200)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("content_hash")
+    @classmethod
+    def normalize_content_hash(cls, value: str) -> str:
+        return normalize_required_secret(value, "content_hash")
+
+
 class AuthTokenResponse(BaseModel):
     access_token: str
     refresh_token: str

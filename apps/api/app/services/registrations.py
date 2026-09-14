@@ -30,6 +30,7 @@ from app.schemas.registrations import (
     RegistrationSelectedOptionResponse,
 )
 from app.services import events as events_service
+from app.services import account_consent as account_consent_service
 from app.services.events import (
     MEMBERS_ONLY_VISIBILITY,
     OCCURRENCE_VISIBLE_STATUS,
@@ -832,6 +833,16 @@ async def register_current_user_for_event(
     )
 
     async with _transaction_scope(session):
+        if payload.guest_names:
+            raise _error(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "guest_personal_data_not_supported",
+                "Guest personal data is not supported for account registration",
+            )
+        await account_consent_service.require_current_account_consent(
+            session,
+            current_user=current_user,
+        )
         registration = await register_user_for_event(
             session,
             user=current_user,

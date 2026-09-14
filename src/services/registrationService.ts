@@ -7,7 +7,6 @@ export type RegisterForPaidEventSimulatedInput = {
   occurrenceId?: string | null;
   optionSelections: PaidEventOptionSelectionInput[];
   seatsCount?: number | null;
-  guestNames?: string[] | null;
   comment?: string | null;
 };
 

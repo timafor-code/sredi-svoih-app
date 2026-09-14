@@ -17,6 +17,8 @@ from app.db.models.core import (
     EventParticipationOption,
     EventRegistration,
     EventRegistrationOptionSelection,
+    LegalAcceptance,
+    LegalDocument,
 )
 from app.db.session import AsyncSessionLocal, engine
 from app.main import app
@@ -53,6 +55,23 @@ class EventRegistrationTests(unittest.IsolatedAsyncioTestCase):
                         ),
                     ],
                 )
+                await session.flush()
+                account_consent = await session.scalar(
+                    select(LegalDocument).where(
+                        LegalDocument.document_type == "account_personal_data_consent",
+                        LegalDocument.effective_at <= now,
+                        LegalDocument.retired_at.is_(None),
+                    ),
+                )
+                self.assertIsNotNone(account_consent)
+                session.add(LegalAcceptance(
+                    user_id=self.user_id,
+                    legal_document_id=account_consent.id,
+                    accepted_at=now,
+                    acceptance_method="checkbox",
+                    source_channel="mobile",
+                    evidence_version="mobile-account-signup-v1",
+                ))
                 await session.flush()
                 session.add(
                     EventCategory(
