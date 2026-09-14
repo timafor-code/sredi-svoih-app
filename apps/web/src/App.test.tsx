@@ -32,6 +32,7 @@ const REGISTRATION_ID = "77777777-7777-4777-8777-777777777777";
 const PRIVACY_REQUEST_ID = "88888888-8888-4888-8888-888888888888";
 const EXPIRES_AT = "2026-09-12T18:00:00+03:00";
 const SET_PASSWORD_CODE = "opaque-set-password-code-with-sufficient-length";
+const MY_TICKETS_ACTIVE_NOW = Date.parse("2026-09-12T12:00:00+03:00");
 
 // jsdom has no native dialog top layer; model open/close for component tests.
 const originalShowModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "showModal");
@@ -2051,61 +2052,71 @@ describe("local form shell", () => {
   });
 
   it("clears rendered ticket history immediately on logout and after an expired session", async () => {
+    const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(MY_TICKETS_ACTIVE_NOW);
     const user = userEvent.setup();
-    const storageSpy = vi.spyOn(Storage.prototype, "setItem");
-    await renderEvent();
-    const accountPanel = await signInExistingAccount(user);
-    vi.mocked(fetch).mockImplementationOnce(() => response(envelope([myRegistration()])))
-      .mockImplementationOnce(() => response({ ok: true }));
-    await user.click(within(accountPanel).getByRole("button", { name: "Мои билеты" }));
-    const ticketsPanel = await screen.findByRole("region", { name: "Мои билеты" });
-    expect(within(ticketsPanel).getByRole("heading", { name: "Шаббат для друзей" })).toBeInTheDocument();
-    await user.click(within(accountPanel).getByRole("button", { name: "Выйти" }));
-    expect(screen.queryByRole("heading", { name: "Мои билеты" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Шаббат для друзей", level: 3 })).not.toBeInTheDocument();
-    expect(storageSpy).not.toHaveBeenCalled();
-    expect(window.localStorage).toHaveLength(0);
-    expect(window.sessionStorage).toHaveLength(0);
+    try {
+      const storageSpy = vi.spyOn(Storage.prototype, "setItem");
+      await renderEvent();
+      const accountPanel = await signInExistingAccount(user);
+      vi.mocked(fetch).mockImplementationOnce(() => response(envelope([myRegistration()])))
+        .mockImplementationOnce(() => response({ ok: true }));
+      await user.click(within(accountPanel).getByRole("button", { name: "Мои билеты" }));
+      const ticketsPanel = await screen.findByRole("region", { name: "Мои билеты" });
+      expect(within(ticketsPanel).getByRole("heading", { name: "Шаббат для друзей" })).toBeInTheDocument();
+      await user.click(within(accountPanel).getByRole("button", { name: "Выйти" }));
+      expect(screen.queryByRole("heading", { name: "Мои билеты" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Шаббат для друзей", level: 3 })).not.toBeInTheDocument();
+      expect(storageSpy).not.toHaveBeenCalled();
+      expect(window.localStorage).toHaveLength(0);
+      expect(window.sessionStorage).toHaveLength(0);
 
-    const nextAccountPanel = await signInExistingAccount(user, "expired-access-token");
-    vi.mocked(fetch)
-      .mockImplementationOnce(() => response({
-        data: null,
-        error: { code: "authentication_required", message: "raw auth detail" },
-        meta: {},
-      }, 401))
-      .mockImplementationOnce(() => response({ ok: true }));
-    await user.click(within(nextAccountPanel).getByRole("button", { name: "Мои билеты" }));
-    await waitFor(() => expect(screen.queryByRole("region", { name: "Аккаунт" })).not.toBeInTheDocument());
-    expect(screen.queryByText("raw auth detail")).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Мои билеты" })).not.toBeInTheDocument();
+      const nextAccountPanel = await signInExistingAccount(user, "expired-access-token");
+      vi.mocked(fetch)
+        .mockImplementationOnce(() => response({
+          data: null,
+          error: { code: "authentication_required", message: "raw auth detail" },
+          meta: {},
+        }, 401))
+        .mockImplementationOnce(() => response({ ok: true }));
+      await user.click(within(nextAccountPanel).getByRole("button", { name: "Мои билеты" }));
+      await waitFor(() => expect(screen.queryByRole("region", { name: "Аккаунт" })).not.toBeInTheDocument());
+      expect(screen.queryByText("raw auth detail")).not.toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Мои билеты" })).not.toBeInTheDocument();
+    } finally {
+      dateNowSpy.mockRestore();
+    }
   });
 
   it.each(["none", "sign_in"] as const)("refreshes open My Tickets after authenticated %s registration", async (nextStep) => {
+    const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(MY_TICKETS_ACTIVE_NOW);
     const user = userEvent.setup();
-    await renderEvent();
-    await fillValidForm(user);
-    const accountPanel = await signInExistingAccount(user);
-    vi.mocked(fetch).mockImplementationOnce(() => response(envelope([])));
-    await user.click(within(accountPanel).getByRole("button", { name: "Мои билеты" }));
-    expect(await screen.findByText("У вас пока нет регистраций.")).toBeInTheDocument();
+    try {
+      await renderEvent();
+      await fillValidForm(user);
+      const accountPanel = await signInExistingAccount(user);
+      vi.mocked(fetch).mockImplementationOnce(() => response(envelope([])));
+      await user.click(within(accountPanel).getByRole("button", { name: "Мои билеты" }));
+      expect(await screen.findByText("У вас пока нет регистраций.")).toBeInTheDocument();
 
-    const newTicket = myRegistration({ id: REGISTRATION_ID });
-    vi.mocked(fetch)
-      .mockImplementationOnce(() => response(intentCreated("completed"), 201))
-      .mockImplementationOnce(() => response(envelope({
-        state: "confirmed",
-        expires_at: null,
-        registration: registrationResult().data.registration,
-        account_next_step: nextStep,
-      })))
-      .mockImplementationOnce(() => response(envelope([newTicket])));
-    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
+      const newTicket = myRegistration({ id: REGISTRATION_ID });
+      vi.mocked(fetch)
+        .mockImplementationOnce(() => response(intentCreated("completed"), 201))
+        .mockImplementationOnce(() => response(envelope({
+          state: "confirmed",
+          expires_at: null,
+          registration: registrationResult().data.registration,
+          account_next_step: nextStep,
+        })))
+        .mockImplementationOnce(() => response(envelope([newTicket])));
+      await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
 
-    expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Шаббат для друзей", level: 3 })).toBeInTheDocument();
-    expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes("/me/registrations")))
-      .toHaveLength(2);
+      expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "Шаббат для друзей", level: 3 })).toBeInTheDocument();
+      expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes("/me/registrations")))
+        .toHaveLength(2);
+    } finally {
+      dateNowSpy.mockRestore();
+    }
   });
 
   it("signs out through the shared session and returns registration to anonymous mode", async () => {
