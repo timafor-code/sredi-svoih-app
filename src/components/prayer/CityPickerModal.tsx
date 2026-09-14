@@ -160,7 +160,7 @@ export function CityPickerModal({ onClose, visible }: CityPickerModalProps) {
           accessibilityLabel="Закрыть выбор города"
           accessibilityRole="button"
           onPress={onClose}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
 
         <View style={[styles.panel, { maxHeight: panelMaxHeight }]}>

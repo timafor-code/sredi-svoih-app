@@ -68,7 +68,7 @@ export function ZmanimModal({
           accessibilityLabel="Закрыть зманим"
           accessibilityRole="button"
           onPress={onClose}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
 
         <View

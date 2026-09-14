@@ -346,7 +346,7 @@ export default function PrayersScreen() {
       <BlessingsEntryCard />
 
       <Pressable style={styles.infoCard}>
-        <LinearGradient colors={['rgba(74,144,217,0.10)', 'rgba(74,144,217,0.04)']} style={StyleSheet.absoluteFillObject} />
+        <LinearGradient colors={['rgba(74,144,217,0.10)', 'rgba(74,144,217,0.04)']} style={StyleSheet.absoluteFill} />
         <Ionicons name="information-circle-outline" size={18} color="#4A90D9" />
         <Text style={styles.infoText}>Зманим рассчитаны через Hebcal для города {activeCity}, часовой пояс {daily.timeZone}.</Text>
       </Pressable>

@@ -294,7 +294,7 @@ async function validateServiceRequests() {
 }
 
 function source(relativePath) {
-  return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
+  return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8').replace(/\r\n?/g, '\n');
 }
 
 function compileTypeScriptModule(module, filename) {

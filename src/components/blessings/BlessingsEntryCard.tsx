@@ -24,14 +24,14 @@ export function BlessingsEntryCard() {
           colors={['rgba(246,164,0,0.14)', 'rgba(240,122,42,0.055)', 'rgba(255,255,255,0)']}
           end={{ x: 1, y: 1 }}
           start={{ x: 0, y: 0 }}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
         <View style={styles.accentLine} />
         <View style={styles.row}>
           <View style={styles.iconBox}>
             <LinearGradient
               colors={['rgba(255,200,50,0.18)', 'rgba(240,122,42,0.10)']}
-              style={StyleSheet.absoluteFillObject}
+              style={StyleSheet.absoluteFill}
             />
             <Ionicons name="book-outline" size={24} color={colors.goldAccent} />
             <View style={styles.foodBadge}>

@@ -204,7 +204,7 @@ export function PrayerActionModal({
           accessibilityRole="button"
           disabled={busy}
           onPress={onClose}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
         <GlassCard
           style={[

@@ -183,7 +183,7 @@ export function BlessingDirectCard({
         <View style={styles.iconBox}>
           <LinearGradient
             colors={['rgba(255,200,50,0.18)', 'rgba(240,122,42,0.08)']}
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
           />
           <Ionicons name={getBlessingIcon(blessing)} size={24} color={colors.goldAccent} />
         </View>

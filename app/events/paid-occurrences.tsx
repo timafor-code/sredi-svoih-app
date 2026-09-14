@@ -299,7 +299,7 @@ export default function PaidOccurrencesScreen() {
               )}
               <LinearGradient
                 colors={['transparent', 'rgba(6,8,16,0.94)']}
-                style={StyleSheet.absoluteFillObject}
+                style={StyleSheet.absoluteFill}
               />
               <View style={styles.heroChips}>
                 <Chip>{event.category}</Chip>

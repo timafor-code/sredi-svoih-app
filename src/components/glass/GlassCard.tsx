@@ -25,10 +25,10 @@ export function GlassCard({
 }: GlassCardProps) {
   return (
     <View style={[styles.shell, style]} {...props}>
-      <WebSafeBlurView tint="dark" intensity={28} style={StyleSheet.absoluteFillObject} />
+      <WebSafeBlurView tint="dark" intensity={28} style={StyleSheet.absoluteFill} />
       <LinearGradient
         colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.025)']}
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
       />
       <View style={[styles.content, !padded && styles.unpadded, contentStyle]}>
         {children}
