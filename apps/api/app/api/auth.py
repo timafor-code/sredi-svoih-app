@@ -17,6 +17,7 @@ from app.schemas.auth import (
     AuthCodeConfirmResponse,
     AuthCodeRequestResponse,
     AuthTokenResponse,
+    ChangePasswordRequest,
     ConfirmEmailVerificationRequest,
     ConfirmPasswordResetRequest,
     ConfirmSetPasswordRequest,
@@ -36,6 +37,7 @@ from app.schemas.auth import (
 )
 from app.services.auth import (
     accept_invite_for_current_user,
+    change_password,
     confirm_email_verification,
     confirm_password_reset,
     confirm_set_password,
@@ -186,6 +188,20 @@ async def logout(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> LogoutResponse:
     return await logout_session(session, refresh_token=payload.refresh_token)
+
+
+@router.post("/change-password", response_model=AuthCodeConfirmResponse)
+async def change_password_endpoint(
+    payload: ChangePasswordRequest,
+    current_user: Annotated[AppUser, Depends(require_auth)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AuthCodeConfirmResponse:
+    return await change_password(
+        session,
+        current_user=current_user,
+        current_password=payload.current_password,
+        new_password=payload.new_password,
+    )
 
 
 @router.post("/request-password-reset", response_model=AuthCodeRequestResponse)

@@ -22,6 +22,13 @@ export async function signOut(): Promise<void> {
   await adminAuthApiService.signOut();
 }
 
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  await adminAuthApiService.changePassword(currentPassword, newPassword);
+}
+
 export async function getCurrentAdminContext(): Promise<AdminAuthContext> {
   return adminAuthApiService.getCurrentAdminContext();
 }

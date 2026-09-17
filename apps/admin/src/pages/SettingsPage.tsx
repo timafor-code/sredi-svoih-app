@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { AdminHealthCheck } from "../components/settings/AdminHealthCheck";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { GlassCard } from "../components/ui/GlassCard";
 import { apiBaseUrl } from "../services/apiClient";
+import { changePassword } from "../services/adminAuthService";
 import { getAdminCommunity } from "../services/adminCommunityService";
 import {
   archiveAdminCommunityLocation,
@@ -30,12 +31,24 @@ type SettingsFactRow = {
   href?: string;
 };
 
+type PasswordChangeFormState = {
+  currentPassword: string;
+  newPassword: string;
+  repeatPassword: string;
+};
+
 const defaultLocationForm: LocationFormState = {
   title: "",
   address: "",
   sortOrder: "100",
   isDefault: false,
   isActive: true,
+};
+
+const defaultPasswordChangeForm: PasswordChangeFormState = {
+  currentPassword: "",
+  newPassword: "",
+  repeatPassword: "",
 };
 
 export function SettingsPage() {
@@ -62,6 +75,11 @@ export function SettingsPage() {
   const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
   const [savingLocation, setSavingLocation] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [passwordChangeForm, setPasswordChangeForm] = useState<PasswordChangeFormState>(
+    defaultPasswordChangeForm,
+  );
+  const [passwordChangeSaving, setPasswordChangeSaving] = useState(false);
+  const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
 
   const loadCommunity = useCallback(async () => {
     if (!communityId) {
@@ -235,6 +253,55 @@ export function SettingsPage() {
     }
   };
 
+  const resetPasswordChangeForm = () => {
+    setPasswordChangeForm(defaultPasswordChangeForm);
+    setPasswordChangeError(null);
+  };
+
+  const submitPasswordChange = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPasswordChangeError(null);
+
+    if (
+      !passwordChangeForm.currentPassword
+      || !passwordChangeForm.newPassword
+      || !passwordChangeForm.repeatPassword
+    ) {
+      setPasswordChangeError("Заполните все поля пароля.");
+      return;
+    }
+
+    if (
+      passwordChangeForm.newPassword.length < 8
+      || passwordChangeForm.newPassword.length > 1024
+    ) {
+      setPasswordChangeError("Новый пароль должен содержать от 8 до 1024 символов.");
+      return;
+    }
+
+    if (passwordChangeForm.newPassword !== passwordChangeForm.repeatPassword) {
+      setPasswordChangeError("Новый пароль и повтор пароля должны совпадать.");
+      return;
+    }
+
+    setPasswordChangeSaving(true);
+
+    try {
+      await changePassword(
+        passwordChangeForm.currentPassword,
+        passwordChangeForm.newPassword,
+      );
+      resetPasswordChangeForm();
+      await auth.signOut();
+    } catch {
+      setPasswordChangeError(
+        "Не удалось изменить пароль. Проверьте текущий пароль и повторите попытку.",
+      );
+    } finally {
+      setPasswordChangeSaving(false);
+    }
+  };
+
   const communitySettingRows = buildCommunitySettingRows(community);
   const betaConnectionRows = buildBetaConnectionRows({
     adminEnvLabel,
@@ -295,6 +362,84 @@ export function SettingsPage() {
           <SettingsFacts rows={communitySettingRows} />
         ) : null}
       </GlassCard>
+
+      {auth.isAdmin ? (
+        <GlassCard className="settings-section" elevated>
+          <div className="settings-section__head">
+            <div className="settings-section__title">
+              <span>Security</span>
+              <h2>Смена пароля</h2>
+              <p>
+                После смены пароля все активные сессии будут завершены. Войдите
+                снова с новым паролем.
+              </p>
+            </div>
+          </div>
+
+          <form className="settings-location-form" onSubmit={submitPasswordChange}>
+            <label className="event-form-field">
+              <span>Текущий пароль</span>
+              <input
+                autoComplete="current-password"
+                disabled={passwordChangeSaving}
+                onChange={(event) => setPasswordChangeForm((current) => ({
+                  ...current,
+                  currentPassword: event.target.value,
+                }))}
+                required
+                type="password"
+                value={passwordChangeForm.currentPassword}
+              />
+            </label>
+
+            <label className="event-form-field">
+              <span>Новый пароль</span>
+              <input
+                autoComplete="new-password"
+                disabled={passwordChangeSaving}
+                maxLength={1024}
+                minLength={8}
+                onChange={(event) => setPasswordChangeForm((current) => ({
+                  ...current,
+                  newPassword: event.target.value,
+                }))}
+                required
+                type="password"
+                value={passwordChangeForm.newPassword}
+              />
+            </label>
+
+            <label className="event-form-field">
+              <span>Повторите новый пароль</span>
+              <input
+                autoComplete="new-password"
+                disabled={passwordChangeSaving}
+                maxLength={1024}
+                minLength={8}
+                onChange={(event) => setPasswordChangeForm((current) => ({
+                  ...current,
+                  repeatPassword: event.target.value,
+                }))}
+                required
+                type="password"
+                value={passwordChangeForm.repeatPassword}
+              />
+            </label>
+
+            {passwordChangeError ? (
+              <div className="settings-state settings-state--error" role="alert">
+                {passwordChangeError}
+              </div>
+            ) : null}
+
+            <div className="settings-location-form__actions">
+              <Button disabled={passwordChangeSaving} type="submit" variant="primary">
+                {passwordChangeSaving ? "Меняем пароль..." : "Сменить пароль"}
+              </Button>
+            </div>
+          </form>
+        </GlassCard>
+      ) : null}
 
       <GlassCard className="settings-section settings-locations" elevated>
         <div className="settings-section__head">

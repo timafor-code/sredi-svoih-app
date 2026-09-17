@@ -145,6 +145,11 @@ export type AdminApiLogoutRequest = {
   refresh_token: string;
 };
 
+export type AdminApiChangePasswordRequest = {
+  current_password: string;
+  new_password: string;
+};
+
 export type AdminApiOkResponse = {
   ok: boolean;
 };

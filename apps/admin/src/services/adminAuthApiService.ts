@@ -11,6 +11,7 @@ import {
 } from "./adminApiAuthTokenStore";
 import type {
   AdminApiAuthTokenResponse,
+  AdminApiChangePasswordRequest,
   AdminApiCurrentUserResponse,
   AdminApiLoginRequest,
   AdminApiLogoutRequest,
@@ -229,6 +230,19 @@ export async function signOut(): Promise<void> {
   } finally {
     clearAdminApiAuthTokens();
   }
+}
+
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  await apiClient.post<AdminApiOkResponse, AdminApiChangePasswordRequest>(
+    "/auth/change-password",
+    {
+      current_password: currentPassword,
+      new_password: newPassword,
+    },
+  );
 }
 
 export async function getCurrentAdminContext(): Promise<AdminAuthContext> {
