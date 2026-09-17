@@ -14880,9 +14880,26 @@ a {
     border-top: 1px solid var(--glass-border);
   }
 
-  .registration-event-list { max-height: 50dvh; }
-  .registration-event-card { min-height: 44px; }
-  .registration-event-card__title :is(strong, span) { white-space: normal; }
+  .registration-event-list {
+    max-height: 50dvh;
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    scroll-padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .registration-event-card {
+    grid-template-rows: auto auto;
+    align-content: start;
+    min-height: 44px;
+    height: auto;
+  }
+
+  .registration-event-card__title :is(strong, span) {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
   .registration-event-card__title strong { font-size: 15px; }
   .registration-event-card__title span { font-size: 12px; }
 
