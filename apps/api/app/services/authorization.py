@@ -107,6 +107,26 @@ async def require_admin(
     return await require_community_role(session, user_id, community_id, ADMIN_ROLES)
 
 
+async def require_active_admin_membership(
+    session: AsyncSession,
+    user_id: UUID,
+) -> CommunityMembership:
+    membership = await session.scalar(
+        select(CommunityMembership)
+        .where(
+            CommunityMembership.user_id == user_id,
+            CommunityMembership.status == ACTIVE_STATUS,
+            CommunityMembership.role.in_(ADMIN_ROLES),
+        )
+        .order_by(CommunityMembership.created_at)
+        .with_for_update(read=True),
+    )
+    if membership is None:
+        raise PermissionDeniedError()
+
+    return membership
+
+
 async def require_admin_or_event_manager(
     session: AsyncSession,
     user_id: UUID,

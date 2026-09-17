@@ -1322,6 +1322,58 @@ async def logout_session(
     return LogoutResponse()
 
 
+async def change_password(
+    session: AsyncSession,
+    *,
+    current_user: AppUser,
+    current_password: str,
+    new_password: str,
+) -> AuthCodeConfirmResponse:
+    await authorization_service.require_active_admin_membership(
+        session,
+        current_user.id,
+    )
+    user = await session.get(
+        AppUser,
+        current_user.id,
+        populate_existing=True,
+        with_for_update=True,
+    )
+    if user is None or user.status != authorization_service.ACTIVE_STATUS:
+        raise _authentication_error()
+
+    if not verify_password(current_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    now = _now()
+    user.password_hash = hash_password(new_password)
+    user.auth_token_version += 1
+    user.updated_at = now
+    await session.execute(
+        update(AuthSession)
+        .where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None))
+        .values(revoked_at=now, updated_at=now)
+        .execution_options(synchronize_session=False),
+    )
+    await _invalidate_user_auth_codes(
+        session,
+        PasswordResetCode,
+        user_id=user.id,
+        now=now,
+    )
+    await _invalidate_user_auth_codes(
+        session,
+        AuthSetPasswordCode,
+        user_id=user.id,
+        now=now,
+    )
+    await session.commit()
+    return _confirm_response()
+
+
 async def get_me_summary(
     session: AsyncSession,
     *,

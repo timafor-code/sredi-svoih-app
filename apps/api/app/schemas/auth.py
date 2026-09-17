@@ -141,6 +141,13 @@ class LogoutRequest(BaseModel):
         return normalize_required_token(value)
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=1024)
+    new_password: str = Field(min_length=8, max_length=1024)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class RequestPasswordResetRequest(BaseModel):
     email: str = Field(min_length=3, max_length=320)
 
