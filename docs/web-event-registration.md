@@ -164,9 +164,11 @@ The target public flow is:
    canonical registration service, and only then create
    `event_registrations` and any canonical questionnaire answer rows.
 7. Return `confirmed`, `pending`, or `waitlisted` according to the event rules;
-   an `internal_paid` confirmation returns registration `pending` with
-   `payment_status=pending`, and the existing set-password path remains
-   available when account creation was selected.
+   current ordinary registrations auto-confirm. An `internal_paid` confirmation
+   returns registration `confirmed` with `payment_status=pending` and
+   `payment_id=null`; this is not payment success. Option snapshots and totals
+   remain canonical, and the existing set-password path remains available when
+   account creation was selected.
 8. Purge expired intents and their temporary PII on the approved short
    retention schedule.
 
@@ -456,7 +458,9 @@ credential. `create_account` returns a first-response-only hash-backed handoff
 for the existing `/auth/confirm-set-password`; replay returns
 `request_set_password`, and a user with a password receives `sign_in`.
 Registration-result email runs after commit and its failure cannot undo the
-registration. Status is PII-free and contains only public state, minimal final
+registration. A newly created confirmed registration is eligible for the
+informational result email; duplicate-free and confirmed-intent replays do not
+resend it. Status is PII-free and contains only public state, minimal final
 registration data, and an account next step without secrets.
 
 ## Administrative Publication Contracts

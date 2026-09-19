@@ -3209,7 +3209,7 @@ describe("registration intent and account claim flow", () => {
         id: REGISTRATION_ID,
         event_id: EVENT_ID,
         occurrence_id: null,
-        status: "pending",
+        status: "confirmed",
         seats_count: 1,
         payment_status: "not_required",
         total_amount: 0,
@@ -3218,7 +3218,7 @@ describe("registration intent and account claim flow", () => {
       account_next_step: "none",
     })));
     await user.click(screen.getByRole("button", { name: "Проверить статус" }));
-    expect(await screen.findByText(/ожидает подтверждения организатора/)).toBeInTheDocument();
+    expect(await screen.findByText("Регистрация подтверждена.")).toBeInTheDocument();
   });
 
   it("shows an expired-flow state returned by status without polling", async () => {
@@ -3233,7 +3233,7 @@ describe("registration intent and account claim flow", () => {
 
   it.each([
     ["confirmed", "Регистрация подтверждена."],
-    ["pending", "ожидает подтверждения организатора"],
+    ["pending", "Регистрация пока не подтверждена."],
     ["waitlisted", "лист ожидания"],
   ] as const)("distinguishes the %s success result", async (status, copy) => {
     const user = await setupValidForm();
@@ -3242,7 +3242,7 @@ describe("registration intent and account claim flow", () => {
     expect(await screen.findByText(new RegExp(copy))).toBeInTheDocument();
   });
 
-  it("shows the server-authoritative pending paid result without payment claims or CTA", async () => {
+  it("accepts the server-authoritative confirmed paid result with pending payment and no CTA", async () => {
     const user = userEvent.setup();
     await renderEvent(paidEventResponse());
     await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
@@ -3254,11 +3254,11 @@ describe("registration intent and account claim flow", () => {
     await createIntent(user);
     await confirmIntent(
       user,
-      registrationResult("pending", "none", null, "pending", 4321, "RUB"),
+      registrationResult("confirmed", "none", null, "pending", 4321, "RUB"),
     );
 
-    expect(await screen.findByRole("heading", { name: "Заявка создана" })).toBeInTheDocument();
-    expect(screen.getByText("Заявка создана.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
+    expect(screen.getByText("Регистрация подтверждена.")).toBeInTheDocument();
     expect(screen.getByText("Сумма").closest("div")).toHaveTextContent(/4.?321.?₽/);
     expect(screen.getByText("Оплата на сайте пока не выполнена.")).toBeInTheDocument();
     expectOneFlowDialog();
@@ -3278,6 +3278,25 @@ describe("registration intent and account claim flow", () => {
     expect(vi.mocked(fetch).mock.calls.filter(([input, init]) => (
       String(input).endsWith("/registration-intents") && init?.method === "POST"
     ))).toHaveLength(registrationPostsBeforeReset);
+  });
+
+  it.each([
+    ["old pending paid result", registrationResult("pending", "none", null, "pending", 4321, "RUB")],
+    ["paid result without a total", registrationResult("confirmed", "none", null, "pending", null, "RUB")],
+  ])("fails closed for a malformed %s", async (_label, result) => {
+    const user = userEvent.setup();
+    await renderEvent(paidEventResponse());
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    await user.type(screen.getByLabelText("Имя"), "Анна");
+    await user.type(screen.getByLabelText("Фамилия"), "Иванова");
+    await user.type(screen.getByLabelText("Телефон"), "+7 (999) 123-45-67");
+    await user.type(screen.getByLabelText("Email"), "anna@example.ru");
+    await user.click(screen.getByLabelText(/Я ознакомился/));
+    await createIntent(user);
+    await confirmIntent(user, result);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("неизвестная ошибка сервера");
+    expect(screen.queryByRole("heading", { name: "Регистрация успешно сохранена" })).not.toBeInTheDocument();
   });
 
   it.each([

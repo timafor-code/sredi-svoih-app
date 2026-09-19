@@ -391,7 +391,7 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_migration_metadata_constraints_queue_index_and_defaults(self) -> None:
         script = ScriptDirectory.from_config(Config("alembic.ini"))
         expected_head = script.get_current_head()
-        self.assertEqual(expected_head, "20260910190000")
+        self.assertEqual(expected_head, "20260911150000")
         self.assertEqual(
             script.get_revision("20260907210000").down_revision,
             "20260907200000",
@@ -886,13 +886,14 @@ class PrivacyErasureLifecycleTests(unittest.IsolatedAsyncioTestCase):
         async with AsyncSessionLocal() as session:
             async with session.begin():
                 other = await session.get(AppUser, other_id)
-                replacement = await registrations.register_user_for_event(
+                replacement_write = await registrations.register_user_for_event(
                     session,
                     user=other,
                     event_id=capacity_event,
                     payload=RegisterEventRequest(),
                     source_channel="mobile",
                 )
+                replacement = replacement_write.registration
                 self.assertEqual(replacement.status, "confirmed")
 
         first_cancelled_at = registrations_by_id["confirmed"].cancelled_at
