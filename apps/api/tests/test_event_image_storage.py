@@ -301,6 +301,27 @@ class EventImageNormalizationTests(unittest.TestCase):
 
 
 class EventImageStorageAdapterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_read_uses_event_bucket_and_closes_provider_body(self) -> None:
+        body = MagicMock()
+        body.read.return_value = _image_bytes("WEBP")
+        client = MagicMock()
+        client.get_object.return_value = {"Body": body, "ContentType": "image/webp"}
+        storage = S3EventImageStorage(_storage_settings())
+        storage._client = client
+
+        result = await storage.read_image(object_key="communities/a/events/b/c.webp")
+
+        self.assertEqual(result.content, body.read.return_value)
+        client.get_object.assert_called_once_with(Bucket="event-images", Key="communities/a/events/b/c.webp")
+        body.close.assert_called_once()
+
+    async def test_read_rejects_unsafe_key_without_provider_call(self) -> None:
+        storage = S3EventImageStorage(_storage_settings())
+        storage._client = MagicMock()
+        with self.assertRaises(EventImageStorageOperationError):
+            await storage.read_image(object_key="../unsafe.webp")
+        storage._client.get_object.assert_not_called()
+
     async def test_event_write_uses_separate_bucket_and_normalized_headers(self) -> None:
         client = MagicMock()
         client.put_object.return_value = {"ETag": '"stored-etag"'}

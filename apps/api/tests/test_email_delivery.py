@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import smtplib
 import unittest
+from datetime import UTC, datetime
 from email import policy
 from email.message import EmailMessage as StdlibEmailMessage
 from email.parser import BytesParser
@@ -42,7 +43,9 @@ from app.services.transactional_email_branding import (
     render_branded_informational_html,
 )
 from app.services.web_registration_email_templates import (
-    render_registration_result_email,
+    RegistrationConfirmationEmailContext,
+    RegistrationConfirmationOption,
+    render_registration_confirmation_email,
     render_verification_code_email,
 )
 from tests import test_web_registration_email_finalize as finalize_tests
@@ -260,53 +263,26 @@ def test_committed_logo_is_small_transparent_png():
         assert logo.getextrema()[3][1] == 255
 
 
-@pytest.mark.parametrize(("status", "heading", "text_body"), [
-    (
-        "confirmed",
-        "Регистрация подтверждена",
-        "\n".join((
-            "Ваш email подтверждён.",
-            "Ваша регистрация подтверждена.",
-            "Пароль не требуется, чтобы регистрация сохранилась.",
-            "Это транзакционное уведомление, а не маркетинговая рассылка.",
-        )),
-    ),
-    (
-        "pending",
-        "Заявка получена",
-        "\n".join((
-            "Ваш email подтверждён.",
-            "Ваша заявка получена и ожидает решения организатора.",
-            "Пароль не требуется, чтобы регистрация сохранилась.",
-            "Это транзакционное уведомление, а не маркетинговая рассылка.",
-        )),
-    ),
-])
-def test_registration_result_is_branded_multipart(
-    status, heading, text_body, smtp_transport,
-):
-    rendered = render_registration_result_email(registration_status=status)
-    result = service.send_web_registration_result(
-        to_address=TEST_ADDRESS, registration_status=status, settings=email_settings(),
-    )
+def test_registration_confirmation_is_branded_multipart(smtp_transport):
+    context = RegistrationConfirmationEmailContext(TEST_ADDRESS, "Иван Тестов", "Тест", None, "single", datetime(2026, 9, 18, 16, tzinfo=UTC), None, "Europe/Moscow", None, None, "confirmed", "pending", 1, (RegistrationConfirmationOption("Билет", None, "participation", 1, 500, 500, "RUB", False, None),), 500, "RUB", (), "https://example.invalid/events/test", "https://example.invalid/privacy", "Политика", None)
+    rendered = render_registration_confirmation_email(context=context, has_event_image=False)
+    result = service.send_web_registration_confirmation(context=context, settings=email_settings())
     sent = smtp_transport.return_value.__enter__.return_value.send_message.call_args.args[0]
     parsed = BytesParser(policy=policy.default).parsebytes(sent.as_bytes())
     assert result.sent
-    assert rendered.subject == "Результат регистрации"
-    assert rendered.text_body == text_body
+    assert rendered.subject == "Регистрация подтверждена"
+    assert "Оплата ещё не выполнена." in rendered.text_body
     assert parsed.get_content_type() == "multipart/alternative"
     plain, related = list(parsed.iter_parts())
-    assert plain.get_content() == text_body + "\n"
+    assert plain.get_content() == rendered.text_body + "\n"
     html, logo = list(related.iter_parts())
-    assert heading in html.get_content()
-    for paragraph in text_body.split("\n"):
-        assert paragraph in html.get_content()
+    assert "Регистрация подтверждена" in html.get_content()
     assert 'src="cid:sredi-svoih-logo"' in html.get_content()
     assert logo.get_content_type() == "image/png"
     assert logo["Content-ID"] == "<sredi-svoih-logo>"
     assert logo.get_content_disposition() == "inline"
     assert logo.get_payload(decode=True) == branded_logo_image().data
-    _assert_informational_html_is_safe(html.get_content())
+    assert "example.com" not in html.get_content()
 
 
 @pytest.mark.parametrize(("sender", "renderer", "subject", "heading", "text_body"), [

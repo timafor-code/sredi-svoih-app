@@ -47,7 +47,6 @@ from app.services.web_registration_email_service import (
     send_web_registration_verification_code,
 )
 from app.services.web_registration_email_templates import (
-    render_registration_result_email,
     render_verification_code_email,
 )
 
@@ -71,7 +70,7 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
 
         def capture_result(**kwargs):
             self.result_deliveries.append(
-                (kwargs["to_address"], kwargs["registration_status"]),
+                (kwargs["context"].to_address, kwargs["context"].registration_status),
             )
             return EmailSendResult(sent=True, disabled=False)
 
@@ -80,7 +79,7 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
             side_effect=capture_verification,
         )
         self.result_patcher = patch(
-            "app.services.web_registration.send_web_registration_result",
+            "app.services.web_registration.send_web_registration_confirmation",
             side_effect=capture_result,
         )
         self.verification_patcher.start()
@@ -1330,10 +1329,6 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("15", rendered.text_body)
         self.assertIn("Никому", rendered.text_body)
         self.assertNotIn("http", rendered.text_body)
-        result_rendered = render_registration_result_email(
-            registration_status="confirmed",
-        )
-        self.assertIn("не маркетинговая", result_rendered.text_body)
 
         payload = self.payload(idempotency_key="web-finalize-router-flow")
         async with httpx.AsyncClient(
@@ -1348,7 +1343,7 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
             flow_id = create_response.json()["data"]["flow_id"]
             code = self.verification_deliveries[-1][1]
             with patch(
-                "app.services.web_registration.send_web_registration_result",
+                "app.services.web_registration.send_web_registration_confirmation",
                 side_effect=WebRegistrationEmailDeliveryError("synthetic"),
             ), self.assertLogs("app.services.web_registration", level="WARNING") as logs:
                 confirm_response = await client.post(

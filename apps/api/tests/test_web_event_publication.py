@@ -1111,7 +1111,7 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
                 side_effect=capture,
             ),
             patch(
-                "app.services.web_registration.send_web_registration_result",
+                "app.services.web_registration.send_web_registration_confirmation",
                 return_value=EmailSendResult(sent=True, disabled=False),
             ),
         ):
@@ -1182,7 +1182,7 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
             return EmailSendResult(sent=True, disabled=False)
 
         def capture_result(**kwargs):
-            result_deliveries.append(kwargs["registration_status"])
+            result_deliveries.append(kwargs["context"].registration_status)
             return EmailSendResult(sent=True, disabled=False)
 
         completed_key = "publication-completed-retry"
@@ -1237,7 +1237,7 @@ class WebEventPublicationTests(unittest.IsolatedAsyncioTestCase):
                 side_effect=capture_verification,
             ),
             patch(
-                "app.services.web_registration.send_web_registration_result",
+                "app.services.web_registration.send_web_registration_confirmation",
                 side_effect=capture_result,
             ),
         ):
