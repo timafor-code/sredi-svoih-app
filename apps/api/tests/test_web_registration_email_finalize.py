@@ -188,6 +188,33 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
             created = await service.create_intent(session, resolved, "192.0.2.1")
         return created, self.verification_deliveries[-1][1]
 
+    async def _add_authenticated_user(self) -> AppUser:
+        user = AppUser(
+            email=self.email,
+            phone=self.phone,
+            password_hash="unchanged",
+            account_origin="password_signup",
+            claim_state="claimed",
+            status="active",
+            email_verified_at=self.now,
+        )
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(user)
+                await session.flush()
+                session.add(
+                    Profile(
+                        user_id=user.id,
+                        first_name="Каноническое",
+                        last_name="Имя",
+                        full_name="Каноническое Имя",
+                        display_name="Каноническое Имя",
+                        email=user.email,
+                        phone=user.phone,
+                    ),
+                )
+        return user
+
     async def backdate_latest_code(self, intent_id, *, seconds: int = 120) -> None:
         async with AsyncSessionLocal() as session:
             async with session.begin():
@@ -767,6 +794,136 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(replay.set_password_code)
         self.assertEqual(status.account_next_step, "request_set_password")
         self.assertEqual(len(self.result_deliveries), 1)
+
+    async def test_authenticated_verified_registration_sends_confirmation_context(self) -> None:
+        user = await self._add_authenticated_user()
+        deliveries: list[dict] = []
+
+        def capture_confirmation(**kwargs):
+            deliveries.append(kwargs)
+            return EmailSendResult(sent=True, disabled=False)
+
+        with patch(
+            "app.services.web_registration.send_web_registration_confirmation",
+            side_effect=capture_confirmation,
+        ):
+            async with AsyncSessionLocal() as session:
+                result = await service.create_intent(
+                    session,
+                    self.payload(
+                        first_name="Подмена",
+                        last_name="Профиля",
+                        email="spoofed@example.invalid",
+                        phone="+79000000000",
+                    ),
+                    "192.0.2.5",
+                    current_user=user,
+                )
+
+        self.assertEqual(result.next_step, "completed")
+        self.assertEqual(self.verification_deliveries, [])
+        self.assertEqual(len(deliveries), 1)
+        context = deliveries[0]["context"]
+        self.assertEqual(context.to_address, self.email)
+        self.assertEqual(context.participant_name, "Каноническое Имя")
+        self.assertEqual(context.event_title, "Synthetic web finalize event")
+        self.assertEqual(context.registration_status, "confirmed")
+        self.assertEqual(context.payment_status, "not_required")
+        self.assertEqual(context.seats_count, 1)
+        async with AsyncSessionLocal() as session:
+            registration = await session.scalar(
+                select(EventRegistration).where(
+                    EventRegistration.event_id == self.event_id,
+                    EventRegistration.user_id == user.id,
+                ),
+            )
+        assert registration is not None
+        self.assertEqual(registration.status, "confirmed")
+
+    async def test_authenticated_duplicate_and_completed_retry_do_not_resend_confirmation(self) -> None:
+        user = await self._add_authenticated_user()
+        payload = self.payload(idempotency_key=f"authenticated-{self.marker}")
+        async with AsyncSessionLocal() as session:
+            first = await service.create_intent(
+                session,
+                payload,
+                "192.0.2.5",
+                current_user=user,
+            )
+        async with AsyncSessionLocal() as session:
+            duplicate = await service.create_intent(
+                session,
+                self.payload(idempotency_key=f"authenticated-duplicate-{self.marker}"),
+                "192.0.2.5",
+                current_user=user,
+            )
+        async with AsyncSessionLocal() as session:
+            replay = await service.create_intent(
+                session,
+                payload,
+                "192.0.2.5",
+                current_user=user,
+            )
+            registration_count = await session.scalar(
+                select(func.count())
+                .select_from(EventRegistration)
+                .where(
+                    EventRegistration.event_id == self.event_id,
+                    EventRegistration.user_id == user.id,
+                ),
+            )
+
+        self.assertEqual((first.next_step, duplicate.next_step, replay.next_step), ("completed", "completed", "completed"))
+        self.assertEqual(self.verification_deliveries, [])
+        self.assertEqual(self.result_deliveries, [(self.email, "confirmed")])
+        self.assertEqual(registration_count, 1)
+
+    async def test_authenticated_paid_registration_sends_pending_confirmation(self) -> None:
+        option = EventParticipationOption(
+            event_id=self.event_id,
+            title="Authenticated paid option",
+            price_amount=1200,
+            price_currency="RUB",
+            option_type="participation",
+            allow_quantity=True,
+            min_quantity=1,
+            max_quantity=1,
+            counts_toward_capacity=True,
+            is_active=True,
+        )
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                event = await session.get(Event, self.event_id)
+                assert event is not None
+                event.registration_mode = "internal_paid"
+                session.add(option)
+                await session.flush()
+
+        user = await self._add_authenticated_user()
+        async with AsyncSessionLocal() as session:
+            result = await service.create_intent(
+                session,
+                self.payload(
+                    option_selections=[{"option_id": option.id, "quantity": 1}],
+                ),
+                "192.0.2.5",
+                current_user=user,
+            )
+
+        self.assertEqual(result.next_step, "completed")
+        self.assertEqual(self.verification_deliveries, [])
+        self.assertEqual(self.result_deliveries, [(self.email, "confirmed")])
+        async with AsyncSessionLocal() as session:
+            registration = await session.scalar(
+                select(EventRegistration).where(
+                    EventRegistration.event_id == self.event_id,
+                    EventRegistration.user_id == user.id,
+                ),
+            )
+        assert registration is not None
+        self.assertEqual(registration.status, "confirmed")
+        self.assertEqual(registration.payment_status, "pending")
+        self.assertIsNone(registration.payment_id)
 
     async def test_confirmation_sends_without_image_when_managed_read_fails(self) -> None:
         created, code = await self.create()

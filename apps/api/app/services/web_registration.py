@@ -783,6 +783,7 @@ async def create_intent(
             + timedelta(hours=get_settings().api_web_registration_intent_ttl_hours),
         )
         session.add(intent)
+        confirmation_context: RegistrationConfirmationEmailContext | None = None
         try:
             await session.flush()
             if current_user is not None and intent_status == CONFIRMED:
@@ -811,6 +812,13 @@ async def create_intent(
                 )
                 intent.confirmed_at = now
                 intent.answer_payload = None
+                if registration_write.created and registration.status == CONFIRMED:
+                    confirmation_context = await _confirmation_email_context(
+                        session,
+                        event=event,
+                        registration=registration,
+                        user=current_user,
+                    )
             if conflict_users:
                 session.add(
                     WebRegistrationIdentityConflict(
@@ -850,6 +858,8 @@ async def create_intent(
         if resolved_status == FAILED:
             raise _identity_unavailable()
         if resolved_status == CONFIRMED:
+            if confirmation_context is not None:
+                await _deliver_confirmation_email(confirmation_context)
             return WebRegistrationIntentCreated(
                 flow_id=flow_id,
                 next_step="completed",
@@ -1307,6 +1317,29 @@ async def _confirmation_email_context(
     return RegistrationConfirmationEmailContext(to_address=user.email or "", participant_name=participant_name, event_title=event.title, occurrence_title=occurrence.title if occurrence else None, event_kind=event.event_kind, starts_at=occurrence.starts_at if occurrence else event.starts_at, ends_at=occurrence.ends_at if occurrence else event.ends_at, timezone=occurrence.timezone if occurrence else (event.timezone or "Europe/Moscow"), location_name=event.location_name, address=event.address, registration_status=registration.status, payment_status=registration.payment_status, seats_count=registration.seats_count, options=options, total_amount=total_amount, total_currency=total_currency, programme=tuple(programme_days), public_event_url=_safe_absolute_url(public_url), privacy_url=_safe_absolute_url(privacy.published_url if privacy else None), privacy_title=privacy.title if privacy else None, event_image_object_key=image.object_key if image else None)
 
 
+async def _deliver_confirmation_email(
+    context: RegistrationConfirmationEmailContext,
+) -> None:
+    try:
+        event_image = None
+        if context.event_image_object_key:
+            try:
+                event_image = (
+                    await get_event_image_storage().read_image(
+                        object_key=context.event_image_object_key,
+                    )
+                ).content
+            except EventImageStorageError:
+                logger.warning("Web registration confirmation event image unavailable")
+        await asyncio.to_thread(
+            send_web_registration_confirmation,
+            context=context,
+            event_image=event_image,
+        )
+    except WebRegistrationEmailDeliveryError:
+        logger.warning("Web registration confirmation email delivery failed")
+
+
 async def _confirm_once(
     session: AsyncSession,
     flow_id: str,
@@ -1510,16 +1543,7 @@ async def _confirm_email(
         raise RuntimeError("unreachable confirmation state")
 
     if confirmation_context is not None:
-        try:
-            event_image = None
-            if confirmation_context.event_image_object_key:
-                try:
-                    event_image = (await get_event_image_storage().read_image(object_key=confirmation_context.event_image_object_key)).content
-                except EventImageStorageError:
-                    logger.warning("Web registration confirmation event image unavailable")
-            await asyncio.to_thread(send_web_registration_confirmation, context=confirmation_context, event_image=event_image)
-        except WebRegistrationEmailDeliveryError:
-            logger.warning("Web registration confirmation email delivery failed")
+        await _deliver_confirmation_email(confirmation_context)
     return result, issued
 
 
