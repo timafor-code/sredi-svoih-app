@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from io import BytesIO
 from ipaddress import ip_address
 from typing import Any
 from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 from uuid import UUID, uuid4
 
 from botocore.exceptions import BotoCoreError, ClientError
+from PIL import Image, UnidentifiedImageError
 
 from app.core.config import Settings, get_settings
 from app.storage.s3 import build_s3_client
@@ -30,6 +32,12 @@ class EventImageStorageOperationError(EventImageStorageError):
 @dataclass(frozen=True)
 class StoredEventImage:
     etag: str | None
+
+
+@dataclass(frozen=True)
+class ReadEventImage:
+    content: bytes
+    content_type: str
 
 
 def build_event_image_object_key(
@@ -86,6 +94,9 @@ class S3EventImageStorage:
     async def delete_image(self, *, object_key: str) -> None:
         await asyncio.to_thread(self._delete_image_sync, object_key=object_key)
 
+    async def read_image(self, *, object_key: str) -> ReadEventImage:
+        return await asyncio.to_thread(self._read_image_sync, object_key=object_key)
+
     def public_url(self, *, object_key: str, version_token: UUID) -> str:
         settings = self._require_settings(require_public_base_url=True)
         return build_event_image_public_url(
@@ -132,6 +143,40 @@ class S3EventImageStorage:
             raise EventImageStorageOperationError(
                 "event image storage operation unavailable",
             ) from exc
+
+    def _read_image_sync(self, *, object_key: str) -> ReadEventImage:
+        settings = self._require_settings()
+        safe_key = _validated_object_key(object_key)
+        body = None
+        try:
+            response = self._s3_client().get_object(
+                Bucket=settings.api_object_storage_event_images_bucket,
+                Key=safe_key,
+            )
+            body = response.get("Body")
+            content = body.read() if body is not None else b""
+            if not isinstance(content, bytes) or not content:
+                raise EventImageStorageOperationError("event image storage operation unavailable")
+            if response.get("ContentType") != _EVENT_IMAGE_CONTENT_TYPE:
+                raise EventImageStorageOperationError("event image storage operation unavailable")
+            try:
+                with Image.open(BytesIO(content)) as image:
+                    if image.format != "WEBP":
+                        raise ValueError("unexpected event image format")
+                    image.verify()
+            except (UnidentifiedImageError, OSError, ValueError) as exc:
+                raise EventImageStorageOperationError(
+                    "event image storage operation unavailable"
+                ) from exc
+            return ReadEventImage(content=content, content_type=_EVENT_IMAGE_CONTENT_TYPE)
+        except (BotoCoreError, ClientError) as exc:
+            raise EventImageStorageOperationError("event image storage operation unavailable") from exc
+        finally:
+            if body is not None:
+                try:
+                    body.close()
+                except Exception:
+                    pass
 
     def _s3_client(self) -> Any:
         settings = self._require_settings()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 import hashlib
 import hmac
 import json
@@ -15,6 +16,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.db.models.event_image import EventImage
 
 from app.core.config import get_settings
 from app.core.hashids import hash_ip_optional
@@ -51,10 +53,19 @@ from app.services import events as events_service
 from app.services import registrations as registrations_service
 from app.services.auth_tokens import hash_token
 from app.services import web_participant_sessions
+from app.services.event_public_slugs import get_canonical_public_slug
+from app.services.jewish_programme_projection import project_jewish_programme_for_occurrence
+from app.storage.event_images import EventImageStorageError, get_event_image_storage
 from app.services.web_registration_email_service import (
     WebRegistrationEmailDeliveryError,
-    send_web_registration_result,
+    send_web_registration_confirmation,
     send_web_registration_verification_code,
+)
+from app.services.web_registration_email_templates import (
+    RegistrationConfirmationEmailContext,
+    RegistrationConfirmationOption,
+    RegistrationConfirmationProgrammeDay,
+    RegistrationConfirmationProgrammeItem,
 )
 
 logger = logging.getLogger(__name__)
@@ -772,6 +783,7 @@ async def create_intent(
             + timedelta(hours=get_settings().api_web_registration_intent_ttl_hours),
         )
         session.add(intent)
+        confirmation_context: RegistrationConfirmationEmailContext | None = None
         try:
             await session.flush()
             if current_user is not None and intent_status == CONFIRMED:
@@ -800,6 +812,13 @@ async def create_intent(
                 )
                 intent.confirmed_at = now
                 intent.answer_payload = None
+                if registration_write.created and registration.status == CONFIRMED:
+                    confirmation_context = await _confirmation_email_context(
+                        session,
+                        event=event,
+                        registration=registration,
+                        user=current_user,
+                    )
             if conflict_users:
                 session.add(
                     WebRegistrationIdentityConflict(
@@ -839,6 +858,8 @@ async def create_intent(
         if resolved_status == FAILED:
             raise _identity_unavailable()
         if resolved_status == CONFIRMED:
+            if confirmation_context is not None:
+                await _deliver_confirmation_email(confirmation_context)
             return WebRegistrationIntentCreated(
                 flow_id=flow_id,
                 next_step="completed",
@@ -1257,6 +1278,68 @@ async def _confirmed_replay(
     return result
 
 
+def _safe_absolute_url(value: str | None) -> str | None:
+    from urllib.parse import urlsplit
+    if not value:
+        return None
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+        return None
+    return value
+
+
+async def _confirmation_email_context(
+    session: AsyncSession, *, event: Event, registration: EventRegistration, user: AppUser,
+) -> RegistrationConfirmationEmailContext:
+    profile = await session.scalar(select(Profile).where(Profile.user_id == user.id))
+    participant_name = " ".join(part for part in ((profile.first_name if profile else None), (profile.last_name if profile else None)) if part) or (profile.display_name if profile else None) or "Участник"
+    occurrence = None
+    if registration.occurrence_id:
+        occurrence = await session.scalar(select(EventOccurrence).where(EventOccurrence.id == registration.occurrence_id, EventOccurrence.event_id == event.id))
+        if occurrence is None:
+            raise _flow_unavailable()
+    selections = list(await session.scalars(select(EventRegistrationOptionSelection).where(EventRegistrationOptionSelection.registration_id == registration.id).order_by(EventRegistrationOptionSelection.created_at, EventRegistrationOptionSelection.id)))
+    options = tuple(RegistrationConfirmationOption(str(item.title_snapshot), item.description_snapshot, str(item.option_type_snapshot), item.quantity, item.unit_price_amount, item.total_amount, str(item.currency), item.is_donation, str(item.option_id) if item.option_id else None) for item in selections)
+    currencies = {item.currency for item in options}
+    total_amount = sum(item.total_amount for item in options) if len(currencies) <= 1 else None
+    total_currency = next(iter(currencies)) if len(currencies) == 1 else None
+    projected = project_jewish_programme_for_occurrence(event_kind=event.event_kind, event_starts_at=event.starts_at, occurrence_starts_at=occurrence.starts_at if occurrence else None, schedule=event.schedule)
+    selected_ids = {item.option_id for item in options if item.option_id}
+    programme_days: list[RegistrationConfirmationProgrammeDay] = []
+    for raw_day in (projected or {}).get("days", []):
+        if not isinstance(raw_day, dict): continue
+        items = tuple(RegistrationConfirmationProgrammeItem(item.get("time") if isinstance(item.get("time"), str) else None, str(item.get("title") or ""), item.get("note") if isinstance(item.get("note"), str) else None, str(item.get("option_id")) in selected_ids) for item in raw_day.get("items", []) if isinstance(item, dict) and (item.get("option_id") is None or str(item.get("option_id")) in selected_ids) and item.get("title"))
+        if items: programme_days.append(RegistrationConfirmationProgrammeDay(raw_day.get("date") if isinstance(raw_day.get("date"), str) else None, raw_day.get("label") if isinstance(raw_day.get("label"), str) else None, raw_day.get("note") if isinstance(raw_day.get("note"), str) else None, items))
+    image = await session.scalar(select(EventImage).where(EventImage.event_id == event.id, EventImage.community_id == event.community_id, EventImage.status == "active", EventImage.deleted_at.is_(None)))
+    privacy = await session.scalar(select(LegalDocument).where(LegalDocument.document_type == "privacy_policy", LegalDocument.effective_at <= _now(), (LegalDocument.retired_at.is_(None)) | (LegalDocument.retired_at > _now())).order_by(LegalDocument.effective_at.desc()).limit(1))
+    slug = await get_canonical_public_slug(session, event.id)
+    public_url = events_service.build_public_event_url(get_settings().public_web_base_url, slug.slug, registration.occurrence_id) if slug else None
+    return RegistrationConfirmationEmailContext(to_address=user.email or "", participant_name=participant_name, event_title=event.title, occurrence_title=occurrence.title if occurrence else None, event_kind=event.event_kind, starts_at=occurrence.starts_at if occurrence else event.starts_at, ends_at=occurrence.ends_at if occurrence else event.ends_at, timezone=occurrence.timezone if occurrence else (event.timezone or "Europe/Moscow"), location_name=event.location_name, address=event.address, registration_status=registration.status, payment_status=registration.payment_status, seats_count=registration.seats_count, options=options, total_amount=total_amount, total_currency=total_currency, programme=tuple(programme_days), public_event_url=_safe_absolute_url(public_url), privacy_url=_safe_absolute_url(privacy.published_url if privacy else None), privacy_title=privacy.title if privacy else None, event_image_object_key=image.object_key if image else None)
+
+
+async def _deliver_confirmation_email(
+    context: RegistrationConfirmationEmailContext,
+) -> None:
+    try:
+        event_image = None
+        if context.event_image_object_key:
+            try:
+                event_image = (
+                    await get_event_image_storage().read_image(
+                        object_key=context.event_image_object_key,
+                    )
+                ).content
+            except EventImageStorageError:
+                logger.warning("Web registration confirmation event image unavailable")
+        await asyncio.to_thread(
+            send_web_registration_confirmation,
+            context=context,
+            event_image=event_image,
+        )
+    except WebRegistrationEmailDeliveryError:
+        logger.warning("Web registration confirmation email delivery failed")
+
+
 async def _confirm_once(
     session: AsyncSession,
     flow_id: str,
@@ -1266,8 +1349,7 @@ async def _confirm_once(
     issue_participant_session: bool,
 ) -> tuple[
     WebRegistrationConfirmResult,
-    str | None,
-    str | None,
+    RegistrationConfirmationEmailContext | None,
     web_participant_sessions.IssuedWebParticipantSession | None,
 ]:
     token_hash = _flow_hash(flow_id)
@@ -1283,7 +1365,7 @@ async def _confirm_once(
         await session.rollback()
         raise _invalid_code()
     if intent.status == CONFIRMED:
-        return await _confirmed_replay(session, intent), None, None, None
+        return await _confirmed_replay(session, intent), None, None
     if intent.status != EMAIL_REQUIRED or intent.expires_at <= now:
         await session.rollback()
         raise _invalid_code()
@@ -1384,19 +1466,17 @@ async def _confirm_once(
         set_password_code=set_password_code,
         set_password_expires_at=set_password_expires_at,
     )
-    recipient = (
-        intent.email_normalized
-        if registration_write.created and registration.status == "confirmed"
-        else None
+    confirmation_context = (
+        await _confirmation_email_context(session, event=event, registration=registration, user=user)
+        if registration_write.created and registration.status == "confirmed" else None
     )
-    registration_status = registration.status if recipient is not None else None
     issued = (
         await web_participant_sessions.issue(session, user=user, now=now)
         if issue_participant_session
         else None
     )
     await session.commit()
-    return result, recipient, registration_status, issued
+    return result, confirmation_context, issued
 
 
 async def confirm_email(
@@ -1447,7 +1527,7 @@ async def _confirm_email(
 ]:
     for attempt in range(2):
         try:
-            result, recipient, registration_status, issued = await _confirm_once(
+            result, confirmation_context, issued = await _confirm_once(
                 session,
                 flow_id,
                 code,
@@ -1462,14 +1542,8 @@ async def _confirm_email(
     else:  # pragma: no cover - the loop always returns or raises.
         raise RuntimeError("unreachable confirmation state")
 
-    if recipient is not None and registration_status is not None:
-        try:
-            send_web_registration_result(
-                to_address=recipient,
-                registration_status=registration_status,
-            )
-        except WebRegistrationEmailDeliveryError:
-            logger.warning("Web registration result email delivery failed")
+    if confirmation_context is not None:
+        await _deliver_confirmation_email(confirmation_context)
     return result, issued
 
 

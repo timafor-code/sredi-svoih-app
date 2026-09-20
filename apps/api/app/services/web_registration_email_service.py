@@ -12,8 +12,10 @@ from app.services.email_delivery import (
     send_email,
 )
 from app.services.web_registration_email_templates import (
+    EVENT_IMAGE_CONTENT_ID,
+    RegistrationConfirmationEmailContext,
     RenderedWebRegistrationEmail,
-    render_registration_result_email,
+    render_registration_confirmation_email,
     render_verification_code_email,
 )
 from app.services.transactional_email_branding import branded_logo_image
@@ -45,19 +47,17 @@ def send_web_registration_verification_code(
     )
 
 
-def send_web_registration_result(
+def send_web_registration_confirmation(
     *,
-    to_address: str,
-    registration_status: str,
+    context: RegistrationConfirmationEmailContext,
+    event_image: bytes | None = None,
     settings: Settings | None = None,
 ) -> EmailSendResult:
     return _send_required(
-        to_address=to_address,
-        render=lambda: render_registration_result_email(
-            registration_status=registration_status,
-        ),
+        to_address=context.to_address,
+        render=lambda: render_registration_confirmation_email(context=context, has_event_image=event_image is not None),
         settings=settings or get_settings(),
-        logo_factory=branded_logo_image,
+        inline_image_factory=lambda: (branded_logo_image(),) + ((InlineEmailImage(event_image, "webp", EVENT_IMAGE_CONTENT_ID),) if event_image else ()),
     )
 
 
@@ -66,18 +66,18 @@ def _send_required(
     to_address: str,
     render: Callable[[], RenderedWebRegistrationEmail],
     settings: Settings,
-    logo_factory: Callable[[], InlineEmailImage] | None = None,
+    inline_image_factory: Callable[[], tuple[InlineEmailImage, ...]] | None = None,
 ) -> EmailSendResult:
     try:
         rendered = render()
         inline_images = ()
         if rendered.html_body:
             inline_images = (
-                (logo_factory() if logo_factory else InlineEmailImage(
+                *(inline_image_factory() if inline_image_factory else (InlineEmailImage(
                     data=_load_verification_logo(),
                     subtype="png",
                     content_id="sredi-svoih-logo",
-                )),
+                ),)),
             )
         result = send_email(
             EmailMessage(
