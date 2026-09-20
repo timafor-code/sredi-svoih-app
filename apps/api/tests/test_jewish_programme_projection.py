@@ -52,6 +52,16 @@ def _holiday_schedule() -> dict:
     }
 
 
+def _holiday_range_schedule(*day_dates: str) -> dict:
+    return {
+        "version": 1,
+        "days": [
+            {"date": day_date, "label": None, "note": None, "items": []}
+            for day_date in day_dates
+        ],
+    }
+
+
 def _system_rows(schedule: dict | None) -> list[dict]:
     return [
         {"date": day["date"], "time": item["time"], "title": item["title"], "system_key": item["system_key"]}
@@ -143,6 +153,36 @@ def test_holiday_occurrence_overrides_event_start_and_preserves_manual_content()
     )
     assert any(row["date"] == "2026-09-12" and row["system_key"] == "candle_lighting_moscow" for row in _system_rows(result))
     assert {"time": "19:00", "title": "Выход звезд", "option_id": None} in result["days"][1]["items"]
+
+
+def test_shavuot_intermediate_friday_uses_ordinary_shabbat_candle_boundary() -> None:
+    result = project_jewish_programme_for_occurrence(
+        event_kind="holiday",
+        event_starts_at="2026-05-22T18:00:00+03:00",
+        schedule=_holiday_range_schedule("2026-05-21", "2026-05-22", "2026-05-23"),
+    )
+
+    friday_rows = [row for row in _system_rows(result) if row["date"] == "2026-05-22"]
+    assert friday_rows == [
+        {"date": "2026-05-22", "time": "20:29", "title": "Зажигание свечей · Москва", "system_key": "candle_lighting_moscow"},
+        {"date": "2026-05-22", "time": "20:47", "title": "Закат", "system_key": "sunset_moscow"},
+    ]
+    assert all(row["system_key"] not in {"tzeit_moscow", "havdalah_moscow"} for row in friday_rows)
+
+
+def test_pesach_final_friday_uses_ordinary_shabbat_candle_boundary() -> None:
+    result = project_jewish_programme_for_occurrence(
+        event_kind="holiday",
+        event_starts_at="2026-04-02T18:00:00+03:00",
+        schedule=_holiday_range_schedule("2026-04-01", "2026-04-02", "2026-04-03"),
+    )
+
+    friday_rows = [row for row in _system_rows(result) if row["date"] == "2026-04-03"]
+    assert friday_rows == [
+        {"date": "2026-04-03", "time": "18:53", "title": "Зажигание свечей · Москва", "system_key": "candle_lighting_moscow"},
+        {"date": "2026-04-03", "time": "19:11", "title": "Закат", "system_key": "sunset_moscow"},
+    ]
+    assert all(row["system_key"] not in {"tzeit_moscow", "havdalah_moscow"} for row in friday_rows)
 
 
 def test_absent_and_unavailable_references_preserve_or_fail_closed_as_required() -> None:

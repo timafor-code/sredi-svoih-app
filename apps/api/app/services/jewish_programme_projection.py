@@ -225,7 +225,9 @@ def _holiday_markers(start: date, end: date) -> list[_Marker]:
     current = start
     while current <= end:
         markers.append(_daily_marker(current, "sunset_moscow"))
-        if current < end:
+        if current.weekday() == 4:
+            markers.append(_marker(current, "candle_lighting_moscow", _candle_lighting_time(current)))
+        elif current < end:
             markers.append(_marker(current, "candle_lighting_moscow", _solar_time(current, 8.5), "Зажигание свечей на праздник · Москва"))
         else:
             markers.extend((
