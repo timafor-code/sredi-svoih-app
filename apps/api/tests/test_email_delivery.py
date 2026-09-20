@@ -278,11 +278,45 @@ def test_registration_confirmation_is_branded_multipart(smtp_transport):
     html, logo = list(related.iter_parts())
     assert "Регистрация подтверждена" in html.get_content()
     assert 'src="cid:sredi-svoih-logo"' in html.get_content()
+    assert "cid:sredi-svoih-event-image" not in html.get_content()
     assert logo.get_content_type() == "image/png"
     assert logo["Content-ID"] == "<sredi-svoih-logo>"
     assert logo.get_content_disposition() == "inline"
     assert logo.get_payload(decode=True) == branded_logo_image().data
     assert "example.com" not in html.get_content()
+
+
+def test_confirmation_renders_event_and_occurrence_and_pending_html():
+    context = RegistrationConfirmationEmailContext(TEST_ADDRESS, "Иван", "Шабат в общине", "Пятничная трапеза", "single", datetime(2026, 9, 18, 16, tzinfo=UTC), None, "Europe/Moscow", None, None, "confirmed", "pending", 1, (), None, None, (), None, None, None, None)
+    rendered = render_registration_confirmation_email(context=context, has_event_image=False)
+    assert "Шабат в общине" in rendered.html_body
+    assert "Пятничная трапеза" in rendered.html_body
+    assert rendered.html_body.index("Шабат в общине") < rendered.html_body.index("Пятничная трапеза")
+    assert "Шабат в общине" in rendered.text_body
+    assert "Пятничная трапеза" in rendered.text_body
+    assert "Оплата ещё не выполнена." in rendered.html_body
+
+
+def test_confirmation_omits_pending_payment_warning_when_not_required():
+    context = RegistrationConfirmationEmailContext(TEST_ADDRESS, "Иван", "Тест", None, "single", None, None, "Europe/Moscow", None, None, "confirmed", "not_required", 1, (), None, None, (), None, None, None, None)
+    assert "Оплата ещё не выполнена." not in render_registration_confirmation_email(context=context, has_event_image=False).html_body
+
+
+def test_confirmation_event_image_is_a_related_cid_part(smtp_transport):
+    image = Image.new("RGB", (2, 2), (1, 2, 3))
+    output = BytesIO()
+    image.save(output, format="WEBP")
+    context = RegistrationConfirmationEmailContext(TEST_ADDRESS, "Иван", "Тест", None, "single", None, None, "Europe/Moscow", None, None, "confirmed", "not_required", 1, (), None, None, (), None, None, None, "communities/a/events/b/c.webp")
+    service.send_web_registration_confirmation(context=context, event_image=output.getvalue(), settings=email_settings())
+    sent = smtp_transport.return_value.__enter__.return_value.send_message.call_args.args[0]
+    parsed = BytesParser(policy=policy.default).parsebytes(sent.as_bytes())
+    related = list(parsed.iter_parts())[1]
+    html, logo, event_image = list(related.iter_parts())
+    assert 'cid:sredi-svoih-event-image' in html.get_content()
+    assert logo["Content-ID"] == "<sredi-svoih-logo>"
+    assert event_image["Content-ID"] == "<sredi-svoih-event-image>"
+    assert event_image.get_content_type() == "image/webp"
+    assert event_image.get_content_disposition() == "inline"
 
 
 @pytest.mark.parametrize(("sender", "renderer", "subject", "heading", "text_body"), [

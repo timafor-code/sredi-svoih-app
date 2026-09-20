@@ -104,7 +104,12 @@ def render_registration_confirmation_email(
     *, context: RegistrationConfirmationEmailContext, has_event_image: bool,
 ) -> RenderedWebRegistrationEmail:
     """Render only immutable registration data; no ORM/session access is allowed here."""
-    event_name = context.occurrence_title or context.event_title
+    event_name = context.event_title
+    occurrence_html = (
+        f'<p style="color:#7A7D85">{escape(context.occurrence_title)}</p>'
+        if context.occurrence_title and context.occurrence_title != context.event_title
+        else ""
+    )
     details = _confirmation_details(context)
     options_html = _options_html(context.options, context.total_amount, context.total_currency)
     programme_html = _programme_html(context.programme)
@@ -122,7 +127,7 @@ def render_registration_confirmation_email(
 <body style="margin:0;background:#F3F1EC"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:32px 16px"><table role="presentation" width="600" style="max-width:600px;background:#fff;border-radius:16px;overflow:hidden" cellspacing="0" cellpadding="0">
 <tr><td width="50%" height="5" bgcolor="#E52C36"></td><td width="50%" height="5" bgcolor="#F6A400"></td></tr><tr><td colspan="2" style="padding:34px 44px;font-family:Arial,sans-serif;color:#1F2126">
 <img src="cid:sredi-svoih-logo" width="100" height="40" alt="Среди своих" style="display:block"><h1 style="font-size:26px">Регистрация подтверждена</h1><p>Здравствуйте, {escape(context.participant_name)}!</p><p>Ваша регистрация подтверждена. Вы в списке участников, ждём вас.</p>{image_html}
-<h2>{escape(event_name)}</h2><table role="presentation" width="100%">{details}</table>{options_html}{programme_html}<table role="presentation" width="100%">{cta}</table><p style="border-top:1px solid #ECEAE4;padding-top:18px;color:#7A7D85;font-size:13px">Это транзакционное уведомление, а не маркетинговая рассылка.</p>
+<h2>{escape(event_name)}</h2>{occurrence_html}<table role="presentation" width="100%">{details}</table>{options_html}{('<p>Оплата ещё не выполнена.</p>' if context.payment_status == 'pending' else '')}{programme_html}<table role="presentation" width="100%">{cta}</table><p style="border-top:1px solid #ECEAE4;padding-top:18px;color:#7A7D85;font-size:13px">Это транзакционное уведомление, а не маркетинговая рассылка.</p>
 </td></tr></table><p style="font:12px Arial;color:#A6A5AE">«Среди своих» — автоматическое письмо, отвечать на него не нужно.{privacy}</p></td></tr></table></body></html>'''
     return RenderedWebRegistrationEmail("Регистрация подтверждена", _confirmation_text(context), html)
 
@@ -172,7 +177,9 @@ def _programme_html(days: tuple[RegistrationConfirmationProgrammeDay, ...]) -> s
 
 
 def _confirmation_text(context: RegistrationConfirmationEmailContext) -> str:
-    lines=["Регистрация подтверждена", "", f"Здравствуйте, {context.participant_name}!", "Ваша регистрация подтверждена. Вы в списке участников, ждём вас.", "", context.occurrence_title or context.event_title]
+    lines=["Регистрация подтверждена", "", f"Здравствуйте, {context.participant_name}!", "Ваша регистрация подтверждена. Вы в списке участников, ждём вас.", "", context.event_title]
+    if context.occurrence_title and context.occurrence_title != context.event_title:
+        lines.append(context.occurrence_title)
     if context.starts_at:
         lines.append(context.starts_at.astimezone(ZoneInfo(context.timezone)).strftime("%d.%m.%Y, %H:%M"))
     lines.extend(value for value in (context.location_name, context.address) if value)
