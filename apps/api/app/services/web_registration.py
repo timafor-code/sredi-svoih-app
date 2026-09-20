@@ -775,7 +775,7 @@ async def create_intent(
         try:
             await session.flush()
             if current_user is not None and intent_status == CONFIRMED:
-                registration = await registrations_service.register_user_for_event(
+                registration_write = await registrations_service.register_user_for_event(
                     session,
                     user=current_user,
                     event_id=intent.event_id,
@@ -783,6 +783,7 @@ async def create_intent(
                     source_channel="public_web",
                     member_community_ids=(),
                 )
+                registration = registration_write.registration
                 await _create_legal_acceptances(
                     session,
                     intent=intent,
@@ -1329,7 +1330,7 @@ async def _confirm_once(
         await _mark_identity_failure(session, intent, conflict_users, now)
         raise _identity_unavailable()
 
-    registration = await registrations_service.register_user_for_event(
+    registration_write = await registrations_service.register_user_for_event(
         session,
         user=user,
         event_id=intent.event_id,
@@ -1337,6 +1338,7 @@ async def _confirm_once(
         source_channel="public_web",
         member_community_ids=(),
     )
+    registration = registration_write.registration
     await _create_legal_acceptances(
         session,
         intent=intent,
@@ -1384,7 +1386,7 @@ async def _confirm_once(
     )
     recipient = (
         intent.email_normalized
-        if registration.status in {"confirmed", "pending"}
+        if registration_write.created and registration.status == "confirmed"
         else None
     )
     registration_status = registration.status if recipient is not None else None

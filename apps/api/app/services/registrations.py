@@ -75,6 +75,14 @@ class RegistrationPreflight:
     seats_count: int
 
 
+@dataclass(frozen=True)
+class RegistrationWriteResult:
+    """The canonical registration row together with its creation evidence."""
+
+    registration: EventRegistration
+    created: bool
+
+
 @asynccontextmanager
 async def _transaction_scope(session: AsyncSession) -> AsyncIterator[None]:
     if session.in_transaction():
@@ -560,21 +568,24 @@ async def _enforce_capacity(
         raise _capacity_unavailable("No seats available for this event")
 
 
-def _registration_status(
-    event: Event,
-    occurrence: EventOccurrence | None,
-) -> tuple[str, str]:
+def _initial_payment_status(event: Event) -> str:
     if event.registration_mode == PAID_REGISTRATION_MODE:
-        return "pending", "pending"
+        return "pending"
+    return "not_required"
 
-    requires_approval = (
-        occurrence.requires_approval
-        if occurrence is not None and occurrence.requires_approval is not None
-        else event.requires_approval
-    )
-    if requires_approval:
-        return "pending", "not_required"
-    return "confirmed", "not_required"
+
+def confirm_registration(
+    registration: EventRegistration,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Confirm a pending registration once and report whether it changed."""
+    if registration.status != "pending":
+        return False
+
+    registration.status = "confirmed"
+    registration.confirmed_at = now if now is not None else _now()
+    return True
 
 
 async def _create_registration(
@@ -590,22 +601,22 @@ async def _create_registration(
     seats_count: int,
 ) -> EventRegistration:
     now = _now()
-    registration_status, payment_status = _registration_status(event, occurrence)
     registration = EventRegistration(
         event_id=event.id,
         occurrence_id=occurrence.id if occurrence is not None else None,
         user_id=current_user.id,
-        status=registration_status,
+        status="pending",
         source_channel=source_channel,
         seats_count=seats_count,
         guest_names=payload.guest_names,
         comment=payload.comment,
         registered_at=now,
-        confirmed_at=now if registration_status == "confirmed" else None,
+        confirmed_at=None,
         cancelled_at=None,
-        payment_status=payment_status,
+        payment_status=_initial_payment_status(event),
         payment_id=None,
     )
+    confirm_registration(registration, now=now)
     session.add(registration)
     await session.flush()
 
@@ -843,7 +854,7 @@ async def register_current_user_for_event(
             session,
             current_user=current_user,
         )
-        registration = await register_user_for_event(
+        write_result = await register_user_for_event(
             session,
             user=current_user,
             event_id=event_id,
@@ -855,7 +866,7 @@ async def register_current_user_for_event(
             session,
             user_id=current_user.id,
             member_community_ids=member_community_ids,
-            registration_id=registration.id,
+            registration_id=write_result.registration.id,
         )
 
 
@@ -867,7 +878,7 @@ async def register_user_for_event(
     payload: RegisterEventRequest,
     source_channel: str,
     member_community_ids: Sequence[UUID] = (),
-) -> EventRegistration:
+) -> RegistrationWriteResult:
     """Create or return a registration inside the caller's transaction."""
     if source_channel not in {"mobile", "public_web", "admin"}:
         raise ValueError("unsupported registration source channel")
@@ -891,7 +902,10 @@ async def register_user_for_event(
             occurrence_id=occurrence.id if occurrence is not None else None,
         )
         if existing_registration is not None:
-            return existing_registration
+            return RegistrationWriteResult(
+                registration=existing_registration,
+                created=False,
+            )
 
     prepared_selections, reservation_drafts, seats_count, legacy_seats_count = (
         await _prepare_options(session, event, payload)
@@ -904,7 +918,7 @@ async def register_user_for_event(
         legacy_seats_count=legacy_seats_count,
     )
 
-    return await _create_registration(
+    registration = await _create_registration(
         session,
         current_user=user,
         source_channel=source_channel,
@@ -915,6 +929,7 @@ async def register_user_for_event(
         reservation_drafts=reservation_drafts,
         seats_count=seats_count,
     )
+    return RegistrationWriteResult(registration=registration, created=True)
 
 
 async def cancel_future_free_registrations_for_erasure(

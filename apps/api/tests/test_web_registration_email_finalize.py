@@ -761,8 +761,39 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(replay.account_next_step, "request_set_password")
         self.assertIsNone(replay.set_password_code)
         self.assertEqual(status.account_next_step, "request_set_password")
+        self.assertEqual(len(self.result_deliveries), 1)
 
-    async def test_paid_confirmation_uses_current_server_price_and_replays_one_pending_result(self) -> None:
+    async def test_duplicate_free_confirmation_does_not_resend_result_email(self) -> None:
+        first_intent, first_code = await self.create()
+        async with AsyncSessionLocal() as session:
+            first = await service.confirm_email(
+                session,
+                first_intent.flow_id,
+                first_code,
+                "192.0.2.5",
+            )
+
+        duplicate_intent, duplicate_code = await self.create(
+            self.payload(idempotency_key=f"web-finalize-duplicate-{self.marker}"),
+        )
+        async with AsyncSessionLocal() as session:
+            duplicate = await service.confirm_email(
+                session,
+                duplicate_intent.flow_id,
+                duplicate_code,
+                "192.0.2.5",
+            )
+            registration_count = await session.scalar(
+                select(func.count())
+                .select_from(EventRegistration)
+                .where(EventRegistration.event_id == self.event_id),
+            )
+
+        self.assertEqual(duplicate.registration.id, first.registration.id)
+        self.assertEqual(registration_count, 1)
+        self.assertEqual(len(self.result_deliveries), 1)
+
+    async def test_paid_confirmation_uses_current_server_price_and_replays_one_pending_payment(self) -> None:
         option = EventParticipationOption(
             event_id=self.event_id,
             title="Canonical paid option",
@@ -823,7 +854,7 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                 "192.0.2.52",
             )
 
-        self.assertEqual(result.registration.status, "pending")
+        self.assertEqual(result.registration.status, "confirmed")
         self.assertEqual(result.registration.payment_status, "pending")
         self.assertEqual(result.registration.seats_count, 2)
         self.assertEqual(result.registration.total_amount, 3500)
@@ -835,7 +866,11 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                     == result.registration.id,
                 ),
             )
+            registration = await session.get(EventRegistration, result.registration.id)
             assert snapshot is not None
+            assert registration is not None
+            self.assertEqual(registration.status, "confirmed")
+            self.assertIsNone(registration.payment_id)
             self.assertEqual(snapshot.option_id, option.id)
             self.assertEqual(snapshot.quantity, 2)
             self.assertEqual(snapshot.unit_price_amount, 1750)

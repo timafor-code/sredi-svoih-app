@@ -15,8 +15,7 @@ payment or claim that payment has completed.
 - PR #379, totals (PR 3): completed browser display totals, seat totals, and
   mixed-currency fail-closed behavior.
 - PR #380, initial backend activation (PR 4): completed enumeration-safe
-  `internal_paid` publication, intent, email confirmation, and canonical
-  `pending/pending` finalization.
+  `internal_paid` publication, intent, and email confirmation.
 - `test/web-mobile-registration-parity` (PR 5): adds the aggregate automated
   parity guard and final documentation and owner checklist, completing the
   series without new product behavior.
@@ -30,7 +29,7 @@ admin registration operations layout.
 | Contract | Availability and options | Quantity, capacity, and money | Confirmation result |
 | --- | --- | --- | --- |
 | `internal_free` | Public form supported; free option supported; paid and donation options excluded by the free-only contract | Existing free option and seat behavior remains unchanged | Existing email-confirmed success behavior remains unchanged |
-| `internal_paid` | Public form is supported simultaneously with `internal_free`; paid options, canonically allowed free participation, and donation are supported | Quantity and `group_key` are supported; donation and `counts_toward_capacity=false` options do not occupy seats; price/currency and snapshots are server-calculated | `registration.status=pending` and `payment_status=pending` |
+| `internal_paid` | Public form is supported simultaneously with `internal_free`; paid options, canonically allowed free participation, and donation are supported | Quantity and `group_key` are supported; donation and `counts_toward_capacity=false` options do not occupy seats; price/currency and snapshots are server-calculated | `registration.status=confirmed`, `payment_status=pending`, and `payment_id=null`; this confirms registration, not payment |
 
 Mixed selected currencies fail closed: the browser blocks submission, the
 backend rejects canonical validation, and aggregation never combines different
@@ -102,7 +101,7 @@ the pushed PR branch.
 - [ ] email verification works through Mailpit/local SMTP;
 - [ ] confirmation creates registration;
 - [ ] success does not claim payment completed;
-- [ ] server result is `pending/pending`;
+- [ ] server result is `confirmed/pending` with `payment_id=null`;
 - [ ] retry/replay does not create duplicate registration;
 - [ ] capacity race is rejected by backend.
 - [ ] free and paid public links remain available simultaneously.

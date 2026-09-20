@@ -555,7 +555,10 @@ curl.exe --fail http://localhost:5174/api/health
 http://127.0.0.1:8025
 ```
 
-`internal_paid` в текущем локальном runtime создаёт регистрацию со статусами `pending / pending`; реальный payment gateway не выполняется.
+`internal_paid` в текущем локальном FastAPI runtime создаёт регистрацию со
+статусом `confirmed`, `payment_status=pending` и `payment_id=null`. Выбранные
+опции, количества, сумму и валюту определяет сервер; это подтверждает
+регистрацию, но не оплату. Реальный payment gateway не выполняется.
 
 ---
 

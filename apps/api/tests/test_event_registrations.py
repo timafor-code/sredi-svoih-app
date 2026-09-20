@@ -22,6 +22,8 @@ from app.db.models.core import (
 )
 from app.db.session import AsyncSessionLocal, engine
 from app.main import app
+from app.schemas.registrations import RegisterEventRequest
+from app.services import registrations as registrations_service
 
 
 class EventRegistrationTests(unittest.IsolatedAsyncioTestCase):
@@ -35,6 +37,7 @@ class EventRegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.option_a_id = uuid4()
         self.option_b_id = uuid4()
         now = datetime.now(UTC).replace(microsecond=0)
+        self.now = now
 
         async with AsyncSessionLocal() as session:
             async with session.begin():
@@ -214,6 +217,12 @@ class EventRegistrationTests(unittest.IsolatedAsyncioTestCase):
         first_registration = first.json()["data"]
         second_registration = second.json()["data"]
         self.assertNotEqual(first_registration["id"], second_registration["id"])
+        self.assertEqual(first_registration["status"], "confirmed")
+        self.assertEqual(second_registration["status"], "confirmed")
+        self.assertEqual(first_registration["payment_status"], "pending")
+        self.assertEqual(second_registration["payment_status"], "pending")
+        self.assertIsNone(first_registration["payment_id"])
+        self.assertIsNone(second_registration["payment_id"])
 
         async with AsyncSessionLocal() as session:
             registrations = list(
@@ -237,6 +246,8 @@ class EventRegistrationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json()["data"]["total_amount"], 1400)
+        self.assertEqual(second.json()["data"]["total_currency"], "RUB")
         first_id = UUID(first.json()["data"]["id"])
         second_id = UUID(second.json()["data"]["id"])
 
@@ -350,6 +361,119 @@ class EventRegistrationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(registration_count, 1)
 
+    async def test_registration_write_result_tracks_free_and_paid_creation(self) -> None:
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                user = await session.get(AppUser, self.user_id)
+                assert user is not None
+                free_first = await registrations_service.register_user_for_event(
+                    session,
+                    user=user,
+                    event_id=self.free_event_id,
+                    payload=RegisterEventRequest(occurrence_id=self.free_occurrence_id),
+                    source_channel="mobile",
+                )
+                free_duplicate = await registrations_service.register_user_for_event(
+                    session,
+                    user=user,
+                    event_id=self.free_event_id,
+                    payload=RegisterEventRequest(occurrence_id=self.free_occurrence_id),
+                    source_channel="mobile",
+                )
+                paid_first = await registrations_service.register_user_for_event(
+                    session,
+                    user=user,
+                    event_id=self.paid_event_id,
+                    payload=RegisterEventRequest(
+                        occurrence_id=self.paid_occurrence_id,
+                        option_selections=[{"option_id": self.option_a_id, "quantity": 1}],
+                    ),
+                    source_channel="mobile",
+                )
+                paid_repeat = await registrations_service.register_user_for_event(
+                    session,
+                    user=user,
+                    event_id=self.paid_event_id,
+                    payload=RegisterEventRequest(
+                        occurrence_id=self.paid_occurrence_id,
+                        option_selections=[{"option_id": self.option_b_id, "quantity": 1}],
+                    ),
+                    source_channel="mobile",
+                )
+
+        self.assertTrue(free_first.created)
+        self.assertFalse(free_duplicate.created)
+        self.assertEqual(free_duplicate.registration.id, free_first.registration.id)
+        self.assertEqual(free_first.registration.status, "confirmed")
+        self.assertEqual(free_first.registration.payment_status, "not_required")
+        self.assertTrue(paid_first.created)
+        self.assertTrue(paid_repeat.created)
+        self.assertNotEqual(paid_first.registration.id, paid_repeat.registration.id)
+        self.assertEqual(paid_first.registration.status, "confirmed")
+        self.assertEqual(paid_first.registration.payment_status, "pending")
+        self.assertIsNone(paid_first.registration.payment_id)
+
+    async def test_requires_approval_does_not_delay_free_confirmation(self) -> None:
+        second_occurrence_id = uuid4()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                user = await session.get(AppUser, self.user_id)
+                event = await session.get(Event, self.free_event_id)
+                occurrence = await session.get(EventOccurrence, self.free_occurrence_id)
+                assert user is not None
+                assert event is not None
+                assert occurrence is not None
+                event.requires_approval = True
+                event_confirmed = await registrations_service.register_user_for_event(
+                    session,
+                    user=user,
+                    event_id=event.id,
+                    payload=RegisterEventRequest(occurrence_id=occurrence.id),
+                    source_channel="mobile",
+                )
+                event.requires_approval = False
+                session.add(EventOccurrence(
+                    id=second_occurrence_id,
+                    event_id=event.id,
+                    starts_at=self.now + timedelta(days=4),
+                    capacity=10,
+                    requires_approval=True,
+                    status="active",
+                ))
+                await session.flush()
+                occurrence_confirmed = await registrations_service.register_user_for_event(
+                    session,
+                    user=user,
+                    event_id=event.id,
+                    payload=RegisterEventRequest(occurrence_id=second_occurrence_id),
+                    source_channel="mobile",
+                )
+
+        for write_result in (event_confirmed, occurrence_confirmed):
+            self.assertTrue(write_result.created)
+            self.assertEqual(write_result.registration.status, "confirmed")
+            self.assertEqual(write_result.registration.payment_status, "not_required")
+
+    async def test_confirmation_transition_is_idempotent_and_write_once(self) -> None:
+        registration = EventRegistration(status="pending", confirmed_at=None)
+        first_confirmed_at = self.now
+
+        self.assertTrue(
+            registrations_service.confirm_registration(
+                registration,
+                now=first_confirmed_at,
+            ),
+        )
+        self.assertEqual(registration.status, "confirmed")
+        self.assertEqual(registration.confirmed_at, first_confirmed_at)
+        self.assertFalse(
+            registrations_service.confirm_registration(
+                registration,
+                now=first_confirmed_at + timedelta(minutes=1),
+            ),
+        )
+        self.assertEqual(registration.confirmed_at, first_confirmed_at)
+
     async def test_cancellation_isolated_to_selected_registration(self) -> None:
         first = await self._register_paid(self.option_a_id, 1)
         second = await self._register_paid(self.option_b_id, 1)
@@ -372,7 +496,7 @@ class EventRegistrationTests(unittest.IsolatedAsyncioTestCase):
 
         assert first_registration is not None
         assert second_registration is not None
-        self.assertEqual(first_registration.status, "pending")
+        self.assertEqual(first_registration.status, "confirmed")
         self.assertEqual(second_registration.status, "cancelled")
 
 

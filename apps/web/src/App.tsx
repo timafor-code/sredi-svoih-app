@@ -874,7 +874,7 @@ function RegistrationFlowDialog({ stage, paymentStatus, accountDone, eventTitle,
 
 const SUCCESS_COPY: Record<WebRegistrationResult["status"], string> = {
   confirmed: "Регистрация подтверждена.",
-  pending: "Заявка отправлена и ожидает подтверждения организатора.",
+  pending: "Регистрация пока не подтверждена.",
   waitlisted: "Вы добавлены в лист ожидания. Участие пока не подтверждено.",
   attended: "Регистрация сохранена.",
 };
@@ -1207,7 +1207,7 @@ function RegistrationForm({
     }
     if (
       (registrationMode === "internal_paid"
-        && (result.status !== "pending"
+        && (result.status !== "confirmed"
           || result.payment_status !== "pending"
           || result.total_amount === null
           || result.total_currency === null))
@@ -1675,10 +1675,10 @@ function RegistrationForm({
           <span className={`registration-flow-result-mark result-${registration.status}`} aria-hidden="true">
             {registration.status === "confirmed" || registration.status === "attended" ? "✓" : "⋯"}
           </span>
-          <h2 id="success-heading" tabIndex={-1}>{isPaidResult ? "Заявка создана" : "Регистрация успешно сохранена"}</h2>
+          <h2 id="success-heading" tabIndex={-1}>Регистрация успешно сохранена</h2>
         </div>
         <p className={`registration-result result-${registration.status}`}>
-          {isPaidResult ? "Заявка создана." : SUCCESS_COPY[registration.status]}
+          {SUCCESS_COPY[registration.status]}
         </p>
         <dl className="result-details">
           <div><dt>Мероприятие</dt><dd>{eventTitle}</dd></div>
