@@ -463,6 +463,14 @@ informational result email; duplicate-free and confirmed-intent replays do not
 resend it. Status is PII-free and contains only public state, minimal final
 registration data, and an account next step without secrets.
 
+For a free duplicate within the same `(event, occurrence, user)` scope, the
+canonical registration service may return the existing registration. Public-web
+finalization then retains that registration's questionnaire answers exactly as
+stored: it does not recreate, overwrite, or delete them. The result email
+remains send-once for a newly created confirmed registration. This does not add
+a client-visible `created` or `already_registered` outcome, and does not decide
+the changed-payload behavior; those remain the next Track A PR.
+
 ## Administrative Publication Contracts
 
 These endpoints are implemented with existing authenticated, community-scoped

@@ -269,6 +269,20 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                 form.published_at = self.now
             return form.id, field.id
 
+    async def _add_occurrence(self) -> EventOccurrence:
+        occurrence = EventOccurrence(
+            event_id=self.event_id,
+            starts_at=self.now + timedelta(days=3),
+            ends_at=self.now + timedelta(days=3, hours=2),
+            timezone="Europe/Moscow",
+            status="active",
+        )
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(occurrence)
+                await session.flush()
+        return occurrence
+
     async def test_first_verified_confirmation_issues_remembered_cookie(self) -> None:
         created, code = await self.create()
         transport = httpx.ASGITransport(app=app)
@@ -1113,6 +1127,114 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(duplicate.registration.id, first.registration.id)
         self.assertEqual(registration_count, 1)
+        self.assertEqual(len(self.result_deliveries), 1)
+
+    async def test_duplicate_free_confirmation_preserves_questionnaire_answers(self) -> None:
+        form_id, field_id = await self._publish_questionnaire(version=1)
+        occurrence = await self._add_occurrence()
+        first_intent, first_code = await self.create(
+            self.payload(
+                occurrence_id=occurrence.id,
+                questionnaire_form_id=form_id,
+                answers=[{"field_id": field_id, "value": "first answer"}],
+            ),
+        )
+        async with AsyncSessionLocal() as session:
+            first = await service.confirm_email(
+                session,
+                first_intent.flow_id,
+                first_code,
+                "192.0.2.5",
+            )
+
+        duplicate_intent, duplicate_code = await self.create(
+            self.payload(
+                occurrence_id=occurrence.id,
+                questionnaire_form_id=form_id,
+                answers=[{"field_id": field_id, "value": "changed answer"}],
+                idempotency_key=f"web-finalize-questionnaire-duplicate-{self.marker}",
+            ),
+        )
+        async with AsyncSessionLocal() as session:
+            duplicate = await service.confirm_email(
+                session,
+                duplicate_intent.flow_id,
+                duplicate_code,
+                "192.0.2.5",
+            )
+            registrations = list(
+                await session.scalars(
+                    select(EventRegistration).where(EventRegistration.event_id == self.event_id),
+                ),
+            )
+            answers = list(
+                await session.scalars(
+                    select(EventRegistrationAnswer).where(
+                        EventRegistrationAnswer.registration_id == first.registration.id,
+                    ),
+                ),
+            )
+            all_answer_count = await session.scalar(
+                select(func.count()).select_from(EventRegistrationAnswer),
+            )
+
+        self.assertEqual(duplicate.registration.id, first.registration.id)
+        self.assertEqual([registration.id for registration in registrations], [first.registration.id])
+        self.assertEqual([(answer.field_id, answer.value_payload) for answer in answers], [(field_id, "first answer")])
+        self.assertEqual(all_answer_count, 1)
+        self.assertEqual(len(self.result_deliveries), 1)
+
+    async def test_authenticated_duplicate_preserves_questionnaire_answers(self) -> None:
+        form_id, field_id = await self._publish_questionnaire(version=1)
+        occurrence = await self._add_occurrence()
+        user = await self._add_authenticated_user()
+        async with AsyncSessionLocal() as session:
+            first = await service.create_intent(
+                session,
+                self.payload(
+                    occurrence_id=occurrence.id,
+                    questionnaire_form_id=form_id,
+                    answers=[{"field_id": field_id, "value": "first answer"}],
+                ),
+                "192.0.2.5",
+                current_user=user,
+            )
+        async with AsyncSessionLocal() as session:
+            duplicate = await service.create_intent(
+                session,
+                self.payload(
+                    occurrence_id=occurrence.id,
+                    questionnaire_form_id=form_id,
+                    answers=[{"field_id": field_id, "value": "changed answer"}],
+                    idempotency_key=f"authenticated-questionnaire-duplicate-{self.marker}",
+                ),
+                "192.0.2.5",
+                current_user=user,
+            )
+        async with AsyncSessionLocal() as session:
+            registrations = list(
+                await session.scalars(
+                    select(EventRegistration).where(
+                        EventRegistration.event_id == self.event_id,
+                        EventRegistration.user_id == user.id,
+                    ),
+                ),
+            )
+            answers = list(
+                await session.scalars(
+                    select(EventRegistrationAnswer).where(
+                        EventRegistrationAnswer.registration_id == registrations[0].id,
+                    ),
+                ),
+            )
+            all_answer_count = await session.scalar(
+                select(func.count()).select_from(EventRegistrationAnswer),
+            )
+
+        self.assertEqual((first.next_step, duplicate.next_step), ("completed", "completed"))
+        self.assertEqual(len(registrations), 1)
+        self.assertEqual([(answer.field_id, answer.value_payload) for answer in answers], [(field_id, "first answer")])
+        self.assertEqual(all_answer_count, 1)
         self.assertEqual(len(self.result_deliveries), 1)
 
     async def test_paid_confirmation_uses_current_server_price_and_replays_one_pending_payment(self) -> None:

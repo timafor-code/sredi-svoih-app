@@ -786,50 +786,6 @@ async def create_intent(
         confirmation_context: RegistrationConfirmationEmailContext | None = None
         try:
             await session.flush()
-            if current_user is not None and intent_status == CONFIRMED:
-                registration_write = await registrations_service.register_user_for_event(
-                    session,
-                    user=current_user,
-                    event_id=intent.event_id,
-                    payload=_registration_payload(intent),
-                    source_channel="public_web",
-                    member_community_ids=(),
-                )
-                registration = registration_write.registration
-                await _create_legal_acceptances(
-                    session,
-                    intent=intent,
-                    user=current_user,
-                    registration=registration,
-                    now=now,
-                )
-                await _create_questionnaire_answers(
-                    session,
-                    intent=intent,
-                    event=event,
-                    registration=registration,
-                    now=now,
-                )
-                intent.confirmed_at = now
-                intent.answer_payload = None
-                if registration_write.created and registration.status == CONFIRMED:
-                    confirmation_context = await _confirmation_email_context(
-                        session,
-                        event=event,
-                        registration=registration,
-                        user=current_user,
-                    )
-            if conflict_users:
-                session.add(
-                    WebRegistrationIdentityConflict(
-                        registration_intent_id=intent.id,
-                        category="email_phone_different_users",
-                        email_user_id=conflict_users[0],
-                        phone_user_id=conflict_users[1],
-                        status="open",
-                    ),
-                )
-            await session.commit()
         except IntegrityError:
             await session.rollback()
             existing = await session.scalar(
@@ -852,6 +808,51 @@ async def create_intent(
             intent_expires_at = existing.expires_at
             await session.rollback()
         else:
+            if current_user is not None and intent_status == CONFIRMED:
+                registration_write = await registrations_service.register_user_for_event(
+                    session,
+                    user=current_user,
+                    event_id=intent.event_id,
+                    payload=_registration_payload(intent),
+                    source_channel="public_web",
+                    member_community_ids=(),
+                )
+                registration = registration_write.registration
+                await _create_legal_acceptances(
+                    session,
+                    intent=intent,
+                    user=current_user,
+                    registration=registration,
+                    now=now,
+                )
+                if registration_write.created:
+                    await _create_questionnaire_answers(
+                        session,
+                        intent=intent,
+                        event=event,
+                        registration=registration,
+                        now=now,
+                    )
+                intent.confirmed_at = now
+                intent.answer_payload = None
+                if registration_write.created and registration.status == CONFIRMED:
+                    confirmation_context = await _confirmation_email_context(
+                        session,
+                        event=event,
+                        registration=registration,
+                        user=current_user,
+                    )
+            if conflict_users:
+                session.add(
+                    WebRegistrationIdentityConflict(
+                        registration_intent_id=intent.id,
+                        category="email_phone_different_users",
+                        email_user_id=conflict_users[0],
+                        phone_user_id=conflict_users[1],
+                        status="open",
+                    ),
+                )
+            await session.commit()
             resolved_status = intent.status
             intent_id = intent.id
             intent_expires_at = intent.expires_at
@@ -1428,13 +1429,14 @@ async def _confirm_once(
         registration=registration,
         now=now,
     )
-    await _create_questionnaire_answers(
-        session,
-        intent=intent,
-        event=event,
-        registration=registration,
-        now=now,
-    )
+    if registration_write.created:
+        await _create_questionnaire_answers(
+            session,
+            intent=intent,
+            event=event,
+            registration=registration,
+            now=now,
+        )
 
     set_password_code: str | None = None
     set_password_expires_at: datetime | None = None
