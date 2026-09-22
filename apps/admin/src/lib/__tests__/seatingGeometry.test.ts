@@ -141,6 +141,7 @@ test("isChairBlockedByAnotherTable: a chair inside another table footprint is bl
     tableId: "owner",
     kind: "end" as const,
     end: "a" as const,
+    isDisabled: false,
     isRabbiTable: false,
   };
   assert(
@@ -237,6 +238,28 @@ test("buildSeatState derives occupied / free / rabbi-reserve counts", () => {
     "rabbi reserve count",
   );
   assert(state.seats[state.headIndex].isHead, "head seat flagged");
+});
+
+test("disabled seats remain structural but leave active capacity and rabbi reserve", () => {
+  const rabbi = makeTable({
+    id: "r",
+    cx: 100,
+    cy: 100,
+    isRabbiTable: true,
+    disabledSeats: ["side:a:1", "end:a"],
+  });
+  const geo = computeTableSeats({ tables: [rabbi] });
+  const disabled = geo.seats.filter((seat) => seat.isDisabled);
+  assertEqual(geo.seats.length, 8, "disabled chairs remain addressable");
+  assertEqual(disabled.length, 2, "stable disabled parts resolve to chairs");
+  assertEqual(geo.disabledSeatCount, 2, "disabled count");
+  assertEqual(geo.physicalSeatCount, 6, "active physical count");
+  assert(disabled.some((seat) => seat.kind === "end" && seat.end === "a"), "disabled end remains");
+  assert(!geo.seats[geo.headIndex].isDisabled, "rabbi head skips disabled candidate");
+  assertEqual(rabbiSeatIndexes(geo.seats).size, 6, "disabled rabbi seats are not reserved");
+  const state = buildSeatState(geo, geo.seats.map(() => "guest"));
+  assertEqual(state.occupiedCount, 6, "disabled chairs are not occupied");
+  assertEqual(state.freeCount, 0, "disabled chairs are not free");
 });
 
 // --- summary ----------------------------------------------------------------

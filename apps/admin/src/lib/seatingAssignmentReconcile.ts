@@ -43,6 +43,7 @@ import type {
 /** Why a previously placed occupant was removed from its seat during reconcile. */
 export type SeatingReconcileReason =
   | "missing_seat"
+  | "disabled_seat"
   | "blocked_seat"
   | "duplicate_seat"
   | "duplicate_occupant"
@@ -56,6 +57,8 @@ export interface SeatingReconcileCounts {
   returnedCount: number;
   /** Placements whose seat key no longer resolves to any seat. */
   missingSeatCount: number;
+  /** Placements whose structurally-present seat is disabled. */
+  disabledSeatCount: number;
   /** Placements whose seat became rabbi-reserved/blocked for that occupant. */
   blockedSeatCount: number;
   /** Conflicts where two placements wanted the same seat or the same occupant. */
@@ -143,6 +146,7 @@ export function reconcileSeatingAssignments({
   const returned: SeatingReconcileReturn[] = [];
   const invalidAssignments: SeatingAssignment[] = [];
   let missingSeatCount = 0;
+  let disabledSeatCount = 0;
   let blockedSeatCount = 0;
   let duplicateCount = 0;
 
@@ -174,6 +178,12 @@ export function reconcileSeatingAssignments({
     }
 
     const seat = geometry.seats[seatIndex];
+    if (seat?.isDisabled) {
+      disabledSeatCount += 1;
+      returned.push({ assignment: unplaceAssignment(assignment), reason: "disabled_seat" });
+      outcomeByOrder.set(order, { kind: "return" });
+      continue;
+    }
     const isRabbiSeat = Boolean(seat?.isRabbiTable);
     const allowedOnRabbiSeat =
       assignment.type === "reserve" ||
@@ -237,6 +247,7 @@ export function reconcileSeatingAssignments({
       keptCount: keptAssignments.length,
       returnedCount: returned.length,
       missingSeatCount,
+      disabledSeatCount,
       blockedSeatCount,
       duplicateCount,
     },

@@ -434,6 +434,23 @@ test("counts add up across a mixed geometry change", () => {
   );
 });
 
+test("disabled placement returns even when manual and locked", () => {
+  const tables = defaultTables();
+  tables[0] = { ...tables[0], disabledSeats: ["side:a:0"] };
+  const geometry = computeTableSeats({ tables });
+  const disabledIndex = geometry.seats.findIndex((seat) => seat.isDisabled);
+  const assignment = placedGuest(makeGuest(1), geometry, disabledIndex, {
+    locked: true,
+    placementSource: "manual",
+  });
+  const result = reconcileSeatingAssignments({ assignments: [assignment], geometry });
+  assertEqual(result.returned[0]?.reason, "disabled_seat", "disabled reason");
+  assertEqual(result.counts.disabledSeatCount, 1, "disabled counter");
+  assertEqual(result.assignments[0]?.seatKey, null, "returned to pool");
+  assertEqual(result.assignments[0]?.locked, false, "lock cleared");
+  assertEqual(result.assignments[0]?.placementSource, undefined, "source cleared");
+});
+
 test("pure helper does not mutate the input assignments array", () => {
   const geometry = defaultGeometry();
   const guest = makeGuest(1);

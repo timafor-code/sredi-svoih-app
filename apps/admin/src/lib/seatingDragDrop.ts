@@ -52,6 +52,7 @@ export type SeatingDropTargetRef =
 export type SeatingDragDropRejection =
   | "noop"
   | "seat_out_of_range"
+  | "disabled_seat"
   | "rabbi_reserved_seat"
   | "missing_guest"
   | "missing_reserve"
@@ -133,6 +134,10 @@ export function applySeatingDragDrop({
   const targetIndex = target.seatIndex;
   if (targetIndex < 0 || targetIndex >= geometry.seats.length) {
     return rejection(assignments, "seat_out_of_range");
+  }
+
+  if (geometry.seats[targetIndex]?.isDisabled) {
+    return rejection(assignments, "disabled_seat");
   }
 
   if (source.kind === "seat" && source.seatIndex === targetIndex) {

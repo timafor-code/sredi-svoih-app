@@ -6,7 +6,7 @@
 //
 //   capacityLimit     = the registration business limit (gate for public sign-up);
 //                       `null` means "без лимита" (no limit).
-//   physicalSeatCount = how many chairs the current table geometry yields.
+//   physicalSeatCount = how many active chairs the current table geometry yields.
 //
 // Editing the table geometry must never change `event_capacity_units.capacity`.
 // This helper only reads numbers and derives display values; it has no IO and
