@@ -48,6 +48,8 @@ export interface SeatingTableGeometry {
   angle: number;
   sideSeats: number;
   isRabbiTable: boolean;
+  /** Stable seat parts excluded from active physical capacity (for example `side:a:0`). */
+  disabledSeats?: string[];
 }
 
 /** Alias used by callers that think of the row as a "table" rather than geometry. */
@@ -82,6 +84,8 @@ export interface ComputedSeat {
   /** Present for `kind === "side"` — index of the seat along the side. */
   slot?: number;
   isRabbiTable: boolean;
+  /** Structurally present, but unavailable for placement and physical capacity. */
+  isDisabled: boolean;
 }
 
 /** A visible seam marker where two tables are connected. */
@@ -108,6 +112,7 @@ export interface SeatingGeometryResult {
   width: number;
   height: number;
   physicalSeatCount: number;
+  disabledSeatCount: number;
 }
 
 /** A per-seat occupant id, or `null` when the seat is empty. */
@@ -134,6 +139,7 @@ export interface SeatState {
   rabbiReserveCount: number;
   headIndex: number;
   physicalSeatCount: number;
+  disabledSeatCount: number;
 }
 
 // ===========================================================================

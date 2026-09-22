@@ -156,6 +156,7 @@ export function autoAssignSeating({
   const blockedSeats = new Set([
     ...blockedRabbiSeats,
     ...blockedSeatIndexes,
+    ...geometry.seats.flatMap((seat, index) => (seat.isDisabled ? [index] : [])),
     ...locked.seatIndexes,
   ]);
   const queueGuests = excludeLockedGuests(activeGuests, locked.guestSignatureCounts);
@@ -169,6 +170,7 @@ export function autoAssignSeating({
     rabbiGuest &&
     headIndex >= 0 &&
     geometry.seats[headIndex] &&
+    !geometry.seats[headIndex].isDisabled &&
     !locked.seatIndexes.has(headIndex)
   ) {
     assignedSeats.push({
@@ -274,12 +276,9 @@ export function deriveSeatingAssignmentRestoreState({
       return;
     }
 
-    if (seatIndex === null || usedSeatIndexes.has(seatIndex)) {
+    if (seatIndex === null || geometry.seats[seatIndex]?.isDisabled || usedSeatIndexes.has(seatIndex)) {
       invalidAssignments.push(normalizedAssignment);
-      currentAssignments.push({
-        ...normalizedAssignment,
-        seatKey: null,
-      });
+      currentAssignments.push(unplaceAssignment(normalizedAssignment));
       return;
     }
 
@@ -315,6 +314,15 @@ export function deriveSeatingAssignmentRestoreState({
 
 export function seatingSeatKey(seat: ComputedSeat, seatIndex: number): string {
   return `${seat.tableId}:${seatStablePart(seat) ?? `legacy:${seatIndex}`}`;
+}
+
+function unplaceAssignment(assignment: SeatingAssignment): SeatingAssignment {
+  return {
+    ...assignment,
+    locked: false,
+    placementSource: undefined,
+    seatKey: null,
+  };
 }
 
 export function seatIndexFromSeatKey(
@@ -1126,7 +1134,7 @@ function resolveLockedPlacements(
     }
 
     const seatIndex = seatIndexFromSeatKey(assignment.seatKey, geometry);
-    if (seatIndex === null || seatIndexes.has(seatIndex)) {
+    if (seatIndex === null || geometry.seats[seatIndex]?.isDisabled || seatIndexes.has(seatIndex)) {
       return;
     }
 

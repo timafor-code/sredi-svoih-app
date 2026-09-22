@@ -127,6 +127,7 @@ function makeSyntheticLayout(
       return {
         anchor: { x: table.cx + slot, y: table.cy },
         edge: "a" as const,
+        isDisabled: false,
         isRabbiTable: table.isRabbiTable,
         kind: "side" as const,
         slot,
@@ -144,6 +145,7 @@ function makeSyntheticLayout(
   return {
     geometry: {
       headIndex: rabbiHeadIndex,
+      disabledSeatCount: 0,
       height: 640,
       physicalSeatCount: seats.length,
       seats,
@@ -1236,6 +1238,41 @@ test("fragmentation fallback minimizes additional tables before anchor proximity
     "ordinary fallback keeps rabbi seats protected",
   );
   assertEqual(lockedAssignment.seatKey?.startsWith("anchor:"), true, "lock unchanged");
+});
+
+test("disabled ordinary seats are skipped and produce ordinary overflow", () => {
+  const tables = [makeTable({ id: "disabled", disabledSeats: ["side:a:0", "side:a:1"] })];
+  const geometry = computeTableSeats({ tables });
+  const guests = Array.from({ length: geometry.physicalSeatCount + 1 }, (_, index) => makeGuest(index));
+  const result = autoAssignSeating({ capacityUnitId: "unit-1", geometry, guestPool: guests, tables });
+  assert(result.assignedSeats.every(({ seatIndex }) => !geometry.seats[seatIndex].isDisabled), "disabled seats are skipped");
+  assert(result.remainingUnassignedGuests.length > 0, "insufficient active seats leave overflow");
+});
+
+test("saved assignment on a disabled stable seat returns guest to unassigned pool", () => {
+  const tables = defaultTables();
+  tables[0] = { ...tables[0], disabledSeats: ["side:a:0"] };
+  const geometry = computeTableSeats({ tables });
+  const guest = makeGuest(1);
+  const restored = deriveSeatingAssignmentRestoreState({
+    assignments: [{
+      guestInitials: guest.initials,
+      guestLabel: guest.displayName,
+      id: "saved-disabled",
+      layoutId: "layout-1",
+      locked: true,
+      placementSource: "manual",
+      registrationId: guest.registrationId,
+      seatKey: "rabbi:side:a:0",
+      type: "guest",
+    }],
+    geometry,
+    guestPool: [guest],
+  });
+  assertEqual(restored.occupants.length, 0, "disabled seat is not rendered");
+  assertEqual(restored.currentAssignments[0]?.seatKey, null, "disabled seat returns to pool");
+  assertEqual(restored.currentAssignments[0]?.locked, false, "disabled seat clears lock");
+  assertArrayEqual(restored.unassignedGuests.map((item) => item.key), [guest.key], "guest is unseated");
 });
 
 function seatStable(geometry: ReturnType<typeof computeTableSeats>, index: number): string {

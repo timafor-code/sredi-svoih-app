@@ -677,6 +677,26 @@ test("a reserve may be placed on a rabbi-reserved seat", () => {
   assertEqual(result.assignments[0].placementSource, "manual", "reserve placement is manual");
 });
 
+test("drops onto a disabled seat are rejected without mutation", () => {
+  const tables = defaultTables();
+  tables[0] = { ...tables[0], disabledSeats: ["side:a:0"] };
+  const geometry = computeTableSeats({ tables });
+  const disabledIndex = geometry.seats.findIndex((seat) => seat.isDisabled);
+  const guest = makeGuest(1);
+  const assignments = [placedAssignment(guest, geometry, regularSeatIndexes(geometry)[0])];
+  const snapshot = JSON.stringify(assignments);
+  const result = applySeatingDragDrop({
+    assignments,
+    geometry,
+    guestPool: [guest],
+    source: { kind: "seat", seatIndex: regularSeatIndexes(geometry)[0] },
+    target: { kind: "seat", seatIndex: disabledIndex },
+  });
+  assertEqual(result.rejection, "disabled_seat", "disabled rejection");
+  assert(!result.changed, "disabled drop is unchanged");
+  assertEqual(JSON.stringify(result.assignments), snapshot, "assignments unchanged");
+});
+
 test("the source assignments array is not mutated", () => {
   const geometry = defaultGeometry();
   const guest = makeGuest(1);

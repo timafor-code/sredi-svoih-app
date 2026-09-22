@@ -213,7 +213,24 @@ function normalizeTable(t: SeatingTableGeometry): SeatingTableGeometry {
     angle: normalizeAngle(t.angle ?? 0),
     sideSeats: t.sideSeats === 2 ? 2 : 3,
     isRabbiTable: !!t.isRabbiTable,
+    disabledSeats: normalizeDisabledSeats(t.disabledSeats),
   };
+}
+
+function normalizeDisabledSeats(disabledSeats: string[] | undefined): string[] {
+  if (!Array.isArray(disabledSeats)) return [];
+  return [...new Set(disabledSeats.filter(isStableSeatPart))];
+}
+
+function isStableSeatPart(value: string): boolean {
+  return /^side:[ab]:\d+$/.test(value) || /^end:[ab]$/.test(value);
+}
+
+function seatStablePart(seat: Pick<ComputedSeat, "kind" | "edge" | "end" | "slot">): string | null {
+  if (seat.kind === "side" && seat.edge && typeof seat.slot === "number") {
+    return `side:${seat.edge}:${seat.slot}`;
+  }
+  return seat.kind === "end" && seat.end ? `end:${seat.end}` : null;
 }
 
 type TablesById = Map<string, SeatingTableGeometry>;
@@ -298,7 +315,7 @@ export function dedupeChairs<T extends Point>(chairs: T[], minDist = 32): T[] {
 // Core: compute the physical seats for a figure of tables
 // ---------------------------------------------------------------------------
 
-type RawChair = Omit<ComputedSeat, "isRabbiTable">;
+type RawChair = Omit<ComputedSeat, "isRabbiTable" | "isDisabled">;
 
 /**
  * v15 `pickRabbiHeadIndex` (line 1061): choose the head seat index.
@@ -323,16 +340,20 @@ export function pickRabbiHeadIndex(
       const prefer = horizontal
         ? tableChairs.filter((c) => c.chair.y <= rabbiTable.cy)
         : tableChairs.filter((c) => c.chair.x <= rabbiTable.cx);
-      const side = prefer.length ? prefer : tableChairs;
+      const activePrefer = prefer.filter((c) => !c.chair.isDisabled);
+      const activeTableChairs = tableChairs.filter((c) => !c.chair.isDisabled);
+      const side = activePrefer.length ? activePrefer : activeTableChairs;
+      if (!side.length) return -1;
       side.sort((a, b) =>
         horizontal ? a.chair.x - b.chair.x : a.chair.y - b.chair.y,
       );
       return side[Math.floor(side.length / 2)].i;
     }
   }
-  let headIndex = 0;
+  let headIndex = chairs.some((chair) => !chair.isDisabled) ? 0 : -1;
   let best = 1e18;
   chairs.forEach((c, i) => {
+    if (c.isDisabled) return;
     const dd = (c.x - hp.x) ** 2 + (c.y - hp.y) ** 2;
     if (dd < best) {
       best = dd;
@@ -361,6 +382,7 @@ export function computeTableSeats(
   const withRabbi = (c: RawChair): ComputedSeat => ({
     ...c,
     isRabbiTable: !!tablesById.get(c.tableId)?.isRabbiTable,
+    isDisabled: Boolean(tablesById.get(c.tableId)?.disabledSeats?.includes(seatStablePart(c) ?? "")),
   });
   const pushChair = (ch: RawChair) => {
     const seat = withRabbi(ch);
@@ -430,7 +452,8 @@ export function computeTableSeats(
   const seats = dedupeChairs(rawChairs, 20).map(withRabbi);
 
   const hp: Point =
-    seats.find((s) => s.isRabbiTable) ??
+    seats.find((s) => s.isRabbiTable && !s.isDisabled) ??
+    seats.find((s) => !s.isDisabled) ??
     seats[0] ??
     (tables[0] ? { x: tables[0].cx, y: tables[0].cy } : { x: 0, y: 0 });
   const headIndex = pickRabbiHeadIndex(tables, seats, hp);
@@ -467,7 +490,8 @@ export function computeTableSeats(
     headIndex,
     width: maxX + 40,
     height: maxY + 40,
-    physicalSeatCount: seats.length,
+    physicalSeatCount: seats.filter((seat) => !seat.isDisabled).length,
+    disabledSeatCount: seats.filter((seat) => seat.isDisabled).length,
   };
 }
 
@@ -477,7 +501,7 @@ export function computeTableSeats(
  * is independent of `capacity_unit.capacity` (PLAN §1).
  */
 export function computePhysicalSeatCount(input: SeatingGeometryInput): number {
-  return computeTableSeats(input).seats.length;
+  return computeTableSeats(input).physicalSeatCount;
 }
 
 // ---------------------------------------------------------------------------
@@ -488,7 +512,7 @@ export function computePhysicalSeatCount(input: SeatingGeometryInput): number {
 export function rabbiSeatIndexes(seats: ComputedSeat[]): Set<number> {
   const indexes = new Set<number>();
   seats.forEach((c, i) => {
-    if (c.isRabbiTable) indexes.add(i);
+    if (c.isRabbiTable && !c.isDisabled) indexes.add(i);
   });
   return indexes;
 }
@@ -558,13 +582,14 @@ export function buildSeatState(
   const seats: SeatStateEntry[] = geo.seats.map((seat, index) => ({
     index,
     seat,
-    occupantId: assignments[index] ?? null,
+    occupantId: seat.isDisabled ? null : assignments[index] ?? null,
     isHead: index === geo.headIndex,
-    isRabbiReserved: seat.isRabbiTable,
+    isRabbiReserved: seat.isRabbiTable && !seat.isDisabled,
   }));
   const occupiedCount = seats.filter((s) => s.occupantId != null).length;
-  const physicalSeatCount = geo.seats.length;
-  const rabbiReserveCount = geo.seats.filter((s) => s.isRabbiTable).length;
+  const physicalSeatCount = geo.physicalSeatCount;
+  const disabledSeatCount = geo.disabledSeatCount;
+  const rabbiReserveCount = geo.seats.filter((s) => s.isRabbiTable && !s.isDisabled).length;
   return {
     seats,
     occupiedCount,
@@ -572,5 +597,6 @@ export function buildSeatState(
     rabbiReserveCount,
     headIndex: geo.headIndex,
     physicalSeatCount,
+    disabledSeatCount,
   };
 }
