@@ -1380,6 +1380,47 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second_status.registration.id, second.registration.id)
         self.assertEqual((second.outcome, first_status.outcome, second_status.outcome), ("created", "created", "created"))
 
+    async def test_legacy_confirmed_intent_with_one_match_replays_without_backfill(self) -> None:
+        created, code = await self.create(self.payload(idempotency_key="legacy-single-match"))
+        async with AsyncSessionLocal() as session:
+            confirmed = await service.confirm_email(session, created.flow_id, code, "192.0.2.52")
+            intent = await session.scalar(select(WebRegistrationIntent).where(WebRegistrationIntent.flow_token_hash == service._flow_hash(created.flow_id)))
+            assert intent is not None
+            intent.registration_outcome = None
+            intent.registration_id = None
+            await session.commit()
+        async with AsyncSessionLocal() as session:
+            replay = await service.confirm_email(session, created.flow_id, code, "192.0.2.52")
+            status_result = await service.get_intent_status(session, created.flow_id)
+            legacy = await session.scalar(select(WebRegistrationIntent).where(WebRegistrationIntent.flow_token_hash == service._flow_hash(created.flow_id)))
+        self.assertEqual(replay.registration.id, confirmed.registration.id)
+        self.assertEqual(status_result.registration.id, confirmed.registration.id)
+        self.assertIsNone(replay.outcome)
+        self.assertIsNone(status_result.outcome)
+        self.assertIsNone(legacy.registration_outcome)
+        self.assertIsNone(legacy.registration_id)
+
+    async def test_legacy_confirmed_intent_with_ambiguous_matches_fails_closed(self) -> None:
+        created, code = await self.create(self.payload(idempotency_key="legacy-ambiguous-match"))
+        async with AsyncSessionLocal() as session:
+            confirmed = await service.confirm_email(session, created.flow_id, code, "192.0.2.52")
+            intent = await session.scalar(select(WebRegistrationIntent).where(WebRegistrationIntent.flow_token_hash == service._flow_hash(created.flow_id)))
+            assert intent is not None
+            session.add(EventRegistration(event_id=self.event_id, user_id=intent.matched_user_id, status="confirmed", seats_count=1, payment_status="not_required", source_channel="mobile"))
+            intent.registration_outcome = None
+            intent.registration_id = None
+            await session.commit()
+        async with AsyncSessionLocal() as session:
+            with self.assertRaises(HTTPException) as replay_error:
+                await service.confirm_email(session, created.flow_id, code, "192.0.2.52")
+            status_result = await service.get_intent_status(session, created.flow_id)
+            legacy = await session.scalar(select(WebRegistrationIntent).where(WebRegistrationIntent.flow_token_hash == service._flow_hash(created.flow_id)))
+        self.assertEqual(replay_error.exception.status_code, 409)
+        self.assertEqual(status_result.state, "not_available")
+        self.assertIsNone(legacy.registration_outcome)
+        self.assertIsNone(legacy.registration_id)
+        self.assertIsNotNone(confirmed.registration.id)
+
     async def test_questionnaire_answers_finalize_atomically_bind_version_and_clear_temporary_payload(self) -> None:
         form_id, field_id = await self._publish_questionnaire(version=1, retention_days=9)
         created, code = await self.create(
