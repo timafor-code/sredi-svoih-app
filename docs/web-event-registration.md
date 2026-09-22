@@ -78,6 +78,14 @@ action, which revokes that browser's remembered session without changing saved
 registrations. The PR-06 local reset of completed-registration UI state after
 browser forget is outside PR-04.
 
+Public Web sign-in offers `Забыли пароль?` from each shared sign-in panel.
+Recovery reuses `POST /auth/request-password-reset` and
+`POST /auth/confirm-password-reset`; the request response remains
+anti-enumerating, and confirmation requires a six-digit code and a password of
+at least eight characters. Successful recovery returns to sign-in and never
+authenticates the participant automatically. Recovery does not issue
+remembered-participant state or change registration state.
+
 A technical `app_users` record is not the same as a password-based account.
 The UI must say “continue without a password,” not “without creating an
 account.” An existing claimed user may also complete email verification and

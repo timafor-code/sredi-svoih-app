@@ -1143,6 +1143,22 @@ export function requestSetPassword(email: string): Promise<AuthCodeResult> {
   return authCodeRequest("/auth/request-set-password", { email });
 }
 
+export function requestPasswordReset(email: string): Promise<AuthCodeResult> {
+  return authCodeRequest("/auth/request-password-reset", { email });
+}
+
+export function confirmPasswordReset(
+  email: string,
+  code: string,
+  newPassword: string,
+): Promise<AuthCodeResult> {
+  return authCodeRequest("/auth/confirm-password-reset", {
+    email,
+    code,
+    new_password: newPassword,
+  });
+}
+
 export function confirmSetPassword(
   code: string,
   newPassword: string,

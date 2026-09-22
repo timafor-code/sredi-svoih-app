@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import {
+  confirmPasswordReset,
   confirmSetPassword,
   confirmWebRegistrationEmail,
   createWebRegistrationIntent,
@@ -21,6 +22,7 @@ import {
   PublicApiError,
   RegistrationUnavailableError,
   requestSetPassword,
+  requestPasswordReset,
   resendWebRegistrationCode,
 } from "./api";
 import { AccountPanel } from "./components/AccountPanel";
@@ -683,9 +685,20 @@ function SignInPanel({ initialEmail, readOnlyEmail = false, onClose, onAuthentic
   const [loginEmail, setLoginEmail] = useState(initialEmail.trim());
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [recoveryStep, setRecoveryStep] = useState<"login" | "email" | "confirm" | "success">("login");
+  const [recoveryEmail, setRecoveryEmail] = useState(initialEmail.trim());
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [recoveryPassword, setRecoveryPassword] = useState("");
+  const [recoveryPasswordConfirmation, setRecoveryPasswordConfirmation] = useState("");
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+  const recoveryEmailRef = useRef<HTMLInputElement>(null);
+  const recoveryCodeRef = useRef<HTMLInputElement>(null);
+  const recoveryPasswordRef = useRef<HTMLInputElement>(null);
+  const recoveryPasswordConfirmationRef = useRef<HTMLInputElement>(null);
+  const loginFocusTargetRef = useRef<"email" | "password">(readOnlyEmail ? "password" : "email");
   const submittingRef = useRef(false);
   const activeRef = useRef(true);
 
@@ -696,11 +709,88 @@ function SignInPanel({ initialEmail, readOnlyEmail = false, onClose, onAuthentic
 
   useEffect(() => {
     activeRef.current = true;
-    (readOnlyEmail ? passwordRef : emailRef).current?.focus();
+    if (recoveryStep === "login") {
+      (loginFocusTargetRef.current === "password" ? passwordRef : emailRef).current?.focus();
+    } else if (recoveryStep === "email") {
+      recoveryEmailRef.current?.focus();
+    } else if (recoveryStep === "confirm") {
+      recoveryCodeRef.current?.focus();
+    }
     return () => {
       activeRef.current = false;
     };
-  }, []);
+  }, [recoveryStep, readOnlyEmail]);
+
+  const openRecovery = () => {
+    const email = readOnlyEmail ? initialEmail.trim() : loginEmail.trim();
+    setRecoveryEmail(email);
+    setRecoveryCode("");
+    setRecoveryPassword("");
+    setRecoveryPasswordConfirmation("");
+    setRecoveryError(null);
+    setLoginError(null);
+    setRecoveryStep("email");
+  };
+
+  const returnToLogin = () => {
+    setLoginEmail(recoveryEmail.trim());
+    loginFocusTargetRef.current = recoveryEmail.trim() ? "password" : "email";
+    setLoginPassword("");
+    setLoginError(null);
+    setRecoveryCode("");
+    setRecoveryPassword("");
+    setRecoveryPasswordConfirmation("");
+    setRecoveryError(null);
+    setRecoveryStep("login");
+  };
+
+  const submitRecoveryRequest = async () => {
+    if (busy || !recoveryEmail.trim()) return;
+    setBusy(true);
+    setRecoveryError(null);
+    try {
+      await requestPasswordReset(recoveryEmail.trim());
+      if (activeRef.current) setRecoveryStep("confirm");
+    } catch {
+      if (activeRef.current) setRecoveryError("Не удалось отправить запрос. Проверьте соединение и попробуйте снова.");
+    } finally {
+      if (activeRef.current) setBusy(false);
+    }
+  };
+
+  const submitRecoveryConfirmation = async () => {
+    if (busy) return;
+    if (!/^\d{6}$/.test(recoveryCode)) {
+      setRecoveryError("Введите шестизначный код из письма.");
+      recoveryCodeRef.current?.focus();
+      return;
+    }
+    if (recoveryPassword.length < 8) {
+      setRecoveryError("Пароль должен содержать минимум 8 символов.");
+      recoveryPasswordRef.current?.focus();
+      return;
+    }
+    if (recoveryPassword !== recoveryPasswordConfirmation) {
+      setRecoveryError("Пароли не совпадают.");
+      recoveryPasswordConfirmationRef.current?.focus();
+      return;
+    }
+    setBusy(true);
+    setRecoveryError(null);
+    try {
+      await confirmPasswordReset(recoveryEmail.trim(), recoveryCode, recoveryPassword);
+      if (activeRef.current) {
+        setRecoveryCode("");
+        setRecoveryPassword("");
+        setRecoveryPasswordConfirmation("");
+        setRecoveryStep("success");
+      }
+    } catch {
+      if (activeRef.current) setRecoveryError("Не удалось подтвердить код. Проверьте его и попробуйте снова.");
+    } finally {
+      if (activeRef.current) setBusy(false);
+    }
+  };
 
   const submitLogin = async () => {
     if (submittingRef.current || !loginEmail.trim() || !loginPassword) return;
@@ -740,7 +830,13 @@ function SignInPanel({ initialEmail, readOnlyEmail = false, onClose, onAuthentic
   };
 
   return (
-    <form className="login-body" noValidate onSubmit={(event) => { event.preventDefault(); void submitLogin(); }}>
+    <form className="login-body" noValidate onSubmit={(event) => {
+      event.preventDefault();
+      if (recoveryStep === "email") void submitRecoveryRequest();
+      else if (recoveryStep === "confirm") void submitRecoveryConfirmation();
+      else if (recoveryStep === "login") void submitLogin();
+    }}>
+      {recoveryStep === "login" ? <>
       <div className="form-field">
         <label htmlFor="login-email">Email</label>
         <input ref={emailRef} id="login-email" type="email" autoComplete="email" readOnly={readOnlyEmail} required value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} />
@@ -748,12 +844,46 @@ function SignInPanel({ initialEmail, readOnlyEmail = false, onClose, onAuthentic
       <div className="form-field">
         <label htmlFor="login-password">Пароль</label>
         <input ref={passwordRef} id="login-password" type="password" autoComplete="current-password" required value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} />
+        <button className="text-button" type="button" onClick={openRecovery}>Забыли пароль?</button>
       </div>
       {loginError ? <p className="form-error" role="alert">{loginError}</p> : null}
       <button className={readOnlyEmail ? "primary-button" : "secondary-button"} type="submit" disabled={busy || !loginEmail.trim() || !loginPassword}>
         {busy ? "Входим…" : "Войти"}
       </button>
       <button className="text-button" type="button" onClick={closeDialog}>Отмена</button>
+      </> : recoveryStep === "email" ? <>
+        <h3>Восстановление пароля</h3>
+        <p>Укажите email аккаунта, чтобы запросить код восстановления.</p>
+        <div className="form-field">
+          <label htmlFor="recovery-email">Email</label>
+          <input ref={recoveryEmailRef} id="recovery-email" type="email" autoComplete="email" readOnly={readOnlyEmail} required value={recoveryEmail} onChange={(event) => setRecoveryEmail(event.target.value)} />
+        </div>
+        {recoveryError ? <p className="form-error" role="alert">{recoveryError}</p> : null}
+        <button className="primary-button" type="submit" disabled={busy || !recoveryEmail.trim()}>{busy ? "Отправляем…" : "Отправить код"}</button>
+        <button className="text-button" type="button" onClick={returnToLogin}>Назад ко входу</button>
+      </> : recoveryStep === "confirm" ? <>
+        <h3>Восстановление пароля</h3>
+        <p role="status">Если такой email зарегистрирован, мы отправили код для восстановления пароля.</p>
+        <div className="form-field">
+          <label htmlFor="recovery-code">Код из письма</label>
+          <input ref={recoveryCodeRef} id="recovery-code" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} required value={recoveryCode} onChange={(event) => setRecoveryCode(event.target.value.replace(/\D/g, "").slice(0, 6))} />
+        </div>
+        <div className="form-field">
+          <label htmlFor="recovery-password">Новый пароль</label>
+          <input ref={recoveryPasswordRef} id="recovery-password" type="password" autoComplete="new-password" required value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} />
+        </div>
+        <div className="form-field">
+          <label htmlFor="recovery-password-confirmation">Повторите пароль</label>
+          <input ref={recoveryPasswordConfirmationRef} id="recovery-password-confirmation" type="password" autoComplete="new-password" required value={recoveryPasswordConfirmation} onChange={(event) => setRecoveryPasswordConfirmation(event.target.value)} />
+        </div>
+        {recoveryError ? <p className="form-error" role="alert">{recoveryError}</p> : null}
+        <button className="primary-button" type="submit" disabled={busy}>{busy ? "Сохраняем…" : "Сохранить пароль"}</button>
+        <button className="text-button" type="button" onClick={returnToLogin}>Назад ко входу</button>
+      </> : <>
+        <h3>Пароль обновлён</h3>
+        <p role="status">Пароль изменён. Теперь войдите с новым паролем.</p>
+        <button className="primary-button" type="button" onClick={returnToLogin}>Вернуться ко входу</button>
+      </>}
     </form>
   );
 }

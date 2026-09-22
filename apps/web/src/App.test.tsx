@@ -498,6 +498,107 @@ describe("public event page", () => {
     ))).toBe(false);
   });
 
+  it("recovers a password in the page sign-in dialog without authenticating or changing registration", async () => {
+    const user = userEvent.setup();
+    const storageSpy = vi.spyOn(Storage.prototype, "setItem");
+    const originalUrl = window.location.href;
+    await renderEvent();
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Войти" }));
+    const dialog = screen.getByRole("dialog", { name: "Войти в аккаунт" });
+    await user.type(within(dialog).getByLabelText("Email"), "recover@example.ru");
+    await user.click(within(dialog).getByRole("button", { name: "Забыли пароль?" }));
+    const recoveryEmail = within(dialog).getByLabelText("Email");
+    expect(recoveryEmail).toHaveValue("recover@example.ru");
+    expect(recoveryEmail).not.toHaveAttribute("readonly");
+
+    vi.mocked(fetch).mockImplementationOnce(() => response({ ok: true }));
+    await user.click(within(dialog).getByRole("button", { name: "Отправить код" }));
+    expect(await within(dialog).findByRole("status")).toHaveTextContent(
+      "Если такой email зарегистрирован, мы отправили код для восстановления пароля.",
+    );
+    expect(fetch).toHaveBeenLastCalledWith("/api/auth/request-password-reset", expect.objectContaining({
+      method: "POST", body: JSON.stringify({ email: "recover@example.ru" }),
+    }));
+    await user.type(within(dialog).getByLabelText("Код из письма"), "12x3456");
+    await user.type(within(dialog).getByLabelText("Новый пароль"), "new-password-123");
+    await user.type(within(dialog).getByLabelText("Повторите пароль"), "different-password");
+    await user.click(within(dialog).getByRole("button", { name: "Сохранить пароль" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Пароли не совпадают.");
+    expect(fetch).not.toHaveBeenCalledWith("/api/auth/confirm-password-reset", expect.anything());
+
+    await user.clear(within(dialog).getByLabelText("Повторите пароль"));
+    await user.type(within(dialog).getByLabelText("Повторите пароль"), "new-password-123");
+    vi.mocked(fetch).mockImplementationOnce(() => response({ ok: true }));
+    await user.click(within(dialog).getByRole("button", { name: "Сохранить пароль" }));
+    expect(await within(dialog).findByRole("status")).toHaveTextContent("Пароль изменён.");
+    expect(fetch).toHaveBeenLastCalledWith("/api/auth/confirm-password-reset", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ email: "recover@example.ru", code: "123456", new_password: "new-password-123" }),
+    }));
+    expect(vi.mocked(fetch).mock.calls.some(([input]) => ["/api/auth/login", "/api/auth/me", "/api/web/participant-session"]
+      .includes(String(input)))).toBe(false);
+    expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).includes("/registration-intents"))).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "Вернуться ко входу" }));
+    expect(within(dialog).getByLabelText("Email")).toHaveValue("recover@example.ru");
+    expect(within(dialog).getByLabelText("Пароль")).toHaveValue("");
+    expect(within(dialog).queryByLabelText("Код из письма")).not.toBeInTheDocument();
+    expect(dialog).toBeInTheDocument();
+    expect(storageSpy).not.toHaveBeenCalled();
+    expect(window.localStorage).toHaveLength(0);
+    expect(window.sessionStorage).toHaveLength(0);
+    expect(window.location.href).toBe(originalUrl);
+  });
+
+  it("rejects incomplete code, short password, and mismatched passwords before reset confirmation", async () => {
+    const user = userEvent.setup();
+    await renderEvent();
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Войти" }));
+    const dialog = screen.getByRole("dialog", { name: "Войти в аккаунт" });
+    await user.click(within(dialog).getByRole("button", { name: "Забыли пароль?" }));
+    vi.mocked(fetch).mockImplementationOnce(() => response({ ok: true }));
+    await user.click(within(dialog).getByRole("button", { name: "Отправить код" }));
+    await user.click(within(dialog).getByRole("button", { name: "Сохранить пароль" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Введите шестизначный код из письма.");
+    await user.type(within(dialog).getByLabelText("Код из письма"), "12x");
+    await user.type(within(dialog).getByLabelText("Новый пароль"), "short");
+    await user.type(within(dialog).getByLabelText("Повторите пароль"), "short");
+    await user.click(within(dialog).getByRole("button", { name: "Сохранить пароль" }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Введите шестизначный код из письма.");
+    expect(within(dialog).getByLabelText("Код из письма")).toHaveValue("12");
+    await user.clear(within(dialog).getByLabelText("Код из письма"));
+    await user.type(within(dialog).getByLabelText("Код из письма"), "123456");
+    await user.click(within(dialog).getByRole("button", { name: "Сохранить пароль" }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Пароль должен содержать минимум 8 символов.");
+    await user.clear(within(dialog).getByLabelText("Новый пароль"));
+    await user.type(within(dialog).getByLabelText("Новый пароль"), "valid-password");
+    await user.click(within(dialog).getByRole("button", { name: "Сохранить пароль" }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Пароли не совпадают.");
+    expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).endsWith("/auth/confirm-password-reset"))).toBe(false);
+  });
+
+  it("keeps recovery open with a safe error when the reset code is invalid", async () => {
+    const user = userEvent.setup();
+    await renderEvent();
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Войти" }));
+    const dialog = screen.getByRole("dialog", { name: "Войти в аккаунт" });
+    await user.type(within(dialog).getByLabelText("Email"), "recover@example.ru");
+    await user.click(within(dialog).getByRole("button", { name: "Забыли пароль?" }));
+    vi.mocked(fetch).mockImplementationOnce(() => response({ ok: true }));
+    await user.click(within(dialog).getByRole("button", { name: "Отправить код" }));
+    await user.type(within(dialog).getByLabelText("Код из письма"), "654321");
+    await user.type(within(dialog).getByLabelText("Новый пароль"), "new-password-123");
+    await user.type(within(dialog).getByLabelText("Повторите пароль"), "new-password-123");
+    vi.mocked(fetch).mockImplementationOnce(() => response(apiError("invalid_code", "private backend detail"), 400));
+    await user.click(within(dialog).getByRole("button", { name: "Сохранить пароль" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Не удалось подтвердить код.");
+    expect(within(dialog).getByRole("alert")).not.toHaveTextContent("private backend detail");
+    expect(within(dialog).getByLabelText("Email")).toHaveValue("recover@example.ru");
+    expect(within(dialog).getByLabelText("Код из письма")).toHaveValue("654321");
+    expect(within(dialog).getByLabelText("Новый пароль")).toHaveValue("new-password-123");
+    expect(within(dialog).getByRole("button", { name: "Назад ко входу" })).toBeInTheDocument();
+    expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).endsWith("/auth/request-password-reset"))).toHaveLength(1);
+  });
+
   it("leaves no remembered identity after successful account sign-out", async () => {
     const user = userEvent.setup();
     await renderEvent();
@@ -3071,6 +3172,21 @@ describe("registration intent and account claim flow", () => {
     expect(within(flowDialog()).getByText("Войти в аккаунт — необязательно", { selector: "summary" }).closest("details")).not.toHaveAttribute("open");
     expect(await screen.findByText("Регистрация уже сохранена. Вход необязателен: войти с существующим паролем для управления аккаунтом можно позже.")).toBeInTheDocument();
     expect(screen.queryByLabelText("Пароль")).not.toBeInTheDocument();
+  });
+
+  it("exposes recovery inside the completed-registration sign-in with its email fixed", async () => {
+    const user = await setupValidForm();
+    await createIntent(user);
+    await confirmIntent(user, registrationResult("confirmed", "sign_in"));
+    const dialog = expectOneFlowDialog();
+    await user.click(within(dialog).getByRole("button", { name: "Войти" }));
+    await user.click(within(dialog).getByRole("button", { name: "Забыли пароль?" }));
+    const email = within(dialog).getByLabelText("Email");
+    expect(email).toHaveValue("anna@example.ru");
+    expect(email).toHaveAttribute("readonly");
+    await user.click(within(dialog).getByRole("button", { name: "Назад ко входу" }));
+    expect(within(dialog).getByLabelText("Email", { selector: "#login-email" })).toHaveValue("anna@example.ru");
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
   });
 
   it.each(["none", "request_set_password"] as const)("requests and confirms a password in the same dialog for %s", async (nextStep) => {
