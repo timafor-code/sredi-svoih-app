@@ -133,8 +133,6 @@ function findRegistrationAction(status: RegistrationAction["status"]): Registrat
 }
 
 const API_REGISTRATION_ACTIONS: RegistrationAction[] = [
-  findRegistrationAction("confirmed"),
-  findRegistrationAction("rejected"),
   findRegistrationAction("waitlisted"),
   findRegistrationAction("attended"),
   findRegistrationAction("no_show"),
