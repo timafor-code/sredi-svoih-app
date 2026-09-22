@@ -37,6 +37,8 @@ class EventRegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.free_occurrence_id = uuid4()
         self.option_a_id = uuid4()
         self.option_b_id = uuid4()
+        self.free_option_a_id = uuid4()
+        self.free_option_b_id = uuid4()
         now = datetime.now(UTC).replace(microsecond=0)
         self.now = now
 
@@ -145,6 +147,21 @@ class EventRegistrationTests(unittest.IsolatedAsyncioTestCase):
                             allow_quantity=True,
                             min_quantity=1,
                             max_quantity=3,
+                        ),
+                        EventParticipationOption(
+                            id=self.free_option_a_id,
+                            event_id=self.free_event_id,
+                            title="Free option A",
+                            option_type="participation",
+                            allow_quantity=True,
+                            min_quantity=1,
+                            max_quantity=3,
+                        ),
+                        EventParticipationOption(
+                            id=self.free_option_b_id,
+                            event_id=self.free_event_id,
+                            title="Free option B",
+                            option_type="participation",
                         ),
                         EventParticipationOption(
                             id=self.option_b_id,
@@ -428,6 +445,46 @@ class EventRegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(paid_first.registration.status, "confirmed")
         self.assertEqual(paid_first.registration.payment_status, "pending")
         self.assertIsNone(paid_first.registration.payment_id)
+
+    async def test_free_duplicate_rejects_changed_option_and_preserves_snapshot(self) -> None:
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                user = await session.get(AppUser, self.user_id)
+                assert user is not None
+                first = await registrations_service.register_user_for_event(
+                    session, user=user, event_id=self.free_event_id,
+                    payload=RegisterEventRequest(occurrence_id=self.free_occurrence_id, option_selections=[{"option_id": self.free_option_a_id, "quantity": 1}]),
+                    source_channel="mobile",
+                )
+                with self.assertRaises(HTTPException) as changed:
+                    await registrations_service.register_user_for_event(
+                        session, user=user, event_id=self.free_event_id,
+                        payload=RegisterEventRequest(occurrence_id=self.free_occurrence_id, option_selections=[{"option_id": self.free_option_b_id, "quantity": 1}]),
+                        source_channel="mobile",
+                    )
+                selections = list(await session.scalars(select(EventRegistrationOptionSelection).where(EventRegistrationOptionSelection.registration_id == first.registration.id)))
+        self.assertEqual(changed.exception.status_code, 409)
+        self.assertEqual(changed.exception.detail["registration_id"], str(first.registration.id))
+        self.assertEqual([(item.option_id, item.quantity) for item in selections], [(self.free_option_a_id, 1)])
+
+    async def test_free_duplicate_rejects_changed_option_quantity_and_preserves_snapshot(self) -> None:
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                user = await session.get(AppUser, self.user_id)
+                assert user is not None
+                first = await registrations_service.register_user_for_event(
+                    session, user=user, event_id=self.free_event_id,
+                    payload=RegisterEventRequest(occurrence_id=self.free_occurrence_id, seats_count=1, option_selections=[{"option_id": self.free_option_a_id, "quantity": 1}]), source_channel="mobile",
+                )
+                with self.assertRaises(HTTPException) as changed:
+                    await registrations_service.register_user_for_event(
+                        session, user=user, event_id=self.free_event_id,
+                        payload=RegisterEventRequest(occurrence_id=self.free_occurrence_id, seats_count=2, option_selections=[{"option_id": self.free_option_a_id, "quantity": 2}]), source_channel="mobile",
+                    )
+                selection = await session.scalar(select(EventRegistrationOptionSelection).where(EventRegistrationOptionSelection.registration_id == first.registration.id))
+        self.assertEqual(changed.exception.status_code, 409)
+        self.assertEqual(changed.exception.detail["registration_id"], str(first.registration.id))
+        self.assertEqual((first.registration.seats_count, selection.quantity), (1, 1))
 
     async def test_requires_approval_does_not_delay_free_confirmation(self) -> None:
         second_occurrence_id = uuid4()
