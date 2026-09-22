@@ -218,6 +218,7 @@ describe("public event API", () => {
       headers: expect.objectContaining({ Authorization: "Bearer temporary-access" }),
     }));
     expect(fetch).toHaveBeenNthCalledWith(3, "/api/auth/logout", expect.objectContaining({
+      credentials: "include",
       body: JSON.stringify({ refresh_token: "temporary-refresh" }),
     }));
   });
@@ -618,7 +619,7 @@ describe("public event API", () => {
     await expect(request()).rejects.toMatchObject({ code: "invalid_response" });
   });
 
-  it("validates direct auth-code responses without credentials", async () => {
+  it("uses browser credentials only when confirming a password boundary", async () => {
     vi.mocked(fetch)
       .mockImplementationOnce(() => fetchResponse({ ok: true }))
       .mockImplementationOnce(() => fetchResponse({ ok: true }));
@@ -626,7 +627,7 @@ describe("public event API", () => {
     await expect(confirmSetPassword("opaque-set-password-code", "password123")).resolves.toEqual({ ok: true });
     expect(vi.mocked(fetch).mock.calls).toEqual([
       ["/api/auth/request-set-password", expect.objectContaining({ method: "POST", credentials: "omit" })],
-      ["/api/auth/confirm-set-password", expect.objectContaining({ method: "POST", credentials: "omit" })],
+      ["/api/auth/confirm-set-password", expect.objectContaining({ method: "POST", credentials: "include" })],
     ]);
   });
 

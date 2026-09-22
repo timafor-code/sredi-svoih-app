@@ -6,11 +6,15 @@ export function AccountPanel({
   onDeleteAccount,
   onOpenTickets,
   onSignOut,
+  signOutBusy,
+  signOutError,
 }: {
   identity: ExistingAccountIdentity;
   onDeleteAccount: () => void;
   onOpenTickets: () => void;
-  onSignOut: () => void;
+  onSignOut: () => void | Promise<void>;
+  signOutBusy: boolean;
+  signOutError: string | null;
 }): ReactNode {
   const panelRef = useRef<HTMLElement>(null);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
@@ -60,9 +64,10 @@ export function AccountPanel({
         >
           Управление аккаунтом
         </button>
-        <button className="secondary-button account-sign-out" type="button" onClick={onSignOut}>
-          Выйти
+        <button className="secondary-button account-sign-out" type="button" onClick={() => { void onSignOut(); }} disabled={signOutBusy}>
+          {signOutBusy ? "Выходим…" : "Выйти"}
         </button>
+        {signOutError ? <p className="form-error" role="alert">{signOutError}</p> : null}
         {managementOpen ? (
           <div id="account-management-actions" className="account-management-actions">
             <button

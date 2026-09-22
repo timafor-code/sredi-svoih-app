@@ -7,6 +7,7 @@ from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import Response
 
 from app.core.config import get_settings
 from app.db.models.core import AppUser, Profile, WebParticipantSession
@@ -47,6 +48,42 @@ def _is_available_user(user: AppUser | None) -> bool:
     )
 
 
+def _is_passwordless_user(user: AppUser | None) -> bool:
+    return _is_available_user(user) and user.password_hash is None
+
+
+def set_remembered_participant_cookie(
+    response: Response,
+    *,
+    token: str,
+    expires_at: datetime,
+) -> None:
+    settings = get_settings()
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        max_age=settings.api_web_participant_session_ttl_days * 24 * 60 * 60,
+        expires=expires_at,
+        path="/",
+        domain=settings.api_web_participant_session_cookie_domain or None,
+        secure=settings.web_participant_session_cookie_secure,
+        httponly=True,
+        samesite="lax",
+    )
+
+
+def clear_remembered_participant_cookie(response: Response) -> None:
+    settings = get_settings()
+    response.delete_cookie(
+        key=COOKIE_NAME,
+        path="/",
+        domain=settings.api_web_participant_session_cookie_domain or None,
+        secure=settings.web_participant_session_cookie_secure,
+        httponly=True,
+        samesite="lax",
+    )
+
+
 async def issue(
     session: AsyncSession,
     *,
@@ -54,6 +91,8 @@ async def issue(
     now: datetime | None = None,
 ) -> IssuedWebParticipantSession:
     """Add a hash-only remembered-browser row to the caller's transaction."""
+    if not _is_passwordless_user(user):
+        raise ValueError("Remembered participant sessions require a passwordless user")
     issued_at = now or _now()
     token = secrets.token_urlsafe(32)
     row = WebParticipantSession(
@@ -92,7 +131,7 @@ async def resolve(
         return None
 
     user = await session.get(AppUser, row.user_id)
-    if not _is_available_user(user):
+    if not _is_passwordless_user(user):
         return None
     profile = await session.scalar(select(Profile).where(Profile.user_id == user.id))
     if (

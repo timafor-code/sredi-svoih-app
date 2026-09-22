@@ -1641,6 +1641,36 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                 1,
             )
 
+    async def test_password_account_confirmation_does_not_issue_remembered_cookie(self) -> None:
+        claimed = AppUser(
+            email=self.email,
+            password_hash="stored-password-hash",
+            account_origin="password_signup",
+            claim_state="claimed",
+            status="active",
+            email_verified_at=self.now,
+        )
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(claimed)
+                await session.flush()
+                session.add(Profile(user_id=claimed.id, first_name="Сохранённое", last_name="Имя"))
+        created, code = await self.create()
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.post(
+                f"/web/registration-intents/{created.flow_id}/confirm-email",
+                json={"code": code},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"]["account_next_step"], "sign_in")
+        self.assertNotIn("set-cookie", response.headers)
+        async with AsyncSessionLocal() as session:
+            self.assertEqual(
+                await session.scalar(select(func.count()).select_from(WebParticipantSession)),
+                0,
+            )
+
     async def test_identity_race_phone_only_fails_without_duplicate(self) -> None:
         created, code = await self.create()
         phone_owner = AppUser(

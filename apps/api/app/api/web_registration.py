@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import get_optional_current_user, require_auth
-from app.core.config import get_settings
 from app.db.models.core import AppUser
 from app.db.session import get_db_session
 from app.schemas.common import ApiResponse
@@ -36,33 +35,6 @@ router = APIRouter(prefix="/web", tags=["web-registration"])
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 OptionalCurrentUser = Annotated[AppUser | None, Depends(get_optional_current_user)]
 CurrentUser = Annotated[AppUser, Depends(require_auth)]
-
-
-def set_remembered_participant_cookie(response: Response, *, token: str, expires_at) -> None:
-    settings = get_settings()
-    response.set_cookie(
-        key=web_participant_sessions.COOKIE_NAME,
-        value=token,
-        max_age=settings.api_web_participant_session_ttl_days * 24 * 60 * 60,
-        expires=expires_at,
-        path="/",
-        domain=settings.api_web_participant_session_cookie_domain or None,
-        secure=settings.web_participant_session_cookie_secure,
-        httponly=True,
-        samesite="lax",
-    )
-
-
-def clear_remembered_participant_cookie(response: Response) -> None:
-    settings = get_settings()
-    response.delete_cookie(
-        key=web_participant_sessions.COOKIE_NAME,
-        path="/",
-        domain=settings.api_web_participant_session_cookie_domain or None,
-        secure=settings.web_participant_session_cookie_secure,
-        httponly=True,
-        samesite="lax",
-    )
 
 
 @router.get("/participant-session", response_model=ApiResponse[WebParticipantSessionResponse])
@@ -97,9 +69,16 @@ async def issue_participant_session(
     session: DbSession,
     current_user: CurrentUser,
 ) -> ApiResponse[WebParticipantSessionIssued]:
+    if current_user.password_hash is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Remembered participant sessions require a passwordless user",
+        )
     issued = await web_participant_sessions.issue(session, user=current_user)
     await session.commit()
-    set_remembered_participant_cookie(response, token=issued.token, expires_at=issued.expires_at)
+    web_participant_sessions.set_remembered_participant_cookie(
+        response, token=issued.token, expires_at=issued.expires_at,
+    )
     return ApiResponse[WebParticipantSessionIssued](data=WebParticipantSessionIssued())
 
 
@@ -113,7 +92,7 @@ async def delete_participant_session(
         session,
         token=request.cookies.get(web_participant_sessions.COOKIE_NAME),
     )
-    clear_remembered_participant_cookie(response)
+    web_participant_sessions.clear_remembered_participant_cookie(response)
     return Response(status_code=status.HTTP_204_NO_CONTENT, headers=dict(response.headers))
 
 
@@ -228,7 +207,7 @@ async def confirm_registration_email(
         request.client.host if request.client else None,
     )
     if issued is not None:
-        set_remembered_participant_cookie(
+        web_participant_sessions.set_remembered_participant_cookie(
             response,
             token=issued.token,
             expires_at=issued.expires_at,

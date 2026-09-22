@@ -729,6 +729,7 @@ async function authJsonRequest<T>(
   path: string,
   init: RequestInit,
   validator: (value: unknown) => value is T,
+  credentials: RequestCredentials = "omit",
 ): Promise<T> {
   const response = await fetch(`${normalizedBaseUrl()}${path}`, {
     ...init,
@@ -737,7 +738,7 @@ async function authJsonRequest<T>(
       ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
       ...init.headers,
     },
-    credentials: "omit",
+    credentials,
   });
   const body = await readJson(response);
   if (!response.ok) {
@@ -908,11 +909,15 @@ function isMyRegistration(value: unknown): value is MyRegistration {
     && value.occurrence_id !== null;
 }
 
-async function authCodeRequest(path: string, body: Record<string, string>): Promise<AuthCodeResult> {
+async function authCodeRequest(
+  path: string,
+  body: Record<string, string>,
+  credentials: RequestCredentials = "omit",
+): Promise<AuthCodeResult> {
   const response = await fetch(`${normalizedBaseUrl()}${path}`, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
-    credentials: "omit",
+    credentials,
     body: JSON.stringify(body),
   });
   const responseBody = await readJson(response);
@@ -1050,6 +1055,7 @@ export async function logoutExistingAccount(refreshToken: string): Promise<void>
     "/auth/logout",
     { method: "POST", body: JSON.stringify({ refresh_token: refreshToken }) },
     (value): value is { ok: boolean } => isRecord(value) && value.ok === true,
+    "include",
   );
 }
 
@@ -1146,5 +1152,5 @@ export function confirmSetPassword(
     ...(email ? { email } : {}),
     code,
     new_password: newPassword,
-  });
+  }, "include");
 }

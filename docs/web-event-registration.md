@@ -67,6 +67,17 @@ coerced:
    name/phone are shown read-only and replace browser-supplied identity fields
    for the registration request.
 
+Remembered participant continuity is passwordless-only. Email confirmation may
+issue the HttpOnly remembered cookie only while the canonical user has no
+password. Normal password login never creates remembered participant state.
+Successful set-password revokes all remembered sessions for that user and clears
+the current browser cookie. Authenticated Public Web sign-out revokes the normal
+refresh session and remembered sessions, then clears the current cookie before
+the page leaves account mode. `Не я` remains the server-owned browser-forget
+action, which revokes that browser's remembered session without changing saved
+registrations. The PR-06 local reset of completed-registration UI state after
+browser forget is outside PR-04.
+
 A technical `app_users` record is not the same as a password-based account.
 The UI must say “continue without a password,” not “without creating an
 account.” An existing claimed user may also complete email verification and
