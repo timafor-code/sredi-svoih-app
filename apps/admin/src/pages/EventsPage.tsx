@@ -749,7 +749,6 @@ function EventsTable({
               <div className="event-table__cell-stack" role="cell">
                 <span>{formatCapacity(event.capacity)}</span>
                 {event.waitlistEnabled ? <small>лист ожидания</small> : null}
-                {event.requiresApproval ? <small>подтверждение</small> : null}
               </div>
               <div className="event-table__cell-stack event-table__source" role="cell">
                 <span>{formatSourceLabel(event.sourceType)}</span>
