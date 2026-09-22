@@ -1183,7 +1183,7 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(caught.exception.status_code, 409)
         self.assertEqual(caught.exception.detail["code"], "already_registered")
-        self.assertEqual(caught.exception.detail["details"]["registration_id"], str(first.registration.id))
+        self.assertEqual(caught.exception.detail["registration_id"], str(first.registration.id))
         self.assertEqual([registration.id for registration in registrations], [first.registration.id])
         self.assertEqual([(answer.field_id, answer.value_payload) for answer in answers], [(field_id, "first answer")])
         self.assertEqual(all_answer_count, 1)

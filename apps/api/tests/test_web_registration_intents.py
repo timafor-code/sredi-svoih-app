@@ -332,6 +332,36 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(valid.status_code, 201)
         self.assertEqual(valid.json()["data"]["next_step"], "completed")
 
+    async def test_router_changed_free_duplicate_has_flat_safe_details(self) -> None:
+        user = await self._add_authenticated_user(
+            email="intent-router-duplicate@example.invalid",
+            phone="+79000000036",
+        )
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            headers = {"Authorization": f"Bearer {create_access_token(user.id)}"}
+            first = await client.post(
+                "/web/registration-intents",
+                json=self.payload(idempotency_key="router-free-duplicate-first").model_dump(mode="json"),
+                headers=headers,
+            )
+            changed = await client.post(
+                "/web/registration-intents",
+                json=self.payload(
+                    seats_count=2,
+                    idempotency_key="router-free-duplicate-changed",
+                ).model_dump(mode="json"),
+                headers=headers,
+            )
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(changed.status_code, 409)
+        error = changed.json()["error"]
+        self.assertEqual(error["code"], "already_registered")
+        self.assertEqual(error["details"], {"registration_id": first.json()["data"]["registration"]["id"]})
+        self.assertNotIn("details", error["details"])
+        self.assertNotIn(user.email, changed.text)
+        self.assertNotIn(user.phone, changed.text)
+
     def test_input_rejects_malformed_contacts_names_and_account_choice(self) -> None:
         for update in ({"phone": "+123"}, {"first_name": "Bad\u0000Name"}, {"account_choice": "invalid"}, {"email": "broken"}):
             with self.assertRaises(ValidationError):

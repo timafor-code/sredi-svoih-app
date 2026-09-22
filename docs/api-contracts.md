@@ -1401,9 +1401,11 @@ credential.
 
 Completed Public Web responses (`POST /web/registration-intents`,
 `POST /web/registration-intents/{flow_id}/confirm-email`, and intent status)
-expose the persisted outcome enum `created | already_registered` alongside the
-authoritative registration where applicable. Older confirmed intents may expose
-`outcome: null`; the API does not infer a historical value. Equivalent free
+  expose the persisted outcome enum `created | already_registered` alongside the
+  exact authoritative registration recorded at completion. Older confirmed
+  intents may expose `outcome: null`; the API returns a legacy result only when
+  exactly one matching final registration exists, and otherwise fails closed.
+  Equivalent free
 duplicates return the existing registration as `already_registered`. A changed
 free participation or normalized questionnaire payload returns HTTP 409
 `already_registered` and `error.details.registration_id`, with no PII or

@@ -1449,6 +1449,10 @@ class WebRegistrationIntent(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     registration_outcome: Mapped[str | None] = mapped_column(Text)
+    registration_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("event_registrations.id", ondelete="SET NULL"),
+    )
     created_at: Mapped[datetime] = timestamptz_now()
 
 

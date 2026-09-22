@@ -138,11 +138,13 @@ def _capacity_unavailable(message: str) -> HTTPException:
 
 
 def already_registered_error(registration_id: UUID) -> HTTPException:
-    return _error(
-        status.HTTP_409_CONFLICT,
-        "already_registered",
-        "An existing registration has different participation details",
-        {"registration_id": str(registration_id)},
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "already_registered",
+            "message": "An existing registration has different participation details",
+            "registration_id": str(registration_id),
+        },
     )
 
 

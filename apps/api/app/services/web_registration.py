@@ -884,6 +884,7 @@ async def create_intent(
                 intent.registration_outcome = (
                     "created" if registration_created else "already_registered"
                 )
+                intent.registration_id = registration.id
                 if registration_created and registration.status == CONFIRMED:
                     confirmation_context = await _confirmation_email_context(
                         session,
@@ -1334,12 +1335,26 @@ async def _find_final_registration(
     intent: WebRegistrationIntent,
     user_id: UUID,
 ) -> EventRegistration | None:
+    if intent.registration_id is not None:
+        registration = await session.get(EventRegistration, intent.registration_id)
+        if (
+            registration is None
+            or registration.event_id != intent.event_id
+            or registration.user_id != user_id
+            or registration.occurrence_id != intent.occurrence_id
+            or registration.status
+            not in registrations_service.DUPLICATE_BLOCKING_REGISTRATION_STATUSES
+        ):
+            return None
+        return registration
+
     occurrence_condition = (
         EventRegistration.occurrence_id.is_(None)
         if intent.occurrence_id is None
         else EventRegistration.occurrence_id == intent.occurrence_id
     )
-    return await session.scalar(
+    registrations = list(
+        await session.scalars(
         select(EventRegistration)
         .where(
             EventRegistration.event_id == intent.event_id,
@@ -1349,12 +1364,9 @@ async def _find_final_registration(
                 registrations_service.DUPLICATE_BLOCKING_REGISTRATION_STATUSES,
             ),
         )
-        .order_by(
-            EventRegistration.registered_at.desc(),
-            EventRegistration.id.desc(),
         )
-        .limit(1),
     )
+    return registrations[0] if len(registrations) == 1 else None
 
 
 async def _confirmed_replay(
@@ -1564,6 +1576,7 @@ async def _confirm_once(
     intent.registration_outcome = (
         "created" if registration_write.created else "already_registered"
     )
+    intent.registration_id = registration.id
     await session.execute(
         update(WebRegistrationVerificationCode)
         .where(

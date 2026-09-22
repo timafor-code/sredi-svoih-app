@@ -472,10 +472,12 @@ in `error.details.registration_id`; it does not alter registrations, options,
 answers, or legal evidence. Option and answer ordering does not create a
 change. Paid repeats remain newly created registrations with `outcome=created`.
 
-`outcome` is persisted for every newly completed flow and is returned by
-confirmation, completed intent creation/replay, and status. Pre-migration
-confirmed intents can return `outcome=null`, because their result cannot be
-backfilled safely. Confirmation email remains send-once and is never resent for
+  `outcome` and the exact final registration UUID are persisted for every newly
+  completed flow and are returned by confirmation, completed intent
+  creation/replay, and status. Pre-migration confirmed intents can return
+  `outcome=null`; their result is returned only when one matching final
+  registration can be identified, and ambiguous legacy paid repeats fail closed.
+  Confirmation email remains send-once and is never resent for
 `already_registered` or rejected duplicates.
 
 Bearer-authenticated and remembered participants are resolved to their

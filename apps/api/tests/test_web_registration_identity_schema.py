@@ -18,6 +18,7 @@ from app.db.models.core import (
     Invite,
     LegalAcceptance,
     LegalDocument,
+    WebRegistrationIntent,
 )
 from app.db.session import AsyncSessionLocal, engine
 from app.schemas.registrations import RegisterEventRequest
@@ -109,6 +110,19 @@ class WebRegistrationIdentitySchemaTests(unittest.IsolatedAsyncioTestCase):
             }.issubset(user_columns),
         )
         self.assertIn("source_channel", inspect(EventRegistration).columns.keys())
+        self.assertIn("registration_id", inspect(WebRegistrationIntent).columns.keys())
+
+    def test_web_registration_outcome_migration_records_exact_registration(self) -> None:
+        script = ScriptDirectory.from_config(Config("alembic.ini"))
+        revision = script.get_revision("20260922120000")
+        self.assertIsNotNone(revision)
+        self.assertEqual(revision.down_revision, "20260911150000")
+        registration_id = inspect(WebRegistrationIntent).columns.registration_id
+        self.assertTrue(registration_id.nullable)
+        foreign_keys = list(registration_id.foreign_keys)
+        self.assertEqual(len(foreign_keys), 1)
+        self.assertEqual(foreign_keys[0].target_fullname, "event_registrations.id")
+        self.assertEqual(foreign_keys[0].ondelete, "SET NULL")
 
     async def _assert_rejected(self, session, row) -> None:
         with self.assertRaises(IntegrityError):
