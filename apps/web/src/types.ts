@@ -332,6 +332,8 @@ export type WebRegistrationIntentCreated = {
   flow_id: string;
   next_step: "confirm_email" | "completed";
   expires_at: string;
+  outcome: WebRegistrationOutcome | null;
+  registration: WebRegistrationResult | null;
 };
 
 export type WebRegistrationStatus = "confirmed" | "pending" | "waitlisted" | "attended";
@@ -344,6 +346,8 @@ export type WebRegistrationPaymentStatus =
   | "cancelled"
   | "refunded"
   | "paid";
+
+export type WebRegistrationOutcome = "created" | "already_registered";
 
 export type WebRegistrationResult = {
   id: string;
@@ -364,6 +368,7 @@ export type WebRegistrationConfirmResult = {
   account_next_step: AccountNextStep;
   set_password_code: string | null;
   set_password_expires_at: string | null;
+  outcome: WebRegistrationOutcome | null;
 };
 
 export type WebRegistrationIntentStatus = {
@@ -371,6 +376,7 @@ export type WebRegistrationIntentStatus = {
   expires_at: string | null;
   registration: WebRegistrationResult | null;
   account_next_step: AccountNextStep | null;
+  outcome: WebRegistrationOutcome | null;
 };
 
 export type WebRegistrationResendResult = {

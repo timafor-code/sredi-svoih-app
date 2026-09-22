@@ -22,6 +22,7 @@ import type {
   WebRegistrationIntentStatus,
   WebRegistrationLegalDocument,
   WebRegistrationOccurrence,
+  WebRegistrationOutcome,
   WebRegistrationParticipationOption,
   WebRegistrationPaymentStatus,
   WebQuestionnaireField,
@@ -84,6 +85,11 @@ const PAYMENT_STATUSES = new Set<WebRegistrationPaymentStatus>([
   "cancelled",
   "refunded",
   "paid",
+]);
+
+const REGISTRATION_OUTCOMES = new Set<WebRegistrationOutcome>([
+  "created",
+  "already_registered",
 ]);
 
 const MY_REGISTRATION_STATUSES = new Set<MyRegistrationStatus>([
@@ -256,6 +262,10 @@ function isAccountNextStep(value: unknown): value is AccountNextStep {
   return typeof value === "string" && ACCOUNT_NEXT_STEPS.has(value as AccountNextStep);
 }
 
+function isNullableRegistrationOutcome(value: unknown): value is WebRegistrationOutcome | null {
+  return value === null || (typeof value === "string" && REGISTRATION_OUTCOMES.has(value as WebRegistrationOutcome));
+}
+
 function isOpaqueCredential(value: unknown): value is string {
   return typeof value === "string" && value.length >= 8 && value.length <= 2048;
 }
@@ -284,7 +294,9 @@ function isIntentCreated(value: unknown): value is WebRegistrationIntentCreated 
   if (!isRecord(value)) return false;
   return isOpaqueCredential(value.flow_id)
     && (value.next_step === "confirm_email" || value.next_step === "completed")
-    && isDateTime(value.expires_at);
+    && isDateTime(value.expires_at)
+    && isNullableRegistrationOutcome(value.outcome)
+    && (value.registration === null || isRegistrationResult(value.registration));
 }
 
 function isResendResult(value: unknown): value is WebRegistrationResendResult {
@@ -298,7 +310,8 @@ function isConfirmResult(value: unknown): value is WebRegistrationConfirmResult 
     || value.intent_status !== "confirmed"
     || !isRegistrationResult(value.registration)
     || !isAccountNextStep(value.account_next_step)
-    || !isNullableDateTime(value.set_password_expires_at)) return false;
+    || !isNullableDateTime(value.set_password_expires_at)
+    || !isNullableRegistrationOutcome(value.outcome)) return false;
   if (value.account_next_step === "set_password") {
     return isOpaqueCredential(value.set_password_code) && isDateTime(value.set_password_expires_at);
   }
@@ -310,7 +323,8 @@ function isIntentStatus(value: unknown): value is WebRegistrationIntentStatus {
     || !["email_verification_required", "confirmed", "not_available"].includes(String(value.state))
     || !isNullableDateTime(value.expires_at)
     || !(value.registration === null || isRegistrationResult(value.registration))
-    || !(value.account_next_step === null || isAccountNextStep(value.account_next_step))) return false;
+    || !(value.account_next_step === null || isAccountNextStep(value.account_next_step))
+    || !isNullableRegistrationOutcome(value.outcome)) return false;
   if (value.state === "confirmed") {
     return isRegistrationResult(value.registration) && isAccountNextStep(value.account_next_step);
   }
