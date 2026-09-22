@@ -3264,12 +3264,16 @@ describe("registration intent and account claim flow", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     vi.mocked(fetch).mockImplementationOnce(() => response(envelope({ next_step: "confirm_email", expires_at: EXPIRES_AT })));
     await user.click(screen.getByRole("button", { name: "Отправить код повторно" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("Новый код отправлен");
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent("Новый код отправлен");
+    expect(notice.closest(".flow-live")).toHaveAttribute("aria-live", "polite");
     expect(screen.getByLabelText("Код подтверждения")).toHaveValue("");
 
     vi.mocked(fetch).mockImplementationOnce(() => response({ data: null, error: { code: "resend_cooldown", message: "technical" }, meta: {} }, 429, { "Retry-After": "9" }));
     await user.click(screen.getByRole("button", { name: "Отправить код повторно" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("немного позже");
+    const error = await screen.findByRole("alert");
+    expect(error).toHaveTextContent("немного позже");
+    expect(error.closest(".flow-live")).toHaveAttribute("aria-live", "polite");
     expect(screen.getByRole("button", { name: /Повторная отправка через/ })).toBeDisabled();
   });
 
@@ -3355,6 +3359,23 @@ describe("registration intent and account claim flow", () => {
     await createIntent(user);
     await confirmIntent(user, registrationResult(status));
     expect(await screen.findByText(new RegExp(copy))).toBeInTheDocument();
+  });
+
+  it("keeps success readable outside the scoped flow announcer", async () => {
+    const user = await setupValidForm();
+    await createIntent(user);
+    await confirmIntent(user);
+
+    const dialog = flowDialog();
+    const successCard = dialog.querySelector(".success-card") as HTMLElement;
+    const flowLive = dialog.querySelector(".flow-live") as HTMLElement;
+    expect(successCard).not.toHaveAttribute("aria-live");
+    expect(flowLive).toHaveAttribute("aria-live", "polite");
+    expect(flowLive).toHaveAttribute("aria-atomic", "true");
+    expect(within(dialog).getByRole("heading", { name: "Регистрация успешно сохранена" })).toHaveFocus();
+    expect(within(dialog).getByLabelText("Этапы регистрации")).toHaveTextContent("ПодтверждениеПодтверждено");
+    expect(within(dialog).queryByText("Аккаунт", { selector: "li" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Оплата", { selector: "li" })).not.toBeInTheDocument();
   });
 
   it("accepts the server-authoritative confirmed paid result with pending payment and no CTA", async () => {

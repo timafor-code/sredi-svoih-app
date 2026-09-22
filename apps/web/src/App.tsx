@@ -1708,7 +1708,7 @@ function RegistrationForm({
       document.getElementById("success-heading")?.focus();
     };
     flowContent = (
-      <section className="flow-card success-card" aria-labelledby="success-heading" aria-live="polite">
+      <section className="flow-card success-card" aria-labelledby="success-heading">
         <p className="eyebrow">{registrationOutcome === "already_registered" ? "Регистрация уже существует" : "Регистрация сохранена"}</p>
         <div className="registration-flow-result-heading">
           <span className={`registration-flow-result-mark result-${registration.status}`} aria-hidden="true">
