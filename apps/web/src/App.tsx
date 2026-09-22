@@ -817,10 +817,10 @@ function SignInDialog({ initialEmail, onClose, onAuthenticated }: {
   );
 }
 
-function RegistrationFlowDialog({ stage, paymentStatus, accountDone, eventTitle, onClose, actions, children }: {
+function RegistrationFlowDialog({ stage, paymentStatus, registrationMode, eventTitle, onClose, actions, children }: {
   stage: FlowStage;
   paymentStatus: WebRegistrationResult["payment_status"] | undefined;
-  accountDone: boolean;
+  registrationMode: WebRegistrationMode;
   eventTitle: string;
   onClose: () => void;
   actions?: ReactNode;
@@ -866,13 +866,16 @@ function RegistrationFlowDialog({ stage, paymentStatus, accountDone, eventTitle,
         <button className="login-close" type="button" aria-label="Закрыть оформление регистрации" onClick={closeDialog}>×</button>
       </header>
       <ol className="registration-flow-progress" aria-label="Этапы регистрации">
-        <li className={stage === "verification" ? "active" : "done"} aria-current={stage === "verification" ? "step" : undefined}>Подтверждение</li>
-        <li className={paymentStatus === "pending" ? "pending" : ""}>
-          Оплата
-          {paymentStatus === "not_required" ? <small>Не требуется</small> : null}
-          {paymentStatus === "pending" ? <small>Ожидается</small> : null}
+        <li className={stage === "verification" ? "active" : "done"} aria-current={stage === "verification" ? "step" : undefined}>
+          Подтверждение
+          <small>{stage === "verification" ? "Текущий этап" : "Подтверждено"}</small>
         </li>
-        <li className={stage === "success" ? accountDone ? "done" : "active" : ""} aria-current={stage === "success" ? "step" : undefined}>Аккаунт</li>
+        {registrationMode === "internal_paid" ? (
+          <li className={paymentStatus === "pending" ? "pending" : ""}>
+            Оплата
+            <small>{paymentStatus === "pending" ? "Оплата · на месте · ожидается" : "Оплата · на месте"}</small>
+          </li>
+        ) : null}
       </ol>
       <div ref={bodyRef} className="registration-flow-body">{children}</div>
       {actions ? <footer className="registration-flow-actions">{actions}</footer> : null}
@@ -1620,13 +1623,6 @@ function RegistrationForm({
     if (!identityReady) return;
   };
 
-  const accountDecisionResolved = (
-    passwordlessDeclined
-    || accountCompleted
-    || signInDeclined
-    || existingAccount !== null
-    || (accountNextStep === "none" && !passwordlessAccountChoiceAvailable)
-  );
   const repeatAvailable = stage === "success"
     && registration !== null
     && !passwordlessDeletionPending
@@ -1690,6 +1686,15 @@ function RegistrationForm({
     const showPasswordForm = (accountNextStep === "set_password" && !passwordlessDeclined)
       || ((accountNextStep === "request_set_password" || showPasswordlessChoice) && passwordRequestSent);
     const canSkipPassword = showPasswordlessChoice || accountNextStep === "set_password";
+    const accountOfferTitle = accountCompleted || existingAccount
+      ? "Аккаунт готов"
+      : passwordlessDeclined
+        ? "Управление данными — необязательно"
+        : accountNextStep === "sign_in"
+          ? "Войти в аккаунт — необязательно"
+          : accountNextStep === "none" && !showPasswordlessChoice && !showPasswordForm
+            ? "Управление данными — необязательно"
+            : "Задать пароль для входа — необязательно";
     const continueWithoutPassword = () => {
       setPasswordlessDeclined(true);
       setSetPasswordCode(null);
@@ -1726,15 +1731,17 @@ function RegistrationForm({
         </dl>
 
         {isPaidResult ? (
-          <div className="account-followup">
-            <p className="muted-copy">Оплата на сайте пока не выполнена.</p>
-            <p className="muted-copy">Статус оплаты: <strong>ожидается</strong>.</p>
-            <p className="muted-copy">Онлайн-оплата пока недоступна.</p>
+          <div className="payment-information">
+            <p><strong>Оплата · на месте</strong></p>
+            <p>Статус: ожидается. Онлайн-оплата на сайте не выполняется.</p>
           </div>
         ) : null}
 
-        {accountNextStep === "none" && !accountCompleted ? <p className="muted-copy">Регистрация уже сохранена. {existingAccount ? "Регистрация сохранена в вашем аккаунте." : "Пароль пока не задан."}</p> : null}
-        {passwordlessDeclined ? <p className="muted-copy">Регистрация сохранена без пароля.</p> : null}
+        <details className="optional-account-section">
+          <summary>{accountOfferTitle}</summary>
+          <div className="optional-account-content">
+            {accountNextStep === "none" && !accountCompleted ? <p className="muted-copy">Регистрация сохранена. {existingAccount ? "Она доступна в вашем аккаунте." : "Пароль не требуется."}</p> : null}
+            {passwordlessDeclined ? <p className="muted-copy">Вы продолжили без пароля; регистрация остаётся сохранённой.</p> : null}
         {accountNextStep === "sign_in" && !accountCompleted && !existingAccount ? (
           <div className="account-followup">
             <p className="muted-copy">Регистрация уже сохранена. Вход необязателен: войти с существующим паролем для управления аккаунтом можно позже.</p>
@@ -1843,7 +1850,8 @@ function RegistrationForm({
             </> : null}
           </div>
         ) : null}
-        <LineageDeclarationPanel consentDocument={lineageConsentDocument} />
+          </div>
+        </details>
         <div className="flow-live" aria-live="polite" aria-atomic="true">
           {notice ? <p className="form-notice" role="status">{notice}</p> : null}
           {passwordError ? <p className="form-error" id="password-error" role="alert">{passwordError}</p> : null}
@@ -2062,7 +2070,7 @@ function RegistrationForm({
         <RegistrationFlowDialog
           stage={stage}
           paymentStatus={registration?.payment_status}
-          accountDone={accountDecisionResolved}
+          registrationMode={registrationMode}
           eventTitle={eventTitle}
           onClose={closeFlow}
           actions={stage === "success" ? <>

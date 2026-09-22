@@ -1849,7 +1849,7 @@ describe("local form shell", () => {
     const resultDialog = screen.getByRole("dialog", { name: "Оформление регистрации" });
     expect(within(resultDialog).queryByRole("button", { name: "Задать пароль" })).not.toBeInTheDocument();
     expect(within(resultDialog).queryByRole("button", { name: "Продолжить без пароля" })).not.toBeInTheDocument();
-    expect(within(resultDialog).getByText("Аккаунт", { selector: "li" })).toHaveClass("done");
+    expect(within(resultDialog).queryByText("Аккаунт", { selector: "li" })).not.toBeInTheDocument();
     expect(window.location.href).not.toContain("temporary-access-token");
     expect(window.location.href).not.toContain("secret-password");
   });
@@ -2437,6 +2437,13 @@ describe("registration intent and account claim flow", () => {
     return dialog;
   }
 
+  async function openOptionalAccount(user: ReturnType<typeof userEvent.setup>, dialog = flowDialog()) {
+    const summary = within(dialog).getByText(/— необязательно$/, { selector: "summary" });
+    expect(summary.closest("details")).not.toHaveAttribute("open");
+    await user.click(summary);
+    expect(summary.closest("details")).toHaveAttribute("open");
+  }
+
   it.each(["Escape", "close", "backdrop", "cancel"])("dismisses confirmation through %s and resumes the same intent with preserved inputs", async (dismissal) => {
     const user = await setupValidForm(responseWithQuestionnaire());
     await fillValidQuestionnaire(user);
@@ -2450,7 +2457,8 @@ describe("registration intent and account claim flow", () => {
     expect(dialog.closest("form")).toBeNull();
     expect(nameInput.closest("form")).toBe(pageForm);
     expect(within(dialog).getByLabelText("Код подтверждения")).toHaveFocus();
-    expect(within(dialog).getByLabelText("Этапы регистрации")).toHaveTextContent("ПодтверждениеОплатаАккаунт");
+    expect(within(dialog).getByLabelText("Этапы регистрации")).toHaveTextContent("ПодтверждениеТекущий этап");
+    expect(within(dialog).queryByText("Аккаунт", { selector: "li" })).not.toBeInTheDocument();
     await user.type(within(dialog).getByLabelText("Код подтверждения"), "12a345");
     const expiry = within(dialog).getByText(/Текущий срок действия/).textContent;
     const callCount = vi.mocked(fetch).mock.calls.length;
@@ -2592,20 +2600,20 @@ describe("registration intent and account claim flow", () => {
     } else {
       expect(within(flowDialog()).getByRole("button", { name: "Задать пароль" })).toBeInTheDocument();
       expect(within(flowDialog()).getByRole("button", { name: "Продолжить без пароля" })).toBeInTheDocument();
-      expect(within(flowDialog()).getByText("Аккаунт", { selector: "li" })).toHaveClass("active");
+      expect(within(flowDialog()).queryByText("Аккаунт", { selector: "li" })).not.toBeInTheDocument();
     }
     await user.click(within(flowDialog()).getByRole("button", { name: "Готово" }));
     const callCount = vi.mocked(fetch).mock.calls.length;
     await user.click(screen.getByRole("button", { name: "Посмотреть регистрацию" }));
     expectOneFlowDialog();
-    expect(within(flowDialog()).getByText("Не требуется")).toBeInTheDocument();
+    expect(within(flowDialog()).queryByText("Оплата", { selector: "li" })).not.toBeInTheDocument();
     expect(within(flowDialog()).getByText("Регистрация подтверждена.")).toBeInTheDocument();
     if (nextStep === "set_password") {
       expect(screen.getByLabelText("Пароль")).toHaveValue("preserved-password");
       expect(screen.getByLabelText("Повторите пароль")).toHaveValue("preserved-password");
     } else {
       expect(within(flowDialog()).getByRole("button", { name: "Продолжить без пароля" })).toBeInTheDocument();
-      expect(within(flowDialog()).getByText("Аккаунт", { selector: "li" })).toHaveClass("active");
+      expect(within(flowDialog()).queryByText("Аккаунт", { selector: "li" })).not.toBeInTheDocument();
     }
     expect(fetch).toHaveBeenCalledTimes(callCount);
   });
@@ -2614,6 +2622,7 @@ describe("registration intent and account claim flow", () => {
     await createIntent(user);
     await confirmIntent(user, registrationResult("confirmed", "sign_in"));
     const dialog = expectOneFlowDialog();
+    await openOptionalAccount(user, dialog);
     expect(within(dialog).getByText(/Регистрация уже сохранена.*Вход необязателен/)).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Войти" }));
     expect(flowDialog()).toBe(dialog);
@@ -2662,6 +2671,7 @@ describe("registration intent and account claim flow", () => {
     expectOneFlowDialog();
     expect(flowDialog()).toBe(dialog);
     expect(within(dialog).getByText("Вход выполнен. Регистрация сохранена в вашем аккаунте.")).toBeInTheDocument();
+    expect(within(flowDialog()).getByText("Аккаунт готов", { selector: "summary" })).toBeInTheDocument();
     expect(within(dialog).getByRole("heading", { name: "Регистрация успешно сохранена" })).toHaveFocus();
     expect(within(dialog).queryByLabelText("Пароль")).not.toBeInTheDocument();
     expect(storageSpy).not.toHaveBeenCalled();
@@ -2756,6 +2766,15 @@ describe("registration intent and account claim flow", () => {
     await confirmIntent(user, registrationResult("confirmed", "set_password"));
     expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
     expect(screen.getByText("Регистрация подтверждена.")).toBeInTheDocument();
+    const dialog = flowDialog();
+    const resultCard = dialog.querySelector(".success-card") as HTMLElement;
+    const optionalAccount = within(dialog).getByText("Задать пароль для входа — необязательно", { selector: "summary" }).closest("details") as HTMLDetailsElement;
+    expect(optionalAccount).not.toHaveAttribute("open");
+    expect(resultCard.querySelector(".registration-result")?.compareDocumentPosition(resultCard.querySelector(".result-details") as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(resultCard.querySelector(".result-details")?.compareDocumentPosition(optionalAccount)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    const callsBeforeOpen = vi.mocked(fetch).mock.calls.length;
+    await openOptionalAccount(user);
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(callsBeforeOpen);
     expect(screen.getByLabelText("Пароль")).toBeInTheDocument();
     expect(screen.getByLabelText("Повторите пароль")).toBeInTheDocument();
     expect(screen.queryByLabelText("Код из письма")).not.toBeInTheDocument();
@@ -2773,8 +2792,9 @@ describe("registration intent and account claim flow", () => {
     await createIntent(user);
     await confirmIntent(user);
     const dialog = expectOneFlowDialog();
-    expect(within(dialog).getByText(/Регистрация уже сохранена/)).toBeInTheDocument();
-    expect(within(dialog).getByText("Аккаунт", { selector: "li" })).toHaveClass("active");
+    await openOptionalAccount(user, dialog);
+    expect(within(dialog).getByText("Регистрация сохранена. Пароль не требуется.")).toBeInTheDocument();
+    expect(within(dialog).queryByText("Аккаунт", { selector: "li" })).not.toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Задать пароль" })).toHaveClass("primary-button");
     const skip = within(dialog).getByRole("button", { name: "Продолжить без пароля" });
     expect(skip).toHaveClass("secondary-button");
@@ -2789,8 +2809,9 @@ describe("registration intent and account claim flow", () => {
     const callCount = vi.mocked(fetch).mock.calls.length;
     const savedDetails = within(dialog).getByText("Мероприятие").closest("dl")?.textContent;
     await user.click(within(dialog).getByRole("button", { name: "Продолжить без пароля" }));
-    expect(within(dialog).getByText("Регистрация сохранена без пароля.")).toBeInTheDocument();
-    expect(within(dialog).getByText("Аккаунт", { selector: "li" })).toHaveClass("done");
+    expect(within(dialog).getByText("Вы продолжили без пароля; регистрация остаётся сохранённой.")).toBeInTheDocument();
+    expect(within(dialog).getByText("Управление данными — необязательно", { selector: "summary" })).toBeInTheDocument();
+    expect(within(dialog).queryByText("Аккаунт", { selector: "li" })).not.toBeInTheDocument();
     expect(within(dialog).getByRole("heading", { name: "Регистрация успешно сохранена" })).toHaveFocus();
     expect(within(dialog).queryByLabelText("Пароль")).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Задать пароль" })).not.toBeInTheDocument();
@@ -2798,10 +2819,11 @@ describe("registration intent and account claim flow", () => {
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Посмотреть регистрацию" }));
     const resumed = expectOneFlowDialog();
-    expect(within(resumed).getByText("Регистрация сохранена без пароля.")).toBeInTheDocument();
+    expect(within(resumed).getByText("Вы продолжили без пароля; регистрация остаётся сохранённой.")).toBeInTheDocument();
     expect(within(resumed).getByText("Регистрация подтверждена.")).toBeInTheDocument();
+    expect(within(resumed).getByText("Управление данными — необязательно", { selector: "summary" })).toBeInTheDocument();
     expect(within(resumed).getByText("Мероприятие").closest("dl")?.textContent).toBe(savedDetails);
-    expect(within(resumed).getByText("Аккаунт", { selector: "li" })).toHaveClass("done");
+    expect(within(resumed).queryByText("Аккаунт", { selector: "li" })).not.toBeInTheDocument();
     expect(within(resumed).getByRole("button", { name: "Управление данными" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledTimes(callCount);
   });
@@ -2826,9 +2848,9 @@ describe("registration intent and account claim flow", () => {
     const result = registrationResult();
     result.data.registration.event_id = otherEvent.event.id;
     await confirmIntent(user, result);
-    expect(within(flowDialog()).queryByText("Регистрация сохранена без пароля.")).not.toBeInTheDocument();
+    expect(within(flowDialog()).queryByText("Вы продолжили без пароля; регистрация остаётся сохранённой.")).not.toBeInTheDocument();
     expect(within(flowDialog()).getByRole("button", { name: "Продолжить без пароля" })).toBeInTheDocument();
-    expect(within(flowDialog()).getByText("Аккаунт", { selector: "li" })).toHaveClass("active");
+    expect(within(flowDialog()).queryByText("Аккаунт", { selector: "li" })).not.toBeInTheDocument();
   });
 
   it.each(["none", "request_set_password"] as const)("keeps %s password request failures safe and allows retry", async (nextStep) => {
@@ -2877,7 +2899,7 @@ describe("registration intent and account claim flow", () => {
     expect(screen.getByLabelText("Код из письма")).toHaveValue("012345");
     expect(screen.getByLabelText("Пароль")).toHaveValue("short-password");
     expect(screen.getByLabelText("Повторите пароль")).toHaveValue("mismatched-password");
-    expect(within(flowDialog()).getByText("Аккаунт", { selector: "li" })).toHaveClass("active");
+    expect(within(flowDialog()).queryByText("Аккаунт", { selector: "li" })).not.toBeInTheDocument();
     expect(fetch).toHaveBeenCalledTimes(5);
   });
 
@@ -3070,11 +3092,12 @@ describe("registration intent and account claim flow", () => {
     vi.mocked(fetch).mockImplementationOnce(() => response({ ok: true }));
     await user.click(screen.getByRole("button", { name: "Сохранить пароль" }));
     expect(await screen.findByRole("status")).toHaveTextContent("Аккаунт создан для этой же регистрации");
+    expect(within(flowDialog()).getByText("Аккаунт готов", { selector: "summary" })).toBeInTheDocument();
     const body = JSON.parse(String(vi.mocked(fetch).mock.calls.at(-1)?.[1]?.body));
     expect(body).toEqual({ code: SET_PASSWORD_CODE, new_password: "strong-pass-123" });
     expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes("/auth/"))
       .map(([input]) => input)).toEqual(["/api/auth/confirm-set-password"]);
-    expect(within(flowDialog()).getByText("Аккаунт", { selector: "li" })).toHaveClass("done");
+    expect(within(flowDialog()).queryByText("Аккаунт", { selector: "li" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Код из письма")).not.toBeInTheDocument();
     expect(window.location.href).not.toContain(SET_PASSWORD_CODE);
     expect(window.location.href).not.toContain("strong-pass-123");
@@ -3093,7 +3116,7 @@ describe("registration intent and account claim flow", () => {
 
     await user.click(within(dialog).getByRole("button", { name: "Продолжить без пароля" }));
 
-    expect(within(dialog).getByText("Регистрация сохранена без пароля.")).toBeInTheDocument();
+    expect(within(dialog).getByText("Вы продолжили без пароля; регистрация остаётся сохранённой.")).toBeInTheDocument();
     expect(within(dialog).queryByLabelText("Пароль")).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText("Повторите пароль")).not.toBeInTheDocument();
     expect(within(dialog).getByText("Мероприятие").closest("dl")?.textContent).toBe(savedDetails);
@@ -3107,6 +3130,7 @@ describe("registration intent and account claim flow", () => {
     const user = await setupValidForm();
     await createIntent(user);
     await confirmIntent(user, registrationResult("confirmed", "sign_in"));
+    expect(within(flowDialog()).getByText("Войти в аккаунт — необязательно", { selector: "summary" }).closest("details")).not.toHaveAttribute("open");
     expect(await screen.findByText("Регистрация уже сохранена. Вход необязателен: войти с существующим паролем для управления аккаунтом можно позже.")).toBeInTheDocument();
     expect(screen.queryByLabelText("Пароль")).not.toBeInTheDocument();
   });
@@ -3118,8 +3142,9 @@ describe("registration intent and account claim flow", () => {
     await createIntent(user);
     await confirmIntent(user, registrationResult("confirmed", nextStep));
     const dialog = expectOneFlowDialog();
+    await openOptionalAccount(user, dialog);
     const savedDetails = within(dialog).getByText("Мероприятие").closest("dl")?.textContent;
-    expect(within(dialog).getByText("Аккаунт", { selector: "li" })).toHaveClass("active");
+    expect(within(dialog).queryByText("Аккаунт", { selector: "li" })).not.toBeInTheDocument();
     expect(fetch).toHaveBeenCalledTimes(4);
     expect(screen.queryByLabelText("Код из письма")).not.toBeInTheDocument();
     vi.mocked(fetch).mockImplementationOnce(() => response({ ok: true }));
@@ -3137,6 +3162,7 @@ describe("registration intent and account claim flow", () => {
     vi.mocked(fetch).mockImplementationOnce(() => response({ ok: true }));
     await user.click(screen.getByRole("button", { name: "Сохранить пароль" }));
     expect(await screen.findByRole("status")).toHaveTextContent("Аккаунт создан для этой же регистрации");
+    expect(within(dialog).getByText("Аккаунт готов", { selector: "summary" })).toBeInTheDocument();
     const authCalls = vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes("/auth/"));
     expect(authCalls.map(([input]) => String(input))).toEqual([
       "/api/auth/request-set-password",
@@ -3147,14 +3173,14 @@ describe("registration intent and account claim flow", () => {
     expect(flowDialog()).toBe(dialog);
     expect(within(dialog).getByText("Мероприятие").closest("dl")?.textContent).toBe(savedDetails);
     expect(within(dialog).getByText("Регистрация подтверждена.")).toBeInTheDocument();
-    expect(within(dialog).getByText("Аккаунт", { selector: "li" })).toHaveClass("done");
+    expect(within(dialog).queryByText("Аккаунт", { selector: "li" })).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText("Пароль")).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Продолжить без пароля" })).not.toBeInTheDocument();
     expect(within(dialog).queryByText(/Пароль и web-сессия не создавались/)).not.toBeInTheDocument();
     expectOneFlowDialog();
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Посмотреть регистрацию" }));
-    expect(within(flowDialog()).getByText("Аккаунт", { selector: "li" })).toHaveClass("done");
+    expect(within(flowDialog()).queryByText("Аккаунт", { selector: "li" })).not.toBeInTheDocument();
     expect(fetch).toHaveBeenCalledTimes(6);
     expect(storageSpy).not.toHaveBeenCalled();
     expect(window.localStorage).toHaveLength(0);
@@ -3349,15 +3375,17 @@ describe("registration intent and account claim flow", () => {
     expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
     expect(screen.getByText("Регистрация подтверждена.")).toBeInTheDocument();
     expect(screen.getByText("Сумма").closest("div")).toHaveTextContent(/4.?321.?₽/);
-    expect(screen.getByText("Оплата на сайте пока не выполнена.")).toBeInTheDocument();
+    expect(screen.getByText("Оплата · на месте")).toBeInTheDocument();
+    expect(screen.getByText(/Статус: ожидается\. Онлайн-оплата на сайте не выполняется/)).toBeInTheDocument();
     expectOneFlowDialog();
-    expect(within(flowDialog()).getByText("Онлайн-оплата пока недоступна.")).toBeInTheDocument();
-    expect(within(flowDialog()).getByLabelText("Этапы регистрации")).toHaveTextContent("Ожидается");
+    expect(within(flowDialog()).getByText(/Статус: ожидается\. Онлайн-оплата на сайте не выполняется/)).toBeInTheDocument();
+    expect(within(flowDialog()).getByLabelText("Этапы регистрации")).toHaveTextContent("Оплата · на месте · ожидается");
     expect(within(flowDialog()).queryByRole("tab")).not.toBeInTheDocument();
     expect(within(flowDialog()).queryByText(/СБП|Банковская карта|Демо/)).not.toBeInTheDocument();
-    expect(screen.getByText(/Статус оплаты:/)).toHaveTextContent("ожидается");
+    expect(screen.getByText(/Статус: ожидается/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Оплатить/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/Оплата прошла|Оплачено|Платёж выполнен|Тестовая оплата/)).not.toBeInTheDocument();
+    await openOptionalAccount(user);
     await user.click(within(flowDialog()).getByRole("button", { name: "Продолжить без пароля" }));
     const registrationPostsBeforeReset = vi.mocked(fetch).mock.calls.filter(([input, init]) => (
       String(input).endsWith("/registration-intents") && init?.method === "POST"
@@ -3582,22 +3610,16 @@ describe("participant lineage declaration", () => {
     expect(screen.getByRole("button", { name: "Готово" })).toBeInTheDocument();
   });
 
-  it("keeps the completed registration intact when saving the lineage declaration fails", async () => {
+  it("keeps lineage out of the completed dialog for an anonymous participant", async () => {
     const user = userEvent.setup();
     const data = responseWithLineageConsent();
-    await renderWithLineage(data, {
-      lineageGet: lineageDeclaration({ state: "none" }),
-      onLineagePut: () => response(apiError("validation_error"), 422),
-    });
+    await renderWithLineage(data, { lineageGet: lineageDeclaration({ state: "none" }) });
     await fillValidForm(user);
     await createIntent(user);
     await confirmIntent(user);
     const dialog = await screen.findByRole("dialog", { name: "Оформление регистрации" });
-    expect(await screen.findByRole("heading", { name: "Еврейское происхождение" })).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("checkbox", { name: "Гиюр" }));
-    await user.click(within(dialog).getByLabelText(/Я даю отдельное согласие/));
-    await user.click(within(dialog).getByRole("button", { name: "Сохранить ответ" }));
-    expect(await within(dialog).findByText("Не удалось сохранить ответ. Попробуйте ещё раз позже.")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("heading", { name: "Еврейское происхождение" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Еврейское происхождение" })).not.toBeInTheDocument();
     expect(within(dialog).getByText("Регистрация подтверждена.")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Продолжить без пароля" }));
     expect(within(dialog).getByRole("button", { name: "Готово" })).toBeInTheDocument();

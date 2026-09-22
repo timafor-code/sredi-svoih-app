@@ -493,7 +493,15 @@ normal submission starts a fresh flow. An `internal_free` completed view does
 not offer a same-occurrence repeat. Its `already_registered` outcome is shown
 as the authoritative existing registration, never as a newly saved one. The
 locked completed form shows saved seats and amount from the returned
-registration rather than mutable pending option selections.
+registration rather than mutable pending option selections. The completed
+dialog leads with that authoritative saved result (status, summary, and, for
+paid registrations, informational “payment on site” status). Optional
+password, sign-in, and data-management actions are contained in one collapsed
+section and are not registration steps. The progress indicator represents
+confirmation and, only for paid registrations, informational payment; it never
+includes an Account step or implies online payment. Lineage declaration remains
+page-only for its existing authenticated and remembered audiences, and is not
+shown in the completed dialog.
 
 ## Administrative Publication Contracts
 
