@@ -1864,6 +1864,52 @@ select {
   font-size: 1.1rem;
 }
 
+.payment-information {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text-secondary);
+}
+
+.payment-information p { margin: 0; line-height: 1.5; }
+.payment-information strong { color: var(--text); }
+
+.optional-account-section {
+  margin-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.optional-account-section summary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.optional-account-content {
+  display: grid;
+  gap: 12px;
+  padding: 0 0 4px;
+}
+
+.optional-account-content .account-followup { margin: 0; }
+.optional-account-content #passwordless-data-management-button {
+  width: auto;
+  justify-self: start;
+  min-height: 40px;
+  padding: 8px 12px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .password-setup-card {
   gap: 14px;
 }
