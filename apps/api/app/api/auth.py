@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import require_auth
@@ -52,6 +52,7 @@ from app.services.auth import (
     register_password_user,
     register_password_user_with_invite,
 )
+from app.services import web_participant_sessions
 from app.services.account_consent import (
     accept_current_account_consent,
     get_account_consent_status,
@@ -185,9 +186,12 @@ async def refresh(
 @router.post("/logout", response_model=LogoutResponse)
 async def logout(
     payload: LogoutRequest,
+    response: Response,
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> LogoutResponse:
-    return await logout_session(session, refresh_token=payload.refresh_token)
+    result = await logout_session(session, refresh_token=payload.refresh_token)
+    web_participant_sessions.clear_remembered_participant_cookie(response)
+    return result
 
 
 @router.post("/change-password", response_model=AuthCodeConfirmResponse)
@@ -256,14 +260,17 @@ async def request_set_password(
 @router.post("/confirm-set-password", response_model=AuthCodeConfirmResponse)
 async def confirm_set_password_endpoint(
     payload: ConfirmSetPasswordRequest,
+    response: Response,
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AuthCodeConfirmResponse:
-    return await confirm_set_password(
+    result = await confirm_set_password(
         session,
         email=payload.email,
         code=payload.code,
         new_password=payload.new_password,
     )
+    web_participant_sessions.clear_remembered_participant_cookie(response)
+    return result
 
 
 @router.get("/me", response_model=MeResponse)

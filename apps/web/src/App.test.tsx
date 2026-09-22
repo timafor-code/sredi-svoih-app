@@ -486,110 +486,48 @@ describe("public event page", () => {
     expect(fetch).toHaveBeenCalledWith("/api/web/participant-session", expect.objectContaining({ method: "DELETE", credentials: "include" }));
   });
 
-  it("issues a remembered session after a real account sign-in", async () => {
+  it("shows the canonical account after password sign-in without issuing participant state", async () => {
     const user = userEvent.setup();
     await renderEvent();
     await signInExistingAccount(user);
-    expect(fetch).toHaveBeenCalledWith("/api/web/participant-session", expect.objectContaining({
-      method: "POST", credentials: "include", headers: expect.objectContaining({ Authorization: "Bearer temporary-access-token" }),
-    }));
+    expect(screen.getByRole("region", { name: "Аккаунт" })).toHaveTextContent("Иван Иванов");
+    expect(fetch).toHaveBeenCalledWith("/api/auth/login", expect.any(Object));
+    expect(fetch).toHaveBeenCalledWith("/api/auth/me", expect.any(Object));
+    expect(vi.mocked(fetch).mock.calls.some(([input, init]) => (
+      String(input).endsWith("/web/participant-session") && init?.method === "POST"
+    ))).toBe(false);
   });
 
-  it("reconciles remembered identity before exposing sign-out registration state", async () => {
+  it("leaves no remembered identity after successful account sign-out", async () => {
     const user = userEvent.setup();
-    const remembered = { first_name: "Пётр", last_name: "Петров", phone: "+79000000002", email: "petr@example.ru" };
-    let participantSessionGets = 0;
-    let resolveSignOutSession!: (value: Response) => void;
-    vi.mocked(fetch).mockImplementation((input, init) => {
-      const url = String(input);
-      if (url.endsWith("/web/participant-session")) {
-        if (init?.method === "POST") return response(envelope({ state: "remembered" }));
-        participantSessionGets += 1;
-        if (participantSessionGets === 1) return response(envelope({ state: "anonymous", participant: null }));
-        if (participantSessionGets === 2) return response(envelope({ state: "remembered", participant: remembered }));
-        return new Promise((resolve) => { resolveSignOutSession = resolve; });
-      }
-      if (url.endsWith("/auth/logout")) return response({ ok: true });
-      return response(envelope(eventResponse()));
-    });
-    window.history.replaceState(null, "", `/events/${EVENT_ID}`);
-    render(<App />);
-    await screen.findByLabelText("Имя");
-
+    await renderEvent();
     const accountPanel = await signInExistingAccount(user);
-    await waitFor(() => expect(participantSessionGets).toBe(2));
+    let finishLogout!: (value: Response) => void;
+    vi.mocked(fetch).mockImplementationOnce(() => new Promise<Response>((resolve) => { finishLogout = resolve; }));
     await user.click(within(accountPanel).getByRole("button", { name: "Выйти" }));
 
-    expect(screen.getByText("Проверяем данные для регистрации…")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Аккаунт" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
-    resolveSignOutSession(await response(envelope({ state: "remembered", participant: remembered })));
-
-    expect(await screen.findByRole("heading", { name: "Записываем вас как Пётр Петров" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Сохранённые данные для регистрации, только для чтения")).toHaveTextContent("Пётр");
-    expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
-  });
-
-  it("shows anonymous fields only after sign-out reconciliation confirms anonymous", async () => {
-    const user = userEvent.setup();
-    const remembered = { first_name: "Пётр", last_name: "Петров", phone: "+79000000002", email: "petr@example.ru" };
-    let participantSessionGets = 0;
-    let resolveSignOutSession!: (value: Response) => void;
-    vi.mocked(fetch).mockImplementation((input, init) => {
-      const url = String(input);
-      if (url.endsWith("/web/participant-session")) {
-        if (init?.method === "POST") return response(envelope({ state: "remembered" }));
-        participantSessionGets += 1;
-        if (participantSessionGets === 1) return response(envelope({ state: "anonymous", participant: null }));
-        if (participantSessionGets === 2) return response(envelope({ state: "remembered", participant: remembered }));
-        return new Promise((resolve) => { resolveSignOutSession = resolve; });
-      }
-      if (url.endsWith("/auth/logout")) return response({ ok: true });
-      return response(envelope(eventResponse()));
-    });
-    window.history.replaceState(null, "", `/events/${EVENT_ID}`);
-    render(<App />);
-    await screen.findByLabelText("Имя");
-
-    const accountPanel = await signInExistingAccount(user);
-    await waitFor(() => expect(participantSessionGets).toBe(2));
-    await user.click(within(accountPanel).getByRole("button", { name: "Выйти" }));
-
-    expect(screen.getByText("Проверяем данные для регистрации…")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
-    resolveSignOutSession(await response(envelope({ state: "anonymous", participant: null })));
-
+    await act(async () => finishLogout(await response({ ok: true })));
+    expect(screen.queryByRole("region", { name: "Аккаунт" })).not.toBeInTheDocument();
     expect(await screen.findByLabelText("Имя")).toBeInTheDocument();
-    expect(screen.getByText("Уже есть аккаунт?")).toBeInTheDocument();
   });
 
-  it("fails closed when sign-out participant-session reconciliation fails", async () => {
+  it("keeps account mode and allows retry when server sign-out fails", async () => {
     const user = userEvent.setup();
-    const remembered = { first_name: "Пётр", last_name: "Петров", phone: "+79000000002", email: "petr@example.ru" };
-    let participantSessionGets = 0;
-    let rejectSignOutSession!: (reason: Error) => void;
-    vi.mocked(fetch).mockImplementation((input, init) => {
-      const url = String(input);
-      if (url.endsWith("/web/participant-session")) {
-        if (init?.method === "POST") return response(envelope({ state: "remembered" }));
-        participantSessionGets += 1;
-        if (participantSessionGets === 1) return response(envelope({ state: "anonymous", participant: null }));
-        if (participantSessionGets === 2) return response(envelope({ state: "remembered", participant: remembered }));
-        return new Promise((_resolve, reject) => { rejectSignOutSession = reject; });
-      }
-      if (url.endsWith("/auth/logout")) return response({ ok: true });
-      return response(envelope(eventResponse()));
-    });
-    window.history.replaceState(null, "", `/events/${EVENT_ID}`);
-    render(<App />);
-    await screen.findByLabelText("Имя");
-
+    await renderEvent();
     const accountPanel = await signInExistingAccount(user);
-    await waitFor(() => expect(participantSessionGets).toBe(2));
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => response(apiError("network_error", "failed"), 503))
+      .mockImplementationOnce(() => response({ ok: true }));
     await user.click(within(accountPanel).getByRole("button", { name: "Выйти" }));
-    rejectSignOutSession(new Error("temporary failure"));
 
-    expect(await screen.findByText("Не удалось проверить данные для регистрации.")).toBeInTheDocument();
+    expect(await within(accountPanel).findByRole("alert")).toHaveTextContent("Не удалось безопасно завершить сеанс");
+    expect(screen.getByRole("region", { name: "Аккаунт" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+    await user.click(within(accountPanel).getByRole("button", { name: "Выйти" }));
+    expect(screen.queryByRole("region", { name: "Аккаунт" })).not.toBeInTheDocument();
+    expect(await screen.findByLabelText("Имя")).toBeInTheDocument();
   });
 
   it("keeps a real account authoritative after participant-session bootstrap and refresh failures", async () => {
@@ -3169,7 +3107,7 @@ describe("registration intent and account claim flow", () => {
       "/api/auth/confirm-set-password",
     ]);
     expect(authCalls[1][1]?.body).toBe(JSON.stringify({ email: "anna@example.ru", code: "012345", new_password: "strong-pass-123" }));
-    expect(fetch).toHaveBeenCalledTimes(6);
+    expect(fetch).toHaveBeenCalledTimes(7);
     expect(flowDialog()).toBe(dialog);
     expect(within(dialog).getByText("Мероприятие").closest("dl")?.textContent).toBe(savedDetails);
     expect(within(dialog).getByText("Регистрация подтверждена.")).toBeInTheDocument();
@@ -3181,7 +3119,7 @@ describe("registration intent and account claim flow", () => {
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Посмотреть регистрацию" }));
     expect(within(flowDialog()).queryByText("Аккаунт", { selector: "li" })).not.toBeInTheDocument();
-    expect(fetch).toHaveBeenCalledTimes(6);
+    expect(fetch).toHaveBeenCalledTimes(7);
     expect(storageSpy).not.toHaveBeenCalled();
     expect(window.localStorage).toHaveLength(0);
     expect(window.sessionStorage).toHaveLength(0);

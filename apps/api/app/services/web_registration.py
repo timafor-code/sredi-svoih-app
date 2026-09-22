@@ -1600,7 +1600,7 @@ async def _confirm_once(
     )
     issued = (
         await web_participant_sessions.issue(session, user=user, now=now)
-        if issue_participant_session
+        if issue_participant_session and user.password_hash is None
         else None
     )
     await session.commit()

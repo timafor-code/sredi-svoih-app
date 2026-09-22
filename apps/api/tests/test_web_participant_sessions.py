@@ -28,9 +28,9 @@ class WebParticipantSessionTests(unittest.IsolatedAsyncioTestCase):
                         id=self.user_id,
                         email=self.email,
                         phone=f"+7900{int(self.marker[:8], 16) % 10**7:07d}",
-                        password_hash="stored-password-hash",
-                        account_origin="password_signup",
-                        claim_state="claimed",
+                        password_hash=None,
+                        account_origin="web_registration",
+                        claim_state="unclaimed",
                         status="active",
                         email_verified_at=datetime.now(UTC),
                     ),
@@ -132,6 +132,21 @@ class WebParticipantSessionTests(unittest.IsolatedAsyncioTestCase):
             response = await client.get("/web/participant-session")
             self.assertEqual(response.json()["data"]["state"], "anonymous")
 
+    async def test_legacy_active_session_for_password_user_fails_closed(self) -> None:
+        issued = await self._issue()
+        async with AsyncSessionLocal() as session:
+            user = await session.get(AppUser, self.user_id)
+            assert user is not None
+            user.password_hash = "legacy-password-hash"
+            await session.commit()
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            client.cookies.set(service.COOKIE_NAME, issued.token)
+            response = await client.get("/web/participant-session")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"], {"state": "anonymous", "participant": None})
+
     async def test_multiple_sessions_and_privacy_revocation_are_independent(self) -> None:
         first = await self._issue()
         second = await self._issue()
@@ -151,7 +166,7 @@ class WebParticipantSessionTests(unittest.IsolatedAsyncioTestCase):
             rows = list(await session.scalars(select(WebParticipantSession)))
             self.assertTrue(all(row.revoked_at is not None for row in rows))
 
-    async def test_authenticated_web_issuance_sets_cookie_without_account_bearer_access(self) -> None:
+    async def test_passwordless_web_issuance_sets_cookie_without_account_bearer_access(self) -> None:
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
             issued = await client.post(

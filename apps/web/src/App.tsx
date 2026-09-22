@@ -18,7 +18,6 @@ import {
   getWebEventRegistrationForm,
   loginExistingAccount,
   logoutExistingAccount,
-  issueWebParticipantSession,
   PublicApiError,
   RegistrationUnavailableError,
   requestSetPassword,
@@ -679,7 +678,7 @@ function SignInPanel({ initialEmail, readOnlyEmail = false, onClose, onAuthentic
   initialEmail: string;
   readOnlyEmail?: boolean;
   onClose: () => void;
-  onAuthenticated: (account: AuthenticatedAccountState, rememberedSessionIssued: boolean) => void;
+  onAuthenticated: (account: AuthenticatedAccountState) => void;
 }): ReactNode {
   const [loginEmail, setLoginEmail] = useState(initialEmail.trim());
   const [loginPassword, setLoginPassword] = useState("");
@@ -727,18 +726,7 @@ function SignInPanel({ initialEmail, readOnlyEmail = false, onClose, onAuthentic
         }
         return;
       }
-      // A remembered participant is deliberately separate from account auth. A
-      // failure here must not make the successful bearer-authenticated account
-      // session look less real, nor fabricate remembered browser state.
-      let rememberedSessionIssued = false;
-      try {
-        await issueWebParticipantSession(tokens.access_token);
-        rememberedSessionIssued = true;
-      } catch {
-        // The account remains authenticated in memory; a later public visit
-        // will only be remembered if the server actually issued the cookie.
-      }
-      onAuthenticated({ tokens, identity }, rememberedSessionIssued);
+      onAuthenticated({ tokens, identity });
     } catch (error: unknown) {
       if (activeRef.current) {
         setLoginPassword("");
@@ -773,7 +761,7 @@ function SignInPanel({ initialEmail, readOnlyEmail = false, onClose, onAuthentic
 function SignInDialog({ initialEmail, onClose, onAuthenticated }: {
   initialEmail: string;
   onClose: () => void;
-  onAuthenticated: (account: AuthenticatedAccountState, rememberedSessionIssued: boolean) => void;
+  onAuthenticated: (account: AuthenticatedAccountState) => void;
 }): ReactNode {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const backdropPressRef = useRef(false);
@@ -809,9 +797,9 @@ function SignInDialog({ initialEmail, onClose, onAuthenticated }: {
         </div>
         <button className="login-close" type="button" aria-label="Закрыть вход" onClick={closeDialog}>×</button>
       </div>
-      <SignInPanel initialEmail={initialEmail} onClose={closeDialog} onAuthenticated={(account, rememberedSessionIssued) => {
+      <SignInPanel initialEmail={initialEmail} onClose={closeDialog} onAuthenticated={(account) => {
         dialogRef.current?.close();
-        onAuthenticated(account, rememberedSessionIssued);
+        onAuthenticated(account);
       }} />
     </dialog>
   );
@@ -933,7 +921,7 @@ function RegistrationForm({
   onRetryParticipantSession: () => void;
   onForgetParticipant: () => Promise<void>;
   onParticipantSessionRefresh: () => Promise<void>;
-  onAuthenticatedAccountChange: (account: AuthenticatedAccountState | null, rememberedSessionIssued?: boolean) => void;
+  onAuthenticatedAccountChange: (account: AuthenticatedAccountState | null) => void;
   onAuthenticatedRegistrationCompleted: () => void;
   onRepeatRegistration: () => void;
   onProgrammeOptionSelect?: (handler: ((optionId: string) => void) | null) => void;
@@ -1574,6 +1562,7 @@ function RegistrationForm({
     setPasswordError(null);
     try {
       await confirmSetPassword(code, newPassword, email);
+      await onParticipantSessionRefresh().catch(() => undefined);
       setAccountCompleted(true);
       setSetPasswordCode(null);
       setRequestedPasswordCode("");
@@ -1751,8 +1740,8 @@ function RegistrationForm({
                 <SignInPanel initialEmail={values.email} readOnlyEmail onClose={() => {
                   setFlowSignIn(false);
                   document.getElementById("success-heading")?.focus();
-                }} onAuthenticated={(account, rememberedSessionIssued) => {
-                  onAuthenticatedAccountChange(account, rememberedSessionIssued);
+                }} onAuthenticated={(account) => {
+                  onAuthenticatedAccountChange(account);
                   setFlowSignIn(false);
                   setAccountCompleted(true);
                   document.getElementById("success-heading")?.focus();
@@ -2109,7 +2098,7 @@ function EventPage({
   requestedOccurrenceId: string | null;
   authenticatedAccount: AuthenticatedAccountState | null;
   onAuthenticatedAccountChange: (account: AuthenticatedAccountState | null) => void;
-  onSignOut: () => void;
+  onSignOut: () => Promise<void>;
 }): ReactNode {
   const [participantSession, setParticipantSession] = useState<ParticipantSessionState>({ status: "checking" });
   const availableOccurrences = useMemo(
@@ -2145,6 +2134,8 @@ function EventPage({
   const [ticketsOpen, setTicketsOpen] = useState(false);
   const [ticketsRevision, setTicketsRevision] = useState(0);
   const [accountDeletionEmail, setAccountDeletionEmail] = useState<string | null>(null);
+  const [signOutBusy, setSignOutBusy] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   // EventPage is keyed by event ID, so description state resets on navigation.
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [stickyRegistrationVisible, setStickyRegistrationVisible] = useState(false);
@@ -2184,7 +2175,6 @@ function EventPage({
 
   const handleAuthenticatedAccountChange = (
     account: AuthenticatedAccountState | null,
-    rememberedSessionIssued = false,
   ) => {
     if (account === null) {
       void resolveParticipantSession().catch(() => undefined);
@@ -2192,12 +2182,21 @@ function EventPage({
       return;
     }
     onAuthenticatedAccountChange(account);
-    if (rememberedSessionIssued) void resolveParticipantSession().catch(() => undefined);
   };
 
-  const handleSignOut = () => {
-    void resolveParticipantSession().catch(() => undefined);
-    onSignOut();
+  const handleSignOut = async () => {
+    if (signOutBusy) return;
+    setSignOutBusy(true);
+    setSignOutError(null);
+    try {
+      await onSignOut();
+      participantSessionRequestId.current += 1;
+      setParticipantSession({ status: "anonymous" });
+    } catch {
+      setSignOutError("Не удалось безопасно завершить сеанс. Попробуйте ещё раз.");
+    } finally {
+      setSignOutBusy(false);
+    }
   };
 
   useEffect(() => {
@@ -2331,9 +2330,9 @@ function EventPage({
         <SignInDialog
           initialEmail={registrationEmail}
           onClose={closeSignIn}
-          onAuthenticated={(account, rememberedSessionIssued) => {
+          onAuthenticated={(account) => {
             setLoginOpener(null);
-            handleAuthenticatedAccountChange(account, rememberedSessionIssued);
+            handleAuthenticatedAccountChange(account);
           }}
         />
       ) : null}
@@ -2408,6 +2407,8 @@ function EventPage({
               onDeleteAccount={() => setAccountDeletionEmail(authenticatedAccount.identity.email)}
               onOpenTickets={() => setTicketsOpen(true)}
               onSignOut={handleSignOut}
+              signOutBusy={signOutBusy}
+              signOutError={signOutError}
             />
           ) : null}
           {authenticatedAccount && ticketsOpen ? (
@@ -2509,12 +2510,11 @@ export default function App(): ReactNode {
   const skipCanonicalRouteFetch = useRef<string | null>(null);
   const lastTriggeredStateCheck = useRef<string | null>(null);
 
-  const signOut = () => {
+  const signOut = async () => {
     const refreshToken = authenticatedAccount?.tokens.refresh_token;
+    if (!refreshToken) return;
+    await logoutExistingAccount(refreshToken);
     setAuthenticatedAccount(null);
-    if (refreshToken) {
-      void logoutExistingAccount(refreshToken).catch(() => undefined);
-    }
   };
 
   useEffect(() => {

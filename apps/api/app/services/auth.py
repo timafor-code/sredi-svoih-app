@@ -56,6 +56,7 @@ from app.schemas.auth import (
 )
 from app.services import authorization as authorization_service
 from app.services import current_user_profile as current_user_profile_service
+from app.services import web_participant_sessions
 from app.services.auth_email_service import (
     AuthEmailDeliveryError,
     send_email_verification_email,
@@ -989,6 +990,11 @@ async def confirm_set_password(
         user_id=user.id,
         now=now,
     )
+    await web_participant_sessions.revoke_all_for_user(
+        session,
+        user_id=user.id,
+        now=now,
+    )
     await session.commit()
     return _confirm_response()
 
@@ -1317,6 +1323,11 @@ async def logout_session(
         now = _now()
         auth_session.revoked_at = now
         auth_session.updated_at = now
+        await web_participant_sessions.revoke_all_for_user(
+            session,
+            user_id=auth_session.user_id,
+            now=now,
+        )
         await session.commit()
 
     return LogoutResponse()
