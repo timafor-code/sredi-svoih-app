@@ -1595,8 +1595,8 @@ function RegistrationForm({
     setStage("form");
   };
 
-  const resetCompletedAttempt = (preselectedOption?: WebRegistrationParticipationOption) => {
-    // A repeat is deliberately a UI-only reset. It must not reuse a flow or
+  const resetLocalRegistrationAttempt = (preselectedOption?: WebRegistrationParticipationOption) => {
+    // This is a local browser-state boundary. It must not reuse a flow or
     // idempotency key, and it must not create a registration on its own.
     setValues(emptyValues);
     setErrors({});
@@ -1640,6 +1640,10 @@ function RegistrationForm({
     submittingRef.current = false;
     idempotencyRef.current = null;
     pendingPasswordlessEmailRef.current = null;
+  };
+
+  const resetCompletedAttempt = (preselectedOption?: WebRegistrationParticipationOption) => {
+    resetLocalRegistrationAttempt(preselectedOption);
     onRepeatRegistration();
   };
 
@@ -1734,12 +1738,13 @@ function RegistrationForm({
     setForgetError(null);
     try {
       await onForgetParticipant();
+      resetLocalRegistrationAttempt();
+      window.requestAnimationFrame(() => document.getElementById("first-name")?.focus());
     } catch {
       setForgetError("Не удалось сменить данные. Попробуйте ещё раз.");
     } finally {
       setForgetBusy(false);
     }
-    if (!identityReady) return;
   };
 
   const repeatAvailable = stage === "success"
