@@ -1359,6 +1359,27 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((result.outcome, replay.outcome, status_result.outcome), ("created", "created", "created"))
         self.assertEqual(registration_count, 1)
 
+        async with AsyncSessionLocal() as session:
+            event = await session.get(Event, self.event_id)
+            assert event is not None
+            event.capacity = 6
+            await session.commit()
+        second_created, second_code = await self.create(
+            self.payload(
+                seats_count=2,
+                option_selections=[{"option_id": option.id, "quantity": 2}],
+                idempotency_key="web-finalize-paid-exact-reference-b",
+            ),
+        )
+        async with AsyncSessionLocal() as session:
+            second = await service.confirm_email(session, second_created.flow_id, second_code, "192.0.2.52")
+            first_status = await service.get_intent_status(session, created.flow_id)
+            second_status = await service.get_intent_status(session, second_created.flow_id)
+        self.assertNotEqual(second.registration.id, result.registration.id)
+        self.assertEqual(first_status.registration.id, result.registration.id)
+        self.assertEqual(second_status.registration.id, second.registration.id)
+        self.assertEqual((second.outcome, first_status.outcome, second_status.outcome), ("created", "created", "created"))
+
     async def test_questionnaire_answers_finalize_atomically_bind_version_and_clear_temporary_payload(self) -> None:
         form_id, field_id = await self._publish_questionnaire(version=1, retention_days=9)
         created, code = await self.create(

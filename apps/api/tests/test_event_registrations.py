@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import httpx
+from fastapi import HTTPException
 from sqlalchemy import delete, func, select
 
 from app.core.tokens import create_access_token
@@ -380,6 +381,17 @@ class EventRegistrationTests(unittest.IsolatedAsyncioTestCase):
                     payload=RegisterEventRequest(occurrence_id=self.free_occurrence_id),
                     source_channel="mobile",
                 )
+                with self.assertRaises(HTTPException) as changed_seats:
+                    await registrations_service.register_user_for_event(
+                        session,
+                        user=user,
+                        event_id=self.free_event_id,
+                        payload=RegisterEventRequest(
+                            occurrence_id=self.free_occurrence_id,
+                            seats_count=2,
+                        ),
+                        source_channel="mobile",
+                    )
                 paid_first = await registrations_service.register_user_for_event(
                     session,
                     user=user,
@@ -404,6 +416,10 @@ class EventRegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(free_first.created)
         self.assertFalse(free_duplicate.created)
         self.assertEqual(free_duplicate.registration.id, free_first.registration.id)
+        self.assertEqual(changed_seats.exception.status_code, 409)
+        self.assertEqual(changed_seats.exception.detail["code"], "already_registered")
+        self.assertEqual(changed_seats.exception.detail["registration_id"], str(free_first.registration.id))
+        self.assertEqual(free_first.registration.seats_count, 1)
         self.assertEqual(free_first.registration.status, "confirmed")
         self.assertEqual(free_first.registration.payment_status, "not_required")
         self.assertTrue(paid_first.created)
