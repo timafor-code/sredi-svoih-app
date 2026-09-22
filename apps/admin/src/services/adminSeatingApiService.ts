@@ -88,6 +88,12 @@ function safeBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function safeStringArray(value: unknown): string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string")
+    ? [...value]
+    : [];
+}
+
 function toAssignmentType(value: unknown): SeatingAssignmentType {
   return nullableString(value)?.toLowerCase() === "reserve" ? "reserve" : "guest";
 }
@@ -107,6 +113,9 @@ function normalizeTable(value: unknown): SeatingTable {
     h: safeNumber(row.h, 0),
     angle: safeNumber(row.angle, 0),
     sideSeats: safeNumber(row.sideSeats ?? row.long_side_seats, 3),
+    disabledSeats: safeStringArray(
+      row.disabledSeats ?? row.disabled_seat_parts,
+    ),
     isRabbiTable: safeBoolean(row.isRabbiTable ?? row.is_rabbi_table, false),
   };
 }
@@ -223,6 +232,7 @@ type SeatingTableWire = {
   h: number;
   angle: number;
   sideSeats: number;
+  disabledSeats: string[];
   isRabbiTable: boolean;
 };
 
@@ -289,6 +299,7 @@ function serializeTable(table: SeatingTable): SeatingTableWire {
     h: table.h,
     angle: table.angle,
     sideSeats: table.sideSeats,
+    disabledSeats: table.disabledSeats ?? [],
     isRabbiTable: table.isRabbiTable,
   };
 }

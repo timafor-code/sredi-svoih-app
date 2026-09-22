@@ -499,6 +499,7 @@ def _snapshot_from_geometry_rows(
                 "h": _json_number(table.h),
                 "angle": table.angle,
                 "sideSeats": table.long_side_seats,
+                "disabledSeats": table.disabled_seat_parts,
                 "isRabbiTable": table.is_rabbi_table,
             }
             for table in tables
@@ -623,6 +624,7 @@ def _add_tables(
                 h=table.h,
                 angle=table.angle,
                 long_side_seats=table.long_side_seats,
+                disabled_seat_parts=table.disabled_seat_parts,
                 is_rabbi_table=table.is_rabbi_table,
                 sort_order=table.sort_order if table.sort_order is not None else index,
             ),

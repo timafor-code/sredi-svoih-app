@@ -9,6 +9,18 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 TableEnd = Literal["a", "b"]
 SeatingAssignmentType = Literal["guest", "reserve"]
+_DISABLED_SEAT_PARTS = frozenset(
+    {
+        "side:a:0",
+        "side:a:1",
+        "side:a:2",
+        "side:b:0",
+        "side:b:1",
+        "side:b:2",
+        "end:a",
+        "end:b",
+    },
+)
 
 
 def _normalize_optional_text(value: str | None) -> str | None:
@@ -61,6 +73,14 @@ class AdminSeatingTablePayload(BaseModel):
         default=None,
         validation_alias=AliasChoices("sort_order", "sortOrder"),
     )
+    disabled_seat_parts: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices(
+            "disabled_seat_parts",
+            "disabledSeatParts",
+            "disabledSeats",
+        ),
+    )
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
@@ -68,6 +88,20 @@ class AdminSeatingTablePayload(BaseModel):
     @classmethod
     def normalize_client_table_id(cls, value: str) -> str:
         return _normalize_required_text(value)
+
+    @field_validator("disabled_seat_parts")
+    @classmethod
+    def normalize_disabled_seat_parts(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            part = value.strip()
+            if part not in _DISABLED_SEAT_PARTS:
+                raise ValueError("unsupported disabled seat part")
+            if part not in seen:
+                normalized.append(part)
+                seen.add(part)
+        return normalized
 
 
 class AdminSeatingConnectionPayload(BaseModel):
@@ -304,6 +338,7 @@ class AdminSeatingTableResponse(BaseModel):
     h: Decimal
     angle: int
     long_side_seats: int
+    disabled_seat_parts: list[str]
     is_rabbi_table: bool
     sort_order: int
     created_at: datetime

@@ -620,6 +620,7 @@ export type AdminApiSeatingTableResponse = {
   h: number | string;
   angle: number | string;
   long_side_seats: number | string;
+  disabled_seat_parts: string[];
   is_rabbi_table: boolean;
   sort_order: number;
   created_at: string;
