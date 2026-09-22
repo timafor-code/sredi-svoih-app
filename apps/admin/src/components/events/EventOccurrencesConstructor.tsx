@@ -2507,13 +2507,6 @@ function OccurrenceModal({
                 onChange((current) => ({ ...current, waitlistEnabled: value }))
               }
             />
-            <ModalToggle
-              checked={form.requiresApproval}
-              label="Требует подтверждения"
-              onChange={(value) =>
-                onChange((current) => ({ ...current, requiresApproval: value }))
-              }
-            />
           </div>
         </div>
 

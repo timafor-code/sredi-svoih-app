@@ -77,13 +77,6 @@ const REGISTRATION_ACTIONS: RegistrationAction[] = [
   },
   {
     kind: "status",
-    status: "pending",
-    label: "Вернуть в заявку",
-    loadingLabel: "Возвращаем...",
-    variant: "secondary",
-  },
-  {
-    kind: "status",
     status: "waitlisted",
     label: "В лист ожидания",
     loadingLabel: "Переносим...",
