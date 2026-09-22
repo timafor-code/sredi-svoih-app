@@ -310,6 +310,39 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
             registration_count = await session.scalar(select(func.count()).select_from(EventRegistration).where(EventRegistration.event_id == self.event_id))
         self.assertEqual(registration_count, 0)
 
+    async def test_unverified_authenticated_duplicate_completes_without_code(self) -> None:
+        user = await self._add_authenticated_user(email="intent-unverified-duplicate@example.invalid", phone="+79000000037", verified=False)
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                registration = EventRegistration(event_id=self.event_id, user_id=user.id, status="confirmed", seats_count=1, payment_status="not_required", source_channel="mobile")
+                session.add(registration)
+                await session.flush()
+            result = await service.create_intent(session, self.payload(idempotency_key="unverified-existing-duplicate"), None, current_user=user)
+        self.assertEqual((result.next_step, result.outcome, result.registration.id), ("completed", "already_registered", registration.id))
+        async with AsyncSessionLocal() as session:
+            count = await session.scalar(select(func.count()).select_from(EventRegistration).where(EventRegistration.event_id == self.event_id, EventRegistration.user_id == user.id))
+            with self.assertRaises(HTTPException) as changed:
+                await service.create_intent(session, self.payload(seats_count=2, idempotency_key="unverified-existing-changed"), None, current_user=user)
+        self.assertEqual(count, 1)
+        self.assertEqual(changed.exception.detail["code"], "already_registered")
+
+    async def test_remembered_duplicate_router_completes_without_code(self) -> None:
+        user = await self._add_authenticated_user(email="intent-remembered-duplicate@example.invalid", phone="+79000000038")
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                registration = EventRegistration(event_id=self.event_id, user_id=user.id, status="confirmed", seats_count=1, payment_status="not_required", source_channel="mobile")
+                session.add(registration)
+                await session.flush()
+                issued = await web_participant_sessions.issue(session, user=user)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+            client.cookies.set(web_participant_sessions.COOKIE_NAME, issued.token)
+            equivalent = await client.post("/web/registration-intents", json=self.payload(idempotency_key="remembered-existing-duplicate").model_dump(mode="json"))
+            changed = await client.post("/web/registration-intents", json=self.payload(seats_count=2, idempotency_key="remembered-existing-changed").model_dump(mode="json"))
+        self.assertEqual(equivalent.status_code, 201)
+        self.assertEqual((equivalent.json()["data"]["next_step"], equivalent.json()["data"]["outcome"], equivalent.json()["data"]["registration"]["id"]), ("completed", "already_registered", str(registration.id)))
+        self.assertEqual(changed.status_code, 409)
+        self.assertEqual(changed.json()["error"]["details"], {"registration_id": str(registration.id)})
+
     async def test_authenticated_router_rejects_invalid_token_and_accepts_valid_token(self) -> None:
         user = await self._add_authenticated_user(
             email="intent-router-auth@example.invalid",
@@ -331,6 +364,36 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(invalid.status_code, 401)
         self.assertEqual(valid.status_code, 201)
         self.assertEqual(valid.json()["data"]["next_step"], "completed")
+
+    async def test_router_changed_free_duplicate_has_flat_safe_details(self) -> None:
+        user = await self._add_authenticated_user(
+            email="intent-router-duplicate@example.invalid",
+            phone="+79000000036",
+        )
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            headers = {"Authorization": f"Bearer {create_access_token(user.id)}"}
+            first = await client.post(
+                "/web/registration-intents",
+                json=self.payload(idempotency_key="router-free-duplicate-first").model_dump(mode="json"),
+                headers=headers,
+            )
+            changed = await client.post(
+                "/web/registration-intents",
+                json=self.payload(
+                    seats_count=2,
+                    idempotency_key="router-free-duplicate-changed",
+                ).model_dump(mode="json"),
+                headers=headers,
+            )
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(changed.status_code, 409)
+        error = changed.json()["error"]
+        self.assertEqual(error["code"], "already_registered")
+        self.assertEqual(error["details"], {"registration_id": first.json()["data"]["registration"]["id"]})
+        self.assertNotIn("details", error["details"])
+        self.assertNotIn(user.email, changed.text)
+        self.assertNotIn(user.phone, changed.text)
 
     def test_input_rejects_malformed_contacts_names_and_account_choice(self) -> None:
         for update in ({"phone": "+123"}, {"first_name": "Bad\u0000Name"}, {"account_choice": "invalid"}, {"email": "broken"}):
@@ -798,10 +861,11 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
             unknown = await service.get_intent_status(session, "x" * 43)
         self.assertEqual(
             current.model_dump().keys(),
-            {"state", "expires_at", "registration", "account_next_step"},
+            {"state", "expires_at", "registration", "account_next_step", "outcome"},
         )
         self.assertIsNone(current.registration)
         self.assertIsNone(current.account_next_step)
+        self.assertIsNone(current.outcome)
         self.assertEqual(current.state, "email_verification_required")
         self.assertEqual(unknown.state, "not_available")
 

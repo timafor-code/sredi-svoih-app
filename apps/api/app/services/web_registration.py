@@ -697,10 +697,21 @@ async def create_intent(
                 "Idempotency key cannot be reused",
             )
         if existing.status == CONFIRMED:
+            registration = (
+                await _find_final_registration(session, existing, existing.matched_user_id)
+                if existing.matched_user_id is not None
+                else None
+            )
             response = WebRegistrationIntentCreated(
                 flow_id=flow_id,
                 next_step="completed",
                 expires_at=existing.expires_at,
+                outcome=existing.registration_outcome,
+                registration=(
+                    await _registration_result(session, registration)
+                    if registration is not None
+                    else None
+                ),
             )
             await session.rollback()
             return response
@@ -735,10 +746,21 @@ async def create_intent(
                 ),
             )
         )
+        early_duplicate = None
         if current_user is not None:
+            early_duplicate = await registrations_service.find_free_registration_duplicate(
+                session,
+                user=current_user,
+                event_id=payload.event_id,
+                payload=RegisterEventRequest(
+                    occurrence_id=payload.occurrence_id,
+                    seats_count=payload.seats_count,
+                    option_selections=[item.model_dump() for item in payload.option_selections],
+                ),
+            )
             intent_status = (
                 CONFIRMED
-                if current_user.email_verified_at is not None
+                if early_duplicate is not None or current_user.email_verified_at is not None
                 else EMAIL_REQUIRED
             )
             matched_user_id = current_user.id
@@ -809,23 +831,47 @@ async def create_intent(
             await session.rollback()
         else:
             if current_user is not None and intent_status == CONFIRMED:
-                registration_write = await registrations_service.register_user_for_event(
-                    session,
-                    user=current_user,
-                    event_id=intent.event_id,
-                    payload=_registration_payload(intent),
-                    source_channel="public_web",
-                    member_community_ids=(),
-                )
-                registration = registration_write.registration
-                await _create_legal_acceptances(
-                    session,
-                    intent=intent,
-                    user=current_user,
-                    registration=registration,
-                    now=now,
-                )
-                if registration_write.created:
+                if early_duplicate is not None:
+                    registration = early_duplicate
+                    registration_created = False
+                    try:
+                        await _validate_duplicate_questionnaire(
+                            session,
+                            intent=intent,
+                            registration=registration,
+                        )
+                    except HTTPException:
+                        await session.rollback()
+                        raise
+                else:
+                    registration_write = await registrations_service.register_user_for_event(
+                        session,
+                        user=current_user,
+                        event_id=intent.event_id,
+                        payload=_registration_payload(intent),
+                        source_channel="public_web",
+                        member_community_ids=(),
+                    )
+                    registration = registration_write.registration
+                    registration_created = registration_write.created
+                    if not registration_created:
+                        try:
+                            await _validate_duplicate_questionnaire(
+                                session,
+                                intent=intent,
+                                registration=registration,
+                            )
+                        except HTTPException:
+                            await session.rollback()
+                            raise
+                if registration_created:
+                    await _create_legal_acceptances(
+                        session,
+                        intent=intent,
+                        user=current_user,
+                        registration=registration,
+                        now=now,
+                    )
                     await _create_questionnaire_answers(
                         session,
                         intent=intent,
@@ -835,7 +881,11 @@ async def create_intent(
                     )
                 intent.confirmed_at = now
                 intent.answer_payload = None
-                if registration_write.created and registration.status == CONFIRMED:
+                intent.registration_outcome = (
+                    "created" if registration_created else "already_registered"
+                )
+                intent.registration_id = registration.id
+                if registration_created and registration.status == CONFIRMED:
                     confirmation_context = await _confirmation_email_context(
                         session,
                         event=event,
@@ -861,10 +911,22 @@ async def create_intent(
         if resolved_status == CONFIRMED:
             if confirmation_context is not None:
                 await _deliver_confirmation_email(confirmation_context)
+            completed_intent = await session.get(WebRegistrationIntent, intent_id)
+            if completed_intent is None or completed_intent.matched_user_id is None:
+                raise _flow_unavailable()
+            registration = await _find_final_registration(
+                session,
+                completed_intent,
+                completed_intent.matched_user_id,
+            )
+            if registration is None:
+                raise _flow_unavailable()
             return WebRegistrationIntentCreated(
                 flow_id=flow_id,
                 next_step="completed",
                 expires_at=intent_expires_at,
+                outcome=completed_intent.registration_outcome,
+                registration=await _registration_result(session, registration),
             )
 
     await _issue_initial_code(session, intent_id, ip)
@@ -1180,6 +1242,43 @@ async def _create_questionnaire_answers(
         )
 
 
+async def _same_questionnaire_answers(
+    session: AsyncSession,
+    *,
+    intent: WebRegistrationIntent,
+    registration: EventRegistration,
+) -> bool:
+    _, submitted = await _bound_questionnaire_answers(session, intent)
+    existing = list(
+        await session.scalars(
+            select(EventRegistrationAnswer).where(
+                EventRegistrationAnswer.registration_id == registration.id,
+            ),
+        ),
+    )
+    submitted_by_field = {UUID(str(item["field_id"])): item["value"] for item in submitted}
+    existing_by_field = {item.field_id: item.value_payload for item in existing}
+    return (
+        len(submitted_by_field) == len(submitted)
+        and len(existing_by_field) == len(existing)
+        and submitted_by_field == existing_by_field
+    )
+
+
+async def _validate_duplicate_questionnaire(
+    session: AsyncSession,
+    *,
+    intent: WebRegistrationIntent,
+    registration: EventRegistration,
+) -> None:
+    if not await _same_questionnaire_answers(
+        session,
+        intent=intent,
+        registration=registration,
+    ):
+        raise registrations_service.already_registered_error(registration.id)
+
+
 def _registration_payload(intent: WebRegistrationIntent) -> RegisterEventRequest:
     return RegisterEventRequest(
         occurrence_id=intent.occurrence_id,
@@ -1236,12 +1335,26 @@ async def _find_final_registration(
     intent: WebRegistrationIntent,
     user_id: UUID,
 ) -> EventRegistration | None:
+    if intent.registration_id is not None:
+        registration = await session.get(EventRegistration, intent.registration_id)
+        if (
+            registration is None
+            or registration.event_id != intent.event_id
+            or registration.user_id != user_id
+            or registration.occurrence_id != intent.occurrence_id
+            or registration.status
+            not in registrations_service.DUPLICATE_BLOCKING_REGISTRATION_STATUSES
+        ):
+            return None
+        return registration
+
     occurrence_condition = (
         EventRegistration.occurrence_id.is_(None)
         if intent.occurrence_id is None
         else EventRegistration.occurrence_id == intent.occurrence_id
     )
-    return await session.scalar(
+    registrations = list(
+        await session.scalars(
         select(EventRegistration)
         .where(
             EventRegistration.event_id == intent.event_id,
@@ -1251,12 +1364,9 @@ async def _find_final_registration(
                 registrations_service.DUPLICATE_BLOCKING_REGISTRATION_STATUSES,
             ),
         )
-        .order_by(
-            EventRegistration.registered_at.desc(),
-            EventRegistration.id.desc(),
         )
-        .limit(1),
     )
+    return registrations[0] if len(registrations) == 1 else None
 
 
 async def _confirmed_replay(
@@ -1274,6 +1384,7 @@ async def _confirmed_replay(
     result = WebRegistrationConfirmResult(
         registration=await _registration_result(session, registration),
         account_next_step=_replay_account_next_step(intent, user),
+        outcome=intent.registration_outcome,
     )
     await session.rollback()
     return result
@@ -1422,14 +1533,14 @@ async def _confirm_once(
         member_community_ids=(),
     )
     registration = registration_write.registration
-    await _create_legal_acceptances(
-        session,
-        intent=intent,
-        user=user,
-        registration=registration,
-        now=now,
-    )
     if registration_write.created:
+        await _create_legal_acceptances(
+            session,
+            intent=intent,
+            user=user,
+            registration=registration,
+            now=now,
+        )
         await _create_questionnaire_answers(
             session,
             intent=intent,
@@ -1437,6 +1548,16 @@ async def _confirm_once(
             registration=registration,
             now=now,
         )
+    else:
+        try:
+            await _validate_duplicate_questionnaire(
+                session,
+                intent=intent,
+                registration=registration,
+            )
+        except HTTPException:
+            await session.rollback()
+            raise
 
     set_password_code: str | None = None
     set_password_expires_at: datetime | None = None
@@ -1452,6 +1573,10 @@ async def _confirm_once(
     intent.confirmed_at = now
     intent.matched_user_id = user.id
     intent.answer_payload = None
+    intent.registration_outcome = (
+        "created" if registration_write.created else "already_registered"
+    )
+    intent.registration_id = registration.id
     await session.execute(
         update(WebRegistrationVerificationCode)
         .where(
@@ -1467,6 +1592,7 @@ async def _confirm_once(
         account_next_step=account_next_step,
         set_password_code=set_password_code,
         set_password_expires_at=set_password_expires_at,
+        outcome=intent.registration_outcome,
     )
     confirmation_context = (
         await _confirmation_email_context(session, event=event, registration=registration, user=user)
@@ -1583,4 +1709,5 @@ async def get_intent_status(
         state=CONFIRMED,
         registration=await _registration_result(session, registration),
         account_next_step=_replay_account_next_step(intent, user),
+        outcome=intent.registration_outcome,
     )

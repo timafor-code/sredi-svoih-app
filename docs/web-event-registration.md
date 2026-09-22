@@ -463,13 +463,28 @@ informational result email; duplicate-free and confirmed-intent replays do not
 resend it. Status is PII-free and contains only public state, minimal final
 registration data, and an account next step without secrets.
 
-For a free duplicate within the same `(event, occurrence, user)` scope, the
-canonical registration service may return the existing registration. Public-web
-finalization then retains that registration's questionnaire answers exactly as
-stored: it does not recreate, overwrite, or delete them. The result email
-remains send-once for a newly created confirmed registration. This does not add
-a client-visible `created` or `already_registered` outcome, and does not decide
-the changed-payload behavior; those remain the next Track A PR.
+For a free duplicate within the same `(event, occurrence, user)` scope, an
+equivalent effective seat count, option-id/quantity set, and normalized
+questionnaire answer set returns the immutable existing registration with
+`outcome=already_registered`. A changed participation or questionnaire payload
+returns HTTP 409 `already_registered` with only the existing registration UUID
+in `error.details.registration_id`; it does not alter registrations, options,
+answers, or legal evidence. Option and answer ordering does not create a
+change. Paid repeats remain newly created registrations with `outcome=created`.
+
+  `outcome` and the exact final registration UUID are persisted for every newly
+  completed flow and are returned by confirmation, completed intent
+  creation/replay, and status. Pre-migration confirmed intents can return
+  `outcome=null`; their result is returned only when one matching final
+  registration can be identified, and ambiguous legacy paid repeats fail closed.
+  Confirmation email remains send-once and is never resent for
+`already_registered` or rejected duplicates.
+
+Bearer-authenticated and remembered participants are resolved to their
+canonical user before intent creation. An equivalent existing free registration
+therefore completes immediately without an email verification code; a changed
+duplicate returns the same 409. Anonymous participants remain deliberately
+unmatched until authoritative email confirmation.
 
 ## Administrative Publication Contracts
 
