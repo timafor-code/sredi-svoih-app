@@ -1416,6 +1416,7 @@ class WebRegistrationIntent(Base):
         CheckConstraint("btrim(request_fingerprint_hash) <> ''", name="web_registration_intents_fingerprint_not_empty"),
         CheckConstraint("expires_at > created_at", name="web_registration_intents_expiry_check"),
         CheckConstraint("confirmed_at IS NULL OR status = 'confirmed'", name="web_registration_intents_confirmed_at_check"),
+        CheckConstraint("registration_outcome IS NULL OR registration_outcome IN ('created', 'already_registered')", name="web_registration_intents_outcome_check"),
         UniqueConstraint("flow_token_hash", name="web_registration_intents_flow_token_hash_key"),
         UniqueConstraint("idempotency_key_hash", name="web_registration_intents_idempotency_key_hash_key"),
         Index("web_registration_intents_expires_at_idx", "expires_at"),
@@ -1447,6 +1448,7 @@ class WebRegistrationIntent(Base):
     request_fingerprint_hash: Mapped[str] = mapped_column(Text, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    registration_outcome: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = timestamptz_now()
 
 

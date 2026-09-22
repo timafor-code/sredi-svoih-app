@@ -236,6 +236,7 @@ database transactions and locks where needed.
 | 404 | `not_found` | Resource does not exist or is not visible to the actor. |
 | 409 | `conflict` | Request conflicts with current resource state. |
 | 409 | `idempotency_conflict` | Idempotency key was reused with a different request body. |
+| 409 | `already_registered` | A free registration duplicate has changed participation or questionnaire data; details contain only `registration_id`. |
 | 409 | `capacity_unavailable` | Registration would exceed event, occurrence, or option capacity. |
 | 409 | `state_conflict` | Requested transition is invalid for the current state. |
 | 413 | `payload_too_large` | Request body exceeds the documented size limit. |
@@ -1397,6 +1398,22 @@ A processable new intent and an equivalent retry before confirmation return
 same `flow_id` with `next_step=completed`; it sends no email, creates no code,
 registration, or legal acceptance, and never replays a plaintext set-password
 credential.
+
+Completed Public Web responses (`POST /web/registration-intents`,
+`POST /web/registration-intents/{flow_id}/confirm-email`, and intent status)
+expose the persisted outcome enum `created | already_registered` alongside the
+authoritative registration where applicable. Older confirmed intents may expose
+`outcome: null`; the API does not infer a historical value. Equivalent free
+duplicates return the existing registration as `already_registered`. A changed
+free participation or normalized questionnaire payload returns HTTP 409
+`already_registered` and `error.details.registration_id`, with no PII or
+submitted payload. This is distinct from `idempotency_conflict`, which only
+means an idempotency key was reused with a different request fingerprint.
+
+Known bearer-authenticated and remembered participants are checked for a free
+duplicate before a verification code is issued. Equivalent duplicates complete
+immediately; anonymous flows still resolve identity only after email
+confirmation.
 
 The current intent release accepts published/public events using
 `internal_free` or `internal_paid` with `web_visibility` set to `unlisted` or

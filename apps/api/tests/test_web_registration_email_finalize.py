@@ -888,6 +888,8 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual((first.next_step, duplicate.next_step, replay.next_step), ("completed", "completed", "completed"))
+        self.assertEqual((first.outcome, duplicate.outcome, replay.outcome), ("created", "already_registered", "created"))
+        self.assertEqual(duplicate.registration.id, first.registration.id)
         self.assertEqual(self.verification_deliveries, [])
         self.assertEqual(self.result_deliveries, [(self.email, "confirmed")])
         self.assertEqual(registration_count, 1)
@@ -1156,12 +1158,13 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         async with AsyncSessionLocal() as session:
-            duplicate = await service.confirm_email(
-                session,
-                duplicate_intent.flow_id,
-                duplicate_code,
-                "192.0.2.5",
-            )
+            with self.assertRaises(HTTPException) as caught:
+                await service.confirm_email(
+                    session,
+                    duplicate_intent.flow_id,
+                    duplicate_code,
+                    "192.0.2.5",
+                )
             registrations = list(
                 await session.scalars(
                     select(EventRegistration).where(EventRegistration.event_id == self.event_id),
@@ -1178,7 +1181,9 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                 select(func.count()).select_from(EventRegistrationAnswer),
             )
 
-        self.assertEqual(duplicate.registration.id, first.registration.id)
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(caught.exception.detail["code"], "already_registered")
+        self.assertEqual(caught.exception.detail["details"]["registration_id"], str(first.registration.id))
         self.assertEqual([registration.id for registration in registrations], [first.registration.id])
         self.assertEqual([(answer.field_id, answer.value_payload) for answer in answers], [(field_id, "first answer")])
         self.assertEqual(all_answer_count, 1)
@@ -1198,19 +1203,20 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 "192.0.2.5",
                 current_user=user,
-            )
+        )
         async with AsyncSessionLocal() as session:
-            duplicate = await service.create_intent(
-                session,
-                self.payload(
-                    occurrence_id=occurrence.id,
-                    questionnaire_form_id=form_id,
-                    answers=[{"field_id": field_id, "value": "changed answer"}],
-                    idempotency_key=f"authenticated-questionnaire-duplicate-{self.marker}",
-                ),
-                "192.0.2.5",
-                current_user=user,
-            )
+            with self.assertRaises(HTTPException) as caught:
+                await service.create_intent(
+                    session,
+                    self.payload(
+                        occurrence_id=occurrence.id,
+                        questionnaire_form_id=form_id,
+                        answers=[{"field_id": field_id, "value": "changed answer"}],
+                        idempotency_key=f"authenticated-questionnaire-duplicate-{self.marker}",
+                    ),
+                    "192.0.2.5",
+                    current_user=user,
+                )
         async with AsyncSessionLocal() as session:
             registrations = list(
                 await session.scalars(
@@ -1231,7 +1237,9 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                 select(func.count()).select_from(EventRegistrationAnswer),
             )
 
-        self.assertEqual((first.next_step, duplicate.next_step), ("completed", "completed"))
+        self.assertEqual(first.next_step, "completed")
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(caught.exception.detail["code"], "already_registered")
         self.assertEqual(len(registrations), 1)
         self.assertEqual([(answer.field_id, answer.value_payload) for answer in answers], [(field_id, "first answer")])
         self.assertEqual(all_answer_count, 1)
@@ -1348,6 +1356,7 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status_result.registration.payment_status, "pending")
         self.assertEqual(status_result.registration.total_amount, 3500)
         self.assertEqual(status_result.registration.total_currency, "RUB")
+        self.assertEqual((result.outcome, replay.outcome, status_result.outcome), ("created", "created", "created"))
         self.assertEqual(registration_count, 1)
 
     async def test_questionnaire_answers_finalize_atomically_bind_version_and_clear_temporary_payload(self) -> None:
@@ -1804,7 +1813,7 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status_data["state"], "confirmed")
         self.assertEqual(
             set(status_data),
-            {"state", "expires_at", "registration", "account_next_step"},
+            {"state", "expires_at", "registration", "account_next_step", "outcome"},
         )
         combined_logs = " ".join(logs.output)
         self.assertNotIn(self.email, combined_logs)
@@ -1873,8 +1882,9 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(retry_data["next_step"], "completed")
         self.assertEqual(
             set(retry_data),
-            {"flow_id", "next_step", "expires_at"},
+            {"flow_id", "next_step", "expires_at", "outcome", "registration"},
         )
+        self.assertEqual(retry_data["outcome"], "created")
         self.assertEqual(
             delivery_counts,
             (len(self.verification_deliveries), len(self.result_deliveries)),

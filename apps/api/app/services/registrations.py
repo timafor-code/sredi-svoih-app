@@ -102,10 +102,18 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def _error(status_code: int, code: str, message: str) -> HTTPException:
+def _error(
+    status_code: int,
+    code: str,
+    message: str,
+    details: dict[str, str] | None = None,
+) -> HTTPException:
+    detail: dict[str, object] = {"code": code, "message": message}
+    if details is not None:
+        detail["details"] = details
     return HTTPException(
         status_code=status_code,
-        detail={"code": code, "message": message},
+        detail=detail,
     )
 
 
@@ -126,6 +134,15 @@ def _capacity_unavailable(message: str) -> HTTPException:
         status.HTTP_409_CONFLICT,
         "capacity_unavailable",
         message,
+    )
+
+
+def already_registered_error(registration_id: UUID) -> HTTPException:
+    return _error(
+        status.HTTP_409_CONFLICT,
+        "already_registered",
+        "An existing registration has different participation details",
+        {"registration_id": str(registration_id)},
     )
 
 
@@ -252,6 +269,87 @@ async def _lock_existing_active_registration(
         )
         .limit(1)
         .with_for_update(),
+    )
+
+
+async def _same_free_participation(
+    session: AsyncSession,
+    *,
+    registration: EventRegistration,
+    submitted_selections: Sequence[_PreparedSelection],
+    seats_count: int,
+) -> bool:
+    if registration.seats_count != seats_count:
+        return False
+    existing = list(
+        await session.scalars(
+            select(EventRegistrationOptionSelection).where(
+                EventRegistrationOptionSelection.registration_id == registration.id,
+            ),
+        ),
+    )
+    existing_options = {(item.option_id, item.quantity) for item in existing}
+    submitted_options = {(item.option.id, item.quantity) for item in submitted_selections}
+    return (
+        len(existing_options) == len(existing)
+        and len(submitted_options) == len(submitted_selections)
+        and existing_options == submitted_options
+    )
+
+
+async def _classify_free_duplicate(
+    session: AsyncSession,
+    *,
+    event: Event,
+    occurrence: EventOccurrence | None,
+    user: AppUser,
+    submitted_selections: Sequence[_PreparedSelection],
+    seats_count: int,
+) -> EventRegistration | None:
+    if event.registration_mode != FREE_REGISTRATION_MODE:
+        return None
+    existing = await _lock_existing_active_registration(
+        session,
+        event_id=event.id,
+        user_id=user.id,
+        occurrence_id=occurrence.id if occurrence is not None else None,
+    )
+    if existing is None:
+        return None
+    if not await _same_free_participation(
+        session,
+        registration=existing,
+        submitted_selections=submitted_selections,
+        seats_count=seats_count,
+    ):
+        raise already_registered_error(existing.id)
+    return existing
+
+
+async def find_free_registration_duplicate(
+    session: AsyncSession,
+    *,
+    user: AppUser,
+    event_id: UUID,
+    payload: RegisterEventRequest,
+    member_community_ids: Sequence[UUID] = (),
+) -> EventRegistration | None:
+    """Classify a free duplicate without creating a registration."""
+    event = await _lock_visible_event(session, event_id, member_community_ids)
+    if event.registration_mode != FREE_REGISTRATION_MODE:
+        return None
+    has_occurrences = await _event_has_occurrences(session, event.id)
+    if _requires_occurrence(event, payload, has_occurrences=has_occurrences):
+        raise _validation_error("occurrence_id is required for this event")
+    occurrence = await _lock_occurrence(session, event, payload.occurrence_id)
+    prepared_selections, _, seats_count, _ = await _prepare_options(session, event, payload)
+    return await _classify_free_duplicate(
+        session,
+        event=event,
+        occurrence=occurrence,
+        user=user,
+        submitted_selections=prepared_selections,
+        seats_count=seats_count,
     )
 
 
@@ -894,22 +992,20 @@ async def register_user_for_event(
         raise _validation_error("occurrence_id is required for this event")
 
     occurrence = await _lock_occurrence(session, event, payload.occurrence_id)
-    if event.registration_mode == FREE_REGISTRATION_MODE:
-        existing_registration = await _lock_existing_active_registration(
-            session,
-            event_id=event.id,
-            user_id=user.id,
-            occurrence_id=occurrence.id if occurrence is not None else None,
-        )
-        if existing_registration is not None:
-            return RegistrationWriteResult(
-                registration=existing_registration,
-                created=False,
-            )
-
     prepared_selections, reservation_drafts, seats_count, legacy_seats_count = (
         await _prepare_options(session, event, payload)
     )
+    existing_registration = await _classify_free_duplicate(
+        session,
+        event=event,
+        occurrence=occurrence,
+        user=user,
+        submitted_selections=prepared_selections,
+        seats_count=seats_count,
+    )
+    if existing_registration is not None:
+        return RegistrationWriteResult(registration=existing_registration, created=False)
+
     await _enforce_capacity(
         session,
         event=event,

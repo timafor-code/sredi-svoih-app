@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, field_validator
 
+WebRegistrationOutcome = Literal["created", "already_registered"]
+
 
 def normalize_email(value: str) -> str:
     value = value.strip()
@@ -114,6 +116,8 @@ class WebRegistrationIntentCreated(BaseModel):
     flow_id: str
     next_step: Literal["confirm_email", "completed"] = "confirm_email"
     expires_at: datetime
+    outcome: WebRegistrationOutcome | None = None
+    registration: WebRegistrationResult | None = None
 
 
 class WebRegistrationResendResult(BaseModel):
@@ -156,6 +160,7 @@ class WebRegistrationConfirmResult(BaseModel):
     account_next_step: AccountNextStep
     set_password_code: str | None = None
     set_password_expires_at: datetime | None = None
+    outcome: WebRegistrationOutcome | None = None
 
 
 class WebRegistrationIntentStatus(BaseModel):
@@ -163,3 +168,4 @@ class WebRegistrationIntentStatus(BaseModel):
     expires_at: datetime | None = None
     registration: WebRegistrationResult | None = None
     account_next_step: AccountNextStep | None = None
+    outcome: WebRegistrationOutcome | None = None

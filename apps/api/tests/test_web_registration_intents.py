@@ -798,10 +798,11 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
             unknown = await service.get_intent_status(session, "x" * 43)
         self.assertEqual(
             current.model_dump().keys(),
-            {"state", "expires_at", "registration", "account_next_step"},
+            {"state", "expires_at", "registration", "account_next_step", "outcome"},
         )
         self.assertIsNone(current.registration)
         self.assertIsNone(current.account_next_step)
+        self.assertIsNone(current.outcome)
         self.assertEqual(current.state, "email_verification_required")
         self.assertEqual(unknown.state, "not_available")
 
