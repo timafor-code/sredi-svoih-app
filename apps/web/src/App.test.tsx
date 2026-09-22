@@ -789,6 +789,43 @@ describe("public event page", () => {
     ))).toHaveLength(registrationPosts);
   });
 
+  it("does not let Programme abandon an active verification flow", async () => {
+    const user = userEvent.setup();
+    await renderEvent(programmeEventResponse());
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    await user.type(screen.getByLabelText("Имя"), "Анна");
+    await user.type(screen.getByLabelText("Фамилия"), "Иванова");
+    await user.type(screen.getByLabelText("Телефон"), "+7 (999) 123-45-67");
+    await user.type(screen.getByLabelText("Email"), "anna@example.ru");
+    await user.click(screen.getByLabelText(/Я ознакомился/));
+    await createIntent(user);
+
+    expect(screen.getByLabelText("Код подтверждения")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Общая трапеза.*записаться/i })).not.toBeInTheDocument();
+    expect(vi.mocked(fetch).mock.calls.filter(([input, init]) => (
+      String(input).endsWith("/registration-intents") && init?.method === "POST"
+    ))).toHaveLength(1);
+  });
+
+  it("does not let Programme reset a completed free registration", async () => {
+    const data = programmeEventResponse();
+    data.event.registration_mode = "internal_free";
+    const user = userEvent.setup();
+    await renderEvent(data);
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    await user.type(screen.getByLabelText("Имя"), "Анна");
+    await user.type(screen.getByLabelText("Фамилия"), "Иванова");
+    await user.type(screen.getByLabelText("Телефон"), "+7 (999) 123-45-67");
+    await user.type(screen.getByLabelText("Email"), "anna@example.ru");
+    await user.click(screen.getByLabelText(/Я ознакомился/));
+    await createIntent(user);
+    await confirmIntent(user);
+
+    expect(screen.queryByRole("button", { name: /Общая трапеза.*записаться/i })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Имя")).toBeDisabled();
+    expect(screen.getByRole("radio", { name: /Платное участие/ })).toBeDisabled();
+  });
+
   it("renders public-only system icons for an occurrence-projected Shabbat while preserving manual linked items", async () => {
     const user = userEvent.setup();
     await renderEvent(shabbatProgrammeEventResponse());

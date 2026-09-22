@@ -2,6 +2,7 @@ import {
   type ReactNode,
   type MouseEventHandler,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -416,6 +417,7 @@ function EventProgramme({
   schedule,
   options,
   registrationReady,
+  registrationActivationAvailable,
   showRegistrationAction,
   requiresDateSelection,
   onLinkedOptionActivate,
@@ -424,6 +426,7 @@ function EventProgramme({
   schedule: WebEventSchedule;
   options: WebRegistrationParticipationOption[];
   registrationReady: boolean;
+  registrationActivationAvailable: boolean;
   showRegistrationAction: boolean;
   requiresDateSelection: boolean;
   onLinkedOptionActivate: (optionId: string) => void;
@@ -489,7 +492,7 @@ function EventProgramme({
             const option = item.option_id ? optionsById.get(item.option_id) : undefined;
             const content = <><time>{item.time}</time><ProgrammeItemTitle item={item} /></>;
             const price = formatOptionPrice(option?.price_amount ?? 0, option?.price_currency ?? "RUB") ?? "Бесплатно";
-            return option && registrationReady ? (
+            return option && registrationReady && registrationActivationAvailable ? (
               <button
                 className="programme-timeline-item programme-timeline-item--linked"
                 key={`${item.time}-${item.title}-${index}`}
@@ -907,7 +910,7 @@ function RegistrationForm({
   onAuthenticatedRegistrationCompleted,
   onRepeatRegistration,
   onProgrammeOptionSelect,
-  onProgrammeFormStateChange,
+  onProgrammeStateChange,
 }: {
   eventId: string;
   eventTitle: string;
@@ -931,7 +934,7 @@ function RegistrationForm({
   onAuthenticatedRegistrationCompleted: () => void;
   onRepeatRegistration: () => void;
   onProgrammeOptionSelect?: (handler: ((optionId: string) => void) | null) => void;
-  onProgrammeFormStateChange?: (isLiveForm: boolean) => void;
+  onProgrammeStateChange?: (state: "form" | "paid_success" | "locked") => void;
 }): ReactNode {
   const emptyValues: FormValues = {
     firstName: "",
@@ -1165,14 +1168,18 @@ function RegistrationForm({
       const option = options.find((candidate) => candidate.id === optionId);
       if (!option) return;
       if (stage === "form") onOptionSelectionChange(option, true);
-      else resetCompletedAttempt(option);
+      else if (stage === "success" && registrationMode === "internal_paid") resetCompletedAttempt(option);
     });
     return () => onProgrammeOptionSelect?.(null);
   }, [onProgrammeOptionSelect, options, stage]);
 
-  useEffect(() => {
-    onProgrammeFormStateChange?.(stage === "form");
-  }, [onProgrammeFormStateChange, stage]);
+  useLayoutEffect(() => {
+    onProgrammeStateChange?.(stage === "form"
+      ? "form"
+      : stage === "success" && registrationMode === "internal_paid"
+        ? "paid_success"
+        : "locked");
+  }, [onProgrammeStateChange, registrationMode, stage]);
 
   const onQuestionnaireChange = (fieldId: string, value: WebQuestionnaireAnswerValue) => {
     setQuestionnaireValues((current) => ({ ...current, [fieldId]: value }));
@@ -2133,7 +2140,7 @@ function EventPage({
   // EventPage is keyed by event ID, so description state resets on navigation.
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [stickyRegistrationVisible, setStickyRegistrationVisible] = useState(false);
-  const [programmeFormActive, setProgrammeFormActive] = useState(true);
+  const [programmeState, setProgrammeState] = useState<"form" | "paid_success" | "locked">("form");
   const eventColumnRef = useRef<HTMLDivElement>(null);
   const formColumnRef = useRef<HTMLDivElement>(null);
   const programmeOptionSelectRef = useRef<((optionId: string) => void) | null>(null);
@@ -2375,7 +2382,8 @@ function EventPage({
                   schedule={projectedProgramme}
                   options={data.participation_options}
                   registrationReady={!dateSelectionPending && effectiveState === "open" && Boolean(consentDocument)}
-                  showRegistrationAction={programmeFormActive}
+                  registrationActivationAvailable={programmeState !== "locked"}
+                  showRegistrationAction={programmeState === "form"}
                   requiresDateSelection={dateSelectionPending}
                   onLinkedOptionActivate={activateProgrammeOption}
                   onDateSelectionRequested={jumpToRegistration}
@@ -2466,7 +2474,7 @@ function EventPage({
                   onProgrammeOptionSelect={(handler) => {
                     programmeOptionSelectRef.current = handler;
                   }}
-                  onProgrammeFormStateChange={setProgrammeFormActive}
+                  onProgrammeStateChange={setProgrammeState}
                 />
               ) : null}
             </>
