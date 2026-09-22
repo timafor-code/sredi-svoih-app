@@ -486,6 +486,15 @@ therefore completes immediately without an email verification code; a changed
 duplicate returns the same 409. Anonymous participants remain deliberately
 unmatched until authoritative email confirmation.
 
+For the public-web completed view, an `internal_paid` registration immediately
+offers a local “Записаться ещё раз” reset independently of the optional
+account/password decision. The reset sends no registration request; a later
+normal submission starts a fresh flow. An `internal_free` completed view does
+not offer a same-occurrence repeat. Its `already_registered` outcome is shown
+as the authoritative existing registration, never as a newly saved one. The
+locked completed form shows saved seats and amount from the returned
+registration rather than mutable pending option selections.
+
 ## Administrative Publication Contracts
 
 These endpoints are implemented with existing authenticated, community-scoped

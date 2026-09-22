@@ -2,6 +2,7 @@ import {
   type ReactNode,
   type MouseEventHandler,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -60,6 +61,7 @@ import type {
   WebRegistrationLegalDocument,
   WebRegistrationMode,
   WebRegistrationOccurrence,
+  WebRegistrationOutcome,
   WebRegistrationParticipationOption,
   WebQuestionnaireAnswerValue,
   WebQuestionnaireField,
@@ -415,6 +417,8 @@ function EventProgramme({
   schedule,
   options,
   registrationReady,
+  registrationActivationAvailable,
+  showRegistrationAction,
   requiresDateSelection,
   onLinkedOptionActivate,
   onDateSelectionRequested,
@@ -422,6 +426,8 @@ function EventProgramme({
   schedule: WebEventSchedule;
   options: WebRegistrationParticipationOption[];
   registrationReady: boolean;
+  registrationActivationAvailable: boolean;
+  showRegistrationAction: boolean;
   requiresDateSelection: boolean;
   onLinkedOptionActivate: (optionId: string) => void;
   onDateSelectionRequested: () => void;
@@ -486,7 +492,7 @@ function EventProgramme({
             const option = item.option_id ? optionsById.get(item.option_id) : undefined;
             const content = <><time>{item.time}</time><ProgrammeItemTitle item={item} /></>;
             const price = formatOptionPrice(option?.price_amount ?? 0, option?.price_currency ?? "RUB") ?? "Бесплатно";
-            return option && registrationReady ? (
+            return option && registrationReady && registrationActivationAvailable ? (
               <button
                 className="programme-timeline-item programme-timeline-item--linked"
                 key={`${item.time}-${item.title}-${index}`}
@@ -494,7 +500,7 @@ function EventProgramme({
                 type="button"
               >
                 {content}
-                <em>{`${price} · записаться`}</em>
+                <em>{showRegistrationAction ? `${price} · записаться` : price}</em>
               </button>
             ) : option && requiresDateSelection ? (
               <button
@@ -811,12 +817,13 @@ function SignInDialog({ initialEmail, onClose, onAuthenticated }: {
   );
 }
 
-function RegistrationFlowDialog({ stage, paymentStatus, accountDone, eventTitle, onClose, children }: {
+function RegistrationFlowDialog({ stage, paymentStatus, accountDone, eventTitle, onClose, actions, children }: {
   stage: FlowStage;
   paymentStatus: WebRegistrationResult["payment_status"] | undefined;
   accountDone: boolean;
   eventTitle: string;
   onClose: () => void;
+  actions?: ReactNode;
   children: ReactNode;
 }): ReactNode {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -868,6 +875,7 @@ function RegistrationFlowDialog({ stage, paymentStatus, accountDone, eventTitle,
         <li className={stage === "success" ? accountDone ? "done" : "active" : ""} aria-current={stage === "success" ? "step" : undefined}>Аккаунт</li>
       </ol>
       <div ref={bodyRef} className="registration-flow-body">{children}</div>
+      {actions ? <footer className="registration-flow-actions">{actions}</footer> : null}
     </dialog>
   );
 }
@@ -902,6 +910,7 @@ function RegistrationForm({
   onAuthenticatedRegistrationCompleted,
   onRepeatRegistration,
   onProgrammeOptionSelect,
+  onProgrammeStateChange,
 }: {
   eventId: string;
   eventTitle: string;
@@ -925,6 +934,7 @@ function RegistrationForm({
   onAuthenticatedRegistrationCompleted: () => void;
   onRepeatRegistration: () => void;
   onProgrammeOptionSelect?: (handler: ((optionId: string) => void) | null) => void;
+  onProgrammeStateChange?: (state: "form" | "paid_success" | "locked") => void;
 }): ReactNode {
   const emptyValues: FormValues = {
     firstName: "",
@@ -962,6 +972,7 @@ function RegistrationForm({
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [registration, setRegistration] = useState<WebRegistrationResult | null>(null);
+  const [registrationOutcome, setRegistrationOutcome] = useState<WebRegistrationOutcome | null>(null);
   const [accountNextStep, setAccountNextStep] = useState<AccountNextStep | null>(null);
   const [setPasswordCode, setSetPasswordCode] = useState<string | null>(null);
   const [setPasswordExpiresAt, setSetPasswordExpiresAt] = useState<string | null>(null);
@@ -1155,10 +1166,20 @@ function RegistrationForm({
   useEffect(() => {
     onProgrammeOptionSelect?.((optionId) => {
       const option = options.find((candidate) => candidate.id === optionId);
-      if (option) onOptionSelectionChange(option, true);
+      if (!option) return;
+      if (stage === "form") onOptionSelectionChange(option, true);
+      else if (stage === "success" && registrationMode === "internal_paid") resetCompletedAttempt(option);
     });
     return () => onProgrammeOptionSelect?.(null);
-  }, [onProgrammeOptionSelect, options]);
+  }, [onProgrammeOptionSelect, options, stage]);
+
+  useLayoutEffect(() => {
+    onProgrammeStateChange?.(stage === "form"
+      ? "form"
+      : stage === "success" && registrationMode === "internal_paid"
+        ? "paid_success"
+        : "locked");
+  }, [onProgrammeStateChange, registrationMode, stage]);
 
   const onQuestionnaireChange = (fieldId: string, value: WebQuestionnaireAnswerValue) => {
     setQuestionnaireValues((current) => ({ ...current, [fieldId]: value }));
@@ -1201,6 +1222,7 @@ function RegistrationForm({
     nextStep: AccountNextStep,
     passwordCode: string | null = null,
     passwordExpiry: string | null = null,
+    outcome: WebRegistrationOutcome | null = null,
   ) => {
     if (result.event_id.toLowerCase() !== eventId.toLowerCase()) {
       throw new PublicApiError("invalid_response");
@@ -1216,6 +1238,7 @@ function RegistrationForm({
       throw new PublicApiError("invalid_response");
     }
     setRegistration(result);
+    setRegistrationOutcome(outcome);
     setAccountNextStep(nextStep === "set_password" && !passwordCode ? "request_set_password" : nextStep);
     setSetPasswordCode(passwordCode);
     setSetPasswordExpiresAt(passwordExpiry);
@@ -1232,7 +1255,7 @@ function RegistrationForm({
 
   const applyStatus = (status: Awaited<ReturnType<typeof getWebRegistrationIntentStatus>>) => {
     if (status.state === "confirmed" && status.registration && status.account_next_step) {
-      completeRegistration(status.registration, status.account_next_step);
+      completeRegistration(status.registration, status.account_next_step, null, null, status.outcome);
       return;
     }
     if (status.state === "email_verification_required") {
@@ -1394,6 +1417,7 @@ function RegistrationForm({
         confirmed.account_next_step,
         confirmed.set_password_code,
         confirmed.set_password_expires_at,
+        confirmed.outcome,
       );
       void onParticipantSessionRefresh().catch(() => undefined);
     } catch (error: unknown) {
@@ -1450,12 +1474,17 @@ function RegistrationForm({
     setStage("form");
   };
 
-  const resetCompletedAttempt = () => {
+  const resetCompletedAttempt = (preselectedOption?: WebRegistrationParticipationOption) => {
     // A repeat is deliberately a UI-only reset. It must not reuse a flow or
     // idempotency key, and it must not create a registration on its own.
     setValues(emptyValues);
     setErrors({});
-    setSelections({});
+    setSelections(preselectedOption ? {
+      [preselectedOption.id]: {
+        selected: true,
+        quantity: clampOptionQuantity(preselectedOption, preselectedOption.min_quantity),
+      },
+    } : {});
     setQuestionnaireValues({});
     setQuestionnaireErrors({});
     setNotice(null);
@@ -1472,6 +1501,7 @@ function RegistrationForm({
     setCooldownUntil(null);
     setCooldownSeconds(0);
     setRegistration(null);
+    setRegistrationOutcome(null);
     setAccountNextStep(null);
     setSetPasswordCode(null);
     setSetPasswordExpiresAt(null);
@@ -1590,13 +1620,17 @@ function RegistrationForm({
     if (!identityReady) return;
   };
 
-  const repeatRegistrationAvailable = !passwordlessDeletionPending && (
+  const accountDecisionResolved = (
     passwordlessDeclined
     || accountCompleted
     || signInDeclined
     || existingAccount !== null
     || (accountNextStep === "none" && !passwordlessAccountChoiceAvailable)
   );
+  const repeatAvailable = stage === "success"
+    && registration !== null
+    && !passwordlessDeletionPending
+    && registrationMode === "internal_paid";
 
   let flowContent: ReactNode = null;
   if (stage === "verification") {
@@ -1670,15 +1704,15 @@ function RegistrationForm({
     };
     flowContent = (
       <section className="flow-card success-card" aria-labelledby="success-heading" aria-live="polite">
-        <p className="eyebrow">Регистрация сохранена</p>
+        <p className="eyebrow">{registrationOutcome === "already_registered" ? "Регистрация уже существует" : "Регистрация сохранена"}</p>
         <div className="registration-flow-result-heading">
           <span className={`registration-flow-result-mark result-${registration.status}`} aria-hidden="true">
             {registration.status === "confirmed" || registration.status === "attended" ? "✓" : "⋯"}
           </span>
-          <h2 id="success-heading" tabIndex={-1}>Регистрация успешно сохранена</h2>
+          <h2 id="success-heading" tabIndex={-1}>{registrationOutcome === "already_registered" ? "Это существующая регистрация" : "Регистрация успешно сохранена"}</h2>
         </div>
         <p className={`registration-result result-${registration.status}`}>
-          {SUCCESS_COPY[registration.status]}
+          {registrationOutcome === "already_registered" ? "Эта регистрация уже была сохранена ранее." : SUCCESS_COPY[registration.status]}
         </p>
         <dl className="result-details">
           <div><dt>Мероприятие</dt><dd>{eventTitle}</dd></div>
@@ -1814,8 +1848,6 @@ function RegistrationForm({
           {notice ? <p className="form-notice" role="status">{notice}</p> : null}
           {passwordError ? <p className="form-error" id="password-error" role="alert">{passwordError}</p> : null}
         </div>
-        {repeatRegistrationAvailable ? <button className="secondary-button" type="button" onClick={resetCompletedAttempt}>Записаться ещё раз</button> : null}
-        <button className="secondary-button" type="button" onClick={closeFlow}>Готово</button>
       </section>
     );
   }
@@ -1879,7 +1911,14 @@ function RegistrationForm({
             focusRef={optionsRef}
           />
 
-          {registrationMode === "internal_paid"
+          {stage === "success" && registration ? (
+            <section className="surface registration-summary saved-registration-summary" aria-label="Сохранённая регистрация">
+              <p><span>Сохранено мест:</span> <strong>{registration.seats_count}</strong></p>
+              {registrationMode === "internal_paid" && registration.total_amount !== null && registration.total_currency ? (
+                <p><span>Сумма регистрации:</span> <strong>{formatRegistrationTotal(registration.total_amount, registration.total_currency)}</strong></p>
+              ) : null}
+            </section>
+          ) : registrationMode === "internal_paid"
             && displayTotals.hasSelection
             && displayTotals.seats > 0
             && !displayTotals.hasMixedCurrencies
@@ -2000,7 +2039,7 @@ function RegistrationForm({
           >
             {stage === "verification" ? "Продолжить подтверждение" : stage === "success" ? "Посмотреть регистрацию" : busyAction === "create" ? "Отправляем…" : "Записаться на мероприятие"}
           </button>
-          {stage === "success" && repeatRegistrationAvailable ? <button className="secondary-button" type="button" onClick={resetCompletedAttempt}>Записаться ещё раз</button> : null}
+          {stage === "success" && repeatAvailable ? <button className="secondary-button" type="button" onClick={() => resetCompletedAttempt()}>Записаться ещё раз</button> : null}
           <p className="registration-caption">{existingAccount
             ? "Регистрация будет оформлена на данные аккаунта."
             : "Подтвердите email кодом из письма. Пароль сейчас не нужен."}</p>
@@ -2023,9 +2062,13 @@ function RegistrationForm({
         <RegistrationFlowDialog
           stage={stage}
           paymentStatus={registration?.payment_status}
-          accountDone={(accountNextStep === "none" && !passwordlessAccountChoiceAvailable) || passwordlessDeclined || accountCompleted || signInDeclined || existingAccount !== null}
+          accountDone={accountDecisionResolved}
           eventTitle={eventTitle}
           onClose={closeFlow}
+          actions={stage === "success" ? <>
+            {repeatAvailable ? <button className="secondary-button" type="button" onClick={() => resetCompletedAttempt()}>Записаться ещё раз</button> : null}
+            <button className="secondary-button" type="button" onClick={closeFlow}>Готово</button>
+          </> : null}
         >
           {flowContent}
         </RegistrationFlowDialog>
@@ -2097,6 +2140,7 @@ function EventPage({
   // EventPage is keyed by event ID, so description state resets on navigation.
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [stickyRegistrationVisible, setStickyRegistrationVisible] = useState(false);
+  const [programmeState, setProgrammeState] = useState<"form" | "paid_success" | "locked">("form");
   const eventColumnRef = useRef<HTMLDivElement>(null);
   const formColumnRef = useRef<HTMLDivElement>(null);
   const programmeOptionSelectRef = useRef<((optionId: string) => void) | null>(null);
@@ -2338,6 +2382,8 @@ function EventPage({
                   schedule={projectedProgramme}
                   options={data.participation_options}
                   registrationReady={!dateSelectionPending && effectiveState === "open" && Boolean(consentDocument)}
+                  registrationActivationAvailable={programmeState !== "locked"}
+                  showRegistrationAction={programmeState === "form"}
                   requiresDateSelection={dateSelectionPending}
                   onLinkedOptionActivate={activateProgrammeOption}
                   onDateSelectionRequested={jumpToRegistration}
@@ -2428,6 +2474,7 @@ function EventPage({
                   onProgrammeOptionSelect={(handler) => {
                     programmeOptionSelectRef.current = handler;
                   }}
+                  onProgrammeStateChange={setProgrammeState}
                 />
               ) : null}
             </>

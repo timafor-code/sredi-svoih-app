@@ -227,7 +227,7 @@ describe("public event API", () => {
       .mockImplementationOnce(() => fetchResponse(envelope({ state: "anonymous", participant: null })))
       .mockImplementationOnce(() => fetchResponse(envelope({ state: "remembered" })))
       .mockImplementationOnce(() => Promise.resolve({ ok: true, status: 204, headers: new Headers() } as unknown as Response))
-      .mockImplementationOnce(() => fetchResponse(envelope({ flow_id: FLOW_ID, next_step: "confirm_email", expires_at: EXPIRES_AT }), 201))
+      .mockImplementationOnce(() => fetchResponse(envelope({ flow_id: FLOW_ID, next_step: "confirm_email", expires_at: EXPIRES_AT, outcome: null, registration: null }), 201))
       .mockImplementationOnce(() => fetchResponse(envelope({
         intent_status: "confirmed",
         registration: {
@@ -235,7 +235,7 @@ describe("public event API", () => {
           status: "confirmed", seats_count: 1, payment_status: "not_required",
           total_amount: 0, total_currency: "RUB",
         },
-        account_next_step: "none", set_password_code: null, set_password_expires_at: null,
+        account_next_step: "none", set_password_code: null, set_password_expires_at: null, outcome: "created",
       })));
 
     await expect(getWebParticipantSession()).resolves.toEqual({ state: "anonymous", participant: null });
@@ -536,9 +536,9 @@ describe("public event API", () => {
 
   it("validates intent, resend, status, and confirm response envelopes at runtime", async () => {
     vi.mocked(fetch)
-      .mockImplementationOnce(() => fetchResponse(envelope({ flow_id: FLOW_ID, next_step: "confirm_email", expires_at: EXPIRES_AT }), 201))
+      .mockImplementationOnce(() => fetchResponse(envelope({ flow_id: FLOW_ID, next_step: "confirm_email", expires_at: EXPIRES_AT, outcome: null, registration: null }), 201))
       .mockImplementationOnce(() => fetchResponse(envelope({ next_step: "confirm_email", expires_at: EXPIRES_AT })))
-      .mockImplementationOnce(() => fetchResponse(envelope({ state: "email_verification_required", expires_at: EXPIRES_AT, registration: null, account_next_step: null })))
+      .mockImplementationOnce(() => fetchResponse(envelope({ state: "email_verification_required", expires_at: EXPIRES_AT, registration: null, account_next_step: null, outcome: null })))
       .mockImplementationOnce(() => fetchResponse(envelope({
         intent_status: "confirmed",
         registration: {
@@ -554,6 +554,7 @@ describe("public event API", () => {
         account_next_step: "none",
         set_password_code: null,
         set_password_expires_at: null,
+        outcome: "already_registered",
       })));
 
     await expect(createWebRegistrationIntent({
@@ -573,7 +574,7 @@ describe("public event API", () => {
     })).resolves.toMatchObject({ flow_id: FLOW_ID });
     await expect(resendWebRegistrationCode(FLOW_ID)).resolves.toMatchObject({ next_step: "confirm_email" });
     await expect(getWebRegistrationIntentStatus(FLOW_ID)).resolves.toMatchObject({ state: "email_verification_required" });
-    await expect(confirmWebRegistrationEmail(FLOW_ID, "123456")).resolves.toMatchObject({ account_next_step: "none" });
+    await expect(confirmWebRegistrationEmail(FLOW_ID, "123456")).resolves.toMatchObject({ account_next_step: "none", outcome: "already_registered" });
   });
 
   it.each([

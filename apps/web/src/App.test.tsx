@@ -65,7 +65,7 @@ function envelope<T>(data: T) {
 }
 
 function intentCreated(nextStep: "confirm_email" | "completed" = "confirm_email") {
-  return envelope({ flow_id: FLOW_ID, next_step: nextStep, expires_at: EXPIRES_AT });
+  return envelope({ flow_id: FLOW_ID, next_step: nextStep, expires_at: EXPIRES_AT, outcome: null, registration: null });
 }
 
 function registrationResult(
@@ -75,6 +75,7 @@ function registrationResult(
   paymentStatus: "not_required" | "pending" = "not_required",
   totalAmount: number | null = 0,
   totalCurrency: string | null = "RUB",
+  outcome: "created" | "already_registered" | null = null,
 ) {
   return envelope({
     intent_status: "confirmed",
@@ -91,6 +92,7 @@ function registrationResult(
     account_next_step: accountNextStep,
     set_password_code: accountNextStep === "set_password" ? SET_PASSWORD_CODE : null,
     set_password_expires_at: accountNextStep === "set_password" ? EXPIRES_AT : null,
+    outcome,
   });
 }
 
@@ -758,6 +760,70 @@ describe("public event page", () => {
     expect(document.querySelector(".form-column")).toHaveFocus();
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog", { name: "Оформление регистрации" })).not.toBeInTheDocument();
+  });
+
+  it("starts a paid repeat from Programme without mutating the locked saved registration", async () => {
+    const user = userEvent.setup();
+    await renderEvent(programmeEventResponse());
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    await user.type(screen.getByLabelText("Имя"), "Анна");
+    await user.type(screen.getByLabelText("Фамилия"), "Иванова");
+    await user.type(screen.getByLabelText("Телефон"), "+7 (999) 123-45-67");
+    await user.type(screen.getByLabelText("Email"), "anna@example.ru");
+    await user.click(screen.getByLabelText(/Я ознакомился/));
+    await createIntent(user);
+    await confirmIntent(user, registrationResult("confirmed", "none", null, "pending", 4321, "RUB"));
+
+    expect(screen.getByLabelText("Сохранённая регистрация")).toHaveTextContent(/4.?321.?₽/);
+    const programmeAction = screen.getByRole("button", { name: /Общая трапеза.*600.*₽/i });
+    expect(programmeAction).not.toHaveTextContent("записаться");
+    const registrationPosts = vi.mocked(fetch).mock.calls.filter(([input, init]) => (
+      String(input).endsWith("/registration-intents") && init?.method === "POST"
+    )).length;
+
+    await user.click(programmeAction);
+    expect(screen.queryByLabelText("Сохранённая регистрация")).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Общая трапеза/ })).toBeChecked();
+    expect(vi.mocked(fetch).mock.calls.filter(([input, init]) => (
+      String(input).endsWith("/registration-intents") && init?.method === "POST"
+    ))).toHaveLength(registrationPosts);
+  });
+
+  it("does not let Programme abandon an active verification flow", async () => {
+    const user = userEvent.setup();
+    await renderEvent(programmeEventResponse());
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    await user.type(screen.getByLabelText("Имя"), "Анна");
+    await user.type(screen.getByLabelText("Фамилия"), "Иванова");
+    await user.type(screen.getByLabelText("Телефон"), "+7 (999) 123-45-67");
+    await user.type(screen.getByLabelText("Email"), "anna@example.ru");
+    await user.click(screen.getByLabelText(/Я ознакомился/));
+    await createIntent(user);
+
+    expect(screen.getByLabelText("Код подтверждения")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Общая трапеза.*записаться/i })).not.toBeInTheDocument();
+    expect(vi.mocked(fetch).mock.calls.filter(([input, init]) => (
+      String(input).endsWith("/registration-intents") && init?.method === "POST"
+    ))).toHaveLength(1);
+  });
+
+  it("does not let Programme reset a completed free registration", async () => {
+    const data = programmeEventResponse();
+    data.event.registration_mode = "internal_free";
+    const user = userEvent.setup();
+    await renderEvent(data);
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    await user.type(screen.getByLabelText("Имя"), "Анна");
+    await user.type(screen.getByLabelText("Фамилия"), "Иванова");
+    await user.type(screen.getByLabelText("Телефон"), "+7 (999) 123-45-67");
+    await user.type(screen.getByLabelText("Email"), "anna@example.ru");
+    await user.click(screen.getByLabelText(/Я ознакомился/));
+    await createIntent(user);
+    await confirmIntent(user);
+
+    expect(screen.queryByRole("button", { name: /Общая трапеза.*записаться/i })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Имя")).toBeDisabled();
+    expect(screen.getByRole("radio", { name: /Платное участие/ })).toBeDisabled();
   });
 
   it("renders public-only system icons for an occurrence-projected Shabbat while preserving manual linked items", async () => {
@@ -1762,6 +1828,7 @@ describe("local form shell", () => {
         expires_at: null,
         registration: registrationResult().data.registration,
         account_next_step: nextStep,
+        outcome: "created",
       })));
     await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
@@ -2106,6 +2173,7 @@ describe("local form shell", () => {
           expires_at: null,
           registration: registrationResult().data.registration,
           account_next_step: nextStep,
+          outcome: "created",
         })))
         .mockImplementationOnce(() => response(envelope([newTicket])));
       await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
@@ -2488,6 +2556,7 @@ describe("registration intent and account claim flow", () => {
       expires_at: null,
       registration: registrationResult().data.registration,
       account_next_step: "set_password",
+      outcome: "created",
     })));
     await user.click(within(flowDialog()).getByRole("button", { name: "Проверить статус" }));
     expect(await screen.findByRole("button", { name: "Запросить код задания пароля" })).toBeInTheDocument();
@@ -2827,7 +2896,7 @@ describe("registration intent and account claim flow", () => {
 
     expect(screen.queryByRole("dialog", { name: "Оформление регистрации" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Имя")).toHaveValue("");
-    expect(screen.getByRole("checkbox", { name: /Основное участие/ })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: /Платное участие/ })).not.toBeChecked();
     expect(screen.getByLabelText(/Я ознакомился/)).not.toBeChecked();
     expect(vi.mocked(fetch).mock.calls.filter(([input, init]) => (
       String(input).endsWith("/registration-intents") && init?.method === "POST"
@@ -2840,15 +2909,22 @@ describe("registration intent and account claim flow", () => {
   });
 
   it("shows completed page actions and resets a repeat locally", async () => {
-    const user = await setupValidForm();
+    const user = userEvent.setup();
+    await renderEvent(paidEventResponse());
+    await user.click(screen.getByRole("radio", { name: /Платное участие/ }));
+    await user.type(screen.getByLabelText("Имя"), "Анна");
+    await user.type(screen.getByLabelText("Фамилия"), "Иванова");
+    await user.type(screen.getByLabelText("Телефон"), "+7 (999) 123-45-67");
+    await user.type(screen.getByLabelText("Email"), "anna@example.ru");
+    await user.click(screen.getByLabelText(/Я ознакомился/));
     const registrationButton = screen.getByRole("button", { name: "Записаться на мероприятие" });
     expect(registrationButton).toHaveClass("registration-confirm");
     expect(registrationButton).not.toHaveClass("completed-registration-action");
     expect(screen.queryByRole("button", { name: "Записаться ещё раз" })).not.toBeInTheDocument();
 
     await createIntent(user);
-    await confirmIntent(user);
-    await user.click(within(flowDialog()).getByRole("button", { name: "Продолжить без пароля" }));
+    await confirmIntent(user, registrationResult("confirmed", "none", null, "pending", 4321, "RUB"));
+    expect(within(flowDialog()).getByRole("button", { name: "Записаться ещё раз" })).toBeInTheDocument();
     await user.click(within(flowDialog()).getByRole("button", { name: "Готово" }));
 
     const viewRegistrationButton = screen.getByRole("button", { name: "Посмотреть регистрацию" });
@@ -2867,7 +2943,7 @@ describe("registration intent and account claim flow", () => {
     await user.click(screen.getByRole("button", { name: "Записаться ещё раз" }));
     expect(screen.queryByRole("dialog", { name: "Оформление регистрации" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Имя")).toHaveValue("");
-    expect(screen.getByRole("checkbox", { name: /Основное участие/ })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: /Платное участие/ })).not.toBeChecked();
     expect(screen.getByLabelText(/Я ознакомился/)).not.toBeChecked();
     expect(vi.mocked(fetch).mock.calls.filter(([input, init]) => (
       String(input).endsWith("/registration-intents") && init?.method === "POST"
@@ -3189,10 +3265,22 @@ describe("registration intent and account claim flow", () => {
           total_currency: "RUB",
         },
         account_next_step: "none",
+        outcome: "created",
       })));
     await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     expect(await screen.findByRole("heading", { name: "Регистрация успешно сохранена" })).toBeInTheDocument();
     expect(vi.mocked(fetch).mock.calls[2][0]).toBe(`/api/web/registration-intents/${FLOW_ID}/status`);
+  });
+
+  it("renders an already-registered free outcome as the existing saved registration", async () => {
+    const user = await setupValidForm();
+    await createIntent(user);
+    await confirmIntent(user, registrationResult("confirmed", "none", null, "not_required", 0, "RUB", "already_registered"));
+
+    const dialog = flowDialog();
+    expect(within(dialog).getByRole("heading", { name: "Это существующая регистрация" })).toBeInTheDocument();
+    expect(within(dialog).getByText("Эта регистрация уже была сохранена ранее.")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Записаться ещё раз" })).not.toBeInTheDocument();
   });
 
   it("recovers an ambiguous confirmation through the explicit status action", async () => {
@@ -3216,6 +3304,7 @@ describe("registration intent and account claim flow", () => {
         total_currency: "RUB",
       },
       account_next_step: "none",
+      outcome: null,
     })));
     await user.click(screen.getByRole("button", { name: "Проверить статус" }));
     expect(await screen.findByText("Регистрация подтверждена.")).toBeInTheDocument();
@@ -3225,7 +3314,7 @@ describe("registration intent and account claim flow", () => {
     const user = await setupValidForm();
     vi.mocked(fetch)
       .mockImplementationOnce(() => response(intentCreated("completed"), 201))
-      .mockImplementationOnce(() => response(envelope({ state: "not_available", expires_at: null, registration: null, account_next_step: null })));
+      .mockImplementationOnce(() => response(envelope({ state: "not_available", expires_at: null, registration: null, account_next_step: null, outcome: null })));
     await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("истёк или регистрация недоступна");
     expect(fetch).toHaveBeenCalledTimes(3);
