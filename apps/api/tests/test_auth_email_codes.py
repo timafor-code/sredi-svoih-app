@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
@@ -16,7 +16,15 @@ from app.db.models.auth import (
     AuthSetPasswordCode,
     PasswordResetCode,
 )
-from app.db.models.core import AppUser, WebParticipantSession
+from app.db.models.core import (
+    AppUser,
+    Community,
+    Event,
+    EventCategory,
+    EventRegistration,
+    Profile,
+    WebParticipantSession,
+)
 from app.db.session import AsyncSessionLocal, engine
 from app.main import app
 from app.services import auth as auth_service
@@ -31,6 +39,7 @@ TEST_CODE = "012345"
 class AuthEmailCodeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.created_user_ids: list[UUID] = []
+        self.created_community_ids: list[UUID] = []
 
     async def asyncTearDown(self) -> None:
         try:
@@ -40,6 +49,12 @@ class AuthEmailCodeTests(unittest.IsolatedAsyncioTestCase):
                         await session.execute(
                             delete(AppUser).where(AppUser.id.in_(self.created_user_ids)),
                         )
+                        if self.created_community_ids:
+                            await session.execute(
+                                delete(Community).where(
+                                    Community.id.in_(self.created_community_ids),
+                                ),
+                            )
         finally:
             await engine.dispose()
 
@@ -430,18 +445,58 @@ class AuthEmailCodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(row.revoked_at)
 
     async def test_logout_revokes_auth_and_remembered_sessions_and_clears_cookie(self) -> None:
-        user = await self._create_user(email=self._email())
+        user = await self._create_user(email=self._email(), password_hash=None)
+        community_id = uuid4()
+        event_id = uuid4()
+        self.created_community_ids.append(community_id)
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(Community(id=community_id, name="Logout test", city="Moscow"))
+                session.add(EventCategory(
+                    community_id=community_id,
+                    slug="community",
+                    title="Community",
+                    color="#123456",
+                    icon="*",
+                ))
+                await session.flush()
+                session.add(Event(
+                    id=event_id,
+                    community_id=community_id,
+                    title="Logout test event",
+                    starts_at=datetime.now(UTC) + timedelta(days=1),
+                    category="community",
+                ))
+                session.add(Profile(user_id=user.id, first_name="Existing", last_name="User"))
+        async with AsyncSessionLocal() as session:
+            current_user = await session.get(AppUser, user.id)
+            assert current_user is not None
+            remembered = await web_participant_sessions.issue(session, user=current_user)
+            # Construct a legacy stale state: issuance predates the password.
+            current_user.password_hash = hash_password(TEST_PASSWORD)
+            current_user.claim_state = "claimed"
+            current_user.claimed_at = datetime.now(UTC)
+            await session.commit()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                registration = EventRegistration(
+                    event_id=event_id,
+                    user_id=user.id,
+                    status="confirmed",
+                    source_channel="public_web",
+                    seats_count=1,
+                    guest_names=[],
+                    payment_status="not_required",
+                )
+                session.add(registration)
+                await session.flush()
+                registration_id = registration.id
         async with AsyncSessionLocal() as session:
             tokens = await auth_service.login_password_user(
                 session,
                 email=user.email,
                 password=TEST_PASSWORD,
             )
-        async with AsyncSessionLocal() as session:
-            current_user = await session.get(AppUser, user.id)
-            assert current_user is not None
-            remembered = await web_participant_sessions.issue(session, user=current_user)
-            await session.commit()
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
             client.cookies.set(web_participant_sessions.COOKIE_NAME, remembered.token)
@@ -449,6 +504,7 @@ class AuthEmailCodeTests(unittest.IsolatedAsyncioTestCase):
             after = await client.get("/web/participant-session")
         self.assertEqual(response.status_code, 200)
         self.assertIn("HttpOnly", response.headers["set-cookie"])
+        self.assertIn("Max-Age=0", response.headers["set-cookie"])
         self.assertEqual(after.json()["data"], {"state": "anonymous", "participant": None})
         async with AsyncSessionLocal() as session:
             auth_row = await session.scalar(
@@ -459,8 +515,16 @@ class AuthEmailCodeTests(unittest.IsolatedAsyncioTestCase):
                     WebParticipantSession.token_hash == hash_token(remembered.token),
                 ),
             )
+            surviving_user = await session.get(AppUser, user.id)
+            surviving_profile = await session.scalar(
+                select(Profile).where(Profile.user_id == user.id),
+            )
+            surviving_registration = await session.get(EventRegistration, registration_id)
         self.assertIsNotNone(auth_row.revoked_at)
         self.assertIsNotNone(remembered_row.revoked_at)
+        self.assertIsNotNone(surviving_user)
+        self.assertIsNotNone(surviving_profile)
+        self.assertIsNotNone(surviving_registration)
 
 
 if __name__ == "__main__":

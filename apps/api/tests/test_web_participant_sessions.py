@@ -29,7 +29,7 @@ class WebParticipantSessionTests(unittest.IsolatedAsyncioTestCase):
                         email=self.email,
                         phone=f"+7900{int(self.marker[:8], 16) % 10**7:07d}",
                         password_hash=None,
-                        account_origin="web_registration",
+                        account_origin="web_guest",
                         claim_state="unclaimed",
                         status="active",
                         email_verified_at=datetime.now(UTC),
@@ -181,3 +181,26 @@ class WebParticipantSessionTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("Каноническое", issued.text)
             no_bearer_access = await client.get("/auth/me")
             self.assertEqual(no_bearer_access.status_code, 401)
+
+    async def test_password_bearing_user_cannot_mint_remembered_session(self) -> None:
+        async with AsyncSessionLocal() as session:
+            user = await session.get(AppUser, self.user_id)
+            assert user is not None
+            user.password_hash = "stored-password-hash"
+            user.claim_state = "claimed"
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            user = await session.get(AppUser, self.user_id)
+            assert user is not None
+            with self.assertRaisesRegex(ValueError, "passwordless"):
+                await service.issue(session, user=user)
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.post(
+                "/web/participant-session",
+                headers={"Authorization": f"Bearer {create_access_token(self.user_id)}"},
+            )
+        self.assertEqual(response.status_code, 409)
+        self.assertNotIn("set-cookie", response.headers)
