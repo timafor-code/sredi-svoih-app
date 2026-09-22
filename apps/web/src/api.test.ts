@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  confirmPasswordReset,
   confirmPrivacyAccessCode,
   confirmPrivacyErasure,
   confirmSetPassword,
@@ -21,6 +22,7 @@ import {
   logoutExistingAccount,
   putLineageDeclaration,
   requestSetPassword,
+  requestPasswordReset,
   requestPrivacyAccessCode,
   resendWebRegistrationCode,
 } from "./api";
@@ -629,6 +631,24 @@ describe("public event API", () => {
       ["/api/auth/request-set-password", expect.objectContaining({ method: "POST", credentials: "omit" })],
       ["/api/auth/confirm-set-password", expect.objectContaining({ method: "POST", credentials: "include" })],
     ]);
+  });
+
+  it("uses unauthenticated password-reset endpoints with exact payloads", async () => {
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => fetchResponse({ ok: true }))
+      .mockImplementationOnce(() => fetchResponse({ ok: true }));
+    await expect(requestPasswordReset("person@example.test")).resolves.toEqual({ ok: true });
+    await expect(confirmPasswordReset("person@example.test", "123456", "new-password-123")).resolves.toEqual({ ok: true });
+    expect(fetch).toHaveBeenNthCalledWith(1, "/api/auth/request-password-reset", expect.objectContaining({
+      method: "POST", credentials: "omit", body: JSON.stringify({ email: "person@example.test" }),
+    }));
+    expect(fetch).toHaveBeenNthCalledWith(2, "/api/auth/confirm-password-reset", expect.objectContaining({
+      method: "POST", credentials: "omit",
+      body: JSON.stringify({ email: "person@example.test", code: "123456", new_password: "new-password-123" }),
+    }));
+    for (const [, init] of vi.mocked(fetch).mock.calls) {
+      expect(init?.headers).not.toHaveProperty("Authorization");
+    }
   });
 
   it("rejects malformed auth success and preserves safe error code plus Retry-After", async () => {
