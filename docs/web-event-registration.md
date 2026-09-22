@@ -73,10 +73,15 @@ password. Normal password login never creates remembered participant state.
 Successful set-password revokes all remembered sessions for that user and clears
 the current browser cookie. Authenticated Public Web sign-out revokes the normal
 refresh session and remembered sessions, then clears the current cookie before
-the page leaves account mode. `Не я` remains the server-owned browser-forget
-action, which revokes that browser's remembered session without changing saved
-registrations. The PR-06 local reset of completed-registration UI state after
-browser forget is outside PR-04.
+the page leaves account mode. `Не я` is the server-owned browser-forget action:
+it first revokes that browser's remembered session and, only after a successful
+revoke, Public Web discards all participant-specific and completed-registration
+browser state. The saved-result dialog and its CTA disappear and the page
+returns to a fresh, editable anonymous form. Valid event and occurrence context
+may remain, but old idempotency, verification, and account-follow-up state is
+discarded. No new registration is created automatically, and the already-saved
+canonical registration is not deleted, cancelled, or modified. If revoke fails,
+the remembered and completed browser state remains intact.
 
 Public Web sign-in offers `Забыли пароль?` from each shared sign-in panel.
 Recovery reuses `POST /auth/request-password-reset` and

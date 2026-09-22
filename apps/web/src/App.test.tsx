@@ -486,6 +486,100 @@ describe("public event page", () => {
     expect(fetch).toHaveBeenCalledWith("/api/web/participant-session", expect.objectContaining({ method: "DELETE", credentials: "include" }));
   });
 
+  it("resets a completed remembered registration locally only after a successful forget", async () => {
+    const remembered = {
+      first_name: "Иван", last_name: "Иванов", phone: "+79000000001", email: "ivan@example.ru",
+    };
+    const data = responseWithQuestionnaire();
+    let forgotten = false;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/web/participant-session") && init?.method === "DELETE") {
+        forgotten = true;
+        return Promise.resolve({ ok: true, status: 204, headers: new Headers() } as unknown as Response);
+      }
+      if (url.endsWith("/web/participant-session")) {
+        return response(envelope(forgotten
+          ? { state: "anonymous", participant: null }
+          : { state: "remembered", participant: remembered }));
+      }
+      return response(envelope(data));
+    });
+    window.history.replaceState(null, "", `/events/${EVENT_ID}`);
+    render(<App />);
+    const user = userEvent.setup();
+    await screen.findByRole("button", { name: "Не я" });
+    await user.click(screen.getByRole("checkbox", { name: /Основное участие/ }));
+    await fillValidQuestionnaire(user);
+    await user.click(screen.getByLabelText(/Я ознакомился/));
+    await createIntent(user);
+    await confirmIntent(user);
+    await screen.findByRole("heading", { name: "Регистрация успешно сохранена" });
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "Посмотреть регистрацию" })).toBeInTheDocument();
+    const registrationPostsBeforeForget = vi.mocked(fetch).mock.calls.filter(([input, init]) => (
+      String(input).endsWith("/registration-intents") && init?.method === "POST"
+    )).length;
+    const requestsBeforeForget = vi.mocked(fetch).mock.calls.length;
+
+    await user.click(screen.getByRole("button", { name: "Не я" }));
+
+    const firstName = await screen.findByLabelText("Имя");
+    await waitFor(() => expect(firstName).toHaveFocus());
+    expect(screen.queryByRole("heading", { name: /Записываем вас как/ })).not.toBeInTheDocument();
+    expect(firstName).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Посмотреть регистрацию" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Записаться на мероприятие" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Основное участие/ })).toBeEnabled();
+    expect(screen.getByRole("checkbox", { name: /Основное участие/ })).not.toBeChecked();
+    expect(screen.getByLabelText(/Код встречи/)).toHaveValue("");
+    expect(screen.getByLabelText(/Я ознакомился/)).not.toBeChecked();
+    expect(screen.queryByLabelText("Сохранённая регистрация")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Оформление регистрации" })).not.toBeInTheDocument();
+    expect(vi.mocked(fetch).mock.calls.filter(([input, init]) => (
+      String(input).endsWith("/registration-intents") && init?.method === "POST"
+    ))).toHaveLength(registrationPostsBeforeForget);
+    expect(vi.mocked(fetch).mock.calls.slice(requestsBeforeForget)).toEqual([[
+      "/api/web/participant-session",
+      expect.objectContaining({ method: "DELETE", credentials: "include" }),
+    ]]);
+    expect(vi.mocked(fetch).mock.calls.some(([input, init]) => (
+      /\/registration(?:s)?(?:\/|$)/.test(String(input))
+      && ["DELETE", "PATCH", "PUT"].includes(init?.method ?? "GET")
+    ))).toBe(false);
+  });
+
+  it("keeps a completed remembered registration intact when forget revoke fails", async () => {
+    const remembered = {
+      first_name: "Иван", last_name: "Иванов", phone: "+79000000001", email: "ivan@example.ru",
+    };
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/web/participant-session") && init?.method === "DELETE") return response(apiError("service_unavailable"), 503);
+      if (url.endsWith("/web/participant-session")) {
+        return response(envelope({ state: "remembered", participant: remembered }));
+      }
+      return response(envelope(eventResponse()));
+    });
+    window.history.replaceState(null, "", `/events/${EVENT_ID}`);
+    render(<App />);
+    const user = userEvent.setup();
+    await screen.findByRole("button", { name: "Не я" });
+    await user.click(screen.getByRole("checkbox", { name: /Основное участие/ }));
+    await user.click(screen.getByLabelText(/Я ознакомился/));
+    await createIntent(user);
+    await confirmIntent(user);
+    await user.keyboard("{Escape}");
+
+    await user.click(screen.getByRole("button", { name: "Не я" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось сменить данные. Попробуйте ещё раз.");
+    expect(screen.getByRole("heading", { name: "Записываем вас как Иван Иванов" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Имя")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Посмотреть регистрацию" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Основное участие/ })).toBeDisabled();
+  });
+
   it("shows the canonical account after password sign-in without issuing participant state", async () => {
     const user = userEvent.setup();
     await renderEvent();
