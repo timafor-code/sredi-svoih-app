@@ -105,12 +105,13 @@ export function SeatingAssignmentsPanel({
           </button>
           {canAddReserve && onAddReserve ? (
             <button
+              aria-label="Добавить резерв"
               className="seat-pool__add"
               onClick={onAddReserve}
               title="Добавить операционный резерв (гость раввина, габай, незаписанный гость)"
               type="button"
             >
-              + Резерв
+              <ReservePlusIcon />
             </button>
           ) : null}
         </div>
@@ -206,6 +207,10 @@ export function SeatingAssignmentsPanel({
       ) : null}
     </aside>
   );
+}
+
+function ReservePlusIcon() {
+  return <svg aria-hidden="true" fill="none" height="14" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24" width="14"><path d="M12 5.5v13M5.5 12h13" /></svg>;
 }
 
 function GuestChip({

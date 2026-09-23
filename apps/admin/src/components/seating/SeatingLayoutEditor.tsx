@@ -1890,8 +1890,7 @@ export function SeatingLayoutEditor({
                   Редактировать столы
                 </Button>
                 <Button className={seatEditEnabled ? "is-on" : undefined} disabled={isLayoutActionBusy} onClick={handleToggleSeatEdit} size="sm" title={layoutBusyReason ?? "Выключение мест"} variant="secondary"><SeatEditIcon />Выключение мест</Button>
-                <span className="seat-toolbar__sep" />
-                <SeatingShortcutLegend />
+                <SeatingShortcutLegend mode="seating" />
               </div>
             ) : (
               <SeatingToolbar

@@ -31,7 +31,13 @@ export function SeatingToolbar(props: SeatingToolbarProps) {
   </div>;
 }
 
-export function SeatingShortcutLegend() { return <div aria-label="Горячие клавиши" className="seat-shortcuts"><span><kbd>N</kbd> добавить стол</span><span><kbd>R</kbd> повернуть</span><span><kbd>Delete</kbd> удалить</span><span><kbd>Esc</kbd> отменить / закрыть</span><span><kbd>Колесо зажать</kbd> — двигать схему</span></div>; }
+export function SeatingShortcutLegend({ mode = "layout" }: { mode?: "layout" | "seating" }) {
+  return <div aria-label="Горячие клавиши" className="seat-shortcuts">
+    {mode === "layout" ? <><span><kbd>N</kbd> стол</span><span><kbd>R</kbd> повернуть</span><span><kbd>Delete</kbd> удалить</span></> : null}
+    <span><kbd>Esc</kbd> снять выделение</span><span><kbd>Колесо</kbd> зажать — двигать схему</span>
+    {mode === "seating" ? <span><kbd>Alt</kbd>+клик — выключить место</span> : null}
+  </div>;
+}
 function buttonTitle(disabled: boolean, disabledReason: string | null | undefined, enabledTitle: string): string { return disabled ? disabledReason ?? enabledTitle : enabledTitle; }
 
 function PlusIcon() { return <svg aria-hidden="true" className="seat-button-icon" fill="none" height="15" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24" width="15"><path d="M12 5.5v13M5.5 12h13" /></svg>; }
