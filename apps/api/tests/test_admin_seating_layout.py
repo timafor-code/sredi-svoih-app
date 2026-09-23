@@ -3,9 +3,10 @@ from __future__ import annotations
 import unittest
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,7 +16,10 @@ from app.db.models.seating import (
     EventSeatingLayoutTemplate,
     EventSeatingTable,
 )
-from app.schemas.admin_seating import AdminSeatingTablePayload
+from app.schemas.admin_seating import (
+    AdminSeatingLayoutFromTemplateRequest,
+    AdminSeatingTablePayload,
+)
 from app.services import admin_seating as seating_service
 
 
@@ -244,24 +248,24 @@ class AdminSeatingLayoutSaveTemplateReferenceTests(unittest.IsolatedAsyncioTestC
         self.assertIsNone(template_id)
         session.scalar.assert_not_awaited()
 
-    async def test_unavailable_template_is_cleared_during_layout_save(self) -> None:
-        for unavailable_template in (
-            "missing",
-            "inactive",
-            "another community",
-        ):
-            with self.subTest(unavailable_template=unavailable_template):
-                session = AsyncMock(spec=AsyncSession)
-                session.scalar.return_value = None
+    async def test_unavailable_template_is_cleared_with_active_community_filter(self) -> None:
+        community_id = uuid4()
+        template_id = uuid4()
+        session = AsyncMock(spec=AsyncSession)
+        session.scalar.return_value = None
 
-                template_id = await seating_service._resolve_template_reference_for_layout_save(
-                    session,
-                    community_id=uuid4(),
-                    active_template_id=str(uuid4()),
-                )
+        resolved_template_id = await seating_service._resolve_template_reference_for_layout_save(
+            session,
+            community_id=community_id,
+            active_template_id=str(template_id),
+        )
 
-                self.assertIsNone(template_id)
-                session.scalar.assert_awaited_once()
+        self.assertIsNone(resolved_template_id)
+        statement = session.scalar.await_args.args[0]
+        statement_sql = str(statement)
+        self.assertIn("event_seating_layout_templates.id", statement_sql)
+        self.assertIn("event_seating_layout_templates.community_id", statement_sql)
+        self.assertIn("event_seating_layout_templates.is_active IS true", statement_sql)
 
     async def test_active_community_template_is_kept_during_layout_save(self) -> None:
         expected_template_id = uuid4()
@@ -275,6 +279,40 @@ class AdminSeatingLayoutSaveTemplateReferenceTests(unittest.IsolatedAsyncioTestC
         )
 
         self.assertEqual(template_id, expected_template_id)
+
+    async def test_create_from_inactive_or_deleted_template_raises_not_found(self) -> None:
+        session = AsyncMock(spec=AsyncSession)
+        session.in_transaction.return_value = True
+        session.scalar.return_value = None
+        community_id = uuid4()
+        payload = AdminSeatingLayoutFromTemplateRequest(
+            event_id=uuid4(),
+            capacity_unit_id=uuid4(),
+            template_id=uuid4(),
+        )
+
+        with (
+            patch.object(
+                seating_service,
+                "_resolve_slot",
+                new=AsyncMock(return_value=MagicMock(community_id=community_id)),
+            ),
+            patch.object(
+                seating_service,
+                "resolve_manageable_community_ids",
+                new=AsyncMock(return_value=[community_id]),
+            ),
+        ):
+            with self.assertRaises(HTTPException) as error:
+                await seating_service.create_admin_seating_layout_from_template(
+                    session,
+                    MagicMock(),
+                    payload,
+                )
+
+        self.assertEqual(error.exception.status_code, 404)
+        statement = session.scalar.await_args.args[0]
+        self.assertIn("event_seating_layout_templates.is_active IS true", str(statement))
 
 
 if __name__ == "__main__":
