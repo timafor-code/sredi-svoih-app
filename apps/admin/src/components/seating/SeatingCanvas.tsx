@@ -12,7 +12,7 @@ const MAX_SCALE = 1.5;
 const SCALE_STEP = 0.1;
 
 type CanvasView = { scale: number; autoFit: boolean; panX: number; panY: number };
-type DragState = { id: string; origCx: number; origCy: number; startX: number; startY: number; moved: boolean };
+type DragState = { id: string; origCx: number; origCy: number; startX: number; startY: number; moved: boolean; lastCenter: { cx: number; cy: number } | null };
 type PanState = { pointerId: number; startX: number; startY: number; panX: number; panY: number; samples: Array<{ t: number; x: number; y: number }> };
 type SpringKey = "scale" | "panX" | "panY";
 
@@ -23,7 +23,7 @@ export function SeatingCanvas({ cancelVersion, connections, geometry, isSeatingD
   isSeatingDone: boolean;
   manualSeatingEnabled?: boolean;
   onMoveTable: (tableId: string, center: { cx: number; cy: number }) => void;
-  onMoveTableEnd?: (tableId: string) => void;
+  onMoveTableEnd?: (tableId: string, center: { cx: number; cy: number }) => void;
   onSeatClick?: (seatIndex: number) => void;
   onSeatDragEnd?: () => void;
   onSeatDragStart?: (seatIndex: number) => void;
@@ -39,6 +39,7 @@ export function SeatingCanvas({ cancelVersion, connections, geometry, isSeatingD
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
+  const dragRef = useRef<DragState | null>(null);
   const [pan, setPan] = useState<PanState | null>(null);
   const [view, setView] = useState<CanvasView>({ scale: 1, autoFit: true, panX: 0, panY: 0 });
   const viewRef = useRef(view);
@@ -94,12 +95,17 @@ export function SeatingCanvas({ cancelVersion, connections, geometry, isSeatingD
       const dx = event.clientX - drag.startX;
       const dy = event.clientY - drag.startY;
       if (!drag.moved && Math.hypot(dx, dy) < 3) return;
-      if (!drag.moved) setDrag((current) => current ? { ...current, moved: true } : null);
       const scale = getCanvasScale(canvasRef.current);
-      onMoveTable(drag.id, { cx: drag.origCx + dx / scale, cy: drag.origCy + dy / scale });
+      const center = { cx: drag.origCx + dx / scale, cy: drag.origCy + dy / scale };
+      const nextDrag = { ...drag, moved: true, lastCenter: center };
+      dragRef.current = nextDrag;
+      setDrag(nextDrag);
+      onMoveTable(drag.id, center);
     };
     const up = () => {
-      if (drag.moved) onMoveTableEnd?.(drag.id);
+      const finalDrag = dragRef.current;
+      if (finalDrag?.moved && finalDrag.lastCenter) onMoveTableEnd?.(finalDrag.id, finalDrag.lastCenter);
+      dragRef.current = null;
       setDrag(null);
     };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up, { once: true });
@@ -139,7 +145,7 @@ export function SeatingCanvas({ cancelVersion, connections, geometry, isSeatingD
     setPan({ ...pan, samples: [...pan.samples, { t: event.timeStamp, x: event.clientX, y: event.clientY }].slice(-6) });
   }, [pan, updateView]);
   const handleWrapPointerEnd = useCallback((event: ReactPointerEvent<HTMLDivElement>) => { if (!pan || event.pointerId !== pan.pointerId) return; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); finishPan(pan); }, [finishPan, pan]);
-  const handleTablePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>, table: SeatingTable) => { if (event.button !== 0 || (event.target as Element).closest(".seat")) return; event.preventDefault(); onSelectTable(table.id); setDrag({ id: table.id, origCx: table.cx, origCy: table.cy, startX: event.clientX, startY: event.clientY, moved: false }); }, [onSelectTable]);
+  const handleTablePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>, table: SeatingTable) => { if (event.button !== 0 || (event.target as Element).closest(".seat")) return; event.preventDefault(); onSelectTable(table.id); const nextDrag = { id: table.id, origCx: table.cx, origCy: table.cy, startX: event.clientX, startY: event.clientY, moved: false, lastCenter: null }; dragRef.current = nextDrag; setDrag(nextDrag); }, [onSelectTable]);
   const handleSeatDragStart = useCallback((event: ReactDragEvent<HTMLSpanElement>, index: number) => { if (!manualSeatingEnabled || !onSeatDragStart) return; event.dataTransfer.setData("text/plain", `seat:${index}`); event.dataTransfer.effectAllowed = "move"; setDraggingSeatIndex(index); onSeatDragStart(index); }, [manualSeatingEnabled, onSeatDragStart]);
   const handleSeatDrop = useCallback((event: ReactDragEvent<HTMLDivElement>, index: number) => { if (!manualSeatingEnabled || !onSeatDrop) return; event.preventDefault(); setDropTargetSeatIndex(null); setDraggingSeatIndex(null); onSeatDrop(index); }, [manualSeatingEnabled, onSeatDrop]);
 

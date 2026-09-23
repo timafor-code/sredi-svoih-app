@@ -486,7 +486,7 @@ export function SeatingLayoutEditor({
       guestPool.length === 0,
   );
   const invalidSeatKeyWarning =
-    assignmentRestoreState.invalidAssignments.length > 0
+    !hasUnsavedChanges && assignmentRestoreState.invalidAssignments.length > 0
       ? "Часть сохранённых мест больше не существует в текущей схеме."
       : null;
   const guestPoolWarning =
@@ -758,18 +758,19 @@ export function SeatingLayoutEditor({
 
   const reconcileGeometryChange = useCallback((nextTables: SeatingTable[], nextConnections: SeatingConnection[]) => {
     const result = reconcileAfterGeometryChange({
-      assignments: currentAssignments,
+      assignments,
       geometry: computeTableSeats({ connections: nextConnections, tables: nextTables }),
       guestPool,
     });
     setAssignments(result.assignments);
     if (result.returnedCount > 0) {
       setFeedback({
-        message: `${result.returnedCount} ${pluralizeRu(result.returnedCount, "гость", "гостя", "гостей")} вернулись в список — их места исчезли после изменения столов.`,
+        message: `Вернулись в список: ${result.returnedCount} — их места исчезли после изменения столов.`,
         tone: "muted",
       });
     }
-  }, [currentAssignments, guestPool]);
+    return result;
+  }, [assignments, guestPool]);
 
   const handleAddTable = useCallback(() => {
     if (!canAddTable) {
@@ -821,9 +822,17 @@ export function SeatingLayoutEditor({
     [canEditLayout, connections, tables],
   );
 
-  const handleMoveTableEnd = useCallback((tableId: string) => {
+  const handleMoveTableEnd = useCallback((tableId: string, center: { cx: number; cy: number }) => {
     if (!canEditLayout || !tables.some((table) => table.id === tableId)) return;
-    reconcileGeometryChange(tables, connections);
+    const nextTables = ensureOneRabbiTable(tables.map((table) =>
+      table.id === tableId
+        ? clampTableToCanvasStart({ ...table, cx: center.cx, cy: center.cy })
+        : table,
+    ));
+    const nextConnections = connections.filter((connection) => !connectionTouchesTable(connection, tableId));
+    setTables(nextTables);
+    setConnections(nextConnections);
+    reconcileGeometryChange(nextTables, nextConnections);
   }, [canEditLayout, connections, reconcileGeometryChange, tables]);
 
   const handleRemoveTable = useCallback(() => {
@@ -1048,8 +1057,8 @@ export function SeatingLayoutEditor({
       commitGeometry,
       geometry.physicalSeatCount,
       isLayoutActionBusy,
-       currentAssignments,
-       isSeatingDone,
+      currentAssignments,
+      isSeatingDone,
       saveLayoutGeometry,
       slot,
       templates,
@@ -1543,9 +1552,11 @@ export function SeatingLayoutEditor({
         : [...(item.disabledSeats ?? []), stablePart],
     });
     setTables(nextTables);
-    reconcileGeometryChange(nextTables, connections);
+    const reconcile = reconcileGeometryChange(nextTables, connections);
     setHasUnsavedChanges(true);
-    if (wasDisabled || !occupant) {
+    if (!wasDisabled && occupant && reconcile.returnedCount === 1) {
+      setFeedback({ message: `«${occupant.guestLabel}» снят с выключенного места.`, tone: "muted" });
+    } else if (wasDisabled || !occupant) {
       setFeedback(wasDisabled
         ? { message: "Место включено обратно.", tone: "muted" }
         : { message: "Место выключено и не входит в схему.", tone: "muted" });
