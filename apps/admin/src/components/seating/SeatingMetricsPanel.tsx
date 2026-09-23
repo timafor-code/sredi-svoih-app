@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import type { ReactNode } from "react";
 
 import {
   computeSeatingMetricsDisplaySummary,
@@ -7,150 +6,39 @@ import {
 } from "../../lib/seatingCapacity";
 
 type SeatingMetricsPanelProps = SeatingMetricsDisplayInput & {
-  action?: ReactNode;
+  disabledSeatCount: number;
   rabbiReserveCount: number;
   tableCount: number;
   unseatedCount: number;
 };
 
-type SeatingMetricCard = {
-  id: string;
-  label: string;
-  value: string;
-};
-
 export function SeatingMetricsPanel({
-  action,
-  capacityLimit,
-  physicalOccupiedSeats,
-  physicalSeatCount,
-  rabbiReserveCount,
-  registrationOccupiedSeats,
-  reserveSeats = 0,
-  seatedGuestCount,
-  tableCount,
-  unseatedCount,
+  capacityLimit, disabledSeatCount, physicalOccupiedSeats, physicalSeatCount,
+  rabbiReserveCount, registrationOccupiedSeats, reserveSeats = 0,
+  seatedGuestCount, tableCount, unseatedCount,
 }: SeatingMetricsPanelProps) {
   const summary = useMemo(
-    () =>
-      computeSeatingMetricsDisplaySummary({
-        capacityLimit,
-        physicalOccupiedSeats,
-        physicalSeatCount,
-        registrationOccupiedSeats,
-        reserveSeats,
-        seatedGuestCount,
-      }),
-    [
-      capacityLimit,
-      physicalOccupiedSeats,
-      physicalSeatCount,
-      registrationOccupiedSeats,
-      reserveSeats,
-      seatedGuestCount,
-    ],
+    () => computeSeatingMetricsDisplaySummary({ capacityLimit, physicalOccupiedSeats, physicalSeatCount, registrationOccupiedSeats, reserveSeats, seatedGuestCount }),
+    [capacityLimit, physicalOccupiedSeats, physicalSeatCount, registrationOccupiedSeats, reserveSeats, seatedGuestCount],
   );
-  const normalizedRabbiReserveCount = toCount(rabbiReserveCount);
-  const normalizedTableCount = toCount(tableCount);
-  const normalizedUnseatedCount = toCount(unseatedCount);
-
-  const cards: SeatingMetricCard[] = [
-    {
-      id: "tables",
-      label: "столов",
-      value: formatCount(normalizedTableCount),
-    },
-    {
-      id: "physical",
-      label: "физ. мест",
-      value: formatCount(summary.physicalSeatCount),
-    },
-    {
-      id: "limit",
-      label: summary.capacityLimit === null ? "без лимита" : "лимит",
-      value: summary.capacityLimit === null ? "∞" : formatCount(summary.capacityLimit),
-    },
-    {
-      id: "occupied",
-      label: "занято",
-      value: formatCount(summary.seatedGuestCount),
-    },
+  const metrics = [
+    { id: "tables", label: "Столов", title: "Столов в схеме", value: tableCount },
+    { id: "physical", label: "Физ. мест", title: "Физических мест с учётом стыков и выключенных", value: summary.physicalSeatCount },
+    { id: "limit", label: summary.capacityLimit === null ? "Без лимита" : "Лимит", title: "Лимит регистрации", value: summary.capacityLimit === null ? "∞" : summary.capacityLimit, warn: summary.capacityLimit !== null && summary.physicalSeatCount < summary.capacityLimit },
+    { id: "occupied", label: "Занято", title: "Занято мест", value: summary.seatedGuestCount },
+    { id: "free", label: "Свободно", title: "Физически свободно", value: summary.freePhysical },
+    { id: "reserve", label: "Резерв", title: "Раввинский резерв", value: rabbiReserveCount },
+    { id: "unseated", label: "Не рассажены", title: "Гостей без места", value: unseatedCount, warn: unseatedCount > 0 },
+    ...(disabledSeatCount > 0 ? [{ id: "off", label: "Выключено", title: "Выключенных мест — в схему не входят", value: disabledSeatCount, off: true }] : []),
   ];
 
-  cards.push({
-    id: "free-physical",
-    label: "физически свободно",
-    value: formatCount(summary.freePhysical),
-  });
-
-  cards.push({
-    id: "rabbi-reserve",
-    label: "раввинский резерв",
-    value: formatCount(normalizedRabbiReserveCount),
-  });
-
-  cards.push({
-    id: "unseated",
-    label: "не рассажены",
-    value: formatCount(normalizedUnseatedCount),
-  });
-
-  const hasShortage = summary.missingPhysical > 0;
-  const seatsNeeded = summary.registrationOccupiedSeats + summary.reserveSeats;
-
-  return (
-    <section
-      aria-label="Показатели рассадки"
-      aria-live="polite"
-      className="seat-metrics-panel"
-    >
-      <h4>Показатели</h4>
-      <div className="seat-metrics-grid">
-        {cards.map((card) => (
-          <div className="seat-metric-card" key={card.id}>
-            <strong>{card.value}</strong>
-            <span>{card.label}</span>
-          </div>
-        ))}
-      </div>
-
-      {hasShortage ? (
-        <p className="seat-metrics-warning" role="alert">
-          Не хватает физических мест: {formatCount(seatsNeeded)}{" "}
-          {pluralizeRu(seatsNeeded, "гость", "гостя", "гостей")} на{" "}
-          {formatCount(summary.physicalSeatCount)}{" "}
-          {pluralizeRu(summary.physicalSeatCount, "стул", "стула", "стульев")}
-        </p>
-      ) : null}
-
-      {action ? <div className="seat-metrics-actions">{action}</div> : null}
-    </section>
-  );
-}
-
-function toCount(value: number | null | undefined): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return 0;
-  }
-  return Math.max(0, Math.round(value));
+  return <div aria-label="Показатели рассадки" aria-live="polite" className="seat-metrics-strip">
+    {metrics.map((metric) => <div className={["seat-metric", metric.warn ? "seat-metric--warn" : "", metric.off ? "seat-metric--off" : ""].filter(Boolean).join(" ")} key={metric.id} title={metric.title}>
+      <strong>{typeof metric.value === "number" ? formatCount(metric.value) : metric.value}</strong><span>{metric.label}</span>
+    </div>)}
+  </div>;
 }
 
 function formatCount(value: number): string {
-  return new Intl.NumberFormat("ru-RU").format(value);
-}
-
-function pluralizeRu(count: number, one: string, few: string, many: string): string {
-  const mod100 = Math.abs(count) % 100;
-  const mod10 = mod100 % 10;
-
-  if (mod100 >= 11 && mod100 <= 14) {
-    return many;
-  }
-  if (mod10 === 1) {
-    return one;
-  }
-  if (mod10 >= 2 && mod10 <= 4) {
-    return few;
-  }
-  return many;
+  return new Intl.NumberFormat("ru-RU").format(Math.max(0, Math.round(value)));
 }
