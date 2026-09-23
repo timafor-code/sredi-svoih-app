@@ -10471,11 +10471,11 @@ a {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .seat-unseated-dialog-overlay { transition: none !important; opacity: 1; }
+  .seat-unseated-dialog-overlay { transition: none !important; opacity: 1 !important; }
   .seat-unseated-dialog {
     transform: none !important;
     filter: none !important;
-    opacity: 1;
+    opacity: 1 !important;
     transition: none !important;
   }
 
@@ -10916,7 +10916,7 @@ a {
   border-radius: 14px;
   background: var(--surface-strong);
   box-shadow: var(--shadow);
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   transform: scale(.93);
   filter: blur(7px);
   opacity: .4;
@@ -11087,7 +11087,11 @@ a {
   list-style: none;
 }
 
-.seat-unseated-party__members li,
+.seat-unseated-party__members li {
+  min-width: 0;
+  padding: 0;
+}
+
 .seat-unseated-dialog__reserves li {
   display: flex;
   align-items: center;
