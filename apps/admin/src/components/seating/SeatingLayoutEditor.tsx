@@ -142,6 +142,7 @@ export function SeatingLayoutEditor({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [seatEditEnabled, setSeatEditEnabled] = useState(false);
   const [isTemplateListLoading, setIsTemplateListLoading] = useState(false);
+  const [hasLoadedTemplates, setHasLoadedTemplates] = useState(false);
   const [printModel, setPrintModel] = useState<SeatingPrintModel | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [isSeatingDone, setIsSeatingDone] = useState(false);
@@ -323,6 +324,7 @@ export function SeatingLayoutEditor({
   const refreshTemplates = useCallback(() => {
     if (!slot) {
       setTemplates([]);
+      setHasLoadedTemplates(false);
       return Promise.resolve();
     }
 
@@ -331,9 +333,11 @@ export function SeatingLayoutEditor({
     return listSeatingTemplates()
       .then((nextTemplates) => {
         setTemplates(nextTemplates);
+        setHasLoadedTemplates(true);
       })
       .catch((error) => {
         setTemplates([]);
+        setHasLoadedTemplates(false);
         setFeedback({
           message:
             error instanceof Error
@@ -353,6 +357,7 @@ export function SeatingLayoutEditor({
     if (!slot) {
       setIsTemplateListLoading(false);
       setTemplates([]);
+      setHasLoadedTemplates(false);
       return undefined;
     }
 
@@ -362,11 +367,13 @@ export function SeatingLayoutEditor({
       .then((nextTemplates) => {
         if (!cancelled) {
           setTemplates(nextTemplates);
+          setHasLoadedTemplates(true);
         }
       })
       .catch((error) => {
         if (!cancelled) {
           setTemplates([]);
+          setHasLoadedTemplates(false);
           setFeedback({
             message:
               error instanceof Error
@@ -911,7 +918,11 @@ export function SeatingLayoutEditor({
       }
 
       return saveSeatingLayout({
-        activeTemplateId: templateIdForSavePayload(templateValue, templates),
+        activeTemplateId: templateIdForSavePayload(
+          templateValue,
+          templates,
+          hasLoadedTemplates && !isTemplateListLoading,
+        ),
         capacity: capacityLimit ?? 0,
         capacityUnitId: slot.bucket.capacityUnitId,
         chairs: [],
@@ -926,7 +937,7 @@ export function SeatingLayoutEditor({
         tableConnections: nextConnections,
       });
     },
-    [capacityLimit, slot, templates],
+    [capacityLimit, hasLoadedTemplates, isTemplateListLoading, slot, templates],
   );
 
   const commitGeometry = useCallback(
@@ -1154,6 +1165,7 @@ export function SeatingLayoutEditor({
     const savedTemplateValue = templateValueAfterSave(
       activeTemplateValue,
       templates,
+      hasLoadedTemplates && !isTemplateListLoading,
     );
 
     setIsSaving(true);
@@ -1217,7 +1229,9 @@ export function SeatingLayoutEditor({
     commitGeometry,
     connections,
     currentAssignments,
+    hasLoadedTemplates,
     isSeatingDone,
+    isTemplateListLoading,
     saveLayoutGeometry,
     saveDisabled,
     selectedTableId,
@@ -1312,6 +1326,7 @@ export function SeatingLayoutEditor({
       const savedTemplateValue = templateValueAfterSave(
         activeTemplateValue,
         templates,
+        hasLoadedTemplates && !isTemplateListLoading,
       );
 
       setIsAutoAssigning(true);
@@ -1359,7 +1374,10 @@ export function SeatingLayoutEditor({
           setIsEditingAfterSeating(false);
           setReconcileNotice(reconcile.counts.returnedCount > 0 ? reconcile.counts : null);
           setFeedback(
-            autoFill && newlySeatedGuestCount === 0 && pooledReserves.length > 0
+            autoFill &&
+            newlySeatedGuestCount === 0 &&
+            overflowCount === 0 &&
+            pooledReserves.length > 0
               ? {
                   message:
                     "Свободных гостей нет. Резервы рассаживаются вручную — перетащите их на свободные места.",
@@ -1386,7 +1404,9 @@ export function SeatingLayoutEditor({
       connections,
       currentAssignments,
       guestPool,
+      hasLoadedTemplates,
       hasValidGeometry,
+      isTemplateListLoading,
       saveLayoutGeometry,
       slot,
       tables,
@@ -2449,9 +2469,11 @@ function countRabbiTables(tables: SeatingTable[]): number {
 function templateIdForSavePayload(
   value: SeatingTemplateValue,
   templates: SeatingTemplate[],
+  hasLoadedTemplates: boolean,
 ): string | null {
   const templateId = parseUserSeatingTemplateValue(value);
-  return templateId && templates.some((template) => template.id === templateId)
+  return templateId &&
+    (!hasLoadedTemplates || templates.some((template) => template.id === templateId))
     ? templateId
     : null;
 }
@@ -2459,8 +2481,10 @@ function templateIdForSavePayload(
 function templateValueAfterSave(
   value: SeatingTemplateValue,
   templates: SeatingTemplate[],
+  hasLoadedTemplates: boolean,
 ): SeatingTemplateValue {
-  return parseUserSeatingTemplateValue(value) && !templateIdForSavePayload(value, templates)
+  return parseUserSeatingTemplateValue(value) &&
+    !templateIdForSavePayload(value, templates, hasLoadedTemplates)
     ? DEFAULT_SEATING_TEMPLATE_VALUE
     : value;
 }
