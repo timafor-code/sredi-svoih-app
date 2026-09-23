@@ -9583,7 +9583,7 @@ a {
   padding: 14px 18px;
 }
 
-.seat-modal__head > div {
+.seat-modal__title-block {
   display: grid;
   min-width: 0;
   gap: 4px;
@@ -9794,7 +9794,7 @@ a {
   display: grid;
   min-height: 0;
   overflow: hidden;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  grid-template-columns: minmax(0, 1fr) var(--seat-side-width);
 }
 
 .seat-stage {
@@ -10107,11 +10107,12 @@ a {
 
 .seat-shortcuts {
   display: flex;
-  flex: 1 1 280px;
+  flex: 1 1 100%;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;
   min-width: 0;
+  margin: 0;
   color: var(--text-muted);
 }
 
@@ -10522,7 +10523,7 @@ a {
   min-height: 0;
   gap: 10px;
   overflow: hidden;
-  padding: 14px;
+  padding: 0;
   grid-template-rows: auto minmax(0, 1fr);
 }
 

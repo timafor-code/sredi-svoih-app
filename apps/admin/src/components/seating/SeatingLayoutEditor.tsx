@@ -23,6 +23,7 @@ import {
   autoAssignResultToAssignments,
   autoAssignSeating,
   deriveSeatingAssignmentRestoreState,
+  seatIndexFromSeatKey,
 } from "../../lib/seatingAutoAssign";
 import {
   reconcileSeatingAssignments,
@@ -1463,8 +1464,11 @@ export function SeatingLayoutEditor({
     if (!stablePart) return;
     const table = tables.find((item) => item.id === seat.tableId);
     if (!table) return;
-    const seatKey = `${seat.tableId}:${stablePart}`;
-    const occupant = currentAssignments.find((assignment) => assignment.seatKey === seatKey) ?? null;
+    const occupant = currentAssignments.find(
+      (assignment) =>
+        assignment.seatKey &&
+        seatIndexFromSeatKey(assignment.seatKey, geometry) === seatIndex,
+    ) ?? null;
     const wasDisabled = Boolean(table.disabledSeats?.includes(stablePart));
 
     setTables((currentTables) => currentTables.map((item) => item.id !== table.id ? item : {
@@ -1480,7 +1484,7 @@ export function SeatingLayoutEditor({
     }
     setHasUnsavedChanges(true);
     setFeedback(wasDisabled
-      ? { message: "Место включено обратно.", tone: "success" }
+      ? { message: "Место включено обратно.", tone: "muted" }
       : occupant
         ? { message: `«${occupant.guestLabel}» снят с выключенного места.`, tone: "muted" }
         : { message: "Место выключено и не входит в схему.", tone: "muted" });
