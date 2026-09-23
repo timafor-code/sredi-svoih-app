@@ -168,6 +168,72 @@ test("uses visual table-based print seat numbers in scheme and legend", () => {
   );
 });
 
+test("keeps disabled chairs visible but unnumbered and excludes stale occupants", () => {
+  const table = makeTable({
+    disabledSeats: ["side:a:0"],
+    id: "disabled-table",
+    isRabbiTable: true,
+  });
+  const tables = [table];
+  const geometry = computeTableSeats({ tables });
+  const disabledSeatIndex = geometry.seats.findIndex((seat) => seat.isDisabled);
+  const activeSeatIndex = geometry.seats.findIndex((seat) => !seat.isDisabled);
+  const printSeatNumberBySeatIndex = buildPrintSeatNumberBySeatIndex({
+    geometry,
+    tables,
+  });
+
+  assert(disabledSeatIndex >= 0, "disabled seat exists");
+  assert(activeSeatIndex >= 0, "active seat exists");
+  assertEqual(
+    printSeatNumberBySeatIndex[disabledSeatIndex],
+    undefined,
+    "disabled seat has no print number",
+  );
+  assertArrayEqual(
+    Object.values(printSeatNumberBySeatIndex).sort((a, b) => a - b),
+    Array.from({ length: geometry.physicalSeatCount }, (_, index) => index + 1),
+    "active print numbers are contiguous",
+  );
+  assertEqual(
+    Object.keys(printSeatNumberBySeatIndex).length,
+    geometry.physicalSeatCount,
+    "only physical seats receive print numbers",
+  );
+
+  const model = buildSeatingPrintModel({
+    capacityBucketTitle: "Шаббатний ужин",
+    eventTitle: "Среди своих",
+    geometry,
+    occupants: [
+      makeOccupant({ id: "guest-disabled", seatIndex: disabledSeatIndex }),
+      makeOccupant({ id: "guest-active", seatIndex: activeSeatIndex }),
+    ],
+    occurrenceSubtitle: "Пятница · dinner",
+    printedAt: new Date("2026-06-29T10:15:00Z"),
+    tables,
+  });
+  const disabledPrintSeat = model.canvas.seats[disabledSeatIndex];
+  const activePrintSeat = model.canvas.seats[activeSeatIndex];
+
+  assertEqual(model.canvas.seats.length, geometry.seats.length, "all chairs remain on canvas");
+  assertEqual(disabledPrintSeat.isDisabled, true, "disabled chair is explicit in print model");
+  assertEqual(disabledPrintSeat.seatNumber, null, "disabled chair has null print number");
+  assertEqual(disabledPrintSeat.occupant, null, "disabled chair has no print occupant");
+  assert(!model.legend.some((item) => item.id === "guest-disabled"), "stale occupant omitted from legend");
+  assert(
+    !model.canvas.seats.some((seat) => seat.occupant?.id === "guest-disabled"),
+    "stale occupant omitted from scheme",
+  );
+  assert(activePrintSeat.seatNumber !== null, "active occupant has a print number");
+  assertEqual(activePrintSeat.occupant?.seatNumber, activePrintSeat.seatNumber, "scheme number matches occupant");
+  assertEqual(
+    model.legend.find((item) => item.id === "guest-active")?.seatNumber,
+    activePrintSeat.seatNumber,
+    "legend number matches scheme",
+  );
+});
+
 test("unseated section omits email and phone", () => {
   const tables = [makeTable({ id: "rabbi", isRabbiTable: true })];
   const geometry = computeTableSeats({ tables });

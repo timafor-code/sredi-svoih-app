@@ -342,10 +342,11 @@ export interface SeatingPrintSeatOccupant {
 }
 
 export interface SeatingPrintSeat {
+  isDisabled: boolean;
   isHead: boolean;
   isRabbiTable: boolean;
   occupant: SeatingPrintSeatOccupant | null;
-  seatNumber: number;
+  seatNumber: number | null;
   x: number;
   y: number;
 }

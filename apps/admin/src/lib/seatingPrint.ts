@@ -55,6 +55,10 @@ export function buildSeatingPrintModel({
 }: BuildSeatingPrintModelInput): SeatingPrintModel {
   const occupantsBySeat = new Map<number, SeatingSeatOccupant>();
   occupants.forEach((occupant) => {
+    const seat = geometry.seats[occupant.seatIndex];
+    if (!seat || seat.isDisabled) {
+      return;
+    }
     occupantsBySeat.set(occupant.seatIndex, occupant);
   });
 
@@ -68,7 +72,7 @@ export function buildSeatingPrintModel({
   });
   const legendColumns = PRINT_CONTENT_WIDTH >= 960 ? 4 : 3;
   const estimatedDetailsHeight = estimateDetailsHeight({
-    legendCount: occupants.length,
+    legendCount: occupantsBySeat.size,
     legendColumns,
     unseatedCount: unseatedGuests.length + unseatedReserves.length,
   });
@@ -100,15 +104,18 @@ export function buildSeatingPrintModel({
   );
 
   const printSeats: SeatingPrintSeat[] = geometry.seats.map((seat, seatIndex) => {
-    const occupant = occupantsBySeat.get(seatIndex) ?? null;
-    const seatNumber = printSeatNumberBySeatIndex[seatIndex];
+    const seatNumber = printSeatNumberBySeatIndex[seatIndex] ?? null;
+    const occupant = !seat.isDisabled && seatNumber !== null
+      ? occupantsBySeat.get(seatIndex) ?? null
+      : null;
     const initials = normalizeInitials(occupant?.initials, occupant?.type ?? "guest");
     const displayName = normalizeDisplayName(occupant?.displayName, occupant?.type ?? "guest");
 
     return {
-      isHead: seatIndex === geometry.headIndex,
+      isDisabled: seat.isDisabled,
+      isHead: !seat.isDisabled && seatIndex === geometry.headIndex,
       isRabbiTable: seat.isRabbiTable,
-      occupant: occupant
+      occupant: occupant && seatNumber !== null
         ? {
             displayName,
             id: occupant.id,
@@ -136,7 +143,7 @@ export function buildSeatingPrintModel({
       id: seat.occupant.id,
       initials: seat.occupant.initials,
       legendLabel: seat.occupant.legendLabel,
-      seatNumber: seat.seatNumber,
+      seatNumber: seat.occupant.seatNumber,
       type: seat.occupant.type,
     }))
     .sort((a, b) => a.seatNumber - b.seatNumber);
@@ -212,7 +219,7 @@ export function buildPrintSeatNumberBySeatIndex({
   orderTablesForPrint(tables).forEach((table) => {
     const tableSeats = geometry.seats
       .map((seat, seatIndex) => ({ seat, seatIndex }))
-      .filter(({ seat }) => seat.tableId === table.id);
+      .filter(({ seat }) => seat.tableId === table.id && !seat.isDisabled);
 
     orderSeatsClockwiseFromTopLeft(tableSeats, table).forEach(({ seatIndex }) => {
       numberBySeatIndex[seatIndex] = nextNumber;
@@ -222,7 +229,7 @@ export function buildPrintSeatNumberBySeatIndex({
 
   geometry.seats
     .map((seat, seatIndex) => ({ seat, seatIndex }))
-    .filter(({ seatIndex }) => numberBySeatIndex[seatIndex] === undefined)
+    .filter(({ seat, seatIndex }) => !seat.isDisabled && numberBySeatIndex[seatIndex] === undefined)
     .sort(compareSeatsByVisualPosition)
     .forEach(({ seatIndex }) => {
       numberBySeatIndex[seatIndex] = nextNumber;
