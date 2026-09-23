@@ -359,7 +359,7 @@ def _template_geometry(
     return tables, connections
 
 
-async def _resolve_template_reference(
+async def _resolve_template_reference_for_layout_save(
     session: AsyncSession,
     *,
     community_id: UUID,
@@ -380,8 +380,9 @@ async def _resolve_template_reference(
             EventSeatingLayoutTemplate.is_active.is_(True),
         ),
     )
-    if found_id is None:
-        raise _not_found("Seating template not found")
+    # A saved layout owns its geometry. Its template is only an optional
+    # provenance reference, so a deleted, inactive, or foreign template must
+    # not prevent the layout (or its assignments) from being saved.
     return found_id
 
 
@@ -711,7 +712,7 @@ async def save_admin_seating_layout(
             occurrence_id=payload.occurrence_id,
             capacity_unit_id=payload.capacity_unit_id,
         )
-        template_id = await _resolve_template_reference(
+        template_id = await _resolve_template_reference_for_layout_save(
             session,
             community_id=slot.community_id,
             active_template_id=payload.active_template_id,

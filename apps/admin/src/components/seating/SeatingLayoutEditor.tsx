@@ -911,7 +911,7 @@ export function SeatingLayoutEditor({
       }
 
       return saveSeatingLayout({
-        activeTemplateId: templateIdForSavePayload(templateValue),
+        activeTemplateId: templateIdForSavePayload(templateValue, templates),
         capacity: capacityLimit ?? 0,
         capacityUnitId: slot.bucket.capacityUnitId,
         chairs: [],
@@ -926,7 +926,7 @@ export function SeatingLayoutEditor({
         tableConnections: nextConnections,
       });
     },
-    [capacityLimit, slot],
+    [capacityLimit, slot, templates],
   );
 
   const commitGeometry = useCallback(
@@ -1151,6 +1151,10 @@ export function SeatingLayoutEditor({
     const assignmentPayloadEntries = isSeatingDone
       ? assignmentsToPayloadEntries(currentAssignments)
       : null;
+    const savedTemplateValue = templateValueAfterSave(
+      activeTemplateValue,
+      templates,
+    );
 
     setIsSaving(true);
     setFeedback({ message: "Сохраняем схему...", tone: "muted" });
@@ -1160,7 +1164,7 @@ export function SeatingLayoutEditor({
       nextSeatingDone: isSeatingDone,
       nextSelectedTableId,
       nextTables,
-      templateValue: activeTemplateValue,
+      templateValue: savedTemplateValue,
     })
       .then(() => {
         if (!assignmentPayloadEntries) {
@@ -1189,7 +1193,7 @@ export function SeatingLayoutEditor({
           nextConnections,
           nextSelectedTableId,
           nextTables,
-          templateValue: activeTemplateValue,
+          templateValue: savedTemplateValue,
         });
         setFeedback({
           message: isSeatingDone
@@ -1219,6 +1223,7 @@ export function SeatingLayoutEditor({
     selectedTableId,
     slot,
     tables,
+    templates,
   ]);
 
   // PR 17: shared seating commit. Recomputes the physical seats for the current
@@ -1260,6 +1265,7 @@ export function SeatingLayoutEditor({
 
       let mergedAssignments: SeatingAssignment[];
       let overflowCount = 0;
+      let newlySeatedGuestCount = 0;
 
       if (autoFill) {
         const result = autoAssignSeating({
@@ -1295,6 +1301,7 @@ export function SeatingLayoutEditor({
           ...autoAssignResultToAssignments(result),
         ];
         overflowCount = result.remainingUnassignedGuests.length;
+        newlySeatedGuestCount = result.assignedSeats.length;
       } else {
         // Restore-only exit: kept placements + returned/pooled occupants as-is.
         mergedAssignments = reconcile.assignments;
@@ -1302,6 +1309,10 @@ export function SeatingLayoutEditor({
 
       const payloadEntries = assignmentsToPayloadEntries(mergedAssignments);
       const nextSelectedTableId = null;
+      const savedTemplateValue = templateValueAfterSave(
+        activeTemplateValue,
+        templates,
+      );
 
       setIsAutoAssigning(true);
       setFeedback({ message: "Делаем рассадку...", tone: "muted" });
@@ -1311,7 +1322,7 @@ export function SeatingLayoutEditor({
         nextSeatingDone: false,
         nextSelectedTableId: pickSelectedTableId(nextTables),
         nextTables,
-        templateValue: activeTemplateValue,
+        templateValue: savedTemplateValue,
       })
         .then(() =>
           saveSeatingAssignments({
@@ -1332,7 +1343,7 @@ export function SeatingLayoutEditor({
             nextSeatingDone: true,
             nextSelectedTableId,
             nextTables,
-            templateValue: activeTemplateValue,
+            templateValue: savedTemplateValue,
           }),
         )
         .then(() => {
@@ -1340,14 +1351,22 @@ export function SeatingLayoutEditor({
             nextConnections,
             nextSelectedTableId,
             nextTables,
-            templateValue: activeTemplateValue,
+            templateValue: savedTemplateValue,
           });
           setDragSource(null);
           setAssignments(mergedAssignments);
           setIsSeatingDone(true);
           setIsEditingAfterSeating(false);
           setReconcileNotice(reconcile.counts.returnedCount > 0 ? reconcile.counts : null);
-          setFeedback(buildSeatingFeedback(reconcile.counts, overflowCount));
+          setFeedback(
+            autoFill && newlySeatedGuestCount === 0 && pooledReserves.length > 0
+              ? {
+                  message:
+                    "Свободных гостей нет. Резервы рассаживаются вручную — перетащите их на свободные места.",
+                  tone: "muted",
+                }
+              : buildSeatingFeedback(reconcile.counts, overflowCount),
+          );
           setHasUnsavedChanges(false);
         })
         .catch((error) => {
@@ -1371,6 +1390,7 @@ export function SeatingLayoutEditor({
       saveLayoutGeometry,
       slot,
       tables,
+      templates,
     ],
   );
 
@@ -2119,9 +2139,7 @@ function formatLayoutSaveError(error: unknown, expectedAssignmentsSave: boolean)
     return formatAutoAssignSaveError(error);
   }
 
-  return error instanceof Error
-    ? error.message
-    : "Не удалось сохранить схему рассадки.";
+  return "Не удалось сохранить схему. Обновите страницу и попробуйте ещё раз.";
 }
 
 function manualDropRejectionFeedback(
@@ -2183,7 +2201,7 @@ function formatAutoAssignSaveError(error: unknown): string {
     return "Не удалось подтвердить сохранение рассадки. Обновите данные и попробуйте ещё раз.";
   }
 
-  return "Не удалось сохранить рассадку. Обновите данные и попробуйте ещё раз.";
+  return "Не удалось сохранить схему. Обновите страницу и попробуйте ещё раз.";
 }
 
 function formatCapacitySyncError(error: unknown): string {
@@ -2428,8 +2446,23 @@ function countRabbiTables(tables: SeatingTable[]): number {
   return tables.filter((table) => table.isRabbiTable).length;
 }
 
-function templateIdForSavePayload(value: SeatingTemplateValue): string | null {
-  return parseUserSeatingTemplateValue(value);
+function templateIdForSavePayload(
+  value: SeatingTemplateValue,
+  templates: SeatingTemplate[],
+): string | null {
+  const templateId = parseUserSeatingTemplateValue(value);
+  return templateId && templates.some((template) => template.id === templateId)
+    ? templateId
+    : null;
+}
+
+function templateValueAfterSave(
+  value: SeatingTemplateValue,
+  templates: SeatingTemplate[],
+): SeatingTemplateValue {
+  return parseUserSeatingTemplateValue(value) && !templateIdForSavePayload(value, templates)
+    ? DEFAULT_SEATING_TEMPLATE_VALUE
+    : value;
 }
 
 function upsertTemplate(

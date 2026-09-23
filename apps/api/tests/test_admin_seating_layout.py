@@ -231,5 +231,51 @@ class AdminSeatingDisabledSeatPartsTests(unittest.TestCase):
         self.assertEqual(tables[0].disabled_seat_parts, ["side:a:2", "end:b"])
 
 
+class AdminSeatingLayoutSaveTemplateReferenceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_invalid_template_id_is_cleared_during_layout_save(self) -> None:
+        session = AsyncMock(spec=AsyncSession)
+
+        template_id = await seating_service._resolve_template_reference_for_layout_save(
+            session,
+            community_id=uuid4(),
+            active_template_id="not-a-uuid",
+        )
+
+        self.assertIsNone(template_id)
+        session.scalar.assert_not_awaited()
+
+    async def test_unavailable_template_is_cleared_during_layout_save(self) -> None:
+        for unavailable_template in (
+            "missing",
+            "inactive",
+            "another community",
+        ):
+            with self.subTest(unavailable_template=unavailable_template):
+                session = AsyncMock(spec=AsyncSession)
+                session.scalar.return_value = None
+
+                template_id = await seating_service._resolve_template_reference_for_layout_save(
+                    session,
+                    community_id=uuid4(),
+                    active_template_id=str(uuid4()),
+                )
+
+                self.assertIsNone(template_id)
+                session.scalar.assert_awaited_once()
+
+    async def test_active_community_template_is_kept_during_layout_save(self) -> None:
+        expected_template_id = uuid4()
+        session = AsyncMock(spec=AsyncSession)
+        session.scalar.return_value = expected_template_id
+
+        template_id = await seating_service._resolve_template_reference_for_layout_save(
+            session,
+            community_id=uuid4(),
+            active_template_id=str(expected_template_id),
+        )
+
+        self.assertEqual(template_id, expected_template_id)
+
+
 if __name__ == "__main__":
     unittest.main()
