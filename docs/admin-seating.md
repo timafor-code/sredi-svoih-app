@@ -307,10 +307,16 @@ returns that placement to the pool/reconcile path.
 
 ## Edit-Preserve Reconcile
 
-When admins edit tables after seating has already been done, the editor preserves
-the current assignments while geometry is being changed. Returning to seating or
-running auto seating reconciles those preserved assignments against the new
-physical seats.
+Tables and guests share one workspace. Every committed table mutation (add,
+move release, rotate, delete, seat-count change, and disabled-seat toggle)
+reconciles the current assignments against the next physical geometry. Guests
+whose stable seat keys still resolve remain seated; only occupants whose seats
+disappear or become invalid return to `Не рассажены`, with a muted returned-count
+message. Dragging a table updates its position live and reconciles only on release.
+
+Applying a ready-made layout while seating exists asks for confirmation, then
+persists the new geometry and cleared assignments together. All guests return to
+the guest list and reserves remain pooled. There is no separate geometry-edit mode.
 
 A saved disabled seat is invalid with reason `disabled_seat`, including manual,
 locked, and reserve placements; it cannot be retained merely because it was a
@@ -428,6 +434,14 @@ for C and D.
 40. With no disabled chairs, confirm auto seating, party grouping, rabbi
     protection/manual override, reserves, drag/drop, click-to-place, full list,
     save/reopen, print, and capacity sync continue to behave as expected.
+41. After auto seating, move, rotate, and switch `2 | 3` without a mode switch;
+    guests stay visible and valid placements remain seated.
+42. On a fresh layout, manually place a guest before auto seating, save, and reopen;
+    the manual placement remains.
+43. Apply a ready-made layout while seated; confirm that guests and reserves return
+    to their respective pools and no stale placement reappears after reopen.
+44. Confirm there is no `Редактировать столы` or `Вернуться к рассадке` control and
+    table controls remain available throughout.
 
 ## Out Of Scope
 

@@ -26,6 +26,7 @@ import {
   seatIndexFromSeatKey,
 } from "../../lib/seatingAutoAssign";
 import {
+  reconcileAfterGeometryChange,
   reconcileSeatingAssignments,
   type SeatingReconcileCounts,
 } from "../../lib/seatingAssignmentReconcile";
@@ -76,7 +77,7 @@ import {
   type BuiltInSeatingTemplateId,
   type SeatingTemplateValue,
 } from "./SeatingTemplateSelector";
-import { SeatingShortcutLegend, SeatingToolbar } from "./SeatingToolbar";
+import { SeatingToolbar } from "./SeatingToolbar";
 
 export type SeatingLayoutEditorSlot = {
   bucket: AdminRegistrationCapacityBucket;
@@ -130,10 +131,6 @@ export function SeatingLayoutEditor({
   const [isApplyingTemplate, setIsApplyingTemplate] = useState(false);
   const [isDeletingTemplate, setIsDeletingTemplate] = useState(false);
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
-  // PR 17: true after "Редактировать столы" reopens geometry editing from a done
-  // seating; controls the reconcile/restore exit affordance and warning.
-  const [isEditingAfterSeating, setIsEditingAfterSeating] = useState(false);
-  const [reconcileNotice, setReconcileNotice] = useState<SeatingReconcileCounts | null>(null);
   const [isGuestPoolLoading, setIsGuestPoolLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isReserveDialogOpen, setIsReserveDialogOpen] = useState(false);
@@ -163,8 +160,6 @@ export function SeatingLayoutEditor({
       setIsCapacitySyncDialogOpen(false);
       setIsCapacitySyncing(false);
       setIsAutoAssigning(false);
-      setIsEditingAfterSeating(false);
-      setReconcileNotice(null);
       setIsReserveDialogOpen(false);
       setIsSeatingDone(false);
       setPrintModel(null);
@@ -186,8 +181,6 @@ export function SeatingLayoutEditor({
     setIsReserveDialogOpen(false);
     setIsCapacitySyncDialogOpen(false);
     setIsCapacitySyncing(false);
-    setIsEditingAfterSeating(false);
-    setReconcileNotice(null);
     setActiveTemplateValue(DEFAULT_SEATING_TEMPLATE_VALUE);
     setIsLoading(true);
     setIsApplyingTemplate(false);
@@ -450,20 +443,20 @@ export function SeatingLayoutEditor({
     [assignments, geometry, guestPool],
   );
   const seatOccupants = useMemo(
-    () => (isSeatingDone ? assignmentRestoreState.occupants : []),
-    [assignmentRestoreState.occupants, isSeatingDone],
+    () => assignmentRestoreState.occupants,
+    [assignmentRestoreState.occupants],
   );
   const seatedGuestCount = useMemo(
     () => seatOccupants.filter((occupant) => occupant.type === "guest").length,
     [seatOccupants],
   );
   const currentAssignments = useMemo(
-    () => (isSeatingDone ? assignmentRestoreState.currentAssignments : assignments),
-    [assignmentRestoreState.currentAssignments, assignments, isSeatingDone],
+    () => assignmentRestoreState.currentAssignments,
+    [assignmentRestoreState.currentAssignments],
   );
   const unassignedGuestPool = useMemo(
-    () => (isSeatingDone ? assignmentRestoreState.unassignedGuests : guestPool),
-    [assignmentRestoreState.unassignedGuests, guestPool, isSeatingDone],
+    () => assignmentRestoreState.unassignedGuests,
+    [assignmentRestoreState.unassignedGuests],
   );
   const placementByGuestKey = useMemo(() => {
     const placement = new Map<string, string>();
@@ -493,7 +486,7 @@ export function SeatingLayoutEditor({
       guestPool.length === 0,
   );
   const invalidSeatKeyWarning =
-    isSeatingDone && assignmentRestoreState.invalidAssignments.length > 0
+    assignmentRestoreState.invalidAssignments.length > 0
       ? "Часть сохранённых мест больше не существует в текущей схеме."
       : null;
   const guestPoolWarning =
@@ -544,44 +537,27 @@ export function SeatingLayoutEditor({
     isSavingTemplate,
   });
   const isLayoutActionBusy = Boolean(layoutBusyReason);
-  const canEditLayout = Boolean(slot) && !isSeatingDone && !isLayoutActionBusy;
+  const canEditLayout = Boolean(slot) && !isLayoutActionBusy;
   const canAddTable = canEditLayout;
   const canRotateSelectedTable = canEditLayout && Boolean(selectedTable);
   const canChangeSelectedTableSideSeats = canEditLayout && Boolean(selectedTable);
   const canSetAllSideSeats = canEditLayout && tables.length > 0;
   const canRemoveSelectedTable =
     canEditLayout && Boolean(selectedTable) && tables.length > 1;
-  const addTableDisabledReason = layoutBusyReason ?? (isSeatingDone ? "Рассадка зафиксирована." : null);
+  const addTableDisabledReason = layoutBusyReason;
   const rotateTableDisabledReason =
-    layoutBusyReason ??
-    (isSeatingDone
-      ? "Рассадка зафиксирована."
-      : selectedTable
-        ? null
-        : "Выберите стол для поворота.");
+    layoutBusyReason ?? (selectedTable ? null : "Выберите стол для поворота.");
   const sideSeatsDisabledReason =
-    layoutBusyReason ??
-    (isSeatingDone
-      ? "Рассадка зафиксирована."
-      : selectedTable
-        ? null
-        : "Выберите стол для изменения мест.");
+    layoutBusyReason ?? (selectedTable ? null : "Выберите стол для изменения мест.");
   const allSideSeatsDisabledReason =
-    layoutBusyReason ??
-    (isSeatingDone
-      ? "Рассадка зафиксирована."
-      : tables.length > 0
-        ? null
-        : "Сначала добавьте стол.");
+    layoutBusyReason ?? (tables.length > 0 ? null : "Сначала добавьте стол.");
   const removeTableDisabledReason =
     layoutBusyReason ??
-    (isSeatingDone
-      ? "Рассадка зафиксирована."
-      : selectedTable
-        ? tables.length <= 1
-          ? "Нельзя удалить последний обязательный стол."
-          : null
-        : "Выберите стол для удаления.");
+    (selectedTable
+      ? tables.length <= 1
+        ? "Нельзя удалить последний обязательный стол."
+        : null
+      : "Выберите стол для удаления.");
   const saveDisabled =
     !slot || !hasValidGeometry || isLayoutActionBusy;
   const autoAssignDisabled =
@@ -606,8 +582,7 @@ export function SeatingLayoutEditor({
         physicalSeatCount: geometry.physicalSeatCount,
       })
     : null;
-  const manualSeatingEnabled =
-    isSeatingDone && hasValidGeometry && !isLayoutActionBusy;
+  const manualSeatingEnabled = hasValidGeometry && !isLayoutActionBusy;
   useEffect(() => { if (pendingGuestKey && (!manualSeatingEnabled || !unassignedGuestPool.some((guest) => guest.key === pendingGuestKey))) setPendingGuestKey(null); }, [manualSeatingEnabled, pendingGuestKey, unassignedGuestPool]);
   const canShowCapacitySyncAction = Boolean(
     slot?.bucket.capacityUnitId &&
@@ -638,12 +613,12 @@ export function SeatingLayoutEditor({
   // PR 16: unseated reserves live in the assignments array as pooled
   // (`seatKey === null`) `type: "reserve"` entries; placed reserves are occupants.
   const allPooledReserves = useMemo(
-    () => (isSeatingDone ? derivePooledReserves(currentAssignments) : []),
-    [currentAssignments, isSeatingDone],
+    () => derivePooledReserves(currentAssignments),
+    [currentAssignments],
   );
   const pooledReserves = useMemo(
-    () => (manualSeatingEnabled ? allPooledReserves : []),
-    [allPooledReserves, manualSeatingEnabled],
+    () => allPooledReserves,
+    [allPooledReserves],
   );
   const placedReserveCount = useMemo(
     () =>
@@ -781,6 +756,21 @@ export function SeatingLayoutEditor({
     slot,
   ]);
 
+  const reconcileGeometryChange = useCallback((nextTables: SeatingTable[], nextConnections: SeatingConnection[]) => {
+    const result = reconcileAfterGeometryChange({
+      assignments: currentAssignments,
+      geometry: computeTableSeats({ connections: nextConnections, tables: nextTables }),
+      guestPool,
+    });
+    setAssignments(result.assignments);
+    if (result.returnedCount > 0) {
+      setFeedback({
+        message: `${result.returnedCount} ${pluralizeRu(result.returnedCount, "гость", "гостя", "гостей")} вернулись в список — их места исчезли после изменения столов.`,
+        tone: "muted",
+      });
+    }
+  }, [currentAssignments, guestPool]);
+
   const handleAddTable = useCallback(() => {
     if (!canAddTable) {
       return;
@@ -800,11 +790,13 @@ export function SeatingLayoutEditor({
       sideSeats: tableSideSeats(base),
     });
     const nextTables = ensureOneRabbiTable([...currentTables, nextTable]);
+    const nextConnections = connections;
 
     setTables(nextTables);
+    reconcileGeometryChange(nextTables, nextConnections);
     setSelectedTableId(nextTable.id);
     setHasUnsavedChanges(true);
-  }, [canAddTable, selectedTableId, tables]);
+  }, [canAddTable, connections, reconcileGeometryChange, selectedTableId, tables]);
 
   const handleMoveTable = useCallback(
     (tableId: string, center: { cx: number; cy: number }) => {
@@ -816,22 +808,23 @@ export function SeatingLayoutEditor({
         return;
       }
 
-      setTables((currentTables) =>
-        ensureOneRabbiTable(
-          currentTables.map((table) =>
-            table.id === tableId
-              ? clampTableToCanvasStart({ ...table, cx: center.cx, cy: center.cy })
-              : table,
-          ),
-        ),
-      );
-      setConnections((currentConnections) =>
-        currentConnections.filter((connection) => !connectionTouchesTable(connection, tableId)),
-      );
+      const nextTables = ensureOneRabbiTable(tables.map((table) =>
+        table.id === tableId
+          ? clampTableToCanvasStart({ ...table, cx: center.cx, cy: center.cy })
+          : table,
+      ));
+      const nextConnections = connections.filter((connection) => !connectionTouchesTable(connection, tableId));
+      setTables(nextTables);
+      setConnections(nextConnections);
       setHasUnsavedChanges(true);
     },
-    [canEditLayout, tables],
+    [canEditLayout, connections, tables],
   );
+
+  const handleMoveTableEnd = useCallback((tableId: string) => {
+    if (!canEditLayout || !tables.some((table) => table.id === tableId)) return;
+    reconcileGeometryChange(tables, connections);
+  }, [canEditLayout, connections, reconcileGeometryChange, tables]);
 
   const handleRemoveTable = useCallback(() => {
     if (!canRemoveSelectedTable || !selectedTableId) {
@@ -841,41 +834,35 @@ export function SeatingLayoutEditor({
     const nextTables = ensureOneRabbiTable(
       tables.filter((table) => table.id !== selectedTableId),
     );
+    const nextConnections = connections.filter(
+      (connection) => !connectionTouchesTable(connection, selectedTableId),
+    );
 
     setTables(nextTables);
-    setConnections((currentConnections) =>
-      currentConnections.filter(
-        (connection) => !connectionTouchesTable(connection, selectedTableId),
-      ),
-    );
+    setConnections(nextConnections);
+    reconcileGeometryChange(nextTables, nextConnections);
     setSelectedTableId(pickSelectedTableId(nextTables));
     setHasUnsavedChanges(true);
-  }, [canRemoveSelectedTable, selectedTableId, tables]);
+  }, [canRemoveSelectedTable, connections, reconcileGeometryChange, selectedTableId, tables]);
 
   const handleRotateTable = useCallback(() => {
     if (!canRotateSelectedTable || !selectedTableId) {
       return;
     }
 
-    setTables((currentTables) =>
-      ensureOneRabbiTable(
-        currentTables.map((table) =>
-          table.id === selectedTableId
-            ? clampTableToCanvasStart({
-                ...table,
-                angle: normalizeAngle((table.angle || 0) + 90),
-              })
-            : table,
-        ),
-      ),
+    const nextTables = ensureOneRabbiTable(tables.map((table) =>
+      table.id === selectedTableId
+        ? clampTableToCanvasStart({ ...table, angle: normalizeAngle((table.angle || 0) + 90) })
+        : table,
+    ));
+    const nextConnections = connections.filter(
+      (connection) => !connectionTouchesTable(connection, selectedTableId),
     );
-    setConnections((currentConnections) =>
-      currentConnections.filter(
-        (connection) => !connectionTouchesTable(connection, selectedTableId),
-      ),
-    );
+    setTables(nextTables);
+    setConnections(nextConnections);
+    reconcileGeometryChange(nextTables, nextConnections);
     setHasUnsavedChanges(true);
-  }, [canRotateSelectedTable, selectedTableId]);
+  }, [canRotateSelectedTable, connections, reconcileGeometryChange, selectedTableId, tables]);
 
   const handleSetSelectedSideSeats = useCallback((sideSeats: 2 | 3) => {
     if (!canChangeSelectedTableSideSeats || !selectedTableId) {
@@ -883,17 +870,13 @@ export function SeatingLayoutEditor({
     }
     if (tableSideSeats(selectedTable!) === sideSeats) return;
 
-    setTables((currentTables) =>
-      ensureOneRabbiTable(
-        currentTables.map((table) =>
-          table.id === selectedTableId
-            ? { ...table, sideSeats }
-            : table,
-        ),
-      ),
-    );
+    const nextTables = ensureOneRabbiTable(tables.map((table) =>
+      table.id === selectedTableId ? { ...table, sideSeats } : table,
+    ));
+    setTables(nextTables);
+    reconcileGeometryChange(nextTables, connections);
     setHasUnsavedChanges(true);
-  }, [canChangeSelectedTableSideSeats, selectedTable, selectedTableId]);
+  }, [canChangeSelectedTableSideSeats, connections, reconcileGeometryChange, selectedTable, selectedTableId, tables]);
 
   const handleSetAllSideSeats = useCallback((sideSeats: 2 | 3) => {
     if (!canSetAllSideSeats) {
@@ -901,11 +884,11 @@ export function SeatingLayoutEditor({
     }
     if (allTablesSideSeats === sideSeats) return;
 
-    setTables((currentTables) =>
-      ensureOneRabbiTable(currentTables.map((table) => ({ ...table, sideSeats }))),
-    );
+    const nextTables = ensureOneRabbiTable(tables.map((table) => ({ ...table, sideSeats })));
+    setTables(nextTables);
+    reconcileGeometryChange(nextTables, connections);
     setHasUnsavedChanges(true);
-  }, [allTablesSideSeats, canSetAllSideSeats]);
+  }, [allTablesSideSeats, canSetAllSideSeats, connections, reconcileGeometryChange, tables]);
 
   const saveLayoutGeometry = useCallback(
     async ({
@@ -970,7 +953,12 @@ export function SeatingLayoutEditor({
 
   const handleTemplateChange = useCallback(
     (value: SeatingTemplateValue) => {
-      if (!slot || value === activeTemplateValue || isSeatingDone || isLayoutActionBusy) {
+      if (!slot || value === activeTemplateValue || isLayoutActionBusy) {
+        return;
+      }
+
+      const clearsSeating = isSeatingDone || currentAssignments.some((assignment) => Boolean(assignment.seatKey));
+      if (clearsSeating && !window.confirm("Применить расстановку? Текущая рассадка будет сброшена, все гости вернутся в список.")) {
         return;
       }
 
@@ -999,16 +987,34 @@ export function SeatingLayoutEditor({
         nextTables,
       );
       const nextSelectedTableId = pickSelectedTableId(nextTables);
+      const clearedAssignments = currentAssignments.map((assignment) => ({
+        ...assignment,
+        locked: false,
+        placementSource: undefined,
+        seatKey: null,
+      }));
+      const clearedAssignmentPayload = assignmentsToPayloadEntries(clearedAssignments);
 
       setIsApplyingTemplate(true);
       setFeedback({ message: "Применяем шаблон...", tone: "muted" });
 
       void saveLayoutGeometry({
         nextConnections,
+        nextSeatingDone: clearsSeating ? false : isSeatingDone,
         nextSelectedTableId,
         nextTables,
         templateValue: value,
       })
+        .then(() => clearsSeating ? saveSeatingAssignments({
+          capacityUnitId: slot.bucket.capacityUnitId,
+          chairs: clearedAssignmentPayload.chairs,
+          eventId: slot.event.eventId,
+          occurrenceId: slot.occurrence?.id ?? null,
+          pool: clearedAssignmentPayload.pool,
+          reserveIds: [],
+        }).then((saveResult) => {
+          assertAssignmentSaveResultMatchesPayload(saveResult, clearedAssignmentPayload);
+        }) : null)
         .then(() => {
           commitGeometry({
             nextConnections,
@@ -1016,6 +1022,10 @@ export function SeatingLayoutEditor({
             nextTables,
             templateValue: value,
           });
+          if (clearsSeating) {
+            setAssignments(clearedAssignments);
+            setIsSeatingDone(false);
+          }
           setFeedback({ message: "Шаблон применён.", tone: "success" });
           setHasUnsavedChanges(true);
         })
@@ -1038,7 +1048,8 @@ export function SeatingLayoutEditor({
       commitGeometry,
       geometry.physicalSeatCount,
       isLayoutActionBusy,
-      isSeatingDone,
+       currentAssignments,
+       isSeatingDone,
       saveLayoutGeometry,
       slot,
       templates,
@@ -1046,7 +1057,7 @@ export function SeatingLayoutEditor({
   );
 
   const handleSaveTemplate = useCallback(() => {
-    if (!slot || !hasValidGeometry || isSeatingDone || isLayoutActionBusy) {
+    if (!slot || !hasValidGeometry || isLayoutActionBusy) {
       return;
     }
 
@@ -1167,7 +1178,8 @@ export function SeatingLayoutEditor({
     const nextSelectedTableId = isSeatingDone
       ? null
       : selectedTableId ?? pickSelectedTableId(nextTables);
-    const assignmentPayloadEntries = isSeatingDone
+    const shouldSaveAssignments = isSeatingDone || currentAssignments.length > 0;
+    const assignmentPayloadEntries = shouldSaveAssignments
       ? assignmentsToPayloadEntries(currentAssignments)
       : null;
     const savedTemplateValue = templateValueAfterSave(
@@ -1216,7 +1228,7 @@ export function SeatingLayoutEditor({
           templateValue: savedTemplateValue,
         });
         setFeedback({
-          message: isSeatingDone
+          message: shouldSaveAssignments
             ? "Схема и рассадка сохранены."
             : "Схема сохранена.",
           tone: "success",
@@ -1238,7 +1250,7 @@ export function SeatingLayoutEditor({
     connections,
     currentAssignments,
     hasLoadedTemplates,
-    isSeatingDone,
+     isSeatingDone,
     isTemplateListLoading,
     saveLayoutGeometry,
     saveDisabled,
@@ -1379,8 +1391,6 @@ export function SeatingLayoutEditor({
           setDragSource(null);
           setAssignments(mergedAssignments);
           setIsSeatingDone(true);
-          setIsEditingAfterSeating(false);
-          setReconcileNotice(reconcile.counts.returnedCount > 0 ? reconcile.counts : null);
           setFeedback(
             autoFill &&
             newlySeatedGuestCount === 0 &&
@@ -1429,37 +1439,6 @@ export function SeatingLayoutEditor({
     performSeating(true);
   }, [autoAssignDisabled, performSeating, slot]);
 
-  const handleReturnToSeating = useCallback(() => {
-    if (!slot || !isEditingAfterSeating || isLayoutActionBusy) {
-      return;
-    }
-    performSeating(false);
-  }, [isEditingAfterSeating, isLayoutActionBusy, performSeating, slot]);
-
-  const handleEditTablesAfterSeating = useCallback(() => {
-    if (!isSeatingDone || isLayoutActionBusy) {
-      return;
-    }
-
-    const confirmed = window.confirm(
-      "Рассадка уже сделана. В режиме редактирования гости скрыты, а текущая рассадка сохраняется. После изменения схемы нажмите «Сделать рассадку» или «Вернуться к рассадке» — посадки восстановятся насколько возможно, освободившиеся гости вернутся в список. Продолжить?",
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    setDragSource(null);
-    setIsSeatingDone(false);
-    setIsEditingAfterSeating(true);
-    setReconcileNotice(null);
-    setSelectedTableId(pickSelectedTableId(tables));
-    setFeedback({
-      message: "Редактирование столов: гости скрыты, рассадка сохранится.",
-      tone: "muted",
-    });
-  }, [isLayoutActionBusy, isSeatingDone, tables]);
-
   const handleManualDragEnd = useCallback(() => {
     setDragSource(null);
   }, []);
@@ -1488,7 +1467,7 @@ export function SeatingLayoutEditor({
     if (!pendingGuestKey || !manualSeatingEnabled) return;
     const result = applySeatingDragDrop({ assignments: currentAssignments, geometry, guestPool, source: { kind: "pool", guestKey: pendingGuestKey }, target: { kind: "seat", seatIndex } });
     if (!result.changed) { const rejection = result.rejection ? manualDropRejectionFeedback(result.rejection) : null; if (rejection) setFeedback(rejection); return; }
-    setAssignments(result.assignments); setPendingGuestKey(null); setReconcileNotice(null); setHasUnsavedChanges(true); setFeedback({ message: "Изменения рассадки не сохранены. Нажмите «Сохранить схему рассадки».", tone: "muted" });
+    setAssignments(result.assignments); setPendingGuestKey(null); setIsSeatingDone(true); setHasUnsavedChanges(true); setFeedback({ message: "Изменения рассадки не сохранены. Нажмите «Сохранить схему рассадки».", tone: "muted" });
   }, [currentAssignments, geometry, guestPool, manualSeatingEnabled, pendingGuestKey]);
 
   const handleManualDrop = useCallback(
@@ -1519,7 +1498,7 @@ export function SeatingLayoutEditor({
       }
 
       setAssignments(result.assignments);
-      setReconcileNotice(null);
+      setIsSeatingDone(true);
       setFeedback({
         message: "Изменения рассадки не сохранены. Нажмите «Сохранить схему рассадки».",
         tone: "muted",
@@ -1557,24 +1536,21 @@ export function SeatingLayoutEditor({
     ) ?? null;
     const wasDisabled = Boolean(table.disabledSeats?.includes(stablePart));
 
-    setTables((currentTables) => currentTables.map((item) => item.id !== table.id ? item : {
+    const nextTables = tables.map((item) => item.id !== table.id ? item : {
       ...item,
       disabledSeats: wasDisabled
         ? (item.disabledSeats ?? []).filter((part) => part !== stablePart)
         : [...(item.disabledSeats ?? []), stablePart],
-    }));
-    if (!wasDisabled && occupant) {
-      setAssignments((current) => current.map((assignment) => assignment.id !== occupant.id ? assignment : {
-        ...assignment, seatKey: null, locked: false, placementSource: undefined,
-      }));
-    }
+    });
+    setTables(nextTables);
+    reconcileGeometryChange(nextTables, connections);
     setHasUnsavedChanges(true);
-    setFeedback(wasDisabled
-      ? { message: "Место включено обратно.", tone: "muted" }
-      : occupant
-        ? { message: `«${occupant.guestLabel}» снят с выключенного места.`, tone: "muted" }
+    if (wasDisabled || !occupant) {
+      setFeedback(wasDisabled
+        ? { message: "Место включено обратно.", tone: "muted" }
         : { message: "Место выключено и не входит в схему.", tone: "muted" });
-  }, [currentAssignments, geometry.seats, isLayoutActionBusy, tables]);
+    }
+  }, [connections, currentAssignments, geometry.seats, isLayoutActionBusy, reconcileGeometryChange, tables]);
 
   const handleToggleSeatEdit = useCallback(() => {
     if (isLayoutActionBusy) return;
@@ -1777,8 +1753,8 @@ export function SeatingLayoutEditor({
 
         <div className="seat-toolbar">
           <SeatingTemplateSelector
-            canSaveTemplate={hasValidGeometry && !isSeatingDone && !isLayoutActionBusy}
-            disabled={isLayoutActionBusy || isSeatingDone}
+            canSaveTemplate={hasValidGeometry && !isLayoutActionBusy}
+            disabled={isLayoutActionBusy}
             isApplyingTemplate={isApplyingTemplate}
             isDeletingTemplate={isDeletingTemplate}
             isLoadingTemplates={isTemplateListLoading}
@@ -1786,9 +1762,6 @@ export function SeatingLayoutEditor({
             onDeleteTemplate={handleDeleteTemplate}
             onSaveTemplate={handleSaveTemplate}
             onTemplateChange={handleTemplateChange}
-            canReturnToSeating={isEditingAfterSeating && !isSeatingDone}
-            returnDisabled={isLayoutActionBusy || !hasValidGeometry}
-            onReturnToSeating={handleReturnToSeating}
             selectedValue={activeTemplateValue}
             templates={templates}
           />
@@ -1862,6 +1835,7 @@ export function SeatingLayoutEditor({
                 isSeatingDone={isSeatingDone}
                 manualSeatingEnabled={manualSeatingEnabled}
                 onMoveTable={handleMoveTable}
+                onMoveTableEnd={handleMoveTableEnd}
                 onSeatClick={handlePendingGuestSeatClick}
                 onSeatDragEnd={handleManualDragEnd}
                 onSeatDragStart={handleSeatDragStart}
@@ -1877,23 +1851,7 @@ export function SeatingLayoutEditor({
             )}
             </div>
 
-            {isSeatingDone ? (
-              <div className="seat-layout-controls seat-layout-controls--locked">
-                <span className="seat-controls-label">Рассадка</span>
-                <Button
-                  disabled={isLayoutActionBusy}
-                  onClick={handleEditTablesAfterSeating}
-                  size="sm"
-                  title={layoutBusyReason ?? "Редактировать столы с сохранением текущей рассадки"}
-                  variant="secondary"
-                >
-                  Редактировать столы
-                </Button>
-                <Button className={seatEditEnabled ? "is-on" : undefined} disabled={isLayoutActionBusy} onClick={handleToggleSeatEdit} size="sm" title={layoutBusyReason ?? "Выключение мест"} variant="secondary"><SeatEditIcon />Выключение мест</Button>
-                <SeatingShortcutLegend mode="seating" />
-              </div>
-            ) : (
-              <SeatingToolbar
+            <SeatingToolbar
                 addDisabled={!canAddTable}
                 addDisabledReason={addTableDisabledReason}
                 allSideSeatsDisabled={!canSetAllSideSeats}
@@ -1917,14 +1875,6 @@ export function SeatingLayoutEditor({
                 seatEditEnabled={seatEditEnabled}
                 variant="layout"
               />
-            )}
-
-            {isSeatingDone && reconcileNotice ? (
-              <div className="seat-reconcile-status" role="status">
-                После изменения схемы сохранено {reconcileNotice.keptCount} посадок,{" "}
-                {reconcileNotice.returnedCount} гостей/резервов вернулись в список.
-              </div>
-            ) : null}
           </div>
 
           <aside className="seat-side-panel">
@@ -2690,4 +2640,3 @@ function seatingGuestSignature(registrationId: string | null, label: string | nu
 function SaveIcon() { return <svg aria-hidden="true" className="seat-button-icon" fill="none" height="15" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24" width="15"><path d="M5 4.5h10.5L19.5 8.5V19.5H5zM8.5 4.5v4.8h6.2V4.5M8 19.5v-5.7h8v5.7" /></svg>; }
 function SparkleIcon() { return <svg aria-hidden="true" className="seat-button-icon" fill="none" height="15" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24" width="15"><path d="M9 3.6l1.3 3.4 3.4 1.3-3.4 1.3L9 13l-1.3-3.4-3.4-1.3 3.4-1.3zM17 13.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" /></svg>; }
 function PrinterIcon() { return <svg aria-hidden="true" className="seat-button-icon" fill="none" height="15" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24" width="15"><path d="M7.5 9V4.5h9V9M5.5 9h13a1.5 1.5 0 0 1 1.5 1.5v5H4v-5A1.5 1.5 0 0 1 5.5 9zM7.5 13.5h9v6h-9z" /></svg>; }
-function SeatEditIcon() { return <svg aria-hidden="true" className="seat-button-icon" fill="none" height="15" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24" width="15"><circle cx="12" cy="12" r="7.5" /><path d="M7 17 17 7" /></svg>; }

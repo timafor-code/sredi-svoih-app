@@ -49,9 +49,6 @@ export function SeatingTemplateSelector({
   onDeleteTemplate,
   onSaveTemplate,
   onTemplateChange,
-  onReturnToSeating,
-  canReturnToSeating = false,
-  returnDisabled = false,
   selectedValue,
   templates,
 }: {
@@ -64,9 +61,6 @@ export function SeatingTemplateSelector({
   onDeleteTemplate: (template: SeatingTemplate) => void;
   onSaveTemplate: () => void;
   onTemplateChange: (value: SeatingTemplateValue) => void;
-  onReturnToSeating?: () => void;
-  canReturnToSeating?: boolean;
-  returnDisabled?: boolean;
   selectedValue: SeatingTemplateValue;
   templates: SeatingTemplate[];
 }) {
@@ -139,7 +133,6 @@ export function SeatingTemplateSelector({
           title={isDeletingTemplate ? "Удаляем шаблон..." : "Удалить шаблон"}
           type="button"
         ><TrashIcon /></button>
-        {canReturnToSeating && onReturnToSeating ? <><span className="seat-icon-group__sep" /><button aria-label="Вернуться к рассадке" className="seat-icon-button" disabled={busy || returnDisabled} onClick={onReturnToSeating} title="Вернуться к рассадке" type="button"><ReturnIcon /></button></> : null}
       </div>
     </div>
   );
@@ -147,4 +140,3 @@ export function SeatingTemplateSelector({
 
 function TemplateSaveIcon() { return <svg aria-hidden="true" fill="none" height="17" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24" width="17"><path d="M5 4h11l3 3v13H5z" /><path d="M8 4v6h8V4M8 20v-6h8v6" /></svg>; }
 function TrashIcon() { return <svg aria-hidden="true" fill="none" height="17" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24" width="17"><path d="M4 7h16M10 11v5m4-5v5M9 7l1-3h4l1 3m-9 0 1 13h10l1-13" /></svg>; }
-function ReturnIcon() { return <svg aria-hidden="true" fill="none" height="17" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24" width="17"><path d="M9 7 4 12l5 5M4 12h11a5 5 0 0 1 0 10h-1" /></svg>; }

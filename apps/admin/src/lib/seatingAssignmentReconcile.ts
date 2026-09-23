@@ -106,6 +106,30 @@ export interface SeatingReconcileInput {
   blockedSeatIndexes?: readonly number[];
 }
 
+/**
+ * Reconcile assignments at an editor geometry commit point.
+ *
+ * This deliberately adds no policy of its own: it is the small UI-facing wrapper
+ * used by the unified workspace so every table mutation follows the canonical
+ * reconcile rules above.
+ */
+export function reconcileAfterGeometryChange({
+  assignments,
+  geometry,
+  guestPool,
+}: Pick<SeatingReconcileInput, "assignments" | "geometry" | "guestPool">): {
+  assignments: SeatingAssignment[];
+  returnedCount: number;
+  counts: SeatingReconcileCounts;
+} {
+  const result = reconcileSeatingAssignments({ assignments, geometry, guestPool });
+  return {
+    assignments: result.assignments,
+    returnedCount: result.counts.returnedCount,
+    counts: result.counts,
+  };
+}
+
 export function reconcileSeatingAssignments({
   assignments,
   geometry,
