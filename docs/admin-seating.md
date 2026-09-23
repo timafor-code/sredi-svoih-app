@@ -11,15 +11,16 @@ template flow, assignments, and print model keep the same frontend service
 contract.
 
 It requires no privileged server keys, Supabase Admin API access, direct
-database access from `apps/admin`, or direct access to `auth.users`.
+database access from `apps/admin`, or direct access to authentication user
+records.
 
 ## Status
 
 The seating feature is implemented end to end for admin/event-manager use from
 the registrations capacity bucket UI:
 
-- schema, RLS, read RPCs, and write RPCs;
-- typed TypeScript service layer;
+- FastAPI/PostgreSQL seating persistence through the server-side Admin API;
+- typed TypeScript API service layer;
 - pure geometry layer for tables, seats, seams, rabbi seats, and spread indexes;
 - modal layout editor with table creation, movement, rotation, side-seat
   controls, zoom/fit, loading/error states, and keyboard shortcuts;
@@ -33,7 +34,12 @@ the registrations capacity bucket UI:
 - explicit capacity sync action with confirmation;
 - empty guest-pool warning for beta admins;
 - print-ready A4 landscape seating document from the current completed seating;
-- responsive modal polish for smaller admin viewports.
+- responsive modal polish for smaller admin viewports;
+- stable disabled physical seats and disabled-seat editing;
+- compact header metrics and redesigned toolbar, right column, and bottom controls;
+- auto-fit canvas, animated zoom, and middle-button rubber-band/momentum pan;
+- full-list search/filter dialog, click-to-place, and native HTML5 drag/drop;
+- template persistence and print representation for disabled seats.
 
 ## Manual Tool Boundary
 
@@ -44,14 +50,16 @@ physical layout and place guests for one selected slot:
 Manual drag/drop is an explicit administrator operation and may place any
 registered participant or guest on a rabbi-table seat. This does not change the
 automatic seating algorithm: rabbi seats remain protected from ordinary auto
-placement. Capacity reservation logic, donation logic, backend RPCs, and schema
-are unchanged. The editor must not auto-create guests, auto-seat empty pools, or
+placement. Capacity reservation and donation business rules are unchanged. The
+editor must not auto-create guests, auto-seat empty pools, or
 infer missing registrations.
 
 ## Backend Architecture
 
 The persisted seating model is split into reusable geometry templates and
-concrete layout instances.
+concrete layout instances. Production uses one runtime path:
+
+`Admin browser → browser-safe apiClient → FastAPI /admin/seating/* → SQLAlchemy → PostgreSQL`.
 
 Tables:
 
@@ -63,39 +71,33 @@ Tables:
 | `event_seating_table_connections` | Seams/connections between tables in a layout instance. |
 | `event_seating_assignments` | Guest and reserve placements for a layout instance. |
 
-RLS is enabled on all seating tables. Template/layout rows carry
-`community_id`; child rows are authorized through their parent layout. Access is
-limited to admins and event managers through the same community-role pattern as
-the registration capacity tables. Browser code does not get direct table write
-access.
+Admin has no direct PostgreSQL, Supabase Admin API, or service-role access.
+Authorization is server-side in FastAPI/service logic. Legacy Supabase seating
+migrations and RPC artifacts are historical only, not current runtime.
 
-Read RPCs:
+The verified router is `apps/api/app/api/admin/seating.py`:
 
-| Function | Purpose |
+| Method | Route |
 | --- | --- |
-| `admin_list_seating_templates()` | Lists active templates available to the caller's managed communities. |
-| `admin_get_seating_template(p_template_id uuid)` | Reads one template after role and community checks. |
-| `admin_get_seating_layout(p_event_id uuid, p_occurrence_id uuid, p_capacity_unit_id uuid)` | Reads one slot layout with tables, connections, and assignments. Returns an empty layout envelope when no instance exists yet. |
+| GET | `/admin/seating/templates` |
+| GET | `/admin/seating/templates/{template_id}` |
+| POST | `/admin/seating/templates/from-layout` |
+| DELETE | `/admin/seating/templates/{template_id}` |
+| GET | `/admin/seating/layout` |
+| POST | `/admin/seating/layout/from-template` |
+| PATCH | `/admin/seating/layout` |
+| PATCH | `/admin/seating/assignments` |
 
-Write RPCs:
-
-| Function | Purpose |
-| --- | --- |
-| `admin_save_seating_layout(payload jsonb)` | Upserts the slot layout and replaces geometry tables/connections. Assignments are not changed. |
-| `admin_save_seating_assignments(payload jsonb)` | Replaces guest/reserve assignments for an existing layout. |
-| `admin_create_seating_template_from_layout(p_layout_id uuid, p_title text)` | Saves geometry from a layout as a reusable template. |
-| `admin_delete_seating_template(p_template_id uuid)` | Soft-deletes a user template. Built-ins are protected. |
-| `admin_create_seating_layout_from_template(p_event_id uuid, p_occurrence_id uuid, p_capacity_unit_id uuid, p_template_id uuid)` | Forks template geometry into a fresh slot layout instance. |
-| `admin_update_capacity_unit_limit(capacity_unit_id uuid, new_capacity integer)` | Explicitly changes the registration limit after confirmation. This is the only seating-related capacity update path. |
+There is no capacity endpoint under `/admin/seating/*`. Capacity sync is an
+explicit confirmed administrator action through the server-side Admin API path;
+geometry never changes registration capacity automatically.
 
 ## Service And Geometry Layers
 
-`apps/admin/src/services/adminSeatingService.ts` is the typed provider facade
-used by the seating UI. In Supabase mode it calls the read/write seating RPCs.
-In API mode it delegates to `adminSeatingApiService.ts`, which calls the Python
-admin seating endpoints through `apiClient`. Both paths normalize snake_case
-rows into camelCase frontend models and serialize the v15 payload contract on
-writes.
+`apps/admin/src/services/adminSeatingService.ts` is only a thin re-export of
+`adminSeatingApiService.ts`. The API service calls Python FastAPI through
+`apiClient`, normalizes snake_case rows into camelCase frontend models, and
+serializes the existing payload contract on writes.
 
 API mode keeps these existing v15 payload keys unchanged: `eventId`,
 `occurrenceId`, `capacityUnitId`, `layout`, `customTables`, `tableConnections`,
@@ -106,14 +108,54 @@ API mode keeps these existing v15 payload keys unchanged: `eventId`,
 helpers handle deterministic auto assignment, drag/drop moves, assignment
 reconcile, and display-only capacity math.
 
+## Disabled Physical Seats
+
+A disabled chair stays in `geometry.seats` with `isDisabled = true`; it is never
+filtered out, because removal would renumber saved seat indexes/keys and corrupt
+assignments. Stable parts per table are `side:a:0` through `side:a:2`,
+`side:b:0` through `side:b:2`, `end:a`, and `end:b`. Persistence is
+`event_seating_tables.disabled_seat_parts`, represented by frontend
+`disabledSeats`.
+
+`geometry.seats.length` is the structural chair count; `physicalSeatCount`
+counts active chairs only. Disabled chairs are excluded from physical free-seat
+metrics and rabbi-reserve capacity. Disabling/enabling never automatically
+changes `event_capacity_units.capacity`; capacity sync remains explicit and
+confirmed.
+
+Auto seating skips disabled chairs, drag/drop rejects them, and they are not
+click-to-place targets. Disabling an occupied chair returns its occupant to the
+pool and removes its seat/locked-manual placement. Reconcile treats
+`disabled_seat` as invalid even for manual, locked, and reserve assignments:
+physical unavailability beats the normal manual-placement priority.
+
+When the editor is not busy in geometry or completed-seating modes, toggle a
+chair by: (1) enabling `Выключение мест` then plain left-clicking; (2) Alt +
+left-clicking; or (3) right-clicking. Seat-edit mode takes priority over
+click-to-place; Alt and right-click remain direct shortcuts.
+
+## Editor Layout And Canvas Interaction
+
+Header metrics are a compact strip, including `Выключено` when applicable.
+`Сохранить схему рассадки` is the primary save action. The right column contains
+`Рассадить гостей`, `Дорассадить свободных` after seating is complete, and
+`Печать рассадки`. Bottom controls group table actions, selected-table `2 | 3`,
+all-tables `2 | 3`, `Выключение мест`, and a shortcut legend on its own row.
+
+Canvas starts in auto-fit and refits geometry/viewport changes while active.
+`+`/`−` animate zoom, percentage resets to 100%, and `По размеру` restores
+auto-fit and centers. Middle-button panning has rubber-band boundary resistance
+and may continue with momentum after release. Table dragging remains distinct;
+reduced-motion preference suppresses unnecessary animation.
+
 ## Capacity Limit Vs Physical Seats
 
 This invariant must stay true across seating work:
 
 - `capacity_unit.capacity` / `event_capacity_units.capacity` is the business
   limit for public registration.
-- `physicalSeatCount` is the number of physical chairs produced by the current
-  seating geometry.
+- `physicalSeatCount` is the active physical-chair count, not total structural
+  `geometry.seats.length` after disabled seats exist.
 - `Занято` is the number of actual guests currently seated on physical chairs.
 - `Свободно по лимиту` is registration capacity remaining and continues to use
   the capacity bucket occupancy rather than current canvas occupants.
@@ -135,8 +177,8 @@ This invariant must stay true across seating work:
   explicit capacity sync action and confirmation dialog.
 
 The capacity summary is display math. It does not write anything. Capacity sync
-calls `admin_update_capacity_unit_limit` only after admin confirmation and does
-not change layouts, assignments, registrations, payments, or donations.
+uses the current server-side Admin API path only after admin confirmation and
+does not change layouts, assignments, registrations, payments, or donations.
 
 ## Guest Pool
 
@@ -169,6 +211,15 @@ with participant and guest rows, party-level option/status/payment metadata,
 named guests where available, and readable fallback guest labels. Operational
 reserves appear in a separate section and remain unrelated to registrations.
 
+The portal-based full-list dialog traps focus. Escape closes the child dialog
+without closing the parent seating modal. Its header shows total people and total
+registrations. Search placeholder is `Имя, трапеза, стол`; `Все`, `Рассажены`,
+and `Не рассажены` filters compose with search across display name, source label,
+option titles, registration status, payment status, and placement label, never
+email or phone. Placement pills show `Стол N` or `Не рассажен`. Seated-member
+click reports its table and stays open; unseated-member click selects the guest
+for pending placement and closes the dialog.
+
 Assignment behavior:
 
 - auto seating groups active seat-taking rows only by their existing
@@ -190,9 +241,16 @@ Assignment behavior:
   tables without moving the lock;
 - a manually locked ordinary guest may remain on a rabbi seat, but the rest of
   that party cannot automatically consume other protected rabbi seats;
-- assignments are saved through `saveSeatingAssignments()` /
-  `admin_save_seating_assignments`;
-- reopening a layout restores saved assignments from the backend.
+- assignments are saved through `saveSeatingAssignments()` and the server-side
+  Admin API; reopening restores saved assignments from the backend.
+
+Click-to-place is the supported non-DnD flow: select an unseated pool/full-list
+guest, enter pending placement, click one of the gold free active-chair targets,
+and reuse the existing drag/drop domain operation to create an unsaved seating
+change. Occupied and disabled chairs are not targets. `Выключение мест` and Alt
+toggle take priority; Escape clears pending selection before the modal closes,
+and native HTML5 dragstart clears it. Native HTML5 drag/drop remains supported;
+reserves remain drag/manual rather than click-to-place.
 
 ## Donations
 
@@ -219,6 +277,11 @@ These concepts are intentionally separate.
 After a template is applied, later edits affect only the current layout
 instance. There is no live binding back to the template.
 
+Disabled state survives save → close → reopen through FastAPI/PostgreSQL.
+`layout → Сохранить как шаблон → template snapshot → apply template` preserves
+disabled stable parts. State is keyed by stable part, so currently valid parts
+survive `2 ↔ 3 места/стор.` round-trips without transient array removal.
+
 ## Rabbi Table And Reserves
 
 Every valid layout has exactly one rabbi table. Its head seat is visually marked
@@ -238,12 +301,20 @@ Reserves are operational placeholders for physical chairs:
 - auto seating never seats reserve pool items; reserves are added and placed
   manually.
 
+A disabled rabbi chair is unavailable, does not count as an active rabbi
+reserve, and cannot hold a reserve placement. Disabling any occupied chair
+returns that placement to the pool/reconcile path.
+
 ## Edit-Preserve Reconcile
 
 When admins edit tables after seating has already been done, the editor preserves
 the current assignments while geometry is being changed. Returning to seating or
 running auto seating reconciles those preserved assignments against the new
 physical seats.
+
+A saved disabled seat is invalid with reason `disabled_seat`, including manual,
+locked, and reserve placements; it cannot be retained merely because it was a
+manual placement.
 
 Reconcile never changes `event_capacity_units.capacity`.
 
@@ -284,6 +355,13 @@ Print behavior:
 - remaining unseated guests and pooled reserves are shown in a separate
   `Не рассажены` section;
 - email and phone are never included in the print model or document.
+
+Disabled chairs remain in the printed physical scheme as hollow circles with a
+diagonal strike. They have no print number or occupant text; stale/malformed
+disabled-chair occupant data is omitted. Their indexes are absent from
+`printSeatNumberBySeatIndex`, they create no legend entry, and active numbering
+remains contiguous and consistent between scheme and legend. Layouts with no
+disabled chairs retain the previous output.
 
 ## Manual Smoke Checklist
 
@@ -328,21 +406,45 @@ for C and D.
 30. Confirm printing remains correct.
 31. Confirm manual drag/drop still works.
 32. Confirm capacity limits and capacity sync are unchanged.
+33. Verify `Выключение мест` plain click, Alt + click, and right click; confirm
+    chair cross-out/re-enable and `Выключено` / physical/free metric updates.
+34. Disable an occupied chair; confirm its occupant returns to `Не рассажены`,
+    the chair rejects drag/drop and click-to-place, auto seating skips it, and
+    re-enabling makes it available without restoring its previous occupant.
+35. Verify disable → save → close → reopen preserves disabled chairs; confirm
+    registration capacity did not change automatically, warning/sync uses active
+    physical seats, and any capacity change still requires confirmation.
+36. Verify disabled seat → save layout → save as template → apply template
+    retains disabled state, including valid stable parts through `2 ↔ 3 места/стор.`.
+37. Verify initial auto-fit, resize/geometry refit, animated `+` / `−`,
+    percentage reset to 100%, `По размеру`, middle-button pan,
+    momentum/boundary resistance, and separate normal left-button table movement.
+38. Verify full-list totals, search, all/seated/unseated filters, `Стол N` /
+    `Не рассажен` pills; seated click stays open/reports table; unseated click
+    creates pending placement; target click seats; Escape clears; drag/drop works.
+39. Verify print preview: disabled chair is hollow/crossed and visible, has no
+    number or occupant label, active numbers remain contiguous, legend excludes
+    disabled occupants, scheme/legend numbers match, and email/phone are absent.
+40. With no disabled chairs, confirm auto seating, party grouping, rabbi
+    protection/manual override, reserves, drag/drop, click-to-place, full list,
+    save/reopen, print, and capacity sync continue to behave as expected.
 
 ## Out Of Scope
 
-- RPC changes;
-- Supabase schema or migrations;
+- automatic derived/recreated table connections; `feature/admin-seating-derived-connections`
+  remains optional/deferred and is not part of v17 mandatory completion;
 - capacity reservation business logic changes;
 - donation business logic changes;
 - seat-by-seat seating assignment export;
 - PDF seating chart generation;
 - household, surname, or relationship-based party inference;
 - advanced preference, demographic, VIP, or generalized optimization models;
-- mobile seating;
+- mobile seating or touch drag/drop;
 - payment gateway;
 - advanced conflict/audit reports.
 
 ## Next PR
 
-None — the seating UX, rabbi override, and party auto-seating series is complete.
+None mandatory for Admin Seating v17.
+`feature/admin-seating-derived-connections` remains an optional/deferred
+refinement and is not required for v17 completion.
