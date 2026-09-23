@@ -18,6 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -187,6 +188,13 @@ class EventSeatingTable(Base):
             "long_side_seats IN (2, 3)",
             name="event_seating_tables_long_side_seats_check",
         ),
+        CheckConstraint(
+            "array_position(disabled_seat_parts, NULL) IS NULL "
+            "AND disabled_seat_parts <@ "
+            "ARRAY['side:a:0', 'side:a:1', 'side:a:2', 'side:b:0', "
+            "'side:b:1', 'side:b:2', 'end:a', 'end:b']::text[]",
+            name="event_seating_tables_disabled_seat_parts_check",
+        ),
         CheckConstraint("sort_order >= 0", name="event_seating_tables_sort_order_check"),
         Index("event_seating_tables_layout_idx", "layout_id"),
         Index(
@@ -223,6 +231,11 @@ class EventSeatingTable(Base):
         Integer,
         nullable=False,
         server_default=text("3"),
+    )
+    disabled_seat_parts: Mapped[list[str]] = mapped_column(
+        postgresql.ARRAY(Text),
+        nullable=False,
+        server_default=text("'{}'::text[]"),
     )
     is_rabbi_table: Mapped[bool] = mapped_column(
         Boolean,
