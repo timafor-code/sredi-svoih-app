@@ -1,235 +1,275 @@
 # AGENTS.md
 
-Canonical standing rules for Codex-compatible agents in this repository.
+Canonical standing rules for agents executing PRs in `timafor-code/sredi-svoih-app`.
 
-Source of truth for the backend migration roadmap: repository-root `plan.md`,
-version `2026-07-06 v2.7`. The local plan file is ignored by Git and must not be
-staged unless a future PR explicitly lists it in expected scope.
+The goal is small, safe, reviewable production changes.
 
-## Agent Execution Policy
+## 1. Agent Execution Policy
 
-- Primary agent: Codex.
-- Fallback agent: Claude Code.
-- Prompts are written in English regardless of the executing tool.
-- One canonical prompt per PR should work for both agents without rewriting.
+- Primary agent: Codex. Fallback agent: Claude Code.
 - "The agent" means whichever tool is executing the current PR.
+- PR prompts are written in English and must work for both agents without rewriting.
+- Standing rules live in this file. PR prompts must not duplicate them.
 
-## Existing Project Restrictions
+## 2. Sources Of Truth
 
-- Do not touch `auth.users`.
-- Do not use Supabase Admin API.
-- Do not use a service-role key.
-- Do not add `DATABASE_URL` to `apps/admin`.
-- Do not commit `.env.local`.
-- Do not run `npx supabase db reset` unless the project owner explicitly asks
-  for it in a separate command.
-- Do not use global `rg`. Use `git grep`, PowerShell
-  `Get-ChildItem`/`Select-String`, or targeted file reads.
-- Do not touch untracked `supabase/functions/`, `supabase/snippets/`, or `500`
-  unless explicitly in expected scope.
-- Do not read or show `prayer_activity_logs` in admin.
-- Do not stage files outside the current PR's expected scope.
+Precedence for the executing agent:
 
-## Migration Script Carve-Out
+1. Latest explicit instruction from the project owner.
+2. The current PR prompt: primary outcome, scope, expected files, checks.
+3. This `AGENTS.md`.
+4. Current repository state: `main`, existing code, Alembic migrations, tests, `docs/`.
 
-The restrictions above apply to all app/admin/mobile code and all normal PR
-work.
+The PR prompt defines what to do. The repository defines what exists.
 
-The only explicit exception is for controlled owner-run migration utilities:
+If the PR prompt conflicts with the repository (a referenced file, service,
+endpoint, table, column or signature does not exist or differs), stop and
+report the mismatch. Do not guess, do not invent the missing piece, do not
+silently adapt the scope.
 
-- Owner-run scripts under `scripts/migration/**` may read Supabase Auth metadata
-  when required for inventory/export.
-- This includes `auth.users`/`auth.identities` access through direct database
-  access or a service-role key stored only in the owner's local environment.
-- The key must never be committed.
-- The key must never be placed in `apps/admin`, mobile, Expo env, Vite env, docs
-  examples with real values, or frontend code.
-- The agent may create or review these scripts in future PRs but must not run
-  them against production unless the project owner gives a separate explicit
-  command.
-- Scripts must output counts, mappings, and validation reports only.
-- No raw auth dumps, plaintext tokens, OAuth provider payloads, or password data
-  may be committed.
+Never describe proposed files, endpoints or tables as existing unless verified
+in the repository.
 
-For forbidden scans, hits in `scripts/migration/**` that mention service-role or
-Admin Auth access are not automatic failures. They require manual review against
-this carve-out. The same strings in `apps/admin/**`, `app/**`, `src/**`, or
-committed env files remain a hard failure.
+## 3. Architecture
 
-## New Backend Restrictions
+Canonical production architecture:
 
-- Do not expose PostgreSQL directly to mobile/admin.
-- Do not put `DATABASE_URL` into mobile or `apps/admin`.
-- Do not log raw email, phone, names, invite codes, registration comments, JWTs,
-  refresh tokens, or password reset codes.
-- Do not store plaintext passwords.
-- Do not store plaintext refresh tokens.
-- Do not store plaintext invite codes.
-- Do not implement payment gateway during backend migration.
-- Do not implement Apple Sign-In during the first backend migration wave.
-- Do not mark email verification or password reset as complete without a
-  working delivery path.
-- Do not enable API auth for production until OAuth-only users have an explicit
-  migration path.
+```text
+Mobile app (Expo)  ─┐
+Public web (apps/web) ─┼─ HTTPS ─> FastAPI (apps/api) ─> PostgreSQL
+Web-admin (apps/admin) ─┘
+```
 
-## Git Workflow
+- All clients communicate only through the FastAPI backend.
+- Clients never connect to PostgreSQL directly.
+- Authorization decisions belong to the backend. Frontend visibility is not
+  authorization.
+- Supabase is fully retired. Do not add Supabase dependencies, clients, env
+  variables, migrations or functions. Remaining Supabase files in the
+  repository are legacy and may be changed or removed only by an explicit
+  cleanup PR.
+- Do not change architecture without explicit owner approval.
 
-- The agent creates the feature branch, implements the PR scope, runs checks,
-  commits, and pushes.
-- Stage only files listed in the PR expected scope, by explicit path.
-- Use `git add <path> <path>`.
-- Never use `git add -A`.
-- Never use `git add .`.
+## 4. Repository Map
+
+- Mobile app screens: `app/`
+- Mobile shared code and services: `src/` (API client: `src/services/apiClient.ts`)
+- Web-admin: `apps/admin/` (stylesheet: `apps/admin/src/styles/globals.css`)
+- Public web registration: `apps/web/`
+- Backend API: `apps/api/` (FastAPI app: `apps/api/app/`, tests: `apps/api/tests/`)
+- Database migrations: `apps/api/alembic/versions/`
+- Infrastructure and env examples: `infra/`
+- Documentation: `docs/`, `docs/infra/`
+- Repository scripts and validators: `scripts/`
+- Legacy, do not extend: `supabase/`, `scripts/migration/`
+
+## 5. Navigation And Search
+
+- Use `git grep -n`, targeted file reads, and PowerShell
+  `Get-ChildItem`/`Select-String`.
+- Do not use global `rg`.
+- Verify referenced paths, services and signatures against the repository
+  before editing.
+
+## 6. Git Workflow
+
+### Before starting a PR
+
+```powershell
+git status --short
+git switch main
+git pull origin main
+git status --short
+```
+
+- Both `git status --short` runs must be empty (section 7). Otherwise stop and
+  report before switching or branching.
+- If `git pull` is not permitted in the current agent environment, stop and ask
+  the owner to sync `main`. Never branch from a stale `main`.
+
+Create the branch from the updated `main`:
+
+```powershell
+git switch -c <prefix>/<focused-change-name>
+```
+
+Allowed prefixes: `feature/`, `fix/`, `docs/`.
+
+### Staging and pushing
+
+- The agent creates the branch, implements the PR scope, runs checks, commits
+  and pushes.
+- Stage only files listed in the PR expected scope, by explicit path:
+  `git add <path> <path>`.
+- Never use `git add -A` or `git add .`.
 - Never merge PRs.
 - Never push to `main`.
 - Never force-push.
-- Never rebase a pushed branch without separate owner instruction.
-- If modified tracked files, deleted tracked files, staged files, merge
-  conflicts, or unexpected untracked files outside the tolerated list and
-  outside the current PR expected scope are present before branching, stop and
-  report them. Do not hide, delete, stage, or work around unrelated local
+- Never rebase a pushed branch without a separate owner instruction.
+
+## 7. Local Working Tree
+
+Before branching, `git status --short` must be empty.
+
+If it is not empty, stop and report, without resetting, deleting, stashing,
+moving or working around anything. This covers modified, deleted or staged
+tracked files, merge conflicts, and any untracked file.
+
+Git-ignored local files are owner-local: `plan*.md`, `PLAN*.md`,
+`pr-body*.md`, `AGENTS.override.md`, `.env`, `.env.*`, `.claude/`,
+`.migration-reports/`. Never force-add them, never read or print `.env*`
+contents, and never edit, move or delete them unless the owner explicitly
+asks.
+
+## 8. PR Discipline
+
+Every PR has one primary outcome, explicit scope, expected files, checks and a
+manual smoke checklist.
+
+Do not:
+
+- mix unrelated features;
+- perform unrelated cleanup or refactoring;
+- create duplicate implementations of existing functionality; improve the
+  canonical implementation instead;
+- silently expand scope.
+
+Improvements discovered during work are listed in the final report as
+follow-ups. They are not implemented in the current PR.
+
+## 9. Security And Privacy
+
+- Preserve server-side authorization and least privilege in every endpoint.
+- Never trust frontend-only permissions.
+- Do not read or show `prayer_activity_logs` or any private prayer activity in
+  admin, public web or member-facing views.
+- Do not expose private user data beyond what the endpoint needs.
+- Do not log raw email, phone, names, invite codes, registration comments,
+  JWTs, refresh tokens, or verification/password reset codes.
+- Do not store plaintext passwords, refresh tokens or invite codes.
+- Do not put `DATABASE_URL` or any backend secret into `app/`, `src/`,
+  `apps/admin/`, `apps/web/`, Expo env or Vite env.
+- Never commit `.env` files or real secrets. Committed env files are only
+  `*.example` with placeholder values.
+
+## 10. Database And Migrations
+
+- Alembic in `apps/api/alembic/versions/` is the only migration mechanism.
+- Never add files to `supabase/migrations/`.
+- Inspect existing models and migrations before any schema change.
+- New migration file name: `YYYYMMDDHHMMSS_<slug>.py`, consistent with existing
   files.
-- Tolerated pre-existing untracked files listed in
-  "Known Local Untracked Files" do not block branch creation if they are the
-  only dirty entries in `git status --short`.
-- Known local files that must never be staged unless explicitly in expected
-  scope include `500`, `supabase/functions/`, `supabase/snippets/`,
-  `.env.local`, `AGENTS.override.md`, and local plan files.
+- Never edit a migration that has already been merged to `main`.
+- No destructive migrations (dropping tables or columns with data, data
+  deletion, irreversible type changes) without explicit owner approval in the
+  PR prompt.
+- Never delete production data as part of a feature PR.
 
-## Known Local Untracked Files
+## 11. API Tests And Test Database
 
-The following pre-existing local untracked files and directories are tolerated:
-
-- `500`
-- `supabase/functions/.gitkeep`
-- `supabase/functions/`
-- `supabase/snippets/Untitled query 971.sql`
-- `supabase/snippets/`
-- `PLAN-seating-registrations-v15.md`
-- `pr-body.md`
-
-If these paths are the only dirty entries in `git status --short`, they do not
-block branch creation.
-
-The agent must leave these paths untouched:
-
-- do not stage them;
-- do not edit them;
-- do not delete them;
-- do not move them;
-- do not commit them.
-
-The agent must stop only for:
-
-- modified tracked files;
-- deleted tracked files;
-- staged files;
-- merge conflicts;
-- unexpected untracked files outside the tolerated list and outside the current
-  PR expected scope.
-
-## Smoke Policy
-
-- Smoke tests must not be run by the agent.
-- Browser smoke and Expo/iPhone smoke are owner-only on the pushed PR branch
-  before merge.
-- The agent should only provide a manual smoke checklist.
-
-## Forbidden Scan Policy
-
-Forbidden scan is a hard pre-commit gate for staged files.
-
-Expected/reviewable hits are allowed only in these paths:
-
-- `docs/**` may mention `auth.users`, `DATABASE_URL`, service-role access, or
-  migration targets as documentation.
-- `infra/env/*.example` may include `DATABASE_URL` as backend-only example
-  configuration.
-- `scripts/**` may include `DATABASE_URL` only for owner/dev migration or import
-  tools, never for `apps/admin` or mobile.
-- `scripts/migration/**` may mention service-role/Admin Auth access only under
-  the owner-run migration-script carve-out.
-
-Hard failures that block commit:
-
-- Any forbidden hit in staged files outside the allowed paths above.
-- Secrets or backend-only access strings in `apps/admin/**`, `app/**`,
-  `src/**`, or committed env files.
-- `DATABASE_URL` in `apps/admin` or mobile code.
-- `service_role`, `SUPABASE_SERVICE`, or `sb_secret` in client code.
-- New production code touching `auth.users` directly.
-- New admin UI reading `prayer_activity_logs`.
-- Any staged file outside the PR's expected scope.
-
-Before commit, after explicit-path staging, run the staged-file scan:
+Automated API tests run only against the disposable test database through the
+Compose `test` profile (see `docs/api-tests.md`):
 
 ```powershell
-git diff --cached --name-only | ForEach-Object { Select-String -Path $_ -Pattern "service_role|sb_secret|SUPABASE_SERVICE|DATABASE_URL|auth.users|prayer_activity_logs" -SimpleMatch:$false -ErrorAction SilentlyContinue }
+docker compose -f infra/docker-compose.api.yml --profile test up -d --force-recreate api_test_postgres
+docker compose -f infra/docker-compose.api.yml --profile test build api_test_backend
+docker compose -f infra/docker-compose.api.yml --profile test run --rm api_test_backend alembic upgrade head
+docker compose -f infra/docker-compose.api.yml --profile test run --rm api_test_backend python -m pytest -q tests
+docker compose -f infra/docker-compose.api.yml --profile test stop api_test_postgres
 ```
 
-If scan reports expected docs/example/script hits, explain the file, reason, and
-why it is not a client/runtime secret leak.
+- Never run tests through `api_backend`: it uses the working local database.
+- Never use `docker compose down -v`.
+- Never weaken or bypass the fail-closed guard in `apps/api/tests/db_safety.py`
+  and `apps/api/tests/conftest.py`.
 
-## Repository Map
+## 12. Production Boundary
 
-- Mobile app: `app/`
-- Mobile shared code/services: `src/`
-- Canonical Supabase client: `src/services/supabaseClient.ts`
-- Web-admin app: `apps/admin/`
-- Admin stylesheet: `apps/admin/src/styles/globals.css`
-- Supabase migrations: `supabase/migrations/`
-- Future Python backend: `apps/api/`
-- Migration scripts: `scripts/migration/`
-- Local plan file: repository root, ignored by Git.
+- Merge is not deployment. Deployment is an owner-run operation.
+- The agent does not deploy, does not connect to production hosts, and does not
+  change production DNS, Nginx, TLS, env or databases.
+- The agent does not run import, promote or migration scripts against any
+  production or candidate database.
+- Changes to `infra/` production configuration are allowed only when listed in
+  the PR expected scope.
 
-## Navigation And Search
+## 13. Checks Ladder
 
-- Use `git grep`, targeted file reads, and PowerShell
-  `Get-ChildItem`/`Select-String`.
-- Do not use global `rg`.
-- Verify referenced paths/services/signatures against the actual repository
-  before editing or emitting prompts.
+Run the checks listed in the PR prompt. Typical checks by area:
 
-## Checks Ladder
+- Mobile: `npm run typecheck`, relevant `npm run validate:*` scripts.
+- Web-admin: `npm run admin:typecheck`, then `npm run admin:build` once as the
+  final pre-commit check.
+- Public web: `npm run web:typecheck`, `npm run web:test`, `npm run web:build`.
+- API: full or focused pytest through the test profile (section 11).
 
-- Official PR checks are mandatory pre-commit gates.
-- If any required check fails, do not commit. Fix the issue within PR scope or
-  stop and report the failure.
-- Check results must not be described as passed unless they were actually run
-  and passed.
-- Claude Code should not run `npm run admin:build` during iterations; it runs it
-  once as the final pre-commit check.
+Rules:
 
-## PR Link Policy
+- Required checks are pre-commit gates. If one fails, fix it within scope or
+  stop and report. Do not commit.
+- Never report a check as passed unless it was actually run and passed.
+- Known issue: `apps/web/src/App.test.tsx` may hang under Vitest. If
+  `web:test` hangs, stop it, report it as the known hang, and do not try to fix
+  it in an unrelated PR.
 
-- Default mode B is push-only. After push, the agent outputs the complete PR
-  body using the root `plan.md` section 9 template as one ready-to-paste
-  markdown block, then outputs the GitHub new-PR URL.
-- `gh pr create` is optional only when `gh` is installed and authenticated.
-- Merge remains owner-only after manual smoke.
+## 14. Forbidden Scan
 
-## AGENTS.md And CLAUDE.md Conventions
+Hard pre-commit gate. After explicit-path staging, run:
+
+```powershell
+git diff --cached --name-only | Where-Object { $_ -match '^(app|src|apps/admin|apps/web)/' } | ForEach-Object { Select-String -Path $_ -Pattern 'DATABASE_URL|API_JWT_SECRET|API_TOKEN_HASH_SECRET|prayer_activity_logs|supabase' -ErrorAction SilentlyContinue }
+git diff --cached --name-only | Where-Object { $_ -match '(^|/)\.env' -and $_ -notmatch '\.example$' }
+```
+
+Any output from either command blocks the commit.
+
+Also blocks the commit:
+
+- any staged file outside the PR expected scope;
+- a real secret in any staged file, including docs and `*.example` files.
+
+`docs/` and `infra/env/*.example` may mention env variable names as
+documentation. If they appear in the diff, state why they are not a leak.
+
+## 15. Smoke Policy
+
+- The agent does not perform manual smoke testing: no browser UI verification,
+  no Expo or iPhone runs.
+- Browser and Expo/iPhone smoke are owner-only, on the pushed PR branch, before
+  merge.
+- The agent provides a manual smoke checklist in the PR body.
+
+## 16. PR Output
+
+Default mode is push-only. After push, output:
+
+1. The complete PR body as one ready-to-paste markdown block:
+
+   ```markdown
+   ## Summary
+   <primary outcome in 1-3 sentences>
+
+   ## Changes
+   - <file or area>: <what changed>
+
+   ## Checks
+   - <command>: passed | failed | not run (reason)
+
+   ## Manual smoke checklist
+   - [ ] <step and expected result>
+
+   ## Out of scope / follow-ups
+   - <item or "none">
+   ```
+
+2. The GitHub new-PR URL for the pushed branch.
+
+`gh pr create` is optional, only when `gh` is installed and authenticated.
+Merge remains owner-only after manual smoke.
+
+## 17. AGENTS.md And CLAUDE.md
 
 - `AGENTS.md` is canonical.
-- `CLAUDE.md` imports `@AGENTS.md`.
-- `CLAUDE.md` must not duplicate all standing rules.
-- Codex reads `AGENTS.md` at session start, so restart Codex after changing
-  `AGENTS.md`.
-- `AGENTS.override.md` is local/private and must never be committed.
-
-## Prompt Authoring Policy
-
-- Prompts may be authored by ChatGPT, Claude, or manually.
-- Prompt authors must use the root `plan.md` version.
-- Prompt authors must verify referenced paths, services, signatures, and files
-  against the actual repository before emitting prompts.
-- Do not reference plan sections by number unless the root plan file exists and
-  the version header matches the intended version.
-
-## Main Branch Protection Recommendation
-
-The repository owner should configure `main` to:
-
-- require a pull request before merging;
-- block direct pushes to `main`;
-- keep merge owner-controlled.
+- `CLAUDE.md` imports `@AGENTS.md` and contains only Claude Code specific rules.
+- Codex reads `AGENTS.md` at session start: restart Codex after it changes.
+- `AGENTS.override.md` is local and private and is never committed.
