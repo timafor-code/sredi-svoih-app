@@ -179,6 +179,10 @@ export function SeatingAssignmentsPanel({
         )}
       </div>
 
+      {manualSeatingEnabled ? (
+        <p className="seat-pool__hint">Перетащите гостя на стул или выберите его кликом, затем нажмите свободное место.</p>
+      ) : null}
+
       {isFullListOpen ? (
         <SeatingUnseatedDialog
           fullListGuests={fullListGuests}

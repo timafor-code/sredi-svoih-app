@@ -18,6 +18,7 @@ import {
   tableBounds,
   tableSideSeats,
 } from "../../lib/seatingGeometry";
+import { computeSeatingMetricsDisplaySummary } from "../../lib/seatingCapacity";
 import {
   autoAssignResultToAssignments,
   autoAssignSeating,
@@ -136,6 +137,8 @@ export function SeatingLayoutEditor({
   const [isReserveDialogOpen, setIsReserveDialogOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [seatEditEnabled, setSeatEditEnabled] = useState(false);
   const [isTemplateListLoading, setIsTemplateListLoading] = useState(false);
   const [printModel, setPrintModel] = useState<SeatingPrintModel | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
@@ -163,6 +166,8 @@ export function SeatingLayoutEditor({
       setPrintModel(null);
       setSelectedTableId(null);
       setTables([]);
+      setHasUnsavedChanges(false);
+      setSeatEditEnabled(false);
       return undefined;
     }
 
@@ -185,6 +190,8 @@ export function SeatingLayoutEditor({
     setIsDeletingTemplate(false);
     setIsSaving(false);
     setIsSavingTemplate(false);
+    setHasUnsavedChanges(false);
+    setSeatEditEnabled(false);
 
     getSeatingLayout({
       capacityUnitId: slot.bucket.capacityUnitId,
@@ -217,6 +224,7 @@ export function SeatingLayoutEditor({
             : DEFAULT_SEATING_TEMPLATE_VALUE,
         );
         setSelectedTableId(layout?.seatingDone ? null : pickSelectedTableId(nextTables));
+        setHasUnsavedChanges(false);
         setFeedback(
           layout
             ? null
@@ -480,7 +488,7 @@ export function SeatingLayoutEditor({
       : slot?.bucket.capacity ?? null;
   const canPerformAdminActions = auth.canAccessAdmin && (auth.isAdmin || auth.isEventManager);
   const rabbiReserveCount = useMemo(
-    () => geometry.seats.filter((seat) => seat.isRabbiTable).length,
+    () => geometry.seats.filter((seat) => seat.isRabbiTable && !seat.isDisabled).length,
     [geometry.seats],
   );
   const slotTitle = slot ? formatSlotTitle(slot) : "Схема рассадки";
@@ -606,6 +614,24 @@ export function SeatingLayoutEditor({
       assignmentRestoreState.occupants.filter((occupant) => occupant.type === "reserve")
         .length,
     [assignmentRestoreState.occupants],
+  );
+  const allTablesSideSeats = useMemo<2 | 3 | null>(() => {
+    if (tables.length === 0) return null;
+    const sideSeats = tableSideSeats(tables[0]);
+    return tables.every((table) => tableSideSeats(table) === sideSeats)
+      ? (sideSeats as 2 | 3)
+      : null;
+  }, [tables]);
+  const metricsSummary = useMemo(
+    () => computeSeatingMetricsDisplaySummary({
+      capacityLimit,
+      physicalOccupiedSeats: seatOccupants.length,
+      physicalSeatCount: geometry.physicalSeatCount,
+      registrationOccupiedSeats: slot?.bucket.occupiedSeats ?? 0,
+      reserveSeats: placedReserveCount,
+      seatedGuestCount,
+    }),
+    [capacityLimit, geometry.physicalSeatCount, placedReserveCount, seatOccupants.length, seatedGuestCount, slot?.bucket.occupiedSeats],
   );
 
   useEffect(() => {
@@ -741,11 +767,16 @@ export function SeatingLayoutEditor({
 
     setTables(nextTables);
     setSelectedTableId(nextTable.id);
+    setHasUnsavedChanges(true);
   }, [canAddTable, selectedTableId, tables]);
 
   const handleMoveTable = useCallback(
     (tableId: string, center: { cx: number; cy: number }) => {
       if (!canEditLayout) {
+        return;
+      }
+      const currentTable = tables.find((table) => table.id === tableId);
+      if (!currentTable || (currentTable.cx === center.cx && currentTable.cy === center.cy)) {
         return;
       }
 
@@ -761,8 +792,9 @@ export function SeatingLayoutEditor({
       setConnections((currentConnections) =>
         currentConnections.filter((connection) => !connectionTouchesTable(connection, tableId)),
       );
+      setHasUnsavedChanges(true);
     },
-    [canEditLayout],
+    [canEditLayout, tables],
   );
 
   const handleRemoveTable = useCallback(() => {
@@ -781,6 +813,7 @@ export function SeatingLayoutEditor({
       ),
     );
     setSelectedTableId(pickSelectedTableId(nextTables));
+    setHasUnsavedChanges(true);
   }, [canRemoveSelectedTable, selectedTableId, tables]);
 
   const handleRotateTable = useCallback(() => {
@@ -805,33 +838,38 @@ export function SeatingLayoutEditor({
         (connection) => !connectionTouchesTable(connection, selectedTableId),
       ),
     );
+    setHasUnsavedChanges(true);
   }, [canRotateSelectedTable, selectedTableId]);
 
-  const handleToggleSelectedSideSeats = useCallback(() => {
+  const handleSetSelectedSideSeats = useCallback((sideSeats: 2 | 3) => {
     if (!canChangeSelectedTableSideSeats || !selectedTableId) {
       return;
     }
+    if (tableSideSeats(selectedTable!) === sideSeats) return;
 
     setTables((currentTables) =>
       ensureOneRabbiTable(
         currentTables.map((table) =>
           table.id === selectedTableId
-            ? { ...table, sideSeats: tableSideSeats(table) === 2 ? 3 : 2 }
+            ? { ...table, sideSeats }
             : table,
         ),
       ),
     );
-  }, [canChangeSelectedTableSideSeats, selectedTableId]);
+    setHasUnsavedChanges(true);
+  }, [canChangeSelectedTableSideSeats, selectedTable, selectedTableId]);
 
   const handleSetAllSideSeats = useCallback((sideSeats: 2 | 3) => {
     if (!canSetAllSideSeats) {
       return;
     }
+    if (allTablesSideSeats === sideSeats) return;
 
     setTables((currentTables) =>
       ensureOneRabbiTable(currentTables.map((table) => ({ ...table, sideSeats }))),
     );
-  }, [canSetAllSideSeats]);
+    setHasUnsavedChanges(true);
+  }, [allTablesSideSeats, canSetAllSideSeats]);
 
   const saveLayoutGeometry = useCallback(
     async ({
@@ -939,6 +977,7 @@ export function SeatingLayoutEditor({
             templateValue: value,
           });
           setFeedback({ message: "Шаблон применён.", tone: "success" });
+          setHasUnsavedChanges(true);
         })
         .catch((error) => {
           setFeedback({
@@ -1137,6 +1176,7 @@ export function SeatingLayoutEditor({
             : "Схема сохранена.",
           tone: "success",
         });
+        setHasUnsavedChanges(false);
       })
       .catch((error) => {
         setFeedback({
@@ -1287,6 +1327,7 @@ export function SeatingLayoutEditor({
           setIsEditingAfterSeating(false);
           setReconcileNotice(reconcile.counts.returnedCount > 0 ? reconcile.counts : null);
           setFeedback(buildSeatingFeedback(reconcile.counts, overflowCount));
+          setHasUnsavedChanges(false);
         })
         .catch((error) => {
           console.error("Auto seating save failed", error);
@@ -1393,9 +1434,10 @@ export function SeatingLayoutEditor({
       setAssignments(result.assignments);
       setReconcileNotice(null);
       setFeedback({
-        message: "Изменения рассадки не сохранены. Нажмите «Сохранить».",
+        message: "Изменения рассадки не сохранены. Нажмите «Сохранить схему рассадки».",
         tone: "muted",
       });
+      setHasUnsavedChanges(true);
     },
     [currentAssignments, dragSource, geometry, guestPool, manualSeatingEnabled],
   );
@@ -1410,6 +1452,47 @@ export function SeatingLayoutEditor({
   const handlePoolDrop = useCallback(() => {
     handleManualDrop({ kind: "pool" });
   }, [handleManualDrop]);
+
+  const handleToggleSeat = useCallback((seatIndex: number) => {
+    if (isLayoutActionBusy) return;
+    const seat = geometry.seats[seatIndex];
+    if (!seat) return;
+    const stablePart = seat.kind === "side" && seat.edge && typeof seat.slot === "number"
+      ? `side:${seat.edge}:${seat.slot}`
+      : seat.kind === "end" && seat.end ? `end:${seat.end}` : null;
+    if (!stablePart) return;
+    const table = tables.find((item) => item.id === seat.tableId);
+    if (!table) return;
+    const seatKey = `${seat.tableId}:${stablePart}`;
+    const occupant = currentAssignments.find((assignment) => assignment.seatKey === seatKey) ?? null;
+    const wasDisabled = Boolean(table.disabledSeats?.includes(stablePart));
+
+    setTables((currentTables) => currentTables.map((item) => item.id !== table.id ? item : {
+      ...item,
+      disabledSeats: wasDisabled
+        ? (item.disabledSeats ?? []).filter((part) => part !== stablePart)
+        : [...(item.disabledSeats ?? []), stablePart],
+    }));
+    if (!wasDisabled && occupant) {
+      setAssignments((current) => current.map((assignment) => assignment.id !== occupant.id ? assignment : {
+        ...assignment, seatKey: null, locked: false, placementSource: undefined,
+      }));
+    }
+    setHasUnsavedChanges(true);
+    setFeedback(wasDisabled
+      ? { message: "Место включено обратно.", tone: "success" }
+      : occupant
+        ? { message: `«${occupant.guestLabel}» снят с выключенного места.`, tone: "muted" }
+        : { message: "Место выключено и не входит в схему.", tone: "muted" });
+  }, [currentAssignments, geometry.seats, isLayoutActionBusy, tables]);
+
+  const handleToggleSeatEdit = useCallback(() => {
+    if (isLayoutActionBusy) return;
+    setSeatEditEnabled((enabled) => {
+      setFeedback({ message: enabled ? "Режим мест выключен." : "Режим мест: клик по стулу выключает или включает его.", tone: "muted" });
+      return !enabled;
+    });
+  }, [isLayoutActionBusy]);
 
   const handleAddReserve = useCallback(() => {
     if (!manualSeatingEnabled) {
@@ -1435,6 +1518,7 @@ export function SeatingLayoutEditor({
       message: `Резерв «${trimmed}» добавлен в «Не рассажены». Перетащите его на место и нажмите «Сохранить».`,
       tone: "muted",
     });
+    setHasUnsavedChanges(true);
   }, []);
 
   const handleDeleteReserve = useCallback((reserveId: string) => {
@@ -1448,6 +1532,7 @@ export function SeatingLayoutEditor({
       message: "Резерв удалён. Нажмите «Сохранить», чтобы зафиксировать изменение.",
       tone: "muted",
     });
+    setHasUnsavedChanges(true);
   }, []);
 
   const handleReserveDragStart = useCallback((reserveId: string) => {
@@ -1570,11 +1655,23 @@ export function SeatingLayoutEditor({
         role="dialog"
       >
         <header className="seat-modal__head">
-          <div>
+          <div className="seat-modal__title-block">
             <span>Схема рассадки</span>
             <h2 id="seat-modal-title">{slotTitle}</h2>
             {slotSubtitle ? <p>{slotSubtitle}</p> : null}
           </div>
+          <SeatingMetricsPanel
+            capacityLimit={capacityLimit}
+            disabledSeatCount={geometry.disabledSeatCount}
+            physicalOccupiedSeats={seatOccupants.length}
+            physicalSeatCount={geometry.physicalSeatCount}
+            rabbiReserveCount={rabbiReserveCount}
+            registrationOccupiedSeats={slot.bucket.occupiedSeats}
+            reserveSeats={placedReserveCount}
+            seatedGuestCount={seatedGuestCount}
+            tableCount={tables.length}
+            unseatedCount={unassignedGuestPool.length + pooledReserves.length}
+          />
           <button
             aria-label="Закрыть схему рассадки"
             className="seat-modal__close"
@@ -1584,12 +1681,6 @@ export function SeatingLayoutEditor({
             ×
           </button>
         </header>
-
-        <p className="seat-modal__context-note">
-          Редактор рассадки — ручной инструмент для выбранного слота. Лимит регистрации
-          не равен автоматически физическим стульям, а донаты не создают гостя для
-          рассадки сами по себе.
-        </p>
 
         <div className="seat-toolbar">
           <SeatingTemplateSelector
@@ -1602,35 +1693,12 @@ export function SeatingLayoutEditor({
             onDeleteTemplate={handleDeleteTemplate}
             onSaveTemplate={handleSaveTemplate}
             onTemplateChange={handleTemplateChange}
+            canReturnToSeating={isEditingAfterSeating && !isSeatingDone}
+            returnDisabled={isLayoutActionBusy || !hasValidGeometry}
+            onReturnToSeating={handleReturnToSeating}
             selectedValue={activeTemplateValue}
             templates={templates}
           />
-
-          <Button
-            disabled={autoAssignDisabled}
-            onClick={handleAutoAssign}
-            size="sm"
-            title={autoAssignDisabledReason ?? "Сделать рассадку по текущей схеме"}
-            variant="success"
-          >
-            {isAutoAssigning
-              ? "Делаем рассадку..."
-              : isSeatingDone
-                ? "Дорассадить свободных"
-                : "Сделать рассадку"}
-          </Button>
-
-          {isEditingAfterSeating && !isSeatingDone ? (
-            <Button
-              disabled={isLayoutActionBusy || !hasValidGeometry}
-              onClick={handleReturnToSeating}
-              size="sm"
-              title={layoutBusyReason ?? "Вернуться к рассадке с сохранением возможных посадок"}
-              variant="secondary"
-            >
-              Вернуться к рассадке
-            </Button>
-          ) : null}
 
           {feedback?.message ? (
             <span
@@ -1641,16 +1709,16 @@ export function SeatingLayoutEditor({
             </span>
           ) : null}
 
-          <Button
-            className="seat-toolbar__save"
+          <div className="seat-toolbar__save-slot"><Button
+            className={`seat-toolbar__save${hasUnsavedChanges ? " is-dirty" : ""}`}
             disabled={saveDisabled}
             onClick={handleSave}
             size="sm"
-            title={saveDisabled ? layoutBusyReason ?? "Нужна валидная схема с одним раввинским столом." : "Сохранить схему"}
+            title={saveDisabled ? layoutBusyReason ?? "Нужна валидная схема с одним раввинским столом." : "Сохранить схему рассадки"}
             variant="gold"
           >
-            {isSaving ? "Сохраняем..." : "Сохранить"}
-          </Button>
+            {isSaving ? "Сохраняем..." : "Сохранить схему рассадки"}
+          </Button></div>
         </div>
 
         <div className="seat-body">
@@ -1682,9 +1750,11 @@ export function SeatingLayoutEditor({
                 onSeatDragEnd={handleManualDragEnd}
                 onSeatDragStart={handleSeatDragStart}
                 onSeatDrop={handleSeatDrop}
+                onToggleSeat={handleToggleSeat}
                 onSelectTable={setSelectedTableId}
                 occupants={seatOccupants}
                 selectedTableId={selectedTableId}
+                seatEditEnabled={seatEditEnabled}
                 tables={tables}
               />
             )}
@@ -1702,6 +1772,7 @@ export function SeatingLayoutEditor({
                 >
                   Редактировать столы
                 </Button>
+                <Button className={seatEditEnabled ? "is-on" : undefined} disabled={isLayoutActionBusy} onClick={handleToggleSeatEdit} size="sm" title={layoutBusyReason ?? "Выключение мест"} variant="secondary">⌾ Выключение мест</Button>
                 <span className="seat-toolbar__sep" />
                 <SeatingShortcutLegend />
               </div>
@@ -1711,11 +1782,13 @@ export function SeatingLayoutEditor({
                 addDisabledReason={addTableDisabledReason}
                 allSideSeatsDisabled={!canSetAllSideSeats}
                 allSideSeatsDisabledReason={allSideSeatsDisabledReason}
+                allSideSeats={allTablesSideSeats}
                 onAddTable={handleAddTable}
                 onRemoveTable={handleRemoveTable}
                 onRotateTable={handleRotateTable}
                 onSetAllSideSeats={handleSetAllSideSeats}
-                onToggleSelectedSideSeats={handleToggleSelectedSideSeats}
+                onSetSelectedSideSeats={handleSetSelectedSideSeats}
+                onToggleSeatEdit={handleToggleSeatEdit}
                 removeDisabled={!canRemoveSelectedTable}
                 removeDisabledReason={removeTableDisabledReason}
                 rotateDisabled={!canRotateSelectedTable}
@@ -1723,7 +1796,9 @@ export function SeatingLayoutEditor({
                 selectedTableSideSeats={selectedTable ? tableSideSeats(selectedTable) : null}
                 sideSeatsDisabled={!canChangeSelectedTableSideSeats}
                 sideSeatsDisabledReason={sideSeatsDisabledReason}
-                tableCount={tables.length}
+                seatEditDisabled={isLayoutActionBusy}
+                seatEditDisabledReason={layoutBusyReason}
+                seatEditEnabled={seatEditEnabled}
                 variant="layout"
               />
             )}
@@ -1737,18 +1812,8 @@ export function SeatingLayoutEditor({
           </div>
 
           <aside className="seat-side-panel">
-            <SeatingMetricsPanel
-              action={capacitySyncButton}
-              capacityLimit={capacityLimit}
-              physicalOccupiedSeats={seatOccupants.length}
-              physicalSeatCount={geometry.physicalSeatCount}
-              rabbiReserveCount={rabbiReserveCount}
-              registrationOccupiedSeats={slot.bucket.occupiedSeats}
-              reserveSeats={placedReserveCount}
-              seatedGuestCount={seatedGuestCount}
-              tableCount={tables.length}
-              unseatedCount={unassignedGuestPool.length + pooledReserves.length}
-            />
+            {metricsSummary.missingPhysical > 0 || (metricsSummary.capacityLimit !== null && metricsSummary.physicalSeatCount < metricsSummary.capacityLimit) ? <div className="seat-capacity-alert" role="alert">
+              <span>{metricsSummary.missingPhysical > 0 ? <>Не хватает физических мест: {formatCount(metricsSummary.registrationOccupiedSeats + metricsSummary.reserveSeats)} {pluralizeRu(metricsSummary.registrationOccupiedSeats + metricsSummary.reserveSeats, "гость", "гостя", "гостей")} на {formatCount(metricsSummary.physicalSeatCount)} {pluralizeRu(metricsSummary.physicalSeatCount, "стул", "стула", "стульев")}</> : <>В схеме {formatCount(metricsSummary.physicalSeatCount)} {pluralizeRu(metricsSummary.physicalSeatCount, "место", "места", "мест")} при лимите {formatCount(metricsSummary.capacityLimit!)} — не хватает {formatCount(metricsSummary.capacityLimit! - metricsSummary.physicalSeatCount)}. Лимит регистрации сам по схеме не меняется.</>}</span>{capacitySyncButton}</div> : null}
 
             <SeatingAssignmentsPanel
               canAddReserve={manualSeatingEnabled}
@@ -1769,23 +1834,8 @@ export function SeatingLayoutEditor({
               warning={guestPoolWarning}
             />
 
-            <section className="seat-layout-panel">
-              <h4>Фигура столов</h4>
-              <p className="seat-layout-note">
-                Пустые серые кружки показывают потенциальные физические места.
-                Раввинский стол подсвечен золотым; головное место отмечено звездой.
-              </p>
-              <div className="seat-legend">
-                <span>
-                  <i className="seat-legend__empty" /> Потенциальное место
-                </span>
-                <span>
-                  <i className="seat-legend__rabbi" /> Раввинский резерв
-                </span>
-                <span>
-                  <i className="seat-legend__head" /> Головное место
-                </span>
-              </div>
+            <div className="seat-side-actions">
+              <Button className="seat-side-actions__primary" disabled={autoAssignDisabled} onClick={handleAutoAssign} size="md" title={autoAssignDisabledReason ?? "Сделать рассадку по текущей схеме"} variant="success">{isAutoAssigning ? "Делаем рассадку..." : isSeatingDone ? "Дорассадить свободных" : "Рассадить гостей"}</Button>
               <Button
                 className="seat-print-sidebar-action"
                 disabled={!canPrintSeating}
@@ -1796,7 +1846,7 @@ export function SeatingLayoutEditor({
               >
                 Печать рассадки
               </Button>
-            </section>
+            </div>
           </aside>
         </div>
       </section>
@@ -2035,6 +2085,8 @@ function manualDropRejectionFeedback(
       };
     case "duplicate_guest":
       return { message: "Этот гость уже рассажен.", tone: "muted" };
+    case "disabled_seat":
+      return { message: "Место выключено — включите его, чтобы посадить гостя.", tone: "error" };
     case "noop":
     case "missing_guest":
     case "missing_source_occupant":
@@ -2103,6 +2155,15 @@ function formatCapacitySyncError(error: unknown): string {
 
 function formatCount(value: number): string {
   return new Intl.NumberFormat("ru-RU").format(value);
+}
+
+function pluralizeRu(count: number, one: string, few: string, many: string): string {
+  const mod100 = Math.abs(count) % 100;
+  const mod10 = mod100 % 10;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
 }
 
 type TemplateGeometry = {
