@@ -12,6 +12,7 @@
   --text-soft: rgba(255, 255, 255, 0.72);
   --text-muted: rgba(255, 255, 255, 0.48);
   --text-faint: rgba(255, 255, 255, 0.28);
+  --seat-disabled-line: rgba(255, 255, 255, 0.22);
   --red: #e52c36;
   --red-soft: rgba(229, 44, 54, 0.16);
   --gold: #f2b84b;
@@ -10168,6 +10169,11 @@ a {
   padding: 0 10px;
 }
 
+.seat-canvas-tool--fit.is-on {
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
 .seat-canvas-scale {
   min-width: 48px;
   color: var(--text-muted);
@@ -10184,6 +10190,14 @@ a {
   top: 0;
   left: 0;
   transform-origin: top left;
+}
+
+.seat-canvas-wrap.is-panning {
+  cursor: grabbing;
+}
+
+.seat-canvas-wrap.is-panning .seat-canvas {
+  pointer-events: none;
 }
 
 .seat-table {
@@ -10338,6 +10352,10 @@ a {
   pointer-events: none;
 }
 
+.seat--preview.seat--toggleable {
+  pointer-events: auto;
+}
+
 .seat--rabbi-reserved {
   border-color: rgba(242, 184, 75, 0.34);
   background: rgba(242, 184, 75, 0.055);
@@ -10351,6 +10369,23 @@ a {
 .seat--rabbi-head {
   border-color: rgba(242, 184, 75, 0.72);
   background: linear-gradient(135deg, var(--gold), #e09200);
+}
+
+.seat--disabled {
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(0,0,0,.35);
+  color: var(--text-faint);
+}
+
+.seat--disabled::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  top: 50%;
+  height: 1px;
+  background: var(--seat-disabled-line);
+  transform: rotate(-45deg);
 }
 
 /* PR 15: manual drag/drop visual states (seat namespace only). */
@@ -10396,6 +10431,59 @@ a {
   color: var(--gold);
   font-size: 12px;
   opacity: 0.72;
+}
+
+.seat-modal .button:active:not(:disabled),
+.seat-modal .seat-icon-button:active:not(:disabled),
+.seat-modal .seat-seg__option:active:not(:disabled),
+.seat-modal .seat-guest-chip:active,
+.seat-modal .seat-canvas-tool:active:not(:disabled) {
+  transform: scale(0.97);
+  transition: transform 90ms ease-out;
+}
+
+.seat:active {
+  transform: scale(0.93);
+  transition: transform 90ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seat-unseated-dialog {
+    transform: none !important;
+    filter: none !important;
+    transition: opacity 150ms ease;
+  }
+
+  .seat-modal .button,
+  .seat-modal .seat-icon-button,
+  .seat-modal .seat-seg__option,
+  .seat,
+  .seat-guest-chip {
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .seat-modal-overlay {
+    background: rgba(6, 7, 14, 0.97);
+    backdrop-filter: none;
+  }
+
+  .seat-canvas-tools {
+    background: var(--surface-strong);
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .seat-modal {
+    --glass-border: rgba(255, 255, 255, 0.36);
+  }
+
+  .seat--empty {
+    border-style: solid;
+  }
 }
 
 .seat-side-panel {
