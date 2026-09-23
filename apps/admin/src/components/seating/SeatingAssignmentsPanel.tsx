@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent } from "react";
 
 import type {
@@ -9,7 +9,7 @@ import {
   formatPaymentStatus,
   getRegistrationStatusLabel,
 } from "../registrations/formatters";
-import { SeatingUnseatedDialog } from "./SeatingUnseatedDialog";
+import { SeatingUnseatedDialog, type DialogTriggerRect } from "./SeatingUnseatedDialog";
 
 export function SeatingAssignmentsPanel({
   canAddReserve = false,
@@ -23,10 +23,13 @@ export function SeatingAssignmentsPanel({
   onDeleteReserve,
   onGuestDragEnd,
   onGuestDragStart,
+  onGuestSelect,
   onPoolDrop,
   onReserveDragEnd,
   onReserveDragStart,
   reserves = [],
+  pendingGuestKey = null,
+  placementByGuestKey = new Map<string, string>(),
   warning,
 }: {
   /** PR 16: when true, the "+ Резерв" action and reserve chips are interactive. */
@@ -44,15 +47,20 @@ export function SeatingAssignmentsPanel({
   onDeleteReserve?: (reserveId: string) => void;
   onGuestDragEnd?: () => void;
   onGuestDragStart?: (guestKey: string) => void;
+  onGuestSelect?: (guestKey: string) => boolean;
   onPoolDrop?: () => void;
   onReserveDragEnd?: () => void;
   onReserveDragStart?: (reserveId: string) => void;
   /** PR 16: unseated operational reserves (no registration). */
   reserves?: SeatingReservePoolItem[];
+  pendingGuestKey?: string | null;
+  placementByGuestKey?: Map<string, string>;
   warning?: string | null;
 }) {
   const [isDropTarget, setIsDropTarget] = useState(false);
   const [isFullListOpen, setIsFullListOpen] = useState(false);
+  const [triggerRect, setTriggerRect] = useState<DialogTriggerRect | null>(null);
+  const fullListButtonRef = useRef<HTMLButtonElement | null>(null);
   const handleCloseFullList = useCallback(() => setIsFullListOpen(false), []);
 
   const handleDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
@@ -89,7 +97,8 @@ export function SeatingAssignmentsPanel({
             aria-expanded={isFullListOpen}
             aria-haspopup="dialog"
             className="seat-pool__all"
-            onClick={() => setIsFullListOpen(true)}
+            onClick={() => { const rect = fullListButtonRef.current?.getBoundingClientRect(); setTriggerRect(rect ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height } : null); setIsFullListOpen(true); }}
+            ref={fullListButtonRef}
             type="button"
           >
             Весь список
@@ -163,6 +172,8 @@ export function SeatingAssignmentsPanel({
                 key={guest.key}
                 onDragEnd={onGuestDragEnd}
                 onDragStart={onGuestDragStart}
+                onSelect={onGuestSelect}
+                selected={pendingGuestKey === guest.key}
               />
             ))}
             {reserves.map((reserve) => (
@@ -187,7 +198,10 @@ export function SeatingAssignmentsPanel({
         <SeatingUnseatedDialog
           fullListGuests={fullListGuests}
           onClose={handleCloseFullList}
+          onGuestSelect={onGuestSelect ?? (() => false)}
+          placementByGuestKey={placementByGuestKey}
           reserves={reserves}
+          triggerRect={triggerRect}
         />
       ) : null}
     </aside>
@@ -199,11 +213,15 @@ function GuestChip({
   guest,
   onDragEnd,
   onDragStart,
+  onSelect,
+  selected,
 }: {
   draggable: boolean;
   guest: SeatingGuestPoolItem;
   onDragEnd?: () => void;
   onDragStart?: (guestKey: string) => void;
+  onSelect?: (guestKey: string) => boolean;
+  selected?: boolean;
 }) {
   const statusLabel = guest.status ? getRegistrationStatusLabel(guest.status) : null;
   const paymentLabel = guest.paymentStatus
@@ -224,9 +242,14 @@ function GuestChip({
 
   return (
     <div
-      className={["seat-guest-chip", draggable ? "seat-guest-chip--draggable" : ""]
+      className={["seat-guest-chip", draggable ? "seat-guest-chip--draggable" : "", selected ? "is-selected" : ""]
         .filter(Boolean)
         .join(" ")}
+      role={onSelect ? "button" : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      aria-pressed={onSelect ? selected : undefined}
+      onClick={onSelect ? () => onSelect(guest.key) : undefined}
+      onKeyDown={onSelect ? (event) => { if (event.key === "Enter") onSelect(guest.key); if (event.key === " ") { event.preventDefault(); onSelect(guest.key); } } : undefined}
       draggable={draggable}
       onDragEnd={draggable ? onDragEnd : undefined}
       onDragStart={draggable ? handleDragStart : undefined}

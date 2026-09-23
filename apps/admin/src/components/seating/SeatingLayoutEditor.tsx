@@ -113,6 +113,7 @@ export function SeatingLayoutEditor({
   const [connections, setConnections] = useState<SeatingConnection[]>([]);
   const [assignments, setAssignments] = useState<SeatingAssignment[]>([]);
   const [dragSource, setDragSource] = useState<SeatingDragSourceRef | null>(null);
+  const [pendingGuestKey, setPendingGuestKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<EditorFeedback | null>(null);
   const [guestPool, setGuestPool] = useState<SeatingGuestPoolItem[]>([]);
   const [guestPoolError, setGuestPoolError] = useState<string | null>(null);
@@ -155,6 +156,7 @@ export function SeatingLayoutEditor({
       setCapacitySyncError(null);
       setConnections([]);
       setDragSource(null);
+      setPendingGuestKey(null);
       setLayoutLoadError(null);
       setCanvasCancelVersion((version) => version + 1);
       setIsCapacitySyncDialogOpen(false);
@@ -179,6 +181,7 @@ export function SeatingLayoutEditor({
     setCapacitySyncError(null);
     setLayoutLoadError(null);
     setCanvasCancelVersion((version) => version + 1);
+    setPendingGuestKey(null);
     setIsReserveDialogOpen(false);
     setIsCapacitySyncDialogOpen(false);
     setIsCapacitySyncing(false);
@@ -218,6 +221,7 @@ export function SeatingLayoutEditor({
         setConnections(nextConnections);
         setLayoutLoadError(null);
         setAssignments(layout?.assignments ?? []);
+        setPendingGuestKey(null);
         setIsSeatingDone(Boolean(layout?.seatingDone));
         setActiveTemplateValue(
           layout?.templateId
@@ -243,6 +247,7 @@ export function SeatingLayoutEditor({
         setTables(fallbackTables);
         setConnections([]);
         setAssignments([]);
+        setPendingGuestKey(null);
         setIsSeatingDone(false);
         setActiveTemplateValue(DEFAULT_SEATING_TEMPLATE_VALUE);
         setSelectedTableId(pickSelectedTableId(fallbackTables));
@@ -459,6 +464,20 @@ export function SeatingLayoutEditor({
     () => (isSeatingDone ? assignmentRestoreState.unassignedGuests : guestPool),
     [assignmentRestoreState.unassignedGuests, guestPool, isSeatingDone],
   );
+  const placementByGuestKey = useMemo(() => {
+    const placement = new Map<string, string>();
+    const unused = new Set(guestPool.map((guest) => guest.key));
+    currentAssignments.forEach((assignment) => {
+      if (assignment.type !== "guest" || !assignment.seatKey) return;
+      const seatIndex = seatIndexFromSeatKey(assignment.seatKey, geometry); const seat = seatIndex === null ? null : geometry.seats[seatIndex];
+      if (!seat || seat.isDisabled) return;
+      const tableIndex = tables.findIndex((table) => table.id === seat.tableId); if (tableIndex < 0) return;
+      const signature = seatingGuestSignature(assignment.registrationId, assignment.guestLabel, assignment.guestInitials);
+      const match = guestPool.find((guest) => unused.has(guest.key) && seatingGuestSignature(guest.registrationId, guest.displayName, guest.initials) === signature) ?? (!assignment.guestLabel && !assignment.guestInitials ? guestPool.find((guest) => unused.has(guest.key) && guest.registrationId === assignment.registrationId) : undefined);
+      if (match) { unused.delete(match.key); placement.set(match.key, `Стол ${tableIndex + 1}`); }
+    });
+    return placement;
+  }, [currentAssignments, geometry, guestPool, tables]);
   const visibleGuestPool = unassignedGuestPool;
   const hasBucketOccupancy = Boolean(
     slot &&
@@ -574,6 +593,7 @@ export function SeatingLayoutEditor({
     : null;
   const manualSeatingEnabled =
     isSeatingDone && hasValidGeometry && !isLayoutActionBusy;
+  useEffect(() => { if (pendingGuestKey && (!manualSeatingEnabled || !unassignedGuestPool.some((guest) => guest.key === pendingGuestKey))) setPendingGuestKey(null); }, [manualSeatingEnabled, pendingGuestKey, unassignedGuestPool]);
   const canShowCapacitySyncAction = Boolean(
     slot?.bucket.capacityUnitId &&
       canPerformAdminActions &&
@@ -1398,12 +1418,31 @@ export function SeatingLayoutEditor({
   }, []);
 
   const handleSeatDragStart = useCallback((seatIndex: number) => {
+    setPendingGuestKey(null);
     setDragSource({ kind: "seat", seatIndex });
   }, []);
 
   const handleGuestDragStart = useCallback((guestKey: string) => {
+    setPendingGuestKey(null);
     setDragSource({ kind: "pool", guestKey });
   }, []);
+
+  const handleSelectGuestForPlacement = useCallback((guestKey: string): boolean => {
+    if (!manualSeatingEnabled) return false;
+    const guest = guestPool.find((item) => item.key === guestKey);
+    if (!guest) return false;
+    const placement = placementByGuestKey.get(guestKey);
+    if (placement) { setFeedback({ message: `${guest.displayName} уже за столом · ${placement}.`, tone: "muted" }); return false; }
+    if (!unassignedGuestPool.some((item) => item.key === guestKey)) return false;
+    setPendingGuestKey(guestKey); setFeedback({ message: "Выберите свободное место на схеме.", tone: "muted" }); return true;
+  }, [guestPool, manualSeatingEnabled, placementByGuestKey, unassignedGuestPool]);
+
+  const handlePendingGuestSeatClick = useCallback((seatIndex: number) => {
+    if (!pendingGuestKey || !manualSeatingEnabled) return;
+    const result = applySeatingDragDrop({ assignments: currentAssignments, geometry, guestPool, source: { kind: "pool", guestKey: pendingGuestKey }, target: { kind: "seat", seatIndex } });
+    if (!result.changed) { const rejection = result.rejection ? manualDropRejectionFeedback(result.rejection) : null; if (rejection) setFeedback(rejection); return; }
+    setAssignments(result.assignments); setPendingGuestKey(null); setReconcileNotice(null); setHasUnsavedChanges(true); setFeedback({ message: "Изменения рассадки не сохранены. Нажмите «Сохранить схему рассадки».", tone: "muted" });
+  }, [currentAssignments, geometry, guestPool, manualSeatingEnabled, pendingGuestKey]);
 
   const handleManualDrop = useCallback(
     (target: SeatingDropTargetRef) => {
@@ -1540,6 +1579,7 @@ export function SeatingLayoutEditor({
   }, []);
 
   const handleReserveDragStart = useCallback((reserveId: string) => {
+    setPendingGuestKey(null);
     setDragSource({ kind: "reserve", reserveId });
   }, []);
 
@@ -1557,6 +1597,7 @@ export function SeatingLayoutEditor({
         if (isReserveDialogOpen || isCapacitySyncDialogOpen) {
           return;
         }
+        if (pendingGuestKey) { event.preventDefault(); setPendingGuestKey(null); return; }
 
         if (dragSource || selectedTableId) {
           event.preventDefault();
@@ -1620,6 +1661,7 @@ export function SeatingLayoutEditor({
     handleRotateTable,
     isCapacitySyncDialogOpen,
     isReserveDialogOpen,
+    pendingGuestKey,
     onClose,
     selectedTableId,
     slot,
@@ -1751,6 +1793,7 @@ export function SeatingLayoutEditor({
                 isSeatingDone={isSeatingDone}
                 manualSeatingEnabled={manualSeatingEnabled}
                 onMoveTable={handleMoveTable}
+                onSeatClick={handlePendingGuestSeatClick}
                 onSeatDragEnd={handleManualDragEnd}
                 onSeatDragStart={handleSeatDragStart}
                 onSeatDrop={handleSeatDrop}
@@ -1759,6 +1802,7 @@ export function SeatingLayoutEditor({
                 occupants={seatOccupants}
                 selectedTableId={selectedTableId}
                 seatEditEnabled={seatEditEnabled}
+                seatPlacementPending={pendingGuestKey !== null}
                 tables={tables}
               />
             )}
@@ -1831,10 +1875,13 @@ export function SeatingLayoutEditor({
               onDeleteReserve={handleDeleteReserve}
               onGuestDragEnd={handleManualDragEnd}
               onGuestDragStart={handleGuestDragStart}
+              onGuestSelect={handleSelectGuestForPlacement}
               onPoolDrop={handlePoolDrop}
               onReserveDragEnd={handleManualDragEnd}
               onReserveDragStart={handleReserveDragStart}
               reserves={pooledReserves}
+              pendingGuestKey={pendingGuestKey}
+              placementByGuestKey={placementByGuestKey}
               warning={guestPoolWarning}
             />
 
@@ -2549,4 +2596,8 @@ function formatPrintSlotSubtitle(slot: SeatingLayoutEditorSlot): string {
   const bucketCode = slot.bucket.code || slot.bucket.key;
 
   return [occurrenceLabel, bucketCode].filter(Boolean).join(" · ");
+}
+
+function seatingGuestSignature(registrationId: string | null, label: string | null, initials: string | null): string {
+  return [registrationId ?? "", label?.trim().toLocaleLowerCase("ru-RU") ?? "", initials?.trim().toLocaleLowerCase("ru-RU") ?? ""].join("|");
 }
