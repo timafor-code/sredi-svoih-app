@@ -519,6 +519,20 @@ export function SeatingLayoutEditor({
     isApplyingTemplate ||
     isDeletingTemplate ||
     isSavingTemplate;
+  const nonErrorFeedback: { message: string; tone: "muted" | "success" } | null =
+    feedback?.tone === "muted"
+      ? { message: feedback.message, tone: "muted" }
+      : feedback?.tone === "success"
+        ? { message: feedback.message, tone: "success" }
+        : null;
+  const toolbarStatus: { message: string; tone: "dirty" | "muted" | "success" } | null =
+    isSaving || isAutoAssigning || isTemplateBusy
+      ? nonErrorFeedback?.tone === "muted"
+        ? nonErrorFeedback
+        : null
+      : hasUnsavedChanges
+        ? { message: "Есть несохранённые изменения", tone: "dirty" }
+        : nonErrorFeedback;
   const layoutBusyReason = getLayoutBusyReason({
     isApplyingTemplate,
     isAutoAssigning,
@@ -1779,13 +1793,13 @@ export function SeatingLayoutEditor({
             templates={templates}
           />
 
-          {feedback?.message && feedback.tone !== "error" ? (
+          {toolbarStatus ? (
             <span
-              className={`seat-save-status seat-save-status--${feedback.tone}`}
+              className={`seat-save-status seat-save-status--${toolbarStatus.tone}`}
               role="status"
-              title={feedback.message}
+              title={toolbarStatus.message}
             >
-              {feedback.message}
+              {toolbarStatus.message}
             </span>
           ) : null}
 
@@ -1797,6 +1811,7 @@ export function SeatingLayoutEditor({
             title={saveDisabled ? layoutBusyReason ?? "Нужна валидная схема с одним раввинским столом." : "Сохранить схему рассадки"}
             variant="gold"
           >
+            <SaveIcon />
             {isSaving ? "Сохраняем..." : "Сохранить схему рассадки"}
           </Button></div>
         </div>
@@ -1804,20 +1819,30 @@ export function SeatingLayoutEditor({
         <div className="seat-body">
           <div className="seat-stage">
             <div className="seat-canvas-shell">
-              {feedback?.tone === "error" ? (
+              {layoutLoadError || (feedback?.tone === "error" && feedback.message !== layoutLoadError) ? (
                 <div className="seat-canvas-error-slot" role="alert">
-                  <div className="seat-canvas-banner seat-canvas-banner--error">
-                    <strong>Ошибка схемы рассадки.</strong>
-                    <span>{feedback.message}</span>
-                  </div>
-                  <button
-                    aria-label="Скрыть ошибку"
-                    className="seat-canvas-error-slot__close"
-                    onClick={() => setFeedback(null)}
-                    type="button"
-                  >
-                    ×
-                  </button>
+                  {layoutLoadError ? (
+                    <div className="seat-canvas-banner seat-canvas-banner--error">
+                      <strong>Не удалось загрузить сохраненную схему.</strong>
+                      <span>{layoutLoadError}</span>
+                    </div>
+                  ) : null}
+                  {feedback?.tone === "error" && feedback.message !== layoutLoadError ? (
+                    <div className="seat-canvas-error-slot__action">
+                      <div className="seat-canvas-banner seat-canvas-banner--error">
+                        <strong>Не удалось выполнить действие.</strong>
+                        <span>{feedback.message}</span>
+                      </div>
+                      <button
+                        aria-label="Скрыть ошибку"
+                        className="seat-canvas-error-slot__close"
+                        onClick={() => setFeedback(null)}
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -1864,7 +1889,7 @@ export function SeatingLayoutEditor({
                 >
                   Редактировать столы
                 </Button>
-                <Button className={seatEditEnabled ? "is-on" : undefined} disabled={isLayoutActionBusy} onClick={handleToggleSeatEdit} size="sm" title={layoutBusyReason ?? "Выключение мест"} variant="secondary">⌾ Выключение мест</Button>
+                <Button className={seatEditEnabled ? "is-on" : undefined} disabled={isLayoutActionBusy} onClick={handleToggleSeatEdit} size="sm" title={layoutBusyReason ?? "Выключение мест"} variant="secondary"><SeatEditIcon />Выключение мест</Button>
                 <span className="seat-toolbar__sep" />
                 <SeatingShortcutLegend />
               </div>
@@ -1930,7 +1955,7 @@ export function SeatingLayoutEditor({
             />
 
             <div className="seat-side-actions">
-              <Button className="seat-side-actions__primary" disabled={autoAssignDisabled} onClick={handleAutoAssign} size="md" title={autoAssignDisabledReason ?? "Сделать рассадку по текущей схеме"} variant="success">{isAutoAssigning ? "Делаем рассадку..." : isSeatingDone ? "Дорассадить свободных" : "Рассадить гостей"}</Button>
+              <Button className="seat-side-actions__primary" disabled={autoAssignDisabled} onClick={handleAutoAssign} size="md" title={autoAssignDisabledReason ?? "Сделать рассадку по текущей схеме"} variant="success"><SparkleIcon />{isAutoAssigning ? "Делаем рассадку..." : isSeatingDone ? "Дорассадить свободных" : "Рассадить гостей"}</Button>
               <Button
                 className="seat-print-sidebar-action"
                 disabled={!canPrintSeating}
@@ -1939,7 +1964,7 @@ export function SeatingLayoutEditor({
                 title={printDisabledReason ?? "Напечатать текущую рассадку"}
                 variant="secondary"
               >
-                Печать рассадки
+                <PrinterIcon />Печать рассадки
               </Button>
             </div>
           </aside>
@@ -2662,3 +2687,8 @@ function formatPrintSlotSubtitle(slot: SeatingLayoutEditorSlot): string {
 function seatingGuestSignature(registrationId: string | null, label: string | null, initials: string | null): string {
   return [registrationId ?? "", label?.trim().toLocaleLowerCase("ru-RU") ?? "", initials?.trim().toLocaleLowerCase("ru-RU") ?? ""].join("|");
 }
+
+function SaveIcon() { return <svg aria-hidden="true" className="seat-button-icon" fill="none" height="15" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24" width="15"><path d="M5 4.5h10.5L19.5 8.5V19.5H5zM8.5 4.5v4.8h6.2V4.5M8 19.5v-5.7h8v5.7" /></svg>; }
+function SparkleIcon() { return <svg aria-hidden="true" className="seat-button-icon" fill="none" height="15" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24" width="15"><path d="M9 3.6l1.3 3.4 3.4 1.3-3.4 1.3L9 13l-1.3-3.4-3.4-1.3 3.4-1.3zM17 13.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" /></svg>; }
+function PrinterIcon() { return <svg aria-hidden="true" className="seat-button-icon" fill="none" height="15" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24" width="15"><path d="M7.5 9V4.5h9V9M5.5 9h13a1.5 1.5 0 0 1 1.5 1.5v5H4v-5A1.5 1.5 0 0 1 5.5 9zM7.5 13.5h9v6h-9z" /></svg>; }
+function SeatEditIcon() { return <svg aria-hidden="true" className="seat-button-icon" fill="none" height="15" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24" width="15"><circle cx="12" cy="12" r="7.5" /><path d="M7 17 17 7" /></svg>; }
