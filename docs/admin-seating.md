@@ -87,6 +87,14 @@ Print keeps disabled chairs visibly present as hollow circles with diagonal stri
 39. Verify disabled print: hollow crossed visible chair, no number/occupant; contiguous active numbers; legend exclusion; numbers match; email/phone absent.
 40. With no disabled chairs, confirm auto seating, party grouping, rabbi protection/manual override, reserves, drag/drop, click-to-place, full list, save/reopen, print, capacity sync.
 
+## Operational Details
+
+The editor remains a manual tool for one selected event, occurrence, and capacity bucket. It does not create guests, auto-seat an empty pool, or infer registrations. Parties are grouped by registrationId: participants precede guests, compact placement at one eligible table is preferred, and directly connected tables are preferred if necessary. Manual drag/drop supports pool-to-seat, seat-to-seat, occupied-seat swap, and seat-to-pool; eligible locked placements and placed reserves survive repeat automatic seating.
+
+A template is reusable community-scoped geometry; a layout is the concrete plan for one event/occurrence/capacity slot. Save-as-template copies geometry and apply-template forks it. Assignments, guests, reserves, registration ids, occupancy, and capacity limits are never copied. Each valid layout has one rabbi table; ordinary auto seating excludes it, while manual drag/drop may place guests or reserves there. Reserves consume active chairs but create no registrations and do not change capacity.
+
+Printing is client-only A4 landscape browser printing. Visual/table order determines active print numbering rather than raw geometry index. Active occupied seats show initials plus number, empty seats show number, reserves are marked Резерв, and unseated guests/reserves remain separate.
+
 ## Out Of Scope
 
 Automatic derived/recreated table connections: feature/admin-seating-derived-connections is optional/deferred, not v17 mandatory. Also out: mobile seating, touch drag/drop, PDF library/server PDFs, household/surname/relationship inference, generalized optimization/preferences, payment changes, registration/donation business-rule changes.
