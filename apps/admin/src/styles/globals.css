@@ -10345,23 +10345,6 @@ a {
     inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
-.seat--disabled {
-  border: 1px solid rgba(255,255,255,.14);
-  background: rgba(0,0,0,.35);
-  color: var(--text-faint);
-}
-
-.seat--disabled::after {
-  content: "";
-  position: absolute;
-  left: 5px;
-  right: 5px;
-  top: 50%;
-  height: 1px;
-  background: var(--seat-disabled-line);
-  transform: rotate(-45deg);
-}
-
 .seat--preview {
   border-color: rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.035);
@@ -10386,6 +10369,23 @@ a {
 .seat--rabbi-head {
   border-color: rgba(242, 184, 75, 0.72);
   background: linear-gradient(135deg, var(--gold), #e09200);
+}
+
+.seat--disabled {
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(0,0,0,.35);
+  color: var(--text-faint);
+}
+
+.seat--disabled::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  top: 50%;
+  height: 1px;
+  background: var(--seat-disabled-line);
+  transform: rotate(-45deg);
 }
 
 /* PR 15: manual drag/drop visual states (seat namespace only). */
