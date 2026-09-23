@@ -9705,8 +9705,6 @@ a {
 }
 
 .seat-template-field select {
-  min-width: 250px;
-  max-width: 360px;
   width: 100%;
   height: 30px;
   border: 0;
@@ -9867,8 +9865,6 @@ a {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  max-height: min(190px, 34vh);
-  overflow: auto;
   border-top: 1px solid var(--glass-border);
   padding: 10px 14px;
   background: rgba(255, 255, 255, 0.025);
@@ -11244,28 +11240,6 @@ a {
   content: "★";
 }
 
-.seat-print-sidebar-action.button {
-  width: 100%;
-  min-height: 40px;
-  margin-top: 4px;
-  border-color: rgba(107, 127, 212, 0.62);
-  background: linear-gradient(135deg, #5c73d6, #3f5fc7);
-  color: white;
-  box-shadow: 0 12px 24px rgba(63, 95, 199, 0.22);
-}
-
-.seat-print-sidebar-action.button:hover:not(:disabled),
-.seat-print-sidebar-action.button:focus-visible:not(:disabled) {
-  border-color: rgba(139, 159, 255, 0.74);
-  background: linear-gradient(135deg, #6b82e8, #4f6fe0);
-  box-shadow: 0 14px 28px rgba(63, 95, 199, 0.28);
-}
-
-.seat-print-sidebar-action.button:focus-visible {
-  outline: 2px solid rgba(139, 159, 255, 0.72);
-  outline-offset: 2px;
-}
-
 .seat-print-sidebar-action.button:disabled {
   border-color: rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.08);
@@ -11755,13 +11729,508 @@ a {
   }
 
   .seat-layout-controls {
-    max-height: 118px;
     padding-top: 8px;
     padding-bottom: 8px;
   }
 
   .seat-pool__list {
     max-height: 180px;
+  }
+}
+
+/* Seating editor panel and feedback stabilization. Keep these after legacy seat rules. */
+.seat-side-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "alert"
+    "pool"
+    "actions";
+  gap: 0;
+}
+
+.seat-capacity-alert {
+  grid-area: alert;
+  margin-bottom: 14px;
+}
+
+.seat-side-panel > .seat-pool {
+  grid-area: pool;
+  min-height: 0;
+}
+
+.seat-side-actions {
+  grid-area: actions;
+  align-content: start;
+  margin-top: 14px;
+}
+
+.seat-pool__list {
+  align-content: flex-start;
+  align-items: flex-start;
+}
+
+.seat-toolbar__save {
+  width: 100%;
+  min-height: 38px;
+  border-color: rgba(242, 184, 75, 0.55);
+  background: var(--gold-soft);
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.seat-toolbar__save.is-dirty {
+  border-color: var(--gold);
+  background: var(--gold);
+  color: #2b1c00;
+}
+
+.seat-save-status {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.25;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.seat-canvas-shell {
+  position: relative;
+}
+
+.seat-canvas-error-slot {
+  top: auto;
+  bottom: 12px;
+}
+
+.seat-canvas-error-slot .seat-canvas-banner--error {
+  border: 1px solid rgba(229, 44, 54, 0.34);
+  border-radius: 8px;
+  padding-right: 42px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+}
+
+.seat-canvas-error-slot__close {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: currentColor;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.seat-canvas-error-slot__action {
+  position: relative;
+  margin-top: 8px;
+}
+
+.seat-layout-controls {
+  max-height: none;
+  overflow: visible;
+}
+
+@media (min-width: 1280px) {
+  .seat-layout-controls {
+    gap: 6px;
+  }
+
+  .seat-layout-controls .button {
+    white-space: nowrap;
+  }
+
+  .seat-layout-controls > :not(.seat-shortcuts) {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 1080px) {
+  .seat-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(200px, 36vh);
+  }
+
+  .seat-side-panel {
+    border-top: 1px solid var(--glass-border);
+    border-left: 0;
+  }
+}
+
+/* Follow-up seating chrome alignment. Keep after the panel stabilization rules. */
+.seat-save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.seat-save-status::before {
+  content: "";
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.seat-save-status--dirty {
+  color: var(--gold);
+}
+
+.seat-template-selector {
+  flex: 0 1 auto;
+}
+
+.seat-template-field {
+  flex: 0 1 auto;
+  min-width: 280px;
+  max-width: 360px;
+}
+
+.seat-modal__head .seat-metric span {
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.seat-modal__head .seat-metric--warn span {
+  color: rgba(242, 184, 75, 0.8);
+}
+
+.seat-pool {
+  display: flex;
+  flex-direction: column;
+}
+
+.seat-pool__head,
+.seat-pool__hint {
+  flex: none;
+}
+
+.seat-pool__list {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border: 0;
+  padding: 0;
+}
+
+.seat-pool__list--drop {
+  border: 1px dashed var(--gold);
+  padding: 10px;
+}
+
+.seat-toolbar__save,
+.seat-side-actions .button,
+.seat-layout-controls .button {
+  gap: 6px;
+}
+
+.seat-button-icon {
+  flex: 0 0 15px;
+}
+
+.seat-layout-controls .seat-icon-button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+
+/* Final prototype parity adjustments for the seating editor. */
+.seat-modal {
+  width: min(1400px, calc(100vw - 32px));
+  height: calc(100vh - 32px);
+  max-height: calc(100vh - 32px);
+  min-height: min(620px, calc(100vh - 32px));
+}
+
+.seat-toolbar {
+  gap: 10px;
+}
+
+.seat-template-selector {
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+.seat-template-field {
+  flex: 0 0 auto;
+  width: 340px;
+  min-width: 0;
+  max-width: 340px;
+  min-height: 34px;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.seat-template-field span {
+  flex: none;
+}
+
+.seat-template-field select {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  width: auto;
+  cursor: pointer;
+}
+
+.seat-canvas-wrap {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+  padding: 16px;
+}
+
+.seat-canvas-tools {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 8;
+  gap: 4px;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  background: rgba(16, 17, 32, 0.86);
+  backdrop-filter: blur(8px);
+}
+
+.seat-canvas-tool,
+.seat-canvas-scale {
+  min-width: 30px;
+  min-height: 26px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 8px;
+  background: none;
+  color: var(--text-soft);
+  font-weight: 700;
+}
+
+.seat-canvas-tool:hover:not(:disabled),
+.seat-canvas-tool:focus-visible {
+  background: var(--glass-strong);
+  color: var(--text);
+}
+
+.seat-canvas-scale {
+  min-width: 46px;
+  font-variant-numeric: tabular-nums;
+}
+
+.seat-table__label {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.seat-table--rabbi .seat-table__label {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.seat-table__size {
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 750;
+  color: rgba(242, 184, 75, 0.9);
+}
+
+.seat-pool__head {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.seat-pool__head h4 {
+  white-space: nowrap;
+}
+
+.seat-pool__head-meta {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.seat-pool__count {
+  margin-left: auto;
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 2px 7px;
+  background: var(--glass);
+  color: var(--text-soft);
+  font-size: 10.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.seat-pool__all {
+  min-height: 26px;
+  border: 1px solid var(--glass-border);
+  padding: 0 9px;
+  background: var(--glass);
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.seat-pool__all:hover,
+.seat-pool__all:focus-visible {
+  border-color: var(--glass-border);
+  background: var(--glass-strong);
+  color: var(--text);
+}
+
+.seat-pool__add {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  place-items: center;
+  border-color: rgba(242, 184, 75, 0.5);
+  padding: 0;
+}
+
+.seat-pool__list {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.seat-guest-chip,
+.seat-reserve-chip {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  border-radius: 10px;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.seat-guest-chip {
+  border-color: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.seat-guest-chip:hover {
+  border-color: var(--glass-border);
+  background: var(--glass);
+}
+
+.seat-guest-chip.is-selected {
+  border-color: rgba(242, 184, 75, 0.55);
+  background: rgba(242, 184, 75, 0.1);
+  box-shadow: none;
+}
+
+.seat-guest-chip__initials,
+.seat-reserve-chip__initials {
+  flex-basis: 30px;
+  width: 30px;
+  height: 30px;
+}
+
+.seat-guest-chip__body strong,
+.seat-reserve-chip__body strong {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.seat-guest-chip__body span,
+.seat-guest-chip__body small,
+.seat-reserve-chip__body span {
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.seat-layout-controls {
+  gap: 10px;
+  padding: 9px 16px;
+}
+
+.seat-controls-group__label,
+.seat-controls-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.seat-shortcuts {
+  color: var(--text-faint);
+}
+
+.seat-shortcuts span {
+  font-size: 10.5px;
+}
+
+.seat-shortcuts kbd {
+  border: 1px solid var(--glass-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  background: var(--glass);
+  color: var(--text-soft);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .seat-canvas-tools {
+    background: var(--surface-strong);
+    backdrop-filter: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .seat-modal {
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+    max-height: calc(100vh - 16px);
+    min-height: 0;
+  }
+
+  .seat-template-selector,
+  .seat-template-field {
+    flex-basis: 100%;
+  }
+
+  .seat-template-field {
+    width: auto;
+    max-width: none;
+  }
+}
+
+@media (max-height: 680px) {
+  .seat-modal {
+    height: calc(100vh - 16px);
+    max-height: calc(100vh - 16px);
+    min-height: 0;
+  }
+
+  .seat-canvas-wrap {
+    padding: 10px;
+  }
+
+  .seat-layout-controls {
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
 }
 

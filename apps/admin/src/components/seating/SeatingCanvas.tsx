@@ -50,6 +50,13 @@ export function SeatingCanvas({ cancelVersion, connections, geometry, isSeatingD
 
   const connectedTableIds = useMemo(() => new Set(connections.flatMap((connection) => [connection.aTableId, connection.bTableId])), [connections]);
   const occupantsBySeat = useMemo(() => new Map(occupants.map((occupant) => [occupant.seatIndex, occupant])), [occupants]);
+  const activeSeatCountByTableId = useMemo(() => {
+    const counts = new Map<string, number>();
+    geometry.seats.forEach((seat) => {
+      if (!seat.isDisabled) counts.set(seat.tableId, (counts.get(seat.tableId) ?? 0) + 1);
+    });
+    return counts;
+  }, [geometry.seats]);
   const updateView = useCallback((patch: Partial<CanvasView>) => { viewRef.current = { ...viewRef.current, ...patch }; setView(viewRef.current); }, []);
   const stopSpring = useCallback((key: SpringKey) => { springsRef.current[key]?.stop(); delete springsRef.current[key]; }, []);
   const springTo = useCallback((key: SpringKey, target: number, config: { response: number; eps: number; vEps: number; velocity?: number }) => {
@@ -61,8 +68,8 @@ export function SeatingCanvas({ cancelVersion, connections, geometry, isSeatingD
   const fitTarget = useCallback(() => {
     const wrap = wrapRef.current;
     if (!wrap) return 1;
-    const availableWidth = Math.max(120, wrap.clientWidth - 24);
-    const availableHeight = Math.max(120, (wrap.clientHeight || Math.round(window.innerHeight * 0.7)) - 24);
+    const availableWidth = Math.max(120, wrap.clientWidth - 32);
+    const availableHeight = Math.max(120, (wrap.clientHeight || Math.round(window.innerHeight * 0.7)) - 32);
     return clampScale(Math.min(availableWidth / canvasWidth, availableHeight / canvasHeight));
   }, [canvasHeight, canvasWidth]);
   const applyFit = useCallback(() => {
@@ -142,7 +149,7 @@ export function SeatingCanvas({ cancelVersion, connections, geometry, isSeatingD
       <button className={["seat-canvas-tool", "seat-canvas-tool--fit", view.autoFit ? "is-on" : ""].filter(Boolean).join(" ")} onClick={fit} title="Подогнать схему под видимую область" type="button">По размеру</button>
     </div>
     <div className="seat-canvas-viewport" style={{ height: Math.ceil(canvasHeight * view.scale), width: Math.ceil(canvasWidth * view.scale) }}><div aria-label="Конструктор схемы столов" className="seat-canvas" ref={canvasRef} role="application" style={canvasStyle}>
-      {tables.map((table, index) => { const selected = !isSeatingDone && table.id === selectedTableId; return <div aria-pressed={isSeatingDone ? undefined : selected} className={["seat-table", isSeatingDone ? "seat-table--locked" : "seat-table--editable", selected ? "seat-table--selected" : "", connectedTableIds.has(table.id) ? "seat-table--connected" : "", table.isRabbiTable ? "seat-table--rabbi" : ""].filter(Boolean).join(" ")} key={table.id} onKeyDown={(event) => { if (!isSeatingDone && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onSelectTable(table.id); } }} onPointerDown={(event) => handleTablePointerDown(event, table)} role={isSeatingDone ? "img" : "button"} style={{ height: table.h, left: table.cx - table.w / 2, top: table.cy - table.h / 2, transform: `rotate(${table.angle || 0}deg)`, width: table.w }} tabIndex={isSeatingDone ? -1 : 0} title={`Стол ${index + 1}. Перетащите стол по схеме; поворот — кнопкой ↻ 90°.`}><span className="seat-table__label">{table.isRabbiTable ? <span className="seat-table__role">Раввинский стол</span> : null}Стол {index + 1}{table.isRabbiTable ? null : ` · ${table.angle || 0}°`}<span className="seat-table__size">{table.sideSeats === 2 ? 2 : 3} места/стор.</span></span></div>; })}
+      {tables.map((table, index) => { const selected = !isSeatingDone && table.id === selectedTableId; const activeSeatCount = activeSeatCountByTableId.get(table.id) ?? 0; const sideSeats = table.sideSeats === 2 ? 2 : 3; return <div aria-pressed={isSeatingDone ? undefined : selected} className={["seat-table", isSeatingDone ? "seat-table--locked" : "seat-table--editable", selected ? "seat-table--selected" : "", connectedTableIds.has(table.id) ? "seat-table--connected" : "", table.isRabbiTable ? "seat-table--rabbi" : ""].filter(Boolean).join(" ")} key={table.id} onKeyDown={(event) => { if (!isSeatingDone && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onSelectTable(table.id); } }} onPointerDown={(event) => handleTablePointerDown(event, table)} role={isSeatingDone ? "img" : "button"} style={{ height: table.h, left: table.cx - table.w / 2, top: table.cy - table.h / 2, transform: `rotate(${table.angle || 0}deg)`, width: table.w }} tabIndex={isSeatingDone ? -1 : 0} title={`Стол ${index + 1}. Перетащите стол по схеме; поворот — клавиша R.`}><span className="seat-table__label">{table.isRabbiTable ? <span className="seat-table__role">Раввинский стол</span> : null}Стол {index + 1}{table.isRabbiTable ? null : ` · ${table.angle || 0}°`}<span className="seat-table__size">{sideSeats}/стор. · {activeSeatCount} {pluralizePlace(activeSeatCount)}</span></span></div>; })}
       {geometry.seams.map((seam, index) => <span className="seat-seam" key={`${seam.x}:${seam.y}:${index}`} style={{ left: seam.x, top: seam.y }} title="Торцы соединены: посадка на этом торце отключена" />)}
       {geometry.seats.map((seat, index) => {
         const isHead = index === geometry.headIndex; const occupant = seat.isDisabled ? undefined : occupantsBySeat.get(index); const isDropTarget = !seat.isDisabled && manualSeatingEnabled && dropTargetSeatIndex === index; const isPlacementTarget = seatPlacementPending && !seat.isDisabled && !occupant; const toggleable = Boolean(onToggleSeat);
@@ -158,3 +165,4 @@ export function SeatingCanvas({ cancelVersion, connections, geometry, isSeatingD
 
 function getCanvasScale(canvas: HTMLDivElement | null): number { if (!canvas) return 1; const rect = canvas.getBoundingClientRect(); return rect.width && canvas.offsetWidth ? rect.width / canvas.offsetWidth : 1; }
 function clampScale(value: number): number { if (!Number.isFinite(value) || value <= 0) return 1; return Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.round(value * 100) / 100)); }
+function pluralizePlace(value: number): string { const remainder100 = Math.abs(value) % 100; const remainder10 = Math.abs(value) % 10; return remainder100 >= 11 && remainder100 <= 14 ? "мест" : remainder10 === 1 ? "место" : remainder10 >= 2 && remainder10 <= 4 ? "места" : "мест"; }
