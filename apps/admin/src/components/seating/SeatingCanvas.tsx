@@ -12,17 +12,18 @@ const MAX_SCALE = 1.5;
 const SCALE_STEP = 0.1;
 
 type CanvasView = { scale: number; autoFit: boolean; panX: number; panY: number };
-type DragState = { id: string; origCx: number; origCy: number; startX: number; startY: number; moved: boolean };
+type DragState = { id: string; origCx: number; origCy: number; startX: number; startY: number; moved: boolean; lastCenter: { cx: number; cy: number } | null };
 type PanState = { pointerId: number; startX: number; startY: number; panX: number; panY: number; samples: Array<{ t: number; x: number; y: number }> };
 type SpringKey = "scale" | "panX" | "panY";
 
-export function SeatingCanvas({ cancelVersion, connections, geometry, isSeatingDone, manualSeatingEnabled = false, onMoveTable, onSeatClick, onSeatDragEnd, onSeatDragStart, onSeatDrop, onSelectTable, onToggleSeat, occupants, seatEditEnabled = false, seatPlacementPending = false, selectedTableId, tables }: {
+export function SeatingCanvas({ cancelVersion, connections, geometry, isSeatingDone, manualSeatingEnabled = false, onMoveTable, onMoveTableEnd, onSeatClick, onSeatDragEnd, onSeatDragStart, onSeatDrop, onSelectTable, onToggleSeat, occupants, seatEditEnabled = false, seatPlacementPending = false, selectedTableId, tables }: {
   cancelVersion?: number;
   connections: SeatingConnection[];
   geometry: SeatingGeometryResult;
   isSeatingDone: boolean;
   manualSeatingEnabled?: boolean;
   onMoveTable: (tableId: string, center: { cx: number; cy: number }) => void;
+  onMoveTableEnd?: (tableId: string, center: { cx: number; cy: number }) => void;
   onSeatClick?: (seatIndex: number) => void;
   onSeatDragEnd?: () => void;
   onSeatDragStart?: (seatIndex: number) => void;
@@ -38,6 +39,7 @@ export function SeatingCanvas({ cancelVersion, connections, geometry, isSeatingD
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
+  const dragRef = useRef<DragState | null>(null);
   const [pan, setPan] = useState<PanState | null>(null);
   const [view, setView] = useState<CanvasView>({ scale: 1, autoFit: true, panX: 0, panY: 0 });
   const viewRef = useRef(view);
@@ -93,14 +95,22 @@ export function SeatingCanvas({ cancelVersion, connections, geometry, isSeatingD
       const dx = event.clientX - drag.startX;
       const dy = event.clientY - drag.startY;
       if (!drag.moved && Math.hypot(dx, dy) < 3) return;
-      if (!drag.moved) setDrag((current) => current ? { ...current, moved: true } : null);
       const scale = getCanvasScale(canvasRef.current);
-      onMoveTable(drag.id, { cx: drag.origCx + dx / scale, cy: drag.origCy + dy / scale });
+      const center = { cx: drag.origCx + dx / scale, cy: drag.origCy + dy / scale };
+      const nextDrag = { ...drag, moved: true, lastCenter: center };
+      dragRef.current = nextDrag;
+      setDrag(nextDrag);
+      onMoveTable(drag.id, center);
     };
-    const up = () => setDrag(null);
+    const up = () => {
+      const finalDrag = dragRef.current;
+      if (finalDrag?.moved && finalDrag.lastCenter) onMoveTableEnd?.(finalDrag.id, finalDrag.lastCenter);
+      dragRef.current = null;
+      setDrag(null);
+    };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up, { once: true });
     return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-  }, [drag, onMoveTable]);
+  }, [drag, onMoveTable, onMoveTableEnd]);
   useEffect(() => { if (!drag && pendingFitRef.current) { pendingFitRef.current = false; applyFit(); } }, [applyFit, drag]);
 
   const finishPan = useCallback((state: PanState) => {
@@ -135,7 +145,7 @@ export function SeatingCanvas({ cancelVersion, connections, geometry, isSeatingD
     setPan({ ...pan, samples: [...pan.samples, { t: event.timeStamp, x: event.clientX, y: event.clientY }].slice(-6) });
   }, [pan, updateView]);
   const handleWrapPointerEnd = useCallback((event: ReactPointerEvent<HTMLDivElement>) => { if (!pan || event.pointerId !== pan.pointerId) return; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); finishPan(pan); }, [finishPan, pan]);
-  const handleTablePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>, table: SeatingTable) => { if (isSeatingDone || event.button !== 0) return; event.preventDefault(); onSelectTable(table.id); setDrag({ id: table.id, origCx: table.cx, origCy: table.cy, startX: event.clientX, startY: event.clientY, moved: false }); }, [isSeatingDone, onSelectTable]);
+  const handleTablePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>, table: SeatingTable) => { if (event.button !== 0 || (event.target as Element).closest(".seat")) return; event.preventDefault(); onSelectTable(table.id); const nextDrag = { id: table.id, origCx: table.cx, origCy: table.cy, startX: event.clientX, startY: event.clientY, moved: false, lastCenter: null }; dragRef.current = nextDrag; setDrag(nextDrag); }, [onSelectTable]);
   const handleSeatDragStart = useCallback((event: ReactDragEvent<HTMLSpanElement>, index: number) => { if (!manualSeatingEnabled || !onSeatDragStart) return; event.dataTransfer.setData("text/plain", `seat:${index}`); event.dataTransfer.effectAllowed = "move"; setDraggingSeatIndex(index); onSeatDragStart(index); }, [manualSeatingEnabled, onSeatDragStart]);
   const handleSeatDrop = useCallback((event: ReactDragEvent<HTMLDivElement>, index: number) => { if (!manualSeatingEnabled || !onSeatDrop) return; event.preventDefault(); setDropTargetSeatIndex(null); setDraggingSeatIndex(null); onSeatDrop(index); }, [manualSeatingEnabled, onSeatDrop]);
 
@@ -149,7 +159,7 @@ export function SeatingCanvas({ cancelVersion, connections, geometry, isSeatingD
       <button className={["seat-canvas-tool", "seat-canvas-tool--fit", view.autoFit ? "is-on" : ""].filter(Boolean).join(" ")} onClick={fit} title="Подогнать схему под видимую область" type="button">По размеру</button>
     </div>
     <div className="seat-canvas-viewport" style={{ height: Math.ceil(canvasHeight * view.scale), width: Math.ceil(canvasWidth * view.scale) }}><div aria-label="Конструктор схемы столов" className="seat-canvas" ref={canvasRef} role="application" style={canvasStyle}>
-      {tables.map((table, index) => { const selected = !isSeatingDone && table.id === selectedTableId; const activeSeatCount = activeSeatCountByTableId.get(table.id) ?? 0; const sideSeats = table.sideSeats === 2 ? 2 : 3; return <div aria-pressed={isSeatingDone ? undefined : selected} className={["seat-table", isSeatingDone ? "seat-table--locked" : "seat-table--editable", selected ? "seat-table--selected" : "", connectedTableIds.has(table.id) ? "seat-table--connected" : "", table.isRabbiTable ? "seat-table--rabbi" : ""].filter(Boolean).join(" ")} key={table.id} onKeyDown={(event) => { if (!isSeatingDone && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onSelectTable(table.id); } }} onPointerDown={(event) => handleTablePointerDown(event, table)} role={isSeatingDone ? "img" : "button"} style={{ height: table.h, left: table.cx - table.w / 2, top: table.cy - table.h / 2, transform: `rotate(${table.angle || 0}deg)`, width: table.w }} tabIndex={isSeatingDone ? -1 : 0} title={`Стол ${index + 1}. Перетащите стол по схеме; поворот — клавиша R.`}><span className="seat-table__label">{table.isRabbiTable ? <span className="seat-table__role">Раввинский стол</span> : null}Стол {index + 1}{table.isRabbiTable ? null : ` · ${table.angle || 0}°`}<span className="seat-table__size">{sideSeats}/стор. · {activeSeatCount} {pluralizePlace(activeSeatCount)}</span></span></div>; })}
+      {tables.map((table, index) => { const selected = table.id === selectedTableId; const activeSeatCount = activeSeatCountByTableId.get(table.id) ?? 0; const sideSeats = table.sideSeats === 2 ? 2 : 3; return <div aria-pressed={selected} className={["seat-table", "seat-table--editable", selected ? "seat-table--selected" : "", connectedTableIds.has(table.id) ? "seat-table--connected" : "", table.isRabbiTable ? "seat-table--rabbi" : ""].filter(Boolean).join(" ")} key={table.id} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectTable(table.id); } }} onPointerDown={(event) => handleTablePointerDown(event, table)} role="button" style={{ height: table.h, left: table.cx - table.w / 2, top: table.cy - table.h / 2, transform: `rotate(${table.angle || 0}deg)`, width: table.w }} tabIndex={0} title={`Стол ${index + 1}. Перетащите стол по схеме; поворот — клавиша R.`}><span className="seat-table__label">{table.isRabbiTable ? <span className="seat-table__role">Раввинский стол</span> : null}Стол {index + 1}{table.isRabbiTable ? null : ` · ${table.angle || 0}°`}<span className="seat-table__size">{sideSeats}/стор. · {activeSeatCount} {pluralizePlace(activeSeatCount)}</span></span></div>; })}
       {geometry.seams.map((seam, index) => <span className="seat-seam" key={`${seam.x}:${seam.y}:${index}`} style={{ left: seam.x, top: seam.y }} title="Торцы соединены: посадка на этом торце отключена" />)}
       {geometry.seats.map((seat, index) => {
         const isHead = index === geometry.headIndex; const occupant = seat.isDisabled ? undefined : occupantsBySeat.get(index); const isDropTarget = !seat.isDisabled && manualSeatingEnabled && dropTargetSeatIndex === index; const isPlacementTarget = seatPlacementPending && !seat.isDisabled && !occupant; const toggleable = Boolean(onToggleSeat);

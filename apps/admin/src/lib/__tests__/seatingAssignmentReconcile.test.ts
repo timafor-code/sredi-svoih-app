@@ -1,4 +1,4 @@
-import { reconcileSeatingAssignments } from "../seatingAssignmentReconcile";
+import { reconcileAfterGeometryChange, reconcileSeatingAssignments } from "../seatingAssignmentReconcile";
 import { seatingSeatKey } from "../seatingAutoAssign";
 import { TABLE_H, TABLE_W, computeTableSeats } from "../seatingGeometry";
 import type {
@@ -158,6 +158,62 @@ test("seat still exists (table moved) -> assignment is kept", () => {
   assertEqual(result.counts.returnedCount, 0, "returned count");
   assertEqual(result.keptAssignments.length, 1, "kept array");
   assert(result.assignments[0].seatKey !== null, "kept placement still seated");
+});
+
+test("reconcileAfterGeometryChange keeps a moved table's seated guest", () => {
+  const geometry = defaultGeometry();
+  const guest = makeGuest(1);
+  const assignment = placedGuest(guest, geometry, regularSeatIndexes(geometry)[0]);
+  const movedGeometry = computeTableSeats({ tables: [makeTable({ id: "rabbi", cx: 100, cy: 100, isRabbiTable: true }), makeTable({ id: "regular", cx: 380, cy: 360, isRabbiTable: false })] });
+  const result = reconcileAfterGeometryChange({ assignments: [assignment], geometry: movedGeometry, guestPool: [guest] });
+  assertEqual(result.returnedCount, 0, "moved table must keep its assignment");
+  assert(result.assignments[0].seatKey !== null, "guest remains seated");
+});
+
+test("reconcileAfterGeometryChange returns only a removed side seat", () => {
+  const geometry = defaultGeometry();
+  const guest = makeGuest(1);
+  const assignment = placedGuest(guest, geometry, geometry.seats.findIndex((seat) => seat.tableId === "regular" && seat.kind === "side" && seat.edge === "a" && seat.slot === 2));
+  const reduced = computeTableSeats({ tables: [makeTable({ id: "rabbi", cx: 100, cy: 100, isRabbiTable: true }), makeTable({ id: "regular", cx: 300, cy: 100, sideSeats: 2 })] });
+  const result = reconcileAfterGeometryChange({ assignments: [assignment], geometry: reduced, guestPool: [guest] });
+  assertEqual(result.returnedCount, 1, "removed side seat returns its guest");
+  assertEqual(result.assignments[0].seatKey, null, "guest is pooled");
+});
+
+test("reconcileAfterGeometryChange returns a reserve from a removed table", () => {
+  const geometry = defaultGeometry();
+  const reserve = placedReserve("res-removed", geometry, regularSeatIndexes(geometry)[0]);
+  const reduced = computeTableSeats({ tables: [makeTable({ id: "rabbi", cx: 100, cy: 100, isRabbiTable: true })] });
+  const result = reconcileAfterGeometryChange({ assignments: [reserve], geometry: reduced, guestPool: [] });
+  assertEqual(result.returnedCount, 1, "removed reserve is returned");
+  assertEqual(result.assignments[0].type, "reserve", "reserve stays in its pool");
+  assertEqual(result.assignments[0].seatKey, null, "reserve has no seat");
+});
+
+test("reconcileAfterGeometryChange leaves a locked guest on another table seated", () => {
+  const geometry = computeTableSeats({ tables: [...defaultTables(), makeTable({ id: "kept", cx: 320, cy: 340 })] });
+  const returnedGuest = makeGuest(1);
+  const lockedGuest = makeGuest(2);
+  const removed = placedGuest(returnedGuest, geometry, regularSeatIndexes(geometry)[0]);
+  const keptSeatIndex = geometry.seats.findIndex((seat) => seat.tableId === "kept" && !seat.isDisabled);
+  const kept = placedGuest(lockedGuest, geometry, keptSeatIndex, { locked: true, placementSource: "manual" });
+  const reduced = computeTableSeats({ tables: [makeTable({ id: "rabbi", cx: 100, cy: 100, isRabbiTable: true }), makeTable({ id: "kept", cx: 320, cy: 340 })] });
+  const result = reconcileAfterGeometryChange({ assignments: [removed, kept], geometry: reduced, guestPool: [returnedGuest, lockedGuest] });
+  assertEqual(result.returnedCount, 1, "only the removed table occupant returns");
+  assertEqual(result.assignments[0].seatKey, null, "removed guest is pooled");
+  assert(result.assignments[1].seatKey !== null, "locked guest is untouched");
+});
+
+test("reconcileAfterGeometryChange returns an occupant when its seat is disabled", () => {
+  const geometry = defaultGeometry();
+  const guest = makeGuest(1);
+  const seatIndex = regularSeatIndexes(geometry)[0];
+  const assignment = placedGuest(guest, geometry, seatIndex);
+  const seat = geometry.seats[seatIndex];
+  const disabled = computeTableSeats({ tables: [makeTable({ id: "rabbi", cx: 100, cy: 100, isRabbiTable: true }), makeTable({ id: "regular", cx: 300, cy: 100, disabledSeats: [`side:${seat.edge}:${seat.slot}`] })] });
+  const result = reconcileAfterGeometryChange({ assignments: [assignment], geometry: disabled, guestPool: [guest] });
+  assertEqual(result.returnedCount, 1, "disabled seat returns its occupant");
+  assertEqual(result.assignments[0].seatKey, null, "occupant is pooled");
 });
 
 test("seat disappeared -> occupant returns to the pool", () => {
