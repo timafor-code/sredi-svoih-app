@@ -11541,6 +11541,24 @@ a {
     background: #e2e8f0;
   }
 
+  .seat-print-seat--disabled {
+    border: 1px solid #94a3b8;
+    background: #fff;
+    color: transparent;
+  }
+
+  .seat-print-seat--disabled::after {
+    position: absolute;
+    top: 50%;
+    right: 5px;
+    left: 5px;
+    height: 1px;
+    background: #64748b;
+    content: "";
+    transform: rotate(-45deg);
+    transform-origin: center;
+  }
+
   .seat-print-seat strong,
   .seat-print-seat span {
     display: block;

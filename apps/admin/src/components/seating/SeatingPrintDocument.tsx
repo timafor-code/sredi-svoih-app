@@ -83,24 +83,28 @@ export function SeatingPrintDocument({ model }: { model: SeatingPrintModel }) {
                 />
               ))}
 
-              {model.canvas.seats.map((seat) => (
+              {model.canvas.seats.map((seat, seatIndex) => (
                 <div
                   className={[
                     "seat-print-seat",
-                    seat.occupant ? "seat-print-seat--occupied" : "seat-print-seat--empty",
+                    seat.isDisabled
+                      ? "seat-print-seat--disabled"
+                      : seat.occupant
+                        ? "seat-print-seat--occupied"
+                        : "seat-print-seat--empty",
                     seat.isRabbiTable ? "seat-print-seat--rabbi" : "",
                     seat.isHead ? "seat-print-seat--head" : "",
                     seat.occupant?.type === "reserve" ? "seat-print-seat--reserve" : "",
                   ]
                     .filter(Boolean)
                     .join(" ")}
-                  key={seat.seatNumber}
+                  key={seat.seatNumber ?? `disabled:${seatIndex}`}
                   style={{
                     left: seat.x - PRINT_SEAT_SIZE / 2,
                     top: seat.y - PRINT_SEAT_SIZE / 2,
                   }}
                 >
-                  {seat.occupant ? (
+                  {seat.isDisabled ? null : seat.occupant ? (
                     <strong>{seat.occupant.schemeLabel}</strong>
                   ) : (
                     <span>{seat.seatNumber}</span>
