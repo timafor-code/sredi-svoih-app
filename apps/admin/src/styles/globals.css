@@ -9867,8 +9867,6 @@ a {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  max-height: min(190px, 34vh);
-  overflow: auto;
   border-top: 1px solid var(--glass-border);
   padding: 10px 14px;
   background: rgba(255, 255, 255, 0.025);
@@ -11755,13 +11753,136 @@ a {
   }
 
   .seat-layout-controls {
-    max-height: 118px;
     padding-top: 8px;
     padding-bottom: 8px;
   }
 
   .seat-pool__list {
     max-height: 180px;
+  }
+}
+
+/* Seating editor panel and feedback stabilization. Keep these after legacy seat rules. */
+.seat-side-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "alert"
+    "pool"
+    "actions";
+  gap: 0;
+}
+
+.seat-capacity-alert {
+  grid-area: alert;
+  margin-bottom: 14px;
+}
+
+.seat-side-panel > .seat-pool {
+  grid-area: pool;
+  min-height: 0;
+}
+
+.seat-side-actions {
+  grid-area: actions;
+  align-content: start;
+  margin-top: 14px;
+}
+
+.seat-pool__list {
+  align-content: flex-start;
+  align-items: flex-start;
+}
+
+.seat-toolbar__save {
+  width: 100%;
+  min-height: 38px;
+  border-color: rgba(242, 184, 75, 0.55);
+  background: var(--gold-soft);
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.seat-toolbar__save.is-dirty {
+  border-color: var(--gold);
+  background: var(--gold);
+  color: #2b1c00;
+}
+
+.seat-save-status {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.25;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.seat-canvas-shell {
+  position: relative;
+}
+
+.seat-canvas-error-slot {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  right: 12px;
+  left: 12px;
+}
+
+.seat-canvas-error-slot .seat-canvas-banner--error {
+  border: 1px solid rgba(229, 44, 54, 0.34);
+  border-radius: 8px;
+  padding-right: 42px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+}
+
+.seat-canvas-error-slot__close {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: currentColor;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.seat-layout-controls {
+  max-height: none;
+  overflow: visible;
+}
+
+@media (min-width: 1280px) {
+  .seat-layout-controls {
+    gap: 6px;
+  }
+
+  .seat-layout-controls .button {
+    white-space: nowrap;
+  }
+
+  .seat-layout-controls > :not(.seat-shortcuts) {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 1080px) {
+  .seat-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(200px, 36vh);
+  }
+
+  .seat-side-panel {
+    border-top: 1px solid var(--glass-border);
+    border-left: 0;
   }
 }
 

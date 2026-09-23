@@ -257,13 +257,7 @@ export function SeatingLayoutEditor({
             ? error.message
             : "Не удалось загрузить схему рассадки.";
         setLayoutLoadError(layoutErrorMessage);
-        setFeedback({
-          message:
-            error instanceof Error
-              ? error.message
-              : "Не удалось загрузить схему рассадки.",
-          tone: "error",
-        });
+        setFeedback({ message: layoutErrorMessage, tone: "error" });
       })
       .finally(() => {
         if (!cancelled) {
@@ -1447,8 +1441,7 @@ export function SeatingLayoutEditor({
     setReconcileNotice(null);
     setSelectedTableId(pickSelectedTableId(tables));
     setFeedback({
-      message:
-        "Режим редактирования включён. Гости скрыты; assignments сохранятся и будут восстановлены при возврате к рассадке.",
+      message: "Редактирование столов: гости скрыты, рассадка сохранится.",
       tone: "muted",
     });
   }, [isLayoutActionBusy, isSeatingDone, tables]);
@@ -1786,10 +1779,11 @@ export function SeatingLayoutEditor({
             templates={templates}
           />
 
-          {feedback?.message ? (
+          {feedback?.message && feedback.tone !== "error" ? (
             <span
               className={`seat-save-status seat-save-status--${feedback.tone}`}
-              role={feedback.tone === "error" ? "alert" : "status"}
+              role="status"
+              title={feedback.message}
             >
               {feedback.message}
             </span>
@@ -1810,10 +1804,20 @@ export function SeatingLayoutEditor({
         <div className="seat-body">
           <div className="seat-stage">
             <div className="seat-canvas-shell">
-              {layoutLoadError ? (
-                <div className="seat-canvas-banner seat-canvas-banner--error" role="alert">
-                  <strong>Не удалось загрузить сохраненную схему.</strong>
-                  <span>{layoutLoadError}</span>
+              {feedback?.tone === "error" ? (
+                <div className="seat-canvas-error-slot" role="alert">
+                  <div className="seat-canvas-banner seat-canvas-banner--error">
+                    <strong>Ошибка схемы рассадки.</strong>
+                    <span>{feedback.message}</span>
+                  </div>
+                  <button
+                    aria-label="Скрыть ошибку"
+                    className="seat-canvas-error-slot__close"
+                    onClick={() => setFeedback(null)}
+                    type="button"
+                  >
+                    ×
+                  </button>
                 </div>
               ) : null}
 
