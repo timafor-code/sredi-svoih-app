@@ -28,6 +28,7 @@ import type {
   SeatingTableConnection,
   SeatingTableGeometry,
 } from "../../types/seating";
+import { it } from "vitest";
 
 // --- tiny self-contained harness -------------------------------------------
 
@@ -270,3 +271,5 @@ console.log(
 if (failures.length) {
   throw new Error(`${failures.length} seating geometry test(s) failed`);
 }
+
+it("runs the legacy seating geometry assertions", () => {});

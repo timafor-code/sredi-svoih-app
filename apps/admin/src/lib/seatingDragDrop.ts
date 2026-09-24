@@ -34,6 +34,7 @@
 // derived from the stable `client_table_id`, never the volatile DB row id.
 
 import { seatIndexFromSeatKey, seatingSeatKey } from "./seatingAutoAssign";
+import { createSeatingGuestIndex, resolveSeatingAssignmentGuests } from "./seatingGuestIndex";
 import type {
   SeatingAssignment,
   SeatingGeometryResult,
@@ -84,6 +85,8 @@ export function applySeatingDragDrop({
   target,
 }: SeatingDragDropInput): SeatingDragDropResult {
   const next = assignments.map((assignment) => ({ ...assignment }));
+  const guestIndex = createSeatingGuestIndex(guestPool);
+  const resolvedGuests = resolveSeatingAssignmentGuests(assignments, guestIndex);
   const placedPosByIndex = indexPlacedAssignments(next, geometry);
 
   // ---- resolve the moving entity ----------------------------------------
@@ -111,11 +114,11 @@ export function applySeatingDragDrop({
     }
     sourcePos = pos;
   } else {
-    movingGuest = guestPool.find((guest) => guest.key === source.guestKey) ?? null;
+    movingGuest = guestIndex.byKey.get(source.guestKey) ?? null;
     if (!movingGuest) {
       return rejection(assignments, "missing_guest");
     }
-    if (next.some((assignment) => assignment.seatKey && matchesGuest(assignment, movingGuest!))) {
+    if (next.some((assignment, order) => assignment.seatKey && resolvedGuests[order]?.key === movingGuest!.key)) {
       return rejection(assignments, "duplicate_guest");
     }
   }
@@ -173,7 +176,7 @@ export function applySeatingDragDrop({
   const guest = movingGuest!;
   const placed = markManual(placedAssignmentFromGuest(guest, targetSeatKey));
   const pooledPos = next.findIndex(
-    (assignment) => !assignment.seatKey && matchesGuest(assignment, guest),
+    (assignment, order) => !assignment.seatKey && resolvedGuests[order]?.key === guest.key,
   );
   if (pooledPos >= 0) {
     next[pooledPos] = placed;
@@ -235,29 +238,9 @@ function placedAssignmentFromGuest(
     id: `manual:${guest.key}:${seatKey}`,
     layoutId: "",
     registrationId: guest.registrationId,
+    guestIndex: guest.source === "guest" ? guest.guestIndex : null,
     seatKey,
     type: "guest",
+    userId: guest.source === "participant" ? guest.participantUserId : null,
   };
-}
-
-function matchesGuest(
-  assignment: SeatingAssignment,
-  guest: SeatingGuestPoolItem,
-): boolean {
-  return (
-    guestSignature(assignment.registrationId, assignment.guestLabel, assignment.guestInitials) ===
-    guestSignature(guest.registrationId, guest.displayName, guest.initials)
-  );
-}
-
-function guestSignature(
-  registrationId: string | null,
-  label: string | null,
-  initials: string | null,
-): string {
-  return [
-    registrationId ?? "",
-    (label ?? "").trim().toLocaleLowerCase("ru-RU"),
-    (initials ?? "").trim().toLocaleLowerCase("ru-RU"),
-  ].join("|");
 }

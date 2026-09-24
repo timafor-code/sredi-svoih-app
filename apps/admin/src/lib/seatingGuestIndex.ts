@@ -1,0 +1,145 @@
+import type { SeatingAssignment, SeatingGuestPoolItem } from "../types/seating";
+
+export type SeatingGuestIndex = {
+  byIdentity: ReadonlyMap<string, SeatingGuestPoolItem>;
+  byKey: ReadonlyMap<string, SeatingGuestPoolItem>;
+  byRegistration: ReadonlyMap<string, readonly SeatingGuestPoolItem[]>;
+  bySignature: ReadonlyMap<string, readonly SeatingGuestPoolItem[]>;
+};
+
+export function seatingGuestSignature(
+  registrationId: string | null,
+  label: string | null,
+  initials: string | null,
+): string {
+  return [registrationId ?? "", normalize(label), normalize(initials)].join("|");
+}
+
+export function seatingGuestIdentity(guest: SeatingGuestPoolItem): string | null {
+  if (guest.source === "participant" && guest.participantUserId) {
+    return seatingParticipantIdentity(guest.registrationId, guest.participantUserId);
+  }
+  if (guest.source === "guest" && guest.guestIndex !== null) {
+    return seatingInvitedGuestIdentity(guest.registrationId, guest.guestIndex);
+  }
+  return null;
+}
+
+export function seatingParticipantIdentity(registrationId: string, userId: string): string {
+  return `participant:${registrationId}:${userId}`;
+}
+
+export function seatingInvitedGuestIdentity(registrationId: string, guestIndex: number): string {
+  return `guest:${registrationId}:${guestIndex}`;
+}
+
+export function createSeatingGuestIndex(
+  guestPool: readonly SeatingGuestPoolItem[],
+): SeatingGuestIndex {
+  const byKey = new Map<string, SeatingGuestPoolItem>();
+  const byIdentity = new Map<string, SeatingGuestPoolItem>();
+  const bySignature = new Map<string, SeatingGuestPoolItem[]>();
+  const byRegistration = new Map<string, SeatingGuestPoolItem[]>();
+  guestPool.forEach((guest) => {
+    byKey.set(guest.key, guest);
+    const identity = seatingGuestIdentity(guest);
+    if (identity) byIdentity.set(identity, guest);
+    append(bySignature, seatingGuestSignature(guest.registrationId, guest.displayName, guest.initials), guest);
+    append(byRegistration, guest.registrationId, guest);
+  });
+  return { byKey, byIdentity, byRegistration, bySignature };
+}
+
+/** Resolves in assignment order; a pool guest can be selected at most once. */
+export function resolveSeatingAssignmentGuests(
+  assignments: readonly SeatingAssignment[],
+  index: SeatingGuestIndex,
+): Array<SeatingGuestPoolItem | null> {
+  const resolved: Array<SeatingGuestPoolItem | null> = Array(assignments.length).fill(null);
+  const settled = new Set<number>();
+  const used = new Set<string>();
+
+  // Current-session ids are unequivocal and must reserve their guests before
+  // persisted or legacy rows can consume a matching signature bucket entry.
+  assignments.forEach((assignment, order) => {
+    if (assignment.type !== "guest") return;
+    const embeddedKey = seatingAssignmentEmbeddedGuestKey(assignment);
+    const exact = embeddedKey ? index.byKey.get(embeddedKey) : undefined;
+    if (!exact) return;
+    settled.add(order);
+    if (!used.has(exact.key)) resolved[order] = claim(exact, used);
+  });
+
+  // Persisted invited guest indexes are strong identities. Resolve every one
+  // before a preceding legacy row can claim the same signature-bucket guest.
+  assignments.forEach((assignment, order) => {
+    if (settled.has(order) || assignment.type !== "guest") return;
+    const invited = assignment.registrationId !== null && typeof assignment.guestIndex === "number"
+      ? index.byIdentity.get(seatingInvitedGuestIdentity(assignment.registrationId, assignment.guestIndex))
+      : undefined;
+    if (!invited) return;
+    settled.add(order);
+    if (!used.has(invited.key)) resolved[order] = claim(invited, used);
+  });
+
+  // Legacy rows with null guest_index may carry the registration owner's user
+  // id even when they represent an invited guest, so signature wins first.
+  assignments.forEach((assignment, order) => {
+    if (settled.has(order) || assignment.type !== "guest") return;
+    const signature = seatingGuestSignature(assignment.registrationId, assignment.guestLabel, assignment.guestInitials);
+    const signatureMatch = firstUnused(index.bySignature.get(signature), used);
+    if (signatureMatch) {
+      resolved[order] = claim(signatureMatch, used);
+      settled.add(order);
+    }
+  });
+
+  // user_id is only a participant fallback for unresolved legacy rows.
+  assignments.forEach((assignment, order) => {
+    if (settled.has(order) || assignment.type !== "guest") return;
+    const participant = assignment.registrationId !== null && assignment.guestIndex === null && typeof assignment.userId === "string"
+      ? index.byIdentity.get(seatingParticipantIdentity(assignment.registrationId, assignment.userId))
+      : undefined;
+    if (!participant) return;
+    settled.add(order);
+    if (!used.has(participant.key)) resolved[order] = claim(participant, used);
+  });
+
+  assignments.forEach((assignment, order) => {
+    if (settled.has(order) || assignment.type !== "guest") return;
+    if (!assignment.guestLabel && !assignment.guestInitials && assignment.registrationId) {
+      const registrationMatch = firstUnused(index.byRegistration.get(assignment.registrationId), used);
+      if (registrationMatch) resolved[order] = claim(registrationMatch, used);
+    }
+  });
+
+  return resolved;
+}
+
+export function seatingAssignmentEmbeddedGuestKey(assignment: SeatingAssignment): string | null {
+  if (!assignment.id.startsWith("auto:") && !assignment.id.startsWith("manual:")) return null;
+  const prefix = assignment.id.startsWith("auto:") ? "auto:" : "manual:";
+  const suffix = `:${assignment.seatKey ?? "pool"}`;
+  if (!assignment.id.endsWith(suffix)) return null;
+  const key = assignment.id.slice(prefix.length, -suffix.length);
+  return key || null;
+}
+
+function normalize(value: string | null | undefined): string {
+  return (value ?? "").trim().toLocaleLowerCase("ru-RU");
+}
+
+function append(map: Map<string, SeatingGuestPoolItem[]>, key: string, guest: SeatingGuestPoolItem): void {
+  const bucket = map.get(key);
+  if (bucket) bucket.push(guest);
+  else map.set(key, [guest]);
+}
+
+function firstUnused(bucket: readonly SeatingGuestPoolItem[] | undefined, used: ReadonlySet<string>): SeatingGuestPoolItem | null {
+  return bucket?.find((guest) => !used.has(guest.key)) ?? null;
+}
+
+function claim(guest: SeatingGuestPoolItem, used: Set<string>): SeatingGuestPoolItem {
+  used.add(guest.key);
+  return guest;
+}

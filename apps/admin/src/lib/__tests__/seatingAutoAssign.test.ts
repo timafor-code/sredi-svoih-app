@@ -4,6 +4,7 @@ import {
   autoAssignSeating,
   deriveSeatingAssignmentRestoreState,
   seatIndexFromSeatKey,
+  seatingSeatKey,
 } from "../seatingAutoAssign";
 import { reconcileSeatingAssignments } from "../seatingAssignmentReconcile";
 import { TABLE_H, TABLE_W, computeTableSeats } from "../seatingGeometry";
@@ -14,6 +15,7 @@ import type {
   SeatingGuestPoolItem,
   SeatingTable,
 } from "../../types/seating";
+import { expect, it } from "vitest";
 
 let passed = 0;
 const failures: string[] = [];
@@ -1292,3 +1294,67 @@ console.log(
 if (failures.length) {
   throw new Error(`${failures.length} seating auto-assign test(s) failed`);
 }
+
+it("runs the legacy seating auto-assign assertions", () => {});
+
+it("restores same-name participant and guest as distinct people and excludes both from the pool", () => {
+  const participant = makeGuest(8001, { displayName: "Иван Иванов", initials: "ИИ", participantUserId: "user-1" });
+  const invited = makeGuest(8002, { displayName: "Иван Иванов", initials: "ИИ", registrationId: participant.registrationId, source: "guest", guestIndex: 0 });
+  const geometry = computeTableSeats({ tables: [makeTable({ id: "regular", sideSeats: 3 })] });
+  const restored = deriveSeatingAssignmentRestoreState({
+    assignments: [
+      { id: "saved-1", layoutId: "layout", registrationId: participant.registrationId, guestLabel: "Иван Иванов", guestInitials: "ИИ", seatKey: seatingSeatKey(geometry.seats[0], 0), type: "guest" },
+      { id: "saved-2", layoutId: "layout", registrationId: participant.registrationId, guestLabel: "Иван Иванов", guestInitials: "ИИ", seatKey: seatingSeatKey(geometry.seats[1], 1), type: "guest" },
+    ], geometry, guestPool: [participant, invited],
+  });
+  expect(restored.resolvedGuests.map((guest) => guest?.key)).toEqual([participant.key, invited.key]);
+  expect(restored.unassignedGuests).toEqual([]);
+});
+
+it("derives 600 assignments against 1000 guests in under 20 ms after warmup", () => {
+  const guestPool = Array.from({ length: 1000 }, (_, index) => makeGuest(9000 + index));
+  const tables = Array.from({ length: 75 }, (_, index) => makeTable({ id: `table-${index}`, cx: 100 + index * 1000, sideSeats: 3 }));
+  const geometry = computeTableSeats({ tables });
+  const assignments = guestPool.slice(0, 600).map((guest, index) => ({
+    id: `saved-${index}`, layoutId: "layout", registrationId: guest.registrationId,
+    guestLabel: guest.displayName, guestInitials: guest.initials,
+    seatKey: seatingSeatKey(geometry.seats[index], index), type: "guest" as const,
+  }));
+  for (let index = 0; index < 3; index += 1) deriveSeatingAssignmentRestoreState({ assignments, geometry, guestPool });
+  const times = Array.from({ length: 5 }, () => {
+    const started = performance.now();
+    deriveSeatingAssignmentRestoreState({ assignments, geometry, guestPool });
+    return performance.now() - started;
+  }).sort((a, b) => a - b);
+  console.log(`  benchmark 1000 guests / 600 assignments: ${times.map((time) => time.toFixed(2)).join(", ")} ms`);
+  expect(times[2]).toBeLessThan(20);
+});
+
+it("repeat auto seating excludes a same-name locked invited guest by canonical key", () => {
+  const participant = makeGuest(9101, { displayName: "Иван Иванов", initials: "ИИ", participantUserId: "user-1" });
+  const invited = makeGuest(9102, { displayName: "Иван Иванов", initials: "ИИ", registrationId: participant.registrationId, source: "guest", guestIndex: 1 });
+  const tables = [makeTable({ id: "regular", sideSeats: 3 })];
+  const geometry = computeTableSeats({ tables });
+  const lockedSeatKey = seatingSeatKey(geometry.seats[0], 0);
+  const result = autoAssignSeating({
+    guestPool: [participant, invited], tables, geometry,
+    lockedAssignments: [{ id: `manual:${invited.key}:${lockedSeatKey}`, layoutId: "layout", registrationId: invited.registrationId, guestIndex: 1, userId: participant.participantUserId, guestLabel: invited.displayName, guestInitials: invited.initials, seatKey: lockedSeatKey, type: "guest", locked: true, placementSource: "manual" }],
+  });
+  expect(result.assignedSeats.map((seat) => seat.guest.key)).toContain(participant.key);
+  expect(result.assignedSeats.map((seat) => seat.guest.key)).not.toContain(invited.key);
+});
+
+it("repeat auto seating resolves a legacy locked invited guest by signature", () => {
+  const participant = makeGuest(9201, { displayName: "Пётр Петров", initials: "ПП", participantUserId: "user-1" });
+  const invited = makeGuest(9202, { displayName: "Иван Иванов", initials: "ИИ", registrationId: participant.registrationId, source: "guest", guestIndex: 1 });
+  const tables = [makeTable({ id: "regular", sideSeats: 3 })];
+  const geometry = computeTableSeats({ tables });
+  const lockedSeatKey = seatingSeatKey(geometry.seats[0], 0);
+  const result = autoAssignSeating({
+    guestPool: [participant, invited], tables, geometry,
+    lockedAssignments: [{ id: "persisted-assignment-id", layoutId: "layout", registrationId: invited.registrationId, guestIndex: null, userId: "user-1", guestLabel: invited.displayName, guestInitials: invited.initials, seatKey: lockedSeatKey, type: "guest", locked: true, placementSource: "manual" }],
+  });
+  expect(result.assignedSeats.map((seat) => seat.guest.key)).toContain(participant.key);
+  expect(result.assignedSeats.map((seat) => seat.guest.key)).not.toContain(invited.key);
+  expect(result.assignedSeats.map((seat) => seat.seatIndex)).not.toContain(0);
+});

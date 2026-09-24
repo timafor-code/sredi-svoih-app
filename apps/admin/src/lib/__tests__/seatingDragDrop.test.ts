@@ -7,6 +7,7 @@ import type {
   SeatingGuestPoolItem,
   SeatingTable,
 } from "../../types/seating";
+import { it } from "vitest";
 
 let passed = 0;
 const failures: string[] = [];
@@ -147,6 +148,57 @@ test("pool -> empty seat places the guest as a manual, locked assignment", () =>
     (placed.seatKey ?? "").includes(":side:") || (placed.seatKey ?? "").includes(":end:"),
     "seat key is stable (client_table_id based)",
   );
+});
+
+test("manual invited placement preserves guestIndex and manual identity metadata", () => {
+  const geometry = defaultGeometry();
+  const participant = makeGuest(100, { participantUserId: "user-1" });
+  const invited = makeGuest(101, { registrationId: participant.registrationId, source: "guest", guestIndex: 1, displayName: "Иван Иванов", initials: "ИИ" });
+  const targetIndex = regularSeatIndexes(geometry)[0];
+  const result = applySeatingDragDrop({ assignments: [], geometry, guestPool: [participant, invited], source: { kind: "pool", guestKey: invited.key }, target: { kind: "seat", seatIndex: targetIndex } });
+  const placed = result.assignments[0];
+  assert(result.changed, "invited guest placed");
+  assertEqual(placed.guestIndex, 1, "invited guest index is retained");
+  assertEqual(placed.locked, true, "manual placement is locked");
+  assertEqual(placed.placementSource, "manual", "manual source retained");
+});
+
+test("same-name participant and invited guest can be manually seated separately", () => {
+  const geometry = defaultGeometry();
+  const [participantSeat, invitedSeat] = regularSeatIndexes(geometry);
+  const participant = makeGuest(110, { displayName: "Иван Иванов", initials: "ИИ", participantUserId: "user-1" });
+  const invited = makeGuest(111, { registrationId: participant.registrationId, source: "guest", guestIndex: 1, displayName: "Иван Иванов", initials: "ИИ" });
+  const seatedParticipant = { ...placedAssignment(participant, geometry, participantSeat), guestIndex: null, userId: "user-1" };
+  const result = applySeatingDragDrop({ assignments: [seatedParticipant], geometry, guestPool: [participant, invited], source: { kind: "pool", guestKey: invited.key }, target: { kind: "seat", seatIndex: invitedSeat } });
+  assert(result.changed, "invited placement is allowed");
+  assertEqual(result.rejection, undefined, "no duplicate rejection");
+  assertEqual(result.assignments.filter((assignment) => assignment.seatKey).length, 2, "both guests seated");
+  assertEqual(result.assignments.find((assignment) => assignment.guestIndex === 1)?.seatKey, seatingSeatKey(geometry.seats[invitedSeat], invitedSeat), "invited guest has own seat");
+  assertEqual(result.assignments.find((assignment) => assignment.guestIndex === null)?.seatKey, seatingSeatKey(geometry.seats[participantSeat], participantSeat), "participant keeps own seat");
+});
+
+test("the same invited guest cannot be manually placed twice", () => {
+  const geometry = defaultGeometry();
+  const [first, second] = regularSeatIndexes(geometry);
+  const participant = makeGuest(120, { participantUserId: "user-1" });
+  const invited = makeGuest(121, { registrationId: participant.registrationId, source: "guest", guestIndex: 1, displayName: "Иван Иванов", initials: "ИИ" });
+  const seated = { ...placedAssignment(invited, geometry, first), guestIndex: 1 };
+  const result = applySeatingDragDrop({ assignments: [seated], geometry, guestPool: [participant, invited], source: { kind: "pool", guestKey: invited.key }, target: { kind: "seat", seatIndex: second } });
+  assert(!result.changed, "duplicate placement rejected");
+  assertEqual(result.rejection, "duplicate_guest", "duplicate rejection");
+});
+
+test("same-name invited guests with different guest indexes remain distinct", () => {
+  const geometry = defaultGeometry();
+  const [first, second] = regularSeatIndexes(geometry);
+  const participant = makeGuest(130, { participantUserId: "user-1" });
+  const invitedOne = makeGuest(131, { registrationId: participant.registrationId, source: "guest", guestIndex: 1, displayName: "Иван Иванов", initials: "ИИ" });
+  const invitedTwo = makeGuest(132, { registrationId: participant.registrationId, source: "guest", guestIndex: 2, displayName: "Иван Иванов", initials: "ИИ" });
+  const seated = { ...placedAssignment(invitedOne, geometry, first), guestIndex: 1 };
+  const result = applySeatingDragDrop({ assignments: [seated], geometry, guestPool: [participant, invitedOne, invitedTwo], source: { kind: "pool", guestKey: invitedTwo.key }, target: { kind: "seat", seatIndex: second } });
+  assert(result.changed, "second invited guest placement is allowed");
+  assertEqual(result.assignments.filter((assignment) => assignment.seatKey).length, 2, "both invited guests seated");
+  assertEqual(new Set(result.assignments.map((assignment) => assignment.guestIndex)).size, 2, "guest identities stay distinct");
 });
 
 test("seat -> empty seat moves the occupant", () => {
@@ -718,3 +770,5 @@ console.log(`\nSeating drag/drop tests: ${passed} passed, ${failures.length} fai
 if (failures.length) {
   throw new Error(`${failures.length} seating drag/drop test(s) failed`);
 }
+
+it("runs the legacy seating drag/drop assertions", () => {});

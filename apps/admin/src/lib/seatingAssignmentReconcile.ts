@@ -33,7 +33,8 @@
 // Manual/locked placements (PR 15) and reserve placements (PR 16) win every
 // conflict, so a repeat auto seating after a geometry edit never reshuffles them.
 
-import { isExplicitRabbiGuest, seatIndexFromSeatKey } from "./seatingAutoAssign";
+import { createSeatingSeatIndex, isExplicitRabbiGuest, seatIndexFromSeatKey, type SeatingSeatIndex } from "./seatingAutoAssign";
+import { createSeatingGuestIndex, resolveSeatingAssignmentGuests, seatingAssignmentEmbeddedGuestKey, seatingGuestSignature, type SeatingGuestIndex } from "./seatingGuestIndex";
 import type {
   SeatingAssignment,
   SeatingGeometryResult,
@@ -100,6 +101,10 @@ export interface SeatingReconcileInput {
    * seat). When empty, neither check evicts anyone beyond the geometry rules.
    */
   guestPool?: readonly SeatingGuestPoolItem[];
+  /** Optional memoized guest matching context for editor geometry commits. */
+  guestIndex?: SeatingGuestIndex;
+  resolvedGuests?: readonly (SeatingGuestPoolItem | null)[];
+  seatIndex?: SeatingSeatIndex;
   /** Optional explicit rabbi-guest keys (same contract as auto seating). */
   rabbiGuestKeys?: readonly string[];
   /** Optional extra blocked seat indexes (besides rabbi-reserved seats). */
@@ -117,12 +122,15 @@ export function reconcileAfterGeometryChange({
   assignments,
   geometry,
   guestPool,
-}: Pick<SeatingReconcileInput, "assignments" | "geometry" | "guestPool">): {
+  guestIndex,
+  resolvedGuests,
+  seatIndex,
+}: Pick<SeatingReconcileInput, "assignments" | "geometry" | "guestPool" | "guestIndex" | "resolvedGuests" | "seatIndex">): {
   assignments: SeatingAssignment[];
   returnedCount: number;
   counts: SeatingReconcileCounts;
 } {
-  const result = reconcileSeatingAssignments({ assignments, geometry, guestPool });
+  const result = reconcileSeatingAssignments({ assignments, geometry, guestPool, guestIndex, resolvedGuests, seatIndex });
   return {
     assignments: result.assignments,
     returnedCount: result.counts.returnedCount,
@@ -134,13 +142,19 @@ export function reconcileSeatingAssignments({
   assignments,
   geometry,
   guestPool = [],
+  guestIndex: providedGuestIndex,
+  resolvedGuests: providedResolvedGuests,
   rabbiGuestKeys = [],
   blockedSeatIndexes = [],
+  seatIndex: providedSeatIndex,
 }: SeatingReconcileInput): SeatingReconcileResult {
   const blocked = new Set(blockedSeatIndexes);
   const poolRegistrationIds = new Set(
     guestPool.map((guest) => guest.registrationId).filter(Boolean) as string[],
   );
+  const guestIndex = providedGuestIndex ?? createSeatingGuestIndex(guestPool);
+  const resolvedGuests = providedResolvedGuests ?? resolveSeatingAssignmentGuests(assignments, guestIndex);
+  const seatIndex = providedSeatIndex ?? createSeatingSeatIndex(geometry);
 
   type PlacedEntry = {
     assignment: SeatingAssignment;
@@ -183,7 +197,7 @@ export function reconcileSeatingAssignments({
       continue;
     }
 
-    const signature = occupantSignature(assignment);
+    const signature = occupantSignature(assignment, resolvedGuests[order]);
 
     // Duplicate occupant: the same guest/reserve already kept a seat. The redundant
     // placement is dropped (the occupant is already seated once).
@@ -193,15 +207,15 @@ export function reconcileSeatingAssignments({
       continue;
     }
 
-    const seatIndex = seatIndexFromSeatKey(assignment.seatKey, geometry);
-    if (seatIndex === null) {
+    const resolvedSeatIndex = seatIndexFromSeatKey(assignment.seatKey, geometry, seatIndex);
+    if (resolvedSeatIndex === null) {
       missingSeatCount += 1;
       returned.push({ assignment: unplaceAssignment(assignment), reason: "missing_seat" });
       outcomeByOrder.set(order, { kind: "return" });
       continue;
     }
 
-    const seat = geometry.seats[seatIndex];
+    const seat = geometry.seats[resolvedSeatIndex];
     if (seat?.isDisabled) {
       disabledSeatCount += 1;
       returned.push({ assignment: unplaceAssignment(assignment), reason: "disabled_seat" });
@@ -211,9 +225,9 @@ export function reconcileSeatingAssignments({
     const isRabbiSeat = Boolean(seat?.isRabbiTable);
     const allowedOnRabbiSeat =
       assignment.type === "reserve" ||
-      isRabbiGuestAssignment(assignment, guestPool, rabbiGuestKeys);
+      isRabbiGuestAssignment(resolvedGuests[order], rabbiGuestKeys);
 
-    if ((isRabbiSeat && !allowedOnRabbiSeat) || blocked.has(seatIndex)) {
+    if ((isRabbiSeat && !allowedOnRabbiSeat) || blocked.has(resolvedSeatIndex)) {
       blockedSeatCount += 1;
       returned.push({ assignment: unplaceAssignment(assignment), reason: "blocked_seat" });
       outcomeByOrder.set(order, { kind: "return" });
@@ -221,14 +235,14 @@ export function reconcileSeatingAssignments({
     }
 
     // Duplicate seat: another (higher-priority) occupant already claimed this seat.
-    if (usedSeatIndexes.has(seatIndex)) {
+    if (usedSeatIndexes.has(resolvedSeatIndex)) {
       duplicateCount += 1;
       returned.push({ assignment: unplaceAssignment(assignment), reason: "duplicate_seat" });
       outcomeByOrder.set(order, { kind: "return" });
       continue;
     }
 
-    usedSeatIndexes.add(seatIndex);
+    usedSeatIndexes.add(resolvedSeatIndex);
     usedOccupants.add(signature);
     keptAssignments.push(assignment);
   }
@@ -310,10 +324,13 @@ function unplaceAssignment(assignment: SeatingAssignment): SeatingAssignment {
   };
 }
 
-function occupantSignature(assignment: SeatingAssignment): string {
+function occupantSignature(assignment: SeatingAssignment, resolvedGuest: SeatingGuestPoolItem | null): string {
   if (assignment.type === "reserve") {
     return `reserve:${assignment.id}`;
   }
+  const embeddedKey = seatingAssignmentEmbeddedGuestKey(assignment);
+  if (embeddedKey) return `guest:${embeddedKey}`;
+  if (resolvedGuest) return `guest:${resolvedGuest.key}`;
   return `guest:${guestSignature(
     assignment.registrationId,
     assignment.guestLabel,
@@ -341,22 +358,10 @@ function isOrphanGuest(
 }
 
 function isRabbiGuestAssignment(
-  assignment: SeatingAssignment,
-  guestPool: readonly SeatingGuestPoolItem[],
+  guest: SeatingGuestPoolItem | null,
   rabbiGuestKeys: readonly string[],
 ): boolean {
-  const guest = guestPool.find((candidate) => matchesGuest(assignment, candidate));
   return guest ? isExplicitRabbiGuest(guest, rabbiGuestKeys) : false;
-}
-
-function matchesGuest(
-  assignment: SeatingAssignment,
-  guest: SeatingGuestPoolItem,
-): boolean {
-  return (
-    guestSignature(assignment.registrationId, assignment.guestLabel, assignment.guestInitials) ===
-    guestSignature(guest.registrationId, guest.displayName, guest.initials)
-  );
 }
 
 function guestSignature(
@@ -364,9 +369,5 @@ function guestSignature(
   label: string | null,
   initials: string | null,
 ): string {
-  return [
-    registrationId ?? "",
-    (label ?? "").trim().toLocaleLowerCase("ru-RU"),
-    (initials ?? "").trim().toLocaleLowerCase("ru-RU"),
-  ].join("|");
+  return seatingGuestSignature(registrationId, label, initials);
 }

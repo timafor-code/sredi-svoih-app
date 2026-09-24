@@ -7,6 +7,7 @@ import type {
   SeatingGuestPoolItem,
   SeatingTable,
 } from "../../types/seating";
+import { expect, it } from "vitest";
 
 let passed = 0;
 const failures: string[] = [];
@@ -522,3 +523,26 @@ console.log(`\nSeating reconcile tests: ${passed} passed, ${failures.length} fai
 if (failures.length) {
   throw new Error(`${failures.length} seating reconcile test(s) failed`);
 }
+
+it("runs the legacy seating reconcile assertions", () => {});
+
+it("does not treat same-name participant and guest as duplicate occupants", () => {
+  const geometry = defaultGeometry();
+  const participant = makeGuest(701, { displayName: "Иван Иванов", initials: "ИИ", participantUserId: "user-1" });
+  const invited = makeGuest(702, { displayName: "Иван Иванов", initials: "ИИ", registrationId: participant.registrationId, source: "guest", guestIndex: 0 });
+  const seats = regularSeatIndexes(geometry);
+  const result = reconcileSeatingAssignments({ assignments: [placedGuest(participant, geometry, seats[0]), placedGuest(invited, geometry, seats[1])], geometry, guestPool: [participant, invited] });
+  expect(result.counts.duplicateCount).toBe(0);
+  expect(result.counts.keptCount).toBe(2);
+});
+
+it("deduplicates two generated assignments for the same real guest", () => {
+  const geometry = defaultGeometry();
+  const person = makeGuest(703);
+  const seats = regularSeatIndexes(geometry);
+  const first = placedGuest(person, geometry, seats[0], { id: `manual:${person.key}:${seatingSeatKey(geometry.seats[seats[0]], seats[0])}` });
+  const second = placedGuest(person, geometry, seats[1], { id: `manual:${person.key}:${seatingSeatKey(geometry.seats[seats[1]], seats[1])}` });
+  const result = reconcileSeatingAssignments({ assignments: [first, second], geometry, guestPool: [person] });
+  expect(result.counts.duplicateCount).toBe(1);
+  expect(result.counts.keptCount).toBe(1);
+});

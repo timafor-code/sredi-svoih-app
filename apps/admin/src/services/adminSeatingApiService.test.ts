@@ -73,6 +73,18 @@ describe("admin seating API disabled-seat serialization", () => {
     expect(layout?.tables[0].disabledSeats).toEqual(["side:a:0", "end:b"]);
   });
 
+  it("preserves persisted assignment guest identity on layout load", async () => {
+    mockedApiClient.get.mockResolvedValue({
+      layout: layoutRow, tables: [], connections: [], assignments: [{
+        id: "assignment-1", layout_id: "layout-1", registration_id: "registration-1",
+        guest_index: 2, user_id: "user-1", seat_key: "table-1:side:a:0",
+        guest_label: "Иван Иванов", guest_initials: "ИИ", assignment_type: "guest",
+      }],
+    });
+    const layout = await getSeatingLayout({ eventId: "event-1", occurrenceId: null, capacityUnitId: "unit-1" });
+    expect(layout?.assignments[0]).toMatchObject({ registrationId: "registration-1", guestIndex: 2, userId: "user-1", guestLabel: "Иван Иванов" });
+  });
+
   it("maps disabledSeats in template snapshots onto the domain table", async () => {
     mockedApiClient.get.mockResolvedValue({
       id: "template-1",
@@ -185,6 +197,19 @@ describe("admin seating API disabled-seat serialization", () => {
     );
     expect(result.layout.updatedAt).toBe(layoutRow.updated_at);
     expect(result.assignments).toMatchObject({ placedCount: 1, pooledCount: 2, reserveCount: 1 });
+  });
+
+  it("serializes guestIndex but never client-supplied userId", async () => {
+    mockedApiClient.put.mockResolvedValue({ layout: layoutRow, assignments: null });
+    await saveSeatingLayoutState({
+      eventId: "event-1", occurrenceId: null, capacityUnitId: "unit-1", customTables: [], expectedUpdatedAt: null,
+      assignments: { chairs: [{ type: "guest", registrationId: "registration-1", guestIndex: 2, name: "Иван Иванов", initials: "ИИ", seatKey: "table-1:side:a:0", ...({ userId: "must-not-serialize" } as Record<string, unknown>) }], pool: [{ type: "guest", registrationId: "registration-1", guestIndex: null, name: "Participant", initials: "P", seatKey: null }] },
+    });
+    expect(mockedApiClient.put).toHaveBeenCalledWith("/admin/seating/layout/state", expect.objectContaining({
+      assignments: expect.objectContaining({ chairs: [expect.objectContaining({ guestIndex: 2 })], pool: [expect.objectContaining({ guestIndex: null })] }),
+    }));
+    const payload = mockedApiClient.put.mock.calls[0]?.[1] as { assignments: { chairs: Array<Record<string, unknown>> } };
+    expect(payload.assignments.chairs[0]).not.toHaveProperty("userId");
   });
 
   it("omits atomic assignments when not provided", async () => {
