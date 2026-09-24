@@ -208,6 +208,8 @@ export function SeatingLayoutEditor({
 
   useEffect(() => {
     if (!slot) {
+      setIsCloseDialogOpen(false);
+      dismissCanvasNotice();
       setActiveTemplateValue(DEFAULT_SEATING_TEMPLATE_VALUE);
       setAssignments([]);
       setCapacityLimitOverride(undefined);
@@ -233,6 +235,8 @@ export function SeatingLayoutEditor({
 
     let cancelled = false;
 
+    setIsCloseDialogOpen(false);
+    dismissCanvasNotice();
     setFeedback({ message: "Загружаем схему...", tone: "muted" });
     setCapacityLimitOverride(undefined);
     setCapacitySyncError(null);
@@ -324,7 +328,7 @@ export function SeatingLayoutEditor({
     return () => {
       cancelled = true;
     };
-  }, [layoutReloadVersion, slot]);
+  }, [dismissCanvasNotice, layoutReloadVersion, slot]);
 
   useEffect(() => {
     if (!slot) {
