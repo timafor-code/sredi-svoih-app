@@ -217,7 +217,7 @@ function normalizeTable(t: SeatingTableGeometry): SeatingTableGeometry {
   };
 }
 
-function normalizeDisabledSeats(disabledSeats: string[] | undefined): string[] {
+export function normalizeDisabledSeats(disabledSeats: string[] | undefined): string[] {
   if (!Array.isArray(disabledSeats)) return [];
   return [...new Set(disabledSeats.filter(isStableSeatPart))];
 }
