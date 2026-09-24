@@ -3,6 +3,7 @@ import {
   autoAssignResultToPayloadEntries,
   autoAssignSeating,
   deriveSeatingAssignmentRestoreState,
+  protectPersistedSeatingAssignments,
   seatIndexFromSeatKey,
   seatingSeatKey,
 } from "../seatingAutoAssign";
@@ -1275,6 +1276,114 @@ test("saved assignment on a disabled stable seat returns guest to unassigned poo
   assertEqual(restored.currentAssignments[0]?.seatKey, null, "disabled seat returns to pool");
   assertEqual(restored.currentAssignments[0]?.locked, false, "disabled seat clears lock");
   assertArrayEqual(restored.unassignedGuests.map((item) => item.key), [guest.key], "guest is unseated");
+});
+
+test("locked manual placement survives repeat automatic seating without a duplicate", () => {
+  const guests = [makeGuest(3001), makeGuest(3002)];
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "regular", seatCount: 3 },
+  ]);
+  const manual = lockedGuestAssignment(guests[0], geometry, "regular", 2);
+  const result = autoAssignSeating({
+    geometry,
+    guestPool: guests,
+    lockedAssignments: [manual],
+    tables,
+  });
+  const merged = [manual, ...autoAssignResultToAssignments(result)];
+
+  assertEqual(
+    result.assignedSeats.some((assigned) => assigned.guest.key === guests[0].key),
+    false,
+    "manual guest is excluded from automatic queue",
+  );
+  assertEqual(
+    merged.filter((assignment) => assignment.registrationId === guests[0].registrationId).length,
+    1,
+    "manual guest has one assignment",
+  );
+  assertEqual(
+    new Set(merged.filter((assignment) => assignment.seatKey).map((assignment) => assignment.seatKey)).size,
+    merged.filter((assignment) => assignment.seatKey).length,
+    "merged placements do not duplicate seats",
+  );
+});
+
+test("unlocked system placement is recalculated rather than treated as protected", () => {
+  const guest = makeGuest(3011);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "regular", seatCount: 3 },
+  ]);
+  const [firstSeat, , oldSystemSeat] = tableSeatIndexes(geometry, "regular");
+  const result = autoAssignSeating({
+    geometry,
+    guestPool: [guest],
+    lockedAssignments: [{
+      guestInitials: guest.initials,
+      guestLabel: guest.displayName,
+      id: "auto:previous-run",
+      layoutId: "layout-1",
+      locked: false,
+      placementSource: "auto",
+      registrationId: guest.registrationId,
+      seatKey: seatingSeatKey(geometry.seats[oldSystemSeat], oldSystemSeat),
+      type: "guest",
+    }],
+    tables,
+  });
+
+  assertEqual(result.assignedSeats[0]?.seatIndex, firstSeat, "system assignment is recalculated");
+});
+
+test("reserve placement remains protected without manual lock metadata", () => {
+  const guest = makeGuest(3021);
+  const { geometry, tables } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "regular", seatCount: 3 },
+  ]);
+  const reserveSeat = tableSeatIndexes(geometry, "regular")[0];
+  const result = autoAssignSeating({
+    geometry,
+    guestPool: [guest],
+    lockedAssignments: [{
+      guestInitials: "Р",
+      guestLabel: "Reserve",
+      id: "reserve-guard",
+      layoutId: "layout-1",
+      registrationId: null,
+      seatKey: seatingSeatKey(geometry.seats[reserveSeat], reserveSeat),
+      type: "reserve",
+    }],
+    tables,
+  });
+
+  assertEqual(
+    result.assignedSeats.some((assigned) => assigned.seatIndex === reserveSeat),
+    false,
+    "reserve seat remains unavailable to automatic seating",
+  );
+});
+
+test("persisted placements become protected on refresh because lock metadata is not persisted", () => {
+  const guest = makeGuest(3031);
+  const { geometry } = makeSyntheticLayout([
+    { id: "rabbi", isRabbiTable: true, seatCount: 2 },
+    { id: "regular", seatCount: 3 },
+  ]);
+  const seat = tableSeatIndexes(geometry, "regular")[0];
+  const restored = protectPersistedSeatingAssignments([{
+    guestInitials: guest.initials,
+    guestLabel: guest.displayName,
+    id: "persisted-assignment",
+    layoutId: "layout-1",
+    registrationId: guest.registrationId,
+    seatKey: seatingSeatKey(geometry.seats[seat], seat),
+    type: "guest",
+  }]);
+
+  assertEqual(restored[0]?.locked, true, "restored placement is protected");
 });
 
 function seatStable(geometry: ReturnType<typeof computeTableSeats>, index: number): string {

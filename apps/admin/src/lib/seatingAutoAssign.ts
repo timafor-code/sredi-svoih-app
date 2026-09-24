@@ -267,6 +267,35 @@ export function autoAssignResultToAssignments(
   ];
 }
 
+/**
+ * Returns whether an existing placement must survive a repeat automatic run.
+ *
+ * Manual drag/drop decisions carry the lock in the live editor session. Reserves
+ * have always occupied a physical chair independently of registration seating,
+ * so they remain protected as well. System-generated placements deliberately do
+ * not match this predicate and may be recalculated.
+ */
+export function isProtectedSeatingAssignment(assignment: SeatingAssignment): boolean {
+  return assignment.type === "reserve" || Boolean(assignment.locked) || assignment.placementSource === "manual";
+}
+
+/**
+ * Assignment lock metadata is intentionally not part of the persisted API
+ * contract. On a layout reload we therefore preserve every existing placement
+ * conservatively: the editor cannot know whether it came from a prior automatic
+ * run or from a manual admin decision. New system placements remain unlocked in
+ * the active editor session and can still be recalculated.
+ */
+export function protectPersistedSeatingAssignments(
+  assignments: readonly SeatingAssignment[],
+): SeatingAssignment[] {
+  return assignments.map((assignment) =>
+    assignment.seatKey && !isProtectedSeatingAssignment(assignment)
+      ? { ...assignment, locked: true }
+      : { ...assignment },
+  );
+}
+
 export function deriveSeatingAssignmentRestoreState({
   assignments,
   geometry,
@@ -1059,7 +1088,7 @@ function resolveLockedPlacements(
   const tableIdsByRegistration = new Map<string, string[]>();
 
   lockedAssignments.forEach((assignment, order) => {
-    if (!assignment.seatKey) {
+    if (!assignment.seatKey || !isProtectedSeatingAssignment(assignment)) {
       return;
     }
 
