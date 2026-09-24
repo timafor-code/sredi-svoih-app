@@ -165,13 +165,10 @@ export type SeatingAssignmentType = "guest" | "reserve";
 /**
  * How a placed assignment got onto its seat. `auto` = deterministic auto seating
  * (PR 14); `manual` = explicit drag/drop placement (PR 15). This is UI-safe
- * metadata: the `admin_save_seating_assignments` RPC only reads the known v15
- * entry keys, so it is ignored on the way to the backend and is not persisted as
- * a column. After a reopen the flag cannot be restored from the DB, so the editor
- * treats every currently placed assignment as locked for repeat auto seating
- * (see PR 15 in `docs/admin-seating.md`).
+ * metadata persisted with the assignment. Legacy rows predate these fields and
+ * are conservatively protected by the editor after reload.
  */
-export type SeatingPlacementSource = "auto" | "manual";
+export type SeatingPlacementSource = "auto" | "manual" | "reserve";
 
 /**
  * A table connection in the service model. Identical to the geometry
@@ -249,7 +246,7 @@ export interface SeatingAssignment {
   guestLabel: string | null;
   guestInitials: string | null;
   type: SeatingAssignmentType;
-  /** PR 15: how this assignment reached its seat. Optional / UI-safe metadata. */
+  /** How this assignment reached its seat; absent only for legacy rows. */
   placementSource?: SeatingPlacementSource;
   /** PR 15: a locked assignment is preserved by repeat auto seating. */
   locked?: boolean;
@@ -523,8 +520,8 @@ export interface SeatingAssignmentEntry {
   name?: string | null;
   initials?: string | null;
   /**
-   * PR 15 UI-safe metadata. The save RPC ignores unknown entry keys, so these
-   * are sent for client round-tripping only and never reach a DB column.
+   * Protection metadata stored with the assignment. Both fields are independent:
+   * `auto` remains unlocked while `manual` preserves the explicit admin action.
    */
   placementSource?: SeatingPlacementSource;
   locked?: boolean;

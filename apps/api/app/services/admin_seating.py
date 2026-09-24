@@ -81,6 +81,8 @@ class _NormalizedAssignment:
     guest_label: str | None
     guest_initials: str | None
     assignment_type: str
+    locked: bool
+    placement_source: str | None
 
 
 @dataclass(frozen=True)
@@ -1000,6 +1002,8 @@ async def _normalize_assignments(
                 guest_label=entry.guest_label,
                 guest_initials=entry.guest_initials,
                 assignment_type=entry.assignment_type,
+                locked=entry.locked,
+                placement_source=entry.placement_source,
             ),
         )
 
@@ -1049,6 +1053,8 @@ async def save_admin_seating_assignments(
                     guest_label=assignment.guest_label,
                     guest_initials=assignment.guest_initials,
                     assignment_type=assignment.assignment_type,
+                    locked=assignment.locked,
+                    placement_source=assignment.placement_source,
                     created_by=current_user.id,
                 ),
             )
@@ -1146,6 +1152,8 @@ async def save_admin_seating_layout_state(
                     guest_label=assignment.guest_label,
                     guest_initials=assignment.guest_initials,
                     assignment_type=assignment.assignment_type,
+                    locked=assignment.locked,
+                    placement_source=assignment.placement_source,
                     created_by=current_user.id,
                 ))
             placed_count = sum(1 for assignment in assignments if assignment.seat_key)

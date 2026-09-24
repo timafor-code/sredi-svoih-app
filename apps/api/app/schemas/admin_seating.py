@@ -9,6 +9,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 TableEnd = Literal["a", "b"]
 SeatingAssignmentType = Literal["guest", "reserve"]
+SeatingPlacementSource = Literal["manual", "auto", "reserve"]
 _DISABLED_SEAT_PARTS = frozenset(
     {
         "side:a:0",
@@ -175,6 +176,11 @@ class AdminSeatingAssignmentEntryPayload(BaseModel):
         default=None,
         validation_alias=AliasChoices("guest_initials", "guestInitials", "initials"),
     )
+    locked: bool = False
+    placement_source: SeatingPlacementSource | None = Field(
+        default=None,
+        validation_alias=AliasChoices("placement_source", "placementSource"),
+    )
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
@@ -188,6 +194,13 @@ class AdminSeatingAssignmentEntryPayload(BaseModel):
     def normalize_assignment_type(cls, value: object) -> object:
         if isinstance(value, str):
             return value.strip().lower()
+        return value
+
+    @field_validator("placement_source", mode="before")
+    @classmethod
+    def normalize_placement_source(cls, value: object | None) -> object | None:
+        if isinstance(value, str):
+            return value.strip().lower() or None
         return value
 
 
@@ -403,6 +416,8 @@ class AdminSeatingAssignmentResponse(BaseModel):
     guest_label: str | None
     guest_initials: str | None
     assignment_type: str
+    locked: bool
+    placement_source: SeatingPlacementSource | None
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime

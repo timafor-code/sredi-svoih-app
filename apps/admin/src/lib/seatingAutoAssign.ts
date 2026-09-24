@@ -267,6 +267,36 @@ export function autoAssignResultToAssignments(
   ];
 }
 
+/**
+ * Returns whether an existing placement must survive a repeat automatic run.
+ *
+ * Manual drag/drop decisions carry the lock in the live editor session. Reserves
+ * have always occupied a physical chair independently of registration seating,
+ * so they remain protected as well. System-generated placements deliberately do
+ * not match this predicate and may be recalculated.
+ */
+export function isProtectedSeatingAssignment(assignment: SeatingAssignment): boolean {
+  return assignment.type === "reserve" ||
+    Boolean(assignment.locked) ||
+    assignment.placementSource === "manual" ||
+    assignment.placementSource === "reserve";
+}
+
+/**
+ * Legacy rows have no placement source. On a layout reload those placements are
+ * conservatively protected because their origin cannot be reconstructed. New
+ * persisted rows always carry a source, so automatic placements stay unlocked.
+ */
+export function protectPersistedSeatingAssignments(
+  assignments: readonly SeatingAssignment[],
+): SeatingAssignment[] {
+  return assignments.map((assignment) =>
+    assignment.seatKey && assignment.placementSource === undefined
+      ? { ...assignment, locked: true }
+      : { ...assignment },
+  );
+}
+
 export function deriveSeatingAssignmentRestoreState({
   assignments,
   geometry,
@@ -1017,6 +1047,8 @@ function assignmentFromGuest(
     layoutId: "",
     registrationId: guest.registrationId,
     guestIndex: guest.source === "guest" ? guest.guestIndex : null,
+    locked: false,
+    placementSource: "auto",
     seatKey,
     type: "guest",
     userId: guest.source === "participant" ? guest.participantUserId : null,
@@ -1059,7 +1091,7 @@ function resolveLockedPlacements(
   const tableIdsByRegistration = new Map<string, string[]>();
 
   lockedAssignments.forEach((assignment, order) => {
-    if (!assignment.seatKey) {
+    if (!assignment.seatKey || !isProtectedSeatingAssignment(assignment)) {
       return;
     }
 

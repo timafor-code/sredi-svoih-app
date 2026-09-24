@@ -37,6 +37,8 @@ import {
   autoAssignSeating,
   createSeatingSeatIndex,
   deriveSeatingAssignmentRestoreState,
+  isProtectedSeatingAssignment,
+  protectPersistedSeatingAssignments,
   seatIndexFromSeatKey,
 } from "../../lib/seatingAutoAssign";
 import { createSeatingGuestIndex, resolveSeatingAssignmentGuests } from "../../lib/seatingGuestIndex";
@@ -281,7 +283,7 @@ export function SeatingLayoutEditor({
         setTables(nextTables);
         setConnections(nextConnections);
         setLayoutLoadError(null);
-        setAssignments(layout?.assignments ?? []);
+        setAssignments(protectPersistedSeatingAssignments(layout?.assignments ?? []));
         setPendingGuestKey(null);
         setIsSeatingDone(Boolean(layout?.seatingDone));
         setLayoutUpdatedAt(layout?.updatedAt ?? null);
@@ -1398,11 +1400,13 @@ export function SeatingLayoutEditor({
         guestIndex,
         resolvedGuests: resolvedAssignmentGuests,
       });
-      // Kept placements (guests + reserves) block their seats for any re-seating and
-      // exclude their guests from the auto queue. Unseated reserves are carried so
-      // auto never drops them; ordinary guests freed by reconcile stay in the pool
-      // and are picked up by auto from `guestPool`.
-      const keptAssignments = reconcile.keptAssignments;
+      // Only explicit manual decisions and reserves survive a repeat automatic
+      // run. Valid system placements are intentionally fed back through the
+      // deterministic allocator, while loaded placements are protected above
+      // because the persisted contract has no lock metadata.
+      const protectedAssignments = reconcile.keptAssignments.filter(
+        isProtectedSeatingAssignment,
+      );
       const pooledReserves = reconcile.assignments.filter(
         (assignment) => !assignment.seatKey && assignment.type === "reserve",
       );
@@ -1418,7 +1422,7 @@ export function SeatingLayoutEditor({
           geometry: autoGeometry,
           guestIndex,
           guestPool,
-          lockedAssignments: keptAssignments,
+          lockedAssignments: protectedAssignments,
           occurrenceId: slot.occurrence?.id ?? null,
           tables: nextTables,
         });
@@ -1433,7 +1437,7 @@ export function SeatingLayoutEditor({
 
         if (
           result.warning?.code === "empty_guest_pool" &&
-          keptAssignments.length === 0 &&
+          protectedAssignments.length === 0 &&
           pooledReserves.length === 0
         ) {
           setFeedback({ message: "Нет гостей для авторассадки.", tone: "muted" });
@@ -1441,7 +1445,7 @@ export function SeatingLayoutEditor({
         }
 
         mergedAssignments = [
-          ...keptAssignments,
+          ...protectedAssignments,
           ...pooledReserves,
           ...autoAssignResultToAssignments(result),
         ];
@@ -2254,6 +2258,8 @@ function assignmentToPayloadEntry(assignment: SeatingAssignment): SeatingAssignm
     name: assignment.guestLabel,
     registrationId: assignment.registrationId,
     guestIndex: assignment.guestIndex,
+    locked: assignment.locked,
+    placementSource: assignment.placementSource,
     seatKey: assignment.seatKey,
     type: assignment.type,
   };
@@ -2634,6 +2640,8 @@ function createReserveAssignment(label: string): SeatingAssignment {
     guestLabel: label,
     id: `reserve_${Date.now().toString(36)}_${clientReserveSequence.toString(36)}`,
     layoutId: "",
+    locked: false,
+    placementSource: "reserve",
     registrationId: null,
     seatKey: null,
     type: "reserve",

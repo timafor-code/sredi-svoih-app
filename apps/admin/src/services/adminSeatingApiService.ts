@@ -22,6 +22,7 @@ import type {
   SeatingLayoutRow,
   SeatingLayoutStatePayload,
   SeatingLayoutStateSaveResult,
+  SeatingPlacementSource,
   SeatingSlotParams,
   SeatingTable,
   SeatingTemplate,
@@ -101,6 +102,17 @@ function toAssignmentType(value: unknown): SeatingAssignmentType {
   return nullableString(value)?.toLowerCase() === "reserve" ? "reserve" : "guest";
 }
 
+function toPlacementSource(value: unknown): SeatingPlacementSource | undefined {
+  switch (nullableString(value)?.toLowerCase()) {
+    case "auto":
+    case "manual":
+    case "reserve":
+      return nullableString(value)?.toLowerCase() as SeatingPlacementSource;
+    default:
+      return undefined;
+  }
+}
+
 function toTableEnd(value: unknown): TableEnd {
   return nullableString(value)?.toLowerCase() === "b" ? "b" : "a";
 }
@@ -148,6 +160,8 @@ function normalizeAssignment(value: unknown): SeatingAssignment {
     seatKey: nullableString(row.seatKey ?? row.seat_key),
     guestLabel: nullableString(row.guestLabel ?? row.guest_label),
     guestInitials: nullableString(row.guestInitials ?? row.guest_initials),
+    locked: safeBoolean(row.locked, false),
+    placementSource: toPlacementSource(row.placementSource ?? row.placement_source),
     type: toAssignmentType(row.type ?? row.assignment_type),
   };
 }
@@ -257,6 +271,8 @@ type SeatingAssignmentEntryWire = {
   type: SeatingAssignmentType;
   name: string | null;
   initials: string | null;
+  locked: boolean;
+  placementSource: SeatingPlacementSource | null;
 };
 
 type SeatingLayoutWirePayload = {
@@ -338,6 +354,8 @@ function serializeEntry(entry: SeatingAssignmentEntry): SeatingAssignmentEntryWi
     type: entry.type,
     name: entry.name ?? null,
     initials: entry.initials ?? null,
+    locked: entry.locked ?? false,
+    placementSource: entry.placementSource ?? null,
   };
 }
 
