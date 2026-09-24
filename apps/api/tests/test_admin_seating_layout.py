@@ -66,6 +66,23 @@ class AdminSeatingLayoutResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(request.assignments)
         self.assertEqual(request.expected_updated_at, datetime(2026, 9, 23, tzinfo=UTC))
 
+    def test_assignment_payload_accepts_protection_metadata(self) -> None:
+        request = AdminSeatingAssignmentsPatchRequest.model_validate({
+            "eventId": str(uuid4()),
+            "capacityUnitId": str(uuid4()),
+            "chairs": [{
+                "type": "guest",
+                "registrationId": str(uuid4()),
+                "seatKey": "table-1:side:a:0",
+                "locked": True,
+                "placementSource": "manual",
+            }],
+        })
+
+        assignment = request.chairs[0]
+        self.assertTrue(assignment.locked)
+        self.assertEqual(assignment.placement_source, "manual")
+
     async def test_layout_envelope_serializes_saved_assignments(self) -> None:
         now = datetime.now(UTC)
         layout_id = uuid4()
@@ -94,6 +111,8 @@ class AdminSeatingLayoutResponseTests(unittest.IsolatedAsyncioTestCase):
             guest_label="Saved guest",
             guest_initials="SG",
             assignment_type="guest",
+            locked=True,
+            placement_source="manual",
             created_by=uuid4(),
             created_at=now,
             updated_at=now,
@@ -108,6 +127,8 @@ class AdminSeatingLayoutResponseTests(unittest.IsolatedAsyncioTestCase):
             guest_label="Saved reserve",
             guest_initials="SR",
             assignment_type="reserve",
+            locked=False,
+            placement_source="reserve",
             created_by=uuid4(),
             created_at=now,
             updated_at=now,
@@ -122,8 +143,12 @@ class AdminSeatingLayoutResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.assignments[0].registration_id, guest_registration_id)
         self.assertEqual(response.assignments[0].guest_label, "Saved guest")
         self.assertEqual(response.assignments[0].assignment_type, "guest")
+        self.assertTrue(response.assignments[0].locked)
+        self.assertEqual(response.assignments[0].placement_source, "manual")
         self.assertEqual(response.assignments[1].guest_label, "Saved reserve")
         self.assertEqual(response.assignments[1].assignment_type, "reserve")
+        self.assertFalse(response.assignments[1].locked)
+        self.assertEqual(response.assignments[1].placement_source, "reserve")
 
     async def test_layout_envelope_serializes_disabled_seat_parts(self) -> None:
         now = datetime.now(UTC)
@@ -411,8 +436,8 @@ class AdminSeatingAtomicStatePersistenceTests(unittest.IsolatedAsyncioTestCase):
             expected_updated_at=created.layout.updated_at,
             tables=self._tables(table_id="table-final"),
             assignments={
-                "chairs": [{"type": "reserve", "seatKey": "table-final:side:a:0", "name": "R"}],
-                "pool": [{"type": "reserve", "name": "P"}],
+                "chairs": [{"type": "reserve", "seatKey": "table-final:side:a:0", "name": "R", "locked": False, "placementSource": "reserve"}],
+                "pool": [{"type": "reserve", "name": "P", "locked": False, "placementSource": "reserve"}],
                 "reserveIds": [],
             },
             seating_done=True,
@@ -422,6 +447,10 @@ class AdminSeatingAtomicStatePersistenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(layout.seating_done)
         self.assertEqual([table.client_table_id for table in tables], ["table-final"])
         self.assertEqual(sorted(item.seat_key for item in assignments if item.seat_key), ["table-final:side:a:0"])
+        self.assertEqual(
+            {(item.locked, item.placement_source) for item in assignments},
+            {(False, "reserve")},
+        )
         self.assertEqual(result.layout.updated_at, layout.updated_at)
         self.assertGreater(result.layout.updated_at.microsecond, 0)
         self.assertIsNotNone(result.assignments)

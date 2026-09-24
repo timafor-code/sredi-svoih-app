@@ -335,6 +335,10 @@ class EventSeatingAssignment(Base):
             "assignment_type <> 'reserve' OR registration_id IS NULL",
             name="event_seating_assignments_reserve_registration_check",
         ),
+        CheckConstraint(
+            "placement_source IS NULL OR placement_source IN ('manual', 'auto', 'reserve')",
+            name="event_seating_assignments_placement_source_check",
+        ),
         UniqueConstraint(
             "layout_id",
             "seat_key",
@@ -378,6 +382,12 @@ class EventSeatingAssignment(Base):
         nullable=False,
         server_default=text("'guest'"),
     )
+    locked: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    placement_source: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("app_users.id", ondelete="SET NULL"),

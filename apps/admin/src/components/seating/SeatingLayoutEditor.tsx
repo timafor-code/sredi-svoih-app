@@ -2258,6 +2258,8 @@ function assignmentToPayloadEntry(assignment: SeatingAssignment): SeatingAssignm
     name: assignment.guestLabel,
     registrationId: assignment.registrationId,
     guestIndex: assignment.guestIndex,
+    locked: assignment.locked,
+    placementSource: assignment.placementSource,
     seatKey: assignment.seatKey,
     type: assignment.type,
   };
@@ -2638,6 +2640,8 @@ function createReserveAssignment(label: string): SeatingAssignment {
     guestLabel: label,
     id: `reserve_${Date.now().toString(36)}_${clientReserveSequence.toString(36)}`,
     layoutId: "",
+    locked: false,
+    placementSource: "reserve",
     registrationId: null,
     seatKey: null,
     type: "reserve",

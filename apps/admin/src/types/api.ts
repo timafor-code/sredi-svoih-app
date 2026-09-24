@@ -649,6 +649,8 @@ export type AdminApiSeatingAssignmentResponse = {
   guest_label: string | null;
   guest_initials: string | null;
   assignment_type: string;
+  locked: boolean;
+  placement_source: "manual" | "auto" | "reserve" | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

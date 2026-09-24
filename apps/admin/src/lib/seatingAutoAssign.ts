@@ -276,21 +276,22 @@ export function autoAssignResultToAssignments(
  * not match this predicate and may be recalculated.
  */
 export function isProtectedSeatingAssignment(assignment: SeatingAssignment): boolean {
-  return assignment.type === "reserve" || Boolean(assignment.locked) || assignment.placementSource === "manual";
+  return assignment.type === "reserve" ||
+    Boolean(assignment.locked) ||
+    assignment.placementSource === "manual" ||
+    assignment.placementSource === "reserve";
 }
 
 /**
- * Assignment lock metadata is intentionally not part of the persisted API
- * contract. On a layout reload we therefore preserve every existing placement
- * conservatively: the editor cannot know whether it came from a prior automatic
- * run or from a manual admin decision. New system placements remain unlocked in
- * the active editor session and can still be recalculated.
+ * Legacy rows have no placement source. On a layout reload those placements are
+ * conservatively protected because their origin cannot be reconstructed. New
+ * persisted rows always carry a source, so automatic placements stay unlocked.
  */
 export function protectPersistedSeatingAssignments(
   assignments: readonly SeatingAssignment[],
 ): SeatingAssignment[] {
   return assignments.map((assignment) =>
-    assignment.seatKey && !isProtectedSeatingAssignment(assignment)
+    assignment.seatKey && assignment.placementSource === undefined
       ? { ...assignment, locked: true }
       : { ...assignment },
   );
@@ -1046,6 +1047,8 @@ function assignmentFromGuest(
     layoutId: "",
     registrationId: guest.registrationId,
     guestIndex: guest.source === "guest" ? guest.guestIndex : null,
+    locked: false,
+    placementSource: "auto",
     seatKey,
     type: "guest",
     userId: guest.source === "participant" ? guest.participantUserId : null,
