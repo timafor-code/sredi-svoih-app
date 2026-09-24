@@ -18,12 +18,42 @@ from app.db.models.seating import (
 )
 from app.schemas.admin_seating import (
     AdminSeatingLayoutFromTemplateRequest,
+    AdminSeatingLayoutStateRequest,
     AdminSeatingTablePayload,
 )
 from app.services import admin_seating as seating_service
 
 
 class AdminSeatingLayoutResponseTests(unittest.IsolatedAsyncioTestCase):
+    def test_stable_seat_key_parts_include_disabled_part_identifier(self) -> None:
+        self.assertEqual(
+            seating_service._seat_key_parts("table-1:side:a:2"),
+            ("table-1", "side", 2, "side:a:2"),
+        )
+        self.assertEqual(
+            seating_service._seat_key_parts("table-1:end:b"),
+            ("table-1", "end", None, "end:b"),
+        )
+        self.assertEqual(
+            seating_service._seat_key_parts("table-1:3"),
+            ("table-1", "legacy", 3, None),
+        )
+
+    def test_disabled_stable_seat_is_rejected(self) -> None:
+        table = seating_service._LayoutTableSeats(3, frozenset({"side:a:1"}))
+        with self.assertRaises(HTTPException) as context:
+            seating_service._validate_seat_key("table-1:side:a:1", {"table-1": table})
+        self.assertEqual(context.exception.detail["message"], "seat_key references a disabled seat")
+        seating_service._validate_seat_key("table-1:side:a:1", {"table-1": seating_service._LayoutTableSeats(3, frozenset())})
+
+    def test_state_request_accepts_camel_case_and_omits_assignments(self) -> None:
+        request = AdminSeatingLayoutStateRequest.model_validate({
+            "eventId": str(uuid4()), "capacityUnitId": str(uuid4()),
+            "customTables": [], "expectedUpdatedAt": "2026-09-23T00:00:00Z",
+        })
+        self.assertIsNone(request.assignments)
+        self.assertEqual(request.expected_updated_at, datetime(2026, 9, 23, tzinfo=UTC))
+
     async def test_layout_envelope_serializes_saved_assignments(self) -> None:
         now = datetime.now(UTC)
         layout_id = uuid4()

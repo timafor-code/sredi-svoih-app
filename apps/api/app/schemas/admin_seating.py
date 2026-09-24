@@ -296,6 +296,38 @@ class AdminSeatingAssignmentsPatchRequest(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
 
+class AdminSeatingStateAssignmentsPayload(BaseModel):
+    chairs: list[AdminSeatingAssignmentEntryPayload] = Field(default_factory=list)
+    pool: list[AdminSeatingAssignmentEntryPayload] = Field(default_factory=list)
+    reserve_ids: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("reserve_ids", "reserveIds"),
+    )
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+
+class AdminSeatingLayoutStateRequest(BaseModel):
+    event_id: UUID = Field(validation_alias=AliasChoices("event_id", "eventId"))
+    occurrence_id: UUID | None = Field(default=None, validation_alias=AliasChoices("occurrence_id", "occurrenceId"))
+    capacity_unit_id: UUID = Field(validation_alias=AliasChoices("capacity_unit_id", "capacityUnitId"))
+    layout: str | None = Field(default=None, max_length=120)
+    custom_tables: list[AdminSeatingTablePayload] = Field(default_factory=list, validation_alias=AliasChoices("custom_tables", "customTables", "tables"))
+    table_connections: list[AdminSeatingConnectionPayload] = Field(default_factory=list, validation_alias=AliasChoices("table_connections", "tableConnections", "connections"))
+    selected_table_id: str | None = Field(default=None, validation_alias=AliasChoices("selected_table_id", "selectedTableId"))
+    seating_done: bool = Field(default=False, validation_alias=AliasChoices("seating_done", "seatingDone"))
+    active_template_id: str | None = Field(default=None, validation_alias=AliasChoices("active_template_id", "activeTemplateId"))
+    assignments: AdminSeatingStateAssignmentsPayload | None = None
+    expected_updated_at: datetime | None = Field(default=None, validation_alias=AliasChoices("expected_updated_at", "expectedUpdatedAt"))
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    @field_validator("layout", "selected_table_id", "active_template_id")
+    @classmethod
+    def normalize_optional_text_field(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value)
+
+
 class AdminSeatingTemplateResponse(BaseModel):
     id: UUID
     community_id: UUID
@@ -390,3 +422,8 @@ class AdminSeatingAssignmentsSaveResponse(BaseModel):
     placed_count: int
     pooled_count: int
     reserve_count: int
+
+
+class AdminSeatingLayoutStateSaveResponse(BaseModel):
+    layout: AdminSeatingLayoutRowResponse
+    assignments: AdminSeatingAssignmentsSaveResponse | None

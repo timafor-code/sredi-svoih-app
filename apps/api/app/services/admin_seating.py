@@ -41,6 +41,8 @@ from app.schemas.admin_seating import (
     AdminSeatingLayoutFromTemplateRequest,
     AdminSeatingLayoutPatchRequest,
     AdminSeatingLayoutRowResponse,
+    AdminSeatingLayoutStateRequest,
+    AdminSeatingLayoutStateSaveResponse,
     AdminSeatingTablePayload,
     AdminSeatingTableResponse,
     AdminSeatingTemplateFromLayoutRequest,
@@ -79,6 +81,12 @@ class _NormalizedAssignment:
     guest_label: str | None
     guest_initials: str | None
     assignment_type: str
+
+
+@dataclass(frozen=True)
+class _LayoutTableSeats:
+    long_side_seats: int
+    disabled_seat_parts: frozenset[str]
 
 
 @asynccontextmanager
@@ -121,6 +129,14 @@ def _validation_error(message: str) -> HTTPException:
 
 def _conflict(message: str) -> HTTPException:
     return _error(http_status.HTTP_409_CONFLICT, "conflict", message)
+
+
+def _seating_layout_conflict() -> HTTPException:
+    return _error(
+        http_status.HTTP_409_CONFLICT,
+        "seating_layout_conflict",
+        "Seating layout was changed by another session",
+    )
 
 
 def _require_manageable_communities(community_ids: Sequence[UUID]) -> None:
@@ -755,51 +771,76 @@ async def save_admin_seating_layout(
             connections=payload.table_connections,
         )
         await session.flush()
+        await _clear_unresolvable_seat_keys(session, layout.id)
         await session.refresh(layout)
         return _layout_row_response(layout)
 
 
-def _seat_key_parts(seat_key: str) -> tuple[str, str | None, int | None]:
+def _seat_key_parts(seat_key: str) -> tuple[str, str | None, int | None, str | None]:
     side_match = _STABLE_SIDE_SEAT_RE.match(seat_key)
     if side_match is not None:
-        table_id, _, raw_slot = side_match.groups()
-        return table_id, "side", int(raw_slot)
+        table_id, edge, raw_slot = side_match.groups()
+        return table_id, "side", int(raw_slot), f"side:{edge}:{raw_slot}"
 
     end_match = _STABLE_END_SEAT_RE.match(seat_key)
     if end_match is not None:
-        table_id, _ = end_match.groups()
-        return table_id, "end", None
+        table_id, end = end_match.groups()
+        return table_id, "end", None, f"end:{end}"
 
     legacy_match = _LEGACY_SEAT_RE.match(seat_key)
     if legacy_match is not None:
         table_id, raw_index = legacy_match.groups()
-        return table_id, "legacy", int(raw_index)
+        return table_id, "legacy", int(raw_index), None
 
     raise _validation_error("seat_key has unsupported format")
 
 
-async def _layout_table_ids(session: AsyncSession, layout_id: UUID) -> dict[str, int]:
+async def _layout_table_ids(session: AsyncSession, layout_id: UUID) -> dict[str, _LayoutTableSeats]:
     tables = list(
         await session.scalars(
             select(EventSeatingTable).where(EventSeatingTable.layout_id == layout_id),
         ),
     )
     return {
-        table.client_table_id: table.long_side_seats
+        table.client_table_id: _LayoutTableSeats(
+            long_side_seats=table.long_side_seats,
+            disabled_seat_parts=frozenset(table.disabled_seat_parts),
+        )
         for table in tables
     }
 
 
 def _validate_seat_key(
     seat_key: str,
-    table_long_side_seats: dict[str, int],
+    table_long_side_seats: dict[str, _LayoutTableSeats],
 ) -> None:
-    table_id, seat_kind, slot = _seat_key_parts(seat_key)
+    table_id, seat_kind, slot, stable_part = _seat_key_parts(seat_key)
     if table_id not in table_long_side_seats:
         raise _validation_error("seat_key references an unknown table")
     if seat_kind == "side" and slot is not None:
-        if slot < 0 or slot >= table_long_side_seats[table_id]:
+        if slot < 0 or slot >= table_long_side_seats[table_id].long_side_seats:
             raise _validation_error("seat_key references an unknown side seat")
+    if stable_part is not None and stable_part in table_long_side_seats[table_id].disabled_seat_parts:
+        raise _validation_error("seat_key references a disabled seat")
+
+
+async def _clear_unresolvable_seat_keys(session: AsyncSession, layout_id: UUID) -> int:
+    tables = await _layout_table_ids(session, layout_id)
+    assignments = list(await session.scalars(
+        select(EventSeatingAssignment).where(
+            EventSeatingAssignment.layout_id == layout_id,
+            EventSeatingAssignment.seat_key.is_not(None),
+        ),
+    ))
+    cleared = 0
+    for assignment in assignments:
+        try:
+            _validate_seat_key(assignment.seat_key, tables)  # type: ignore[arg-type]
+        except HTTPException:
+            assignment.seat_key = None
+            assignment.updated_at = _now()
+            cleared += 1
+    return cleared
 
 
 async def _registration_obligation_ids(
@@ -882,7 +923,11 @@ async def _registrations_by_id(
 async def _normalize_assignments(
     session: AsyncSession,
     *,
-    payload: AdminSeatingAssignmentsPatchRequest,
+    event_id: UUID,
+    occurrence_id: UUID | None,
+    capacity_unit_id: UUID,
+    chairs: Sequence[AdminSeatingAssignmentEntryPayload],
+    pool: Sequence[AdminSeatingAssignmentEntryPayload],
     layout_id: UUID,
 ) -> list[_NormalizedAssignment]:
     table_long_side_seats = await _layout_table_ids(session, layout_id)
@@ -890,11 +935,11 @@ async def _normalize_assignments(
         raise _validation_error("The seating layout has no tables")
 
     entries: list[tuple[AdminSeatingAssignmentEntryPayload, str | None]] = []
-    for entry in payload.chairs:
+    for entry in chairs:
         if entry.seat_key is None:
             raise _validation_error("chair assignments require seat_key")
         entries.append((entry, entry.seat_key))
-    for entry in payload.pool:
+    for entry in pool:
         entries.append((entry, None))
 
     seen_seat_keys: set[str] = set()
@@ -925,15 +970,15 @@ async def _normalize_assignments(
     registrations = await _registrations_by_id(
         session,
         registration_ids=list(registration_ids),
-        event_id=payload.event_id,
-        occurrence_id=payload.occurrence_id,
+        event_id=event_id,
+        occurrence_id=occurrence_id,
     )
     obligation_ids = await _registration_obligation_ids(
         session,
         registration_ids=list(registration_ids),
-        event_id=payload.event_id,
-        occurrence_id=payload.occurrence_id,
-        capacity_unit_id=payload.capacity_unit_id,
+        event_id=event_id,
+        occurrence_id=occurrence_id,
+        capacity_unit_id=capacity_unit_id,
     )
 
     normalized: list[_NormalizedAssignment] = []
@@ -980,7 +1025,11 @@ async def save_admin_seating_assignments(
 
         assignments = await _normalize_assignments(
             session,
-            payload=payload,
+            event_id=payload.event_id,
+            occurrence_id=payload.occurrence_id,
+            capacity_unit_id=payload.capacity_unit_id,
+            chairs=payload.chairs,
+            pool=payload.pool,
             layout_id=layout.id,
         )
 
@@ -1017,4 +1066,104 @@ async def save_admin_seating_assignments(
             placed_count=placed_count,
             pooled_count=pooled_count,
             reserve_count=reserve_count,
+        )
+
+
+async def save_admin_seating_layout_state(
+    session: AsyncSession,
+    current_user: AppUser,
+    payload: AdminSeatingLayoutStateRequest,
+) -> AdminSeatingLayoutStateSaveResponse:
+    _validate_geometry(payload.custom_tables, payload.table_connections)
+
+    async with _transaction_scope(session):
+        slot = await _resolve_slot(
+            session,
+            current_user,
+            event_id=payload.event_id,
+            occurrence_id=payload.occurrence_id,
+            capacity_unit_id=payload.capacity_unit_id,
+        )
+        template_id = await _resolve_template_reference_for_layout_save(
+            session,
+            community_id=slot.community_id,
+            active_template_id=payload.active_template_id,
+        )
+        layout = await _get_layout_for_slot(session, slot, for_update=True)
+        if payload.expected_updated_at is not None and (
+            layout is None or layout.updated_at != payload.expected_updated_at
+        ):
+            raise _seating_layout_conflict()
+        if layout is None:
+            layout = EventSeatingLayout(
+                community_id=slot.community_id,
+                event_id=slot.event.id,
+                occurrence_id=slot.occurrence.id if slot.occurrence else None,
+                capacity_unit_id=slot.capacity_unit.id,
+                created_by=current_user.id,
+            )
+            session.add(layout)
+            await session.flush()
+
+        layout.template_id = template_id
+        layout.capacity_limit_snapshot = _derive_capacity_snapshot(
+            slot.event, slot.occurrence, slot.capacity_unit,
+        )
+        layout.updated_at = _now()
+        await session.execute(delete(EventSeatingTableConnection).where(
+            EventSeatingTableConnection.layout_id == layout.id,
+        ))
+        await session.execute(delete(EventSeatingTable).where(
+            EventSeatingTable.layout_id == layout.id,
+        ))
+        _add_tables(session, layout_id=layout.id, tables=payload.custom_tables)
+        await session.flush()
+        _add_connections(session, layout_id=layout.id, connections=payload.table_connections)
+        await session.flush()
+
+        assignment_result: AdminSeatingAssignmentsSaveResponse | None = None
+        if payload.assignments is not None:
+            assignments = await _normalize_assignments(
+                session,
+                event_id=payload.event_id,
+                occurrence_id=payload.occurrence_id,
+                capacity_unit_id=payload.capacity_unit_id,
+                chairs=payload.assignments.chairs,
+                pool=payload.assignments.pool,
+                layout_id=layout.id,
+            )
+            await session.execute(delete(EventSeatingAssignment).where(
+                EventSeatingAssignment.layout_id == layout.id,
+            ))
+            for assignment in assignments:
+                session.add(EventSeatingAssignment(
+                    layout_id=layout.id,
+                    registration_id=assignment.registration_id,
+                    guest_index=assignment.guest_index,
+                    user_id=assignment.user_id,
+                    seat_key=assignment.seat_key,
+                    guest_label=assignment.guest_label,
+                    guest_initials=assignment.guest_initials,
+                    assignment_type=assignment.assignment_type,
+                    created_by=current_user.id,
+                ))
+            placed_count = sum(1 for assignment in assignments if assignment.seat_key)
+            assignment_result = AdminSeatingAssignmentsSaveResponse(
+                layout_id=layout.id,
+                placed_count=placed_count,
+                pooled_count=len(assignments) - placed_count,
+                reserve_count=sum(
+                    1 for assignment in assignments
+                    if assignment.assignment_type == "reserve"
+                ),
+            )
+        else:
+            await _clear_unresolvable_seat_keys(session, layout.id)
+
+        layout.seating_done = payload.seating_done
+        await session.flush()
+        await session.refresh(layout)
+        return AdminSeatingLayoutStateSaveResponse(
+            layout=_layout_row_response(layout),
+            assignments=assignment_result,
         )

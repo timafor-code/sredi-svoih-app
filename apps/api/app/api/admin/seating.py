@@ -16,6 +16,8 @@ from app.schemas.admin_seating import (
     AdminSeatingLayoutFromTemplateRequest,
     AdminSeatingLayoutPatchRequest,
     AdminSeatingLayoutRowResponse,
+    AdminSeatingLayoutStateRequest,
+    AdminSeatingLayoutStateSaveResponse,
     AdminSeatingTemplateFromLayoutRequest,
     AdminSeatingTemplateResponse,
 )
@@ -200,6 +202,23 @@ async def save_admin_seating_layout(
         payload,
     )
     return ApiResponse[AdminSeatingLayoutRowResponse](data=layout)
+
+
+@router.put(
+    "/layout/state",
+    response_model=ApiResponse[AdminSeatingLayoutStateSaveResponse],
+)
+async def save_admin_seating_layout_state(
+    payload: AdminSeatingLayoutStateRequest,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[AdminSeatingLayoutStateSaveResponse]:
+    result = await admin_seating_service.save_admin_seating_layout_state(
+        session,
+        current_user,
+        payload,
+    )
+    return ApiResponse[AdminSeatingLayoutStateSaveResponse](data=result)
 
 
 @router.patch(

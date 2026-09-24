@@ -564,6 +564,24 @@ export interface SeatingAssignmentsPayload {
   reserveIds?: string[];
 }
 
+export interface SeatingLayoutStatePayload {
+  eventId: string;
+  occurrenceId?: string | null;
+  capacityUnitId: string;
+  layout?: string;
+  customTables: SeatingTable[];
+  tableConnections?: SeatingConnection[];
+  selectedTableId?: string | null;
+  seatingDone?: boolean;
+  activeTemplateId?: string | null;
+  assignments?: {
+    chairs?: SeatingAssignmentEntry[];
+    pool?: SeatingAssignmentEntry[];
+    reserveIds?: string[];
+  } | null;
+  expectedUpdatedAt: string | null;
+}
+
 /** Slot identifier for the read / fork RPC. */
 export interface SeatingSlotParams {
   eventId: string;
@@ -582,4 +600,9 @@ export interface SeatingAssignmentsSaveResult {
   placedCount: number;
   pooledCount: number;
   reserveCount: number;
+}
+
+export interface SeatingLayoutStateSaveResult {
+  layout: SeatingLayoutRow;
+  assignments: SeatingAssignmentsSaveResult | null;
 }

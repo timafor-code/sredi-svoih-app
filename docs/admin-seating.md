@@ -86,6 +86,7 @@ The verified router is `apps/api/app/api/admin/seating.py`:
 | GET | `/admin/seating/layout` |
 | POST | `/admin/seating/layout/from-template` |
 | PATCH | `/admin/seating/layout` |
+| PUT | `/admin/seating/layout/state` |
 | PATCH | `/admin/seating/assignments` |
 
 There is no capacity endpoint under `/admin/seating/*`. Capacity sync is an
@@ -103,6 +104,22 @@ API mode keeps these existing v15 payload keys unchanged: `eventId`,
 `occurrenceId`, `capacityUnitId`, `layout`, `customTables`, `tableConnections`,
 `selectedTableId`, `seatingDone`, `activeTemplateId`, `reserveIds`, `capacity`,
 `chairs`, and `pool`.
+
+## Atomic state save and concurrency
+
+The editor saves a layout's geometry, optional assignments, and `seatingDone`
+through `PUT /admin/seating/layout/state` in one transaction. It sends the last
+received `updatedAt` unchanged as `expectedUpdatedAt`; a stale value returns
+`409` with code `seating_layout_conflict` and message `Seating layout was changed
+by another session`. The editor reload action discards local changes and loads
+the current server state.
+
+When geometry is saved without assignments, invalid existing seat keys are
+cleared (not deleted): unknown tables, unavailable side slots, disabled stable
+seat parts, and unsupported formats become pooled rows. Legacy `PATCH /layout`
+does the same cleanup. Assignment saves reject disabled stable seats with 422.
+Collision blocking remains client-side only; the API does not add geometry
+collision validation.
 
 `apps/admin/src/lib/seatingGeometry.ts` is pure and has no IO. Related pure
 helpers handle deterministic auto assignment, drag/drop moves, assignment
@@ -249,8 +266,8 @@ Assignment behavior:
   tables without moving the lock;
 - a manually locked ordinary guest may remain on a rabbi seat, but the rest of
   that party cannot automatically consume other protected rabbi seats;
-- assignments are saved through `saveSeatingAssignments()` and the server-side
-  Admin API; reopening restores saved assignments from the backend.
+- editor actions use the atomic state-save endpoint; reopening restores saved
+  assignments from the backend.
 
 Click-to-place is the supported non-DnD flow: select an unseated pool/full-list
 guest, enter pending placement, click one of the gold free active-chair targets,

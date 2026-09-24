@@ -667,3 +667,8 @@ export type AdminApiSeatingAssignmentsSaveResponse = {
   pooled_count: number;
   reserve_count: number;
 };
+
+export type AdminApiSeatingLayoutStateSaveResponse = {
+  layout: AdminApiSeatingLayoutRowResponse;
+  assignments: AdminApiSeatingAssignmentsSaveResponse | null;
+};

@@ -54,9 +54,11 @@ import {
   deleteSeatingTemplate,
   getSeatingLayout,
   listSeatingTemplates,
-  saveSeatingAssignments,
-  saveSeatingLayout,
 } from "../../services/adminSeatingService";
+import {
+  isSeatingLayoutConflictError,
+  saveSeatingLayoutState,
+} from "../../services/adminSeatingApiService";
 import { updateCapacityUnitLimit } from "../../services/adminCapacityService";
 import { getAdminRegistrationCapacityGuestPool } from "../../services/adminRegistrationCapacityService";
 import type { AdminEventOccurrence } from "../../types/eventOccurrences";
@@ -68,7 +70,6 @@ import type {
   SeatingAssignmentsSaveResult,
   SeatingConnection,
   SeatingGuestPoolItem,
-  SeatingLayoutRow,
   SeatingPrintModel,
   SeatingReservePoolItem,
   SeatingTable,
@@ -100,6 +101,7 @@ export type SeatingLayoutEditorSlot = {
 type EditorFeedback = {
   message: string;
   tone: "muted" | "success" | "error";
+  action?: "reload_layout";
 };
 
 const GRID_TABLE_CAPACITY = 8;
@@ -149,6 +151,8 @@ export function SeatingLayoutEditor({
   const [printModel, setPrintModel] = useState<SeatingPrintModel | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [isSeatingDone, setIsSeatingDone] = useState(false);
+  const [layoutUpdatedAt, setLayoutUpdatedAt] = useState<string | null>(null);
+  const [layoutReloadVersion, setLayoutReloadVersion] = useState(0);
   const [tables, setTables] = useState<SeatingTable[]>([]);
   const [templates, setTemplates] = useState<SeatingTemplate[]>([]);
   const currentGuestPoolSlotKey = guestPoolSlotKey(
@@ -177,6 +181,7 @@ export function SeatingLayoutEditor({
       setIsAutoAssigning(false);
       setIsReserveDialogOpen(false);
       setIsSeatingDone(false);
+      setLayoutUpdatedAt(null);
       setPrintModel(null);
       setSelectedTableId(null);
       setTables([]);
@@ -232,6 +237,7 @@ export function SeatingLayoutEditor({
         setAssignments(layout?.assignments ?? []);
         setPendingGuestKey(null);
         setIsSeatingDone(Boolean(layout?.seatingDone));
+        setLayoutUpdatedAt(layout?.updatedAt ?? null);
         setActiveTemplateValue(
           layout?.templateId
             ? userSeatingTemplateValue(layout.templateId)
@@ -258,6 +264,7 @@ export function SeatingLayoutEditor({
         setAssignments([]);
         setPendingGuestKey(null);
         setIsSeatingDone(false);
+        setLayoutUpdatedAt(null);
         setActiveTemplateValue(DEFAULT_SEATING_TEMPLATE_VALUE);
         setSelectedTableId(pickSelectedTableId(fallbackTables));
         const layoutErrorMessage =
@@ -276,7 +283,7 @@ export function SeatingLayoutEditor({
     return () => {
       cancelled = true;
     };
-  }, [slot]);
+  }, [layoutReloadVersion, slot]);
 
   useEffect(() => {
     if (!slot) {
@@ -917,45 +924,47 @@ export function SeatingLayoutEditor({
     setHasUnsavedChanges(true);
   }, [allTablesSideSeats, canSetAllSideSeats, connections, reconcileGeometryChange, tables]);
 
-  const saveLayoutGeometry = useCallback(
+  const saveLayoutState = useCallback(
     async ({
+      assignments: nextAssignments,
       nextConnections,
       nextSeatingDone = false,
       nextSelectedTableId,
       nextTables,
       templateValue,
     }: {
+      assignments?: { chairs: SeatingAssignmentEntry[]; pool: SeatingAssignmentEntry[] } | null;
       nextConnections: SeatingConnection[];
       nextSeatingDone?: boolean;
       nextSelectedTableId: string | null;
       nextTables: SeatingTable[];
       templateValue: SeatingTemplateValue;
-    }): Promise<SeatingLayoutRow> => {
+    }) => {
       if (!slot) {
         throw new Error("Не выбран слот для схемы рассадки.");
       }
 
-      return saveSeatingLayout({
+      const result = await saveSeatingLayoutState({
         activeTemplateId: templateIdForSavePayload(
           templateValue,
           templates,
           hasLoadedTemplates && !isTemplateListLoading,
         ),
-        capacity: capacityLimit ?? 0,
         capacityUnitId: slot.bucket.capacityUnitId,
-        chairs: [],
         customTables: nextTables,
         eventId: slot.event.eventId,
         layout: "islands",
         occurrenceId: slot.occurrence?.id ?? null,
-        pool: [],
-        reserveIds: [],
+        assignments: nextAssignments === undefined ? undefined : nextAssignments,
+        expectedUpdatedAt: layoutUpdatedAt,
         seatingDone: nextSeatingDone,
         selectedTableId: nextSeatingDone ? null : nextSelectedTableId,
         tableConnections: nextConnections,
       });
+      setLayoutUpdatedAt(result.layout.updatedAt);
+      return result;
     },
-    [capacityLimit, hasLoadedTemplates, isTemplateListLoading, slot, templates],
+    [hasLoadedTemplates, isTemplateListLoading, layoutUpdatedAt, slot, templates],
   );
 
   const commitGeometry = useCallback(
@@ -1025,23 +1034,19 @@ export function SeatingLayoutEditor({
       setIsApplyingTemplate(true);
       setFeedback({ message: "Применяем шаблон...", tone: "muted" });
 
-      void saveLayoutGeometry({
+      void saveLayoutState({
+        assignments: clearsSeating ? clearedAssignmentPayload : undefined,
         nextConnections,
         nextSeatingDone: clearsSeating ? false : isSeatingDone,
         nextSelectedTableId,
         nextTables,
         templateValue: value,
       })
-        .then(() => clearsSeating ? saveSeatingAssignments({
-          capacityUnitId: slot.bucket.capacityUnitId,
-          chairs: clearedAssignmentPayload.chairs,
-          eventId: slot.event.eventId,
-          occurrenceId: slot.occurrence?.id ?? null,
-          pool: clearedAssignmentPayload.pool,
-          reserveIds: [],
-        }).then((saveResult) => {
-          assertAssignmentSaveResultMatchesPayload(saveResult, clearedAssignmentPayload);
-        }) : null)
+        .then((result) => {
+          if (result.assignments && clearsSeating) {
+            assertAssignmentSaveResultMatchesPayload(result.assignments, clearedAssignmentPayload);
+          }
+        })
         .then(() => {
           commitGeometry({
             nextConnections,
@@ -1059,10 +1064,13 @@ export function SeatingLayoutEditor({
         .catch((error) => {
           setFeedback({
             message:
-              error instanceof Error
+              isSeatingLayoutConflictError(error)
+                ? "Схема изменена в другом окне. Обновите схему, чтобы продолжить — несохранённые изменения будут потеряны."
+                : error instanceof Error
                 ? error.message
                 : "Не удалось применить шаблон.",
             tone: "error",
+            action: isSeatingLayoutConflictError(error) ? "reload_layout" : undefined,
           });
         })
         .finally(() => {
@@ -1077,7 +1085,7 @@ export function SeatingLayoutEditor({
       isLayoutActionBusy,
       currentAssignments,
       isSeatingDone,
-      saveLayoutGeometry,
+      saveLayoutState,
       slot,
       templates,
     ],
@@ -1101,14 +1109,14 @@ export function SeatingLayoutEditor({
     setIsSavingTemplate(true);
     setFeedback({ message: "Сохраняем шаблон...", tone: "muted" });
 
-    void saveLayoutGeometry({
+    void saveLayoutState({
       nextConnections,
       nextSeatingDone: isSeatingDone,
       nextSelectedTableId,
       nextTables,
       templateValue: activeTemplateValue,
     })
-      .then((nextLayout) => {
+      .then((result) => {
         commitGeometry({
           nextConnections,
           nextSelectedTableId: isSeatingDone ? null : nextSelectedTableId,
@@ -1116,7 +1124,7 @@ export function SeatingLayoutEditor({
           templateValue: activeTemplateValue,
         });
 
-        return createSeatingTemplateFromLayout(nextLayout.id, title);
+        return createSeatingTemplateFromLayout(result.layout.id, title);
       })
       .then((template) => {
         const nextTemplateValue = userSeatingTemplateValue(template.id);
@@ -1128,10 +1136,13 @@ export function SeatingLayoutEditor({
       .catch((error) => {
         setFeedback({
           message:
-            error instanceof Error
+            isSeatingLayoutConflictError(error)
+              ? "Схема изменена в другом окне. Обновите схему, чтобы продолжить — несохранённые изменения будут потеряны."
+              : error instanceof Error
               ? error.message
               : "Не удалось сохранить шаблон.",
           tone: "error",
+          action: isSeatingLayoutConflictError(error) ? "reload_layout" : undefined,
         });
       })
       .finally(() => {
@@ -1145,7 +1156,7 @@ export function SeatingLayoutEditor({
     isLayoutActionBusy,
     isSeatingDone,
     refreshTemplates,
-    saveLayoutGeometry,
+    saveLayoutState,
     selectedTableId,
     slot,
     tables,
@@ -1218,34 +1229,18 @@ export function SeatingLayoutEditor({
     setIsSaving(true);
     setFeedback({ message: "Сохраняем схему...", tone: "muted" });
 
-    void saveLayoutGeometry({
+    void saveLayoutState({
+      assignments: assignmentPayloadEntries,
       nextConnections,
       nextSeatingDone: isSeatingDone,
       nextSelectedTableId,
       nextTables,
       templateValue: savedTemplateValue,
     })
-      .then(() => {
-        if (!assignmentPayloadEntries) {
-          return null;
+      .then((result) => {
+        if (result.assignments && assignmentPayloadEntries) {
+          assertAssignmentSaveResultMatchesPayload(result.assignments, assignmentPayloadEntries);
         }
-
-        // PR 14 persistence: layout save keeps geometry only; assignments are
-        // replaced by the dedicated RPC and must succeed before showing success.
-        return saveSeatingAssignments({
-          capacityUnitId: slot.bucket.capacityUnitId,
-          chairs: assignmentPayloadEntries.chairs,
-          eventId: slot.event.eventId,
-          occurrenceId: slot.occurrence?.id ?? null,
-          pool: assignmentPayloadEntries.pool,
-          reserveIds: [],
-        }).then((saveResult) => {
-          assertAssignmentSaveResultMatchesPayload(
-            saveResult,
-            assignmentPayloadEntries,
-          );
-          return saveResult;
-        });
       })
       .then(() => {
         commitGeometry({
@@ -1264,8 +1259,11 @@ export function SeatingLayoutEditor({
       })
       .catch((error) => {
         setFeedback({
-          message: formatLayoutSaveError(error, isSeatingDone),
+          message: isSeatingLayoutConflictError(error)
+            ? "Схема изменена в другом окне. Обновите схему, чтобы продолжить — несохранённые изменения будут потеряны."
+            : formatLayoutSaveError(error, isSeatingDone),
           tone: "error",
+          action: isSeatingLayoutConflictError(error) ? "reload_layout" : undefined,
         });
       })
       .finally(() => {
@@ -1279,7 +1277,7 @@ export function SeatingLayoutEditor({
     hasLoadedTemplates,
      isSeatingDone,
     isTemplateListLoading,
-    saveLayoutGeometry,
+    saveLayoutState,
     saveDisabled,
     selectedTableId,
     slot,
@@ -1379,35 +1377,19 @@ export function SeatingLayoutEditor({
       setIsAutoAssigning(true);
       setFeedback({ message: "Делаем рассадку...", tone: "muted" });
 
-      void saveLayoutGeometry({
+      void saveLayoutState({
+        assignments: payloadEntries,
         nextConnections,
-        nextSeatingDone: false,
-        nextSelectedTableId: pickSelectedTableId(nextTables),
+        nextSeatingDone: true,
+        nextSelectedTableId,
         nextTables,
         templateValue: savedTemplateValue,
       })
-        .then(() =>
-          saveSeatingAssignments({
-            capacityUnitId: slot.bucket.capacityUnitId,
-            chairs: payloadEntries.chairs,
-            eventId: slot.event.eventId,
-            occurrenceId: slot.occurrence?.id ?? null,
-            pool: payloadEntries.pool,
-            reserveIds: [],
-          }),
-        )
         .then((saveResult) => {
-          assertAssignmentSaveResultMatchesPayload(saveResult, payloadEntries);
+          if (saveResult.assignments) {
+            assertAssignmentSaveResultMatchesPayload(saveResult.assignments, payloadEntries);
+          }
         })
-        .then(() =>
-          saveLayoutGeometry({
-            nextConnections,
-            nextSeatingDone: true,
-            nextSelectedTableId,
-            nextTables,
-            templateValue: savedTemplateValue,
-          }),
-        )
         .then(() => {
           commitGeometry({
             nextConnections,
@@ -1435,8 +1417,11 @@ export function SeatingLayoutEditor({
         .catch((error) => {
           console.error("Auto seating save failed", error);
           setFeedback({
-            message: formatAutoAssignSaveError(error),
+            message: isSeatingLayoutConflictError(error)
+              ? "Схема изменена в другом окне. Обновите схему, чтобы продолжить — несохранённые изменения будут потеряны."
+              : formatAutoAssignSaveError(error),
             tone: "error",
+            action: isSeatingLayoutConflictError(error) ? "reload_layout" : undefined,
           });
         })
         .finally(() => {
@@ -1452,7 +1437,7 @@ export function SeatingLayoutEditor({
       hasLoadedTemplates,
       hasValidGeometry,
       isTemplateListLoading,
-      saveLayoutGeometry,
+      saveLayoutState,
       slot,
       tables,
       templates,
@@ -1835,6 +1820,15 @@ export function SeatingLayoutEditor({
                         <strong>Не удалось выполнить действие.</strong>
                         <span>{feedback.message}</span>
                       </div>
+                      {feedback.action === "reload_layout" ? (
+                        <Button
+                          onClick={() => setLayoutReloadVersion((version) => version + 1)}
+                          size="sm"
+                          variant="secondary"
+                        >
+                          Обновить схему
+                        </Button>
+                      ) : null}
                       <button
                         aria-label="Скрыть ошибку"
                         className="seat-canvas-error-slot__close"
