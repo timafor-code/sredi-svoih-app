@@ -9,6 +9,7 @@ import {
   formatPaymentStatus,
   getRegistrationStatusLabel,
 } from "../registrations/formatters";
+import { enter, leave, reset } from "../../lib/seatingDropDepth";
 import { SeatingUnseatedDialog, type DialogTriggerRect } from "./SeatingUnseatedDialog";
 
 export function SeatingAssignmentsPanel({
@@ -58,13 +59,29 @@ export function SeatingAssignmentsPanel({
   warning?: string | null;
 }) {
   const [isDropTarget, setIsDropTarget] = useState(false);
+  const dragDepthRef = useRef(0);
+  const isPoolDropEnabled = manualSeatingEnabled && Boolean(onPoolDrop);
   const [isFullListOpen, setIsFullListOpen] = useState(false);
   const [triggerRect, setTriggerRect] = useState<DialogTriggerRect | null>(null);
   const fullListButtonRef = useRef<HTMLButtonElement | null>(null);
   const handleCloseFullList = useCallback(() => setIsFullListOpen(false), []);
 
-  const handleDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
-    if (!manualSeatingEnabled || !onPoolDrop) {
+  const setDragState = (state: ReturnType<typeof reset>) => {
+    dragDepthRef.current = state.depth;
+    setIsDropTarget(state.isOver);
+  };
+
+  const handleDragEnter = (event: ReactDragEvent<HTMLElement>) => {
+    if (!isPoolDropEnabled) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragState(enter(dragDepthRef.current));
+  };
+
+  const handleDragOver = (event: ReactDragEvent<HTMLElement>) => {
+    if (!isPoolDropEnabled) {
       return;
     }
     event.preventDefault();
@@ -72,20 +89,38 @@ export function SeatingAssignmentsPanel({
     setIsDropTarget(true);
   };
 
-  const handleDrop = (event: ReactDragEvent<HTMLDivElement>) => {
-    if (!manualSeatingEnabled || !onPoolDrop) {
+  const handleDragLeave = () => {
+    if (!isPoolDropEnabled) {
+      return;
+    }
+    setDragState(leave(dragDepthRef.current));
+  };
+
+  const handleDragEnd = () => {
+    if (isPoolDropEnabled) {
+      setDragState(reset());
+    }
+  };
+
+  const handleDrop = (event: ReactDragEvent<HTMLElement>) => {
+    if (!isPoolDropEnabled) {
       return;
     }
     event.preventDefault();
-    setIsDropTarget(false);
-    onPoolDrop();
+    setDragState(reset());
+    onPoolDrop?.();
   };
 
   return (
     <aside
       aria-busy={isLoading}
       aria-label="Не рассажены"
-      className="seat-pool"
+      className={isDropTarget ? "seat-pool seat-pool--drop" : "seat-pool"}
+      onDragEnd={isPoolDropEnabled ? handleDragEnd : undefined}
+      onDragEnter={isPoolDropEnabled ? handleDragEnter : undefined}
+      onDragLeave={isPoolDropEnabled ? handleDragLeave : undefined}
+      onDragOver={isPoolDropEnabled ? handleDragOver : undefined}
+      onDrop={isPoolDropEnabled ? handleDrop : undefined}
     >
       <div className="seat-pool__head">
         <h4>Не рассажены</h4>
@@ -120,14 +155,9 @@ export function SeatingAssignmentsPanel({
       <div
         className={[
           "seat-pool__list",
-          manualSeatingEnabled ? "seat-pool__list--droppable" : "",
-          isDropTarget ? "seat-pool__list--drop" : "",
         ]
           .filter(Boolean)
           .join(" ")}
-        onDragLeave={manualSeatingEnabled ? () => setIsDropTarget(false) : undefined}
-        onDragOver={manualSeatingEnabled ? handleDragOver : undefined}
-        onDrop={manualSeatingEnabled ? handleDrop : undefined}
       >
         {!isLoading && !error && warning ? (
           <p className="seat-pool__empty seat-pool__empty--warning" role="alert">
@@ -324,7 +354,7 @@ function ReserveChip({
           title="Удалить резерв"
           type="button"
         >
-          ×
+          <svg aria-hidden="true" fill="none" height="10" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" viewBox="0 0 10 10" width="10"><path d="m1 1 8 8M9 1 1 9" /></svg>
         </button>
       ) : null}
     </div>

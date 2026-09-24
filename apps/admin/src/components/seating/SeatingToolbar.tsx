@@ -15,7 +15,7 @@ export type SeatingToolbarProps = {
 
 export function SeatingToolbar(props: SeatingToolbarProps) {
   return <div className="seat-layout-controls">
-    <div className="seat-controls-group"><span className="seat-controls-group__label">Расстановка столов</span>
+    <div className="seat-controls-group"><span className="seat-controls-caption">Расстановка столов</span>
       <Button aria-keyshortcuts="N" disabled={props.addDisabled} onClick={props.onAddTable} size="sm" title={buttonTitle(props.addDisabled, props.addDisabledReason, "Добавить стол (N)")} variant="secondary"><PlusIcon />Стол</Button>
       <Button aria-keyshortcuts="R" aria-label="Повернуть на 90 градусов" className="seat-icon-button" disabled={props.rotateDisabled} onClick={props.onRotateTable} size="sm" title={buttonTitle(props.rotateDisabled, props.rotateDisabledReason, "Повернуть (R)")} variant="secondary"><RotateIcon /></Button>
       <Button aria-keyshortcuts="Delete Backspace" aria-label="Удалить стол" className="seat-icon-button seat-icon-button--danger" disabled={props.removeDisabled} onClick={props.onRemoveTable} size="sm" title={buttonTitle(props.removeDisabled, props.removeDisabledReason, "Удалить (Delete)")} variant="secondary"><TrashIcon /></Button>
@@ -27,7 +27,6 @@ export function SeatingToolbar(props: SeatingToolbarProps) {
       {[2, 3].map((value) => <button aria-pressed={props.allSideSeats === value} className={props.allSideSeats === value ? "seat-seg__option is-on" : "seat-seg__option"} disabled={props.allSideSeatsDisabled} key={value} onClick={() => props.onSetAllSideSeats(value as 2 | 3)} title={buttonTitle(props.allSideSeatsDisabled, props.allSideSeatsDisabledReason, `${value} места на сторону всем столам`)} type="button">{value}</button>)}</div><span className="seat-controls-group__unit">места/стор.</span></div>
     <span className="seat-controls-divider" />
     <Button className={props.seatEditEnabled ? "is-on" : undefined} disabled={props.seatEditDisabled} onClick={props.onToggleSeatEdit} size="sm" title={buttonTitle(props.seatEditDisabled, props.seatEditDisabledReason, "Выключение мест")} variant="secondary"><SeatEditIcon />Выключение мест</Button>
-    <SeatingShortcutLegend />
   </div>;
 }
 
