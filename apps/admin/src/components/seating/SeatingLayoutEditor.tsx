@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
@@ -78,6 +79,7 @@ import type {
 import { SeatingAssignmentsPanel } from "./SeatingAssignmentsPanel";
 import { SeatingCanvas } from "./SeatingCanvas";
 import { SeatingCapacitySyncDialog } from "./SeatingCapacitySyncDialog";
+import { SeatingCloseDialog } from "./SeatingCloseDialog";
 import { SeatingMetricsPanel } from "./SeatingMetricsPanel";
 import { SeatingPrintDocument } from "./SeatingPrintDocument";
 import { SeatingReserveDialog } from "./SeatingReserveDialog";
@@ -124,6 +126,9 @@ export function SeatingLayoutEditor({
   const [dragSource, setDragSource] = useState<SeatingDragSourceRef | null>(null);
   const [pendingGuestKey, setPendingGuestKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<EditorFeedback | null>(null);
+  const [canvasNotice, setCanvasNotice] = useState<string | null>(null);
+  const noticeTimerRef = useRef<number | null>(null);
+  const saveInFlightRef = useRef(false);
   const [guestPool, setGuestPool] = useState<SeatingGuestPoolItem[]>([]);
   const [guestPoolError, setGuestPoolError] = useState<string | null>(null);
   const [layoutLoadError, setLayoutLoadError] = useState<string | null>(null);
@@ -143,6 +148,7 @@ export function SeatingLayoutEditor({
   const [isLoading, setIsLoading] = useState(false);
   const [isReserveDialogOpen, setIsReserveDialogOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isCloseDialogOpen, setIsCloseDialogOpen] = useState(false);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [seatEditEnabled, setSeatEditEnabled] = useState(false);
@@ -155,6 +161,41 @@ export function SeatingLayoutEditor({
   const [layoutReloadVersion, setLayoutReloadVersion] = useState(0);
   const [tables, setTables] = useState<SeatingTable[]>([]);
   const [templates, setTemplates] = useState<SeatingTemplate[]>([]);
+
+  const showCanvasNotice = useCallback((message: string) => {
+    setCanvasNotice(message);
+    if (noticeTimerRef.current !== null) {
+      window.clearTimeout(noticeTimerRef.current);
+    }
+    noticeTimerRef.current = window.setTimeout(() => {
+      noticeTimerRef.current = null;
+      setCanvasNotice(null);
+    }, 8_000);
+  }, []);
+
+  const dismissCanvasNotice = useCallback(() => {
+    if (noticeTimerRef.current !== null) {
+      window.clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = null;
+    }
+    setCanvasNotice(null);
+  }, []);
+
+  useEffect(() => () => {
+    if (noticeTimerRef.current !== null) {
+      window.clearTimeout(noticeTimerRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return undefined;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
   const currentGuestPoolSlotKey = guestPoolSlotKey(
     slot
       ? {
@@ -789,13 +830,10 @@ export function SeatingLayoutEditor({
     });
     setAssignments(result.assignments);
     if (result.returnedCount > 0) {
-      setFeedback({
-        message: `Вернулись в список: ${result.returnedCount} — их места исчезли после изменения столов.`,
-        tone: "muted",
-      });
+      showCanvasNotice(`Вернулись в список: ${result.returnedCount} — их места исчезли после изменения столов.`);
     }
     return result;
-  }, [assignments, guestPool]);
+  }, [assignments, guestPool, showCanvasNotice]);
 
   const handleAddTable = useCallback(() => {
     if (!canAddTable) {
@@ -1206,9 +1244,9 @@ export function SeatingLayoutEditor({
     [activeTemplateValue, refreshTemplates],
   );
 
-  const handleSave = useCallback(() => {
-    if (saveDisabled) {
-      return;
+  const saveLayout = useCallback(async (): Promise<boolean> => {
+    if (saveDisabled || isSaving || saveInFlightRef.current) {
+      return false;
     }
 
     const nextTables = normalizeEditorTables(tables);
@@ -1226,56 +1264,57 @@ export function SeatingLayoutEditor({
       hasLoadedTemplates && !isTemplateListLoading,
     );
 
+    saveInFlightRef.current = true;
     setIsSaving(true);
     setFeedback({ message: "Сохраняем схему...", tone: "muted" });
 
-    void saveLayoutState({
-      assignments: assignmentPayloadEntries,
-      nextConnections,
-      nextSeatingDone: isSeatingDone,
-      nextSelectedTableId,
-      nextTables,
-      templateValue: savedTemplateValue,
-    })
-      .then((result) => {
-        if (result.assignments && assignmentPayloadEntries) {
-          assertAssignmentSaveResultMatchesPayload(result.assignments, assignmentPayloadEntries);
-        }
-      })
-      .then(() => {
-        commitGeometry({
-          nextConnections,
-          nextSelectedTableId,
-          nextTables,
-          templateValue: savedTemplateValue,
-        });
-        setFeedback({
-          message: shouldSaveAssignments
-            ? "Схема и рассадка сохранены."
-            : "Схема сохранена.",
-          tone: "success",
-        });
-        setHasUnsavedChanges(false);
-      })
-      .catch((error) => {
-        setFeedback({
-          message: isSeatingLayoutConflictError(error)
-            ? "Схема изменена в другом окне. Обновите схему, чтобы продолжить — несохранённые изменения будут потеряны."
-            : formatLayoutSaveError(error, isSeatingDone),
-          tone: "error",
-          action: isSeatingLayoutConflictError(error) ? "reload_layout" : undefined,
-        });
-      })
-      .finally(() => {
-        setIsSaving(false);
+    try {
+      const result = await saveLayoutState({
+        assignments: assignmentPayloadEntries,
+        nextConnections,
+        nextSeatingDone: isSeatingDone,
+        nextSelectedTableId,
+        nextTables,
+        templateValue: savedTemplateValue,
       });
+      if (result.assignments && assignmentPayloadEntries) {
+        assertAssignmentSaveResultMatchesPayload(result.assignments, assignmentPayloadEntries);
+      }
+      commitGeometry({
+        nextConnections,
+        nextSelectedTableId,
+        nextTables,
+        templateValue: savedTemplateValue,
+      });
+      setFeedback({
+        message: shouldSaveAssignments
+          ? "Схема и рассадка сохранены."
+          : "Схема сохранена.",
+        tone: "success",
+      });
+      setHasUnsavedChanges(false);
+      return true;
+    } catch (error) {
+      setFeedback({
+        message: isSeatingLayoutConflictError(error)
+          ? "Схема изменена в другом окне. Обновите схему, чтобы продолжить — несохранённые изменения будут потеряны."
+          : formatLayoutSaveError(error, isSeatingDone),
+        tone: "error",
+        action: isSeatingLayoutConflictError(error) ? "reload_layout" : undefined,
+      });
+      return false;
+    } finally {
+      saveInFlightRef.current = false;
+      setIsSaving(false);
+    }
   }, [
     activeTemplateValue,
     commitGeometry,
     connections,
     currentAssignments,
     hasLoadedTemplates,
-     isSeatingDone,
+    isSaving,
+    isSeatingDone,
     isTemplateListLoading,
     saveLayoutState,
     saveDisabled,
@@ -1284,6 +1323,31 @@ export function SeatingLayoutEditor({
     tables,
     templates,
   ]);
+
+  const handleSave = useCallback(() => {
+    void saveLayout();
+  }, [saveLayout]);
+
+  const isCloseWriteActive =
+    isSaving || isAutoAssigning || isApplyingTemplate || isCapacitySyncing;
+  const requestClose = useCallback(() => {
+    if (isCloseWriteActive) {
+      showCanvasNotice("Дождитесь окончания сохранения.");
+      return;
+    }
+    if (hasUnsavedChanges) {
+      setIsCloseDialogOpen(true);
+      return;
+    }
+    onClose();
+  }, [hasUnsavedChanges, isCloseWriteActive, onClose, showCanvasNotice]);
+
+  const handleSaveAndClose = useCallback(() => {
+    if (isSaving) return;
+    void saveLayout().then((didSave) => {
+      if (didSave) onClose();
+    });
+  }, [isSaving, onClose, saveLayout]);
 
   // PR 17: shared seating commit. Recomputes the physical seats for the current
   // (possibly just-edited) geometry, reconciles the preserved assignments against
@@ -1558,13 +1622,13 @@ export function SeatingLayoutEditor({
     const reconcile = reconcileGeometryChange(nextTables, connections);
     setHasUnsavedChanges(true);
     if (!wasDisabled && occupant && reconcile.returnedCount === 1) {
-      setFeedback({ message: `«${occupant.guestLabel}» снят с выключенного места.`, tone: "muted" });
+      showCanvasNotice(`«${occupant.guestLabel?.trim() || occupant.guestInitials?.trim() || "Гость"}» снят с выключенного места.`);
     } else if (wasDisabled || !occupant) {
-      setFeedback(wasDisabled
-        ? { message: "Место включено обратно.", tone: "muted" }
-        : { message: "Место выключено и не входит в схему.", tone: "muted" });
+      showCanvasNotice(wasDisabled
+        ? "Место включено обратно."
+        : "Место выключено и не входит в схему.");
     }
-  }, [connections, currentAssignments, geometry.seats, isLayoutActionBusy, reconcileGeometryChange, tables]);
+  }, [connections, currentAssignments, geometry.seats, isLayoutActionBusy, reconcileGeometryChange, showCanvasNotice, tables]);
 
   const handleToggleSeatEdit = useCallback(() => {
     if (isLayoutActionBusy) return;
@@ -1631,6 +1695,9 @@ export function SeatingLayoutEditor({
       }
 
       if (event.key === "Escape") {
+        if (isCloseDialogOpen) {
+          return;
+        }
         if (isReserveDialogOpen || isCapacitySyncDialogOpen) {
           return;
         }
@@ -1644,7 +1711,7 @@ export function SeatingLayoutEditor({
           return;
         }
 
-        onClose();
+        requestClose();
         return;
       }
 
@@ -1697,9 +1764,10 @@ export function SeatingLayoutEditor({
     handleRemoveTable,
     handleRotateTable,
     isCapacitySyncDialogOpen,
+    isCloseDialogOpen,
     isReserveDialogOpen,
     pendingGuestKey,
-    onClose,
+    requestClose,
     selectedTableId,
     slot,
   ]);
@@ -1727,7 +1795,7 @@ export function SeatingLayoutEditor({
         className="seat-modal-overlay"
         onMouseDown={(event) => {
           if (event.target === event.currentTarget) {
-            onClose();
+            requestClose();
           }
         }}
       >
@@ -1758,7 +1826,7 @@ export function SeatingLayoutEditor({
           <button
             aria-label="Закрыть схему рассадки"
             className="seat-modal__close"
-            onClick={onClose}
+            onClick={requestClose}
             type="button"
           >
             ×
@@ -1806,6 +1874,21 @@ export function SeatingLayoutEditor({
         <div className="seat-body">
           <div className="seat-stage">
             <div className="seat-canvas-shell">
+              {canvasNotice ? (
+                <div className="seat-canvas-notice-slot" role="status">
+                  <div className="seat-canvas-banner seat-canvas-banner--notice">
+                    <span>{canvasNotice}</span>
+                    <button
+                      aria-label="Скрыть уведомление"
+                      className="seat-canvas-notice-slot__close"
+                      onClick={dismissCanvasNotice}
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               {layoutLoadError || (feedback?.tone === "error" && feedback.message !== layoutLoadError) ? (
                 <div className="seat-canvas-error-slot" role="alert">
                   {layoutLoadError ? (
@@ -1953,7 +2036,7 @@ export function SeatingLayoutEditor({
         />
       ) : null}
 
-        {isCapacitySyncDialogOpen ? (
+      {isCapacitySyncDialogOpen ? (
           <SeatingCapacitySyncDialog
             capacityLimit={capacityLimit}
             error={capacitySyncError}
@@ -1963,7 +2046,19 @@ export function SeatingLayoutEditor({
             onConfirm={handleConfirmCapacitySync}
             physicalSeatCount={geometry.physicalSeatCount}
           />
-        ) : null}
+      ) : null}
+      {isCloseDialogOpen ? (
+        <SeatingCloseDialog
+          isSaving={isSaving}
+          onCancel={() => {
+            if (!isSaving) setIsCloseDialogOpen(false);
+          }}
+          onDiscard={() => {
+            if (!isSaving) onClose();
+          }}
+          onSaveAndClose={handleSaveAndClose}
+        />
+      ) : null}
       </div>
 
       {printModel ? <SeatingPrintDocument model={printModel} /> : null}

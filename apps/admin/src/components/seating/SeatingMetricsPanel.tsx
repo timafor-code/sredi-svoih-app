@@ -27,7 +27,7 @@ export function SeatingMetricsPanel({
     { id: "limit", label: summary.capacityLimit === null ? "Без лимита" : "Лимит", title: "Лимит регистрации", value: summary.capacityLimit === null ? "∞" : summary.capacityLimit, warn: summary.capacityLimit !== null && summary.physicalSeatCount < summary.capacityLimit },
     { id: "occupied", label: "Занято", title: "Занято мест", value: summary.seatedGuestCount },
     { id: "free", label: "Свободно", title: "Физически свободно", value: summary.freePhysical },
-    { id: "reserve", label: "Резерв", title: "Раввинский резерв", value: rabbiReserveCount },
+    { id: "reserve", label: "Места раввина", title: "Места раввинского стола — только ручная посадка", value: rabbiReserveCount },
     { id: "unseated", label: "Не рассажены", title: "Гостей без места", value: unseatedCount, warn: unseatedCount > 0 },
     ...(disabledSeatCount > 0 ? [{ id: "off", label: "Выключено", title: "Выключенных мест — в схему не входят", value: disabledSeatCount, off: true }] : []),
   ];

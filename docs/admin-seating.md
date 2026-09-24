@@ -170,6 +170,21 @@ auto-fit and centers. Middle-button panning has rubber-band boundary resistance
 and may continue with momentum after release. Table dragging remains distinct;
 reduced-motion preference suppresses unnecessary animation.
 
+Closing the editor is guarded. During saving, auto seating, template apply, or
+capacity sync, the main close button, overlay, and final Escape do not close the
+editor and instead show a transient canvas notice. With local unsaved changes,
+those entry points open an in-app confirmation: cancel preserves the editor,
+discard closes without a write, and save-and-close uses the same atomic state
+save as the toolbar and closes only after it succeeds. Unsaved changes also
+enable the browser-native `beforeunload` protection.
+
+Escape retains nested precedence: the full guest list, reserve dialog, capacity
+dialog, pending placement, and active drag/table selection consume it before the
+editor close flow. Geometry reconciliation and disabled-seat changes use a
+closable, eight-second muted notice over the bottom of the canvas; errors remain
+in their existing canvas error slot. The `Места раввина` metric counts active
+rabbi-table seats intended only for manual placement.
+
 ## Capacity Limit Vs Physical Seats
 
 This invariant must stay true across seating work:
