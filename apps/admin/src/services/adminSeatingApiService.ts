@@ -1,10 +1,11 @@
-import { apiClient } from "./apiClient";
+import { ApiClientError, apiClient } from "./apiClient";
 import type {
   AdminApiSeatingAssignmentsSaveResponse,
   AdminApiSeatingAssignmentResponse,
   AdminApiSeatingConnectionResponse,
   AdminApiSeatingLayoutEnvelopeResponse,
   AdminApiSeatingLayoutRowResponse,
+  AdminApiSeatingLayoutStateSaveResponse,
   AdminApiSeatingTableResponse,
   AdminApiSeatingTemplateResponse,
 } from "../types/api";
@@ -19,6 +20,8 @@ import type {
   SeatingLayout,
   SeatingLayoutPayload,
   SeatingLayoutRow,
+  SeatingLayoutStatePayload,
+  SeatingLayoutStateSaveResult,
   SeatingSlotParams,
   SeatingTable,
   SeatingTemplate,
@@ -278,6 +281,15 @@ type SeatingAssignmentsWirePayload = {
   reserveIds: string[];
 };
 
+type SeatingLayoutStateWirePayload = Omit<SeatingLayoutWirePayload, "reserveIds" | "capacity" | "chairs" | "pool"> & {
+  assignments?: {
+    chairs: SeatingAssignmentEntryWire[];
+    pool: SeatingAssignmentEntryWire[];
+    reserveIds: string[];
+  };
+  expectedUpdatedAt: string | null;
+};
+
 type SeatingLayoutFromTemplateApiPayload = {
   eventId: string;
   occurrenceId: string | null;
@@ -358,6 +370,31 @@ function serializeSeatingAssignmentsPayload(
   };
 }
 
+function serializeSeatingLayoutStatePayload(
+  payload: SeatingLayoutStatePayload,
+): SeatingLayoutStateWirePayload {
+  const result: SeatingLayoutStateWirePayload = {
+    eventId: payload.eventId,
+    occurrenceId: payload.occurrenceId ?? null,
+    capacityUnitId: payload.capacityUnitId,
+    layout: payload.layout ?? "",
+    customTables: (payload.customTables ?? []).map(serializeTable),
+    tableConnections: (payload.tableConnections ?? []).map(serializeConnection),
+    selectedTableId: payload.selectedTableId ?? null,
+    seatingDone: payload.seatingDone ?? false,
+    activeTemplateId: payload.activeTemplateId ?? null,
+    expectedUpdatedAt: payload.expectedUpdatedAt,
+  };
+  if (payload.assignments !== undefined && payload.assignments !== null) {
+    result.assignments = {
+      chairs: (payload.assignments.chairs ?? []).map(serializeEntry),
+      pool: (payload.assignments.pool ?? []).map(serializeEntry),
+      reserveIds: payload.assignments.reserveIds ?? [],
+    };
+  }
+  return result;
+}
+
 export async function listSeatingTemplates(): Promise<SeatingTemplate[]> {
   const templates = await apiClient.get<AdminApiSeatingTemplateResponse[] | null>(
     "/admin/seating/templates",
@@ -428,6 +465,25 @@ export async function saveSeatingAssignments(
   >("/admin/seating/assignments", serializeSeatingAssignmentsPayload(payload));
 
   return normalizeAssignmentsSaveResult(result);
+}
+
+export async function saveSeatingLayoutState(
+  payload: SeatingLayoutStatePayload,
+): Promise<SeatingLayoutStateSaveResult> {
+  const result = await apiClient.put<
+    AdminApiSeatingLayoutStateSaveResponse,
+    SeatingLayoutStateWirePayload
+  >("/admin/seating/layout/state", serializeSeatingLayoutStatePayload(payload));
+  return {
+    layout: normalizeLayoutRow(result.layout),
+    assignments: result.assignments
+      ? normalizeAssignmentsSaveResult(result.assignments)
+      : null,
+  };
+}
+
+export function isSeatingLayoutConflictError(error: unknown): boolean {
+  return error instanceof ApiClientError && error.code === "seating_layout_conflict";
 }
 
 export async function createSeatingTemplateFromLayout(

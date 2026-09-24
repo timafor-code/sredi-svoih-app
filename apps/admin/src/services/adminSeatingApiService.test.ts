@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiClient } from "./apiClient";
@@ -5,12 +6,14 @@ import {
   getSeatingLayout,
   getSeatingTemplate,
   saveSeatingLayout,
+  saveSeatingLayoutState,
 } from "./adminSeatingApiService";
 
 vi.mock("./apiClient", () => ({
   apiClient: {
     get: vi.fn(),
     patch: vi.fn(),
+    put: vi.fn(),
   },
 }));
 
@@ -159,5 +162,51 @@ describe("admin seating API disabled-seat serialization", () => {
         customTables: [expect.objectContaining({ disabledSeats: [] })],
       }),
     );
+  });
+
+  it("saves atomic layout state with unchanged concurrency timestamp", async () => {
+    mockedApiClient.put.mockResolvedValue({
+      layout: layoutRow,
+      assignments: { layout_id: "layout-1", placed_count: 1, pooled_count: 2, reserve_count: 1 },
+    });
+    const result = await saveSeatingLayoutState({
+      eventId: "event-1", occurrenceId: null, capacityUnitId: "unit-1",
+      customTables: [{ id: "table-1", cx: 100, cy: 120, w: 180, h: 80, angle: 0, sideSeats: 2, disabledSeats: ["side:a:0"], isRabbiTable: true }],
+      expectedUpdatedAt: "2026-09-23T00:00:00.123456Z",
+      assignments: { chairs: [], pool: [] },
+    });
+    expect(mockedApiClient.put).toHaveBeenCalledWith(
+      "/admin/seating/layout/state",
+      expect.objectContaining({
+        expectedUpdatedAt: "2026-09-23T00:00:00.123456Z",
+        assignments: expect.any(Object),
+        customTables: [expect.objectContaining({ disabledSeats: ["side:a:0"] })],
+      }),
+    );
+    expect(result.layout.updatedAt).toBe(layoutRow.updated_at);
+    expect(result.assignments).toMatchObject({ placedCount: 1, pooledCount: 2, reserveCount: 1 });
+  });
+
+  it("omits atomic assignments when not provided", async () => {
+    mockedApiClient.put.mockResolvedValue({ layout: layoutRow, assignments: null });
+    await saveSeatingLayoutState({
+      eventId: "event-1", occurrenceId: null, capacityUnitId: "unit-1",
+      customTables: [], expectedUpdatedAt: null,
+    });
+    expect(mockedApiClient.put).toHaveBeenCalledWith(
+      "/admin/seating/layout/state",
+      expect.not.objectContaining({ assignments: expect.anything() }),
+    );
+  });
+
+  it("keeps converted editor saves on the atomic state operation", async () => {
+    const editorSource = await readFile(
+      new URL("../components/seating/SeatingLayoutEditor.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(editorSource).not.toMatch(/\bsaveSeatingAssignments\b/);
+    expect(editorSource).not.toMatch(/\bsaveSeatingLayout\b/);
+    expect((editorSource.match(/saveLayoutState\(\{/g) ?? []).length).toBeGreaterThanOrEqual(3);
   });
 });
