@@ -55,29 +55,65 @@ export function resolveSeatingAssignmentGuests(
   assignments: readonly SeatingAssignment[],
   index: SeatingGuestIndex,
 ): Array<SeatingGuestPoolItem | null> {
+  const resolved: Array<SeatingGuestPoolItem | null> = Array(assignments.length).fill(null);
+  const settled = new Set<number>();
   const used = new Set<string>();
-  return assignments.map((assignment) => {
-    if (assignment.type !== "guest") return null;
+
+  // Current-session ids are unequivocal and must reserve their guests before
+  // persisted or legacy rows can consume a matching signature bucket entry.
+  assignments.forEach((assignment, order) => {
+    if (assignment.type !== "guest") return;
     const embeddedKey = seatingAssignmentEmbeddedGuestKey(assignment);
     const exact = embeddedKey ? index.byKey.get(embeddedKey) : undefined;
-    if (exact) return used.has(exact.key) ? null : claim(exact, used);
+    if (!exact) return;
+    settled.add(order);
+    if (!used.has(exact.key)) resolved[order] = claim(exact, used);
+  });
+
+  // Persisted invited guest indexes are strong identities. Resolve every one
+  // before a preceding legacy row can claim the same signature-bucket guest.
+  assignments.forEach((assignment, order) => {
+    if (settled.has(order) || assignment.type !== "guest") return;
     const invited = assignment.registrationId !== null && typeof assignment.guestIndex === "number"
       ? index.byIdentity.get(seatingInvitedGuestIdentity(assignment.registrationId, assignment.guestIndex))
       : undefined;
-    if (invited) return used.has(invited.key) ? null : claim(invited, used);
+    if (!invited) return;
+    settled.add(order);
+    if (!used.has(invited.key)) resolved[order] = claim(invited, used);
+  });
+
+  // Legacy rows with null guest_index may carry the registration owner's user
+  // id even when they represent an invited guest, so signature wins first.
+  assignments.forEach((assignment, order) => {
+    if (settled.has(order) || assignment.type !== "guest") return;
+    const signature = seatingGuestSignature(assignment.registrationId, assignment.guestLabel, assignment.guestInitials);
+    const signatureMatch = firstUnused(index.bySignature.get(signature), used);
+    if (signatureMatch) {
+      resolved[order] = claim(signatureMatch, used);
+      settled.add(order);
+    }
+  });
+
+  // user_id is only a participant fallback for unresolved legacy rows.
+  assignments.forEach((assignment, order) => {
+    if (settled.has(order) || assignment.type !== "guest") return;
     const participant = assignment.registrationId !== null && assignment.guestIndex === null && typeof assignment.userId === "string"
       ? index.byIdentity.get(seatingParticipantIdentity(assignment.registrationId, assignment.userId))
       : undefined;
-    if (participant) return used.has(participant.key) ? null : claim(participant, used);
-    const signature = seatingGuestSignature(assignment.registrationId, assignment.guestLabel, assignment.guestInitials);
-    const signatureMatch = firstUnused(index.bySignature.get(signature), used);
-    if (signatureMatch) return claim(signatureMatch, used);
+    if (!participant) return;
+    settled.add(order);
+    if (!used.has(participant.key)) resolved[order] = claim(participant, used);
+  });
+
+  assignments.forEach((assignment, order) => {
+    if (settled.has(order) || assignment.type !== "guest") return;
     if (!assignment.guestLabel && !assignment.guestInitials && assignment.registrationId) {
       const registrationMatch = firstUnused(index.byRegistration.get(assignment.registrationId), used);
-      if (registrationMatch) return claim(registrationMatch, used);
+      if (registrationMatch) resolved[order] = claim(registrationMatch, used);
     }
-    return null;
   });
+
+  return resolved;
 }
 
 export function seatingAssignmentEmbeddedGuestKey(assignment: SeatingAssignment): string | null {

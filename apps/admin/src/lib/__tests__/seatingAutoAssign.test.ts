@@ -1343,3 +1343,18 @@ it("repeat auto seating excludes a same-name locked invited guest by canonical k
   expect(result.assignedSeats.map((seat) => seat.guest.key)).toContain(participant.key);
   expect(result.assignedSeats.map((seat) => seat.guest.key)).not.toContain(invited.key);
 });
+
+it("repeat auto seating resolves a legacy locked invited guest by signature", () => {
+  const participant = makeGuest(9201, { displayName: "Пётр Петров", initials: "ПП", participantUserId: "user-1" });
+  const invited = makeGuest(9202, { displayName: "Иван Иванов", initials: "ИИ", registrationId: participant.registrationId, source: "guest", guestIndex: 1 });
+  const tables = [makeTable({ id: "regular", sideSeats: 3 })];
+  const geometry = computeTableSeats({ tables });
+  const lockedSeatKey = seatingSeatKey(geometry.seats[0], 0);
+  const result = autoAssignSeating({
+    guestPool: [participant, invited], tables, geometry,
+    lockedAssignments: [{ id: "persisted-assignment-id", layoutId: "layout", registrationId: invited.registrationId, guestIndex: null, userId: "user-1", guestLabel: invited.displayName, guestInitials: invited.initials, seatKey: lockedSeatKey, type: "guest", locked: true, placementSource: "manual" }],
+  });
+  expect(result.assignedSeats.map((seat) => seat.guest.key)).toContain(participant.key);
+  expect(result.assignedSeats.map((seat) => seat.guest.key)).not.toContain(invited.key);
+  expect(result.assignedSeats.map((seat) => seat.seatIndex)).not.toContain(0);
+});

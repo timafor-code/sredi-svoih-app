@@ -66,4 +66,39 @@ describe("seating guest index", () => {
     expect(resolveSeatingAssignmentGuests([participantRow, invitedRow], index)).toEqual([participant, invited]);
     expect(resolveSeatingAssignmentGuests([invitedRow, participantRow], index)).toEqual([invited, participant]);
   });
+
+  it("resolves a legacy invited row by signature before the shared registration user id", () => {
+    const participant = guest(1, { displayName: "Пётр Петров", initials: "ПП", participantUserId: "user-1" });
+    const invited = guest(2, { source: "guest", guestIndex: 1, displayName: "Иван Иванов", initials: "ИИ" });
+    const legacy = assignment(1, invited, { guestIndex: null, userId: "user-1" });
+    expect(resolveSeatingAssignmentGuests([legacy], createSeatingGuestIndex([participant, invited]))).toEqual([invited]);
+  });
+
+  it("resolves a legacy participant row by its matching signature", () => {
+    const participant = guest(1, { displayName: "Пётр Петров", initials: "ПП", participantUserId: "user-1" });
+    const invited = guest(2, { source: "guest", guestIndex: 1, displayName: "Иван Иванов", initials: "ИИ" });
+    const legacy = assignment(1, participant, { guestIndex: null, userId: "user-1" });
+    expect(resolveSeatingAssignmentGuests([legacy], createSeatingGuestIndex([participant, invited]))).toEqual([participant]);
+  });
+
+  it("reserves explicit guest indexes before earlier legacy signature fallbacks", () => {
+    const participant = guest(1, { displayName: "Иван Иванов", initials: "ИИ", participantUserId: "user-1" });
+    const invited = guest(2, { source: "guest", guestIndex: 1, displayName: "Иван Иванов", initials: "ИИ" });
+    const legacy = assignment(1, participant, { guestIndex: null, userId: "user-1" });
+    const explicit = assignment(2, invited, { guestIndex: 1, userId: "user-1" });
+    const index = createSeatingGuestIndex([participant, invited]);
+    expect(resolveSeatingAssignmentGuests([legacy, explicit], index)).toEqual([participant, invited]);
+    expect(resolveSeatingAssignmentGuests([explicit, legacy], index)).toEqual([invited, participant]);
+  });
+
+  it("assigns fully ambiguous legacy same-name rows to distinct guests deterministically", () => {
+    const participant = guest(1, { displayName: "Иван Иванов", initials: "ИИ", participantUserId: "user-1" });
+    const invited = guest(2, { source: "guest", guestIndex: 1, displayName: "Иван Иванов", initials: "ИИ" });
+    const rows = [assignment(1, participant, { guestIndex: null, userId: "user-1" }), assignment(2, participant, { guestIndex: null, userId: "user-1" })];
+    const index = createSeatingGuestIndex([participant, invited]);
+    const first = resolveSeatingAssignmentGuests(rows, index).map((item) => item?.key);
+    const second = resolveSeatingAssignmentGuests(rows, index).map((item) => item?.key);
+    expect(first).toEqual([participant.key, invited.key]);
+    expect(second).toEqual(first);
+  });
 });
