@@ -77,7 +77,7 @@ import {
   type BuiltInSeatingTemplateId,
   type SeatingTemplateValue,
 } from "./SeatingTemplateSelector";
-import { SeatingToolbar } from "./SeatingToolbar";
+import { SeatingShortcutLegend, SeatingToolbar } from "./SeatingToolbar";
 
 export type SeatingLayoutEditorSlot = {
   bucket: AdminRegistrationCapacityBucket;
@@ -1862,30 +1862,6 @@ export function SeatingLayoutEditor({
             )}
             </div>
 
-            <SeatingToolbar
-                addDisabled={!canAddTable}
-                addDisabledReason={addTableDisabledReason}
-                allSideSeatsDisabled={!canSetAllSideSeats}
-                allSideSeatsDisabledReason={allSideSeatsDisabledReason}
-                allSideSeats={allTablesSideSeats}
-                onAddTable={handleAddTable}
-                onRemoveTable={handleRemoveTable}
-                onRotateTable={handleRotateTable}
-                onSetAllSideSeats={handleSetAllSideSeats}
-                onSetSelectedSideSeats={handleSetSelectedSideSeats}
-                onToggleSeatEdit={handleToggleSeatEdit}
-                removeDisabled={!canRemoveSelectedTable}
-                removeDisabledReason={removeTableDisabledReason}
-                rotateDisabled={!canRotateSelectedTable}
-                rotateDisabledReason={rotateTableDisabledReason}
-                selectedTableSideSeats={selectedTable ? tableSideSeats(selectedTable) : null}
-                sideSeatsDisabled={!canChangeSelectedTableSideSeats}
-                sideSeatsDisabledReason={sideSeatsDisabledReason}
-                seatEditDisabled={isLayoutActionBusy}
-                seatEditDisabledReason={layoutBusyReason}
-                seatEditEnabled={seatEditEnabled}
-                variant="layout"
-              />
           </div>
 
           <aside className="seat-side-panel">
@@ -1929,6 +1905,33 @@ export function SeatingLayoutEditor({
             </div>
           </aside>
         </div>
+        <footer className="seat-footer">
+          <SeatingToolbar
+            addDisabled={!canAddTable}
+            addDisabledReason={addTableDisabledReason}
+            allSideSeatsDisabled={!canSetAllSideSeats}
+            allSideSeatsDisabledReason={allSideSeatsDisabledReason}
+            allSideSeats={allTablesSideSeats}
+            onAddTable={handleAddTable}
+            onRemoveTable={handleRemoveTable}
+            onRotateTable={handleRotateTable}
+            onSetAllSideSeats={handleSetAllSideSeats}
+            onSetSelectedSideSeats={handleSetSelectedSideSeats}
+            onToggleSeatEdit={handleToggleSeatEdit}
+            removeDisabled={!canRemoveSelectedTable}
+            removeDisabledReason={removeTableDisabledReason}
+            rotateDisabled={!canRotateSelectedTable}
+            rotateDisabledReason={rotateTableDisabledReason}
+            selectedTableSideSeats={selectedTable ? tableSideSeats(selectedTable) : null}
+            sideSeatsDisabled={!canChangeSelectedTableSideSeats}
+            sideSeatsDisabledReason={sideSeatsDisabledReason}
+            seatEditDisabled={isLayoutActionBusy}
+            seatEditDisabledReason={layoutBusyReason}
+            seatEditEnabled={seatEditEnabled}
+            variant="layout"
+          />
+          <SeatingShortcutLegend />
+        </footer>
       </section>
 
       {isReserveDialogOpen ? (
