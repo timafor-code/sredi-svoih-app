@@ -35,9 +35,11 @@ import { computeSeatingMetricsDisplaySummary } from "../../lib/seatingCapacity";
 import {
   autoAssignResultToAssignments,
   autoAssignSeating,
+  createSeatingSeatIndex,
   deriveSeatingAssignmentRestoreState,
   seatIndexFromSeatKey,
 } from "../../lib/seatingAutoAssign";
+import { createSeatingGuestIndex, resolveSeatingAssignmentGuests } from "../../lib/seatingGuestIndex";
 import {
   reconcileAfterGeometryChange,
   reconcileSeatingAssignments,
@@ -499,14 +501,23 @@ export function SeatingLayoutEditor({
     () => computeTableSeats({ connections, tables }),
     [connections, tables],
   );
+  const guestIndex = useMemo(() => createSeatingGuestIndex(guestPool), [guestPool]);
+  const resolvedAssignmentGuests = useMemo(
+    () => resolveSeatingAssignmentGuests(assignments, guestIndex),
+    [assignments, guestIndex],
+  );
+  const geometrySeatIndex = useMemo(() => createSeatingSeatIndex(geometry), [geometry]);
   const assignmentRestoreState = useMemo(
     () =>
       deriveSeatingAssignmentRestoreState({
         assignments,
         geometry,
         guestPool,
+        guestIndex,
+        resolvedGuests: resolvedAssignmentGuests,
+        seatIndex: geometrySeatIndex,
       }),
-    [assignments, geometry, guestPool],
+    [assignments, geometry, geometrySeatIndex, guestIndex, guestPool, resolvedAssignmentGuests],
   );
   const seatOccupants = useMemo(
     () => assignmentRestoreState.occupants,
@@ -524,20 +535,22 @@ export function SeatingLayoutEditor({
     () => assignmentRestoreState.unassignedGuests,
     [assignmentRestoreState.unassignedGuests],
   );
+  const tableDisplayIndexById = useMemo(
+    () => new Map(tables.map((table, index) => [table.id, index + 1])),
+    [tables],
+  );
   const placementByGuestKey = useMemo(() => {
     const placement = new Map<string, string>();
-    const unused = new Set(guestPool.map((guest) => guest.key));
-    currentAssignments.forEach((assignment) => {
+    currentAssignments.forEach((assignment, order) => {
       if (assignment.type !== "guest" || !assignment.seatKey) return;
-      const seatIndex = seatIndexFromSeatKey(assignment.seatKey, geometry); const seat = seatIndex === null ? null : geometry.seats[seatIndex];
+      const seatIndex = seatIndexFromSeatKey(assignment.seatKey, geometry, geometrySeatIndex); const seat = seatIndex === null ? null : geometry.seats[seatIndex];
       if (!seat || seat.isDisabled) return;
-      const tableIndex = tables.findIndex((table) => table.id === seat.tableId); if (tableIndex < 0) return;
-      const signature = seatingGuestSignature(assignment.registrationId, assignment.guestLabel, assignment.guestInitials);
-      const match = guestPool.find((guest) => unused.has(guest.key) && seatingGuestSignature(guest.registrationId, guest.displayName, guest.initials) === signature) ?? (!assignment.guestLabel && !assignment.guestInitials ? guestPool.find((guest) => unused.has(guest.key) && guest.registrationId === assignment.registrationId) : undefined);
-      if (match) { unused.delete(match.key); placement.set(match.key, `Стол ${tableIndex + 1}`); }
+      const tableIndex = tableDisplayIndexById.get(seat.tableId); if (!tableIndex) return;
+      const match = resolvedAssignmentGuests[order];
+      if (match) placement.set(match.key, `Стол ${tableIndex}`);
     });
     return placement;
-  }, [currentAssignments, geometry, guestPool, tables]);
+  }, [currentAssignments, geometry, geometrySeatIndex, resolvedAssignmentGuests, tableDisplayIndexById]);
   const visibleGuestPool = unassignedGuestPool;
   const hasBucketOccupancy = Boolean(
     slot &&
@@ -2684,10 +2697,6 @@ function formatPrintSlotSubtitle(slot: SeatingLayoutEditorSlot): string {
   const bucketCode = slot.bucket.code || slot.bucket.key;
 
   return [occurrenceLabel, bucketCode].filter(Boolean).join(" · ");
-}
-
-function seatingGuestSignature(registrationId: string | null, label: string | null, initials: string | null): string {
-  return [registrationId ?? "", label?.trim().toLocaleLowerCase("ru-RU") ?? "", initials?.trim().toLocaleLowerCase("ru-RU") ?? ""].join("|");
 }
 
 function SaveIcon() { return <svg aria-hidden="true" className="seat-button-icon" fill="none" height="15" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24" width="15"><path d="M5 4.5h10.5L19.5 8.5V19.5H5zM8.5 4.5v4.8h6.2V4.5M8 19.5v-5.7h8v5.7" /></svg>; }

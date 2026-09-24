@@ -3,6 +3,11 @@ import {
   pickRabbiHeadIndex,
   rabbiSeatIndexes,
 } from "./seatingGeometry";
+import {
+  createSeatingGuestIndex,
+  resolveSeatingAssignmentGuests,
+  type SeatingGuestIndex,
+} from "./seatingGuestIndex";
 import type {
   ComputedSeat,
   SeatingAssignment,
@@ -80,7 +85,10 @@ export type SeatingAssignmentRestoreState = {
   occupiedCount: number;
   occupants: SeatingSeatOccupant[];
   unassignedGuests: SeatingGuestPoolItem[];
+  resolvedGuests: Array<SeatingGuestPoolItem | null>;
 };
+
+export type SeatingSeatIndex = ReadonlyMap<string, number>;
 
 type RabbiMarkerRecord = {
   assignmentType?: unknown;
@@ -256,44 +264,52 @@ export function deriveSeatingAssignmentRestoreState({
   assignments,
   geometry,
   guestPool,
+  guestIndex = createSeatingGuestIndex(guestPool),
+  resolvedGuests = resolveSeatingAssignmentGuests(assignments, guestIndex),
+  seatIndex = createSeatingSeatIndex(geometry),
 }: {
   assignments: readonly SeatingAssignment[];
   geometry: SeatingGeometryResult;
   guestPool: readonly SeatingGuestPoolItem[];
+  guestIndex?: SeatingGuestIndex;
+  resolvedGuests?: readonly (SeatingGuestPoolItem | null)[];
+  seatIndex?: SeatingSeatIndex;
 }): SeatingAssignmentRestoreState {
   const usedSeatIndexes = new Set<number>();
   const currentAssignments: SeatingAssignment[] = [];
   const invalidAssignments: SeatingAssignment[] = [];
   const occupants: SeatingSeatOccupant[] = [];
+  const assignedGuestKeys = new Set<string>();
 
-  assignments.forEach((assignment) => {
-    const fallbackGuest = findGuestPoolFallback(guestPool, assignment);
+  assignments.forEach((assignment, order) => {
+    const fallbackGuest = resolvedGuests[order] ?? null;
     const normalizedAssignment = normalizeAssignmentDisplay(assignment, fallbackGuest);
-    const seatIndex = seatIndexFromSeatKey(normalizedAssignment.seatKey, geometry);
+    const resolvedSeatIndex = seatIndexFromSeatKey(normalizedAssignment.seatKey, geometry, seatIndex);
 
     if (!normalizedAssignment.seatKey) {
       currentAssignments.push(normalizedAssignment);
       return;
     }
 
-    if (seatIndex === null || geometry.seats[seatIndex]?.isDisabled || usedSeatIndexes.has(seatIndex)) {
+    if (resolvedSeatIndex === null || geometry.seats[resolvedSeatIndex]?.isDisabled || usedSeatIndexes.has(resolvedSeatIndex)) {
       invalidAssignments.push(normalizedAssignment);
       currentAssignments.push(unplaceAssignment(normalizedAssignment));
       return;
     }
 
-    usedSeatIndexes.add(seatIndex);
+    usedSeatIndexes.add(resolvedSeatIndex);
+    if (fallbackGuest) assignedGuestKeys.add(fallbackGuest.key);
     currentAssignments.push(normalizedAssignment);
     occupants.push({
       displayName: normalizedAssignment.guestLabel?.trim() || "Гость",
       id: normalizedAssignment.id,
       initials: normalizedAssignment.guestInitials?.trim() || "?",
       isRabbiHead:
-        seatIndex === geometry.headIndex && Boolean(geometry.seats[seatIndex]?.isRabbiTable),
+        resolvedSeatIndex === geometry.headIndex && Boolean(geometry.seats[resolvedSeatIndex]?.isRabbiTable),
       locked: normalizedAssignment.locked,
       placementSource: normalizedAssignment.placementSource,
       registrationId: normalizedAssignment.registrationId,
-      seatIndex,
+      seatIndex: resolvedSeatIndex,
       seatKey: normalizedAssignment.seatKey,
       type: normalizedAssignment.type,
     });
@@ -308,7 +324,8 @@ export function deriveSeatingAssignmentRestoreState({
       (occupant) => occupant.type === "guest" && occupant.registrationId,
     ).length,
     occupants,
-    unassignedGuests: filterUnassignedGuests(guestPool, currentAssignments),
+    unassignedGuests: guestPool.filter((guest) => !assignedGuestKeys.has(guest.key)),
+    resolvedGuests: [...resolvedGuests],
   };
 }
 
@@ -328,17 +345,22 @@ function unplaceAssignment(assignment: SeatingAssignment): SeatingAssignment {
 export function seatIndexFromSeatKey(
   seatKey: string | null | undefined,
   geometry?: SeatingGeometryResult,
+  seatIndex?: SeatingSeatIndex,
 ): number | null {
   if (!seatKey) {
     return null;
   }
 
-  const stableSeatIndex = stableSeatIndexFromSeatKey(seatKey, geometry);
+  const stableSeatIndex = seatIndex?.get(seatKey) ?? stableSeatIndexFromSeatKey(seatKey, geometry);
   if (stableSeatIndex !== null) {
     return stableSeatIndex;
   }
 
   return legacySeatIndexFromSeatKey(seatKey, geometry);
+}
+
+export function createSeatingSeatIndex(geometry: SeatingGeometryResult): SeatingSeatIndex {
+  return new Map(geometry.seats.map((seat, index) => [seatingSeatKey(seat, index), index]));
 }
 
 export function isExplicitRabbiGuest(
@@ -1000,87 +1022,6 @@ function normalizeAssignmentDisplay(
     guestInitials: assignment.guestInitials?.trim() || fallbackGuest?.initials || null,
     guestLabel: assignment.guestLabel?.trim() || fallbackGuest?.displayName || null,
   };
-}
-
-function filterUnassignedGuests(
-  guestPool: readonly SeatingGuestPoolItem[],
-  assignments: readonly SeatingAssignment[],
-): SeatingGuestPoolItem[] {
-  const assignedCounts = new Map<string, number>();
-  const assignedRegistrationFallbackCounts = new Map<string, number>();
-
-  assignments.forEach((assignment) => {
-    if (!assignment.seatKey || assignment.type !== "guest") {
-      return;
-    }
-
-    if (!assignment.guestLabel && !assignment.guestInitials && assignment.registrationId) {
-      assignedRegistrationFallbackCounts.set(
-        assignment.registrationId,
-        (assignedRegistrationFallbackCounts.get(assignment.registrationId) ?? 0) + 1,
-      );
-      return;
-    }
-
-    const signature = assignmentGuestSignature(
-      assignment.registrationId,
-      assignment.guestLabel,
-      assignment.guestInitials,
-    );
-    assignedCounts.set(signature, (assignedCounts.get(signature) ?? 0) + 1);
-  });
-
-  return guestPool.filter((guest) => {
-    const signature = assignmentGuestSignature(
-      guest.registrationId,
-      guest.displayName,
-      guest.initials,
-    );
-    const count = assignedCounts.get(signature) ?? 0;
-
-    if (count > 0) {
-      assignedCounts.set(signature, count - 1);
-      return false;
-    }
-
-    const registrationCount = guest.registrationId
-      ? assignedRegistrationFallbackCounts.get(guest.registrationId) ?? 0
-      : 0;
-
-    if (registrationCount > 0 && guest.registrationId) {
-      assignedRegistrationFallbackCounts.set(
-        guest.registrationId,
-        registrationCount - 1,
-      );
-      return false;
-    }
-
-    return true;
-  });
-}
-
-function findGuestPoolFallback(
-  guestPool: readonly SeatingGuestPoolItem[],
-  assignment: SeatingAssignment,
-): SeatingGuestPoolItem | null {
-  const signature = assignmentGuestSignature(
-    assignment.registrationId,
-    assignment.guestLabel,
-    assignment.guestInitials,
-  );
-
-  return (
-    guestPool.find(
-      (guest) =>
-        assignmentGuestSignature(
-          guest.registrationId,
-          guest.displayName,
-          guest.initials,
-        ) === signature,
-    ) ??
-    guestPool.find((guest) => guest.registrationId === assignment.registrationId) ??
-    null
-  );
 }
 
 function assignmentGuestSignature(
