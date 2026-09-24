@@ -242,6 +242,8 @@ export interface SeatingAssignment {
   layoutId: string;
   /** `null` for reserves and unplaced pool entries. */
   registrationId: string | null;
+  guestIndex?: number | null;
+  userId?: string | null;
   /** `client_table_id` + seat index; `null` when unplaced (pool). */
   seatKey: string | null;
   guestLabel: string | null;
@@ -489,6 +491,8 @@ export interface SeatingAssignmentRpcRow {
   id: string;
   layout_id: string;
   registration_id: string | null;
+  guest_index: number | null;
+  user_id: string | null;
   seat_key: string | null;
   guest_label: string | null;
   guest_initials: string | null;
@@ -514,6 +518,7 @@ export interface SeatingLayoutEnvelopeRpcRow {
 export interface SeatingAssignmentEntry {
   seatKey?: string | null;
   registrationId?: string | null;
+  guestIndex?: number | null;
   type: SeatingAssignmentType;
   name?: string | null;
   initials?: string | null;

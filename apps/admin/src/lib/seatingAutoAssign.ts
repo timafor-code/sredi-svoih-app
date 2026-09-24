@@ -56,6 +56,7 @@ export type SeatingAutoAssignInput = {
   capacityUnitId?: string;
   connections?: readonly SeatingConnection[];
   geometry?: SeatingGeometryResult;
+  guestIndex?: SeatingGuestIndex;
   guestPool: readonly SeatingGuestPoolItem[];
   /**
    * PR 15: assignments that must be preserved by a repeat auto seating. Their
@@ -102,7 +103,7 @@ type RabbiMarkerRecord = {
 };
 
 type LockedPlacements = {
-  guestSignatureCounts: Map<string, number>;
+  guestKeys: Set<string>;
   seatIndexes: Set<number>;
   tableIdsByRegistration: Map<string, string[]>;
 };
@@ -118,6 +119,7 @@ export function autoAssignSeating({
   capacityUnitId,
   connections = [],
   geometry: providedGeometry,
+  guestIndex: providedGuestIndex,
   guestPool,
   lockedAssignments = [],
   occurrenceId,
@@ -158,7 +160,12 @@ export function autoAssignSeating({
 
   // PR 15: keep locked/manual placements where they are. Their seats are blocked
   // and their guests are dropped from the queue, so auto only fills the rest.
-  const locked = resolveLockedPlacements(lockedAssignments, geometry);
+  const guestIndex = providedGuestIndex ?? createSeatingGuestIndex(guestPool);
+  const locked = resolveLockedPlacements(
+    lockedAssignments,
+    geometry,
+    resolveSeatingAssignmentGuests(lockedAssignments, guestIndex),
+  );
   const headIndex = resolveHeadIndex(geometry, tables);
   const blockedRabbiSeats = blockedRabbiSeatIndexes(geometry, tables);
   const blockedSeats = new Set([
@@ -167,7 +174,7 @@ export function autoAssignSeating({
     ...geometry.seats.flatMap((seat, index) => (seat.isDisabled ? [index] : [])),
     ...locked.seatIndexes,
   ]);
-  const queueGuests = excludeLockedGuests(activeGuests, locked.guestSignatureCounts);
+  const queueGuests = excludeLockedGuests(activeGuests, locked.guestKeys);
   const rabbiGuest = queueGuests.find((guest) =>
     isExplicitRabbiGuest(guest, rabbiGuestKeys),
   );
@@ -990,6 +997,7 @@ function guestToAssignmentEntry(
   seatKey: string | null,
 ): SeatingAssignmentEntry {
   return {
+    guestIndex: guest.guestIndex,
     initials: guest.initials,
     name: guest.displayName,
     registrationId: guest.registrationId,
@@ -1008,8 +1016,10 @@ function assignmentFromGuest(
     id: `auto:${guest.key}:${seatKey ?? "pool"}`,
     layoutId: "",
     registrationId: guest.registrationId,
+    guestIndex: guest.source === "guest" ? guest.guestIndex : null,
     seatKey,
     type: "guest",
+    userId: guest.source === "participant" ? guest.participantUserId : null,
   };
 }
 
@@ -1019,40 +1029,18 @@ function normalizeAssignmentDisplay(
 ): SeatingAssignment {
   return {
     ...assignment,
+    guestIndex: assignment.guestIndex ?? (fallbackGuest?.source === "guest" ? fallbackGuest.guestIndex : null),
+    userId: assignment.userId ?? (fallbackGuest?.source === "participant" ? fallbackGuest.participantUserId : null),
     guestInitials: assignment.guestInitials?.trim() || fallbackGuest?.initials || null,
     guestLabel: assignment.guestLabel?.trim() || fallbackGuest?.displayName || null,
   };
 }
 
-function assignmentGuestSignature(
-  registrationId: string | null,
-  label: string | null,
-  initials: string | null,
-): string {
-  return [
-    registrationId ?? "",
-    (label ?? "").trim().toLocaleLowerCase("ru-RU"),
-    (initials ?? "").trim().toLocaleLowerCase("ru-RU"),
-  ].join("|");
-}
-
-function guestPoolSignature(guest: SeatingGuestPoolItem): string {
-  return assignmentGuestSignature(guest.registrationId, guest.displayName, guest.initials);
-}
-
 function excludeLockedGuests(
   guests: readonly SeatingGuestPoolItem[],
-  lockedGuestSignatureCounts: ReadonlyMap<string, number>,
+  lockedGuestKeys: ReadonlySet<string>,
 ): SeatingGuestPoolItem[] {
-  const remainingCounts = new Map(lockedGuestSignatureCounts);
-
-  return guests.filter((guest) => {
-    const signature = guestPoolSignature(guest);
-    const count = remainingCounts.get(signature) ?? 0;
-    if (count <= 0) return true;
-    remainingCounts.set(signature, count - 1);
-    return false;
-  });
+  return guests.filter((guest) => !lockedGuestKeys.has(guest.key));
 }
 
 /**
@@ -1064,12 +1052,13 @@ function excludeLockedGuests(
 function resolveLockedPlacements(
   lockedAssignments: readonly SeatingAssignment[],
   geometry: SeatingGeometryResult,
+  resolvedGuests: readonly (SeatingGuestPoolItem | null)[],
 ): LockedPlacements {
   const seatIndexes = new Set<number>();
-  const guestSignatureCounts = new Map<string, number>();
+  const guestKeys = new Set<string>();
   const tableIdsByRegistration = new Map<string, string[]>();
 
-  lockedAssignments.forEach((assignment) => {
+  lockedAssignments.forEach((assignment, order) => {
     if (!assignment.seatKey) {
       return;
     }
@@ -1082,12 +1071,8 @@ function resolveLockedPlacements(
     seatIndexes.add(seatIndex);
     if (assignment.type !== "guest" || !assignment.registrationId) return;
 
-    const signature = assignmentGuestSignature(
-      assignment.registrationId,
-      assignment.guestLabel,
-      assignment.guestInitials,
-    );
-    guestSignatureCounts.set(signature, (guestSignatureCounts.get(signature) ?? 0) + 1);
+    const guest = resolvedGuests[order];
+    if (guest) guestKeys.add(guest.key);
 
     const tableId = geometry.seats[seatIndex]?.tableId;
     if (!tableId) return;
@@ -1096,7 +1081,7 @@ function resolveLockedPlacements(
     tableIdsByRegistration.set(assignment.registrationId, tableIds);
   });
 
-  return { guestSignatureCounts, seatIndexes, tableIdsByRegistration };
+  return { guestKeys, seatIndexes, tableIdsByRegistration };
 }
 
 function seatStablePart(seat: ComputedSeat): string | null {

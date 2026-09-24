@@ -33,8 +33,8 @@
 // Manual/locked placements (PR 15) and reserve placements (PR 16) win every
 // conflict, so a repeat auto seating after a geometry edit never reshuffles them.
 
-import { createSeatingSeatIndex, isExplicitRabbiGuest, seatIndexFromSeatKey } from "./seatingAutoAssign";
-import { createSeatingGuestIndex, resolveSeatingAssignmentGuests, seatingAssignmentEmbeddedGuestKey, seatingGuestSignature } from "./seatingGuestIndex";
+import { createSeatingSeatIndex, isExplicitRabbiGuest, seatIndexFromSeatKey, type SeatingSeatIndex } from "./seatingAutoAssign";
+import { createSeatingGuestIndex, resolveSeatingAssignmentGuests, seatingAssignmentEmbeddedGuestKey, seatingGuestSignature, type SeatingGuestIndex } from "./seatingGuestIndex";
 import type {
   SeatingAssignment,
   SeatingGeometryResult,
@@ -101,6 +101,10 @@ export interface SeatingReconcileInput {
    * seat). When empty, neither check evicts anyone beyond the geometry rules.
    */
   guestPool?: readonly SeatingGuestPoolItem[];
+  /** Optional memoized guest matching context for editor geometry commits. */
+  guestIndex?: SeatingGuestIndex;
+  resolvedGuests?: readonly (SeatingGuestPoolItem | null)[];
+  seatIndex?: SeatingSeatIndex;
   /** Optional explicit rabbi-guest keys (same contract as auto seating). */
   rabbiGuestKeys?: readonly string[];
   /** Optional extra blocked seat indexes (besides rabbi-reserved seats). */
@@ -118,12 +122,15 @@ export function reconcileAfterGeometryChange({
   assignments,
   geometry,
   guestPool,
-}: Pick<SeatingReconcileInput, "assignments" | "geometry" | "guestPool">): {
+  guestIndex,
+  resolvedGuests,
+  seatIndex,
+}: Pick<SeatingReconcileInput, "assignments" | "geometry" | "guestPool" | "guestIndex" | "resolvedGuests" | "seatIndex">): {
   assignments: SeatingAssignment[];
   returnedCount: number;
   counts: SeatingReconcileCounts;
 } {
-  const result = reconcileSeatingAssignments({ assignments, geometry, guestPool });
+  const result = reconcileSeatingAssignments({ assignments, geometry, guestPool, guestIndex, resolvedGuests, seatIndex });
   return {
     assignments: result.assignments,
     returnedCount: result.counts.returnedCount,
@@ -135,15 +142,19 @@ export function reconcileSeatingAssignments({
   assignments,
   geometry,
   guestPool = [],
+  guestIndex: providedGuestIndex,
+  resolvedGuests: providedResolvedGuests,
   rabbiGuestKeys = [],
   blockedSeatIndexes = [],
+  seatIndex: providedSeatIndex,
 }: SeatingReconcileInput): SeatingReconcileResult {
   const blocked = new Set(blockedSeatIndexes);
   const poolRegistrationIds = new Set(
     guestPool.map((guest) => guest.registrationId).filter(Boolean) as string[],
   );
-  const resolvedGuests = resolveSeatingAssignmentGuests(assignments, createSeatingGuestIndex(guestPool));
-  const seatIndex = createSeatingSeatIndex(geometry);
+  const guestIndex = providedGuestIndex ?? createSeatingGuestIndex(guestPool);
+  const resolvedGuests = providedResolvedGuests ?? resolveSeatingAssignmentGuests(assignments, guestIndex);
+  const seatIndex = providedSeatIndex ?? createSeatingSeatIndex(geometry);
 
   type PlacedEntry = {
     assignment: SeatingAssignment;

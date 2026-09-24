@@ -143,6 +143,8 @@ function normalizeAssignment(value: unknown): SeatingAssignment {
     id: requiredString(row.id),
     layoutId: requiredString(row.layoutId ?? row.layout_id),
     registrationId: nullableString(row.registrationId ?? row.registration_id),
+    guestIndex: nullableNumber(row.guestIndex ?? row.guest_index),
+    userId: nullableString(row.userId ?? row.user_id),
     seatKey: nullableString(row.seatKey ?? row.seat_key),
     guestLabel: nullableString(row.guestLabel ?? row.guest_label),
     guestInitials: nullableString(row.guestInitials ?? row.guest_initials),
@@ -251,6 +253,7 @@ type SeatingConnectionWire = {
 type SeatingAssignmentEntryWire = {
   seatKey: string | null;
   registrationId: string | null;
+  guestIndex: number | null;
   type: SeatingAssignmentType;
   name: string | null;
   initials: string | null;
@@ -331,6 +334,7 @@ function serializeEntry(entry: SeatingAssignmentEntry): SeatingAssignmentEntryWi
   return {
     seatKey: entry.seatKey ?? null,
     registrationId: entry.registrationId ?? null,
+    guestIndex: entry.guestIndex ?? null,
     type: entry.type,
     name: entry.name ?? null,
     initials: entry.initials ?? null,

@@ -56,4 +56,14 @@ describe("seating guest index", () => {
     const unknown = assignment(1, pool[0], { guestLabel: "Unknown", guestInitials: "U" });
     expect(resolveSeatingAssignmentGuests([unknown], createSeatingGuestIndex(pool))).toEqual([null]);
   });
+
+  it("uses persisted guest index before user identity and resolves same-name reopen rows in either order", () => {
+    const participant = guest(1, { displayName: "Иван Иванов", initials: "ИИ", participantUserId: "user-1" });
+    const invited = guest(2, { source: "guest", guestIndex: 1, displayName: "Иван Иванов", initials: "ИИ" });
+    const participantRow = assignment(1, participant, { guestIndex: null, userId: "user-1" });
+    const invitedRow = assignment(2, invited, { guestIndex: 1, userId: "user-1" });
+    const index = createSeatingGuestIndex([participant, invited]);
+    expect(resolveSeatingAssignmentGuests([participantRow, invitedRow], index)).toEqual([participant, invited]);
+    expect(resolveSeatingAssignmentGuests([invitedRow, participantRow], index)).toEqual([invited, participant]);
+  });
 });

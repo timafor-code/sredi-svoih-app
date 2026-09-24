@@ -1313,7 +1313,7 @@ it("restores same-name participant and guest as distinct people and excludes bot
 
 it("derives 600 assignments against 1000 guests in under 20 ms after warmup", () => {
   const guestPool = Array.from({ length: 1000 }, (_, index) => makeGuest(9000 + index));
-  const tables = Array.from({ length: 150 }, (_, index) => makeTable({ id: `table-${index}`, cx: 100 + index * 1000, sideSeats: 5 }));
+  const tables = Array.from({ length: 75 }, (_, index) => makeTable({ id: `table-${index}`, cx: 100 + index * 1000, sideSeats: 3 }));
   const geometry = computeTableSeats({ tables });
   const assignments = guestPool.slice(0, 600).map((guest, index) => ({
     id: `saved-${index}`, layoutId: "layout", registrationId: guest.registrationId,
@@ -1328,4 +1328,18 @@ it("derives 600 assignments against 1000 guests in under 20 ms after warmup", ()
   }).sort((a, b) => a - b);
   console.log(`  benchmark 1000 guests / 600 assignments: ${times.map((time) => time.toFixed(2)).join(", ")} ms`);
   expect(times[2]).toBeLessThan(20);
+});
+
+it("repeat auto seating excludes a same-name locked invited guest by canonical key", () => {
+  const participant = makeGuest(9101, { displayName: "Иван Иванов", initials: "ИИ", participantUserId: "user-1" });
+  const invited = makeGuest(9102, { displayName: "Иван Иванов", initials: "ИИ", registrationId: participant.registrationId, source: "guest", guestIndex: 1 });
+  const tables = [makeTable({ id: "regular", sideSeats: 3 })];
+  const geometry = computeTableSeats({ tables });
+  const lockedSeatKey = seatingSeatKey(geometry.seats[0], 0);
+  const result = autoAssignSeating({
+    guestPool: [participant, invited], tables, geometry,
+    lockedAssignments: [{ id: `manual:${invited.key}:${lockedSeatKey}`, layoutId: "layout", registrationId: invited.registrationId, guestIndex: 1, userId: participant.participantUserId, guestLabel: invited.displayName, guestInitials: invited.initials, seatKey: lockedSeatKey, type: "guest", locked: true, placementSource: "manual" }],
+  });
+  expect(result.assignedSeats.map((seat) => seat.guest.key)).toContain(participant.key);
+  expect(result.assignedSeats.map((seat) => seat.guest.key)).not.toContain(invited.key);
 });

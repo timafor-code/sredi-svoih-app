@@ -17,12 +17,20 @@ export function seatingGuestSignature(
 
 export function seatingGuestIdentity(guest: SeatingGuestPoolItem): string | null {
   if (guest.source === "participant" && guest.participantUserId) {
-    return `participant:${guest.registrationId}:${guest.participantUserId}`;
+    return seatingParticipantIdentity(guest.registrationId, guest.participantUserId);
   }
   if (guest.source === "guest" && guest.guestIndex !== null) {
-    return `guest:${guest.registrationId}:${guest.guestIndex}`;
+    return seatingInvitedGuestIdentity(guest.registrationId, guest.guestIndex);
   }
   return null;
+}
+
+export function seatingParticipantIdentity(registrationId: string, userId: string): string {
+  return `participant:${registrationId}:${userId}`;
+}
+
+export function seatingInvitedGuestIdentity(registrationId: string, guestIndex: number): string {
+  return `guest:${registrationId}:${guestIndex}`;
 }
 
 export function createSeatingGuestIndex(
@@ -53,6 +61,14 @@ export function resolveSeatingAssignmentGuests(
     const embeddedKey = seatingAssignmentEmbeddedGuestKey(assignment);
     const exact = embeddedKey ? index.byKey.get(embeddedKey) : undefined;
     if (exact) return used.has(exact.key) ? null : claim(exact, used);
+    const invited = assignment.registrationId !== null && typeof assignment.guestIndex === "number"
+      ? index.byIdentity.get(seatingInvitedGuestIdentity(assignment.registrationId, assignment.guestIndex))
+      : undefined;
+    if (invited) return used.has(invited.key) ? null : claim(invited, used);
+    const participant = assignment.registrationId !== null && assignment.guestIndex === null && typeof assignment.userId === "string"
+      ? index.byIdentity.get(seatingParticipantIdentity(assignment.registrationId, assignment.userId))
+      : undefined;
+    if (participant) return used.has(participant.key) ? null : claim(participant, used);
     const signature = seatingGuestSignature(assignment.registrationId, assignment.guestLabel, assignment.guestInitials);
     const signatureMatch = firstUnused(index.bySignature.get(signature), used);
     if (signatureMatch) return claim(signatureMatch, used);

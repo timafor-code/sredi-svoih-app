@@ -844,13 +844,15 @@ export function SeatingLayoutEditor({
       assignments,
       geometry: computeTableSeats({ connections: nextConnections, tables: nextTables }),
       guestPool,
+      guestIndex,
+      resolvedGuests: resolvedAssignmentGuests,
     });
     setAssignments(result.assignments);
     if (result.returnedCount > 0) {
       showCanvasNotice(`Вернулись в список: ${result.returnedCount} — их места исчезли после изменения столов.`);
     }
     return result;
-  }, [assignments, guestPool, showCanvasNotice]);
+  }, [assignments, guestIndex, guestPool, resolvedAssignmentGuests, showCanvasNotice]);
 
   const handleAddTable = useCallback(() => {
     if (!canAddTable) {
@@ -1393,6 +1395,8 @@ export function SeatingLayoutEditor({
         assignments: currentAssignments,
         geometry: autoGeometry,
         guestPool,
+        guestIndex,
+        resolvedGuests: resolvedAssignmentGuests,
       });
       // Kept placements (guests + reserves) block their seats for any re-seating and
       // exclude their guests from the auto queue. Unseated reserves are carried so
@@ -1412,6 +1416,7 @@ export function SeatingLayoutEditor({
           capacityUnitId: slot.bucket.capacityUnitId,
           connections: nextConnections,
           geometry: autoGeometry,
+          guestIndex,
           guestPool,
           lockedAssignments: keptAssignments,
           occurrenceId: slot.occurrence?.id ?? null,
@@ -1514,10 +1519,12 @@ export function SeatingLayoutEditor({
       commitGeometry,
       connections,
       currentAssignments,
+      guestIndex,
       guestPool,
       hasLoadedTemplates,
       hasValidGeometry,
       isTemplateListLoading,
+      resolvedAssignmentGuests,
       saveLayoutState,
       slot,
       tables,
@@ -2246,6 +2253,7 @@ function assignmentToPayloadEntry(assignment: SeatingAssignment): SeatingAssignm
     initials: assignment.guestInitials,
     name: assignment.guestLabel,
     registrationId: assignment.registrationId,
+    guestIndex: assignment.guestIndex,
     seatKey: assignment.seatKey,
     type: assignment.type,
   };
