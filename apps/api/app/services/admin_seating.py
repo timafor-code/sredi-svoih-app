@@ -1090,9 +1090,10 @@ async def save_admin_seating_layout_state(
             active_template_id=payload.active_template_id,
         )
         layout = await _get_layout_for_slot(session, slot, for_update=True)
-        if payload.expected_updated_at is not None and (
-            layout is None or layout.updated_at != payload.expected_updated_at
-        ):
+        if payload.expected_updated_at is None:
+            if layout is not None:
+                raise _seating_layout_conflict()
+        elif layout is None or layout.updated_at != payload.expected_updated_at:
             raise _seating_layout_conflict()
         if layout is None:
             layout = EventSeatingLayout(

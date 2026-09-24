@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiClient } from "./apiClient";
@@ -196,5 +197,16 @@ describe("admin seating API disabled-seat serialization", () => {
       "/admin/seating/layout/state",
       expect.not.objectContaining({ assignments: expect.anything() }),
     );
+  });
+
+  it("keeps converted editor saves on the atomic state operation", async () => {
+    const editorSource = await readFile(
+      new URL("../components/seating/SeatingLayoutEditor.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(editorSource).not.toMatch(/\bsaveSeatingAssignments\b/);
+    expect(editorSource).not.toMatch(/\bsaveSeatingLayout\b/);
+    expect((editorSource.match(/saveLayoutState\(\{/g) ?? []).length).toBeGreaterThanOrEqual(3);
   });
 });
