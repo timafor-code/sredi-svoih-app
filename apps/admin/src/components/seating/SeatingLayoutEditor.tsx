@@ -15,9 +15,21 @@ import {
   TABLE_W,
   computeTableSeats,
   normalizeAngle,
-  tableBounds,
   tableSideSeats,
 } from "../../lib/seatingGeometry";
+import {
+  TABLE_ADD_DX,
+  TABLE_ADD_DY,
+  clampTableToCanvasStart,
+  createEditorTable,
+  ensureOneRabbiTable,
+  normalizeEditorTables,
+} from "../../lib/seatingEditorTables";
+import {
+  guestPoolSlotKey,
+  hasGuestPoolMismatch as getGuestPoolMismatch,
+  isGuestPoolPending,
+} from "../../lib/seatingGuestPoolStatus";
 import { computeSeatingMetricsDisplaySummary } from "../../lib/seatingCapacity";
 import {
   autoAssignResultToAssignments,
@@ -90,15 +102,9 @@ type EditorFeedback = {
   tone: "muted" | "success" | "error";
 };
 
-const TABLE_START_CX = TABLE_W + CHAIR_OFFSET * 2;
-const TABLE_START_CY = TABLE_H + CHAIR_OFFSET * 2;
-const TABLE_ADD_DX = TABLE_W + CHAIR_OFFSET * 2;
-const TABLE_ADD_DY = TABLE_H / 2;
-const TABLE_MIN_PADDING = CHAIR_OFFSET + 24;
 const GRID_TABLE_CAPACITY = 8;
 const HOLIDAY_TABLE_CAPACITY = 6.5;
 
-let clientTableSequence = 0;
 let clientReserveSequence = 0;
 
 export function SeatingLayoutEditor({
@@ -131,7 +137,7 @@ export function SeatingLayoutEditor({
   const [isApplyingTemplate, setIsApplyingTemplate] = useState(false);
   const [isDeletingTemplate, setIsDeletingTemplate] = useState(false);
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
-  const [isGuestPoolLoading, setIsGuestPoolLoading] = useState(false);
+  const [loadedGuestPoolSlotKey, setLoadedGuestPoolSlotKey] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isReserveDialogOpen, setIsReserveDialogOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -145,6 +151,15 @@ export function SeatingLayoutEditor({
   const [isSeatingDone, setIsSeatingDone] = useState(false);
   const [tables, setTables] = useState<SeatingTable[]>([]);
   const [templates, setTemplates] = useState<SeatingTemplate[]>([]);
+  const currentGuestPoolSlotKey = guestPoolSlotKey(
+    slot
+      ? {
+          capacityUnitId: slot.bucket.capacityUnitId,
+          eventId: slot.event.eventId,
+          occurrenceId: slot.occurrence?.id ?? null,
+        }
+      : null,
+  );
 
   useEffect(() => {
     if (!slot) {
@@ -267,7 +282,7 @@ export function SeatingLayoutEditor({
     if (!slot) {
       setGuestPool([]);
       setGuestPoolError(null);
-      setIsGuestPoolLoading(false);
+      setLoadedGuestPoolSlotKey(null);
       return undefined;
     }
 
@@ -275,7 +290,6 @@ export function SeatingLayoutEditor({
 
     setGuestPool([]);
     setGuestPoolError(null);
-    setIsGuestPoolLoading(true);
 
     getAdminRegistrationCapacityGuestPool({
       capacityUnitId: slot.bucket.capacityUnitId,
@@ -299,14 +313,14 @@ export function SeatingLayoutEditor({
       })
       .finally(() => {
         if (!cancelled) {
-          setIsGuestPoolLoading(false);
+          setLoadedGuestPoolSlotKey(currentGuestPoolSlotKey);
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [slot]);
+  }, [currentGuestPoolSlotKey, slot]);
 
   const refreshTemplates = useCallback(() => {
     if (!slot) {
@@ -478,13 +492,17 @@ export function SeatingLayoutEditor({
       ((slot.bucket.occupiedSeats ?? 0) > 0 ||
         (slot.bucket.reservationsCount ?? 0) > 0),
   );
-  const hasGuestPoolMismatch = Boolean(
-    slot &&
-      !isGuestPoolLoading &&
-      !guestPoolError &&
-      hasBucketOccupancy &&
-      guestPool.length === 0,
-  );
+  const isGuestPoolLoading = isGuestPoolPending({
+    loadedSlotKey: loadedGuestPoolSlotKey,
+    slotKey: currentGuestPoolSlotKey,
+  });
+  const hasGuestPoolMismatch = getGuestPoolMismatch({
+    error: guestPoolError,
+    guestPoolLength: guestPool.length,
+    hasBucketOccupancy,
+    loadedSlotKey: loadedGuestPoolSlotKey,
+    slotKey: currentGuestPoolSlotKey,
+  });
   const invalidSeatKeyWarning =
     !hasUnsavedChanges && assignmentRestoreState.invalidAssignments.length > 0
       ? "Часть сохранённых мест больше не существует в текущей схеме."
@@ -2425,6 +2443,7 @@ function cloneTemplateGeometry(template: SeatingTemplate): TemplateGeometry {
       h: sourceTable.h,
       isRabbiTable: sourceTable.isRabbiTable,
       sideSeats: tableSideSeats(sourceTable),
+      disabledSeats: sourceTable.disabledSeats,
       w: sourceTable.w,
     });
     idMap.set(sourceTable.id, table.id);
@@ -2491,32 +2510,6 @@ function upsertTemplate(
   );
 }
 
-function createEditorTable({
-  angle = 0,
-  cx = TABLE_START_CX,
-  cy = TABLE_START_CY,
-  h = TABLE_H,
-  isRabbiTable = false,
-  sideSeats = 3,
-  w = TABLE_W,
-}: Partial<SeatingTable> = {}): SeatingTable {
-  return {
-    angle: normalizeAngle(angle),
-    cx,
-    cy,
-    h: h > 0 ? h : TABLE_H,
-    id: createClientTableId(),
-    isRabbiTable,
-    sideSeats: sideSeats === 2 ? 2 : 3,
-    w: w > 0 ? w : TABLE_W,
-  };
-}
-
-function createClientTableId(): string {
-  clientTableSequence += 1;
-  return `table_${Date.now().toString(36)}_${clientTableSequence.toString(36)}`;
-}
-
 // PR 16: a reserve is a pooled `type: "reserve"` assignment with no
 // registration_id. The stable client id is its identity for drag/drop and delete;
 // after a reopen the DB row id takes over the same role.
@@ -2554,53 +2547,6 @@ function reserveInitials(label: string): string {
     return words[0].slice(0, 2).toLocaleUpperCase("ru-RU");
   }
   return `${words[0][0]}${words[1][0]}`.toLocaleUpperCase("ru-RU");
-}
-
-function normalizeEditorTables(tables: SeatingTable[]): SeatingTable[] {
-  const normalizedTables = tables
-    .filter((table) => table.id)
-    .map((table) =>
-      clampTableToCanvasStart({
-        angle: normalizeAngle(table.angle || 0),
-        cx: Number.isFinite(table.cx) ? table.cx : TABLE_START_CX,
-        cy: Number.isFinite(table.cy) ? table.cy : TABLE_START_CY,
-        h: table.h > 0 ? table.h : TABLE_H,
-        id: table.id,
-        isRabbiTable: Boolean(table.isRabbiTable),
-        sideSeats: table.sideSeats === 2 ? 2 : 3,
-        w: table.w > 0 ? table.w : TABLE_W,
-      }),
-    );
-
-  return ensureOneRabbiTable(
-    normalizedTables.length > 0
-      ? normalizedTables
-      : [createEditorTable({ isRabbiTable: true })],
-  );
-}
-
-function ensureOneRabbiTable(tables: SeatingTable[]): SeatingTable[] {
-  if (tables.length === 0) {
-    return [];
-  }
-
-  const rabbiIndex = Math.max(
-    0,
-    tables.findIndex((table) => table.isRabbiTable),
-  );
-
-  return tables.map((table, index) => ({
-    ...table,
-    isRabbiTable: index === rabbiIndex,
-  }));
-}
-
-function clampTableToCanvasStart(table: SeatingTable): SeatingTable {
-  const bounds = tableBounds(table);
-  const dx = bounds.minX < TABLE_MIN_PADDING ? TABLE_MIN_PADDING - bounds.minX : 0;
-  const dy = bounds.minY < TABLE_MIN_PADDING ? TABLE_MIN_PADDING - bounds.minY : 0;
-
-  return dx || dy ? { ...table, cx: table.cx + dx, cy: table.cy + dy } : table;
 }
 
 function filterConnectionsForTables(

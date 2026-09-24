@@ -134,6 +134,11 @@ chair by: (1) enabling `Выключение мест` then plain left-clicking;
 left-clicking; or (3) right-clicking. Seat-edit mode takes priority over
 click-to-place; Alt and right-click remain direct shortcuts.
 
+Every editor path — load, save, auto seating, save as template, and template
+apply — preserves `disabledSeats` through `normalizeEditorTables`. Normalisation
+drops unknown parts, while retaining slots outside the table's current
+`sideSeats` range so `2 ↔ 3` seat-per-side round-trips remain reversible.
+
 ## Editor Layout And Canvas Interaction
 
 Header metrics are a compact strip, including `Выключено` when applicable.
@@ -196,6 +201,9 @@ The guest pool may be empty. The UI should make the likely causes readable:
 
 An empty pool warning is informational. It must not create guests, change
 registrations, auto-seat, or change the seating algorithm.
+
+The empty-pool warning appears only after the guest pool for the current slot
+has finished loading.
 
 The right-column metrics are intentionally compact so the inline `Не
 рассажены` pool can grow through the remaining desktop sidebar height while
