@@ -199,7 +199,7 @@ function questionValidationTarget(
   issue: string | null,
 ): QuestionValidationTarget | null {
   if (!issue) return null;
-  const match = issue.match(/вопроса (\d+)\./);
+  const match = issue.match(/вопроса (\d+)/);
   if (!match) return null;
   const questionIndex = Number(match[1]) - 1;
   if (issue.startsWith("Укажите текст вопроса")) {
