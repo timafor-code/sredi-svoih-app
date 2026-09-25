@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
@@ -13,7 +14,13 @@ import { RegistrationCapacityBucketsOverview } from "../components/registrations
 import { RegistrationDetailPanel } from "../components/registrations/RegistrationDetailPanel";
 import { RegistrationEventsPanel } from "../components/registrations/RegistrationEventsPanel";
 import { RegistrationMainActions } from "../components/registrations/RegistrationMainActions";
-import { QuestionnaireAnswersSummary } from "../components/registrations/QuestionnaireAnswersSummary";
+import {
+  buildQuestionnaireModalViewModel,
+  formatQuestionCount,
+  formatQuestionnaireModalUpdatedAt,
+  formatRespondentCount,
+  QuestionnaireAnswersSummary,
+} from "../components/registrations/QuestionnaireAnswersSummary";
 import { RegistrationsState } from "../components/registrations/RegistrationsState";
 import { RegistrationsTable } from "../components/registrations/RegistrationsTable";
 import { WebRegistrationOperationsPanel } from "../components/registrations/WebRegistrationOperationsPanel";
@@ -154,6 +161,7 @@ export function RegistrationsPage() {
     useState<AdminEventRegistrationRow[]>([]);
   const [questionnaireModalLoading, setQuestionnaireModalLoading] = useState(false);
   const [questionnaireModalError, setQuestionnaireModalError] = useState<string | null>(null);
+  const [questionnaireModalUpdatedAt, setQuestionnaireModalUpdatedAt] = useState<string | null>(null);
   const [capacityAnalytics, setCapacityAnalytics] =
     useState<AdminRegistrationCapacityAnalytics | null>(null);
   const [capacityAnalyticsLoading, setCapacityAnalyticsLoading] = useState(false);
@@ -429,9 +437,17 @@ export function RegistrationsPage() {
     setQuestionnaireModalLoading(true);
     setQuestionnaireModalError(null);
     setQuestionnaireModalRegistrations([]);
+    setQuestionnaireModalUpdatedAt(null);
     try {
       const allRegistrations: AdminEventRegistrationRow[] = [];
       let summaryOffset = 0;
+      const summaryPromise = getQuestionnaireAnswersSummary({
+        eventId: selectedEventId,
+        occurrenceId: eventHasOccurrences ? selectedOccurrenceId : null,
+        capacityUnitId: selectedCapacityUnitId,
+        status: "all",
+        sourceChannel: registrationSourceFilter,
+      });
       while (true) {
         const page = await listEventRegistrations({
           eventId: selectedEventId,
@@ -447,13 +463,29 @@ export function RegistrationsPage() {
         if (page.length < QUESTIONNAIRE_MODAL_PAGE_SIZE) break;
         summaryOffset += page.length;
       }
+      const nextSummary = await summaryPromise;
+      setQuestionnaireSummary(nextSummary);
       setQuestionnaireModalRegistrations(allRegistrations);
+      setQuestionnaireModalUpdatedAt(new Date().toISOString());
     } catch (nextError) {
       setQuestionnaireModalError(nextError instanceof Error ? nextError.message : "Не удалось загрузить ответы анкеты.");
     } finally {
       setQuestionnaireModalLoading(false);
     }
   }, [eventHasOccurrences, registrationSourceFilter, selectedCapacityUnitId, selectedEventId, selectedOccurrenceId]);
+
+  const closeQuestionnaireModal = useCallback(() => {
+    setQuestionnaireModalOpen(false);
+  }, []);
+
+  const questionnaireModalViewModel = useMemo(
+    () => buildQuestionnaireModalViewModel({
+      registrations: questionnaireModalRegistrations,
+      summary: questionnaireSummary,
+      updatedAt: questionnaireModalUpdatedAt,
+    }),
+    [questionnaireModalRegistrations, questionnaireModalUpdatedAt, questionnaireSummary],
+  );
 
   useEffect(() => {
     void loadRegistrationEventSummaries().catch(() => undefined);
@@ -1124,12 +1156,11 @@ export function RegistrationsPage() {
       />
 
       <QuestionnaireAnswersModal
-        error={questionnaireModalError ?? questionnaireSummaryError}
-        loading={questionnaireModalLoading || questionnaireSummaryLoading}
-        onClose={() => setQuestionnaireModalOpen(false)}
+        error={questionnaireModalError}
+        loading={questionnaireModalLoading}
+        onClose={closeQuestionnaireModal}
         open={questionnaireModalOpen}
-        registrations={questionnaireModalRegistrations}
-        summary={questionnaireSummary}
+        viewModel={questionnaireModalViewModel}
       />
 
       <SeatingLayoutEditor
@@ -1246,18 +1277,18 @@ function QuestionnaireAnswersModal({
   loading,
   onClose,
   open,
-  registrations,
-  summary,
+  viewModel,
 }: {
   error: string | null;
   loading: boolean;
   onClose: () => void;
   open: boolean;
-  registrations: readonly AdminEventRegistrationRow[];
-  summary: AdminQuestionnaireAnswersSummary | null;
+  viewModel: ReturnType<typeof buildQuestionnaireModalViewModel>;
 }) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return undefined;
+    closeButtonRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
@@ -1271,19 +1302,26 @@ function QuestionnaireAnswersModal({
       className="registration-detail-modal-overlay"
       onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
     >
-      <section aria-modal="true" className="questionnaire-summary-modal registration-detail-modal" role="dialog">
+      <section aria-labelledby="questionnaire-answers-modal-title" aria-modal="true" className="questionnaire-summary-modal registration-detail-modal" role="dialog">
+        <div className="questionnaire-summary-modal__handle" aria-hidden="true" />
         <header className="registration-detail-modal__head">
-          <div><h2>Ответы на анкету</h2></div>
-          <button aria-label="Закрыть ответы анкеты" className="registration-detail-modal__close" onClick={onClose} type="button">×</button>
+          <div>
+            <h2 id="questionnaire-answers-modal-title">Ответы на анкету</h2>
+            {viewModel ? <p>{formatQuestionCount(viewModel.questions.length)} · {formatRespondentCount(viewModel.respondents)}</p> : null}
+          </div>
+          <button aria-label="Закрыть ответы анкеты" className="registration-detail-modal__close questionnaire-summary-modal__close" onClick={onClose} ref={closeButtonRef} type="button">×</button>
         </header>
         <div className="registration-detail-modal__body">
           <QuestionnaireAnswersSummary
             error={error}
             loading={loading}
-            registrations={registrations}
-            summary={summary}
+            viewModel={viewModel}
           />
         </div>
+        <footer className="questionnaire-summary-modal__footer">
+          <span>{formatQuestionnaireModalUpdatedAt(viewModel?.updatedAt ?? null)}</span>
+          <Button onClick={onClose} variant="secondary">Закрыть</Button>
+        </footer>
       </section>
     </div>,
     document.body,
