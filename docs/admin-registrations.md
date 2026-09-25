@@ -115,8 +115,10 @@ options, or notification behavior.
 ## Excel Export
 
 `apps/admin/src/services/registrationExcelExport.ts` builds the workbook from
-the same registration service data the page already uses. The Excel schema is
-unchanged.
+the same registration service data the page already uses. The existing fixed
+operational schema remains unchanged; questionnaire columns are appended
+dynamically after the fixed columns. Select answers use their human-readable
+option labels, while canonical option values remain stored unchanged.
 
 The export action respects the current selected context:
 

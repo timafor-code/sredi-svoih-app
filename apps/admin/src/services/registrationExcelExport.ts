@@ -9,13 +9,15 @@ import {
   insertElementMarkupAccordingToOrderOfSiblings,
 } from "write-excel-file/utility";
 
-import { listEventRegistrations } from "./adminEventsService";
+import { getQuestionnaireAnswersSummary, listEventRegistrations } from "./adminEventsService";
 import type { AdminEventOccurrence } from "../types/eventOccurrences";
 import type {
   AdminEventRegistrationRow,
   AdminRegistrationEventSummary,
   AdminRegistrationOptionSelectionSummary,
+  AdminQuestionnaireSummaryField,
 } from "../types/registrations";
+import { formatQuestionnaireAnswerValue } from "../types/registrations";
 
 type BrowserFileContent = File | Blob | ArrayBuffer;
 
@@ -38,13 +40,15 @@ type RegistrationExcelExportScope = {
 
 type RegistrationExportColumn = {
   header: string;
-  key: keyof RegistrationExportRow;
+  key: string;
+  questionnaireFieldKey?: string;
   maxWidth?: number;
   minWidth?: number;
   wrap?: boolean;
 };
 
 type RegistrationExportRow = {
+  [key: string]: string | number | null;
   eventTitle: string;
   occurrenceDate: string;
   occurrenceTitle: string;
@@ -158,10 +162,20 @@ export async function exportEventRegistrationsToExcel(
     capacityUnitId: options.capacityUnitId ?? null,
     capacityUnitTitle: options.capacityUnitTitle ?? null,
   };
-  const registrations = await fetchAllEventRegistrations(event.eventId, scope);
-  const sheets = createRegistrationSheets(event, registrations, scope);
+  const [registrations, questionnaire] = await Promise.all([
+    fetchAllEventRegistrations(event.eventId, scope),
+    getQuestionnaireAnswersSummary({
+      eventId: event.eventId,
+      occurrenceId: scope.occurrence?.id ?? null,
+      capacityUnitId: scope.capacityUnitId,
+      status: "all",
+      sourceChannel: "all",
+    }),
+  ]);
+  const columns = buildExportColumns(questionnaire.fields);
+  const sheets = createRegistrationSheets(event, registrations, scope, columns);
   const blob = await writeXlsxFile(sheets, {
-    features: [createAutoFilterFeature()],
+    features: [createAutoFilterFeature(columns.length)],
     fontFamily: "Calibri",
     fontSize: 11,
   })
@@ -206,9 +220,10 @@ function createRegistrationSheets(
   event: AdminRegistrationEventSummary,
   registrations: AdminEventRegistrationRow[],
   scope: RegistrationExcelExportScope,
+  columns: RegistrationExportColumn[],
 ): Array<Sheet<BrowserFileContent>> {
   const sheets: Array<Sheet<BrowserFileContent>> = [
-    createRegistrationSheet(ALL_REGISTRATIONS_SHEET_NAME, event, registrations),
+    createRegistrationSheet(ALL_REGISTRATIONS_SHEET_NAME, event, registrations, columns),
   ];
 
   if (scope.occurrence) {
@@ -219,7 +234,7 @@ function createRegistrationSheets(
 
   for (const group of groupRegistrationsByOccurrence(registrations)) {
     const sheetName = makeUniqueSheetName(group.name, usedSheetNames);
-    sheets.push(createRegistrationSheet(sheetName, event, group.registrations));
+    sheets.push(createRegistrationSheet(sheetName, event, group.registrations, columns));
   }
 
   return sheets;
@@ -229,20 +244,21 @@ function createRegistrationSheet(
   sheetName: string,
   event: AdminRegistrationEventSummary,
   registrations: AdminEventRegistrationRow[],
+  columns: RegistrationExportColumn[],
 ): Sheet<BrowserFileContent> {
-  const rows = registrations.map((registration) => buildExportRow(registration, event));
+  const rows = registrations.map((registration) => buildExportRow(registration, event, columns));
 
   return {
-    columns: createColumnWidths(rows),
-    data: createSheetData(rows),
+    columns: createColumnWidths(rows, columns),
+    data: createSheetData(rows, columns),
     sheet: sheetName,
     stickyRowsCount: 1,
   };
 }
 
-function createSheetData(rows: RegistrationExportRowWithStatus[]): SheetData {
+function createSheetData(rows: RegistrationExportRowWithStatus[], columns: RegistrationExportColumn[]): SheetData {
   return [
-    EXPORT_COLUMNS.map((column) => ({
+    columns.map((column) => ({
       alignVertical: "center",
       backgroundColor: "#f4f7fb",
       bottomBorderColor: "#d8dee8",
@@ -251,7 +267,7 @@ function createSheetData(rows: RegistrationExportRowWithStatus[]): SheetData {
       value: column.header,
       wrap: true,
     })),
-    ...rows.map((row) => EXPORT_COLUMNS.map((column) => createBodyCell(row, column))),
+    ...rows.map((row) => columns.map((column) => createBodyCell(row, column))),
   ];
 }
 
@@ -293,11 +309,12 @@ function createBodyCell(
 
 function createColumnWidths(
   rows: RegistrationExportRowWithStatus[],
+  columns: RegistrationExportColumn[],
 ): Array<{ width: number }> {
-  return EXPORT_COLUMNS.map((column) => ({
+  return columns.map((column) => ({
     width: getColumnWidth(
       column,
-      rows.map((row) => row[column.key]),
+      rows.map((row) => row[column.key] ?? null),
     ),
   }));
 }
@@ -305,8 +322,9 @@ function createColumnWidths(
 function buildExportRow(
   registration: AdminEventRegistrationRow,
   event: AdminRegistrationEventSummary,
+  columns: RegistrationExportColumn[],
 ): RegistrationExportRowWithStatus {
-  return {
+  const row: RegistrationExportRowWithStatus = {
     amount: getRegistrationAmount(registration),
     cancelledAt: formatDateTime(registration.cancelledAt),
     capacitySeats: getCapacitySeats(registration.selectedOptions),
@@ -330,6 +348,46 @@ function buildExportRow(
     status: formatRegistrationStatus(registration.status),
     statusKey: registration.status,
   };
+  for (const column of columns.slice(EXPORT_COLUMNS.length)) {
+    row[column.key] = buildQuestionnaireRowValues(registration.answers)[column.questionnaireFieldKey ?? ""] ?? "";
+  }
+  return row;
+}
+
+export function buildExportColumns(
+  fields: readonly Pick<AdminQuestionnaireSummaryField, "fieldKey" | "label">[],
+): RegistrationExportColumn[] {
+  return [
+    ...EXPORT_COLUMNS,
+    ...fields.map((field) => ({
+      header: field.label,
+      key: `questionnaire:${field.fieldKey}`,
+      questionnaireFieldKey: field.fieldKey,
+      maxWidth: 42,
+      minWidth: 16,
+      wrap: true,
+    })),
+  ];
+}
+
+export function formatQuestionnaireExportValue(value: string | boolean | string[] | null): string {
+  if (value === null) return "";
+  if (typeof value === "boolean") return value ? "Да" : "Нет";
+  return Array.isArray(value) ? value.join(", ") : value;
+}
+
+export function buildQuestionnaireRowValues(
+  answers: readonly Pick<
+    AdminEventRegistrationRow["answers"][number],
+    "fieldKey" | "fieldType" | "options" | "value"
+  >[],
+): Record<string, string> {
+  return Object.fromEntries(
+    answers.map((answer) => [
+      answer.fieldKey,
+      formatQuestionnaireExportValue(formatQuestionnaireAnswerValue(answer)),
+    ]),
+  );
 }
 
 function groupRegistrationsByOccurrence(
@@ -719,7 +777,7 @@ function sanitizeSheetName(value: string): string {
   return cleaned || "Лист";
 }
 
-function createAutoFilterFeature(): Feature<BrowserFileContent> {
+function createAutoFilterFeature(columnCount: number): Feature<BrowserFileContent> {
   return {
     files: {
       transform: {
@@ -730,7 +788,7 @@ function createAutoFilterFeature(): Feature<BrowserFileContent> {
             }
 
             const lastRow = getLastSheetRow(xml);
-            const lastColumn = getExcelColumnName(EXPORT_COLUMNS.length);
+            const lastColumn = getExcelColumnName(columnCount);
             const autoFilter = `<autoFilter ref="A1:${lastColumn}${lastRow}"/>`;
             const siblingOrder =
               getOrderOfSiblings("xl/worksheets/sheet{id}.xml", "worksheet") ??

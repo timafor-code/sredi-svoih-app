@@ -19,6 +19,9 @@ from app.db.models.core import (
     EventParticipationOption,
     EventParticipationOptionCapacityUnit,
     EventRegistration,
+    EventRegistrationAnswer,
+    EventRegistrationForm,
+    EventRegistrationFormField,
     EventRegistrationCapacityReservation,
     EventRegistrationOptionSelection,
 )
@@ -36,6 +39,9 @@ class AdminRegistrationSourceTests(unittest.IsolatedAsyncioTestCase):
         self.event_id = uuid4()
         self.foreign_event_id = uuid4()
         self.registration_ids = [uuid4() for _ in range(3)]
+        self.questionnaire_form_id = uuid4()
+        self.questionnaire_field_id = uuid4()
+        self.optional_questionnaire_field_id = uuid4()
         now = datetime.now(UTC).replace(microsecond=0)
 
         async with AsyncSessionLocal() as session:
@@ -164,6 +170,49 @@ class AdminRegistrationSourceTests(unittest.IsolatedAsyncioTestCase):
                         ),
                     ],
                 )
+                await session.flush()
+                form = EventRegistrationForm(
+                    id=self.questionnaire_form_id,
+                    event_id=self.event_id,
+                    channel="web",
+                    version=1,
+                    purpose="Registration questionnaire",
+                    status="draft",
+                )
+                session.add(form)
+                await session.flush()
+                session.add_all(
+                    [
+                        EventRegistrationFormField(
+                            id=self.questionnaire_field_id, form_id=self.questionnaire_form_id,
+                            field_key="conversion", field_type="single_select", label="Статус гиюра",
+                            required=False, purpose="Registration question", retention_days=30,
+                            options_payload=[{"value": "option_3", "label": "Я прошел гиюр"}],
+                            validation_payload={}, data_category="ordinary", sort_order=0,
+                        ),
+                        EventRegistrationFormField(
+                            id=self.optional_questionnaire_field_id,
+                            form_id=self.questionnaire_form_id,
+                            field_key="optional_note",
+                            field_type="short_text",
+                            label="Дополнительная заметка",
+                            required=False,
+                            purpose="Registration question",
+                            retention_days=30,
+                            options_payload=[],
+                            validation_payload={},
+                            data_category="ordinary",
+                            sort_order=1,
+                        ),
+                    ],
+                )
+                await session.flush()
+                form.status = "published"
+                form.published_at = now
+                session.add(EventRegistrationAnswer(
+                    registration_id=self.registration_ids[0], field_id=self.questionnaire_field_id,
+                    value_payload="option_3", purge_at=now + timedelta(days=30),
+                ))
 
         self.admin_headers = {
             "Authorization": f"Bearer {create_access_token(self.admin_id)}",
@@ -253,6 +302,45 @@ class AdminRegistrationSourceTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(foreign.status_code, 404)
             self.assertEqual(foreign.json()["error"]["code"], "not_found")
+
+    async def test_questionnaire_answers_and_summary_use_registration_authorization(self) -> None:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            listed = await client.get(
+                f"/admin/events/{self.event_id}/registrations",
+                headers=self.event_manager_headers,
+            )
+            self.assertEqual(listed.status_code, 200)
+            by_id = {row["id"]: row for row in listed.json()["data"]}
+            answers = by_id[str(self.registration_ids[0])]["answers"]
+            answer = next(item for item in answers if item["field_key"] == "conversion")
+            self.assertEqual(answer["field_key"], "conversion")
+            self.assertEqual(answer["field_id"], str(self.questionnaire_field_id))
+            self.assertEqual(answer["label"], "Статус гиюра")
+            self.assertEqual(answer["field_type"], "single_select")
+            self.assertEqual(answer["value_payload"], "option_3")
+            self.assertEqual(answer["form_version"], 1)
+            self.assertEqual(answer["form_status"], "published")
+            self.assertEqual(answer["options"], [{"value": "option_3", "label": "Я прошел гиюр"}])
+            optional_answer = next(item for item in answers if item["field_key"] == "optional_note")
+            self.assertIsNone(optional_answer["value_payload"])
+            self.assertEqual(optional_answer["options"], [])
+            self.assertEqual(by_id[str(self.registration_ids[1])]["answers"], [])
+
+            summary = await client.get(
+                f"/admin/events/{self.event_id}/questionnaire-answers/summary",
+                headers=self.event_manager_headers,
+            )
+            self.assertEqual(summary.status_code, 200)
+            field = summary.json()["data"]["fields"][0]
+            self.assertEqual(field["answered_count"], 1)
+            self.assertEqual(field["options"][0]["count"], 1)
+
+            foreign = await client.get(
+                f"/admin/events/{self.foreign_event_id}/questionnaire-answers/summary",
+                headers=self.event_manager_headers,
+            )
+            self.assertEqual(foreign.status_code, 404)
 
     async def test_existing_status_and_attendance_actions_preserve_source(self) -> None:
         registration_id = self.registration_ids[0]

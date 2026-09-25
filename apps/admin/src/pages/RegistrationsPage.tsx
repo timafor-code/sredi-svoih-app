@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
@@ -13,6 +14,13 @@ import { RegistrationCapacityBucketsOverview } from "../components/registrations
 import { RegistrationDetailPanel } from "../components/registrations/RegistrationDetailPanel";
 import { RegistrationEventsPanel } from "../components/registrations/RegistrationEventsPanel";
 import { RegistrationMainActions } from "../components/registrations/RegistrationMainActions";
+import {
+  buildQuestionnaireModalViewModel,
+  formatQuestionCount,
+  formatQuestionnaireModalUpdatedAt,
+  formatRespondentCount,
+  QuestionnaireAnswersSummary,
+} from "../components/registrations/QuestionnaireAnswersSummary";
 import { RegistrationsState } from "../components/registrations/RegistrationsState";
 import { RegistrationsTable } from "../components/registrations/RegistrationsTable";
 import { WebRegistrationOperationsPanel } from "../components/registrations/WebRegistrationOperationsPanel";
@@ -24,6 +32,7 @@ import { useAdminAuth } from "../context/AdminAuthContext";
 import { getAdminRegistrationCapacityAnalytics } from "../services/adminRegistrationCapacityService";
 import {
   listAdminEventCapacities,
+  getQuestionnaireAnswersSummary,
   listEventRegistrations,
   listRegistrationEvents,
   listRegistrationEventOccurrences,
@@ -37,6 +46,7 @@ import type {
   AdminEventRegistrationRow,
   AdminRegistrationEventSummary,
   AdminRegistrationSourceFilter,
+  AdminQuestionnaireAnswersSummary,
 } from "../types/registrations";
 import { ADMIN_REGISTRATION_SOURCE_CHANNELS } from "../types/registrations";
 import type {
@@ -67,6 +77,7 @@ type ToastMessage = {
 };
 
 const REGISTRATION_PAGE_SIZE = 50;
+const QUESTIONNAIRE_MODAL_PAGE_SIZE = 200;
 const REGISTRATION_ACTIONS: RegistrationAction[] = [
   {
     kind: "status",
@@ -142,6 +153,15 @@ export function RegistrationsPage() {
   const [registrations, setRegistrations] = useState<AdminEventRegistrationRow[]>([]);
   const [registrationsLoading, setRegistrationsLoading] = useState(false);
   const [registrationsError, setRegistrationsError] = useState<string | null>(null);
+  const [questionnaireSummary, setQuestionnaireSummary] = useState<AdminQuestionnaireAnswersSummary | null>(null);
+  const [questionnaireSummaryLoading, setQuestionnaireSummaryLoading] = useState(false);
+  const [questionnaireSummaryError, setQuestionnaireSummaryError] = useState<string | null>(null);
+  const [questionnaireModalOpen, setQuestionnaireModalOpen] = useState(false);
+  const [questionnaireModalRegistrations, setQuestionnaireModalRegistrations] =
+    useState<AdminEventRegistrationRow[]>([]);
+  const [questionnaireModalLoading, setQuestionnaireModalLoading] = useState(false);
+  const [questionnaireModalError, setQuestionnaireModalError] = useState<string | null>(null);
+  const [questionnaireModalUpdatedAt, setQuestionnaireModalUpdatedAt] = useState<string | null>(null);
   const [capacityAnalytics, setCapacityAnalytics] =
     useState<AdminRegistrationCapacityAnalytics | null>(null);
   const [capacityAnalyticsLoading, setCapacityAnalyticsLoading] = useState(false);
@@ -387,6 +407,86 @@ export function RegistrationsPage() {
     [eventHasOccurrences, selectedEventId, selectedOccurrenceId],
   );
 
+  const loadQuestionnaireSummary = useCallback(async () => {
+    if (!selectedEventId || (eventHasOccurrences && !selectedOccurrenceId)) {
+      setQuestionnaireSummary(null);
+      setQuestionnaireSummaryError(null);
+      return;
+    }
+    setQuestionnaireSummaryLoading(true);
+    setQuestionnaireSummaryError(null);
+    try {
+      setQuestionnaireSummary(await getQuestionnaireAnswersSummary({
+        eventId: selectedEventId,
+        occurrenceId: eventHasOccurrences ? selectedOccurrenceId : null,
+        capacityUnitId: selectedCapacityUnitId,
+        status: "all",
+        sourceChannel: registrationSourceFilter,
+      }));
+    } catch (nextError) {
+      setQuestionnaireSummary(null);
+      setQuestionnaireSummaryError(nextError instanceof Error ? nextError.message : "Не удалось загрузить сводку анкеты.");
+    } finally {
+      setQuestionnaireSummaryLoading(false);
+    }
+  }, [eventHasOccurrences, registrationSourceFilter, selectedCapacityUnitId, selectedEventId, selectedOccurrenceId]);
+
+  const openQuestionnaireModal = useCallback(async () => {
+    if (!selectedEventId) return;
+    setQuestionnaireModalOpen(true);
+    setQuestionnaireModalLoading(true);
+    setQuestionnaireModalError(null);
+    setQuestionnaireModalRegistrations([]);
+    setQuestionnaireModalUpdatedAt(null);
+    try {
+      const allRegistrations: AdminEventRegistrationRow[] = [];
+      let summaryOffset = 0;
+      const summaryPromise = getQuestionnaireAnswersSummary({
+        eventId: selectedEventId,
+        occurrenceId: eventHasOccurrences ? selectedOccurrenceId : null,
+        capacityUnitId: selectedCapacityUnitId,
+        status: "all",
+        sourceChannel: registrationSourceFilter,
+      });
+      while (true) {
+        const page = await listEventRegistrations({
+          eventId: selectedEventId,
+          occurrenceId: eventHasOccurrences ? selectedOccurrenceId : null,
+          capacityUnitId: selectedCapacityUnitId,
+          status: "all",
+          sourceChannel: registrationSourceFilter,
+          search: null,
+          limit: QUESTIONNAIRE_MODAL_PAGE_SIZE,
+          offset: summaryOffset,
+        });
+        allRegistrations.push(...page);
+        if (page.length < QUESTIONNAIRE_MODAL_PAGE_SIZE) break;
+        summaryOffset += page.length;
+      }
+      const nextSummary = await summaryPromise;
+      setQuestionnaireSummary(nextSummary);
+      setQuestionnaireModalRegistrations(allRegistrations);
+      setQuestionnaireModalUpdatedAt(new Date().toISOString());
+    } catch (nextError) {
+      setQuestionnaireModalError(nextError instanceof Error ? nextError.message : "Не удалось загрузить ответы анкеты.");
+    } finally {
+      setQuestionnaireModalLoading(false);
+    }
+  }, [eventHasOccurrences, registrationSourceFilter, selectedCapacityUnitId, selectedEventId, selectedOccurrenceId]);
+
+  const closeQuestionnaireModal = useCallback(() => {
+    setQuestionnaireModalOpen(false);
+  }, []);
+
+  const questionnaireModalViewModel = useMemo(
+    () => buildQuestionnaireModalViewModel({
+      registrations: questionnaireModalRegistrations,
+      summary: questionnaireSummary,
+      updatedAt: questionnaireModalUpdatedAt,
+    }),
+    [questionnaireModalRegistrations, questionnaireModalUpdatedAt, questionnaireSummary],
+  );
+
   useEffect(() => {
     void loadRegistrationEventSummaries().catch(() => undefined);
   }, [loadRegistrationEventSummaries]);
@@ -398,6 +498,10 @@ export function RegistrationsPage() {
   useEffect(() => {
     void loadCapacityAnalytics();
   }, [loadCapacityAnalytics]);
+
+  useEffect(() => {
+    void loadQuestionnaireSummary();
+  }, [loadQuestionnaireSummary]);
 
   useEffect(() => {
     if (!selectedCapacityUnitId || capacityAnalyticsLoading) {
@@ -909,6 +1013,16 @@ export function RegistrationsPage() {
                     Показано {registrationRangeStart}-{registrationRangeEnd}
                   </span>
                   <div className="registrations-table-panel__tools">
+                    {questionnaireSummary?.fields.length ? (
+                      <Button
+                        disabled={questionnaireSummaryLoading}
+                        onClick={() => void openQuestionnaireModal()}
+                        size="sm"
+                        variant="secondary"
+                      >
+                        Ответы на анкету
+                      </Button>
+                    ) : null}
                     <div className="registrations-export-group">
                       <Button
                         disabled={excelExportDisabled}
@@ -1041,6 +1155,14 @@ export function RegistrationsPage() {
         registration={selectedRegistration}
       />
 
+      <QuestionnaireAnswersModal
+        error={questionnaireModalError}
+        loading={questionnaireModalLoading}
+        onClose={closeQuestionnaireModal}
+        open={questionnaireModalOpen}
+        viewModel={questionnaireModalViewModel}
+      />
+
       <SeatingLayoutEditor
         onCapacityLimitUpdated={handleCapacityLimitUpdated}
         onClose={() => setSeatingEditorSlot(null)}
@@ -1144,6 +1266,62 @@ function RegistrationDetailModal({
             registration={registration}
           />
         </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+function QuestionnaireAnswersModal({
+  error,
+  loading,
+  onClose,
+  open,
+  viewModel,
+}: {
+  error: string | null;
+  loading: boolean;
+  onClose: () => void;
+  open: boolean;
+  viewModel: ReturnType<typeof buildQuestionnaireModalViewModel>;
+}) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    closeButtonRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose, open]);
+
+  if (!open || typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      className="registration-detail-modal-overlay"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+    >
+      <section aria-labelledby="questionnaire-answers-modal-title" aria-modal="true" className="questionnaire-summary-modal registration-detail-modal" role="dialog">
+        <div className="questionnaire-summary-modal__handle" aria-hidden="true" />
+        <header className="registration-detail-modal__head">
+          <div>
+            <h2 id="questionnaire-answers-modal-title">Ответы на анкету</h2>
+            {viewModel ? <p>{formatQuestionCount(viewModel.questions.length)} · {formatRespondentCount(viewModel.respondents)}</p> : null}
+          </div>
+          <button aria-label="Закрыть ответы анкеты" className="registration-detail-modal__close questionnaire-summary-modal__close" onClick={onClose} ref={closeButtonRef} type="button">×</button>
+        </header>
+        <div className="registration-detail-modal__body">
+          <QuestionnaireAnswersSummary
+            error={error}
+            loading={loading}
+            viewModel={viewModel}
+          />
+        </div>
+        <footer className="questionnaire-summary-modal__footer">
+          <span>{formatQuestionnaireModalUpdatedAt(viewModel?.updatedAt ?? null)}</span>
+          <Button onClick={onClose} variant="secondary">Закрыть</Button>
+        </footer>
       </section>
     </div>,
     document.body,

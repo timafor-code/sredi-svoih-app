@@ -19,12 +19,18 @@ from app.db.models.core import (
     EventOccurrence,
     EventParticipationOptionCapacityUnit,
     EventRegistration,
+    EventRegistrationAnswer,
+    EventRegistrationForm,
+    EventRegistrationFormField,
     EventRegistrationCapacityReservation,
     EventRegistrationOptionSelection,
     Profile,
 )
 from app.schemas.admin_registrations import (
     AdminEventRegistrationResponse,
+    AdminQuestionnaireAnswerSummaryFieldResponse,
+    AdminQuestionnaireAnswersSummaryResponse,
+    AdminQuestionnaireSummaryOptionResponse,
     AdminRegistrationCapacityAnalyticsResponse,
     AdminRegistrationCapacityBucketAggregateResponse,
     AdminRegistrationCapacityBucketOptionBreakdownResponse,
@@ -33,6 +39,8 @@ from app.schemas.admin_registrations import (
     AdminRegistrationCapacityStatusCountsResponse,
     AdminRegistrationCapacityTotalsResponse,
     AdminRegistrationSelectedOptionResponse,
+    AdminRegistrationQuestionnaireAnswerResponse,
+    AdminRegistrationQuestionnaireOptionResponse,
 )
 from app.services.admin_events import resolve_manageable_community_ids
 
@@ -249,6 +257,66 @@ async def _validate_capacity_unit(
     return capacity_unit
 
 
+def _apply_registration_scope(
+    query,
+    *,
+    event_id: UUID,
+    occurrence_id: UUID | None,
+    capacity_unit_id: UUID | None,
+    status_filter: str | None,
+    source_channel_filter: str | None,
+):
+    """Apply the canonical registrations scope to a query rooted at EventRegistration."""
+    query = query.where(EventRegistration.event_id == event_id)
+    if occurrence_id is not None:
+        query = query.where(EventRegistration.occurrence_id == occurrence_id)
+    if status_filter is not None:
+        query = query.where(EventRegistration.status == status_filter)
+    if source_channel_filter is not None:
+        query = query.where(EventRegistration.source_channel == source_channel_filter)
+    if capacity_unit_id is None:
+        return query
+
+    persisted_reservation_exists = (
+        select(EventRegistrationCapacityReservation.id)
+        .where(
+            EventRegistrationCapacityReservation.registration_id == EventRegistration.id,
+            EventRegistrationCapacityReservation.event_id == event_id,
+            EventRegistrationCapacityReservation.capacity_unit_id == capacity_unit_id,
+        )
+        .exists()
+    )
+    matching_persisted_reservation_exists = (
+        select(EventRegistrationCapacityReservation.id)
+        .where(
+            EventRegistrationCapacityReservation.registration_id == EventRegistration.id,
+            EventRegistrationCapacityReservation.event_id == event_id,
+            EventRegistrationCapacityReservation.capacity_unit_id == capacity_unit_id,
+            EventRegistrationCapacityReservation.option_id == EventRegistrationOptionSelection.option_id,
+        )
+        .exists()
+    )
+    fallback_selection_exists = (
+        select(EventRegistrationOptionSelection.id)
+        .join(
+            EventParticipationOptionCapacityUnit,
+            EventParticipationOptionCapacityUnit.option_id == EventRegistrationOptionSelection.option_id,
+        )
+        .where(
+            EventRegistrationOptionSelection.registration_id == EventRegistration.id,
+            EventRegistrationOptionSelection.option_id.is_not(None),
+            EventRegistrationOptionSelection.is_donation.is_(False),
+            EventRegistrationOptionSelection.counts_toward_capacity.is_(True),
+            EventRegistrationOptionSelection.quantity > 0,
+            EventParticipationOptionCapacityUnit.event_id == event_id,
+            EventParticipationOptionCapacityUnit.capacity_unit_id == capacity_unit_id,
+            ~matching_persisted_reservation_exists,
+        )
+        .exists()
+    )
+    return query.where(or_(persisted_reservation_exists, fallback_selection_exists))
+
+
 def build_selected_option_response(
     selection: EventRegistrationOptionSelection,
 ) -> AdminRegistrationSelectedOptionResponse:
@@ -275,6 +343,7 @@ def _registration_response(
     user: AppUser | None,
     occurrence: EventOccurrence | None,
     selected_options: Sequence[EventRegistrationOptionSelection],
+    answers: Sequence[AdminRegistrationQuestionnaireAnswerResponse] = (),
 ) -> AdminEventRegistrationResponse:
     display_name = _first_text(
         profile.display_name if profile is not None else None,
@@ -327,6 +396,7 @@ def _registration_response(
         selected_options=[
             build_selected_option_response(selection) for selection in selected_options
         ],
+        answers=list(answers),
         total_amount=total_amount,
         created_at=registration.created_at,
         updated_at=registration.updated_at,
@@ -359,6 +429,8 @@ async def _registration_rows_to_responses(
     for selection in selections:
         selections_by_registration[selection.registration_id].append(selection)
 
+    answers_by_registration = await _load_registration_answers(session, registration_ids)
+
     return [
         _registration_response(
             registration,
@@ -366,9 +438,83 @@ async def _registration_rows_to_responses(
             user,
             occurrence,
             selections_by_registration[registration.id],
+            answers_by_registration[registration.id],
         )
         for registration, profile, user, occurrence in rows
     ]
+
+
+async def _load_registration_answers(
+    session: AsyncSession,
+    registration_ids: Sequence[UUID],
+) -> dict[UUID, list[AdminRegistrationQuestionnaireAnswerResponse]]:
+    """Load all answer fields for the forms actually bound to a page, in one query."""
+    result: dict[UUID, list[AdminRegistrationQuestionnaireAnswerResponse]] = defaultdict(list)
+    if not registration_ids:
+        return result
+
+    answered_forms = (
+        select(
+            EventRegistrationAnswer.registration_id.label("registration_id"),
+            EventRegistrationFormField.form_id.label("form_id"),
+        )
+        .join(
+            EventRegistrationFormField,
+            EventRegistrationFormField.id == EventRegistrationAnswer.field_id,
+        )
+        .where(EventRegistrationAnswer.registration_id.in_(registration_ids))
+        .distinct()
+        .cte("answered_forms")
+    )
+    rows = (
+        await session.execute(
+            select(
+                answered_forms.c.registration_id,
+                EventRegistrationFormField,
+                EventRegistrationAnswer.value_payload,
+                EventRegistrationForm.version,
+                EventRegistrationForm.status,
+            )
+            .join(
+                EventRegistrationFormField,
+                EventRegistrationFormField.form_id == answered_forms.c.form_id,
+            )
+            .join(EventRegistrationForm, EventRegistrationForm.id == answered_forms.c.form_id)
+            .outerjoin(
+                EventRegistrationAnswer,
+                (EventRegistrationAnswer.registration_id == answered_forms.c.registration_id)
+                & (EventRegistrationAnswer.field_id == EventRegistrationFormField.id),
+            )
+            .order_by(
+                answered_forms.c.registration_id,
+                EventRegistrationFormField.sort_order,
+                EventRegistrationFormField.id,
+            )
+        )
+    ).all()
+    for registration_id, field, value_payload, form_version, form_status in rows:
+        result[registration_id].append(
+            AdminRegistrationQuestionnaireAnswerResponse(
+                field_id=field.id,
+                field_key=field.field_key,
+                label=field.label,
+                field_type=field.field_type,
+                value_payload=value_payload,
+                form_version=form_version,
+                form_status=form_status,
+                options=[
+                    AdminRegistrationQuestionnaireOptionResponse(
+                        value=option["value"],
+                        label=option["label"],
+                    )
+                    for option in field.options_payload
+                    if isinstance(option, dict)
+                    and isinstance(option.get("value"), str)
+                    and isinstance(option.get("label"), str)
+                ],
+            ),
+        )
+    return result
 
 
 def _registration_row_query():
@@ -427,62 +573,14 @@ async def list_admin_event_registrations(
     status_filter = _normalize_status_filter(status)
     source_channel_filter = _normalize_source_channel_filter(source_channel)
 
-    query = _registration_row_query().where(EventRegistration.event_id == event.id)
-    if occurrence_id is not None:
-        query = query.where(EventRegistration.occurrence_id == occurrence_id)
-    if status_filter is not None:
-        query = query.where(EventRegistration.status == status_filter)
-    if source_channel_filter is not None:
-        query = query.where(EventRegistration.source_channel == source_channel_filter)
-    if capacity_unit_id is not None:
-        persisted_reservation_exists = (
-            select(EventRegistrationCapacityReservation.id)
-            .where(
-                EventRegistrationCapacityReservation.registration_id
-                == EventRegistration.id,
-                EventRegistrationCapacityReservation.event_id == event.id,
-                EventRegistrationCapacityReservation.capacity_unit_id
-                == capacity_unit_id,
-            )
-            .exists()
-        )
-        matching_persisted_reservation_exists = (
-            select(EventRegistrationCapacityReservation.id)
-            .where(
-                EventRegistrationCapacityReservation.registration_id
-                == EventRegistration.id,
-                EventRegistrationCapacityReservation.event_id == event.id,
-                EventRegistrationCapacityReservation.capacity_unit_id
-                == capacity_unit_id,
-                EventRegistrationCapacityReservation.option_id
-                == EventRegistrationOptionSelection.option_id,
-            )
-            .exists()
-        )
-        fallback_selection_exists = (
-            select(EventRegistrationOptionSelection.id)
-            .join(
-                EventParticipationOptionCapacityUnit,
-                EventParticipationOptionCapacityUnit.option_id
-                == EventRegistrationOptionSelection.option_id,
-            )
-            .where(
-                EventRegistrationOptionSelection.registration_id
-                == EventRegistration.id,
-                EventRegistrationOptionSelection.option_id.is_not(None),
-                EventRegistrationOptionSelection.is_donation.is_(False),
-                EventRegistrationOptionSelection.counts_toward_capacity.is_(True),
-                EventRegistrationOptionSelection.quantity > 0,
-                EventParticipationOptionCapacityUnit.event_id == event.id,
-                EventParticipationOptionCapacityUnit.capacity_unit_id
-                == capacity_unit_id,
-                ~matching_persisted_reservation_exists,
-            )
-            .exists()
-        )
-        query = query.where(
-            or_(persisted_reservation_exists, fallback_selection_exists),
-        )
+    query = _apply_registration_scope(
+        _registration_row_query(),
+        event_id=event.id,
+        occurrence_id=occurrence_id,
+        capacity_unit_id=capacity_unit_id,
+        status_filter=status_filter,
+        source_channel_filter=source_channel_filter,
+    )
 
     normalized_search = _first_text(search)
     if normalized_search is not None:
@@ -517,6 +615,111 @@ async def list_admin_event_registrations(
         .all()
     )
     return await _registration_rows_to_responses(session, rows)
+
+
+async def get_admin_questionnaire_answers_summary(
+    session: AsyncSession,
+    current_user: AppUser,
+    event_id: UUID,
+    *,
+    occurrence_id: UUID | None,
+    capacity_unit_id: UUID | None,
+    status: str | None,
+    source_channel: str | None,
+) -> AdminQuestionnaireAnswersSummaryResponse:
+    event = await _resolve_manageable_event(session, current_user, event_id)
+    await _validate_occurrence(session, event_id=event.id, occurrence_id=occurrence_id)
+    await _validate_capacity_unit(session, event_id=event.id, capacity_unit_id=capacity_unit_id)
+    status_filter = _normalize_status_filter(status)
+    source_channel_filter = _normalize_source_channel_filter(source_channel)
+
+    form = await session.scalar(
+        select(EventRegistrationForm).where(
+            EventRegistrationForm.event_id == event.id,
+            EventRegistrationForm.channel == "web",
+            EventRegistrationForm.status == "published",
+        ),
+    )
+    if form is None:
+        return AdminQuestionnaireAnswersSummaryResponse(event_id=event.id, fields=[])
+
+    fields = list(
+        await session.scalars(
+            select(EventRegistrationFormField)
+            .where(EventRegistrationFormField.form_id == form.id)
+            .order_by(EventRegistrationFormField.sort_order, EventRegistrationFormField.id),
+        ),
+    )
+    if not fields:
+        return AdminQuestionnaireAnswersSummaryResponse(event_id=event.id, fields=[])
+
+    scoped_registration_ids = _apply_registration_scope(
+        select(EventRegistration.id),
+        event_id=event.id,
+        occurrence_id=occurrence_id,
+        capacity_unit_id=capacity_unit_id,
+        status_filter=status_filter,
+        source_channel_filter=source_channel_filter,
+    )
+    answer_rows = (
+        await session.execute(
+            select(EventRegistrationAnswer.field_id, EventRegistrationAnswer.value_payload)
+            .where(
+                EventRegistrationAnswer.registration_id.in_(scoped_registration_ids),
+                EventRegistrationAnswer.field_id.in_([field.id for field in fields]),
+            ),
+        )
+    ).all()
+    values_by_field: dict[UUID, list[object]] = defaultdict(list)
+    for field_id, value_payload in answer_rows:
+        values_by_field[field_id].append(value_payload)
+
+    summary_fields: list[AdminQuestionnaireAnswerSummaryFieldResponse] = []
+    for field in fields:
+        values = values_by_field[field.id]
+        option_counts: list[AdminQuestionnaireSummaryOptionResponse] = []
+        if field.field_type in {"single_select", "multi_select"}:
+            counts: dict[str, int] = defaultdict(int)
+            for value in values:
+                selected = value if field.field_type == "multi_select" else [value]
+                if isinstance(selected, list):
+                    for option_value in selected:
+                        if isinstance(option_value, str):
+                            counts[option_value] += 1
+            for option in field.options_payload:
+                if isinstance(option, dict) and isinstance(option.get("value"), str):
+                    option_counts.append(
+                        AdminQuestionnaireSummaryOptionResponse(
+                            value=option["value"],
+                            label=str(option.get("label") or option["value"]),
+                            count=counts[option["value"]],
+                        ),
+                    )
+        elif field.field_type == "boolean":
+            for value, label in ((True, "Да"), (False, "Нет")):
+                option_counts.append(
+                    AdminQuestionnaireSummaryOptionResponse(
+                        value=value,
+                        label=label,
+                        count=sum(type(answer) is bool and answer is value for answer in values),
+                    ),
+                )
+        summary_fields.append(
+            AdminQuestionnaireAnswerSummaryFieldResponse(
+                field_id=field.id,
+                field_key=field.field_key,
+                label=field.label,
+                field_type=field.field_type,
+                form_version=form.version,
+                answered_count=len(values),
+                options=option_counts,
+            ),
+        )
+
+    return AdminQuestionnaireAnswersSummaryResponse(
+        event_id=event.id,
+        fields=summary_fields,
+    )
 
 
 async def _lock_manageable_registration(

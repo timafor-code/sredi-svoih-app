@@ -319,6 +319,38 @@ export type AdminApiRegistrationSelectedOptionResponse = {
   created_at: string;
 };
 
+export type AdminApiRegistrationQuestionnaireAnswerResponse = {
+  field_id: string;
+  field_key: string;
+  label: string;
+  field_type: "short_text" | "long_text" | "single_select" | "multi_select" | "boolean";
+  value_payload: string | boolean | string[] | null;
+  form_version: number;
+  form_status: "published" | "retired";
+  options: Array<{ value: string; label: string }>;
+};
+
+export type AdminApiQuestionnaireSummaryOptionResponse = {
+  value: string | boolean;
+  label: string;
+  count: number;
+};
+
+export type AdminApiQuestionnaireAnswerSummaryFieldResponse = {
+  field_id: string;
+  field_key: string;
+  label: string;
+  field_type: "short_text" | "long_text" | "single_select" | "multi_select" | "boolean";
+  form_version: number;
+  answered_count: number;
+  options: AdminApiQuestionnaireSummaryOptionResponse[];
+};
+
+export type AdminApiQuestionnaireAnswersSummaryResponse = {
+  event_id: string;
+  fields: AdminApiQuestionnaireAnswerSummaryFieldResponse[];
+};
+
 export type AdminApiEventRegistrationResponse = {
   id: string;
   event_id: string;
@@ -341,6 +373,7 @@ export type AdminApiEventRegistrationResponse = {
   occurrence_ends_at: string | null;
   occurrence_title: string | null;
   selected_options: AdminApiRegistrationSelectedOptionResponse[];
+  answers: AdminApiRegistrationQuestionnaireAnswerResponse[];
   total_amount: number | null;
   created_at: string;
   updated_at: string;
