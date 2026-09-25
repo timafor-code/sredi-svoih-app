@@ -31,10 +31,12 @@ export function QuestionnaireFields({
           const describedBy = errors[field.id] ? `${helpId} ${errorId}` : helpId;
           const value = values[field.id];
           const heading = (
-            <div className="questionnaire-heading-row">
+            <span className="questionnaire-heading-row">
               <span className="questionnaire-label">{field.label}</span>
-              <span className="questionnaire-required">{field.required ? "Обязательный" : "Необязательный"}</span>
-            </div>
+              <span className="questionnaire-required">
+                {field.required ? "Обязательный" : "Необязательный"}
+              </span>
+            </span>
           );
           const transparency = (
             <p className="questionnaire-help" id={helpId}>
