@@ -502,7 +502,11 @@ export function EventQuestionnaireCard({
           : action === "unpublish"
             ? await unpublishAdminEventQuestionnaire(eventId)
             : await deleteAdminEventQuestionnaireDraft(eventId);
-      applyLoadedQuestionnaire(next);
+      if (action === "unpublish") {
+        setQuestionnaire(next);
+      } else {
+        applyLoadedQuestionnaire(next);
+      }
       setSavedAt(new Date().toISOString());
       setFeedback(
         action === "publish"
