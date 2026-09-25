@@ -6539,6 +6539,11 @@ a {
 
 .event-questionnaire-dialog::backdrop { background: rgba(5, 8, 15, 0.72); }
 
+.event-questionnaire-dialog :is(input, textarea)[aria-invalid="true"] {
+  border-color: var(--red);
+  box-shadow: 0 0 0 1px rgba(255, 104, 113, 0.24);
+}
+
 .event-questionnaire-dialog__head,
 .event-questionnaire-dialog__body {
   display: grid;

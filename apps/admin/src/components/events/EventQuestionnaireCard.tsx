@@ -45,6 +45,10 @@ type EditorState = {
   questions: EditorQuestion[];
 };
 type ConfirmationAction = "publish" | "unpublish" | "delete-draft" | null;
+type QuestionValidationTarget = {
+  questionIndex: number;
+  field: "label" | "purpose" | "retention" | "options" | "constraints";
+};
 
 const FIELD_TYPE_LABELS: Record<EventQuestionnaireFieldType, string> = {
   short_text: "Короткий текст",
@@ -191,6 +195,30 @@ function editorValidationIssue(editor: EditorState | null): string | null {
   }
   return null;
 }
+function questionValidationTarget(
+  issue: string | null,
+): QuestionValidationTarget | null {
+  if (!issue) return null;
+  const match = issue.match(/вопроса (\d+)\./);
+  if (!match) return null;
+  const questionIndex = Number(match[1]) - 1;
+  if (issue.startsWith("Укажите текст вопроса")) {
+    return { questionIndex, field: "label" };
+  }
+  if (issue.startsWith("Укажите цель вопроса")) {
+    return { questionIndex, field: "purpose" };
+  }
+  if (issue.startsWith("Укажите положительный срок хранения")) {
+    return { questionIndex, field: "retention" };
+  }
+  if (
+    issue.startsWith("Добавьте хотя бы один вариант") ||
+    issue.startsWith("Заполните все варианты ответа")
+  ) {
+    return { questionIndex, field: "options" };
+  }
+  return { questionIndex, field: "constraints" };
+}
 function draftInput(editor: EditorState): EventQuestionnaireDraftInput {
   return {
     purpose: editor.purpose.trim(),
@@ -299,7 +327,12 @@ export function EventQuestionnaireCard({
   const [editingQuestionIndex, setEditingQuestionIndex] = useState<
     number | null
   >(null);
+  const [validationTarget, setValidationTarget] =
+    useState<QuestionValidationTarget | null>(null);
+  const [privacyDetailsOpen, setPrivacyDetailsOpen] = useState(false);
+  const [constraintsDetailsOpen, setConstraintsDetailsOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<ConfirmationAction>(null);
+  const purposeInputRef = useRef<HTMLTextAreaElement>(null);
   const applyLoadedQuestionnaire = (next: AdminEventQuestionnaire) => {
     const nextEditor = next.draft ? editorFromForm(next.draft, true) : null;
     setQuestionnaire(next);
@@ -348,6 +381,14 @@ export function EventQuestionnaireCard({
     editingQuestionIndex === null
       ? null
       : (editor?.questions[editingQuestionIndex] ?? null);
+  useEffect(() => {
+    if (
+      validationTarget?.field === "purpose" &&
+      editingQuestionIndex === validationTarget.questionIndex
+    ) {
+      window.requestAnimationFrame(() => purposeInputRef.current?.focus());
+    }
+  }, [editingQuestionIndex, validationTarget]);
   const updateQuestion = (index: number, update: Partial<EditorQuestion>) => {
     setEditor((current) =>
       current
@@ -361,6 +402,7 @@ export function EventQuestionnaireCard({
     );
     setSaveError(null);
     setFeedback(null);
+    setValidationTarget(null);
   };
   const handleRefresh = () => {
     if (
@@ -467,7 +509,20 @@ export function EventQuestionnaireCard({
       });
   };
   const handleSave = async () => {
-    if (!editor || validationIssue || busy) return;
+    if (!editor || busy) return;
+    if (validationIssue) {
+      const target = questionValidationTarget(validationIssue);
+      setValidationTarget(target);
+      if (target) {
+        setEditingQuestionIndex(target.questionIndex);
+        setPrivacyDetailsOpen(
+          target.field === "purpose" || target.field === "retention",
+        );
+        setConstraintsDetailsOpen(target.field === "constraints");
+      }
+      return;
+    }
+    setValidationTarget(null);
     setSaving(true);
     setSaveErrorLabel("Ошибка сохранения");
     setSaveError(null);
@@ -774,7 +829,7 @@ export function EventQuestionnaireCard({
           </Button>
           <div className="event-questionnaire-editor__actions">
             <Button
-              disabled={busy || !dirty || Boolean(validationIssue)}
+              disabled={busy || !dirty}
               onClick={() => void handleSave()}
               variant="success"
             >
@@ -846,6 +901,7 @@ export function EventQuestionnaireCard({
             <label className="event-form-field">
               <span>Текст вопроса</span>
               <input
+                aria-invalid={validationTarget?.field === "label"}
                 disabled={busy}
                 maxLength={300}
                 onChange={(event) =>
@@ -920,6 +976,10 @@ export function EventQuestionnaireCard({
                   >
                     <input
                       aria-label={`Вариант ${optionIndex + 1}`}
+                      aria-invalid={
+                        validationTarget?.field === "options" &&
+                        !option.label.trim()
+                      }
                       disabled={busy}
                       maxLength={200}
                       onChange={(event) =>
@@ -960,7 +1020,13 @@ export function EventQuestionnaireCard({
                 </Button>
               </section>
             ) : null}
-            <details className="event-questionnaire-dialog__details">
+            <details
+              className="event-questionnaire-dialog__details"
+              onToggle={(event) =>
+                setConstraintsDetailsOpen(event.currentTarget.open)
+              }
+              open={constraintsDetailsOpen}
+            >
               <summary>Ограничения ответа</summary>
               <div className="event-questionnaire-question__validation">
                 {editingQuestion.fieldType === "short_text" ||
@@ -969,6 +1035,7 @@ export function EventQuestionnaireCard({
                     <label className="event-form-field">
                       <span>Минимальная длина</span>
                       <input
+                        aria-invalid={validationTarget?.field === "constraints"}
                         disabled={busy}
                         min={0}
                         onChange={(event) =>
@@ -983,6 +1050,7 @@ export function EventQuestionnaireCard({
                     <label className="event-form-field">
                       <span>Максимальная длина</span>
                       <input
+                        aria-invalid={validationTarget?.field === "constraints"}
                         disabled={busy}
                         min={0}
                         onChange={(event) =>
@@ -1001,6 +1069,7 @@ export function EventQuestionnaireCard({
                     <label className="event-form-field">
                       <span>Минимум вариантов</span>
                       <input
+                        aria-invalid={validationTarget?.field === "constraints"}
                         disabled={busy}
                         min={0}
                         onChange={(event) =>
@@ -1015,6 +1084,7 @@ export function EventQuestionnaireCard({
                     <label className="event-form-field">
                       <span>Максимум вариантов</span>
                       <input
+                        aria-invalid={validationTarget?.field === "constraints"}
                         disabled={busy}
                         min={0}
                         onChange={(event) =>
@@ -1030,11 +1100,18 @@ export function EventQuestionnaireCard({
                 ) : null}
               </div>
             </details>
-            <details className="event-questionnaire-dialog__details">
+            <details
+              className="event-questionnaire-dialog__details"
+              onToggle={(event) =>
+                setPrivacyDetailsOpen(event.currentTarget.open)
+              }
+              open={privacyDetailsOpen}
+            >
               <summary>Приватность и хранение</summary>
               <label className="event-form-field">
                 <span>Зачем нужен ответ</span>
                 <textarea
+                  aria-invalid={validationTarget?.field === "purpose"}
                   disabled={busy}
                   maxLength={1000}
                   onChange={(event) =>
@@ -1042,6 +1119,7 @@ export function EventQuestionnaireCard({
                       purpose: event.target.value,
                     })
                   }
+                  ref={purposeInputRef}
                   value={editingQuestion.purpose}
                 />
               </label>
@@ -1086,6 +1164,7 @@ export function EventQuestionnaireCard({
                 <label className="event-form-field">
                   <span>Дней</span>
                   <input
+                    aria-invalid={validationTarget?.field === "retention"}
                     disabled={busy}
                     max={36500}
                     min={1}
