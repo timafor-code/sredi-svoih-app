@@ -2461,9 +2461,11 @@ describe("local form shell", () => {
     expect(within(document.body).queryByText("secret@example.test")).not.toBeInTheDocument();
   });
 
-  it("renders all ordinary questionnaire controls with purpose and retention", async () => {
+  it("renders all ordinary questionnaire controls with accessible cards and human-readable retention", async () => {
     await renderEvent(responseWithQuestionnaire());
     expect(screen.getByRole("heading", { name: "Дополнительные вопросы" })).toBeInTheDocument();
+    expect(screen.getAllByText("Обязательный")).toHaveLength(4);
+    expect(screen.getByText("Необязательный")).toBeInTheDocument();
     expect(screen.getByLabelText(/Код встречи/)).toHaveAttribute("type", "text");
     expect(screen.getByLabelText(/Комментарий по прибытию/).tagName).toBe("TEXTAREA");
     expect(screen.getByRole("group", { name: /Выберите вход/ })).toBeInTheDocument();
@@ -2472,8 +2474,15 @@ describe("local form shell", () => {
     expect(screen.getAllByText(/Цель:/)).toHaveLength(5);
     expect(screen.getByText((_content, element) => Boolean(
       element?.classList.contains("questionnaire-help")
-      && element.textContent?.includes("Хранение: 7 дн.") === true,
+      && element.textContent?.includes("Цель: Организовать встречу у входа · Хранение: 7 дней") === true,
     ))).toBeInTheDocument();
+    expect(screen.queryByText(/дн\./)).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Северный" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Первая" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Северный")).toHaveAttribute("type", "radio");
+    expect(screen.getByLabelText("Первая")).toHaveAttribute("type", "checkbox");
+    expect(screen.getByRole("heading", { name: "Дополнительные вопросы" }).closest("section"))
+      .toContainElement(screen.getByRole("group", { name: /Нужен бейдж/ }));
     expect(screen.getByRole("radio", { name: "Да" })).not.toBeChecked();
     expect(screen.getByRole("radio", { name: "Нет" })).not.toBeChecked();
   });

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import {
+  formatQuestionnaireRetention,
   questionnaireControlId,
   type QuestionnaireErrors,
   type QuestionnaireValues,
@@ -30,15 +31,16 @@ export function QuestionnaireFields({
           const describedBy = errors[field.id] ? `${helpId} ${errorId}` : helpId;
           const value = values[field.id];
           const heading = (
-            <>
+            <span className="questionnaire-heading-row">
               <span className="questionnaire-label">{field.label}</span>
-              <span className="questionnaire-required">{field.required ? "Обязательный" : "Необязательный"}</span>
-            </>
+              <span className="questionnaire-required">
+                {field.required ? "Обязательный" : "Необязательный"}
+              </span>
+            </span>
           );
           const transparency = (
             <p className="questionnaire-help" id={helpId}>
-              Цель: {field.purpose}<br />
-              Хранение: {field.retention_days} дн.
+              Цель: {field.purpose} <span aria-hidden="true">·</span> Хранение: {formatQuestionnaireRetention(field.retention_days)}
             </p>
           );
           const error = errors[field.id]
@@ -68,11 +70,20 @@ export function QuestionnaireFields({
           if (field.field_type === "boolean") {
             return (
               <fieldset className="questionnaire-field choice-fieldset" key={field.id} aria-describedby={describedBy}>
-                <legend>{heading}</legend>
+                <legend className="visually-hidden">{field.label}</legend>
+                {heading}
                 {transparency}
-                <div className="questionnaire-choices inline-choices">
-                  <label><input id={controlId} type="radio" name={controlId} checked={value === true} onChange={() => onChange(field.id, true)} /> Да</label>
-                  <label><input type="radio" name={controlId} checked={value === false} onChange={() => onChange(field.id, false)} /> Нет</label>
+                <div className="questionnaire-choices questionnaire-choice-grid">
+                  <label className="questionnaire-choice-card questionnaire-choice-card--radio">
+                    <input className="visually-hidden" id={controlId} type="radio" name={controlId} checked={value === true} aria-invalid={Boolean(errors[field.id])} onChange={() => onChange(field.id, true)} />
+                    <span className="questionnaire-choice-indicator" aria-hidden="true" />
+                    <span>Да</span>
+                  </label>
+                  <label className="questionnaire-choice-card questionnaire-choice-card--radio">
+                    <input className="visually-hidden" id={`${controlId}-false`} type="radio" name={controlId} checked={value === false} aria-invalid={Boolean(errors[field.id])} onChange={() => onChange(field.id, false)} />
+                    <span className="questionnaire-choice-indicator" aria-hidden="true" />
+                    <span>Нет</span>
+                  </label>
                 </div>
                 {error}
               </fieldset>
@@ -82,16 +93,22 @@ export function QuestionnaireFields({
           const selected = Array.isArray(value) ? value : [];
           return (
             <fieldset className="questionnaire-field choice-fieldset" key={field.id} aria-describedby={describedBy}>
-              <legend>{heading}</legend>
+              <legend className="visually-hidden">{field.label}</legend>
+              {heading}
               {transparency}
-              <div className="questionnaire-choices">
+              <div className="questionnaire-choices questionnaire-choice-grid">
                 {field.options.map((option, index) => (
-                  <label key={option.value}>
+                  <label
+                    className={`questionnaire-choice-card${field.field_type === "single_select" ? " questionnaire-choice-card--radio" : ""}`}
+                    key={option.value}
+                  >
                     <input
-                      id={index === 0 ? controlId : undefined}
+                      className="visually-hidden"
+                      id={index === 0 ? controlId : `${controlId}-${index}`}
                       type={field.field_type === "single_select" ? "radio" : "checkbox"}
                       name={controlId}
                       checked={field.field_type === "single_select" ? value === option.value : selected.includes(option.value)}
+                      aria-invalid={Boolean(errors[field.id])}
                       onChange={(event) => {
                         if (field.field_type === "single_select") onChange(field.id, option.value);
                         else onChange(
@@ -102,7 +119,8 @@ export function QuestionnaireFields({
                         );
                       }}
                     />
-                    {option.label}
+                    <span className="questionnaire-choice-indicator" aria-hidden="true" />
+                    <span>{option.label}</span>
                   </label>
                 ))}
               </div>
