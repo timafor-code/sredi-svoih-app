@@ -2,7 +2,11 @@ import type { ReactNode } from "react";
 
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
-import type { AdminEventRegistrationRow, AdminRegistrationEventSummary } from "../../types/registrations";
+import {
+  formatQuestionnaireAnswerValue,
+  type AdminEventRegistrationRow,
+  type AdminRegistrationEventSummary,
+} from "../../types/registrations";
 import {
   formatDateTime,
   formatMoney,
@@ -125,14 +129,14 @@ export function RegistrationDetailPanel({
             {registration.answers.map((answer) => (
               <div className="registration-questionnaire-answer" key={answer.fieldId}>
                 <span>{answer.label}</span>
-                {answer.value === null ? (
+                {formatQuestionnaireAnswerValue(answer) === null ? (
                   <strong className="registration-detail__muted">Не заполнено</strong>
-                ) : answer.fieldType === "multi_select" && Array.isArray(answer.value) ? (
+                ) : Array.isArray(formatQuestionnaireAnswerValue(answer)) ? (
                   <div className="registration-guest-list">
-                    {answer.value.map((value) => <span key={value}>{value}</span>)}
+                    {(formatQuestionnaireAnswerValue(answer) as string[]).map((value) => <span key={value}>{value}</span>)}
                   </div>
                 ) : (
-                  <strong>{answer.fieldType === "boolean" ? (answer.value ? "Да" : "Нет") : answer.value}</strong>
+                  <strong>{formatQuestionnaireAnswerValue(answer)}</strong>
                 )}
               </div>
             ))}

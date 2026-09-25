@@ -13182,6 +13182,8 @@ a {
 
 .registration-questionnaire-answers,
 .questionnaire-summary { display: grid; gap: 12px; }
+.questionnaire-summary-modal { width: min(720px, calc(100vw - 32px)); }
+.questionnaire-summary-modal .registration-detail-modal__body { max-height: min(68dvh, 680px); overflow-y: auto; }
 .registration-questionnaire-answer { display: grid; gap: 5px; }
 .registration-questionnaire-answer > span,
 .questionnaire-summary__field > span { color: var(--muted-text); font-size: 13px; }

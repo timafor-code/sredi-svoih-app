@@ -129,6 +129,9 @@ to operators and `event_manager` actors who can list the event registrations.
 They are read-only: no Admin answer editing or deletion is provided. Retired form
 answers remain visible in participant detail, while active summary and Excel
 columns use only the currently published form.
+The Admin summary opens from `Ответы на анкету` rather than occupying the
+registrations page permanently; select answers are rendered with their immutable
+human-readable option labels while canonical values remain stored unchanged.
 
 The editor exposes only the five supported ordinary field types. Form purpose,
 question label and purpose, and a positive explicit retention period are

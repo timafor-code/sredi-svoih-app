@@ -2051,7 +2051,8 @@ remain registration capacity buckets, not seating.
 ### Admin Registrations
 
 `AdminEventRegistrationResponse` includes `answers`: question field id/key,
-label, type, canonical value payload, form version and minimal form status.
+label, type, canonical value payload, immutable option value/label metadata,
+form version and minimal form status.
 The field is authorized by the normal manageable-registration path, not the
 admin-only questionnaire-configuration path. Optional unanswered fields are
 represented with a null value when the registration is bound to that form.

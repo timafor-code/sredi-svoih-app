@@ -70,6 +70,7 @@ type ToastMessage = {
 };
 
 const REGISTRATION_PAGE_SIZE = 50;
+const QUESTIONNAIRE_MODAL_PAGE_SIZE = 200;
 const REGISTRATION_ACTIONS: RegistrationAction[] = [
   {
     kind: "status",
@@ -148,6 +149,11 @@ export function RegistrationsPage() {
   const [questionnaireSummary, setQuestionnaireSummary] = useState<AdminQuestionnaireAnswersSummary | null>(null);
   const [questionnaireSummaryLoading, setQuestionnaireSummaryLoading] = useState(false);
   const [questionnaireSummaryError, setQuestionnaireSummaryError] = useState<string | null>(null);
+  const [questionnaireModalOpen, setQuestionnaireModalOpen] = useState(false);
+  const [questionnaireModalRegistrations, setQuestionnaireModalRegistrations] =
+    useState<AdminEventRegistrationRow[]>([]);
+  const [questionnaireModalLoading, setQuestionnaireModalLoading] = useState(false);
+  const [questionnaireModalError, setQuestionnaireModalError] = useState<string | null>(null);
   const [capacityAnalytics, setCapacityAnalytics] =
     useState<AdminRegistrationCapacityAnalytics | null>(null);
   const [capacityAnalyticsLoading, setCapacityAnalyticsLoading] = useState(false);
@@ -414,6 +420,38 @@ export function RegistrationsPage() {
       setQuestionnaireSummaryError(nextError instanceof Error ? nextError.message : "Не удалось загрузить сводку анкеты.");
     } finally {
       setQuestionnaireSummaryLoading(false);
+    }
+  }, [eventHasOccurrences, registrationSourceFilter, selectedCapacityUnitId, selectedEventId, selectedOccurrenceId]);
+
+  const openQuestionnaireModal = useCallback(async () => {
+    if (!selectedEventId) return;
+    setQuestionnaireModalOpen(true);
+    setQuestionnaireModalLoading(true);
+    setQuestionnaireModalError(null);
+    setQuestionnaireModalRegistrations([]);
+    try {
+      const allRegistrations: AdminEventRegistrationRow[] = [];
+      let summaryOffset = 0;
+      while (true) {
+        const page = await listEventRegistrations({
+          eventId: selectedEventId,
+          occurrenceId: eventHasOccurrences ? selectedOccurrenceId : null,
+          capacityUnitId: selectedCapacityUnitId,
+          status: "all",
+          sourceChannel: registrationSourceFilter,
+          search: null,
+          limit: QUESTIONNAIRE_MODAL_PAGE_SIZE,
+          offset: summaryOffset,
+        });
+        allRegistrations.push(...page);
+        if (page.length < QUESTIONNAIRE_MODAL_PAGE_SIZE) break;
+        summaryOffset += page.length;
+      }
+      setQuestionnaireModalRegistrations(allRegistrations);
+    } catch (nextError) {
+      setQuestionnaireModalError(nextError instanceof Error ? nextError.message : "Не удалось загрузить ответы анкеты.");
+    } finally {
+      setQuestionnaireModalLoading(false);
     }
   }, [eventHasOccurrences, registrationSourceFilter, selectedCapacityUnitId, selectedEventId, selectedOccurrenceId]);
 
@@ -870,13 +908,6 @@ export function RegistrationsPage() {
                 selectedOccurrence={eventHasOccurrences ? selectedOccurrence : null}
               />
 
-              <QuestionnaireAnswersSummary
-                error={questionnaireSummaryError}
-                loading={questionnaireSummaryLoading}
-                registrations={registrations}
-                summary={questionnaireSummary}
-              />
-
               <div className="registration-controls">
                 <label className="registration-search-field registration-search-field--wide">
                   <span>Поиск по заявкам</span>
@@ -950,6 +981,16 @@ export function RegistrationsPage() {
                     Показано {registrationRangeStart}-{registrationRangeEnd}
                   </span>
                   <div className="registrations-table-panel__tools">
+                    {questionnaireSummary?.fields.length ? (
+                      <Button
+                        disabled={questionnaireSummaryLoading}
+                        onClick={() => void openQuestionnaireModal()}
+                        size="sm"
+                        variant="secondary"
+                      >
+                        Ответы на анкету
+                      </Button>
+                    ) : null}
                     <div className="registrations-export-group">
                       <Button
                         disabled={excelExportDisabled}
@@ -1082,6 +1123,15 @@ export function RegistrationsPage() {
         registration={selectedRegistration}
       />
 
+      <QuestionnaireAnswersModal
+        error={questionnaireModalError ?? questionnaireSummaryError}
+        loading={questionnaireModalLoading || questionnaireSummaryLoading}
+        onClose={() => setQuestionnaireModalOpen(false)}
+        open={questionnaireModalOpen}
+        registrations={questionnaireModalRegistrations}
+        summary={questionnaireSummary}
+      />
+
       <SeatingLayoutEditor
         onCapacityLimitUpdated={handleCapacityLimitUpdated}
         onClose={() => setSeatingEditorSlot(null)}
@@ -1183,6 +1233,55 @@ function RegistrationDetailModal({
             event={event}
             onAction={onAction}
             registration={registration}
+          />
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+function QuestionnaireAnswersModal({
+  error,
+  loading,
+  onClose,
+  open,
+  registrations,
+  summary,
+}: {
+  error: string | null;
+  loading: boolean;
+  onClose: () => void;
+  open: boolean;
+  registrations: readonly AdminEventRegistrationRow[];
+  summary: AdminQuestionnaireAnswersSummary | null;
+}) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose, open]);
+
+  if (!open || typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      className="registration-detail-modal-overlay"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+    >
+      <section aria-modal="true" className="questionnaire-summary-modal registration-detail-modal" role="dialog">
+        <header className="registration-detail-modal__head">
+          <div><h2>Ответы на анкету</h2></div>
+          <button aria-label="Закрыть ответы анкеты" className="registration-detail-modal__close" onClick={onClose} type="button">×</button>
+        </header>
+        <div className="registration-detail-modal__body">
+          <QuestionnaireAnswersSummary
+            error={error}
+            loading={loading}
+            registrations={registrations}
+            summary={summary}
           />
         </div>
       </section>

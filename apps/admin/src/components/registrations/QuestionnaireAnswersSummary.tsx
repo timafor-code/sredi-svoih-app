@@ -18,13 +18,12 @@ export function QuestionnaireAnswersSummary({
   summary: AdminQuestionnaireAnswersSummary | null;
 }) {
   const [showAllText, setShowAllText] = useState(false);
-  if (loading) return <RegistrationsState title="Сводка по анкете" description="Загружаем ответы." />;
-  if (error) return <RegistrationsState title="Сводка по анкете" description="Не удалось загрузить сводку. Таблица регистраций продолжает работать." />;
+  if (loading) return <RegistrationsState title="Загрузка" description="Загружаем ответы." />;
+  if (error) return <RegistrationsState title="Не удалось загрузить" description="Попробуйте открыть ответы снова." />;
   if (!summary || summary.fields.length === 0) return null;
 
   return (
-    <section className="questionnaire-summary" aria-labelledby="questionnaire-summary-title">
-      <h3 id="questionnaire-summary-title">Сводка по анкете</h3>
+    <section className="questionnaire-summary">
       {summary.fields.map((field) => {
         const textAnswers = registrations.flatMap((registration) => {
           const answer = registration.answers.find((candidate) => candidate.fieldKey === field.fieldKey);

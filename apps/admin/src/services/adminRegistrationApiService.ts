@@ -153,6 +153,11 @@ function normalizeQuestionnaireAnswer(
   if (row.form_status !== "published" && row.form_status !== "retired") {
     throw new Error("Admin registration API returned an unsupported questionnaire form status.");
   }
+  if (!Array.isArray(row.options) || !row.options.every((option) =>
+    typeof option?.value === "string" && typeof option.label === "string",
+  )) {
+    throw new Error("Admin registration API returned unsafe questionnaire option metadata.");
+  }
   return {
     fieldId: requiredString(row.field_id, ""),
     fieldKey: requiredString(row.field_key, ""),
@@ -161,6 +166,7 @@ function normalizeQuestionnaireAnswer(
     value: normalizeQuestionnaireAnswerValue(fieldType, row.value_payload),
     formVersion: safeNumber(row.form_version, 0),
     formStatus: row.form_status,
+    options: row.options.map((option) => ({ value: option.value, label: option.label })),
   };
 }
 

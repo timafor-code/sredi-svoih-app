@@ -327,6 +327,7 @@ export type AdminApiRegistrationQuestionnaireAnswerResponse = {
   value_payload: string | boolean | string[] | null;
   form_version: number;
   form_status: "published" | "retired";
+  options: Array<{ value: string; label: string }>;
 };
 
 export type AdminApiQuestionnaireSummaryOptionResponse = {

@@ -40,6 +40,7 @@ from app.schemas.admin_registrations import (
     AdminRegistrationCapacityTotalsResponse,
     AdminRegistrationSelectedOptionResponse,
     AdminRegistrationQuestionnaireAnswerResponse,
+    AdminRegistrationQuestionnaireOptionResponse,
 )
 from app.services.admin_events import resolve_manageable_community_ids
 
@@ -501,6 +502,16 @@ async def _load_registration_answers(
                 value_payload=value_payload,
                 form_version=form_version,
                 form_status=form_status,
+                options=[
+                    AdminRegistrationQuestionnaireOptionResponse(
+                        value=option["value"],
+                        label=option["label"],
+                    )
+                    for option in field.options_payload
+                    if isinstance(option, dict)
+                    and isinstance(option.get("value"), str)
+                    and isinstance(option.get("label"), str)
+                ],
             ),
         )
     return result

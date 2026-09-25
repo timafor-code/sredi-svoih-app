@@ -21,6 +21,12 @@ class AdminRegistrationQuestionnaireAnswerResponse(BaseModel):
     value_payload: QuestionnaireAnswerValue
     form_version: int
     form_status: Literal["published", "retired"]
+    options: list["AdminRegistrationQuestionnaireOptionResponse"]
+
+
+class AdminRegistrationQuestionnaireOptionResponse(BaseModel):
+    value: str
+    label: str
 
 
 class AdminQuestionnaireSummaryOptionResponse(BaseModel):

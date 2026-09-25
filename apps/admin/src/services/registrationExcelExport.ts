@@ -17,6 +17,7 @@ import type {
   AdminRegistrationOptionSelectionSummary,
   AdminQuestionnaireSummaryField,
 } from "../types/registrations";
+import { formatQuestionnaireAnswerValue } from "../types/registrations";
 
 type BrowserFileContent = File | Blob | ArrayBuffer;
 
@@ -40,6 +41,7 @@ type RegistrationExcelExportScope = {
 type RegistrationExportColumn = {
   header: string;
   key: string;
+  questionnaireFieldKey?: string;
   maxWidth?: number;
   minWidth?: number;
   wrap?: boolean;
@@ -347,7 +349,7 @@ function buildExportRow(
     statusKey: registration.status,
   };
   for (const column of columns.slice(EXPORT_COLUMNS.length)) {
-    row[column.key] = buildQuestionnaireRowValues(registration.answers)[column.key] ?? "";
+    row[column.key] = buildQuestionnaireRowValues(registration.answers)[column.questionnaireFieldKey ?? ""] ?? "";
   }
   return row;
 }
@@ -357,7 +359,14 @@ export function buildExportColumns(
 ): RegistrationExportColumn[] {
   return [
     ...EXPORT_COLUMNS,
-    ...fields.map((field) => ({ header: field.label, key: field.fieldKey, maxWidth: 42, minWidth: 16, wrap: true })),
+    ...fields.map((field) => ({
+      header: field.label,
+      key: `questionnaire:${field.fieldKey}`,
+      questionnaireFieldKey: field.fieldKey,
+      maxWidth: 42,
+      minWidth: 16,
+      wrap: true,
+    })),
   ];
 }
 
@@ -368,10 +377,16 @@ export function formatQuestionnaireExportValue(value: string | boolean | string[
 }
 
 export function buildQuestionnaireRowValues(
-  answers: readonly Pick<AdminEventRegistrationRow["answers"][number], "fieldKey" | "value">[],
+  answers: readonly Pick<
+    AdminEventRegistrationRow["answers"][number],
+    "fieldKey" | "fieldType" | "options" | "value"
+  >[],
 ): Record<string, string> {
   return Object.fromEntries(
-    answers.map((answer) => [answer.fieldKey, formatQuestionnaireExportValue(answer.value)]),
+    answers.map((answer) => [
+      answer.fieldKey,
+      formatQuestionnaireExportValue(formatQuestionnaireAnswerValue(answer)),
+    ]),
   );
 }
 

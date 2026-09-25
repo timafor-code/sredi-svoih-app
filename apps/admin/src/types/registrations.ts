@@ -103,7 +103,20 @@ export type AdminRegistrationQuestionnaireAnswer = {
   value: AdminRegistrationAnswerValue;
   formVersion: number;
   formStatus: "published" | "retired";
+  options: Array<{ value: string; label: string }>;
 };
+
+export function formatQuestionnaireAnswerValue(
+  answer: Pick<AdminRegistrationQuestionnaireAnswer, "fieldType" | "options" | "value">,
+): string | string[] | null {
+  if (answer.value === null) return null;
+  if (answer.fieldType === "boolean") return answer.value ? "Да" : "Нет";
+  const labels = new Map(answer.options.map((option) => [option.value, option.label]));
+  if (answer.fieldType === "multi_select" && Array.isArray(answer.value)) {
+    return answer.value.map((value) => labels.get(value) ?? value);
+  }
+  return typeof answer.value === "string" ? (labels.get(answer.value) ?? answer.value) : "";
+}
 
 export type AdminQuestionnaireSummaryOption = {
   value: string | boolean;
