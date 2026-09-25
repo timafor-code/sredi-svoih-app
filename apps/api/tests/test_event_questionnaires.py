@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import unittest
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from unittest.mock import patch
+from uuid import UUID, uuid4
 
 import httpx
 from alembic.config import Config
@@ -19,13 +20,16 @@ from app.db.models.core import (
     EventCategory,
     EventPublicSlug,
     EventRegistration,
+    EventRegistrationAnswer,
     EventRegistrationForm,
     EventRegistrationFormField,
+    LegalAcceptance,
     LegalDocument,
     WebRegistrationIntent,
 )
 from app.db.session import AsyncSessionLocal, engine
 from app.main import app
+from app.schemas.web_registration import WebRegistrationIntentRequest
 from app.services import web_registration
 
 
@@ -194,6 +198,11 @@ class EventQuestionnaireTests(unittest.IsolatedAsyncioTestCase):
                         ),
                     )
                     await session.execute(
+                        delete(LegalAcceptance).where(
+                            LegalAcceptance.legal_document_id == self.consent_id,
+                        ),
+                    )
+                    await session.execute(
                         delete(LegalDocument).where(LegalDocument.id == self.consent_id),
                     )
                     await session.execute(
@@ -277,6 +286,20 @@ class EventQuestionnaireTests(unittest.IsolatedAsyncioTestCase):
             "POST",
             f"/admin/events/{self.event_id}/web-questionnaire/publish",
             role="admin",
+        )
+
+    async def _delete_draft(self, *, role: str = "admin") -> httpx.Response:
+        return await self._request(
+            "DELETE",
+            f"/admin/events/{self.event_id}/web-questionnaire/draft",
+            role=role,
+        )
+
+    async def _unpublish(self, *, role: str = "admin") -> httpx.Response:
+        return await self._request(
+            "POST",
+            f"/admin/events/{self.event_id}/web-questionnaire/unpublish",
+            role=role,
         )
 
     async def test_migration_and_database_invariants(self) -> None:
@@ -568,6 +591,112 @@ class EventQuestionnaireTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
         self.assertEqual(after_counts, baseline_counts)
+
+    async def test_admin_questionnaire_lifecycle_actions_are_scoped_and_safe(self) -> None:
+        created = await self._put_draft()
+        self.assertEqual(created.status_code, 200)
+        draft_id = created.json()["data"]["draft"]["id"]
+
+        deleted = await self._delete_draft()
+        self.assertEqual(deleted.status_code, 200)
+        self.assertIsNone(deleted.json()["data"]["draft"])
+        self.assertIsNone(deleted.json()["data"]["published"])
+        self.assertEqual((await self._delete_draft()).status_code, 200)
+        async with AsyncSessionLocal() as session:
+            self.assertIsNone(await session.get(EventRegistrationForm, draft_id))
+
+        self.assertEqual((await self._put_draft()).status_code, 200)
+        published = await self._publish()
+        self.assertEqual(published.status_code, 200)
+        published_id = published.json()["data"]["published"]["id"]
+        self.assertEqual((await self._put_draft()).status_code, 200)
+        deleted_next = await self._delete_draft()
+        self.assertEqual(deleted_next.status_code, 200)
+        self.assertIsNone(deleted_next.json()["data"]["draft"])
+        self.assertEqual(deleted_next.json()["data"]["published"]["id"], published_id)
+
+        for role in ("event_manager", "member"):
+            self.assertEqual((await self._delete_draft(role=role)).status_code, 403)
+            self.assertEqual((await self._unpublish(role=role)).status_code, 403)
+        for path in ("draft", "unpublish"):
+            method = "DELETE" if path == "draft" else "POST"
+            foreign = await self._request(
+                method,
+                f"/admin/events/{self.event_id}/web-questionnaire/{path}",
+                role="foreign_admin",
+            )
+            self.assertEqual(foreign.status_code, 404)
+
+        unpublished = await self._unpublish()
+        self.assertEqual(unpublished.status_code, 200)
+        self.assertIsNone(unpublished.json()["data"]["published"])
+        async with AsyncSessionLocal() as session:
+            form = await session.get(EventRegistrationForm, published_id)
+            assert form is not None
+            self.assertEqual(form.status, "retired")
+            self.assertEqual(form.event_id, self.event_id)
+            self.assertEqual(form.channel, "web")
+        conflict = await self._unpublish()
+        self.assertEqual(conflict.status_code, 409)
+        self.assertEqual(conflict.json()["error"]["code"], "conflict")
+
+    async def test_retired_questionnaire_intent_finalizes_and_persists_answers(self) -> None:
+        self.assertEqual((await self._put_draft()).status_code, 200)
+        published = await self._publish()
+        self.assertEqual(published.status_code, 200)
+        form = published.json()["data"]["published"]
+        field_id = form["fields"][0]["id"]
+        verification_codes: list[str] = []
+
+        def capture_verification(**kwargs: object) -> None:
+            verification_codes.append(str(kwargs["code"]))
+
+        payload = WebRegistrationIntentRequest.model_validate(
+            {
+                "event_id": self.event_id,
+                "occurrence_id": None,
+                "first_name": "Synthetic",
+                "last_name": "Participant",
+                "phone": f"+7900{int(self.marker[:8], 16) % 10**7:07d}",
+                "email": f"questionnaire-participant-{self.marker}@example.invalid",
+                "seats_count": 1,
+                "option_selections": [],
+                "questionnaire_form_id": form["id"],
+                "answers": [{"field_id": field_id, "value": "morning"}],
+                "legal_acceptances": [{"document_id": self.consent_id, "content_hash": f"sha256:questionnaire-{self.marker}"}],
+                "account_choice": "without_password",
+                "idempotency_key": f"questionnaire-intent-{self.marker}",
+            },
+        )
+        with patch(
+            "app.services.web_registration.send_web_registration_verification_code",
+            side_effect=capture_verification,
+        ), patch(
+            "app.services.web_registration.send_web_registration_confirmation",
+            return_value=None,
+        ):
+            async with AsyncSessionLocal() as session:
+                intent = await web_registration.create_intent(session, payload, "192.0.2.8")
+            self.assertEqual((await self._unpublish()).status_code, 200)
+            self.assertEqual(len(verification_codes), 1)
+            async with AsyncSessionLocal() as session:
+                result = await web_registration.confirm_email(
+                    session,
+                    intent.flow_id,
+                    verification_codes[0],
+                    "192.0.2.8",
+                )
+                answers = list(
+                    await session.scalars(
+                        select(EventRegistrationAnswer).where(
+                            EventRegistrationAnswer.registration_id == result.registration.id,
+                        ),
+                    ),
+                )
+        self.assertEqual(
+            [(answer.field_id, answer.value_payload) for answer in answers],
+            [(UUID(field_id), "morning")],
+        )
 
     async def test_strict_questionnaire_validation(self) -> None:
         base = self._draft_payload()
