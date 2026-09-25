@@ -114,6 +114,32 @@ export function RegistrationDetailPanel({
         <DetailRow label="Комментарий" value={registration.comment ?? "Нет комментария"} />
       </DetailSection>
 
+      {registration.answers.length > 0 ? (
+        <DetailSection title="Ответы анкеты">
+          {registration.answers.some((answer) => answer.formStatus === "retired") ? (
+            <p className="registration-detail__muted">
+              Ответы анкеты · версия {registration.answers[0]?.formVersion} · снята с публикации
+            </p>
+          ) : null}
+          <div className="registration-questionnaire-answers">
+            {registration.answers.map((answer) => (
+              <div className="registration-questionnaire-answer" key={answer.fieldId}>
+                <span>{answer.label}</span>
+                {answer.value === null ? (
+                  <strong className="registration-detail__muted">Не заполнено</strong>
+                ) : answer.fieldType === "multi_select" && Array.isArray(answer.value) ? (
+                  <div className="registration-guest-list">
+                    {answer.value.map((value) => <span key={value}>{value}</span>)}
+                  </div>
+                ) : (
+                  <strong>{answer.fieldType === "boolean" ? (answer.value ? "Да" : "Нет") : answer.value}</strong>
+                )}
+              </div>
+            ))}
+          </div>
+        </DetailSection>
+      ) : null}
+
       <DetailSection title="Оплата">
         <DetailRow label="Статус" value={formatPaymentStatus(registration.paymentStatus)} />
         {isSimulatedPaymentId(registration.paymentId) ? (

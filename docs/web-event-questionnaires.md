@@ -121,6 +121,15 @@ questionnaire endpoints. Backend authorization remains authoritative. The
 create-event page has no questionnaire editor because the API requires an
 existing event ID.
 
+## Registration-operator answer visibility
+
+Questionnaire configuration remains available only to `admin`. Collected answers,
+however, are available through the existing manageable-registration authorization
+to operators and `event_manager` actors who can list the event registrations.
+They are read-only: no Admin answer editing or deletion is provided. Retired form
+answers remain visible in participant detail, while active summary and Excel
+columns use only the currently published form.
+
 The editor exposes only the five supported ordinary field types. Form purpose,
 question label and purpose, and a positive explicit retention period are
 mandatory. Select options receive stable technical values, fields receive

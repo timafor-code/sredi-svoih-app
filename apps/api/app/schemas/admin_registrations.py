@@ -7,6 +7,41 @@ from uuid import UUID
 from pydantic import BaseModel
 
 RegistrationSourceChannel = Literal["mobile", "public_web", "admin"]
+QuestionnaireFieldType = Literal[
+    "short_text", "long_text", "single_select", "multi_select", "boolean"
+]
+QuestionnaireAnswerValue = str | bool | list[str] | None
+
+
+class AdminRegistrationQuestionnaireAnswerResponse(BaseModel):
+    field_id: UUID
+    field_key: str
+    label: str
+    field_type: QuestionnaireFieldType
+    value_payload: QuestionnaireAnswerValue
+    form_version: int
+    form_status: Literal["published", "retired"]
+
+
+class AdminQuestionnaireSummaryOptionResponse(BaseModel):
+    value: str | bool
+    label: str
+    count: int
+
+
+class AdminQuestionnaireAnswerSummaryFieldResponse(BaseModel):
+    field_id: UUID
+    field_key: str
+    label: str
+    field_type: QuestionnaireFieldType
+    form_version: int
+    answered_count: int
+    options: list[AdminQuestionnaireSummaryOptionResponse]
+
+
+class AdminQuestionnaireAnswersSummaryResponse(BaseModel):
+    event_id: UUID
+    fields: list[AdminQuestionnaireAnswerSummaryFieldResponse]
 
 
 class AdminRegistrationSelectedOptionResponse(BaseModel):
@@ -47,6 +82,7 @@ class AdminEventRegistrationResponse(BaseModel):
     occurrence_ends_at: datetime | None
     occurrence_title: str | None
     selected_options: list[AdminRegistrationSelectedOptionResponse]
+    answers: list[AdminRegistrationQuestionnaireAnswerResponse]
     total_amount: int | None
     created_at: datetime
     updated_at: datetime

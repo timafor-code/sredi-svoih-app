@@ -2050,6 +2050,19 @@ remain registration capacity buckets, not seating.
 
 ### Admin Registrations
 
+`AdminEventRegistrationResponse` includes `answers`: question field id/key,
+label, type, canonical value payload, form version and minimal form status.
+The field is authorized by the normal manageable-registration path, not the
+admin-only questionnaire-configuration path. Optional unanswered fields are
+represented with a null value when the registration is bound to that form.
+
+`GET /admin/events/{event_id}/questionnaire-answers/summary` accepts the same
+occurrence, capacity-unit, status and source-channel scope as registrations
+(but no search). It returns only the currently published questionnaire fields,
+server-computed answer/option counts, and never text answer values. Retired
+answers remain available only through registration detail. No schema migration
+or answer mutation endpoint is part of this contract.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/admin/events/{event_id}/registrations` | List registrations for an event in the actor's community. |

@@ -13,6 +13,7 @@ import { RegistrationCapacityBucketsOverview } from "../components/registrations
 import { RegistrationDetailPanel } from "../components/registrations/RegistrationDetailPanel";
 import { RegistrationEventsPanel } from "../components/registrations/RegistrationEventsPanel";
 import { RegistrationMainActions } from "../components/registrations/RegistrationMainActions";
+import { QuestionnaireAnswersSummary } from "../components/registrations/QuestionnaireAnswersSummary";
 import { RegistrationsState } from "../components/registrations/RegistrationsState";
 import { RegistrationsTable } from "../components/registrations/RegistrationsTable";
 import { WebRegistrationOperationsPanel } from "../components/registrations/WebRegistrationOperationsPanel";
@@ -24,6 +25,7 @@ import { useAdminAuth } from "../context/AdminAuthContext";
 import { getAdminRegistrationCapacityAnalytics } from "../services/adminRegistrationCapacityService";
 import {
   listAdminEventCapacities,
+  getQuestionnaireAnswersSummary,
   listEventRegistrations,
   listRegistrationEvents,
   listRegistrationEventOccurrences,
@@ -37,6 +39,7 @@ import type {
   AdminEventRegistrationRow,
   AdminRegistrationEventSummary,
   AdminRegistrationSourceFilter,
+  AdminQuestionnaireAnswersSummary,
 } from "../types/registrations";
 import { ADMIN_REGISTRATION_SOURCE_CHANNELS } from "../types/registrations";
 import type {
@@ -142,6 +145,9 @@ export function RegistrationsPage() {
   const [registrations, setRegistrations] = useState<AdminEventRegistrationRow[]>([]);
   const [registrationsLoading, setRegistrationsLoading] = useState(false);
   const [registrationsError, setRegistrationsError] = useState<string | null>(null);
+  const [questionnaireSummary, setQuestionnaireSummary] = useState<AdminQuestionnaireAnswersSummary | null>(null);
+  const [questionnaireSummaryLoading, setQuestionnaireSummaryLoading] = useState(false);
+  const [questionnaireSummaryError, setQuestionnaireSummaryError] = useState<string | null>(null);
   const [capacityAnalytics, setCapacityAnalytics] =
     useState<AdminRegistrationCapacityAnalytics | null>(null);
   const [capacityAnalyticsLoading, setCapacityAnalyticsLoading] = useState(false);
@@ -387,6 +393,30 @@ export function RegistrationsPage() {
     [eventHasOccurrences, selectedEventId, selectedOccurrenceId],
   );
 
+  const loadQuestionnaireSummary = useCallback(async () => {
+    if (!selectedEventId || (eventHasOccurrences && !selectedOccurrenceId)) {
+      setQuestionnaireSummary(null);
+      setQuestionnaireSummaryError(null);
+      return;
+    }
+    setQuestionnaireSummaryLoading(true);
+    setQuestionnaireSummaryError(null);
+    try {
+      setQuestionnaireSummary(await getQuestionnaireAnswersSummary({
+        eventId: selectedEventId,
+        occurrenceId: eventHasOccurrences ? selectedOccurrenceId : null,
+        capacityUnitId: selectedCapacityUnitId,
+        status: "all",
+        sourceChannel: registrationSourceFilter,
+      }));
+    } catch (nextError) {
+      setQuestionnaireSummary(null);
+      setQuestionnaireSummaryError(nextError instanceof Error ? nextError.message : "Не удалось загрузить сводку анкеты.");
+    } finally {
+      setQuestionnaireSummaryLoading(false);
+    }
+  }, [eventHasOccurrences, registrationSourceFilter, selectedCapacityUnitId, selectedEventId, selectedOccurrenceId]);
+
   useEffect(() => {
     void loadRegistrationEventSummaries().catch(() => undefined);
   }, [loadRegistrationEventSummaries]);
@@ -398,6 +428,10 @@ export function RegistrationsPage() {
   useEffect(() => {
     void loadCapacityAnalytics();
   }, [loadCapacityAnalytics]);
+
+  useEffect(() => {
+    void loadQuestionnaireSummary();
+  }, [loadQuestionnaireSummary]);
 
   useEffect(() => {
     if (!selectedCapacityUnitId || capacityAnalyticsLoading) {
@@ -834,6 +868,13 @@ export function RegistrationsPage() {
                 event={selectedEvent}
                 onOpenSeating={handleOpenSeating}
                 selectedOccurrence={eventHasOccurrences ? selectedOccurrence : null}
+              />
+
+              <QuestionnaireAnswersSummary
+                error={questionnaireSummaryError}
+                loading={questionnaireSummaryLoading}
+                registrations={registrations}
+                summary={questionnaireSummary}
               />
 
               <div className="registration-controls">

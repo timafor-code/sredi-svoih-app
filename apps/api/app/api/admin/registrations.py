@@ -11,6 +11,7 @@ from app.db.models.core import AppUser
 from app.db.session import get_db_session
 from app.schemas.admin_registrations import (
     AdminEventRegistrationResponse,
+    AdminQuestionnaireAnswersSummaryResponse,
     AdminRegistrationCapacityAnalyticsResponse,
     RegistrationSourceChannel,
 )
@@ -53,6 +54,31 @@ async def list_admin_event_registrations(
         offset=offset,
     )
     return ApiResponse[list[AdminEventRegistrationResponse]](data=registrations)
+
+
+@router.get(
+    "/events/{event_id}/questionnaire-answers/summary",
+    response_model=ApiResponse[AdminQuestionnaireAnswersSummaryResponse],
+)
+async def get_admin_questionnaire_answers_summary(
+    event_id: UUID,
+    session: DbSession,
+    current_user: CurrentUser,
+    occurrence_id: Annotated[UUID | None, Query()] = None,
+    capacity_unit_id: Annotated[UUID | None, Query()] = None,
+    status: Annotated[str | None, Query(max_length=32)] = None,
+    source_channel: Annotated[RegistrationSourceChannel | None, Query()] = None,
+) -> ApiResponse[AdminQuestionnaireAnswersSummaryResponse]:
+    result = await admin_registrations_service.get_admin_questionnaire_answers_summary(
+        session,
+        current_user,
+        event_id,
+        occurrence_id=occurrence_id,
+        capacity_unit_id=capacity_unit_id,
+        status=status,
+        source_channel=source_channel,
+    )
+    return ApiResponse[AdminQuestionnaireAnswersSummaryResponse](data=result)
 
 
 @router.get(

@@ -2,6 +2,9 @@ import { apiClient } from "./apiClient";
 import type {
   AdminApiEventOccurrenceResponse,
   AdminApiEventRegistrationResponse,
+  AdminApiQuestionnaireAnswersSummaryResponse,
+  AdminApiQuestionnaireAnswerSummaryFieldResponse,
+  AdminApiRegistrationQuestionnaireAnswerResponse,
   AdminApiEventResponse,
   AdminApiRegistrationSelectedOptionResponse,
   ApiPaginationMeta,
@@ -11,11 +14,17 @@ import type {
   AdminEventRegistrationRow,
   AdminRegistrationAttendanceStatus,
   AdminRegistrationEventSummary,
+  AdminQuestionnaireAnswersSummary,
+  AdminQuestionnaireFieldType,
+  AdminQuestionnaireSummaryField,
+  AdminRegistrationAnswerValue,
+  AdminRegistrationQuestionnaireAnswer,
   AdminRegistrationOptionSelectionSummary,
   AdminRegistrationSourceChannel,
   AdminRegistrationStatus,
   AdminRegistrationStatusUpdate,
   ListEventRegistrationsParams,
+  QuestionnaireAnswersSummaryParams,
 } from "../types/registrations";
 
 const ADMIN_EVENTS_PAGE_LIMIT = 100;
@@ -110,6 +119,76 @@ function normalizeRegistrationSourceChannel(value: unknown): AdminRegistrationSo
   throw new Error("Admin registration API returned an unsupported source_channel.");
 }
 
+function normalizeQuestionnaireFieldType(value: unknown): AdminQuestionnaireFieldType {
+  if (
+    value === "short_text" || value === "long_text" || value === "single_select" ||
+    value === "multi_select" || value === "boolean"
+  ) {
+    return value;
+  }
+  throw new Error("Admin registration API returned an unsupported questionnaire field type.");
+}
+
+function normalizeQuestionnaireAnswerValue(
+  fieldType: AdminQuestionnaireFieldType,
+  value: unknown,
+): AdminRegistrationAnswerValue {
+  if (value === null) return null;
+  if (fieldType === "boolean") {
+    if (typeof value === "boolean") return value;
+  } else if (fieldType === "multi_select") {
+    if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+      return value;
+    }
+  } else if (typeof value === "string") {
+    return value;
+  }
+  throw new Error("Admin registration API returned an unsafe questionnaire answer shape.");
+}
+
+function normalizeQuestionnaireAnswer(
+  row: AdminApiRegistrationQuestionnaireAnswerResponse,
+): AdminRegistrationQuestionnaireAnswer {
+  const fieldType = normalizeQuestionnaireFieldType(row.field_type);
+  if (row.form_status !== "published" && row.form_status !== "retired") {
+    throw new Error("Admin registration API returned an unsupported questionnaire form status.");
+  }
+  return {
+    fieldId: requiredString(row.field_id, ""),
+    fieldKey: requiredString(row.field_key, ""),
+    label: requiredString(row.label, ""),
+    fieldType,
+    value: normalizeQuestionnaireAnswerValue(fieldType, row.value_payload),
+    formVersion: safeNumber(row.form_version, 0),
+    formStatus: row.form_status,
+  };
+}
+
+function normalizeQuestionnaireSummaryField(
+  row: AdminApiQuestionnaireAnswerSummaryFieldResponse,
+): AdminQuestionnaireSummaryField {
+  const fieldType = normalizeQuestionnaireFieldType(row.field_type);
+  if (!Array.isArray(row.options) || !row.options.every((option) =>
+    (typeof option.value === "string" || typeof option.value === "boolean") &&
+    typeof option.label === "string" && typeof option.count === "number" && Number.isFinite(option.count),
+  )) {
+    throw new Error("Admin registration API returned an unsafe questionnaire summary shape.");
+  }
+  return {
+    fieldId: requiredString(row.field_id, ""),
+    fieldKey: requiredString(row.field_key, ""),
+    label: requiredString(row.label, ""),
+    fieldType,
+    formVersion: safeNumber(row.form_version, 0),
+    answeredCount: safeNumber(row.answered_count, 0),
+    options: row.options.map((option) => ({
+      value: option.value,
+      label: option.label,
+      count: option.count,
+    })),
+  };
+}
+
 function normalizeEventRegistrationRow(
   row: AdminApiEventRegistrationResponse,
 ): AdminEventRegistrationRow {
@@ -135,6 +214,9 @@ function normalizeEventRegistrationRow(
     occurrenceEndsAt: nullableString(row.occurrence_ends_at),
     occurrenceTitle: nullableString(row.occurrence_title),
     selectedOptions: normalizeSelectedOptions(row.selected_options),
+    answers: Array.isArray(row.answers) ? row.answers.map(normalizeQuestionnaireAnswer) : (() => {
+      throw new Error("Admin registration API returned an unsafe questionnaire answers shape.");
+    })(),
     totalAmount: nullableNumber(row.total_amount),
     createdAt: requiredString(row.created_at, ""),
     updatedAt: requiredString(row.updated_at, ""),
@@ -307,6 +389,30 @@ export async function listEventRegistrations(
   );
 
   return registrations.map(normalizeEventRegistrationRow);
+}
+
+export async function getQuestionnaireAnswersSummary(
+  params: QuestionnaireAnswersSummaryParams,
+): Promise<AdminQuestionnaireAnswersSummary> {
+  const summary = await apiClient.get<AdminApiQuestionnaireAnswersSummaryResponse>(
+    `/admin/events/${encodeURIComponent(params.eventId)}/questionnaire-answers/summary`,
+    {
+      query: {
+        capacity_unit_id: params.capacityUnitId ?? undefined,
+        occurrence_id: params.occurrenceId ?? undefined,
+        source_channel: params.sourceChannel && params.sourceChannel !== "all"
+          ? params.sourceChannel : undefined,
+        status: params.status ?? undefined,
+      },
+    },
+  );
+  if (!Array.isArray(summary.fields)) {
+    throw new Error("Admin registration API returned an unsafe questionnaire summary shape.");
+  }
+  return {
+    eventId: requiredString(summary.event_id, ""),
+    fields: summary.fields.map(normalizeQuestionnaireSummaryField),
+  };
 }
 
 export async function updateRegistrationStatus(

@@ -89,6 +89,43 @@ export type AdminRegistrationOptionSelectionSummary = {
   createdAt: string;
 };
 
+export const ADMIN_QUESTIONNAIRE_FIELD_TYPES = [
+  "short_text", "long_text", "single_select", "multi_select", "boolean",
+] as const;
+export type AdminQuestionnaireFieldType = (typeof ADMIN_QUESTIONNAIRE_FIELD_TYPES)[number];
+export type AdminRegistrationAnswerValue = string | boolean | string[] | null;
+
+export type AdminRegistrationQuestionnaireAnswer = {
+  fieldId: string;
+  fieldKey: string;
+  label: string;
+  fieldType: AdminQuestionnaireFieldType;
+  value: AdminRegistrationAnswerValue;
+  formVersion: number;
+  formStatus: "published" | "retired";
+};
+
+export type AdminQuestionnaireSummaryOption = {
+  value: string | boolean;
+  label: string;
+  count: number;
+};
+
+export type AdminQuestionnaireSummaryField = {
+  fieldId: string;
+  fieldKey: string;
+  label: string;
+  fieldType: AdminQuestionnaireFieldType;
+  formVersion: number;
+  answeredCount: number;
+  options: AdminQuestionnaireSummaryOption[];
+};
+
+export type AdminQuestionnaireAnswersSummary = {
+  eventId: string;
+  fields: AdminQuestionnaireSummaryField[];
+};
+
 export type AdminEventRegistrationRpcRow = {
   id: string;
   event_id: string;
@@ -137,6 +174,7 @@ export type AdminEventRegistrationRow = {
   occurrenceEndsAt: string | null;
   occurrenceTitle: string | null;
   selectedOptions: AdminRegistrationOptionSelectionSummary[];
+  answers: AdminRegistrationQuestionnaireAnswer[];
   totalAmount: number | null;
   createdAt: string;
   updatedAt: string;
@@ -152,3 +190,8 @@ export type ListEventRegistrationsParams = {
   limit?: number | null;
   offset?: number | null;
 };
+
+export type QuestionnaireAnswersSummaryParams = Pick<
+  ListEventRegistrationsParams,
+  "eventId" | "occurrenceId" | "capacityUnitId" | "status" | "sourceChannel"
+>;

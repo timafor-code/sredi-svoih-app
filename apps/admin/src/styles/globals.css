@@ -13180,6 +13180,19 @@ a {
   line-height: 1.45;
 }
 
+.registration-questionnaire-answers,
+.questionnaire-summary { display: grid; gap: 12px; }
+.registration-questionnaire-answer { display: grid; gap: 5px; }
+.registration-questionnaire-answer > span,
+.questionnaire-summary__field > span { color: var(--muted-text); font-size: 13px; }
+.questionnaire-summary { margin: 18px 0; padding: 16px; border: 1px solid var(--glass-border); border-radius: 14px; }
+.questionnaire-summary h3 { margin: 0; }
+.questionnaire-summary__field { display: grid; gap: 7px; padding-top: 12px; border-top: 1px solid var(--glass-border); }
+.questionnaire-summary__bars { display: grid; gap: 6px; }
+.questionnaire-summary__bars > div { display: grid; grid-template-columns: minmax(100px, 1fr) auto; gap: 4px 12px; }
+.questionnaire-summary__bars i { grid-column: 1 / -1; display: block; height: 5px; border-radius: 999px; background: var(--gold); }
+.questionnaire-summary__text p { margin: 4px 0; overflow-wrap: anywhere; }
+
 .registration-detail-row strong,
 .registration-option-row strong {
   min-width: 0;

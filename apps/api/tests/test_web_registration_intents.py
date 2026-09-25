@@ -102,11 +102,12 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
         verified: bool = True,
         first_name: str | None = "Каноническое",
         last_name: str | None = "Имя",
+        password_hash: str | None = "unchanged",
     ) -> AppUser:
         user = AppUser(
             email=email,
             phone=phone,
-            password_hash="unchanged",
+            password_hash=password_hash,
             account_origin="password_signup",
             claim_state="claimed",
             status="active",
@@ -250,6 +251,7 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
         user = await self._add_authenticated_user(
             email="intent-remembered@example.invalid",
             phone="+79000000035",
+            password_hash=None,
         )
         async with AsyncSessionLocal() as session:
             current_user = await session.get(AppUser, user.id)
@@ -327,7 +329,11 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(changed.exception.detail["code"], "already_registered")
 
     async def test_remembered_duplicate_router_completes_without_code(self) -> None:
-        user = await self._add_authenticated_user(email="intent-remembered-duplicate@example.invalid", phone="+79000000038")
+        user = await self._add_authenticated_user(
+            email="intent-remembered-duplicate@example.invalid",
+            phone="+79000000038",
+            password_hash=None,
+        )
         async with AsyncSessionLocal() as session:
             async with session.begin():
                 registration = EventRegistration(event_id=self.event_id, user_id=user.id, status="confirmed", seats_count=1, payment_status="not_required", source_channel="mobile")
