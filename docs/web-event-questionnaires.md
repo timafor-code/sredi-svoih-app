@@ -61,11 +61,19 @@ Only an active community `admin` may configure questionnaires:
 GET  /admin/events/{event_id}/web-questionnaire
 PUT  /admin/events/{event_id}/web-questionnaire/draft
 POST /admin/events/{event_id}/web-questionnaire/publish
+DELETE /admin/events/{event_id}/web-questionnaire/draft
+POST /admin/events/{event_id}/web-questionnaire/unpublish
 ```
 
 The event is always resolved through the admin's active community membership.
 An `event_manager` or member cannot define fields, and foreign-community event
 identifiers do not expose questionnaire contents.
+
+Draft deletion is idempotent and deletes only the current `draft` form and its
+cascaded draft fields. Published and retired definitions are never deleted.
+Unpublishing transitions only the current `published` form to `retired`, while
+preserving its publication metadata, definition, and collected answers. A
+later publication creates a new version; no schema change is required.
 
 The existing public contract:
 
@@ -98,6 +106,11 @@ capacity changes, unavailable events, identity conflicts, and transaction
 failures create no final answer rows. After successful finalization the
 temporary payload is cleared; confirmed replay returns the existing
 registration without duplicate answer rows.
+
+New public form loads resolve only the current published form. Finalization of
+an already-bound intent deliberately accepts its form while it is published or
+retired, so unpublishing cannot strand a registration that was already started
+or discard its submitted answers.
 
 ## Admin configuration UI
 
@@ -141,10 +154,12 @@ prayer content remains outside read/export paths.
 
 Saving a draft is an explicit action; changes are not sent on every keystroke.
 Refreshing a dirty editor requires confirmation before local changes are
-discarded. Publishing is a separate explicitly confirmed action. Published
-versions are shown read-only and cannot be edited, deleted, unpublished, or
-retired from the UI. Starting a new local version may copy the published
-definition without changing it.
+discarded. Publishing is a separate explicitly confirmed action. The admin
+card has `Не настроена`, `Черновик`, and `Опубликована` states: it can delete
+an unpublished draft or unpublish a published version with separate
+confirmations. Published definitions stay read-only; editing copies one into
+the next draft without changing the published version or previously collected
+answers.
 
 ## Two-tier data boundary
 

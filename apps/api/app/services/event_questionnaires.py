@@ -272,6 +272,35 @@ async def put_admin_event_questionnaire_draft(
 
     return await _questionnaire_response(session, event_id)
 
+
+async def delete_admin_event_questionnaire_draft(
+    session: AsyncSession,
+    current_user: AppUser,
+    event_id: UUID,
+) -> AdminEventQuestionnaireResponse:
+    async with _transaction_scope(session):
+        event = await _require_admin_event(
+            session,
+            current_user,
+            event_id,
+            for_update=True,
+        )
+        draft = await session.scalar(
+            select(EventRegistrationForm)
+            .where(
+                EventRegistrationForm.event_id == event.id,
+                EventRegistrationForm.channel == WEB_CHANNEL,
+                EventRegistrationForm.status == DRAFT_STATUS,
+            )
+            .with_for_update(),
+        )
+        if draft is not None:
+            await session.delete(draft)
+            await session.flush()
+
+    return await _questionnaire_response(session, event_id)
+
+
 async def publish_admin_event_questionnaire(
     session: AsyncSession,
     current_user: AppUser,
@@ -323,6 +352,39 @@ async def publish_admin_event_questionnaire(
         draft.published_at = now
         draft.updated_by = current_user.id
         draft.updated_at = now
+        await session.flush()
+
+    return await _questionnaire_response(session, event_id)
+
+
+async def unpublish_admin_event_questionnaire(
+    session: AsyncSession,
+    current_user: AppUser,
+    event_id: UUID,
+) -> AdminEventQuestionnaireResponse:
+    async with _transaction_scope(session):
+        event = await _require_admin_event(
+            session,
+            current_user,
+            event_id,
+            for_update=True,
+        )
+        published = await session.scalar(
+            select(EventRegistrationForm)
+            .where(
+                EventRegistrationForm.event_id == event.id,
+                EventRegistrationForm.channel == WEB_CHANNEL,
+                EventRegistrationForm.status == PUBLISHED_STATUS,
+            )
+            .with_for_update(),
+        )
+        if published is None:
+            raise _conflict("A published questionnaire is required")
+
+        now = datetime.now(UTC)
+        published.status = RETIRED_STATUS
+        published.updated_by = current_user.id
+        published.updated_at = now
         await session.flush()
 
     return await _questionnaire_response(session, event_id)

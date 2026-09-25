@@ -304,3 +304,22 @@ export async function publishAdminEventQuestionnaire(
   );
   return normalizeResponse(response);
 }
+
+export async function deleteAdminEventQuestionnaireDraft(
+  eventId: string,
+): Promise<AdminEventQuestionnaire> {
+  const response = await apiClient.delete<unknown>(
+    `/admin/events/${encodeURIComponent(eventId)}/web-questionnaire/draft`,
+  );
+  return normalizeResponse(response);
+}
+
+export async function unpublishAdminEventQuestionnaire(
+  eventId: string,
+): Promise<AdminEventQuestionnaire> {
+  const response = await apiClient.post<unknown, undefined>(
+    `/admin/events/${encodeURIComponent(eventId)}/web-questionnaire/unpublish`,
+    undefined,
+  );
+  return normalizeResponse(response);
+}

@@ -1309,12 +1309,20 @@ Questionnaire definition administration is authenticated and admin-only:
 | --- | --- | --- |
 | GET | `/admin/events/{event_id}/web-questionnaire` | Community-scoped read of the current draft and published web definitions. |
 | PUT | `/admin/events/{event_id}/web-questionnaire/draft` | Create the next draft version or replace the existing draft after strict field validation. |
+| DELETE | `/admin/events/{event_id}/web-questionnaire/draft` | Idempotently delete only the current unpublished draft and its draft fields. |
 | POST | `/admin/events/{event_id}/web-questionnaire/publish` | Atomically publish the valid draft and retire the previously published version. |
+| POST | `/admin/events/{event_id}/web-questionnaire/unpublish` | Retire the current published version; no published form returns `409 conflict`. |
 
 Only active `admin` memberships may use these endpoints. `event_manager` and
 member roles cannot define new collection fields, and an admin from another
 community receives no questionnaire contents. Published versions and their
-fields are immutable; further editing uses a later draft version.
+fields are immutable; further editing uses a later draft version. Deleting a
+draft never affects a published version or answer rows. Unpublishing preserves
+the retired form, its fields, and existing answers. A public form load resolves
+only a published definition, while finalization for an already-bound
+registration intent permits that definition to be published or retired. These
+lifecycle operations require no database schema change and do not alter the
+explicit per-field retention semantics.
 
 The definition allowlist is deliberately limited to `short_text`, `long_text`,
 `single_select`, `multi_select`, and `boolean`, with `data_category` fixed to

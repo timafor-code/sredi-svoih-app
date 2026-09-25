@@ -57,6 +57,23 @@ async def put_admin_event_questionnaire_draft(
     return ApiResponse[AdminEventQuestionnaireResponse](data=result)
 
 
+@router.delete(
+    "/events/{event_id}/web-questionnaire/draft",
+    response_model=ApiResponse[AdminEventQuestionnaireResponse],
+)
+async def delete_admin_event_questionnaire_draft(
+    event_id: UUID,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[AdminEventQuestionnaireResponse]:
+    result = await questionnaire_service.delete_admin_event_questionnaire_draft(
+        session,
+        current_user,
+        event_id,
+    )
+    return ApiResponse[AdminEventQuestionnaireResponse](data=result)
+
+
 @router.post(
     "/events/{event_id}/web-questionnaire/publish",
     response_model=ApiResponse[AdminEventQuestionnaireResponse],
@@ -67,6 +84,23 @@ async def publish_admin_event_questionnaire(
     current_user: CurrentUser,
 ) -> ApiResponse[AdminEventQuestionnaireResponse]:
     result = await questionnaire_service.publish_admin_event_questionnaire(
+        session,
+        current_user,
+        event_id,
+    )
+    return ApiResponse[AdminEventQuestionnaireResponse](data=result)
+
+
+@router.post(
+    "/events/{event_id}/web-questionnaire/unpublish",
+    response_model=ApiResponse[AdminEventQuestionnaireResponse],
+)
+async def unpublish_admin_event_questionnaire(
+    event_id: UUID,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[AdminEventQuestionnaireResponse]:
+    result = await questionnaire_service.unpublish_admin_event_questionnaire(
         session,
         current_user,
         event_id,
