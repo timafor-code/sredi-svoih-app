@@ -303,7 +303,7 @@ production API auth.
 | POST | `/auth/request-email-verification` | Public | Request email verification delivery. |
 | POST | `/auth/confirm-email-verification` | Public | Confirm the email-bound six-digit verification code. |
 | POST | `/auth/request-set-password` | Public | Request set-password delivery for migrated OAuth-only users with no password hash. |
-| POST | `/auth/confirm-set-password` | Public | Confirm either an email-bound six-digit set-password code or an opaque direct handoff, then create the first password hash. |
+| POST | `/auth/confirm-set-password` | Public | Confirm either an email-bound six-digit set-password code or an opaque direct handoff, then create the first password hash. On the first successful direct-handoff password creation, sends one informational account-created email after commit; a delivery failure does not affect the response. |
 | POST | `/auth/register-with-invite` | Public | Create an API password user from an invite and return auth tokens plus user/profile/membership summaries. |
 | POST | `/auth/accept-invite` | Authenticated | Accept an invite for the current API user without creating a new user or rotating tokens. |
 

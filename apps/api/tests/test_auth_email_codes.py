@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import logging
 import unittest
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import httpx
 from sqlalchemy import delete, select, text
 
 from app.core.passwords import hash_password
+from app.core.config import Settings
 from app.db.models.auth import (
     AuthEmailVerificationCode,
     AuthSession,
@@ -28,8 +31,15 @@ from app.db.models.core import (
 from app.db.session import AsyncSessionLocal, engine
 from app.main import app
 from app.services import auth as auth_service
+from app.services import auth_email_service
 from app.services import web_participant_sessions
+from app.services.auth_email_service import AuthEmailDeliveryError
+from app.services.auth_email_templates import render_account_created_email
 from app.services.auth_tokens import hash_token
+from app.services.email_delivery import EmailSendResult
+from app.services.transactional_email_branding import (
+    render_branded_informational_html,
+)
 
 
 TEST_PASSWORD = "Synthetic-password-1"
@@ -400,7 +410,11 @@ class AuthEmailCodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(emailed.status_code, 200)
 
     async def test_direct_set_password_handoff_remains_opaque_and_works(self) -> None:
-        user = await self._create_user(email=self._email(), password_hash=None)
+        email = self._email()
+        user = await self._create_user(email=email, password_hash=None)
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(Profile(user_id=user.id, first_name="Иван"))
         async with AsyncSessionLocal() as session:
             async with session.begin():
                 code, _ = await auth_service.issue_set_password_handoff(
@@ -410,11 +424,197 @@ class AuthEmailCodeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertGreaterEqual(len(code), 16)
         self.assertNotRegex(code, r"^[0-9]{6}$")
-        response = await self._post(
-            "/auth/confirm-set-password",
-            {"code": code, "new_password": "Synthetic-password-2"},
-        )
+        with patch.object(auth_service, "send_account_created_email") as sender:
+            response = await self._post(
+                "/auth/confirm-set-password",
+                {"code": code, "new_password": "Synthetic-password-2"},
+            )
         self.assertEqual(response.status_code, 200)
+        sender.assert_called_once_with(to_address=email, first_name="Иван")
+
+    def test_account_created_email_template_and_sender_are_branded_and_safe(self) -> None:
+        first_name = "  Ирина <Иванова>  "
+        handoff_code = "opaque-handoff-secret"
+        password = "Synthetic-password-2"
+        rendered = render_account_created_email(first_name=first_name)
+        unnamed = render_account_created_email(first_name="   ")
+
+        self.assertEqual(rendered.subject, "Ваш аккаунт «Среди своих» создан")
+        self.assertIn("Здравствуйте, Ирина <Иванова>!", rendered.text_body)
+        self.assertIn("Здравствуйте, Ирина &lt;Иванова&gt;!", rendered.html_body)
+        self.assertIn("Здравствуйте! Вы задали пароль", unnamed.text_body)
+        self.assertEqual(
+            rendered.text_body,
+            "Ваш аккаунт «Среди своих» создан\n\n"
+            "Здравствуйте, Ирина <Иванова>! Вы задали пароль и завершили создание аккаунта.\n\n"
+            "Вход по email и паролю\n"
+            "Используйте адрес, на который пришло это письмо, и пароль, который вы только что задали.\n\n"
+            "Регистрации уже в аккаунте\n"
+            "Ваши уже созданные регистрации на мероприятия остаются привязаны к этому аккаунту.\n\n"
+            "Как удалить свои данные\n"
+            "Это можно сделать самостоятельно, без обращения в поддержку.\n"
+            "1. Войдите в аккаунт на странице мероприятия «Среди своих» — кнопка «Войти».\n"
+            "2. Откройте «Управление аккаунтом» и выберите «Удалить аккаунт». В мобильном приложении — в профиле.\n"
+            "3. Подтвердите email кодом из письма.\n"
+            "4. Подтвердите удаление.\n\n"
+            "Что происходит после подтверждения\n"
+            "Доступ к аккаунту прекращается; дальнейшее удаление данных выполняется по установленной процедуре. Если отдельные сведения должны временно сохраняться по закону, это не сохраняет активный аккаунт и возможность входа.\n\n"
+            "Это транзакционное уведомление, а не маркетинговая рассылка.\n\n"
+            "«Среди своих» — автоматическое письмо, отвечать на него не нужно.",
+        )
+        for body in (rendered.text_body, rendered.html_body):
+            block_positions = [
+                body.index("Ваш аккаунт «Среди своих» создан"),
+                body.index("Здравствуйте,"),
+                body.index("Вход по email и паролю"),
+                body.index("Регистрации уже в аккаунте"),
+                body.index("Как удалить свои данные"),
+                body.index("Подтвердите удаление"),
+                body.index("Что происходит после подтверждения"),
+                body.index("Это транзакционное уведомление"),
+                body.index("«Среди своих» — автоматическое письмо"),
+            ]
+            self.assertEqual(block_positions, sorted(block_positions))
+            self.assertNotIn("http://", body)
+            self.assertNotIn("https://", body)
+            self.assertNotIn(handoff_code, body)
+            self.assertNotIn(password, body)
+            self.assertNotRegex(body, r"\b\d{6}\b")
+        self.assertEqual(rendered.html_body.count("<img"), 1)
+        self.assertIn('src="cid:sredi-svoih-logo"', rendered.html_body)
+        self.assertNotIn("{", rendered.html_body)
+        self.assertNotIn("}", rendered.html_body)
+        self.assertIn("max-width:560px", rendered.html_body)
+
+        with patch.object(
+            auth_email_service,
+            "send_email",
+            return_value=EmailSendResult(sent=True, disabled=False),
+        ) as send:
+            result = auth_email_service.send_account_created_email(
+                to_address="account-created@example.invalid",
+                first_name="Ирина",
+                settings=Settings(api_email_enabled=False),
+            )
+        message = send.call_args.args[0]
+        self.assertTrue(result.sent)
+        self.assertEqual(message.html_body, render_account_created_email(first_name="Ирина").html_body)
+        self.assertEqual(len(message.inline_images), 1)
+        self.assertEqual(message.inline_images[0].content_id, "sredi-svoih-logo")
+
+    def test_informational_html_without_sections_is_byte_stable(self) -> None:
+        rendered = render_branded_informational_html(
+            heading="Уведомление",
+            paragraphs=("Первый абзац.", "Второй абзац."),
+            preheader="Первый абзац.",
+        )
+        self.assertEqual(
+            hashlib.sha256(rendered.encode()).hexdigest(),
+            "f0310e1db7cdd7941bc957e46c810a01a0c9127959974ab16c8332ae2ced9bc8",
+        )
+
+    async def test_account_created_delivery_failure_preserves_password_and_redacts_log(self) -> None:
+        email = self._email()
+        user = await self._create_user(email=email, password_hash=None)
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(Profile(user_id=user.id, first_name="Секретное имя"))
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                code, _ = await auth_service.issue_set_password_handoff(session, user=user)
+
+        with (
+            patch.object(
+                auth_service,
+                "send_account_created_email",
+                side_effect=AuthEmailDeliveryError("synthetic"),
+            ),
+            self.assertLogs("app.services.auth", level=logging.WARNING) as captured,
+        ):
+            response = await self._post(
+                "/auth/confirm-set-password",
+                {"code": code, "new_password": "Synthetic-password-2"},
+            )
+        self.assertEqual(response.status_code, 200)
+        async with AsyncSessionLocal() as session:
+            stored = await session.get(AppUser, user.id)
+        self.assertIsNotNone(stored.password_hash)
+        self.assertEqual(stored.claim_state, "claimed")
+        warnings = "\n".join(captured.output)
+        self.assertIn("account_created", warnings)
+        self.assertNotIn(email, warnings)
+        self.assertNotIn("Секретное имя", warnings)
+
+    async def test_account_created_email_is_not_sent_for_other_password_flows(self) -> None:
+        reset_email = self._email()
+        reset_user = await self._create_user(email=reset_email)
+        reset_code = await self._issue_email_code(PasswordResetCode, reset_user)
+        set_password_email = self._email()
+        set_password_user = await self._create_user(
+            email=set_password_email,
+            password_hash=None,
+        )
+        set_password_code = await self._issue_email_code(
+            AuthSetPasswordCode,
+            set_password_user,
+        )
+        with patch.object(auth_service, "send_account_created_email") as sender:
+            reset = await self._post(
+                "/auth/confirm-password-reset",
+                {
+                    "email": reset_email,
+                    "code": reset_code,
+                    "new_password": "Synthetic-password-2",
+                },
+            )
+            emailed = await self._post(
+                "/auth/confirm-set-password",
+                {
+                    "email": set_password_email,
+                    "code": set_password_code,
+                    "new_password": "Synthetic-password-2",
+                },
+            )
+        self.assertEqual(reset.status_code, 200)
+        self.assertEqual(emailed.status_code, 200)
+        sender.assert_not_called()
+
+        async with AsyncSessionLocal() as session:
+            current_user = await session.get(AppUser, reset_user.id)
+            assert current_user is not None
+            with (
+                patch.object(auth_service, "send_account_created_email") as sender,
+                patch.object(
+                    auth_service.authorization_service,
+                    "require_active_admin_membership",
+                    new_callable=AsyncMock,
+                ),
+            ):
+                await auth_service.change_password(
+                    session,
+                    current_user=current_user,
+                    current_password="Synthetic-password-2",
+                    new_password="Synthetic-password-3",
+                )
+        sender.assert_not_called()
+
+    async def test_direct_set_password_handoff_replay_sends_once(self) -> None:
+        user = await self._create_user(email=self._email(), password_hash=None)
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                code, _ = await auth_service.issue_set_password_handoff(session, user=user)
+        with patch.object(auth_service, "send_account_created_email") as sender:
+            first = await self._post(
+                "/auth/confirm-set-password",
+                {"code": code, "new_password": "Synthetic-password-2"},
+            )
+            replay = await self._post(
+                "/auth/confirm-set-password",
+                {"code": code, "new_password": "Synthetic-password-2"},
+            )
+        self.assertEqual(first.status_code, 200)
+        self.assertNotEqual(replay.status_code, 200)
+        self.assertEqual(sender.call_count, 1)
 
     async def test_set_password_revokes_remembered_sessions_and_clears_cookie(self) -> None:
         email = self._email()

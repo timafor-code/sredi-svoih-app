@@ -15,6 +15,11 @@ _AUTOMATIC_EMAIL_FOOTER = (
 )
 
 
+def automatic_email_footer() -> str:
+    """Return the shared footer used by transactional email templates."""
+    return _AUTOMATIC_EMAIL_FOOTER
+
+
 @lru_cache(maxsize=1)
 def load_branded_logo() -> bytes:
     return (Path(__file__).resolve().parent.parent / "assets/email/logo.png").read_bytes()

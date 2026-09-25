@@ -481,6 +481,10 @@ Legal evidence is created only after confirmation with
 credential. `create_account` returns a first-response-only hash-backed handoff
 for the existing `/auth/confirm-set-password`; replay returns
 `request_set_password`, and a user with a password receives `sign_in`.
+After the first successful direct-handoff password creation, the API sends one
+informational account-created email after commit; delivery failure does not
+affect the response. The email has no link; textual deletion instructions use
+the canonical privacy erasure flow.
 Registration-result email runs after commit and its failure cannot undo the
 registration. A newly created confirmed registration is eligible for the
 informational result email; duplicate-free and confirmed-intent replays do not

@@ -12,6 +12,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import get_settings
 from app.core.hashids import hash_ip_optional, hash_user_agent_optional
@@ -59,6 +60,7 @@ from app.services import current_user_profile as current_user_profile_service
 from app.services import web_participant_sessions
 from app.services.auth_email_service import (
     AuthEmailDeliveryError,
+    send_account_created_email,
     send_email_verification_email,
     send_password_reset_email,
     send_set_password_email,
@@ -613,6 +615,20 @@ def _send_set_password_code(to_address: str, code: str) -> None:
         _log_auth_email_delivery_failure(_SET_PASSWORD_PURPOSE)
 
 
+async def _notify_account_created(
+    to_address: str,
+    first_name: str | None,
+) -> None:
+    try:
+        await run_in_threadpool(
+            send_account_created_email,
+            to_address=to_address,
+            first_name=first_name,
+        )
+    except AuthEmailDeliveryError:
+        _log_auth_email_delivery_failure("account_created")
+
+
 def _new_refresh_session(
     user_id: UUID,
     refresh_token: str,
@@ -979,6 +995,16 @@ async def confirm_set_password(
     if user.password_hash is not None:
         raise AuthConflictError("Password is already set")
 
+    account_created_recipient: str | None = None
+    account_created_first_name: str | None = None
+    if email is None:
+        account_created_recipient = user.email
+        profile = await session.scalar(
+            select(Profile).where(Profile.user_id == user.id),
+        )
+        if profile is not None:
+            account_created_first_name = profile.first_name
+
     now = _now()
     user.password_hash = hash_password(new_password)
     user.claim_state = "claimed"
@@ -996,6 +1022,11 @@ async def confirm_set_password(
         now=now,
     )
     await session.commit()
+    if email is None and account_created_recipient is not None:
+        await _notify_account_created(
+            account_created_recipient,
+            account_created_first_name,
+        )
     return _confirm_response()
 
 
