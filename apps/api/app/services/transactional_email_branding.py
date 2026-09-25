@@ -81,28 +81,15 @@ def render_branded_informational_html(
     heading: str,
     paragraphs: tuple[str, ...],
     preheader: str | None = None,
-    sections: tuple[tuple[str, tuple[str, ...]], ...] = (),
 ) -> str:
     """Render the shared, self-contained visual shell for informational emails."""
     escaped_paragraphs = "".join(
         f'<div style="font-family:-apple-system,\'Segoe UI\',Roboto,Arial,sans-serif; font-size:15px; color:#3C3C4A; line-height:1.6; padding-top:12px;">{escape(paragraph)}</div>'
         for paragraph in paragraphs
     )
-    escaped_sections = "".join(
-        "".join(
-            (
-                f'<div style="font-family:-apple-system,\'Segoe UI\',Roboto,Arial,sans-serif; font-size:17px; font-weight:700; color:#0D0D1A; line-height:1.4; padding-top:24px;">{escape(section_heading)}</div>',
-                "".join(
-                    f'<div style="font-family:-apple-system,\'Segoe UI\',Roboto,Arial,sans-serif; font-size:15px; color:#3C3C4A; line-height:1.6; padding-top:12px;">{escape(section_paragraph)}</div>'
-                    for section_paragraph in section_paragraphs
-                ),
-            ),
-        )
-        for section_heading, section_paragraphs in sections
-    )
     return _BRANDED_INFORMATIONAL_HTML.format(
         heading=escape(heading),
-        paragraphs=escaped_paragraphs + escaped_sections,
+        paragraphs=escaped_paragraphs,
         preheader=escape(preheader or ""),
         footer=escape(_AUTOMATIC_EMAIL_FOOTER),
     )

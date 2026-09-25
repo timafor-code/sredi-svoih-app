@@ -442,19 +442,39 @@ class AuthEmailCodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rendered.subject, "Ваш аккаунт «Среди своих» создан")
         self.assertIn("Здравствуйте, Ирина <Иванова>!", rendered.text_body)
         self.assertIn("Здравствуйте, Ирина &lt;Иванова&gt;!", rendered.html_body)
-        self.assertIn("Здравствуйте!", unnamed.text_body)
+        self.assertIn("Здравствуйте! Вы задали пароль", unnamed.text_body)
+        self.assertEqual(
+            rendered.text_body,
+            "Ваш аккаунт «Среди своих» создан\n\n"
+            "Здравствуйте, Ирина <Иванова>! Вы задали пароль и завершили создание аккаунта.\n\n"
+            "Вход по email и паролю\n"
+            "Используйте адрес, на который пришло это письмо, и пароль, который вы только что задали.\n\n"
+            "Регистрации уже в аккаунте\n"
+            "Ваши уже созданные регистрации на мероприятия остаются привязаны к этому аккаунту.\n\n"
+            "Как удалить свои данные\n"
+            "Это можно сделать самостоятельно, без обращения в поддержку.\n"
+            "1. Войдите в аккаунт на странице мероприятия «Среди своих» — кнопка «Войти».\n"
+            "2. Откройте «Управление аккаунтом» и выберите «Удалить аккаунт». В мобильном приложении — в профиле.\n"
+            "3. Подтвердите email кодом из письма.\n"
+            "4. Подтвердите удаление.\n\n"
+            "Что происходит после подтверждения\n"
+            "Доступ к аккаунту прекращается; дальнейшее удаление данных выполняется по установленной процедуре. Если отдельные сведения должны временно сохраняться по закону, это не сохраняет активный аккаунт и возможность входа.\n\n"
+            "Это транзакционное уведомление, а не маркетинговая рассылка.\n\n"
+            "«Среди своих» — автоматическое письмо, отвечать на него не нужно.",
+        )
         for body in (rendered.text_body, rendered.html_body):
-            self.assertIn(
-                "Вы задали пароль и завершили создание аккаунта «Среди своих».",
-                body,
-            )
-            self.assertIn(
-                "Ваши уже созданные регистрации на мероприятия остаются привязаны",
-                body,
-            )
-            self.assertIn("Как удалить свои данные", body)
-            self.assertIn("дальнейшее удаление данных выполняется", body)
-            self.assertIn("Это транзакционное уведомление", body)
+            block_positions = [
+                body.index("Ваш аккаунт «Среди своих» создан"),
+                body.index("Здравствуйте,"),
+                body.index("Вход по email и паролю"),
+                body.index("Регистрации уже в аккаунте"),
+                body.index("Как удалить свои данные"),
+                body.index("Подтвердите удаление"),
+                body.index("Что происходит после подтверждения"),
+                body.index("Это транзакционное уведомление"),
+                body.index("«Среди своих» — автоматическое письмо"),
+            ]
+            self.assertEqual(block_positions, sorted(block_positions))
             self.assertNotIn("http://", body)
             self.assertNotIn("https://", body)
             self.assertNotIn(handoff_code, body)
@@ -462,6 +482,9 @@ class AuthEmailCodeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotRegex(body, r"\b\d{6}\b")
         self.assertEqual(rendered.html_body.count("<img"), 1)
         self.assertIn('src="cid:sredi-svoih-logo"', rendered.html_body)
+        self.assertNotIn("{", rendered.html_body)
+        self.assertNotIn("}", rendered.html_body)
+        self.assertIn("max-width:560px", rendered.html_body)
 
         with patch.object(
             auth_email_service,
@@ -484,15 +507,6 @@ class AuthEmailCodeTests(unittest.IsolatedAsyncioTestCase):
             heading="Уведомление",
             paragraphs=("Первый абзац.", "Второй абзац."),
             preheader="Первый абзац.",
-        )
-        self.assertEqual(
-            rendered,
-            render_branded_informational_html(
-                heading="Уведомление",
-                paragraphs=("Первый абзац.", "Второй абзац."),
-                preheader="Первый абзац.",
-                sections=(),
-            ),
         )
         self.assertEqual(
             hashlib.sha256(rendered.encode()).hexdigest(),
