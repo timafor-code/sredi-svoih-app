@@ -15941,3 +15941,8 @@ a {
   }
   .registration-toast { min-height: 44px; overflow-wrap: anywhere; }
 }
+
+/* The questionnaire modal uses the owner-approved compact circular close control. */
+@media (max-width: 720px) {
+  .questionnaire-summary-modal .questionnaire-summary-modal__close { width: 36px; height: 36px; }
+}
