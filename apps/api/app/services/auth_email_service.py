@@ -5,6 +5,7 @@ from collections.abc import Callable
 from app.core.config import Settings, get_settings
 from app.services.auth_email_templates import (
     RenderedAuthEmail,
+    render_account_created_email,
     render_email_verification_email,
     render_password_reset_email,
     render_set_password_email,
@@ -69,6 +70,21 @@ def send_set_password_email(
         ),
         settings=resolved_settings,
     )
+
+
+def send_account_created_email(
+    *,
+    to_address: str,
+    first_name: str | None,
+    settings: Settings | None = None,
+) -> EmailSendResult:
+    resolved_settings = settings or get_settings()
+    return _send_auth_email(
+        to_address=to_address,
+        render=lambda: render_account_created_email(first_name=first_name),
+        settings=resolved_settings,
+    )
+
 
 def _send_auth_email(
     *,
