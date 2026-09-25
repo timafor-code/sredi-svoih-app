@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatQuestionnaireRetention,
   focusFirstQuestionnaireError,
   questionnaireControlId,
   validateQuestionnaire,
@@ -24,6 +25,45 @@ describe("questionnaire validation", () => {
       { field_id: QUESTION_IDS.multi, value: ["one"] },
       { field_id: QUESTION_IDS.boolean, value: false },
     ]);
+  });
+
+  it("omits optional empty multi-select answers whether untouched or cleared", () => {
+    const optionalMulti = { ...fields[3], required: false };
+
+    expect(validateQuestionnaire([optionalMulti], {}).answers).toEqual([]);
+    expect(validateQuestionnaire([optionalMulti], { [optionalMulti.id]: [] })).toEqual({
+      answers: [],
+      errors: {},
+    });
+  });
+
+  it("keeps required multi-select validation and normalizes duplicate values", () => {
+    const multi = fields[3];
+
+    expect(validateQuestionnaire([multi], { [multi.id]: [] }).errors[multi.id]).toBe(
+      "Ответьте на обязательный вопрос.",
+    );
+    expect(validateQuestionnaire([multi], { [multi.id]: ["one", "one"] }).answers).toEqual([
+      { field_id: multi.id, value: ["one"] },
+    ]);
+  });
+
+  it.each([
+    [365, "1 год"],
+    [730, "2 года"],
+    [1460, "4 года"],
+    [1825, "5 лет"],
+    [1, "1 день"],
+    [2, "2 дня"],
+    [5, "5 дней"],
+    [11, "11 дней"],
+    [7, "7 дней"],
+    [21, "21 день"],
+    [22, "22 дня"],
+    [25, "25 дней"],
+    [366, "366 дней"],
+  ])("formats %s retention days as %s", (days, expected) => {
+    expect(formatQuestionnaireRetention(days)).toBe(expected);
   });
 
   it.each([

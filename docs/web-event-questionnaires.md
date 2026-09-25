@@ -145,7 +145,9 @@ controls.
 The existing public registration form renders all five allowlisted controls
 under `Дополнительные вопросы`: text input, textarea, accessible radio group,
 checkbox group, and explicit `Да`/`Нет` boolean radios. Label, required state,
-purpose, and retention days are visible. Client validation mirrors required,
+purpose, and human-readable retention are visible. Select answers use full
+clickable cards while retaining native radio and checkbox semantics. Optional
+empty multi-select answers are omitted whether untouched or cleared. Client validation mirrors required,
 length, allowlist, selection-count, and explicit-boolean rules for UX, links
 errors accessibly, and focuses the first invalid questionnaire control. The
 backend remains authoritative.

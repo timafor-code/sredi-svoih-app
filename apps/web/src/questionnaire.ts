@@ -11,6 +11,31 @@ export function questionnaireControlId(field: WebQuestionnaireField): string {
   return `questionnaire-${field.id}`;
 }
 
+function russianPlural(value: number, one: string, few: string, many: string): string {
+  const lastTwoDigits = value % 100;
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 14) return many;
+
+  switch (value % 10) {
+    case 1:
+      return one;
+    case 2:
+    case 3:
+    case 4:
+      return few;
+    default:
+      return many;
+  }
+}
+
+export function formatQuestionnaireRetention(days: number): string {
+  if (days > 0 && days % 365 === 0) {
+    const years = days / 365;
+    return `${years} ${russianPlural(years, "год", "года", "лет")}`;
+  }
+
+  return `${days} ${russianPlural(days, "день", "дня", "дней")}`;
+}
+
 function normalizedText(field: WebQuestionnaireField, value: string): string {
   const lineNormalized = field.field_type === "long_text"
     ? value.replace(/\r\n?/g, "\n")
@@ -86,6 +111,7 @@ export function validateQuestionnaire(
         continue;
       }
       const unique = [...new Set(value)];
+      if (!field.required && unique.length === 0) continue;
       const minimum = field.validation.min_selections;
       const maximum = field.validation.max_selections;
       if (field.required && unique.length === 0) {
