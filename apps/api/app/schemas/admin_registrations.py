@@ -1,16 +1,68 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.schemas.registrations import RegisterEventRequest
+from app.schemas.web_registration import (
+    normalize_email,
+    normalize_international_phone,
+    normalize_name,
+)
 
 RegistrationSourceChannel = Literal["mobile", "public_web", "admin"]
 QuestionnaireFieldType = Literal[
     "short_text", "long_text", "single_select", "multi_select", "boolean"
 ]
 QuestionnaireAnswerValue = str | bool | list[str] | None
+
+
+class AdminExistingRegistrationParticipant(BaseModel):
+    mode: Literal["existing"]
+    user_id: UUID
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AdminNewRegistrationParticipant(BaseModel):
+    mode: Literal["new"]
+    full_name: str
+    phone: str
+    email: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_full_name(cls, value: str) -> str:
+        return normalize_name(value)
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str) -> str:
+        return normalize_international_phone(value)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_email(value)
+
+
+AdminRegistrationParticipant = Annotated[
+    AdminExistingRegistrationParticipant | AdminNewRegistrationParticipant,
+    Field(discriminator="mode"),
+]
+
+
+class AdminCreateEventRegistrationRequest(RegisterEventRequest):
+    participant: AdminRegistrationParticipant
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
 
 class AdminRegistrationQuestionnaireAnswerResponse(BaseModel):

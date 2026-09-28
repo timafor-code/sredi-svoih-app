@@ -10,6 +10,7 @@ from app.core.authorization import require_auth
 from app.db.models.core import AppUser
 from app.db.session import get_db_session
 from app.schemas.admin_registrations import (
+    AdminCreateEventRegistrationRequest,
     AdminEventRegistrationResponse,
     AdminQuestionnaireAnswersSummaryResponse,
     AdminRegistrationCapacityAnalyticsResponse,
@@ -54,6 +55,25 @@ async def list_admin_event_registrations(
         offset=offset,
     )
     return ApiResponse[list[AdminEventRegistrationResponse]](data=registrations)
+
+
+@router.post(
+    "/events/{event_id}/registrations",
+    response_model=ApiResponse[AdminEventRegistrationResponse],
+)
+async def create_admin_event_registration(
+    event_id: UUID,
+    payload: AdminCreateEventRegistrationRequest,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ApiResponse[AdminEventRegistrationResponse]:
+    registration = await admin_registrations_service.create_admin_event_registration(
+        session,
+        current_user,
+        event_id,
+        payload,
+    )
+    return ApiResponse[AdminEventRegistrationResponse](data=registration)
 
 
 @router.get(
