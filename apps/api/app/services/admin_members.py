@@ -372,7 +372,7 @@ async def list_admin_members(
     ]
 
 
-async def resolve_scoped_member(
+async def _resolve_scoped_member(
     session: AsyncSession,
     *,
     target_user_id: UUID,
@@ -445,7 +445,7 @@ async def get_admin_member(
 ) -> AdminMemberDetailResponse:
     await _require_admin_community(session, current_user, community_id)
 
-    profile, membership = await resolve_scoped_member(
+    profile, membership = await _resolve_scoped_member(
         session,
         target_user_id=target_user_id,
         community_id=community_id,
@@ -488,7 +488,7 @@ async def list_admin_member_registrations(
     community_id: UUID,
 ) -> list[AdminMemberRegistrationResponse]:
     await _require_admin_community(session, current_user, community_id)
-    await resolve_scoped_member(
+    await _resolve_scoped_member(
         session,
         target_user_id=target_user_id,
         community_id=community_id,
@@ -596,7 +596,7 @@ async def update_admin_member_profile(
         raise _validation_error("At least one profile field is required")
 
     async with _transaction_scope(session):
-        profile, _ = await resolve_scoped_member(
+        profile, _ = await _resolve_scoped_member(
             session,
             target_user_id=target_user_id,
             community_id=payload.community_id,
@@ -658,7 +658,7 @@ async def update_admin_member_membership(
     await _require_admin_community(session, current_user, payload.community_id)
 
     async with _transaction_scope(session):
-        _, membership = await resolve_scoped_member(
+        _, membership = await _resolve_scoped_member(
             session,
             target_user_id=target_user_id,
             community_id=payload.community_id,
@@ -836,7 +836,7 @@ async def start_admin_member_deletion(
         if target_user is None or target_user.erased_at is not None:
             raise _not_found()
 
-        _, target_membership = await resolve_scoped_member(
+        _, target_membership = await _resolve_scoped_member(
             session,
             target_user_id=target_user_id,
             community_id=payload.community_id,
