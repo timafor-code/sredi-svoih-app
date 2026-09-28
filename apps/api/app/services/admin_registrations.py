@@ -43,6 +43,7 @@ from app.schemas.admin_registrations import (
     AdminRegistrationCapacityOptionStatResponse,
     AdminRegistrationCapacityStatusCountsResponse,
     AdminRegistrationCapacityTotalsResponse,
+    AdminRegistrationParticipantPickerResponse,
     AdminRegistrationSelectedOptionResponse,
     AdminRegistrationQuestionnaireAnswerResponse,
     AdminRegistrationQuestionnaireOptionResponse,
@@ -567,13 +568,12 @@ def _is_available_participant(user: AppUser) -> bool:
     )
 
 
-async def _resolve_registration_participant(
-    session: AsyncSession,
+def _participant_community_evidence_clause(
     *,
-    target_user_id: UUID,
+    target_user_id,
     community_id: UUID,
-) -> AppUser:
-    """Resolve a participant with explicit evidence for this event community."""
+):
+    """Require membership or registration history in the selected community."""
     has_community_membership = (
         select(CommunityMembership.id)
         .where(
@@ -591,11 +591,24 @@ async def _resolve_registration_participant(
         )
         .exists()
     )
+    return or_(has_community_membership, has_community_registration)
+
+
+async def _resolve_registration_participant(
+    session: AsyncSession,
+    *,
+    target_user_id: UUID,
+    community_id: UUID,
+) -> AppUser:
+    """Resolve a participant with explicit evidence for this event community."""
     target_user = await session.scalar(
         select(AppUser)
         .where(
             AppUser.id == target_user_id,
-            or_(has_community_membership, has_community_registration),
+            _participant_community_evidence_clause(
+                target_user_id=target_user_id,
+                community_id=community_id,
+            ),
         )
         .with_for_update(),
     )
@@ -607,6 +620,59 @@ async def _resolve_registration_participant(
             "Participant identity is unavailable",
         )
     return target_user
+
+
+async def search_admin_registration_participants(
+    session: AsyncSession,
+    current_user: AppUser,
+    event_id: UUID,
+    *,
+    search: str | None,
+    limit: int,
+) -> list[AdminRegistrationParticipantPickerResponse]:
+    """Search only participants with evidence in the selected event community."""
+    event = await session.scalar(select(Event).where(Event.id == event_id))
+    if event is None:
+        raise _not_found("Event not found")
+    await authorization_service.require_admin(session, current_user.id, event.community_id)
+
+    normalized_search = _first_text(search)
+    if normalized_search is None:
+        return []
+
+    escaped_search = normalized_search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    search_pattern = f"%{escaped_search}%"
+    display_name = func.coalesce(Profile.display_name, Profile.full_name, "")
+    rows = await session.execute(
+        select(AppUser.id, display_name, AppUser.phone, AppUser.email)
+        .outerjoin(Profile, Profile.user_id == AppUser.id)
+        .where(
+            AppUser.status == ACTIVE_STATUS,
+            AppUser.deletion_requested_at.is_(None),
+            AppUser.erased_at.is_(None),
+            _participant_community_evidence_clause(
+                target_user_id=AppUser.id,
+                community_id=event.community_id,
+            ),
+            or_(
+                Profile.display_name.ilike(search_pattern, escape="\\"),
+                Profile.full_name.ilike(search_pattern, escape="\\"),
+                AppUser.phone.ilike(search_pattern, escape="\\"),
+                AppUser.email.ilike(search_pattern, escape="\\"),
+            ),
+        )
+        .order_by(func.lower(display_name), AppUser.id)
+        .limit(limit),
+    )
+    return [
+        AdminRegistrationParticipantPickerResponse(
+            id=user_id,
+            display_name=name or "Участник",
+            phone=phone,
+            email=email,
+        )
+        for user_id, name, phone, email in rows
+    ]
 
 
 async def _resolve_new_participant_identity(

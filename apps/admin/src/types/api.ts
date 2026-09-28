@@ -379,6 +379,13 @@ export type AdminApiEventRegistrationResponse = {
   updated_at: string;
 };
 
+export type AdminApiRegistrationParticipantPickerResponse = {
+  id: string;
+  display_name: string;
+  phone: string | null;
+  email: string | null;
+};
+
 export type AdminApiRegistrationCapacityStatusCountsResponse = {
   confirmed: number;
   pending: number;

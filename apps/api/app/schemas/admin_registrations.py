@@ -65,6 +65,15 @@ class AdminCreateEventRegistrationRequest(RegisterEventRequest):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
 
+class AdminRegistrationParticipantPickerResponse(BaseModel):
+    """Minimal identity projection for the event-scoped Admin picker."""
+
+    id: UUID
+    display_name: str
+    phone: str | None
+    email: str | None
+
+
 class AdminRegistrationQuestionnaireAnswerResponse(BaseModel):
     field_id: UUID
     field_key: str

@@ -204,6 +204,29 @@ export type ListEventRegistrationsParams = {
   offset?: number | null;
 };
 
+export type AdminRegistrationParticipant = {
+  id: string;
+  displayName: string;
+  phone: string | null;
+  email: string | null;
+};
+
+export type AdminRegistrationOptionSelectionInput = {
+  optionId: string;
+  quantity: number;
+};
+
+export type CreateAdminEventRegistrationRequest = {
+  participant:
+    | { mode: "existing"; userId: string }
+    | { mode: "new"; fullName: string; phone: string; email: string | null };
+  occurrenceId: string | null;
+  optionSelections: AdminRegistrationOptionSelectionInput[];
+  seatsCount: number;
+  guestNames: string[];
+  comment: string | null;
+};
+
 export type QuestionnaireAnswersSummaryParams = Pick<
   ListEventRegistrationsParams,
   "eventId" | "occurrenceId" | "capacityUnitId" | "status" | "sourceChannel"

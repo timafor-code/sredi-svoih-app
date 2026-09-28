@@ -13,6 +13,7 @@ from app.schemas.admin_registrations import (
     AdminCreateEventRegistrationRequest,
     AdminEventRegistrationResponse,
     AdminQuestionnaireAnswersSummaryResponse,
+    AdminRegistrationParticipantPickerResponse,
     AdminRegistrationCapacityAnalyticsResponse,
     RegistrationSourceChannel,
 )
@@ -74,6 +75,27 @@ async def create_admin_event_registration(
         payload,
     )
     return ApiResponse[AdminEventRegistrationResponse](data=registration)
+
+
+@router.get(
+    "/events/{event_id}/registration-participants",
+    response_model=ApiResponse[list[AdminRegistrationParticipantPickerResponse]],
+)
+async def search_admin_registration_participants(
+    event_id: UUID,
+    session: DbSession,
+    current_user: CurrentUser,
+    search: Annotated[str | None, Query(max_length=200)] = None,
+    limit: Annotated[int, Query(ge=1, le=20)] = 20,
+) -> ApiResponse[list[AdminRegistrationParticipantPickerResponse]]:
+    participants = await admin_registrations_service.search_admin_registration_participants(
+        session,
+        current_user,
+        event_id,
+        search=search,
+        limit=limit,
+    )
+    return ApiResponse[list[AdminRegistrationParticipantPickerResponse]](data=participants)
 
 
 @router.get(
