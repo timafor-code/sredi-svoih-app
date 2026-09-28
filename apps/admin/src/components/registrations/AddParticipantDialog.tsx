@@ -24,9 +24,10 @@ type AddParticipantDialogProps = {
   occurrenceId: string | null;
   occurrenceLabel: string | null;
   occurrenceRequired: boolean;
-  registrationMode: string;
   onClose: () => void;
-  onSuccess: () => Promise<void> | void;
+  onRefresh: () => Promise<void>;
+  onRefreshFailure: () => void;
+  onSuccess: () => void;
 };
 
 const INITIAL_SEATS_COUNT = 1;
@@ -65,6 +66,8 @@ export function mapAddParticipantError(error: unknown): string {
       return "Этот участник сейчас недоступен для регистрации.";
     case "capacity_unavailable":
       return "Недостаточно свободных мест для выбранных вариантов. Измените выбор и попробуйте снова.";
+    case "already_registered":
+      return "У участника уже есть активная регистрация на эту дату с другими параметрами участия. Проверьте существующую регистрацию перед повторной записью.";
     case "forbidden":
     case "not_found":
       return "У вас нет доступа к этому событию или участнику.";
@@ -74,6 +77,35 @@ export function mapAddParticipantError(error: unknown): string {
       return error.status >= 500 || error.status === 0
         ? "Сервис временно недоступен. Попробуйте ещё раз."
         : "Не удалось сохранить регистрацию. Проверьте введённые данные.";
+  }
+}
+
+export function resolveRegistrationSeats(
+  options: readonly ParticipationOption[],
+  optionSelections: OptionSelections,
+  manualSeatsCount: number,
+): { seatsCount: number; optionSeatsCount: number; usesOptionSeats: boolean } {
+  const optionSeatsCount = options.reduce((total, option) => {
+    const quantity = optionSelections[option.id];
+    return total + (quantity && !option.isDonation && option.countsTowardCapacity
+      ? quantity
+      : 0);
+  }, 0);
+  return {
+    seatsCount: optionSeatsCount > 0 ? optionSeatsCount : manualSeatsCount,
+    optionSeatsCount,
+    usesOptionSeats: optionSeatsCount > 0,
+  };
+}
+
+export async function refreshAfterRegistrationSaved(
+  refresh: () => Promise<void>,
+  onRefreshFailure: () => void,
+): Promise<void> {
+  try {
+    await refresh();
+  } catch {
+    onRefreshFailure();
   }
 }
 
@@ -129,8 +161,9 @@ export function AddParticipantDialog({
   occurrenceId,
   occurrenceLabel,
   occurrenceRequired,
-  registrationMode,
   onClose,
+  onRefresh,
+  onRefreshFailure,
   onSuccess,
 }: AddParticipantDialogProps) {
   const [mode, setMode] = useState<ParticipantMode>("existing");
@@ -214,13 +247,12 @@ export function AddParticipantDialog({
     () => [...options].sort((left, right) => left.sortOrder - right.sortOrder),
     [options],
   );
-  const usesCalculatedSeats = registrationMode === "internal_paid" && activeOptions.length > 0;
-  const calculatedSeats = activeOptions.reduce((total, option) => {
-    const quantity = optionSelections[option.id];
-    return total + (quantity && !option.isDonation && option.countsTowardCapacity ? quantity : 0);
-  }, 0);
   const parsedSeatsCount = Number(seatsCount);
-  const resolvedSeatsCount = usesCalculatedSeats ? calculatedSeats : parsedSeatsCount;
+  const resolvedSeats = resolveRegistrationSeats(
+    activeOptions,
+    optionSelections,
+    parsedSeatsCount,
+  );
 
   const switchMode = (nextMode: ParticipantMode) => {
     if (submitting || nextMode === mode) return;
@@ -270,10 +302,8 @@ export function AddParticipantDialog({
       setSubmitError("Сначала выберите дату события на странице регистраций.");
       return;
     }
-    if (!Number.isInteger(resolvedSeatsCount) || resolvedSeatsCount < 1 || resolvedSeatsCount > 1000) {
-      setSubmitError(usesCalculatedSeats
-        ? "Выбранные варианты должны занимать хотя бы одно место."
-        : "Количество мест должно быть целым числом от 1 до 1000.");
+    if (!Number.isInteger(resolvedSeats.seatsCount) || resolvedSeats.seatsCount < 1 || resolvedSeats.seatsCount > 1000) {
+      setSubmitError("Количество мест должно быть целым числом от 1 до 1000.");
       return;
     }
     const request = buildAdminRegistrationRequest({
@@ -285,7 +315,7 @@ export function AddParticipantDialog({
       optionSelections,
       participant: selectedParticipant,
       phone,
-      seatsCount: resolvedSeatsCount,
+      seatsCount: resolvedSeats.seatsCount,
     });
     if (!request) {
       setSubmitError(mode === "existing"
@@ -298,8 +328,6 @@ export function AddParticipantDialog({
     setSubmitError(null);
     try {
       await createAdminEventRegistration(eventId, request);
-      await onSuccess();
-      onClose();
     } catch (error) {
       const nextError = mapAddParticipantError(error);
       setSubmitError(nextError);
@@ -313,9 +341,13 @@ export function AddParticipantDialog({
         setSelectedParticipant(null);
         setSearch(email.trim());
       }
-    } finally {
       setSubmitting(false);
+      return;
     }
+    setSubmitting(false);
+    onClose();
+    onSuccess();
+    void refreshAfterRegistrationSaved(onRefresh, onRefreshFailure);
   };
 
   if (typeof document === "undefined") return null;
@@ -384,7 +416,7 @@ export function AddParticipantDialog({
             </div>
           </section>
 
-          {usesCalculatedSeats ? <p className="add-participant-state">Мест по выбранным вариантам: {calculatedSeats}</p> : <label className="add-participant-field add-participant-field--compact"><span>Количество мест</span><input disabled={submitting} inputMode="numeric" max={1000} min={1} onChange={(event) => setSeatsCount(event.target.value)} step={1} type="number" value={seatsCount} /></label>}
+          {resolvedSeats.usesOptionSeats ? <p className="add-participant-state">Мест по выбранным вариантам: {resolvedSeats.optionSeatsCount}</p> : <label className="add-participant-field add-participant-field--compact"><span>Количество мест</span><input disabled={submitting} inputMode="numeric" max={1000} min={1} onChange={(event) => setSeatsCount(event.target.value)} step={1} type="number" value={seatsCount} /></label>}
           <label className="add-participant-field"><span>Комментарий <em>необязательно</em></span><textarea disabled={submitting} onChange={(event) => setComment(event.target.value)} rows={3} value={comment} /></label>
           {submitError ? <p className="form-error" role="alert">{submitError}</p> : null}
           <footer className="add-participant-dialog__actions"><Button disabled={submitting} onClick={requestClose} variant="ghost">Отмена</Button><Button disabled={submitting || optionsLoading || Boolean(optionsError)} type="submit" variant="primary">{submitting ? "Сохраняем…" : "Зарегистрировать"}</Button></footer>

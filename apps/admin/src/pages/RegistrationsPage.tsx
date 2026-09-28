@@ -676,10 +676,13 @@ export function RegistrationsPage() {
     loadRegistrations,
   ]);
 
-  const handleAddParticipantSuccess = useCallback(async () => {
-    await refreshAfterAction();
+  const handleAddParticipantSuccess = useCallback(() => {
     pushToast("success", "Регистрация участника сохранена.");
-  }, [pushToast, refreshAfterAction]);
+  }, [pushToast]);
+
+  const handleAddParticipantRefreshFailure = useCallback(() => {
+    pushToast("error", "Регистрация сохранена, но список не удалось обновить. Обновите данные.");
+  }, [pushToast]);
 
   const runRegistrationAction = useCallback(
     async (registration: AdminEventRegistrationRow, action: RegistrationAction) => {
@@ -919,7 +922,10 @@ export function RegistrationsPage() {
                   <p>{formatDateTime(selectedEvent.startsAt)}</p>
                 </div>
                 <RegistrationMainActions
-                  canAddParticipant={isAdmin}
+                  canAddParticipant={isAdmin && (
+                    selectedEvent.registrationMode === "internal_free" ||
+                    selectedEvent.registrationMode === "internal_paid"
+                  )}
                   eventsLoading={eventsLoading}
                   onAddParticipant={() => setAddParticipantOpen(true)}
                   onRefresh={refreshAll}
@@ -1176,8 +1182,9 @@ export function RegistrationsPage() {
             : null}
           occurrenceRequired={eventHasOccurrences}
           onClose={() => setAddParticipantOpen(false)}
+          onRefresh={refreshAfterAction}
+          onRefreshFailure={handleAddParticipantRefreshFailure}
           onSuccess={handleAddParticipantSuccess}
-          registrationMode={selectedEvent.registrationMode}
         />
       ) : null}
 
