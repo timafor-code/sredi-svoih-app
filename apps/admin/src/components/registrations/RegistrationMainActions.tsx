@@ -1,4 +1,24 @@
 import { Button } from "../ui/Button";
+import type { AdminMembership } from "../../types/auth";
+
+type AddParticipantEvent = {
+  communityId: string;
+  registrationMode: string;
+};
+
+export function canAddParticipantForEvent(
+  event: AddParticipantEvent,
+  memberships: readonly AdminMembership[],
+): boolean {
+  const supportsAdminRegistration =
+    event.registrationMode === "internal_free" ||
+    event.registrationMode === "internal_paid";
+  return supportsAdminRegistration && memberships.some((membership) => (
+    membership.community_id === event.communityId &&
+    membership.status === "active" &&
+    membership.role === "admin"
+  ));
+}
 
 type RegistrationMainActionsProps = {
   canAddParticipant: boolean;

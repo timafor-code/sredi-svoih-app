@@ -94,14 +94,19 @@ function toAdminMembership(
   };
 }
 
-function chooseActiveMembership(
+function normalizeAdminMemberships(
   memberships: AdminApiMembershipSummary[],
   userId: string,
-): AdminMembership | null {
-  const activeMemberships = memberships
+): AdminMembership[] {
+  return memberships
     .map((membership) => toAdminMembership(membership, userId))
-    .filter((membership): membership is AdminMembership => membership !== null)
-    .filter((membership) => membership.status === "active");
+    .filter((membership): membership is AdminMembership => membership !== null);
+}
+
+function chooseActiveMembership(
+  memberships: readonly AdminMembership[],
+): AdminMembership | null {
+  const activeMemberships = memberships.filter((membership) => membership.status === "active");
 
   return (
     activeMemberships.find((membership) => (
@@ -252,7 +257,11 @@ export async function getCurrentAdminContext(): Promise<AdminAuthContext> {
     return emptyAdminContext();
   }
 
-  const membership = chooseActiveMembership(currentUser.memberships, currentUser.user.id);
+  const memberships = normalizeAdminMemberships(
+    currentUser.memberships,
+    currentUser.user.id,
+  );
+  const membership = chooseActiveMembership(memberships);
   const role = membership?.role ?? null;
   const isAdmin = role === "admin";
   const isEventManager = role === "event_manager";
@@ -261,6 +270,7 @@ export async function getCurrentAdminContext(): Promise<AdminAuthContext> {
     isAuthenticated: true,
     session: { user: { id: currentUser.user.id, email: currentUser.user.email } },
     profile: toAdminProfile(currentUser.profile, currentUser.user),
+    memberships,
     membership,
     role,
     isAdmin,
@@ -274,6 +284,7 @@ function emptyAdminContext(): AdminAuthContext {
     isAuthenticated: false,
     session: null,
     profile: null,
+    memberships: [],
     membership: null,
     role: null,
     isAdmin: false,

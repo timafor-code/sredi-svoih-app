@@ -13,7 +13,10 @@ import { GlassCard } from "../components/ui/GlassCard";
 import { RegistrationCapacityBucketsOverview } from "../components/registrations/RegistrationCapacityBucketsOverview";
 import { RegistrationDetailPanel } from "../components/registrations/RegistrationDetailPanel";
 import { RegistrationEventsPanel } from "../components/registrations/RegistrationEventsPanel";
-import { RegistrationMainActions } from "../components/registrations/RegistrationMainActions";
+import {
+  canAddParticipantForEvent,
+  RegistrationMainActions,
+} from "../components/registrations/RegistrationMainActions";
 import { AddParticipantDialog } from "../components/registrations/AddParticipantDialog";
 import {
   buildQuestionnaireModalViewModel,
@@ -144,7 +147,7 @@ const API_REGISTRATION_ACTIONS: RegistrationAction[] = [
 ];
 
 export function RegistrationsPage() {
-  const { isAdmin } = useAdminAuth();
+  const { isAdmin, memberships } = useAdminAuth();
   const [events, setEvents] = useState<AdminRegistrationEventSummary[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
@@ -922,10 +925,7 @@ export function RegistrationsPage() {
                   <p>{formatDateTime(selectedEvent.startsAt)}</p>
                 </div>
                 <RegistrationMainActions
-                  canAddParticipant={isAdmin && (
-                    selectedEvent.registrationMode === "internal_free" ||
-                    selectedEvent.registrationMode === "internal_paid"
-                  )}
+                  canAddParticipant={canAddParticipantForEvent(selectedEvent, memberships)}
                   eventsLoading={eventsLoading}
                   onAddParticipant={() => setAddParticipantOpen(true)}
                   onRefresh={refreshAll}

@@ -368,6 +368,7 @@ export async function listRegistrationEvents(): Promise<AdminRegistrationEventSu
 
       return {
         eventId: requiredString(event.id, ""),
+        communityId: requiredString(event.community_id, ""),
         title: requiredString(event.title, "Untitled event"),
         startsAt: nullableString(event.starts_at),
         eventKind: requiredString(event.event_kind, "single"),

@@ -58,6 +58,7 @@ export type AdminRegistrationEventSummaryRpcRow = {
 
 export type AdminRegistrationEventSummary = {
   eventId: string;
+  communityId: string;
   title: string;
   startsAt: string | null;
   eventKind: AdminEventKind | string;

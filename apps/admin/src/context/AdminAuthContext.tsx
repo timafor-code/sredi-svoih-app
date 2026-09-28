@@ -24,6 +24,7 @@ type AdminAuthState = {
   configMissing: boolean;
   session: AdminAuthSession | null;
   profile: AdminProfile | null;
+  memberships: AdminMembership[];
   membership: AdminMembership | null;
   role: AdminRole | null;
   isAuthenticated: boolean;
@@ -49,6 +50,7 @@ const initialAuthState: AdminAuthDataState = {
   configMissing: !isAdminAuthConfigured(),
   session: null,
   profile: null,
+  memberships: [],
   membership: null,
   role: null,
   isAuthenticated: false,
@@ -110,6 +112,7 @@ export function AdminAuthProvider({ children }: AdminAuthProviderProps) {
         configMissing: false,
         session: context.session,
         profile: context.profile,
+        memberships: context.memberships,
         membership: context.membership,
         role: context.role,
         isAuthenticated: context.isAuthenticated,
