@@ -33,6 +33,34 @@ are documented in `docs/admin-seating.md`.
 
 ## Architecture
 
+### Admin registration write contract
+
+`POST /admin/events/{event_id}/registrations` is an Admin-only backend write
+contract. It requires an authenticated active `admin` membership for the
+event's community; event managers and other roles cannot create registrations
+through this route. The request has exactly two participant modes:
+
+- `existing`, which targets a canonical user already visible through the
+  event community through a membership or registration history for that
+  community;
+- `new`, which creates one canonical active participant from a normalized full
+  name, international phone, and optional email.
+
+The backend converts the registration fields to the canonical registration
+request and uses the same writer as other registration channels. It assigns
+`source_channel="admin"` itself and persists the authenticated Admin's user id
+as `event_registrations.created_by_admin_user_id` only when that call creates a
+new registration. Historical registrations remain nullable, and an existing
+registration returned by duplicate handling keeps its original source and
+provenance.
+
+New Admin-created participants are canonical `app_users` with
+`account_origin="admin"` and `claim_state="unclaimed"`, plus a minimal
+profile. They receive no password, invitation, verification timestamp, or
+implicit community membership. The contract rejects existing or ambiguous
+phone/email identities instead of merging them. Public Web identity completion
+for phone-only Admin-created participants is not part of this behavior yet.
+
 - `RegistrationsPage.tsx` owns selected event/occurrence state, data loading,
   search/source filters, pagination, toasts, status actions, Excel export, and
   seating modal state. It renders the web-registration operations panel only

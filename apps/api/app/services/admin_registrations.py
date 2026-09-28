@@ -10,10 +10,12 @@ from uuid import UUID
 
 from fastapi import HTTPException, status as http_status
 from sqlalchemy import Text, cast, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.core import (
     AppUser,
+    CommunityMembership,
     Event,
     EventCapacityUnit,
     EventOccurrence,
@@ -27,7 +29,10 @@ from app.db.models.core import (
     Profile,
 )
 from app.schemas.admin_registrations import (
+    AdminCreateEventRegistrationRequest,
     AdminEventRegistrationResponse,
+    AdminExistingRegistrationParticipant,
+    AdminNewRegistrationParticipant,
     AdminQuestionnaireAnswerSummaryFieldResponse,
     AdminQuestionnaireAnswersSummaryResponse,
     AdminQuestionnaireSummaryOptionResponse,
@@ -42,7 +47,11 @@ from app.schemas.admin_registrations import (
     AdminRegistrationQuestionnaireAnswerResponse,
     AdminRegistrationQuestionnaireOptionResponse,
 )
+from app.schemas.registrations import RegisterEventRequest
+from app.services import authorization as authorization_service
+from app.services import registrations as registrations_service
 from app.services.admin_events import resolve_manageable_community_ids
+from app.services.authorization import ACTIVE_STATUS
 
 DEFAULT_PAGE_LIMIT = 50
 MAX_PAGE_LIMIT = 200
@@ -133,6 +142,10 @@ def _not_found(message: str = "Registration not found") -> HTTPException:
 
 def _validation_error(message: str) -> HTTPException:
     return _error(http_status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", message)
+
+
+def _identity_conflict(code: str, message: str) -> HTTPException:
+    return _error(http_status.HTTP_409_CONFLICT, code, message)
 
 
 def _require_manageable_communities(community_ids: Sequence[UUID]) -> None:
@@ -544,6 +557,196 @@ async def _fetch_admin_registration_response(
             [(row[0], row[1], row[2], row[3])],
         )
     )[0]
+
+
+def _is_available_participant(user: AppUser) -> bool:
+    return (
+        user.status == ACTIVE_STATUS
+        and user.deletion_requested_at is None
+        and user.erased_at is None
+    )
+
+
+async def _resolve_registration_participant(
+    session: AsyncSession,
+    *,
+    target_user_id: UUID,
+    community_id: UUID,
+) -> AppUser:
+    """Resolve a participant with explicit evidence for this event community."""
+    has_community_membership = (
+        select(CommunityMembership.id)
+        .where(
+            CommunityMembership.user_id == target_user_id,
+            CommunityMembership.community_id == community_id,
+        )
+        .exists()
+    )
+    has_community_registration = (
+        select(EventRegistration.id)
+        .join(Event, Event.id == EventRegistration.event_id)
+        .where(
+            EventRegistration.user_id == target_user_id,
+            Event.community_id == community_id,
+        )
+        .exists()
+    )
+    target_user = await session.scalar(
+        select(AppUser)
+        .where(
+            AppUser.id == target_user_id,
+            or_(has_community_membership, has_community_registration),
+        )
+        .with_for_update(),
+    )
+    if target_user is None:
+        raise _not_found("Participant not found")
+    if not _is_available_participant(target_user):
+        raise _identity_conflict(
+            "admin_participant_unavailable",
+            "Participant identity is unavailable",
+        )
+    return target_user
+
+
+async def _resolve_new_participant_identity(
+    session: AsyncSession,
+    participant: AdminNewRegistrationParticipant,
+) -> None:
+    phone_user = await session.scalar(
+        select(AppUser)
+        .where(AppUser.phone == participant.phone)
+        .with_for_update(),
+    )
+    email_user = None
+    if participant.email is not None:
+        email_user = await session.scalar(
+            select(AppUser)
+            .where(func.lower(AppUser.email) == participant.email)
+            .with_for_update(),
+        )
+
+    if (
+        phone_user is not None
+        and email_user is not None
+        and phone_user.id != email_user.id
+    ):
+        raise _identity_conflict(
+            "admin_participant_identity_conflict",
+            "Participant identity cannot be resolved safely",
+        )
+
+    matched_user = phone_user or email_user
+    if matched_user is not None and not _is_available_participant(matched_user):
+        raise _identity_conflict(
+            "admin_participant_unavailable",
+            "Participant identity is unavailable",
+        )
+    if phone_user is not None:
+        raise _identity_conflict(
+            "admin_participant_phone_exists",
+            "A participant with this phone already exists; use existing participant mode",
+        )
+    if email_user is not None:
+        raise _identity_conflict(
+            "admin_participant_email_exists",
+            "A participant with this email already exists; use existing participant mode",
+        )
+
+
+def _identity_race_error(exc: IntegrityError) -> HTTPException | None:
+    constraint_name = getattr(getattr(exc.orig, "diag", None), "constraint_name", "")
+    if constraint_name == "app_users_phone_key":
+        return _identity_conflict(
+            "admin_participant_phone_exists",
+            "A participant with this phone already exists; use existing participant mode",
+        )
+    if constraint_name == "app_users_email_lower_key":
+        return _identity_conflict(
+            "admin_participant_email_exists",
+            "A participant with this email already exists; use existing participant mode",
+        )
+    return None
+
+
+async def create_admin_event_registration(
+    session: AsyncSession,
+    current_user: AppUser,
+    event_id: UUID,
+    payload: AdminCreateEventRegistrationRequest,
+) -> AdminEventRegistrationResponse:
+    """Create an Admin-attributed registration through the canonical writer."""
+    registration_payload = RegisterEventRequest.model_validate(
+        payload.model_dump(exclude={"participant"}),
+    )
+
+    try:
+        async with _transaction_scope(session):
+            event = await session.scalar(
+                select(Event).where(Event.id == event_id).with_for_update(),
+            )
+            if event is None:
+                raise _not_found("Event not found")
+            await authorization_service.require_admin(
+                session,
+                current_user.id,
+                event.community_id,
+            )
+
+            participant = payload.participant
+            if isinstance(participant, AdminExistingRegistrationParticipant):
+                target_user = await _resolve_registration_participant(
+                    session,
+                    target_user_id=participant.user_id,
+                    community_id=event.community_id,
+                )
+            else:
+                await _resolve_new_participant_identity(session, participant)
+                target_user = AppUser(
+                    email=participant.email,
+                    phone=participant.phone,
+                    password_hash=None,
+                    account_origin="admin",
+                    claim_state="unclaimed",
+                    claimed_at=None,
+                    status=ACTIVE_STATUS,
+                    email_verified_at=None,
+                    phone_verified_at=None,
+                )
+                session.add(target_user)
+                await session.flush()
+                session.add(
+                    Profile(
+                        user_id=target_user.id,
+                        full_name=participant.full_name,
+                        display_name=participant.full_name,
+                        phone=participant.phone,
+                        email=participant.email,
+                    ),
+                )
+                await session.flush()
+
+            write_result = await registrations_service.register_user_for_event(
+                session,
+                user=target_user,
+                event_id=event.id,
+                payload=registration_payload,
+                source_channel="admin",
+                member_community_ids=(event.community_id,),
+            )
+            if write_result.created:
+                write_result.registration.created_by_admin_user_id = current_user.id
+                await session.flush()
+
+            return await _fetch_admin_registration_response(
+                session,
+                write_result.registration.id,
+            )
+    except IntegrityError as exc:
+        identity_error = _identity_race_error(exc)
+        if identity_error is not None:
+            raise identity_error from exc
+        raise
 
 
 async def list_admin_event_registrations(

@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import httpx
-from sqlalchemy import delete
+from sqlalchemy import delete, func, select
 
 from app.core.tokens import create_access_token
 from app.db.models.core import (
@@ -24,6 +24,7 @@ from app.db.models.core import (
     EventRegistrationFormField,
     EventRegistrationCapacityReservation,
     EventRegistrationOptionSelection,
+    Profile,
 )
 from app.db.session import AsyncSessionLocal, engine
 from app.main import app
@@ -842,6 +843,351 @@ class AdminRegistrationCapacityUnitFilterTests(unittest.IsolatedAsyncioTestCase)
         self.assertEqual(foreign_unit.json()["error"]["code"], "not_found")
         self.assertEqual(foreign_event.status_code, 404)
         self.assertEqual(foreign_event.json()["error"]["code"], "not_found")
+
+class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.community_id = uuid4()
+        self.foreign_community_id = uuid4()
+        self.event_id = uuid4()
+        self.foreign_event_id = uuid4()
+        self.admin_id = uuid4()
+        self.event_manager_id = uuid4()
+        self.rabbi_id = uuid4()
+        self.member_id = uuid4()
+        self.inactive_admin_id = uuid4()
+        self.foreign_admin_id = uuid4()
+        self.existing_id = uuid4()
+        self.duplicate_id = uuid4()
+        self.out_of_scope_id = uuid4()
+        self.unavailable_ids = [uuid4() for _ in range(3)]
+        self.option_ids = [uuid4(), uuid4()]
+        self.created_user_ids: list[UUID] = []
+        self.marker = uuid4().int % 10_000_000
+        now = datetime.now(UTC).replace(microsecond=0)
+
+        users = [
+            AppUser(id=self.admin_id, account_origin="admin", claim_state="claimed", status="active"),
+            AppUser(id=self.event_manager_id, account_origin="admin", claim_state="claimed", status="active"),
+            AppUser(id=self.rabbi_id, account_origin="admin", claim_state="claimed", status="active"),
+            AppUser(id=self.member_id, account_origin="admin", claim_state="claimed", status="active"),
+            AppUser(id=self.inactive_admin_id, account_origin="admin", claim_state="claimed", status="active"),
+            AppUser(id=self.foreign_admin_id, account_origin="admin", claim_state="claimed", status="active"),
+            AppUser(id=self.existing_id, email=f"existing-{self.event_id.hex[:12]}@example.invalid", account_origin="migration", claim_state="legacy_external", status="active"),
+            AppUser(id=self.duplicate_id, email=f"duplicate-{self.event_id.hex[:12]}@example.invalid", account_origin="migration", claim_state="legacy_external", status="active"),
+            AppUser(id=self.out_of_scope_id, email=f"outside-{self.event_id.hex[:12]}@example.invalid", account_origin="migration", claim_state="legacy_external", status="active"),
+            AppUser(id=self.unavailable_ids[0], email=f"inactive-{self.event_id.hex[:12]}@example.invalid", account_origin="migration", claim_state="legacy_external", status="inactive"),
+            AppUser(id=self.unavailable_ids[1], email=f"deleting-{self.event_id.hex[:12]}@example.invalid", account_origin="migration", claim_state="legacy_external", status="active", deletion_requested_at=now),
+            AppUser(id=self.unavailable_ids[2], email=f"erased-{self.event_id.hex[:12]}@example.invalid", account_origin="migration", claim_state="legacy_external", status="active", erased_at=now),
+        ]
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add_all([
+                    Community(id=self.community_id, name="Admin write community", city="Moscow", slug=f"admin-write-{self.community_id.hex[:12]}"),
+                    Community(id=self.foreign_community_id, name="Foreign admin write community", city="Moscow", slug=f"admin-write-foreign-{self.community_id.hex[:12]}"),
+                    *users,
+                ])
+                await session.flush()
+                session.add_all([
+                    CommunityMembership(community_id=self.community_id, user_id=self.admin_id, role="admin", status="active"),
+                    CommunityMembership(community_id=self.community_id, user_id=self.event_manager_id, role="event_manager", status="active"),
+                    CommunityMembership(community_id=self.community_id, user_id=self.rabbi_id, role="rabbi", status="active"),
+                    CommunityMembership(community_id=self.community_id, user_id=self.member_id, role="member", status="active"),
+                    CommunityMembership(community_id=self.community_id, user_id=self.existing_id, role="member", status="active"),
+                    *[
+                        CommunityMembership(
+                            community_id=self.community_id,
+                            user_id=user_id,
+                            role="member",
+                            status="active",
+                        )
+                        for user_id in self.unavailable_ids
+                    ],
+                    CommunityMembership(community_id=self.community_id, user_id=self.inactive_admin_id, role="admin", status="suspended"),
+                    CommunityMembership(community_id=self.foreign_community_id, user_id=self.foreign_admin_id, role="admin", status="active"),
+                    CommunityMembership(community_id=self.foreign_community_id, user_id=self.out_of_scope_id, role="member", status="active"),
+                    EventCategory(community_id=self.community_id, slug="community", title="Community", color="#123456", icon="*", created_by=self.admin_id, updated_by=self.admin_id),
+                    EventCategory(community_id=self.foreign_community_id, slug="community", title="Community", color="#654321", icon="*", created_by=self.admin_id, updated_by=self.admin_id),
+                ])
+                await session.flush()
+                session.add_all([
+                    Profile(user_id=user_id, full_name=f"Participant {index}", display_name=f"Participant {index}")
+                    for index, user_id in enumerate([self.existing_id, self.duplicate_id, self.out_of_scope_id, *self.unavailable_ids])
+                ])
+                session.add(Event(
+                    id=self.event_id,
+                    community_id=self.community_id,
+                    title="Admin writable event",
+                    starts_at=now + timedelta(days=2),
+                    category="community",
+                    registration_mode="internal_free",
+                    capacity=10,
+                ))
+                session.add(Event(
+                    id=self.foreign_event_id,
+                    community_id=self.foreign_community_id,
+                    title="Foreign Admin writable event",
+                    starts_at=now + timedelta(days=2),
+                    category="community",
+                    registration_mode="internal_free",
+                    capacity=10,
+                ))
+                await session.flush()
+                session.add_all([
+                    EventParticipationOption(
+                        id=self.option_ids[0],
+                        event_id=self.event_id,
+                        title="Participation option one",
+                        option_type="participation",
+                    ),
+                    EventParticipationOption(
+                        id=self.option_ids[1],
+                        event_id=self.event_id,
+                        title="Participation option two",
+                        option_type="participation",
+                    ),
+                ])
+                session.add(EventRegistration(
+                    event_id=self.event_id,
+                    user_id=self.duplicate_id,
+                    status="pending",
+                    source_channel="mobile",
+                ))
+
+        self.admin_headers = {"Authorization": f"Bearer {create_access_token(self.admin_id)}"}
+        self.role_headers = {
+            "event_manager": {"Authorization": f"Bearer {create_access_token(self.event_manager_id)}"},
+            "rabbi": {"Authorization": f"Bearer {create_access_token(self.rabbi_id)}"},
+            "member": {"Authorization": f"Bearer {create_access_token(self.member_id)}"},
+            "inactive": {"Authorization": f"Bearer {create_access_token(self.inactive_admin_id)}"},
+            "foreign": {"Authorization": f"Bearer {create_access_token(self.foreign_admin_id)}"},
+        }
+
+    async def asyncTearDown(self) -> None:
+        try:
+            async with AsyncSessionLocal() as session:
+                async with session.begin():
+                    await session.execute(delete(Community).where(Community.id.in_([self.community_id, self.foreign_community_id])))
+                    await session.execute(delete(AppUser).where(AppUser.id.in_([self.admin_id, self.event_manager_id, self.rabbi_id, self.member_id, self.inactive_admin_id, self.foreign_admin_id, self.existing_id, self.duplicate_id, self.out_of_scope_id, *self.unavailable_ids, *self.created_user_ids])))
+        finally:
+            await engine.dispose()
+
+    def _phone(self, offset: int) -> str:
+        return f"+7999{(self.marker + offset) % 10_000_000:07d}"
+
+    def _existing_payload(self, user_id: UUID) -> dict[str, object]:
+        return {"participant": {"mode": "existing", "user_id": str(user_id)}, "occurrence_id": None, "option_selections": [], "seats_count": 1, "guest_names": [], "comment": None}
+
+    def _new_payload(self, offset: int, *, email: str | None = None, **extra: object) -> dict[str, object]:
+        participant: dict[str, object] = {"mode": "new", "full_name": "  New   Admin Participant  ", "phone": self._phone(offset), "email": email}
+        participant.update(extra)
+        return {"participant": participant, "occurrence_id": None, "option_selections": [], "seats_count": 1, "guest_names": [], "comment": None}
+
+    async def _post(
+        self,
+        payload: dict[str, object],
+        headers: dict[str, str] | None = None,
+        *,
+        event_id: UUID | None = None,
+    ) -> httpx.Response:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.post(
+                f"/admin/events/{event_id or self.event_id}/registrations",
+                headers=headers,
+                json=payload,
+            )
+
+    async def _remember_created_user(self, response: httpx.Response) -> UUID:
+        user_id = UUID(response.json()["data"]["user_id"])
+        self.created_user_ids.append(user_id)
+        return user_id
+
+    async def test_admin_only_authorization_and_strict_contract(self) -> None:
+        for role, headers in self.role_headers.items():
+            with self.subTest(role=role):
+                response = await self._post(self._existing_payload(self.existing_id), headers)
+                self.assertEqual(response.status_code, 403)
+        unauthenticated = await self._post(self._existing_payload(self.existing_id))
+        self.assertEqual(unauthenticated.status_code, 401)
+
+        strict_payload = self._new_payload(1)
+        strict_payload["source_channel"] = "mobile"
+        strict = await self._post(strict_payload, self.admin_headers)
+        self.assertEqual(strict.status_code, 422)
+
+    async def test_existing_current_community_member_uses_canonical_writer_and_preserves_duplicate_provenance(self) -> None:
+        created = await self._post(self._existing_payload(self.existing_id), self.admin_headers)
+        self.assertEqual(created.status_code, 200)
+        data = created.json()["data"]
+        self.assertEqual(data["user_id"], str(self.existing_id))
+        self.assertEqual(data["source_channel"], "admin")
+        registration_id = UUID(data["id"])
+        async with AsyncSessionLocal() as session:
+            registration = await session.get(EventRegistration, registration_id)
+        self.assertIsNotNone(registration)
+        assert registration is not None
+        self.assertEqual(registration.created_by_admin_user_id, self.admin_id)
+
+        duplicate = await self._post(self._existing_payload(self.duplicate_id), self.admin_headers)
+        self.assertEqual(duplicate.status_code, 200)
+        self.assertEqual(duplicate.json()["data"]["source_channel"], "mobile")
+        async with AsyncSessionLocal() as session:
+            duplicate_registration = await session.scalar(select(EventRegistration).where(EventRegistration.event_id == self.event_id, EventRegistration.user_id == self.duplicate_id))
+        self.assertIsNotNone(duplicate_registration)
+        assert duplicate_registration is not None
+        self.assertIsNone(duplicate_registration.created_by_admin_user_id)
+
+    async def test_prior_community_registration_scopes_participant_without_membership(self) -> None:
+        repeated = await self._post(self._existing_payload(self.duplicate_id), self.admin_headers)
+
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(repeated.json()["data"]["user_id"], str(self.duplicate_id))
+
+    async def test_admin_created_participant_is_reselectable_only_in_same_community(self) -> None:
+        created = await self._post(self._new_payload(9), self.admin_headers)
+        self.assertEqual(created.status_code, 200)
+        participant_id = await self._remember_created_user(created)
+
+        repeated = await self._post(
+            self._existing_payload(participant_id),
+            self.admin_headers,
+        )
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(repeated.json()["data"]["id"], created.json()["data"]["id"])
+
+        foreign = await self._post(
+            self._existing_payload(participant_id),
+            self.role_headers["foreign"],
+            event_id=self.foreign_event_id,
+        )
+        self.assertEqual(foreign.status_code, 404)
+        self.assertNotIn(str(participant_id), str(foreign.json()))
+
+    async def test_existing_participant_scope_and_availability_fail_closed(self) -> None:
+        outside = await self._post(self._existing_payload(self.out_of_scope_id), self.admin_headers)
+        self.assertEqual(outside.status_code, 404)
+        self.assertNotIn(
+            f"outside-{self.event_id.hex[:12]}@example.invalid",
+            str(outside.json()),
+        )
+        for unavailable_id in self.unavailable_ids:
+            with self.subTest(user_id=unavailable_id):
+                response = await self._post(self._existing_payload(unavailable_id), self.admin_headers)
+                self.assertEqual(response.status_code, 409)
+                self.assertEqual(response.json()["error"]["code"], "admin_participant_unavailable")
+
+    async def test_new_participants_are_unclaimed_without_membership_or_verification(self) -> None:
+        no_email = await self._post(self._new_payload(2), self.admin_headers)
+        self.assertEqual(no_email.status_code, 200)
+        without_email_id = await self._remember_created_user(no_email)
+        email = f"admin-new-{self.event_id.hex[:12]}@example.invalid"
+        with_email = await self._post(self._new_payload(3, email=email), self.admin_headers)
+        self.assertEqual(with_email.status_code, 200)
+        with_email_id = await self._remember_created_user(with_email)
+
+        async with AsyncSessionLocal() as session:
+            users = list(await session.scalars(select(AppUser).where(AppUser.id.in_([without_email_id, with_email_id]))))
+            profiles = list(await session.scalars(select(Profile).where(Profile.user_id.in_([without_email_id, with_email_id]))))
+            membership_count = await session.scalar(select(func.count()).select_from(CommunityMembership).where(CommunityMembership.user_id.in_([without_email_id, with_email_id])))
+        self.assertEqual(len(users), 2)
+        self.assertEqual(len(profiles), 2)
+        self.assertEqual(membership_count, 0)
+        for user in users:
+            self.assertEqual(user.account_origin, "admin")
+            self.assertEqual(user.claim_state, "unclaimed")
+            self.assertIsNone(user.password_hash)
+            self.assertIsNone(user.email_verified_at)
+            self.assertIsNone(user.phone_verified_at)
+            self.assertIsNone(user.claimed_at)
+        self.assertEqual({profile.full_name for profile in profiles}, {"New Admin Participant"})
+
+    async def test_new_identity_conflicts_are_stable_and_do_not_expose_pii(self) -> None:
+        phone = self._phone(4)
+        email = f"identity-{self.event_id.hex[:12]}@example.invalid"
+        phone_user_id = uuid4()
+        email_user_id = uuid4()
+        self.created_user_ids.extend([phone_user_id, email_user_id])
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add_all([
+                    AppUser(id=phone_user_id, phone=phone, account_origin="migration", claim_state="legacy_external", status="active"),
+                    AppUser(id=email_user_id, email=email, account_origin="migration", claim_state="legacy_external", status="active"),
+                ])
+
+        duplicate_phone = await self._post(self._new_payload(4), self.admin_headers)
+        self.assertEqual(duplicate_phone.status_code, 409)
+        self.assertEqual(duplicate_phone.json()["error"]["code"], "admin_participant_phone_exists")
+        duplicate_email = await self._post(self._new_payload(5, email=email), self.admin_headers)
+        self.assertEqual(duplicate_email.status_code, 409)
+        self.assertEqual(duplicate_email.json()["error"]["code"], "admin_participant_email_exists")
+        ambiguous = await self._post(self._new_payload(4, email=email), self.admin_headers)
+        self.assertEqual(ambiguous.status_code, 409)
+        self.assertEqual(ambiguous.json()["error"]["code"], "admin_participant_identity_conflict")
+        self.assertNotIn(phone, str(ambiguous.json()))
+        self.assertNotIn(email, str(ambiguous.json()))
+
+    async def test_registration_failures_roll_back_new_identity_and_capacity_does_not_orphan(self) -> None:
+        invalid = self._new_payload(6)
+        invalid["occurrence_id"] = str(uuid4())
+        invalid_response = await self._post(invalid, self.admin_headers)
+        self.assertEqual(invalid_response.status_code, 404)
+        async with AsyncSessionLocal() as session:
+            invalid_user = await session.scalar(select(AppUser).where(AppUser.phone == self._phone(6)))
+        self.assertIsNone(invalid_user)
+
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                event = await session.get(Event, self.event_id)
+                assert event is not None
+                event.capacity = 1
+                duplicate = await session.scalar(select(EventRegistration).where(EventRegistration.event_id == self.event_id, EventRegistration.user_id == self.duplicate_id))
+                assert duplicate is not None
+                duplicate.status = "cancelled"
+        full = await self._post(self._new_payload(7), self.admin_headers)
+        self.assertEqual(full.status_code, 200)
+        await self._remember_created_user(full)
+        capacity = await self._post(self._new_payload(8), self.admin_headers)
+        self.assertEqual(capacity.status_code, 409)
+        self.assertEqual(capacity.json()["error"]["code"], "capacity_unavailable")
+        async with AsyncSessionLocal() as session:
+            capacity_user = await session.scalar(select(AppUser).where(AppUser.phone == self._phone(8)))
+        self.assertIsNone(capacity_user)
+
+    async def test_option_selections_are_forwarded_to_the_canonical_writer(self) -> None:
+        payload = self._existing_payload(self.member_id)
+        payload["seats_count"] = 2
+        payload["option_selections"] = [
+            {"option_id": str(option_id), "quantity": 1}
+            for option_id in self.option_ids
+        ]
+
+        created = await self._post(payload, self.admin_headers)
+        self.assertEqual(created.status_code, 200)
+        data = created.json()["data"]
+        self.assertEqual(data["seats_count"], 2)
+        self.assertEqual(
+            {selection["option_id"] for selection in data["selected_options"]},
+            {str(option_id) for option_id in self.option_ids},
+        )
+        async with AsyncSessionLocal() as session:
+            selections = list(
+                await session.scalars(
+                    select(EventRegistrationOptionSelection).where(
+                        EventRegistrationOptionSelection.registration_id
+                        == UUID(data["id"]),
+                    ),
+                ),
+            )
+        self.assertEqual(len(selections), 2)
+        self.assertEqual({selection.quantity for selection in selections}, {1})
+
+        invalid_quantity = self._existing_payload(self.member_id)
+        invalid_quantity["option_selections"] = [
+            {"option_id": str(self.option_ids[0]), "quantity": 2},
+        ]
+        invalid = await self._post(invalid_quantity, self.admin_headers)
+        self.assertEqual(invalid.status_code, 422)
+        self.assertEqual(invalid.json()["error"]["code"], "validation_error")
 
 
 if __name__ == "__main__":

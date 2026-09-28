@@ -1142,6 +1142,10 @@ class EventRegistration(Base):
         Index("event_registrations_user_id_idx", "user_id"),
         Index("event_registrations_status_idx", "status"),
         Index("event_registrations_occurrence_id_idx", "occurrence_id"),
+        Index(
+            "event_registrations_created_by_admin_user_id_idx",
+            "created_by_admin_user_id",
+        ),
     )
 
     id: Mapped[UUID] = uuid_pk()
@@ -1154,6 +1158,10 @@ class EventRegistration(Base):
         PG_UUID(as_uuid=True),
         ForeignKey("app_users.id", ondelete="CASCADE"),
         nullable=False,
+    )
+    created_by_admin_user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("app_users.id", ondelete="SET NULL"),
     )
     occurrence_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
