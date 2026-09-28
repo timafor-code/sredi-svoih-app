@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.core import (
     AppUser,
+    CommunityMembership,
     Event,
     EventCapacityUnit,
     EventOccurrence,
@@ -47,7 +48,6 @@ from app.schemas.admin_registrations import (
     AdminRegistrationQuestionnaireOptionResponse,
 )
 from app.schemas.registrations import RegisterEventRequest
-from app.services import admin_members as admin_members_service
 from app.services import authorization as authorization_service
 from app.services import registrations as registrations_service
 from app.services.admin_events import resolve_manageable_community_ids
@@ -567,6 +567,48 @@ def _is_available_participant(user: AppUser) -> bool:
     )
 
 
+async def _resolve_registration_participant(
+    session: AsyncSession,
+    *,
+    target_user_id: UUID,
+    community_id: UUID,
+) -> AppUser:
+    """Resolve a participant with explicit evidence for this event community."""
+    has_community_membership = (
+        select(CommunityMembership.id)
+        .where(
+            CommunityMembership.user_id == target_user_id,
+            CommunityMembership.community_id == community_id,
+        )
+        .exists()
+    )
+    has_community_registration = (
+        select(EventRegistration.id)
+        .join(Event, Event.id == EventRegistration.event_id)
+        .where(
+            EventRegistration.user_id == target_user_id,
+            Event.community_id == community_id,
+        )
+        .exists()
+    )
+    target_user = await session.scalar(
+        select(AppUser)
+        .where(
+            AppUser.id == target_user_id,
+            or_(has_community_membership, has_community_registration),
+        )
+        .with_for_update(),
+    )
+    if target_user is None:
+        raise _not_found("Participant not found")
+    if not _is_available_participant(target_user):
+        raise _identity_conflict(
+            "admin_participant_unavailable",
+            "Participant identity is unavailable",
+        )
+    return target_user
+
+
 async def _resolve_new_participant_identity(
     session: AsyncSession,
     participant: AdminNewRegistrationParticipant,
@@ -612,7 +654,7 @@ async def _resolve_new_participant_identity(
         )
 
 
-def _identity_race_error(exc: IntegrityError) -> HTTPException:
+def _identity_race_error(exc: IntegrityError) -> HTTPException | None:
     constraint_name = getattr(getattr(exc.orig, "diag", None), "constraint_name", "")
     if constraint_name == "app_users_phone_key":
         return _identity_conflict(
@@ -624,10 +666,7 @@ def _identity_race_error(exc: IntegrityError) -> HTTPException:
             "admin_participant_email_exists",
             "A participant with this email already exists; use existing participant mode",
         )
-    return _identity_conflict(
-        "admin_participant_identity_conflict",
-        "Participant identity cannot be resolved safely",
-    )
+    return None
 
 
 async def create_admin_event_registration(
@@ -656,25 +695,11 @@ async def create_admin_event_registration(
 
             participant = payload.participant
             if isinstance(participant, AdminExistingRegistrationParticipant):
-                await admin_members_service.resolve_scoped_member(
+                target_user = await _resolve_registration_participant(
                     session,
                     target_user_id=participant.user_id,
                     community_id=event.community_id,
-                    lock_profile=True,
                 )
-                target_user = await session.scalar(
-                    select(AppUser)
-                    .where(AppUser.id == participant.user_id)
-                    .with_for_update(),
-                )
-                if (
-                    target_user is None
-                    or not _is_available_participant(target_user)
-                ):
-                    raise _identity_conflict(
-                        "admin_participant_unavailable",
-                        "Participant identity is unavailable",
-                    )
             else:
                 await _resolve_new_participant_identity(session, participant)
                 target_user = AppUser(
@@ -718,7 +743,10 @@ async def create_admin_event_registration(
                 write_result.registration.id,
             )
     except IntegrityError as exc:
-        raise _identity_race_error(exc) from exc
+        identity_error = _identity_race_error(exc)
+        if identity_error is not None:
+            raise identity_error from exc
+        raise
 
 
 async def list_admin_event_registrations(

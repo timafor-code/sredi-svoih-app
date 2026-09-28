@@ -41,7 +41,8 @@ event's community; event managers and other roles cannot create registrations
 through this route. The request has exactly two participant modes:
 
 - `existing`, which targets a canonical user already visible through the
-  Admin Members scope for that community;
+  event community through a membership or registration history for that
+  community;
 - `new`, which creates one canonical active participant from a normalized full
   name, international phone, and optional email.
 

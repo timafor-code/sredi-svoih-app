@@ -849,6 +849,7 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
         self.community_id = uuid4()
         self.foreign_community_id = uuid4()
         self.event_id = uuid4()
+        self.foreign_event_id = uuid4()
         self.admin_id = uuid4()
         self.event_manager_id = uuid4()
         self.rabbi_id = uuid4()
@@ -859,6 +860,7 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
         self.duplicate_id = uuid4()
         self.out_of_scope_id = uuid4()
         self.unavailable_ids = [uuid4() for _ in range(3)]
+        self.option_ids = [uuid4(), uuid4()]
         self.created_user_ids: list[UUID] = []
         self.marker = uuid4().int % 10_000_000
         now = datetime.now(UTC).replace(microsecond=0)
@@ -890,6 +892,16 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
                     CommunityMembership(community_id=self.community_id, user_id=self.event_manager_id, role="event_manager", status="active"),
                     CommunityMembership(community_id=self.community_id, user_id=self.rabbi_id, role="rabbi", status="active"),
                     CommunityMembership(community_id=self.community_id, user_id=self.member_id, role="member", status="active"),
+                    CommunityMembership(community_id=self.community_id, user_id=self.existing_id, role="member", status="active"),
+                    *[
+                        CommunityMembership(
+                            community_id=self.community_id,
+                            user_id=user_id,
+                            role="member",
+                            status="active",
+                        )
+                        for user_id in self.unavailable_ids
+                    ],
                     CommunityMembership(community_id=self.community_id, user_id=self.inactive_admin_id, role="admin", status="suspended"),
                     CommunityMembership(community_id=self.foreign_community_id, user_id=self.foreign_admin_id, role="admin", status="active"),
                     CommunityMembership(community_id=self.foreign_community_id, user_id=self.out_of_scope_id, role="member", status="active"),
@@ -910,6 +922,30 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
                     registration_mode="internal_free",
                     capacity=10,
                 ))
+                session.add(Event(
+                    id=self.foreign_event_id,
+                    community_id=self.foreign_community_id,
+                    title="Foreign Admin writable event",
+                    starts_at=now + timedelta(days=2),
+                    category="community",
+                    registration_mode="internal_free",
+                    capacity=10,
+                ))
+                await session.flush()
+                session.add_all([
+                    EventParticipationOption(
+                        id=self.option_ids[0],
+                        event_id=self.event_id,
+                        title="Participation option one",
+                        option_type="participation",
+                    ),
+                    EventParticipationOption(
+                        id=self.option_ids[1],
+                        event_id=self.event_id,
+                        title="Participation option two",
+                        option_type="participation",
+                    ),
+                ])
                 session.add(EventRegistration(
                     event_id=self.event_id,
                     user_id=self.duplicate_id,
@@ -946,10 +982,20 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
         participant.update(extra)
         return {"participant": participant, "occurrence_id": None, "option_selections": [], "seats_count": 1, "guest_names": [], "comment": None}
 
-    async def _post(self, payload: dict[str, object], headers: dict[str, str] | None = None) -> httpx.Response:
+    async def _post(
+        self,
+        payload: dict[str, object],
+        headers: dict[str, str] | None = None,
+        *,
+        event_id: UUID | None = None,
+    ) -> httpx.Response:
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-            return await client.post(f"/admin/events/{self.event_id}/registrations", headers=headers, json=payload)
+            return await client.post(
+                f"/admin/events/{event_id or self.event_id}/registrations",
+                headers=headers,
+                json=payload,
+            )
 
     async def _remember_created_user(self, response: httpx.Response) -> UUID:
         user_id = UUID(response.json()["data"]["user_id"])
@@ -969,7 +1015,7 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
         strict = await self._post(strict_payload, self.admin_headers)
         self.assertEqual(strict.status_code, 422)
 
-    async def test_existing_participant_uses_canonical_writer_and_preserves_duplicate_provenance(self) -> None:
+    async def test_existing_current_community_member_uses_canonical_writer_and_preserves_duplicate_provenance(self) -> None:
         created = await self._post(self._existing_payload(self.existing_id), self.admin_headers)
         self.assertEqual(created.status_code, 200)
         data = created.json()["data"]
@@ -991,9 +1037,39 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
         assert duplicate_registration is not None
         self.assertIsNone(duplicate_registration.created_by_admin_user_id)
 
+    async def test_prior_community_registration_scopes_participant_without_membership(self) -> None:
+        repeated = await self._post(self._existing_payload(self.duplicate_id), self.admin_headers)
+
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(repeated.json()["data"]["user_id"], str(self.duplicate_id))
+
+    async def test_admin_created_participant_is_reselectable_only_in_same_community(self) -> None:
+        created = await self._post(self._new_payload(9), self.admin_headers)
+        self.assertEqual(created.status_code, 200)
+        participant_id = await self._remember_created_user(created)
+
+        repeated = await self._post(
+            self._existing_payload(participant_id),
+            self.admin_headers,
+        )
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(repeated.json()["data"]["id"], created.json()["data"]["id"])
+
+        foreign = await self._post(
+            self._existing_payload(participant_id),
+            self.role_headers["foreign"],
+            event_id=self.foreign_event_id,
+        )
+        self.assertEqual(foreign.status_code, 404)
+        self.assertNotIn(str(participant_id), str(foreign.json()))
+
     async def test_existing_participant_scope_and_availability_fail_closed(self) -> None:
         outside = await self._post(self._existing_payload(self.out_of_scope_id), self.admin_headers)
         self.assertEqual(outside.status_code, 404)
+        self.assertNotIn(
+            f"outside-{self.event_id.hex[:12]}@example.invalid",
+            str(outside.json()),
+        )
         for unavailable_id in self.unavailable_ids:
             with self.subTest(user_id=unavailable_id):
                 response = await self._post(self._existing_payload(unavailable_id), self.admin_headers)
@@ -1076,6 +1152,42 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
         async with AsyncSessionLocal() as session:
             capacity_user = await session.scalar(select(AppUser).where(AppUser.phone == self._phone(8)))
         self.assertIsNone(capacity_user)
+
+    async def test_option_selections_are_forwarded_to_the_canonical_writer(self) -> None:
+        payload = self._existing_payload(self.member_id)
+        payload["seats_count"] = 2
+        payload["option_selections"] = [
+            {"option_id": str(option_id), "quantity": 1}
+            for option_id in self.option_ids
+        ]
+
+        created = await self._post(payload, self.admin_headers)
+        self.assertEqual(created.status_code, 200)
+        data = created.json()["data"]
+        self.assertEqual(data["seats_count"], 2)
+        self.assertEqual(
+            {selection["option_id"] for selection in data["selected_options"]},
+            {str(option_id) for option_id in self.option_ids},
+        )
+        async with AsyncSessionLocal() as session:
+            selections = list(
+                await session.scalars(
+                    select(EventRegistrationOptionSelection).where(
+                        EventRegistrationOptionSelection.registration_id
+                        == UUID(data["id"]),
+                    ),
+                ),
+            )
+        self.assertEqual(len(selections), 2)
+        self.assertEqual({selection.quantity for selection in selections}, {1})
+
+        invalid_quantity = self._existing_payload(self.member_id)
+        invalid_quantity["option_selections"] = [
+            {"option_id": str(self.option_ids[0]), "quantity": 2},
+        ]
+        invalid = await self._post(invalid_quantity, self.admin_headers)
+        self.assertEqual(invalid.status_code, 422)
+        self.assertEqual(invalid.json()["error"]["code"], "validation_error")
 
 
 if __name__ == "__main__":
