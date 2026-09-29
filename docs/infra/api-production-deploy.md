@@ -25,6 +25,24 @@ Related runbooks:
 - [Incident response](incident-response.md) governs containment, evidence, and
   recovery decisions.
 
+## Current production reference
+
+The architecture below remains provider-neutral, but the current operational
+production reference is:
+
+- provider: Timeweb Cloud;
+- public IPv4: `147.45.154.166`;
+- API: `https://api.sredisvoihapp.ru`;
+- Admin: `https://admin.sredisvoihapp.ru`;
+- Public Web: `https://reg.sredisvoihapp.ru`;
+- repository workspace: `/opt/sredi-svoih-app`;
+- owner-managed runtime files:
+  `/opt/sredi-svoih-app/infra/env/.env.compose.production` and
+  `/opt/sredi-svoih-app/infra/env/.env.api.production`.
+
+These are operational references, not credentials. Real environment values
+remain server-only and must never be copied into Git or client builds.
+
 ## Verified topology
 
 ```text
@@ -212,7 +230,7 @@ commands, never Codex-run deployment commands.
    replace every `<api-domain>` with the real hostname in the host copy only:
 
    ```bash
-   sudo install -m 0644 /opt/sredi-svoih/infra/nginx/api-http.conf.example /etc/nginx/sites-available/sredi-svoih-api.conf
+   sudo install -m 0644 /opt/sredi-svoih-app/infra/nginx/api-http.conf.example /etc/nginx/sites-available/sredi-svoih-api.conf
    sudoedit /etc/nginx/sites-available/sredi-svoih-api.conf
    sudo ln -s /etc/nginx/sites-available/sredi-svoih-api.conf /etc/nginx/sites-enabled/sredi-svoih-api.conf
    ```
@@ -266,7 +284,7 @@ domain.
    Certbot certificate paths exist:
 
    ```bash
-   sudo install -m 0644 /opt/sredi-svoih/infra/nginx/api-https.conf.example /etc/nginx/sites-available/sredi-svoih-api.conf
+   sudo install -m 0644 /opt/sredi-svoih-app/infra/nginx/api-https.conf.example /etc/nginx/sites-available/sredi-svoih-api.conf
    sudoedit /etc/nginx/sites-available/sredi-svoih-api.conf
    sudo nginx -t
    sudo systemctl reload nginx
@@ -466,7 +484,7 @@ infrastructure. Run them only after owner approval and secret injection.
 1. **Prepare an immutable release.** Use an approved revision in a controlled
    deployment workspace. Record commit SHA/release tag; never build from an
    unreviewed worktree.
-2. **Prepare the owner-only runtime files.** In `/opt/sredi-svoih`, derive the
+2. **Prepare the owner-only runtime files.** In `/opt/sredi-svoih-app`, derive the
    two ignored files from the committed examples, replace every placeholder
    with an approved production value, and restrict access before invoking
    Compose. The Compose env file must point `API_ENV_FILE` to
