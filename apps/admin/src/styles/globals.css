@@ -13529,7 +13529,40 @@ a {
 .add-participant-results button:hover,
 .add-participant-results button.is-selected { background: rgba(242, 184, 75, 0.12); }
 .add-participant-results span { color: var(--text-soft); font-size: 12px; }
-.add-participant-selected { color: var(--gold); font-size: 13px; }
+.add-participant-selected {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(242, 184, 75, 0.34);
+  border-radius: 8px;
+  padding: 9px 10px 9px 12px;
+  background: rgba(242, 184, 75, 0.07);
+}
+.add-participant-selected > div { display: grid; min-width: 0; gap: 2px; }
+.add-participant-selected span { color: var(--gold); font-size: 12px; }
+.add-participant-selected strong { color: var(--text); overflow-wrap: anywhere; }
+.add-participant-selected small { color: var(--text-soft); overflow-wrap: anywhere; }
+.add-participant-selected button {
+  display: grid;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--glass-border);
+  border-radius: 7px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.add-participant-selected button:hover { border-color: rgba(242, 184, 75, 0.55); color: var(--text); }
+.add-participant-selected button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.add-participant-selected button:disabled { cursor: not-allowed; opacity: 0.55; }
 
 .add-participant-option {
   grid-template-columns: minmax(0, 1fr) auto;
