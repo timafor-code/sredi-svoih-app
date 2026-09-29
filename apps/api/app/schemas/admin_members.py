@@ -4,9 +4,10 @@ from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.admin_registrations import AdminRegistrationSelectedOptionResponse
+from app.schemas.web_registration import normalize_email, normalize_international_phone
 
 AdminMemberMembershipRole = Literal["member", "rabbi", "event_manager", "admin"]
 AdminMemberMembershipStatus = Literal["pending", "active", "suspended", "left"]
@@ -51,6 +52,7 @@ class AdminMemberListItemResponse(BaseModel):
 
 class AdminMemberDetailResponse(AdminMemberListItemResponse):
     account_email: str | None
+    account_phone: str | None
     profile_community_id: UUID | None
     full_name: str | None
     hebrew_name: str | None
@@ -127,6 +129,21 @@ class AdminMemberProfileUpdateRequest(BaseModel):
         validation_alias=AliasChoices("marital_status", "maritalStatus"),
     )
     about: str | None = Field(default=None, max_length=200)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email_field(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_email(value)
+
+    @field_validator("phone")
+    @classmethod
+    def normalize_phone_field(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_international_phone(value)
+
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
 

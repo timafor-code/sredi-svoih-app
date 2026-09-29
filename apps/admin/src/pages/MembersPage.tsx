@@ -21,6 +21,7 @@ import {
   AdminMemberProfileForm,
   buildAdminMemberProfileUpdateFields,
   createAdminMemberProfileDraft,
+  mapAdminMemberProfileUpdateError,
   type AdminMemberProfileDraft,
 } from "../components/members/AdminMemberProfileForm";
 import {
@@ -780,11 +781,7 @@ function MemberDetailDrawer({
       await onProfileChanged(detail);
       setProfileEditing(false);
     } catch (nextError) {
-      setProfileError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Не удалось сохранить профиль.",
-      );
+      setProfileError(mapAdminMemberProfileUpdateError(nextError));
     } finally {
       setProfileSaving(false);
     }
@@ -1005,14 +1002,11 @@ function MemberProfileSection({
         <MemberDetailField label="Еврейское имя">
           {formatTextOrDash(profile?.hebrewName)}
         </MemberDetailField>
-        <MemberDetailField label="Email аккаунта">
+        <MemberDetailField label="Email аккаунта и для связи">
           {formatTextOrDash(profile?.accountEmail)}
         </MemberDetailField>
-        <MemberDetailField label="Email для связи">
-          {formatTextOrDash(detail.email)}
-        </MemberDetailField>
-        <MemberDetailField label="Телефон">
-          {formatTextOrDash(detail.phone)}
+        <MemberDetailField label="Телефон аккаунта и для связи">
+          {formatTextOrDash(profile ? profile.accountPhone : detail.phone)}
         </MemberDetailField>
         <MemberDetailField label="Город">{formatTextOrDash(detail.city)}</MemberDetailField>
         <MemberDetailField label="Дата рождения">

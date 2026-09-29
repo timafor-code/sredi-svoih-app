@@ -4117,6 +4117,13 @@ a {
   line-height: 1.5;
 }
 
+.member-identity-editor-note {
+  color: var(--muted-text);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  margin: 0;
+}
+
 .member-hebrew-date-editor__clear {
   justify-self: start;
   border: 0;

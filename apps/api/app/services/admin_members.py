@@ -8,6 +8,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status as http_status
 from sqlalchemy import Text, and_, case, cast, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -33,6 +34,7 @@ from app.schemas.admin_members import (
     AdminMemberProfileUpdateResponse,
     AdminMemberRegistrationResponse,
 )
+from app.schemas.web_registration import normalize_email, normalize_international_phone
 from app.services import authorization as authorization_service
 from app.services import privacy_erasure as privacy_erasure_service
 from app.services.admin_registrations import build_selected_option_response
@@ -105,6 +107,10 @@ def _deletion_error(code: str, message: str) -> HTTPException:
     return _error(http_status.HTTP_409_CONFLICT, code, message)
 
 
+def _identity_conflict(code: str, message: str) -> HTTPException:
+    return _error(http_status.HTTP_409_CONFLICT, code, message)
+
+
 async def _require_admin_community(
     session: AsyncSession,
     current_user: AppUser,
@@ -141,6 +147,53 @@ def _display_name(profile: Profile) -> str:
         )
         or str(profile.user_id)
     )
+
+
+def _identity_mutation_is_available(user: AppUser) -> bool:
+    return (
+        user.status == ACTIVE_STATUS
+        and user.deletion_requested_at is None
+        and user.erased_at is None
+    )
+
+
+def _identity_race_error(exc: IntegrityError) -> HTTPException | None:
+    constraint_name = getattr(getattr(exc.orig, "diag", None), "constraint_name", "")
+    if constraint_name == "app_users_phone_key":
+        return _identity_conflict(
+            "admin_member_phone_exists",
+            "Member phone is already assigned to another account",
+        )
+    if constraint_name == "app_users_email_lower_key":
+        return _identity_conflict(
+            "admin_member_email_exists",
+            "Member email is already assigned to another account",
+        )
+    return None
+
+
+def _normalized_existing_email(value: str | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        return normalize_email(value)
+    except ValueError as exc:
+        raise _identity_conflict(
+            "admin_member_identity_unavailable",
+            "Member account identity is unavailable",
+        ) from exc
+
+
+def _normalized_existing_phone(value: str | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        return normalize_international_phone(value)
+    except ValueError as exc:
+        raise _identity_conflict(
+            "admin_member_identity_unavailable",
+            "Member account identity is unavailable",
+        ) from exc
 
 
 def _normalize_role_filter(role: str | None) -> str | None:
@@ -460,6 +513,7 @@ async def get_admin_member(
     return AdminMemberDetailResponse(
         **_list_item_kwargs(profile, membership, stats),
         account_email=account_user.email if account_user is not None else None,
+        account_phone=account_user.phone if account_user is not None else None,
         profile_community_id=profile.community_id,
         full_name=profile.full_name,
         hebrew_name=profile.hebrew_name,
@@ -595,58 +649,136 @@ async def update_admin_member_profile(
     if not updates:
         raise _validation_error("At least one profile field is required")
 
-    async with _transaction_scope(session):
-        profile, _ = await _resolve_scoped_member(
-            session,
-            target_user_id=target_user_id,
-            community_id=payload.community_id,
-            lock_profile=True,
-        )
+    identity_updates = {
+        field_name: updates.pop(field_name)
+        for field_name in ("email", "phone")
+        if field_name in updates
+    }
 
-        names_changed = "first_name" in updates or "last_name" in updates
-        for name_field in ("first_name", "last_name"):
-            if name_field in updates:
-                supplied_name = updates[name_field]
-                normalized_name = supplied_name.strip() if supplied_name else ""
-                updates[name_field] = normalized_name or None
-
-        for field_name, value in updates.items():
-            setattr(profile, field_name, value)
-
-        if names_changed:
-            derived_name = " ".join(
-                component.strip()
-                for component in (profile.first_name, profile.last_name)
-                if component and component.strip()
+    try:
+        async with _transaction_scope(session):
+            profile, _ = await _resolve_scoped_member(
+                session,
+                target_user_id=target_user_id,
+                community_id=payload.community_id,
+                lock_profile=True,
             )
-            profile.full_name = derived_name or None
-            profile.display_name = derived_name or None
-        profile.updated_at = _now()
+            account_user: AppUser | None = None
+            if identity_updates:
+                account_user = await session.scalar(
+                    select(AppUser)
+                    .where(AppUser.id == target_user_id)
+                    .with_for_update(),
+                )
+                if account_user is None or not _identity_mutation_is_available(account_user):
+                    raise _identity_conflict(
+                        "admin_member_identity_unavailable",
+                        "Member account identity is unavailable",
+                    )
 
-        await session.flush()
-        await session.refresh(profile)
+            if "email" in identity_updates and account_user is not None:
+                supplied_email = identity_updates["email"]
+                if supplied_email is None:
+                    if account_user.email is not None:
+                        raise _validation_error("Removing account email is not supported")
+                    profile.email = None
+                else:
+                    current_email = _normalized_existing_email(account_user.email)
+                    if supplied_email != current_email:
+                        conflicting_user_id = await session.scalar(
+                            select(AppUser.id)
+                            .where(
+                                AppUser.id != account_user.id,
+                                func.lower(AppUser.email) == supplied_email,
+                            )
+                            .with_for_update(),
+                        )
+                        if conflicting_user_id is not None:
+                            raise _identity_conflict(
+                                "admin_member_email_exists",
+                                "Member email is already assigned to another account",
+                            )
+                        account_user.email = supplied_email
+                        account_user.email_verified_at = None
+                        account_user.updated_at = _now()
+                    profile.email = account_user.email
 
-        return AdminMemberProfileUpdateResponse(
-            user_id=profile.user_id,
-            profile_community_id=profile.community_id,
-            full_name=profile.full_name,
-            first_name=profile.first_name,
-            last_name=profile.last_name,
-            display_name=profile.display_name,
-            hebrew_name=profile.hebrew_name,
-            email=profile.email,
-            phone=profile.phone,
-            city=profile.city,
-            birth_date=profile.birth_date,
-            hebrew_birth_date=profile.hebrew_birth_date,
-            birth_time_context=profile.birth_time_context,
-            nusach=profile.nusach,
-            tribe_status=profile.tribe_status,
-            marital_status=profile.marital_status,
-            about=profile.about,
-            onboarding_completed=profile.onboarding_completed,
-            profile_updated_at=profile.updated_at,
-        )
+            if "phone" in identity_updates and account_user is not None:
+                supplied_phone = identity_updates["phone"]
+                if supplied_phone is None:
+                    if account_user.phone is not None:
+                        raise _validation_error("Removing account phone is not supported")
+                    profile.phone = None
+                else:
+                    current_phone = _normalized_existing_phone(account_user.phone)
+                    if supplied_phone != current_phone:
+                        conflicting_user_id = await session.scalar(
+                            select(AppUser.id)
+                            .where(
+                                AppUser.id != account_user.id,
+                                AppUser.phone == supplied_phone,
+                            )
+                            .with_for_update(),
+                        )
+                        if conflicting_user_id is not None:
+                            raise _identity_conflict(
+                                "admin_member_phone_exists",
+                                "Member phone is already assigned to another account",
+                            )
+                        account_user.phone = supplied_phone
+                        account_user.phone_verified_at = None
+                        account_user.updated_at = _now()
+                    profile.phone = account_user.phone
+
+            names_changed = "first_name" in updates or "last_name" in updates
+            for name_field in ("first_name", "last_name"):
+                if name_field in updates:
+                    supplied_name = updates[name_field]
+                    normalized_name = supplied_name.strip() if supplied_name else ""
+                    updates[name_field] = normalized_name or None
+
+            for field_name, value in updates.items():
+                setattr(profile, field_name, value)
+
+            if names_changed:
+                derived_name = " ".join(
+                    component.strip()
+                    for component in (profile.first_name, profile.last_name)
+                    if component and component.strip()
+                )
+                profile.full_name = derived_name or None
+                profile.display_name = derived_name or None
+            profile.updated_at = _now()
+
+            await session.flush()
+            await session.refresh(profile)
+
+            return AdminMemberProfileUpdateResponse(
+                user_id=profile.user_id,
+                profile_community_id=profile.community_id,
+                full_name=profile.full_name,
+                first_name=profile.first_name,
+                last_name=profile.last_name,
+                display_name=profile.display_name,
+                hebrew_name=profile.hebrew_name,
+                email=profile.email,
+                phone=profile.phone,
+                city=profile.city,
+                birth_date=profile.birth_date,
+                hebrew_birth_date=profile.hebrew_birth_date,
+                birth_time_context=profile.birth_time_context,
+                nusach=profile.nusach,
+                tribe_status=profile.tribe_status,
+                marital_status=profile.marital_status,
+                about=profile.about,
+                onboarding_completed=profile.onboarding_completed,
+                profile_updated_at=profile.updated_at,
+            )
+    except IntegrityError as exc:
+        identity_error = _identity_race_error(exc)
+        if identity_error is not None:
+            raise identity_error from exc
+        raise
 
 
 async def update_admin_member_membership(
