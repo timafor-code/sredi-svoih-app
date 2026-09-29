@@ -2,23 +2,32 @@
 
 ## Purpose
 
-This owner-run checklist prepares the first controlled production start of the
-Python API on the Selectel host without committing, printing, or copying real
-production secrets into Git.
+This owner-run checklist documents the controlled bootstrap procedure for the
+Python API without committing, printing, or copying real production secrets
+into Git.
 
-Current deployment context:
+Current production reference:
 
+- provider: Timeweb Cloud;
+- public IPv4: `147.45.154.166`;
 - repository: `timafor-code/sredi-svoih-app`;
-- host workspace: `/opt/sredi-svoih`;
-- public API hostname: `api.pgs24.ru` (temporary production/testing hostname);
-- host Nginx and TLS are already configured;
-- Certbot renewal dry-run must have succeeded before this checklist starts;
-- FastAPI must remain reachable only through `127.0.0.1:8000` behind Nginx;
-- PostgreSQL must have no published host port.
+- host workspace: `/opt/sredi-svoih-app-app`;
+- public API hostname: `api.sredisvoihapp.ru`;
+- public Admin hostname: `admin.sredisvoihapp.ru`;
+- public registration hostname: `reg.sredisvoihapp.ru`;
+- host Nginx terminates public HTTPS and proxies FastAPI through
+  `127.0.0.1:8000`;
+- PostgreSQL has no published host port.
 
-This checklist does not enable email, push, object storage, or the privacy
-erasure worker. Those dependencies stay fail-closed until separately reviewed
-and configured.
+**Existing production is already initialized. Do not rerun the secret-generation
+or env-file creation steps below against the live host merely because this
+runbook is being followed.** Those sections are bootstrap/reference material.
+For an existing deployment, preserve the current owner-managed secrets and
+change them only through an explicit reviewed rotation/recovery operation.
+
+Optional service state such as email, object storage, push, and privacy workers
+is managed separately. This bootstrap checklist is not the source of truth for
+whether those services are currently enabled.
 
 ## Non-negotiable secret boundary
 
@@ -50,7 +59,7 @@ infra/env/api.prod.env.example
 Run on the server as `deploy` after the relevant PR has been merged:
 
 ```bash
-cd /opt/sredi-svoih
+cd /opt/sredi-svoih-app
 git status --short
 git fetch origin
 git switch main
@@ -65,7 +74,7 @@ unexpected. Do not discard server changes merely to make the checkout clean.
 ## 2. Verify the secret files are ignored before creating them
 
 ```bash
-cd /opt/sredi-svoih
+cd /opt/sredi-svoih-app
 git check-ignore -v infra/env/.env.compose.production infra/env/.env.api.production
 ```
 
@@ -78,7 +87,7 @@ Use URL-safe hexadecimal values so the PostgreSQL password can be embedded in
 the SQLAlchemy URL without extra escaping.
 
 ```bash
-cd /opt/sredi-svoih
+cd /opt/sredi-svoih-app
 umask 077
 POSTGRES_PASSWORD="$(openssl rand -hex 32)"
 API_JWT_SECRET="$(openssl rand -hex 32)"
@@ -99,7 +108,7 @@ Requirements:
 ## 4. Create the Compose production environment file
 
 ```bash
-cd /opt/sredi-svoih
+cd /opt/sredi-svoih-app
 cat > infra/env/.env.compose.production <<EOF
 SREDI_API_IMAGE=sredi-svoih-api:${GIT_SHA}
 API_ENV_FILE=./env/.env.api.production
@@ -123,7 +132,7 @@ browser origin. Do not cut over admin, public web, or mobile clients while
 these placeholders remain.
 
 ```bash
-cd /opt/sredi-svoih
+cd /opt/sredi-svoih-app
 cat > infra/env/.env.api.production <<EOF
 APP_NAME=sredi-svoih-api
 APP_ENV=production
@@ -177,7 +186,7 @@ unset POSTGRES_PASSWORD API_JWT_SECRET API_TOKEN_HASH_SECRET GIT_SHA
 Do not display file contents.
 
 ```bash
-cd /opt/sredi-svoih
+cd /opt/sredi-svoih-app
 stat -c '%a %U:%G %n' infra/env/.env.compose.production infra/env/.env.api.production
 git status --short
 git check-ignore -v infra/env/.env.compose.production infra/env/.env.api.production
@@ -205,7 +214,7 @@ production env files because the rendered configuration can expose resolved
 credentials in terminal scrollback or logs.
 
 ```bash
-cd /opt/sredi-svoih
+cd /opt/sredi-svoih-app
 sudo docker compose \
   --env-file infra/env/.env.compose.production \
   -f infra/docker-compose.prod.yml \
@@ -227,22 +236,24 @@ Do not add a PostgreSQL `ports:` mapping and do not change the API binding to
 
 ## 8. DNS state for this deployment
 
-The current API hostname is:
+The current production API hostname is:
 
 ```text
-api.pgs24.ru
+api.sredisvoihapp.ru
 ```
 
-For this first start:
+The current production A record resolves to the Timeweb production host
+`147.45.154.166`.
 
-- do not change DNS if the hostname still resolves to the prepared Selectel
-  host and the existing certificate is valid;
+For owner-run production work:
+
+- do not change DNS as part of secret bootstrap or rotation;
 - do not put DNS-provider credentials into either production env file;
 - DNS credentials are infrastructure-management credentials, not API runtime
   secrets;
-- a later move to the permanent domain requires a controlled DNS, Nginx, TLS,
-  CORS, client-build, and public-URL cutover. It does not require moving the
-  PostgreSQL volume merely because the hostname changes.
+- any future hostname/IP cutover requires a separate controlled DNS, Nginx,
+  TLS, CORS, client-build, and public-URL change. It does not require moving
+  the PostgreSQL volume merely because the hostname changes.
 
 ## 9. S3 decision gate
 

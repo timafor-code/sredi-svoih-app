@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This owner-run runbook promotes durable product data from one **Sredi Svoih FastAPI/PostgreSQL** environment to another environment on the **same Alembic head**. It is intended for the first controlled population of an empty API PostgreSQL target, including the Selectel test/production-like contour.
+This owner-run runbook promotes durable product data from one **Sredi Svoih FastAPI/PostgreSQL** environment to another environment on the **same Alembic head**. It is intended for the first controlled population of an empty API PostgreSQL target, including a controlled production-like or production target contour.
 
 Implementation: `scripts/migration/promote_api_data.py`.
 
@@ -165,7 +165,7 @@ Do not open, print, attach, or paste JSONL contents.
 
 ## Artifact transfer
 
-Transfer the complete protected directory to an owner-controlled protected path on Selectel through the approved SSH/SCP path. Do not put it under the Git checkout or in a public bucket.
+Transfer the complete protected directory to an owner-controlled protected path on the reviewed target host through the approved SSH/SCP path. Do not put it under the Git checkout or in a public bucket.
 
 ## Write-free target gate
 
@@ -176,18 +176,18 @@ Before final preflight/apply:
 - stop the normal FastAPI service if writes are possible;
 - keep PostgreSQL running privately because the one-off promotion container needs it.
 
-## Target preflight on Selectel
+## Target preflight on the reviewed production target
 
 Add temporary `API_PROMOTION_PG_URI` to the ignored backend env file, then run:
 
 ```bash
-cd /opt/sredi-svoih
+cd /opt/sredi-svoih-app
 
 sudo docker compose \
   --env-file infra/env/.env.compose.production \
   -f infra/docker-compose.prod.yml \
   run --rm --no-deps \
-  -v /opt/sredi-svoih/scripts/migration:/app/scripts/migration:ro \
+  -v /opt/sredi-svoih-app/scripts/migration:/app/scripts/migration:ro \
   -v <protected-promotion-dir>:/promotion:ro \
   api_backend \
   python /app/scripts/migration/promote_api_data.py preflight --input-dir /promotion
@@ -214,7 +214,7 @@ A disk snapshot alone does not replace this gate.
 Keep normal target application/worker writes stopped:
 
 ```bash
-cd /opt/sredi-svoih
+cd /opt/sredi-svoih-app
 export API_PROMOTION_RUN_ACK='OWNER_APPROVED_API_PROMOTION_APPLY'
 
 sudo -E docker compose \
@@ -222,7 +222,7 @@ sudo -E docker compose \
   -f infra/docker-compose.prod.yml \
   run --rm --no-deps \
   -e API_PROMOTION_RUN_ACK \
-  -v /opt/sredi-svoih/scripts/migration:/app/scripts/migration:ro \
+  -v /opt/sredi-svoih-app/scripts/migration:/app/scripts/migration:ro \
   -v <protected-promotion-dir>:/promotion:ro \
   api_backend \
   python /app/scripts/migration/promote_api_data.py apply \
@@ -240,13 +240,13 @@ The target is checked again for emptiness inside the serializable transaction. D
 Keep target writes stopped until this succeeds:
 
 ```bash
-cd /opt/sredi-svoih
+cd /opt/sredi-svoih-app
 
 sudo docker compose \
   --env-file infra/env/.env.compose.production \
   -f infra/docker-compose.prod.yml \
   run --rm --no-deps \
-  -v /opt/sredi-svoih/scripts/migration:/app/scripts/migration:ro \
+  -v /opt/sredi-svoih-app/scripts/migration:/app/scripts/migration:ro \
   -v <protected-promotion-dir>:/promotion:ro \
   api_backend \
   python /app/scripts/migration/promote_api_data.py validate --input-dir /promotion
