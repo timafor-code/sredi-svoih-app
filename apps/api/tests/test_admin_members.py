@@ -1008,6 +1008,31 @@ class AdminMemberDeletionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(account.email_verified_at, self.now)
         self.assertIsNone(account.phone_verified_at)
 
+    async def test_admin_can_add_missing_canonical_phone_unverified(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                account = await session.get(AppUser, target_id)
+                profile = await session.scalar(select(Profile).where(Profile.user_id == target_id))
+                account.phone = None
+                account.phone_verified_at = self.now
+                profile.phone = None
+
+        response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            phone="8 (999) 555-01-17",
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        async with AsyncSessionLocal() as session:
+            account = await session.get(AppUser, target_id)
+            profile = await session.scalar(select(Profile).where(Profile.user_id == target_id))
+        self.assertEqual(account.phone, "+79995550117")
+        self.assertEqual(profile.phone, "+79995550117")
+        self.assertIsNone(account.phone_verified_at)
+
     async def test_duplicate_canonical_identities_are_safe_and_atomic(self) -> None:
         admin_id = await self._add_admin()
         target_id = await self._add_target()
@@ -1126,6 +1151,83 @@ class AdminMemberDeletionTests(unittest.IsolatedAsyncioTestCase):
             profile = await session.scalar(select(Profile).where(Profile.user_id == target_id))
         self.assertEqual(account.email, original_email)
         self.assertNotEqual(profile.city, "Should not save")
+
+    async def test_inactive_identity_target_fails_closed_without_profile_mutation(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                account = await session.get(AppUser, target_id)
+                account.status = "suspended"
+
+        response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            email="inactive@example.invalid",
+            city="Should not save",
+        )
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(
+            response.json()["error"]["code"],
+            "admin_member_identity_unavailable",
+        )
+        async with AsyncSessionLocal() as session:
+            account = await session.get(AppUser, target_id)
+            profile = await session.scalar(select(Profile).where(Profile.user_id == target_id))
+        self.assertNotEqual(account.email, "inactive@example.invalid")
+        self.assertNotEqual(profile.city, "Should not save")
+
+    async def test_erased_identity_target_fails_closed_without_profile_mutation(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                account = await session.get(AppUser, target_id)
+                account.erased_at = self.now
+
+        response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            phone="+79995550118",
+            city="Should not save",
+        )
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(
+            response.json()["error"]["code"],
+            "admin_member_identity_unavailable",
+        )
+        async with AsyncSessionLocal() as session:
+            account = await session.get(AppUser, target_id)
+            profile = await session.scalar(select(Profile).where(Profile.user_id == target_id))
+        self.assertIsNone(account.phone)
+        self.assertNotEqual(profile.city, "Should not save")
+
+    async def test_identity_lock_helper_locks_app_user_before_profile(self) -> None:
+        events: list[str] = []
+        session = AsyncMock()
+
+        async def lock_app_user(*args: object, **kwargs: object) -> None:
+            events.append("app_user")
+            return None
+
+        async def lock_profile(*args: object, **kwargs: object) -> tuple[object, None]:
+            events.append("profile")
+            return object(), None
+
+        session.scalar.side_effect = lock_app_user
+        with patch(
+            "app.services.admin_members._resolve_scoped_member",
+            new=AsyncMock(side_effect=lock_profile),
+        ):
+            await admin_members._lock_scoped_identity_member(
+                session,
+                target_user_id=uuid4(),
+                community_id=self.community_id,
+            )
+
+        self.assertEqual(events, ["app_user", "profile"])
 
     async def test_known_identity_constraint_races_have_stable_codes(self) -> None:
         class SyntheticDatabaseError(Exception):

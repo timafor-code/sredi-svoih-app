@@ -464,6 +464,28 @@ async def _resolve_scoped_member(
     return profile, membership
 
 
+async def _lock_scoped_identity_member(
+    session: AsyncSession,
+    *,
+    target_user_id: UUID,
+    community_id: UUID,
+) -> tuple[AppUser | None, Profile, CommunityMembership | None]:
+    """Lock canonical identity before its profile, matching deletion lifecycle order."""
+    account_user = await session.scalar(
+        select(AppUser)
+        .where(AppUser.id == target_user_id)
+        .with_for_update()
+        .execution_options(populate_existing=True),
+    )
+    profile, membership = await _resolve_scoped_member(
+        session,
+        target_user_id=target_user_id,
+        community_id=community_id,
+        lock_profile=True,
+    )
+    return account_user, profile, membership
+
+
 async def _member_registration_stats(
     session: AsyncSession,
     *,
@@ -657,24 +679,25 @@ async def update_admin_member_profile(
 
     try:
         async with _transaction_scope(session):
-            profile, _ = await _resolve_scoped_member(
-                session,
-                target_user_id=target_user_id,
-                community_id=payload.community_id,
-                lock_profile=True,
-            )
             account_user: AppUser | None = None
             if identity_updates:
-                account_user = await session.scalar(
-                    select(AppUser)
-                    .where(AppUser.id == target_user_id)
-                    .with_for_update(),
+                account_user, profile, _ = await _lock_scoped_identity_member(
+                    session,
+                    target_user_id=target_user_id,
+                    community_id=payload.community_id,
                 )
                 if account_user is None or not _identity_mutation_is_available(account_user):
                     raise _identity_conflict(
                         "admin_member_identity_unavailable",
                         "Member account identity is unavailable",
                     )
+            else:
+                profile, _ = await _resolve_scoped_member(
+                    session,
+                    target_user_id=target_user_id,
+                    community_id=payload.community_id,
+                    lock_profile=True,
+                )
 
             if "email" in identity_updates and account_user is not None:
                 supplied_email = identity_updates["email"]
