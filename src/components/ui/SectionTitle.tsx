@@ -12,20 +12,16 @@ export function SectionTitle({ action, onActionPress, title }: SectionTitleProps
   return (
     <View style={styles.row}>
       <Text style={styles.title}>{title}</Text>
-      {action ? (
-        onActionPress ? (
-          <Pressable
-            accessibilityLabel={action}
-            accessibilityRole="button"
-            hitSlop={6}
-            onPress={onActionPress}
-            style={({ pressed }) => pressed && styles.actionPressed}
-          >
-            <Text style={styles.action}>{action}</Text>
-          </Pressable>
-        ) : (
+      {action && onActionPress ? (
+        <Pressable
+          accessibilityLabel={action}
+          accessibilityRole="button"
+          hitSlop={16}
+          onPress={onActionPress}
+          style={({ pressed }) => pressed && styles.actionPressed}
+        >
           <Text style={styles.action}>{action}</Text>
-        )
+        </Pressable>
       ) : null}
     </View>
   );

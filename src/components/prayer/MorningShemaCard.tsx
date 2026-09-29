@@ -76,7 +76,7 @@ export function MorningShemaCard({
   const value = isBeforeSunrise
     ? `через ${formatDurationRu(daily.times.sunrise.at.getTime() - now.getTime())}`
     : formatDurationRu(daily.times.shemaGra.at.getTime() - now.getTime());
-  const subtitle = isBeforeSunrise ? 'до восхода' : `осталось · ${Math.round(progress * 100)}%`;
+  const subtitle = isBeforeSunrise ? 'до восхода' : 'осталось';
   const pulseOpacity = pulse.interpolate({
     inputRange: [0, 1],
     outputRange: [0.12, 0.42],

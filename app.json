@@ -5,6 +5,7 @@
     "scheme": "sredi-svoih",
     "version": "1.0.0",
     "orientation": "portrait",
+    "userInterfaceStyle": "dark",
     "web": {
       "output": "single",
       "bundler": "metro",

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { Avatar } from '@/components/ui/Avatar';
@@ -12,6 +12,7 @@ import { SegmentControl } from '@/components/ui/SegmentControl';
 import { useNow } from '@/hooks/useNow';
 import { getLocalContactAvatarBg } from '@/lib/contactAvatar';
 import { getCommunityContactRoute, getIphoneContactRoute } from '@/lib/contactRoutes';
+import { pluralRu } from '@/lib/pluralRu';
 import {
   COMMUNITY_CONTACTS_AUTH_REQUIRED,
   COMMUNITY_CONTACTS_MEMBERSHIP_REQUIRED,
@@ -104,17 +105,34 @@ function BirthdayRow({
   );
 }
 
-function ActionButton({ icon }: { icon: keyof typeof Ionicons.glyphMap }) {
+function CallButton({ name, phone }: { name: string; phone: string }) {
+  const trimmed = phone.trim();
+  const dialable = (trimmed.startsWith('+') ? '+' : '') + trimmed.replace(/\D/g, '');
+
+  const handlePress = async () => {
+    try {
+      await Linking.openURL(`tel:${dialable}`);
+    } catch {
+      // The list row has no place for an inline error; the detail screen reports failures.
+    }
+  };
+
   return (
-    <View style={styles.actionButton}>
-      <Ionicons name={icon} size={17} color="rgba(255,255,255,0.62)" />
-    </View>
+    <Pressable
+      accessibilityLabel={`Позвонить ${name}`}
+      accessibilityRole="button"
+      hitSlop={3}
+      onPress={handlePress}
+      style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}
+    >
+      <Ionicons name="call-outline" size={17} color="rgba(255,255,255,0.62)" />
+    </Pressable>
   );
 }
 
 function CommunityRow({ contact, isLast }: { contact: CommunityContact; isLast?: boolean }) {
   const router = useRouter();
-  const hasPhone = Boolean(contact.phone || contact.phoneNumbers.length > 0);
+  const phone = contact.phone ?? contact.phoneNumbers[0]?.number;
   const subtitle = [
     contact.city,
     contact.subtitle && contact.subtitle !== contact.role ? contact.subtitle : undefined,
@@ -149,7 +167,7 @@ function CommunityRow({ contact, isLast }: { contact: CommunityContact; isLast?:
           ) : null}
         </View>
         <View style={styles.actions}>
-          {hasPhone ? <ActionButton icon="call-outline" /> : null}
+          {phone ? <CallButton name={contact.displayName} phone={phone} /> : null}
           <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.22)" />
         </View>
       </View>
@@ -160,6 +178,7 @@ function CommunityRow({ contact, isLast }: { contact: CommunityContact; isLast?:
 function LocalIphoneRow({ contact, isLast }: { contact: LocalIphoneContact; isLast?: boolean }) {
   const router = useRouter();
   const birthday = contact.nextHebrewBirthday;
+  const phone = contact.phoneNumbers[0]?.number;
   const nextBirthdayLabel = `${birthday.nextDateHebrew.label} · ${birthday.when}`;
 
   return (
@@ -187,7 +206,7 @@ function LocalIphoneRow({ contact, isLast }: { contact: LocalIphoneContact; isLa
           </View>
         </View>
         <View style={styles.actions}>
-          <ActionButton icon="gift-outline" />
+          {phone ? <CallButton name={contact.displayName} phone={phone} /> : null}
           <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.22)" />
         </View>
       </View>
@@ -376,11 +395,13 @@ export default function ContactsScreen() {
     }
 
     if (isLocalAccessIssue(localContactsPermission)) {
+      const needsSettings = localContactsPermission === 'denied' || localContactsPermission === 'limited';
+
       return (
         <ContactsStateCard
-          buttonTitle="Повторить"
+          buttonTitle={needsSettings ? 'Открыть настройки' : 'Повторить'}
           icon="alert-circle-outline"
-          onPress={loadLocalContacts}
+          onPress={needsSettings ? () => void Linking.openSettings() : loadLocalContacts}
           title="Доступ к контактам не разрешён"
           subtitle="Разрешите доступ в настройках iPhone, чтобы видеть дни рождения"
         />
@@ -447,14 +468,11 @@ export default function ContactsScreen() {
             </Pressable>
           ) : null}
         </View>
-        <Pressable style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}>
-          <Ionicons name="person-add-outline" size={20} color="#fff" />
-        </Pressable>
       </View>
 
       {isCommunity && !search && !loadingCommunity && !communityError && communityBirthdays.length > 0 ? (
         <View>
-          <SectionTitle title="БЛИЖАЙШИЕ ДНИ РОЖДЕНИЯ" action="Все дни рождения →" />
+          <SectionTitle title="БЛИЖАЙШИЕ ДНИ РОЖДЕНИЯ" />
           <GlassCard padded={false}>
             {communityBirthdays.map((item, index) => (
               <BirthdayRow key={item.id} item={item} isLast={index === communityBirthdays.length - 1} />
@@ -480,17 +498,14 @@ export default function ContactsScreen() {
             <Ionicons name="phone-portrait-outline" size={20} color="#4A90D9" />
           </View>
           <View style={styles.flex}>
-            <Text style={styles.rowTitle}>{localContactsCount} контактов с днями рождения</Text>
+            <Text style={styles.rowTitle}>{localContactsCount} {pluralRu(localContactsCount, ['контакт', 'контакта', 'контактов'])} с днями рождения</Text>
             <Text style={styles.rowSubtitle}>Еврейские даты рассчитаны автоматически</Text>
           </View>
         </View>
       ) : null}
 
       <View>
-        <SectionTitle
-          title={isCommunity ? 'КОНТАКТЫ ОБЩИНЫ' : 'МОИ КОНТАКТЫ'}
-          action={isCommunity && !search ? 'Все контакты →' : undefined}
-        />
+        <SectionTitle title={isCommunity ? 'КОНТАКТЫ ОБЩИНЫ' : 'МОИ КОНТАКТЫ'} />
         {isCommunity ? renderCommunityContactsContent() : renderLocalContactsContent()}
       </View>
     </Screen>
@@ -540,18 +555,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     paddingVertical: 0,
-  },
-  addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.orange,
-    shadowColor: colors.orange,
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
   },
   birthdayRow: {
     minHeight: 68,

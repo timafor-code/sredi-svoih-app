@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { Avatar } from '@/components/ui/Avatar';
@@ -55,23 +56,57 @@ function InfoRow({
   );
 }
 
+function toDialable(phone: string) {
+  const trimmed = phone.trim();
+  return (trimmed.startsWith('+') ? '+' : '') + trimmed.replace(/\D/g, '');
+}
+
 function PhoneRows({ phoneNumbers }: { phoneNumbers: ContactPhoneNumber[] }) {
+  const [linkError, setLinkError] = useState<string | null>(null);
+
   if (phoneNumbers.length === 0) {
     return <InfoRow icon="call-outline" label="Телефон" value="Не указан" />;
   }
+
+  const handleOpen = async (url: string) => {
+    setLinkError(null);
+    try {
+      await Linking.openURL(url);
+    } catch {
+      setLinkError('Не удалось открыть приложение для этого действия');
+    }
+  };
 
   return (
     <>
       {phoneNumbers.map((phone, index) => (
         <View key={phone.id ?? `${phone.number}:${index}`}>
           {index > 0 ? <View style={styles.separator} /> : null}
-          <InfoRow
-            icon="call-outline"
-            label={phone.label ? `Телефон · ${phone.label}` : 'Телефон'}
-            value={phone.number}
-          />
+          <View style={styles.phoneRow}>
+            <Pressable
+              accessibilityLabel={`Позвонить ${phone.number}`}
+              accessibilityRole="button"
+              onPress={() => handleOpen(`tel:${toDialable(phone.number)}`)}
+              style={({ pressed }) => [styles.flex, pressed && styles.pressed]}
+            >
+              <InfoRow
+                icon="call-outline"
+                label={phone.label ? `Телефон · ${phone.label}` : 'Телефон'}
+                value={phone.number}
+              />
+            </Pressable>
+            <Pressable
+              accessibilityLabel={`Написать ${phone.number}`}
+              accessibilityRole="button"
+              onPress={() => handleOpen(`sms:${toDialable(phone.number)}`)}
+              style={({ pressed }) => [styles.smsButton, pressed && styles.pressed]}
+            >
+              <Ionicons name="chatbubble-outline" size={20} color={colors.orange} />
+            </Pressable>
+          </View>
         </View>
       ))}
+      {linkError ? <Text style={styles.linkError}>{linkError}</Text> : null}
     </>
   );
 }
@@ -380,6 +415,23 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 13,
     fontWeight: '700',
+  },
+  phoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  smsButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  linkError: {
+    color: colors.textGhost,
+    fontSize: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
   },
   pressed: {
     opacity: 0.78,
