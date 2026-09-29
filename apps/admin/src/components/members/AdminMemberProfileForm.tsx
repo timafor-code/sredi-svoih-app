@@ -6,6 +6,7 @@ import type {
   AdminMemberTribeStatus,
   AdminUpdateUserProfileFields,
 } from "../../types/members";
+import { ApiClientError } from "../../services/apiClient";
 
 export type AdminMemberProfileDraft = {
   about: string;
@@ -153,7 +154,7 @@ export function AdminMemberProfileForm({
       </label>
 
       <label className="event-form-field">
-        <span>Email для связи</span>
+        <span>Email аккаунта и для связи</span>
         <input
           disabled={disabled}
           onChange={(event) => updateDraft("email", event.target.value)}
@@ -163,7 +164,7 @@ export function AdminMemberProfileForm({
       </label>
 
       <label className="event-form-field">
-        <span>Телефон</span>
+        <span>Телефон аккаунта и для связи</span>
         <input
           disabled={disabled}
           onChange={(event) => updateDraft("phone", event.target.value)}
@@ -171,6 +172,11 @@ export function AdminMemberProfileForm({
           value={draft.phone}
         />
       </label>
+
+      <p className="member-identity-editor-note event-form-field--wide">
+        Изменение email или телефона обновляет данные аккаунта. Значения, введённые
+        администратором, не считаются подтверждёнными.
+      </p>
 
       <label className="event-form-field">
         <span>Город</span>
@@ -363,7 +369,7 @@ export function createAdminMemberProfileDraft(
     birthDate: formatDateInputValue(detail.birthDate),
     birthTimeContext: normalizeBirthTimeContextDraft(profile?.birthTimeContext),
     city: detail.city ?? "",
-    email: detail.email ?? "",
+    email: profile ? (profile.accountEmail ?? "") : detail.email ?? "",
     firstName: detail.firstName ?? "",
     hebrewBirthDateDay: structuredHebrewBirthDate?.day.toString() ?? "",
     hebrewBirthDateMonthNameRu:
@@ -376,7 +382,7 @@ export function createAdminMemberProfileDraft(
     lastName: detail.lastName ?? "",
     maritalStatus: normalizeMaritalStatusDraft(profile?.maritalStatus),
     nusach: detail.nusach ?? "",
-    phone: detail.phone ?? "",
+    phone: profile ? (profile.accountPhone ?? "") : detail.phone ?? "",
     tribeStatus: normalizeTribeStatusDraft(profile?.tribeStatus),
   };
 }
@@ -415,13 +421,29 @@ export function buildAdminMemberProfileUpdateFields(
     fields.hebrewName = hebrewName;
   }
 
+  const currentAccountEmail =
+    "accountEmail" in detail ? detail.accountEmail : detail.email;
   const email = nullableTrimmedString(draft.email);
-  if (email !== nullableTrimmedString(detail.email)) {
+  if (email === null && currentAccountEmail !== null) {
+    return {
+      error: "Удаление email аккаунта через эту форму пока не поддерживается.",
+      ok: false,
+    };
+  }
+  if (email !== nullableTrimmedString(currentAccountEmail)) {
     fields.email = email;
   }
 
+  const currentAccountPhone =
+    "accountPhone" in detail ? detail.accountPhone : detail.phone;
   const phone = nullableTrimmedString(draft.phone);
-  if (phone !== nullableTrimmedString(detail.phone)) {
+  if (phone === null && currentAccountPhone !== null) {
+    return {
+      error: "Удаление телефона аккаунта через эту форму пока не поддерживается.",
+      ok: false,
+    };
+  }
+  if (phone !== nullableTrimmedString(currentAccountPhone)) {
     fields.phone = phone;
   }
 
@@ -472,6 +494,30 @@ export function buildAdminMemberProfileUpdateFields(
   }
 
   return { fields, ok: true };
+}
+
+export function mapAdminMemberProfileUpdateError(error: unknown): string {
+  if (!(error instanceof ApiClientError)) {
+    return "Не удалось сохранить профиль. Проверьте подключение и попробуйте ещё раз.";
+  }
+
+  switch (error.code) {
+    case "admin_member_email_exists":
+      return "Этот email уже используется другим аккаунтом и не может быть назначен этому участнику.";
+    case "admin_member_phone_exists":
+      return "Этот телефон уже используется другим аккаунтом и не может быть назначен этому участнику.";
+    case "admin_member_identity_unavailable":
+      return "Данные аккаунта участника сейчас нельзя изменить. Обновите карточку и повторите попытку.";
+    case "unauthenticated":
+      return "Сессия администратора истекла. Войдите снова и повторите попытку.";
+    case "forbidden":
+    case "not_found":
+      return "У вас нет доступа к этому участнику.";
+    default:
+      return error.status >= 500 || error.status === 0
+        ? "Сервис временно недоступен. Попробуйте ещё раз."
+        : "Не удалось сохранить профиль. Проверьте введённые данные.";
+  }
 }
 
 function buildHebrewBirthDateUpdate(

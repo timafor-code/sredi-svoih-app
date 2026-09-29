@@ -516,6 +516,7 @@ export type AdminApiMemberListItemResponse = {
 
 export type AdminApiMemberDetailResponse = AdminApiMemberListItemResponse & {
   account_email: string | null;
+  account_phone: string | null;
   profile_community_id: string | null;
   full_name: string | null;
   hebrew_name: string | null;

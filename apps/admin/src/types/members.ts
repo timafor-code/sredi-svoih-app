@@ -72,6 +72,7 @@ export type AdminMemberListRow = {
 
 export type AdminMemberProfile = AdminMemberListRow & {
   accountEmail: string | null;
+  accountPhone: string | null;
   profileCommunityId: string | null;
   fullName: string | null;
   hebrewName: string | null;

@@ -139,6 +139,7 @@ function normalizeAdminMemberProfile(
   return {
     ...normalizeAdminMemberListRow(row),
     accountEmail: nullableString(row.account_email),
+    accountPhone: nullableString(row.account_phone),
     profileCommunityId: nullableString(row.profile_community_id),
     fullName: nullableString(row.full_name),
     hebrewName: nullableString(row.hebrew_name),

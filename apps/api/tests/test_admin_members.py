@@ -3,12 +3,14 @@ from __future__ import annotations
 import asyncio
 import unittest
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import httpx
 from fastapi import HTTPException
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.tokens import create_access_token
 from app.db.models.auth import (
@@ -874,16 +876,20 @@ class AdminMemberDeletionTests(unittest.IsolatedAsyncioTestCase):
                     select(Profile).where(Profile.user_id == target_id),
                 )
                 account.email = "login@example.invalid"
+                account.phone = "+79995550101"
                 profile.email = "contact@example.invalid"
+                profile.phone = "+79995550102"
 
         response = await self._get_member_detail(admin_id, target_id)
 
         self.assertEqual(response.status_code, 200, response.text)
         data = response.json()["data"]
         self.assertEqual(data["account_email"], "login@example.invalid")
+        self.assertEqual(data["account_phone"], "+79995550101")
         self.assertEqual(data["email"], "contact@example.invalid")
+        self.assertEqual(data["phone"], "+79995550102")
 
-    async def test_contact_email_update_does_not_change_account_email(self) -> None:
+    async def test_identity_update_changes_canonical_email_and_synchronizes_profile(self) -> None:
         admin_id = await self._add_admin()
         target_id = await self._add_target()
         async with AsyncSessionLocal() as session:
@@ -893,26 +899,354 @@ class AdminMemberDeletionTests(unittest.IsolatedAsyncioTestCase):
                     select(Profile).where(Profile.user_id == target_id),
                 )
                 account.email = "login@example.invalid"
+                account.phone = "+79995550110"
+                account.email_verified_at = self.now
+                account.phone_verified_at = self.now
                 profile.email = "contact@example.invalid"
+                profile.phone = "+79995550110"
 
         response = await self._update_member_profile(
             admin_id,
             target_id,
-            email="new-contact@example.invalid",
+            email="new-canonical@example.invalid",
         )
 
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(
             response.json()["data"]["email"],
-            "new-contact@example.invalid",
+            "new-canonical@example.invalid",
         )
         async with AsyncSessionLocal() as session:
             account = await session.get(AppUser, target_id)
             profile = await session.scalar(
                 select(Profile).where(Profile.user_id == target_id),
             )
-        self.assertEqual(account.email, "login@example.invalid")
-        self.assertEqual(profile.email, "new-contact@example.invalid")
+        self.assertEqual(account.email, "new-canonical@example.invalid")
+        self.assertEqual(profile.email, "new-canonical@example.invalid")
+        self.assertIsNone(account.email_verified_at)
+        self.assertEqual(account.phone_verified_at, self.now)
+
+    async def test_identity_update_requires_admin_in_requested_community(self) -> None:
+        non_admin_id = await self._add_target()
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+
+        non_admin_response = await self._update_member_profile(
+            non_admin_id,
+            target_id,
+            email="non-admin@example.invalid",
+        )
+        wrong_community_response = await self.client.patch(
+            f"/admin/members/{target_id}/profile",
+            headers=self._headers(admin_id),
+            json={
+                "community_id": str(self.other_community_id),
+                "email": "wrong-community@example.invalid",
+            },
+        )
+
+        self.assertEqual(non_admin_response.status_code, 403)
+        self.assertEqual(wrong_community_response.status_code, 403)
+
+    async def test_admin_can_add_email_to_unclaimed_phone_only_account(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target(email=False)
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                account = await session.get(AppUser, target_id)
+                profile = await session.scalar(
+                    select(Profile).where(Profile.user_id == target_id),
+                )
+                account.account_origin = "admin"
+                account.claim_state = "unclaimed"
+                account.password_hash = None
+                account.phone = "+79995550111"
+                account.phone_verified_at = None
+                profile.phone = "+79995550111"
+
+        response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            email="  Added.Email@Example.Invalid ",
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        async with AsyncSessionLocal() as session:
+            account = await session.get(AppUser, target_id)
+            profile = await session.scalar(select(Profile).where(Profile.user_id == target_id))
+        self.assertEqual(account.email, "added.email@example.invalid")
+        self.assertEqual(profile.email, "added.email@example.invalid")
+        self.assertEqual(account.account_origin, "admin")
+        self.assertEqual(account.claim_state, "unclaimed")
+        self.assertIsNone(account.password_hash)
+        self.assertIsNone(account.email_verified_at)
+
+    async def test_phone_update_normalizes_and_only_clears_phone_verification(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                account = await session.get(AppUser, target_id)
+                profile = await session.scalar(select(Profile).where(Profile.user_id == target_id))
+                account.phone = "+79995550112"
+                profile.phone = "+79995550112"
+                account.email_verified_at = self.now
+                account.phone_verified_at = self.now
+
+        response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            phone="8 (999) 555-01-13",
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        async with AsyncSessionLocal() as session:
+            account = await session.get(AppUser, target_id)
+            profile = await session.scalar(select(Profile).where(Profile.user_id == target_id))
+        self.assertEqual(account.phone, "+79995550113")
+        self.assertEqual(profile.phone, "+79995550113")
+        self.assertEqual(account.email_verified_at, self.now)
+        self.assertIsNone(account.phone_verified_at)
+
+    async def test_admin_can_add_missing_canonical_phone_unverified(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                account = await session.get(AppUser, target_id)
+                profile = await session.scalar(select(Profile).where(Profile.user_id == target_id))
+                account.phone = None
+                account.phone_verified_at = self.now
+                profile.phone = None
+
+        response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            phone="8 (999) 555-01-17",
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        async with AsyncSessionLocal() as session:
+            account = await session.get(AppUser, target_id)
+            profile = await session.scalar(select(Profile).where(Profile.user_id == target_id))
+        self.assertEqual(account.phone, "+79995550117")
+        self.assertEqual(profile.phone, "+79995550117")
+        self.assertIsNone(account.phone_verified_at)
+
+    async def test_duplicate_canonical_identities_are_safe_and_atomic(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+        other_id = await self._add_target()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                other = await session.get(AppUser, other_id)
+                other.phone = "+79995550114"
+
+        email_response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            email=(await self._get_member_detail(admin_id, other_id)).json()["data"]["account_email"],
+        )
+        phone_response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            phone="+79995550114",
+        )
+        atomic_response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            city="Should not save",
+            email="atomic@example.invalid",
+            phone="+79995550114",
+        )
+
+        for response, code in (
+            (email_response, "admin_member_email_exists"),
+            (phone_response, "admin_member_phone_exists"),
+            (atomic_response, "admin_member_phone_exists"),
+        ):
+            self.assertEqual(response.status_code, 409, response.text)
+            error = response.json()["error"]
+            self.assertEqual(error["code"], code)
+            self.assertNotIn(str(other_id), response.text)
+            self.assertNotIn("Synthetic Member", response.text)
+
+        async with AsyncSessionLocal() as session:
+            account = await session.get(AppUser, target_id)
+            profile = await session.scalar(select(Profile).where(Profile.user_id == target_id))
+        self.assertNotEqual(account.email, "atomic@example.invalid")
+        self.assertNotEqual(profile.city, "Should not save")
+
+    async def test_identity_noops_and_profile_only_edits_preserve_verification(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                account = await session.get(AppUser, target_id)
+                profile = await session.scalar(select(Profile).where(Profile.user_id == target_id))
+                account.phone = "+79995550115"
+                profile.phone = "+79995550115"
+                account.email_verified_at = self.now
+                account.phone_verified_at = self.now
+                profile.email = "stale@example.invalid"
+                profile.phone = "+79995550116"
+
+        response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            email=f"  ADMIN-MEMBERS-{self.marker}-2@EXAMPLE.INVALID ",
+            phone="8 (999) 555-01-15",
+        )
+        profile_only_response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            city="Kazan",
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(profile_only_response.status_code, 200, profile_only_response.text)
+        async with AsyncSessionLocal() as session:
+            account = await session.get(AppUser, target_id)
+            profile = await session.scalar(select(Profile).where(Profile.user_id == target_id))
+        self.assertEqual(account.email_verified_at, self.now)
+        self.assertEqual(account.phone_verified_at, self.now)
+        self.assertEqual(profile.email, account.email)
+        self.assertEqual(profile.phone, account.phone)
+        self.assertEqual(profile.city, "Kazan")
+
+    async def test_unsafe_identity_state_and_removal_fail_without_partial_mutation(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                account = await session.get(AppUser, target_id)
+                account.deletion_requested_at = self.now
+
+        unavailable_response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            email="blocked@example.invalid",
+        )
+        self.assertEqual(unavailable_response.status_code, 409, unavailable_response.text)
+        self.assertEqual(
+            unavailable_response.json()["error"]["code"],
+            "admin_member_identity_unavailable",
+        )
+
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                account = await session.get(AppUser, target_id)
+                account.deletion_requested_at = None
+                original_email = account.email
+
+        removal_response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            email=None,
+            city="Should not save",
+        )
+        self.assertEqual(removal_response.status_code, 422, removal_response.text)
+        async with AsyncSessionLocal() as session:
+            account = await session.get(AppUser, target_id)
+            profile = await session.scalar(select(Profile).where(Profile.user_id == target_id))
+        self.assertEqual(account.email, original_email)
+        self.assertNotEqual(profile.city, "Should not save")
+
+    async def test_inactive_identity_target_fails_closed_without_profile_mutation(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                account = await session.get(AppUser, target_id)
+                account.status = "suspended"
+
+        response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            email="inactive@example.invalid",
+            city="Should not save",
+        )
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(
+            response.json()["error"]["code"],
+            "admin_member_identity_unavailable",
+        )
+        async with AsyncSessionLocal() as session:
+            account = await session.get(AppUser, target_id)
+            profile = await session.scalar(select(Profile).where(Profile.user_id == target_id))
+        self.assertNotEqual(account.email, "inactive@example.invalid")
+        self.assertNotEqual(profile.city, "Should not save")
+
+    async def test_erased_identity_target_fails_closed_without_profile_mutation(self) -> None:
+        admin_id = await self._add_admin()
+        target_id = await self._add_target()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                account = await session.get(AppUser, target_id)
+                account.erased_at = self.now
+
+        response = await self._update_member_profile(
+            admin_id,
+            target_id,
+            phone="+79995550118",
+            city="Should not save",
+        )
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(
+            response.json()["error"]["code"],
+            "admin_member_identity_unavailable",
+        )
+        async with AsyncSessionLocal() as session:
+            account = await session.get(AppUser, target_id)
+            profile = await session.scalar(select(Profile).where(Profile.user_id == target_id))
+        self.assertIsNone(account.phone)
+        self.assertNotEqual(profile.city, "Should not save")
+
+    async def test_identity_lock_helper_locks_app_user_before_profile(self) -> None:
+        events: list[str] = []
+        session = AsyncMock()
+
+        async def lock_app_user(*args: object, **kwargs: object) -> None:
+            events.append("app_user")
+            return None
+
+        async def lock_profile(*args: object, **kwargs: object) -> tuple[object, None]:
+            events.append("profile")
+            return object(), None
+
+        session.scalar.side_effect = lock_app_user
+        with patch(
+            "app.services.admin_members._resolve_scoped_member",
+            new=AsyncMock(side_effect=lock_profile),
+        ):
+            await admin_members._lock_scoped_identity_member(
+                session,
+                target_user_id=uuid4(),
+                community_id=self.community_id,
+            )
+
+        self.assertEqual(events, ["app_user", "profile"])
+
+    async def test_known_identity_constraint_races_have_stable_codes(self) -> None:
+        class SyntheticDatabaseError(Exception):
+            def __init__(self, constraint_name: str) -> None:
+                self.diag = SimpleNamespace(constraint_name=constraint_name)
+
+        for constraint_name, code in (
+            ("app_users_email_lower_key", "admin_member_email_exists"),
+            ("app_users_phone_key", "admin_member_phone_exists"),
+        ):
+            with self.subTest(constraint_name=constraint_name):
+                error = IntegrityError("statement", {}, SyntheticDatabaseError(constraint_name))
+                translated = admin_members._identity_race_error(error)
+                self.assertIsNotNone(translated)
+                self.assertEqual(translated.status_code, 409)
+                self.assertEqual(translated.detail["code"], code)
+
+        unknown = IntegrityError("statement", {}, SyntheticDatabaseError("other_constraint"))
+        self.assertIsNone(admin_members._identity_race_error(unknown))
 
     async def test_first_and_last_names_are_normalized_and_derive_names(self) -> None:
         admin_id = await self._add_admin()
