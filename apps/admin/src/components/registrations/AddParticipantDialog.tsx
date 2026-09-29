@@ -18,6 +18,11 @@ type ParticipantMode = "existing" | "new";
 
 type OptionSelections = Record<string, number>;
 
+export type ExistingParticipantPickerState = {
+  search: string;
+  selectedParticipant: AdminRegistrationParticipant | null;
+};
+
 type AddParticipantDialogProps = {
   eventId: string;
   eventTitle: string;
@@ -31,6 +36,36 @@ type AddParticipantDialogProps = {
 };
 
 const INITIAL_SEATS_COUNT = 1;
+
+export function getExistingParticipantPickerView(
+  selectedParticipant: AdminRegistrationParticipant | null,
+): "search" | "selected" {
+  return selectedParticipant ? "selected" : "search";
+}
+
+export function selectExistingParticipant(
+  state: ExistingParticipantPickerState,
+  participant: AdminRegistrationParticipant,
+): ExistingParticipantPickerState {
+  return { ...state, selectedParticipant: participant };
+}
+
+export function deselectExistingParticipant(
+  state: ExistingParticipantPickerState,
+): ExistingParticipantPickerState {
+  return { ...state, selectedParticipant: null };
+}
+
+export function createExistingParticipantSearchState(search: string): ExistingParticipantPickerState {
+  return { search, selectedParticipant: null };
+}
+
+export function updateExistingParticipantSearch(
+  state: ExistingParticipantPickerState,
+  search: string,
+): ExistingParticipantPickerState {
+  return { ...state, search };
+}
 
 function formatPrice(option: ParticipationOption): string | null {
   if (option.priceAmount === 0) return null;
@@ -167,11 +202,12 @@ export function AddParticipantDialog({
   onSuccess,
 }: AddParticipantDialogProps) {
   const [mode, setMode] = useState<ParticipantMode>("existing");
-  const [search, setSearch] = useState("");
+  const [participantPicker, setParticipantPicker] = useState<ExistingParticipantPickerState>(
+    createExistingParticipantSearchState(""),
+  );
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [participants, setParticipants] = useState<AdminRegistrationParticipant[]>([]);
-  const [selectedParticipant, setSelectedParticipant] = useState<AdminRegistrationParticipant | null>(null);
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -185,6 +221,7 @@ export function AddParticipantDialog({
   const [submitting, setSubmitting] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const { search, selectedParticipant } = participantPicker;
 
   useEffect(() => {
     searchRef.current?.focus();
@@ -213,7 +250,7 @@ export function AddParticipantDialog({
   }, [eventId]);
 
   useEffect(() => {
-    if (mode !== "existing" || !search.trim()) {
+    if (mode !== "existing" || selectedParticipant || !search.trim()) {
       setParticipants([]);
       setSearchLoading(false);
       setSearchError(null);
@@ -241,7 +278,7 @@ export function AddParticipantDialog({
       window.clearTimeout(delay);
       controller.abort();
     };
-  }, [eventId, mode, search]);
+  }, [eventId, mode, search, selectedParticipant]);
 
   const activeOptions = useMemo(
     () => [...options].sort((left, right) => left.sortOrder - right.sortOrder),
@@ -265,8 +302,7 @@ export function AddParticipantDialog({
       setEmail("");
     } else {
       setParticipants([]);
-      setSelectedParticipant(null);
-      setSearch("");
+      setParticipantPicker(createExistingParticipantSearchState(""));
     }
   };
 
@@ -287,8 +323,16 @@ export function AddParticipantDialog({
   };
 
   const selectParticipant = (participant: AdminRegistrationParticipant) => {
-    setSelectedParticipant(participant);
+    setParticipantPicker((current) => selectExistingParticipant(current, participant));
+    setParticipants([]);
+    setSearchLoading(false);
+    setSearchError(null);
     setSubmitError(null);
+  };
+
+  const deselectParticipant = () => {
+    setParticipantPicker(deselectExistingParticipant);
+    window.requestAnimationFrame(() => searchRef.current?.focus());
   };
 
   const requestClose = () => {
@@ -333,13 +377,11 @@ export function AddParticipantDialog({
       setSubmitError(nextError);
       if (error instanceof ApiClientError && error.code === "admin_participant_phone_exists") {
         setMode("existing");
-        setSelectedParticipant(null);
-        setSearch(phone.trim());
+        setParticipantPicker(createExistingParticipantSearchState(phone.trim()));
       }
       if (error instanceof ApiClientError && error.code === "admin_participant_email_exists") {
         setMode("existing");
-        setSelectedParticipant(null);
-        setSearch(email.trim());
+        setParticipantPicker(createExistingParticipantSearchState(email.trim()));
       }
       setSubmitting(false);
       return;
@@ -376,20 +418,32 @@ export function AddParticipantDialog({
 
           {mode === "existing" ? (
             <section className="add-participant-section" aria-label="Поиск участника">
-              <label className="add-participant-field">
-                <span>Поиск</span>
-                <input autoComplete="off" disabled={submitting} onChange={(event) => { setSearch(event.target.value); setSelectedParticipant(null); }} placeholder="ФИО, телефон или email" ref={searchRef} type="search" value={search} />
-              </label>
-              {searchLoading ? <p className="add-participant-state">Ищем участников…</p> : null}
-              {searchError ? <p className="form-error" role="alert">{searchError}</p> : null}
-              {search.trim() && !searchLoading && !searchError && participants.length === 0 ? <p className="add-participant-state">Участники не найдены.</p> : null}
-              {participants.length > 0 ? <div className="add-participant-results" role="listbox" aria-label="Результаты поиска">
-                {participants.map((participant) => <button aria-selected={selectedParticipant?.id === participant.id} className={selectedParticipant?.id === participant.id ? "is-selected" : undefined} disabled={submitting} key={participant.id} onClick={() => selectParticipant(participant)} role="option" type="button">
-                  <strong>{participant.displayName}</strong>
-                  <span>{[participant.phone, participant.email].filter(Boolean).join(" · ") || "Контакты не указаны"}</span>
-                </button>)}
-              </div> : null}
-              {selectedParticipant ? <p className="add-participant-selected">Выбран: <strong>{selectedParticipant.displayName}</strong></p> : null}
+              {getExistingParticipantPickerView(selectedParticipant) === "selected" && selectedParticipant ? (
+                <div className="add-participant-selected">
+                  <div>
+                    <span>Выбран:</span>
+                    <strong>{selectedParticipant.displayName}</strong>
+                    <small>{[selectedParticipant.phone, selectedParticipant.email].filter(Boolean).join(" · ") || "Контакты не указаны"}</small>
+                  </div>
+                  <button aria-label={`Убрать выбранного участника ${selectedParticipant.displayName}`} disabled={submitting} onClick={deselectParticipant} type="button">×</button>
+                </div>
+              ) : (
+                <>
+                  <label className="add-participant-field">
+                    <span>Поиск</span>
+                    <input autoComplete="off" disabled={submitting} onChange={(event) => setParticipantPicker((current) => updateExistingParticipantSearch(current, event.target.value))} placeholder="ФИО, телефон или email" ref={searchRef} type="search" value={search} />
+                  </label>
+                  {searchLoading ? <p className="add-participant-state">Ищем участников…</p> : null}
+                  {searchError ? <p className="form-error" role="alert">{searchError}</p> : null}
+                  {search.trim() && !searchLoading && !searchError && participants.length === 0 ? <p className="add-participant-state">Участники не найдены.</p> : null}
+                  {participants.length > 0 ? <div className="add-participant-results" role="listbox" aria-label="Результаты поиска">
+                    {participants.map((participant) => <button disabled={submitting} key={participant.id} onClick={() => selectParticipant(participant)} role="option" type="button">
+                      <strong>{participant.displayName}</strong>
+                      <span>{[participant.phone, participant.email].filter(Boolean).join(" · ") || "Контакты не указаны"}</span>
+                    </button>)}
+                  </div> : null}
+                </>
+              )}
             </section>
           ) : (
             <section className="add-participant-section add-participant-fields" aria-label="Новый участник">

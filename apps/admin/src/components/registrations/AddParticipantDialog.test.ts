@@ -4,9 +4,14 @@ import { ApiClientError } from "../../services/apiClient";
 import type { ParticipationOption } from "../../types/participationOptions";
 import {
   buildAdminRegistrationRequest,
+  createExistingParticipantSearchState,
+  deselectExistingParticipant,
+  getExistingParticipantPickerView,
   mapAddParticipantError,
   refreshAfterRegistrationSaved,
   resolveRegistrationSeats,
+  selectExistingParticipant,
+  updateExistingParticipantSearch,
 } from "./AddParticipantDialog";
 
 const selectedParticipant = {
@@ -29,6 +34,26 @@ const nonCapacityOption = (id: string, isDonation = false) => ({
 }) as ParticipationOption;
 
 describe("AddParticipantDialog request helpers", () => {
+  it("collapses search after explicit selection and restores its query on deselect", () => {
+    const searchState = createExistingParticipantSearchState("Аарон");
+    const selectedState = selectExistingParticipant(searchState, selectedParticipant);
+
+    expect(getExistingParticipantPickerView(selectedState.selectedParticipant)).toBe("selected");
+    expect(selectedState).toEqual({ search: "Аарон", selectedParticipant });
+    expect(updateExistingParticipantSearch(selectedState, "Аарон Абрамов").selectedParticipant).toEqual(selectedParticipant);
+
+    const deselectedState = deselectExistingParticipant(selectedState);
+    expect(getExistingParticipantPickerView(deselectedState.selectedParticipant)).toBe("search");
+    expect(deselectedState).toEqual({ search: "Аарон", selectedParticipant: null });
+  });
+
+  it("starts conflict recovery in an unselected existing-participant search state", () => {
+    expect(createExistingParticipantSearchState("anna@example.invalid")).toEqual({
+      search: "anna@example.invalid",
+      selectedParticipant: null,
+    });
+  });
+
   it("keeps several participation options in one existing-participant request", () => {
     expect(buildAdminRegistrationRequest({
       comment: "  ",
