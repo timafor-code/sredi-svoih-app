@@ -11,7 +11,7 @@ Current production reference:
 - provider: Timeweb Cloud;
 - public IPv4: `147.45.154.166`;
 - repository: `timafor-code/sredi-svoih-app`;
-- host workspace: `/opt/sredi-svoih-app-app`;
+- host workspace: `/opt/sredi-svoih-app`;
 - public API hostname: `api.sredisvoihapp.ru`;
 - public Admin hostname: `admin.sredisvoihapp.ru`;
 - public registration hostname: `reg.sredisvoihapp.ru`;
