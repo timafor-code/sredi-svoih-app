@@ -713,8 +713,7 @@ async def update_admin_member_profile(
                             .where(
                                 AppUser.id != account_user.id,
                                 func.lower(AppUser.email) == supplied_email,
-                            )
-                            .with_for_update(),
+                            ),
                         )
                         if conflicting_user_id is not None:
                             raise _identity_conflict(
@@ -740,8 +739,7 @@ async def update_admin_member_profile(
                             .where(
                                 AppUser.id != account_user.id,
                                 AppUser.phone == supplied_phone,
-                            )
-                            .with_for_update(),
+                            ),
                         )
                         if conflicting_user_id is not None:
                             raise _identity_conflict(
