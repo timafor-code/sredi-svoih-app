@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { Fragment } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Fragment, useState } from 'react';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/glass/GlassCard';
 import { Avatar } from '@/components/ui/Avatar';
@@ -21,6 +21,7 @@ const contactsRoute = '/contacts';
 
 type InfoRowData = {
   accent?: boolean;
+  href?: string;
   icon: string;
   key: string;
   label: string;
@@ -28,21 +29,28 @@ type InfoRowData = {
   value: string;
 };
 
+function toDialable(phone: string) {
+  const trimmed = phone.trim();
+  return (trimmed.startsWith('+') ? '+' : '') + trimmed.replace(/\D/g, '');
+}
+
 function InfoRow({
   accent,
   icon,
   label,
+  onPress,
   subtitle,
   value,
 }: {
   accent?: boolean;
   icon: string;
   label: string;
+  onPress?: () => void;
   subtitle?: string;
   value: string;
 }) {
-  return (
-    <View style={styles.infoRow}>
+  const content = (
+    <>
       <View style={styles.infoIcon}>
         <Text style={styles.infoEmoji}>{icon}</Text>
       </View>
@@ -51,11 +59,26 @@ function InfoRow({
         <Text style={[styles.infoValue, accent && styles.infoValueAccent]}>{value}</Text>
         {subtitle ? <Text style={styles.infoSubtitle}>{subtitle}</Text> : null}
       </View>
-    </View>
+    </>
+  );
+
+  if (!onPress) {
+    return <View style={styles.infoRow}>{content}</View>;
+  }
+
+  return (
+    <Pressable
+      accessibilityLabel={`${label}: ${value}`}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.infoRow, pressed && styles.pressed]}
+    >
+      {content}
+    </Pressable>
   );
 }
 
-function InfoRowsCard({ rows }: { rows: InfoRowData[] }) {
+function InfoRowsCard({ onOpen, rows }: { onOpen?: (url: string) => void; rows: InfoRowData[] }) {
   return (
     <GlassCard padded={false}>
       {rows.map((row, index) => (
@@ -65,6 +88,7 @@ function InfoRowsCard({ rows }: { rows: InfoRowData[] }) {
             accent={row.accent}
             icon={row.icon}
             label={row.label}
+            onPress={row.href && onOpen ? () => onOpen(row.href as string) : undefined}
             subtitle={row.subtitle}
             value={row.value}
           />
@@ -100,9 +124,10 @@ function getBackendBirthday(contact: CommunityContact, now: Date) {
 
 function getBackendContactRows(contact: CommunityContact): InfoRowData[] {
   const phone = contact.phone ?? contact.phoneNumbers[0]?.number;
-  return [
+  const rows: (InfoRowData | null)[] = [
     phone
       ? {
+          href: `tel:${toDialable(phone)}`,
           icon: '☎️',
           key: 'phone',
           label: 'Телефон',
@@ -111,13 +136,15 @@ function getBackendContactRows(contact: CommunityContact): InfoRowData[] {
       : null,
     contact.email
       ? {
+          href: `mailto:${contact.email}`,
           icon: '✉️',
           key: 'email',
           label: 'Email',
           value: contact.email,
         }
       : null,
-  ].filter((row): row is InfoRowData => Boolean(row));
+  ];
+  return rows.filter((row): row is InfoRowData => Boolean(row));
 }
 
 function getBackendProfileRows(contact: CommunityContact): InfoRowData[] {
@@ -149,6 +176,34 @@ function getBackendProfileRows(contact: CommunityContact): InfoRowData[] {
         }
       : null,
   ].filter((row): row is InfoRowData => Boolean(row));
+}
+
+function ContactActions({ contact, onOpen }: { contact: CommunityContact; onOpen: (url: string) => void }) {
+  const phone = contact.phone ?? contact.phoneNumbers[0]?.number;
+  const actions = [
+    phone ? { icon: 'call-outline', label: 'Позвонить', url: `tel:${toDialable(phone)}` } : null,
+    phone ? { icon: 'chatbubble-outline', label: 'Написать', url: `sms:${toDialable(phone)}` } : null,
+    contact.email ? { icon: 'mail-outline', label: 'Email', url: `mailto:${contact.email}` } : null,
+  ].filter((action): action is { icon: string; label: string; url: string } => Boolean(action));
+
+  if (actions.length === 0) return null;
+
+  return (
+    <View style={styles.actionRow}>
+      {actions.map((action) => (
+        <Pressable
+          key={action.label}
+          accessibilityLabel={action.label}
+          accessibilityRole="button"
+          onPress={() => onOpen(action.url)}
+          style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}
+        >
+          <Ionicons name={action.icon as keyof typeof Ionicons.glyphMap} size={18} color={colors.orange} />
+          <Text style={styles.actionText}>{action.label}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
 }
 
 function NotFoundState() {
@@ -197,6 +252,7 @@ function BackendCommunityContactDetail({
   now: Date;
   onBack: () => void;
 }) {
+  const [linkError, setLinkError] = useState<string | null>(null);
   const contactRows = getBackendContactRows(contact);
   const profileRows = getBackendProfileRows(contact);
   const birthday = getBackendBirthday(contact, now);
@@ -206,6 +262,15 @@ function BackendCommunityContactDetail({
   ]
     .filter((part): part is string => Boolean(part))
     .join(' · ');
+
+  const handleOpen = async (url: string) => {
+    setLinkError(null);
+    try {
+      await Linking.openURL(url);
+    } catch {
+      setLinkError('Не удалось открыть приложение для этого действия');
+    }
+  };
 
   return (
     <>
@@ -231,10 +296,13 @@ function BackendCommunityContactDetail({
           </View>
         </GlassCard>
 
+        <ContactActions contact={contact} onOpen={handleOpen} />
+
         {contactRows.length > 0 ? (
           <View>
             <SectionTitle title="КОНТАКТЫ" />
-            <InfoRowsCard rows={contactRows} />
+            <InfoRowsCard onOpen={handleOpen} rows={contactRows} />
+            {linkError ? <Text style={styles.linkError}>{linkError}</Text> : null}
           </View>
         ) : null}
 
@@ -572,6 +640,33 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 13,
     fontWeight: '700',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  actionButton: {
+    flex: 1,
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.glass.w10,
+    backgroundColor: colors.glass.w07,
+  },
+  actionText: {
+    color: colors.orange,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  linkError: {
+    color: colors.textGhost,
+    fontSize: 12,
+    marginTop: 6,
+    paddingHorizontal: 2,
   },
   pressed: {
     opacity: 0.78,

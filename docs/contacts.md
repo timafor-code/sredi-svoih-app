@@ -157,6 +157,21 @@ PR5 подключал экран Profile → Contacts and birthdays settings к
 
 PR6 подключает вкладку Contacts → "Община" к backend RPC `list_community_contacts` через `contactsService.listCommunityContacts()`. UI показывает только rows, которые backend вернул как видимые по `profiles.profile_visibility`; если каталог пустой, это считается нормальным состоянием. Скрытые поля приходят из backend как `NULL`, мапятся в `undefined` и не рисуются в списке, birthday preview или detail screen. Community detail сначала ищет контакт в `useContactsStore.communityContacts` и показывает только backend-returned `phone`, `city`, `hebrew_name`, `birth_date` или `hebrew_birth_date`; если backend contact не найден, fallback на `mockContacts` разрешен только по совпавшему legacy id. Вкладка "Мои контакты" остается local-only iPhone flow: permission prompt открывается только по явной кнопке, контакты не загружаются в Supabase и не сохраняются как вся адресная книга в persistent storage.
 
+## Contact actions
+
+Channels are call (`tel:`), SMS (`sms:`) and email (`mailto:`) only. There is no WhatsApp or Telegram.
+
+- Contacts list (community and iPhone rows): a call button opens `tel:` for the contact's first phone number. It is rendered only when a phone number exists.
+- Community contact detail: an action row under the hero with `Позвонить`, `Написать` (`sms:`) and `Email`, each shown only when the underlying value exists. The phone and email rows are also pressable (`tel:` / `mailto:`).
+- iPhone contact detail: every phone row opens `tel:` on press, with an `sms:` button beside it.
+- Phone numbers are stripped of spaces, dashes and brackets before building `tel:` / `sms:` URLs; a leading `+` is kept.
+- URLs are opened with `Linking.openURL` inside try/catch. `Linking.canOpenURL` is deliberately not used, because it would require `LSApplicationQueriesSchemes`.
+- On failure the detail screens show an inline message under the rows (no `Alert`). The list call button ignores failures silently.
+
+## Contacts permission
+
+In "Мои контакты", when the iPhone contacts permission is `denied` or `limited`, the state card shows `Открыть настройки`, which calls `Linking.openSettings()`. `Повторить` (re-runs `loadLocalContacts`) is shown only for `unavailable` and `error`.
+
 ## Birthday layer
 
 Birthday layer объединяет дни рождения из community contacts и local iPhone contacts в единый список ближайших еврейских дней рождения. Сейчас это вычисляется на клиенте через существующую Hebcal-логику.

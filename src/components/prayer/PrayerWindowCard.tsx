@@ -73,7 +73,6 @@ export function PrayerWindowCard({
     : isUpcomingPreviewLayout
       ? clampProgress(upcomingPreviewProgress)
       : 0;
-  const progressPercent = Math.round(progressValue * 100);
   const nowMs = Date.now();
   const badgeLabel = active ? (alreadyRecorded ? 'Помолился' : 'ИДЁТ') : alreadyRecorded ? 'Помолился' : null;
   const overlineLabel = active
@@ -91,9 +90,9 @@ export function PrayerWindowCard({
         ? formatRuTime(windowEnd, timeZone)
         : formatRuTime(windowStart, timeZone);
   const sideLabel = active
-    ? `осталось · ${progressPercent}%`
+    ? 'осталось'
     : isUpcomingPreviewLayout
-      ? `до начала · ${progressPercent}%`
+      ? 'до начала'
       : done
         ? 'окончание'
         : 'начало';
