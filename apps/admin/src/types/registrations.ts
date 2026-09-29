@@ -58,6 +58,7 @@ export type AdminRegistrationEventSummaryRpcRow = {
 
 export type AdminRegistrationEventSummary = {
   eventId: string;
+  communityId: string;
   title: string;
   startsAt: string | null;
   eventKind: AdminEventKind | string;
@@ -202,6 +203,29 @@ export type ListEventRegistrationsParams = {
   search?: string | null;
   limit?: number | null;
   offset?: number | null;
+};
+
+export type AdminRegistrationParticipant = {
+  id: string;
+  displayName: string;
+  phone: string | null;
+  email: string | null;
+};
+
+export type AdminRegistrationOptionSelectionInput = {
+  optionId: string;
+  quantity: number;
+};
+
+export type CreateAdminEventRegistrationRequest = {
+  participant:
+    | { mode: "existing"; userId: string }
+    | { mode: "new"; fullName: string; phone: string; email: string | null };
+  occurrenceId: string | null;
+  optionSelections: AdminRegistrationOptionSelectionInput[];
+  seatsCount: number;
+  guestNames: string[];
+  comment: string | null;
 };
 
 export type QuestionnaireAnswersSummaryParams = Pick<

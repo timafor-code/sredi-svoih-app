@@ -102,6 +102,8 @@ export {
 export {
   listAdminEventCapacities,
   listEventRegistrations,
+  createAdminEventRegistration,
+  searchAdminRegistrationParticipants,
   getQuestionnaireAnswersSummary,
   listRegistrationEvents,
   markRegistrationAttendance,

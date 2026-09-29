@@ -13374,6 +13374,172 @@ a {
   overflow-y: auto;
 }
 
+.add-participant-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1060;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(8, 8, 17, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.add-participant-dialog {
+  display: grid;
+  width: min(760px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.add-participant-dialog__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--glass-border);
+  padding: 14px 18px;
+}
+
+.add-participant-dialog__head > div,
+.add-participant-dialog__body,
+.add-participant-section,
+.add-participant-field,
+.add-participant-option,
+.add-participant-context {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.add-participant-dialog__head span,
+.add-participant-context > span,
+.add-participant-field > span,
+.add-participant-quantity > span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.add-participant-dialog__head h2,
+.add-participant-dialog__head p,
+.add-participant-section h3,
+.add-participant-state,
+.add-participant-selected {
+  margin: 0;
+}
+
+.add-participant-dialog__head h2 { color: var(--text); font-size: 18px; }
+.add-participant-dialog__head p,
+.add-participant-state { color: var(--text-soft); font-size: 13px; line-height: 1.4; }
+
+.add-participant-dialog__body {
+  overflow-y: auto;
+  padding: 18px;
+  align-content: start;
+}
+
+.add-participant-context {
+  border: 1px solid rgba(242, 184, 75, 0.25);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(242, 184, 75, 0.07);
+}
+
+.add-participant-context strong { color: var(--text); font-size: 13px; }
+
+.add-participant-modes {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.add-participant-modes button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 9px 10px;
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.add-participant-modes button.is-active {
+  border-bottom-color: var(--gold);
+  color: var(--text);
+}
+
+.add-participant-field input,
+.add-participant-field textarea,
+.add-participant-quantity input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+  font: inherit;
+}
+
+.add-participant-field textarea { resize: vertical; }
+.add-participant-field em,
+.add-participant-option em { color: var(--text-muted); font-style: normal; font-weight: 650; text-transform: none; }
+.add-participant-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.add-participant-fields > :first-child { grid-column: 1 / -1; }
+.add-participant-field--compact { max-width: 240px; }
+
+.add-participant-results,
+.add-participant-options {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+}
+
+.add-participant-results button {
+  display: grid;
+  gap: 3px;
+  border: 0;
+  border-top: 1px solid var(--glass-border);
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.add-participant-results button:first-child { border-top: 0; }
+.add-participant-results button:hover,
+.add-participant-results button.is-selected { background: rgba(242, 184, 75, 0.12); }
+.add-participant-results span { color: var(--text-soft); font-size: 12px; }
+.add-participant-selected { color: var(--gold); font-size: 13px; }
+
+.add-participant-option {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-top: 1px solid var(--glass-border);
+  padding: 10px 12px;
+}
+
+.add-participant-option:first-child { border-top: 0; }
+.add-participant-option > label:first-child { display: flex; min-width: 0; align-items: flex-start; gap: 9px; }
+.add-participant-option > label:first-child > span { display: grid; min-width: 0; gap: 3px; }
+.add-participant-option strong { color: var(--text); font-size: 13px; }
+.add-participant-option small { color: var(--text-soft); font-size: 12px; line-height: 1.35; }
+.add-participant-option em { color: rgba(255, 222, 156, 0.94); font-size: 12px; }
+.add-participant-quantity { display: grid; width: 100px; gap: 4px; }
+.add-participant-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
+
 .registration-toast-stack {
   position: fixed;
   z-index: 1100;
@@ -15907,12 +16073,14 @@ a {
   }
 
   .registration-detail-modal-overlay,
-  .registration-action-dialog-backdrop {
+  .registration-action-dialog-backdrop,
+  .add-participant-dialog-overlay {
     padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
   }
 
   .registration-detail-modal,
-  .registration-action-dialog {
+  .registration-action-dialog,
+  .add-participant-dialog {
     min-width: 0;
     max-height: calc(100dvh - max(12px, env(safe-area-inset-top, 0px)) - max(12px, env(safe-area-inset-bottom, 0px)));
     border-radius: 12px;
@@ -15923,6 +16091,14 @@ a {
   .registration-detail-modal__head > div { max-height: 20dvh; overflow-y: auto; }
   .registration-detail-modal__close { width: 44px; height: 44px; }
   .registration-detail-modal__body { min-width: 0; overscroll-behavior-y: contain; }
+  .add-participant-dialog { width: 100%; max-height: calc(100dvh - max(12px, env(safe-area-inset-top, 0px)) - max(12px, env(safe-area-inset-bottom, 0px))); }
+  .add-participant-dialog__head { padding: 12px; }
+  .add-participant-dialog__body { padding: 12px; overscroll-behavior-y: contain; }
+  .add-participant-fields { grid-template-columns: 1fr; }
+  .add-participant-fields > :first-child { grid-column: auto; }
+  .add-participant-option { grid-template-columns: 1fr; align-items: start; }
+  .add-participant-quantity { width: 100%; grid-template-columns: minmax(0, 1fr) minmax(100px, 0.35fr); align-items: center; }
+  .add-participant-dialog__actions .button { flex: 1; }
   .registration-detail { min-width: 0; padding: 12px; }
   .registration-detail :is(.registration-detail-section, .registration-detail__profile, .registration-options-list, .badge-row) { min-width: 0; }
   .registration-detail-row,

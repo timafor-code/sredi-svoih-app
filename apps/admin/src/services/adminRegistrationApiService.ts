@@ -7,6 +7,7 @@ import type {
   AdminApiRegistrationQuestionnaireAnswerResponse,
   AdminApiEventResponse,
   AdminApiRegistrationSelectedOptionResponse,
+  AdminApiRegistrationParticipantPickerResponse,
   ApiPaginationMeta,
   ApiResponseEnvelope,
 } from "../types/api";
@@ -21,10 +22,12 @@ import type {
   AdminRegistrationQuestionnaireAnswer,
   AdminRegistrationOptionSelectionSummary,
   AdminRegistrationSourceChannel,
+  AdminRegistrationParticipant,
   AdminRegistrationStatus,
   AdminRegistrationStatusUpdate,
   ListEventRegistrationsParams,
   QuestionnaireAnswersSummaryParams,
+  CreateAdminEventRegistrationRequest,
 } from "../types/registrations";
 
 const ADMIN_EVENTS_PAGE_LIMIT = 100;
@@ -229,6 +232,26 @@ function normalizeEventRegistrationRow(
   };
 }
 
+function normalizeRegistrationParticipant(
+  row: AdminApiRegistrationParticipantPickerResponse,
+): AdminRegistrationParticipant {
+  if (typeof row.id !== "string" || typeof row.display_name !== "string") {
+    throw new Error("Admin participant picker returned an unsafe participant shape.");
+  }
+  if (row.phone !== null && typeof row.phone !== "string") {
+    throw new Error("Admin participant picker returned an unsafe phone value.");
+  }
+  if (row.email !== null && typeof row.email !== "string") {
+    throw new Error("Admin participant picker returned an unsafe email value.");
+  }
+  return {
+    id: row.id,
+    displayName: requiredString(row.display_name, "Участник"),
+    phone: row.phone,
+    email: row.email,
+  };
+}
+
 function buildCounts(
   registrations: readonly AdminEventRegistrationRow[],
 ): Pick<
@@ -345,6 +368,7 @@ export async function listRegistrationEvents(): Promise<AdminRegistrationEventSu
 
       return {
         eventId: requiredString(event.id, ""),
+        communityId: requiredString(event.community_id, ""),
         title: requiredString(event.title, "Untitled event"),
         startsAt: nullableString(event.starts_at),
         eventKind: requiredString(event.event_kind, "single"),
@@ -395,6 +419,46 @@ export async function listEventRegistrations(
   );
 
   return registrations.map(normalizeEventRegistrationRow);
+}
+
+export async function searchAdminRegistrationParticipants(
+  eventId: string,
+  search: string,
+  signal?: AbortSignal,
+): Promise<AdminRegistrationParticipant[]> {
+  const participants = await apiClient.get<AdminApiRegistrationParticipantPickerResponse[]>(
+    `/admin/events/${encodeURIComponent(eventId)}/registration-participants`,
+    { query: { search, limit: 20 }, signal },
+  );
+  return participants.map(normalizeRegistrationParticipant);
+}
+
+export async function createAdminEventRegistration(
+  eventId: string,
+  request: CreateAdminEventRegistrationRequest,
+): Promise<AdminEventRegistrationRow> {
+  const registration = await apiClient.post<AdminApiEventRegistrationResponse, Record<string, unknown>>(
+    `/admin/events/${encodeURIComponent(eventId)}/registrations`,
+    {
+      participant: request.participant.mode === "existing"
+        ? { mode: "existing", user_id: request.participant.userId }
+        : {
+          mode: "new",
+          full_name: request.participant.fullName,
+          phone: request.participant.phone,
+          email: request.participant.email,
+        },
+      occurrence_id: request.occurrenceId,
+      option_selections: request.optionSelections.map((selection) => ({
+        option_id: selection.optionId,
+        quantity: selection.quantity,
+      })),
+      seats_count: request.seatsCount,
+      guest_names: request.guestNames,
+      comment: request.comment,
+    },
+  );
+  return normalizeEventRegistrationRow(registration);
 }
 
 export async function getQuestionnaireAnswersSummary(

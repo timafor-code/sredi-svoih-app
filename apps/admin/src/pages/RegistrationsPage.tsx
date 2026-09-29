@@ -13,7 +13,11 @@ import { GlassCard } from "../components/ui/GlassCard";
 import { RegistrationCapacityBucketsOverview } from "../components/registrations/RegistrationCapacityBucketsOverview";
 import { RegistrationDetailPanel } from "../components/registrations/RegistrationDetailPanel";
 import { RegistrationEventsPanel } from "../components/registrations/RegistrationEventsPanel";
-import { RegistrationMainActions } from "../components/registrations/RegistrationMainActions";
+import {
+  canAddParticipantForEvent,
+  RegistrationMainActions,
+} from "../components/registrations/RegistrationMainActions";
+import { AddParticipantDialog } from "../components/registrations/AddParticipantDialog";
 import {
   buildQuestionnaireModalViewModel,
   formatQuestionCount,
@@ -143,7 +147,7 @@ const API_REGISTRATION_ACTIONS: RegistrationAction[] = [
 ];
 
 export function RegistrationsPage() {
-  const { isAdmin } = useAdminAuth();
+  const { isAdmin, memberships } = useAdminAuth();
   const [events, setEvents] = useState<AdminRegistrationEventSummary[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
@@ -185,6 +189,7 @@ export function RegistrationsPage() {
   const [excelExportLoading, setExcelExportLoading] = useState(false);
   const [seatingEditorSlot, setSeatingEditorSlot] =
     useState<SeatingLayoutEditorSlot | null>(null);
+  const [addParticipantOpen, setAddParticipantOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const registrationsProviderLabel = "API";
   const registrationsProviderTone: AdminBadgeTone = "blue";
@@ -674,6 +679,14 @@ export function RegistrationsPage() {
     loadRegistrations,
   ]);
 
+  const handleAddParticipantSuccess = useCallback(() => {
+    pushToast("success", "Регистрация участника сохранена.");
+  }, [pushToast]);
+
+  const handleAddParticipantRefreshFailure = useCallback(() => {
+    pushToast("error", "Регистрация сохранена, но список не удалось обновить. Обновите данные.");
+  }, [pushToast]);
+
   const runRegistrationAction = useCallback(
     async (registration: AdminEventRegistrationRow, action: RegistrationAction) => {
       if (actionInFlight) {
@@ -912,7 +925,9 @@ export function RegistrationsPage() {
                   <p>{formatDateTime(selectedEvent.startsAt)}</p>
                 </div>
                 <RegistrationMainActions
+                  canAddParticipant={canAddParticipantForEvent(selectedEvent, memberships)}
                   eventsLoading={eventsLoading}
+                  onAddParticipant={() => setAddParticipantOpen(true)}
                   onRefresh={refreshAll}
                   registrationsLoading={registrationsLoading}
                 />
@@ -1154,6 +1169,24 @@ export function RegistrationsPage() {
         onClose={handleCloseRegistrationModal}
         registration={selectedRegistration}
       />
+
+      {addParticipantOpen && selectedEvent ? (
+        <AddParticipantDialog
+          eventId={selectedEvent.eventId}
+          eventTitle={selectedEvent.title}
+          occurrenceId={eventHasOccurrences ? selectedOccurrenceId : null}
+          occurrenceLabel={eventHasOccurrences
+            ? selectedOccurrence
+              ? selectedOccurrence.title ?? formatDateTime(selectedOccurrence.startsAt)
+              : "Дата события не выбрана"
+            : null}
+          occurrenceRequired={eventHasOccurrences}
+          onClose={() => setAddParticipantOpen(false)}
+          onRefresh={refreshAfterAction}
+          onRefreshFailure={handleAddParticipantRefreshFailure}
+          onSuccess={handleAddParticipantSuccess}
+        />
+      ) : null}
 
       <QuestionnaireAnswersModal
         error={questionnaireModalError}

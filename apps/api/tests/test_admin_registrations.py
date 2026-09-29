@@ -997,6 +997,21 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
                 json=payload,
             )
 
+    async def _search_participants(
+        self,
+        search: str,
+        headers: dict[str, str] | None = None,
+        *,
+        event_id: UUID | None = None,
+    ) -> httpx.Response:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.get(
+                f"/admin/events/{event_id or self.event_id}/registration-participants",
+                headers=headers,
+                params={"search": search},
+            )
+
     async def _remember_created_user(self, response: httpx.Response) -> UUID:
         user_id = UUID(response.json()["data"]["user_id"])
         self.created_user_ids.append(user_id)
@@ -1075,6 +1090,85 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
                 response = await self._post(self._existing_payload(unavailable_id), self.admin_headers)
                 self.assertEqual(response.status_code, 409)
                 self.assertEqual(response.json()["error"]["code"], "admin_participant_unavailable")
+
+    async def test_picker_returns_only_minimal_current_community_member_projection(self) -> None:
+        response = await self._search_participants("Participant 0", self.admin_headers)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["id"], str(self.existing_id))
+        self.assertEqual(data[0]["display_name"], "Participant 0")
+        self.assertEqual(set(data[0]), {"id", "display_name", "phone", "email"})
+
+    async def test_picker_uses_prior_registration_history_and_admin_created_history(self) -> None:
+        prior = await self._search_participants("Participant 1", self.admin_headers)
+        self.assertEqual(prior.status_code, 200)
+        self.assertEqual([row["id"] for row in prior.json()["data"]], [str(self.duplicate_id)])
+
+        created = await self._post(self._new_payload(13), self.admin_headers)
+        self.assertEqual(created.status_code, 200)
+        created_user_id = await self._remember_created_user(created)
+
+        reselectable = await self._search_participants("New Admin Participant", self.admin_headers)
+        self.assertEqual(reselectable.status_code, 200)
+        self.assertIn(str(created_user_id), [row["id"] for row in reselectable.json()["data"]])
+
+        foreign = await self._search_participants(
+            "New Admin Participant",
+            self.role_headers["foreign"],
+            event_id=self.foreign_event_id,
+        )
+        self.assertEqual(foreign.status_code, 200)
+        self.assertEqual(foreign.json()["data"], [])
+
+    async def test_picker_does_not_cross_communities_or_include_users_without_evidence(self) -> None:
+        foreign = await self._search_participants(
+            "Participant 0",
+            self.role_headers["foreign"],
+            event_id=self.foreign_event_id,
+        )
+        self.assertEqual(foreign.status_code, 200)
+        self.assertEqual(foreign.json()["data"], [])
+
+        no_evidence_id = uuid4()
+        self.created_user_ids.append(no_evidence_id)
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(AppUser(
+                    id=no_evidence_id,
+                    account_origin="migration",
+                    claim_state="legacy_external",
+                    status="active",
+                ))
+                session.add(Profile(
+                    user_id=no_evidence_id,
+                    full_name="Standalone Picker Person",
+                    display_name="Standalone Picker Person",
+                ))
+
+        no_evidence = await self._search_participants("Standalone Picker", self.admin_headers)
+        self.assertEqual(no_evidence.status_code, 200)
+        self.assertEqual(no_evidence.json()["data"], [])
+
+    async def test_picker_excludes_unavailable_users_and_never_dumps_on_blank_search(self) -> None:
+        for index, unavailable_id in enumerate(self.unavailable_ids, start=3):
+            with self.subTest(unavailable_id=unavailable_id):
+                response = await self._search_participants(f"Participant {index}", self.admin_headers)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["data"], [])
+
+        blank = await self._search_participants("   ", self.admin_headers)
+        self.assertEqual(blank.status_code, 200)
+        self.assertEqual(blank.json()["data"], [])
+
+    async def test_picker_is_admin_only(self) -> None:
+        for role, headers in self.role_headers.items():
+            with self.subTest(role=role):
+                response = await self._search_participants("Participant", headers)
+                self.assertEqual(response.status_code, 403)
+        unauthenticated = await self._search_participants("Participant")
+        self.assertEqual(unauthenticated.status_code, 401)
 
     async def test_new_participants_are_unclaimed_without_membership_or_verification(self) -> None:
         no_email = await self._post(self._new_payload(2), self.admin_headers)

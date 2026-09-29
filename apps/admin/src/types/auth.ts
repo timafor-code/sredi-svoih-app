@@ -41,6 +41,7 @@ export type AdminAuthContext = {
   isAuthenticated: boolean;
   session: AdminAuthSession | null;
   profile: AdminProfile | null;
+  memberships: AdminMembership[];
   membership: AdminMembership | null;
   role: AdminRole | null;
   isAdmin: boolean;
