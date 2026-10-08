@@ -18,6 +18,7 @@ import {
   RegistrationMainActions,
 } from "../components/registrations/RegistrationMainActions";
 import { AddParticipantDialog } from "../components/registrations/AddParticipantDialog";
+import { isRegistrationClosedByDeadline } from "../lib/registrationWindow";
 import {
   buildQuestionnaireModalViewModel,
   formatQuestionCount,
@@ -1231,8 +1232,7 @@ export function RegistrationsPage() {
             : null}
           occurrenceRequired={eventHasOccurrences}
           registrationMode={selectedEvent.registrationMode}
-          isRegistrationClosed={selectedOccurrence?.registrationState === "closed"
-            && selectedOccurrence.registrationStateReason === "registration_closes_at_past"}
+          isRegistrationClosed={isRegistrationClosedByDeadline(selectedOccurrence)}
           onClose={() => setAddParticipantOpen(false)}
           onRefresh={refreshAfterAction}
           onRefreshFailure={handleAddParticipantRefreshFailure}

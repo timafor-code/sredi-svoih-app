@@ -6,6 +6,7 @@ import {
   buildAdminRegistrationRequest,
   createExistingParticipantSearchState,
   deselectExistingParticipant,
+  getDuplicatePhoneParticipantSearch,
   getNewParticipantValidationError,
   hasRequiredPaidParticipationOption,
   getExistingParticipantPickerView,
@@ -16,6 +17,7 @@ import {
   updateExistingParticipantSearch,
 } from "./AddParticipantDialog";
 import { formatAdminPhoneInput } from "./phone";
+import { isRegistrationClosedByDeadline } from "../../lib/registrationWindow";
 
 const selectedParticipant = {
   id: "participant-1",
@@ -51,6 +53,18 @@ describe("AddParticipantDialog request helpers", () => {
   });
 
   it("starts conflict recovery in an unselected existing-participant search state", () => {
+    expect(createExistingParticipantSearchState("anna@example.invalid")).toEqual({
+      search: "anna@example.invalid",
+      selectedParticipant: null,
+    });
+  });
+
+  it("normalizes duplicate-phone recovery searches without selecting a participant", () => {
+    expect(getDuplicatePhoneParticipantSearch("+7 989 565-65-66")).toBe("+79895656566");
+    expect(getDuplicatePhoneParticipantSearch("+1 415 555 2671")).toBe("+14155552671");
+    expect(createExistingParticipantSearchState(
+      getDuplicatePhoneParticipantSearch("+7 989 565-65-66"),
+    )).toEqual({ search: "+79895656566", selectedParticipant: null });
     expect(createExistingParticipantSearchState("anna@example.invalid")).toEqual({
       search: "anna@example.invalid",
       selectedParticipant: null,
@@ -195,6 +209,26 @@ describe("AddParticipantDialog request helpers", () => {
     expect(getNewParticipantValidationError("Анна", "+7 999")).toBe(
       "Укажите корректный номер телефона с кодом страны.",
     );
+  });
+
+  it("recalculates the deadline warning from active occurrence timestamps", () => {
+    const closesAt = Date.parse("2026-10-08T12:00:00Z");
+    const closedOccurrence = {
+      status: "active",
+      registrationOpensAt: "2026-10-08T10:00:00Z",
+      registrationClosesAt: "2026-10-08T12:00:00Z",
+      serverNow: "2026-10-08T11:00:00Z",
+    };
+    expect(isRegistrationClosedByDeadline(closedOccurrence, closesAt - 1)).toBe(false);
+    expect(isRegistrationClosedByDeadline(closedOccurrence, closesAt + 1)).toBe(true);
+    expect(isRegistrationClosedByDeadline({
+      ...closedOccurrence,
+      registrationOpensAt: "2026-10-08T13:00:00Z",
+    }, closesAt + 1)).toBe(false);
+    expect(isRegistrationClosedByDeadline({
+      ...closedOccurrence,
+      status: "cancelled",
+    }, closesAt + 1)).toBe(false);
   });
 
   it("reports a post-save refresh failure without turning it into a submit failure", async () => {

@@ -72,6 +72,10 @@ export function createExistingParticipantSearchState(search: string): ExistingPa
   return { search, selectedParticipant: null };
 }
 
+export function getDuplicatePhoneParticipantSearch(phone: string): string {
+  return normalizeAdminPhone(phone) ?? phone.trim();
+}
+
 export function updateExistingParticipantSearch(
   state: ExistingParticipantPickerState,
   search: string,
@@ -436,7 +440,9 @@ export function AddParticipantDialog({
       setSubmitError(nextError);
       if (error instanceof ApiClientError && error.code === "admin_participant_phone_exists") {
         setMode("existing");
-        setParticipantPicker(createExistingParticipantSearchState(phone.trim()));
+        setParticipantPicker(
+          createExistingParticipantSearchState(getDuplicatePhoneParticipantSearch(phone)),
+        );
       }
       if (error instanceof ApiClientError && error.code === "admin_participant_email_exists") {
         setMode("existing");
