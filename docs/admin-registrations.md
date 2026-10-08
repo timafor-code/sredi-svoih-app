@@ -12,7 +12,7 @@ or direct access to `auth.users`.
 Registrations v15 is implemented for the admin workflow and now includes Phase
 3 / PR 24 beta UX polish:
 
-- event list/search and selected event workspace;
+- event list/search and selected event workspace, with persisted Current/Archive and sorting preferences;
 - clearer loading, empty, and error states for beta admins;
 - explicit selected event/occurrence context;
 - occurrence selector with active/past date wording;
@@ -69,7 +69,11 @@ for phone-only Admin-created participants is not part of this behavior yet.
   and coordinates refreshes with the conflict queue.
 - `IdentityConflictsPanel.tsx` owns the paged open/resolved conflict queue and
   its status-only confirmation flow.
-- `RegistrationEventsPanel.tsx` renders the event list and event search.
+- `RegistrationEventsPanel.tsx` renders the event list, search, Current/Archive tabs, and sorting.
+- `registrationEventList.ts` is the pure client-side classifier and sorter. It uses occurrence data
+  already loaded for the list: upcoming or ongoing scheduled occurrences keep a series Current;
+  completed series and explicitly cancelled/archived events appear in Archive. Cancelled and archived
+  occurrences do not keep a parent series Current. The selected view preference is browser-local only.
 - `RegistrationCapacityBucketsOverview.tsx` renders capacity totals, capacity
   modes, bucket rows, bucket breakdown, donation/non-seat markers, and the
   seating entry point.

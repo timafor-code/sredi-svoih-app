@@ -61,10 +61,14 @@ export type AdminRegistrationEventSummary = {
   communityId: string;
   title: string;
   startsAt: string | null;
+  endsAt: string | null;
+  status: string;
+  isPermanent: boolean;
   eventKind: AdminEventKind | string;
   registrationMode: AdminEventRegistrationMode | string;
   capacity: number | null;
   occurrenceCount: number;
+  occurrences: AdminRegistrationEventOccurrenceSummary[];
   confirmedCount: number;
   pendingCount: number;
   waitlistedCount: number;
@@ -72,6 +76,12 @@ export type AdminRegistrationEventSummary = {
   rejectedCount: number;
   attendedCount: number;
   noShowCount: number;
+};
+
+export type AdminRegistrationEventOccurrenceSummary = {
+  startsAt: string;
+  endsAt: string | null;
+  status: string;
 };
 
 export type AdminRegistrationOptionSelectionSummary = {

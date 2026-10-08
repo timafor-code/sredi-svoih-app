@@ -44,6 +44,14 @@ import {
   updateRegistrationStatus,
 } from "../services/adminEventsService";
 import { exportEventRegistrationsToExcel } from "../services/registrationExcelExport";
+import {
+  getRegistrationEventList,
+  readRegistrationEventListPreferences,
+  saveRegistrationEventListPreferences,
+  type RegistrationEventListPreferences,
+  type RegistrationEventListSort,
+  type RegistrationEventListTab,
+} from "../lib/registrationEventList";
 import type { AdminEventOccurrence } from "../types/eventOccurrences";
 import type { AdminBadgeTone } from "../types/admin";
 import type {
@@ -146,6 +154,14 @@ const API_REGISTRATION_ACTIONS: RegistrationAction[] = [
   findRegistrationAction("no_show"),
 ];
 
+function getBrowserLocalStorage(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 export function RegistrationsPage() {
   const { isAdmin, memberships } = useAdminAuth();
   const [events, setEvents] = useState<AdminRegistrationEventSummary[]>([]);
@@ -153,6 +169,10 @@ export function RegistrationsPage() {
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [eventQuery, setEventQuery] = useState("");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [eventListPreferences, setEventListPreferences] =
+    useState<RegistrationEventListPreferences>(() =>
+      readRegistrationEventListPreferences(getBrowserLocalStorage()),
+    );
 
   const [registrations, setRegistrations] = useState<AdminEventRegistrationRow[]>([]);
   const [registrationsLoading, setRegistrationsLoading] = useState(false);
@@ -234,6 +254,10 @@ export function RegistrationsPage() {
       timers.forEach((timer) => window.clearTimeout(timer));
     };
   }, [removeToast, toasts]);
+
+  useEffect(() => {
+    saveRegistrationEventListPreferences(eventListPreferences, getBrowserLocalStorage());
+  }, [eventListPreferences]);
 
   const loadRegistrationEventSummaries = useCallback(
     async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -633,27 +657,48 @@ export function RegistrationsPage() {
     excelExportLoading;
   const excelExportLabel = excelExportLoading ? "Готовим Excel..." : "Экспорт Excel";
 
-  const filteredEvents = useMemo(() => {
-    const normalizedQuery = eventQuery.trim().toLocaleLowerCase("ru");
+  const eventsInSelectedTab = useMemo(
+    () => getRegistrationEventList(events, {
+      ...eventListPreferences,
+      query: "",
+    }),
+    [eventListPreferences, events],
+  );
+  const filteredEvents = useMemo(
+    () => getRegistrationEventList(events, {
+      ...eventListPreferences,
+      query: eventQuery,
+    }),
+    [eventListPreferences, eventQuery, events],
+  );
 
-    if (!normalizedQuery) {
-      return events;
-    }
-
-    return events.filter((event) => {
-      const searchableText = [
-        event.title,
-        event.startsAt,
-        event.eventKind,
-        event.registrationMode,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLocaleLowerCase("ru");
-
-      return searchableText.includes(normalizedQuery);
+  useEffect(() => {
+    setSelectedEventId((currentEventId) => {
+      if (currentEventId && eventsInSelectedTab.some((entry) => entry.event.eventId === currentEventId)) {
+        return currentEventId;
+      }
+      return eventsInSelectedTab[0]?.event.eventId ?? null;
     });
-  }, [eventQuery, events]);
+  }, [eventsInSelectedTab]);
+
+  const handleEventListTabChange = useCallback((tab: RegistrationEventListTab) => {
+    if (tab === eventListPreferences.tab) return;
+
+    const nextPreferences = { ...eventListPreferences, tab };
+    const nextEvents = getRegistrationEventList(events, { ...nextPreferences, query: "" });
+    setEventListPreferences(nextPreferences);
+    setSelectedEventId((currentEventId) =>
+      currentEventId && nextEvents.some((entry) => entry.event.eventId === currentEventId)
+        ? currentEventId
+        : nextEvents[0]?.event.eventId ?? null,
+    );
+    setRegistrations([]);
+    setSelectedRegistrationId(null);
+  }, [eventListPreferences, events]);
+
+  const handleEventListSortChange = useCallback((sort: RegistrationEventListSort) => {
+    setEventListPreferences((current) => current.sort === sort ? current : { ...current, sort });
+  }, []);
 
   const selectedRegistration = useMemo(
     () =>
@@ -902,10 +947,14 @@ export function RegistrationsPage() {
           eventsError={eventsError}
           eventsLoading={eventsLoading}
           filteredEvents={filteredEvents}
+          eventsInSelectedTab={eventsInSelectedTab}
+          onEventListSortChange={handleEventListSortChange}
+          onEventListTabChange={handleEventListTabChange}
           onEventQueryChange={setEventQuery}
           onRefresh={refreshAll}
           onRetry={() => void loadRegistrationEventSummaries()}
           onSelectEvent={handleSelectEvent}
+          eventListPreferences={eventListPreferences}
           selectedEventId={selectedEventId}
         />
         <GlassCard className="registrations-main-panel" elevated>
