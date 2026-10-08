@@ -1742,7 +1742,7 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(refreshed.phone, self.phone)
         self.assertEqual((profile.first_name, profile.last_name), ("Иван", "Тестов"))
 
-    async def test_admin_phone_only_identity_is_completed_only_after_email_verification(self) -> None:
+    async def test_admin_phone_only_identity_claim_fails_closed_before_and_after_email_verification(self) -> None:
         admin_user = AppUser(
             phone=self.phone,
             password_hash=None,
@@ -1778,23 +1778,72 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 )
 
-        created, code = await self.create()
+        with self.assertRaises(HTTPException) as initial_error:
+            await self.create()
+        self.assertEqual(initial_error.exception.detail, service.IDENTITY_UNAVAILABLE_DETAIL)
         async with AsyncSessionLocal() as session:
-            before_verification = await session.get(AppUser, admin_user.id)
-            before_profile = await session.scalar(
+            after_initial_rejection = await session.get(AppUser, admin_user.id)
+            initial_profile = await session.scalar(
                 select(Profile).where(Profile.user_id == admin_user.id),
             )
-        self.assertIsNone(before_verification.email)
-        self.assertIsNone(before_verification.email_verified_at)
-        self.assertIsNone(before_profile.email)
+        self.assertIsNone(after_initial_rejection.email)
+        self.assertIsNone(after_initial_rejection.email_verified_at)
+        self.assertIsNone(initial_profile.email)
+
+        legacy_idempotency_hash = service._idempotency_hash(
+            f"legacy-phone-only-{uuid4().hex}",
+        )
+        legacy_flow_id = service._flow_id(legacy_idempotency_hash)
+        legacy_code = "123456"
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                legacy_intent = WebRegistrationIntent(
+                    flow_token_hash=service._flow_hash(legacy_flow_id),
+                    event_id=self.event_id,
+                    occurrence_id=None,
+                    questionnaire_form_id=None,
+                    matched_user_id=admin_user.id,
+                    first_name="Иван",
+                    last_name="Тестов",
+                    email_normalized=self.email,
+                    phone_normalized=self.phone,
+                    seats_count=1,
+                    option_payload=[],
+                    answer_payload=[],
+                    legal_acceptance_payload=[],
+                    account_choice="without_password",
+                    status=service.EMAIL_REQUIRED,
+                    idempotency_key_hash=legacy_idempotency_hash,
+                    request_fingerprint_hash=uuid4().hex,
+                    created_at=self.now,
+                    expires_at=self.now + timedelta(hours=1),
+                )
+                session.add(legacy_intent)
+                await session.flush()
+                session.add(
+                    WebRegistrationVerificationCode(
+                        registration_intent_id=legacy_intent.id,
+                        code_hash=service._verification_code_hash(
+                            legacy_intent.id,
+                            legacy_code,
+                        ),
+                        expires_at=self.now + timedelta(minutes=10),
+                        attempt_count=0,
+                        created_at=self.now,
+                    ),
+                )
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.post(
+                f"/web/registration-intents/{legacy_flow_id}/confirm-email",
+                json={"code": legacy_code},
+            )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], service.IDENTITY_UNAVAILABLE_DETAIL)
+        self.assertNotIn("set-cookie", response.headers)
 
         async with AsyncSessionLocal() as session:
-            result = await service.confirm_email(
-                session,
-                created.flow_id,
-                code,
-                "192.0.2.82",
-            )
             completed = await session.get(AppUser, admin_user.id)
             profile = await session.scalar(select(Profile).where(Profile.user_id == admin_user.id))
             registrations = list(
@@ -1810,19 +1859,30 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
                     | (func.lower(AppUser.email) == self.email),
                 ),
             )
-        self.assertEqual(result.outcome, "already_registered")
-        self.assertEqual(completed.email, self.email)
-        self.assertIsNotNone(completed.email_verified_at)
+            participant_session_count = await session.scalar(
+                select(func.count()).select_from(WebParticipantSession),
+            )
+            set_password_handoff_count = await session.scalar(
+                select(func.count())
+                .select_from(AuthSetPasswordCode)
+                .where(AuthSetPasswordCode.user_id == admin_user.id),
+            )
+            legacy_status = await session.get(WebRegistrationIntent, legacy_intent.id)
+        self.assertIsNone(completed.email)
+        self.assertIsNone(completed.email_verified_at)
         self.assertEqual(completed.account_origin, "admin")
         self.assertEqual(completed.claim_state, "unclaimed")
         self.assertIsNone(completed.password_hash)
-        self.assertEqual(profile.email, self.email)
+        self.assertIsNone(profile.email)
         self.assertEqual(profile.phone, self.phone)
         self.assertEqual(profile.full_name, "Созданный Админом")
         self.assertEqual(len(registrations), 1)
         self.assertEqual(registrations[0].user_id, admin_user.id)
         self.assertEqual(registrations[0].source_channel, "admin")
         self.assertEqual(matching_user_count, 1)
+        self.assertEqual(participant_session_count, 0)
+        self.assertEqual(set_password_handoff_count, 0)
+        self.assertEqual(legacy_status.status, service.FAILED)
 
     async def test_different_user_and_deletion_races_stay_generic(self) -> None:
         different_payload = self.payload(

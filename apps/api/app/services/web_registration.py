@@ -555,8 +555,6 @@ async def _identity_state(
     if email_user and phone_user and email_user.id != phone_user.id:
         return FAILED, None, (email_user.id, phone_user.id)
     if phone_user and not email_user:
-        if _is_reusable_admin_phone_identity(phone_user):
-            return EMAIL_REQUIRED, phone_user.id, None
         return FAILED, None, None
     matched = (
         email_user
@@ -1040,17 +1038,6 @@ def _is_deletion_blocked(user: AppUser | None) -> bool:
     )
 
 
-def _is_reusable_admin_phone_identity(user: AppUser) -> bool:
-    return (
-        user.account_origin == "admin"
-        and user.claim_state == "unclaimed"
-        and user.status == "active"
-        and user.email is None
-        and user.password_hash is None
-        and user.email_verified_at is None
-    )
-
-
 async def _resolve_identity(
     session: AsyncSession,
     intent: WebRegistrationIntent,
@@ -1073,20 +1060,7 @@ async def _resolve_identity(
     if email_user and phone_user and email_user.id != phone_user.id:
         return None, (email_user, phone_user), False
     if phone_user and email_user is None:
-        if not _is_reusable_admin_phone_identity(phone_user):
-            return None, None, False
-        user = phone_user
-        user.email = intent.email_normalized
-        user.email_verified_at = now
-        user.updated_at = now
-        profile = await session.scalar(
-            select(Profile).where(Profile.user_id == user.id).with_for_update(),
-        )
-        if profile is None:
-            session.add(_minimal_profile(user.id, intent))
-        else:
-            _update_profile_identity_projection(profile, intent, now)
-        return user, None, False
+        return None, None, False
 
     if email_user is None:
         user = AppUser(
@@ -1148,16 +1122,6 @@ def _update_unclaimed_profile(
     profile.last_name = intent.last_name
     profile.full_name = full_name
     profile.display_name = full_name
-    profile.email = intent.email_normalized
-    profile.phone = intent.phone_normalized
-    profile.updated_at = now
-
-
-def _update_profile_identity_projection(
-    profile: Profile,
-    intent: WebRegistrationIntent,
-    now: datetime,
-) -> None:
     profile.email = intent.email_normalized
     profile.phone = intent.phone_normalized
     profile.updated_at = now

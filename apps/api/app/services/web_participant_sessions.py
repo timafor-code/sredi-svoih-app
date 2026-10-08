@@ -52,6 +52,16 @@ def _is_passwordless_user(user: AppUser | None) -> bool:
     return _is_available_user(user) and user.password_hash is None
 
 
+def _remembered_name_parts(profile: Profile) -> tuple[str, str] | None:
+    if profile.first_name and profile.last_name:
+        return profile.first_name, profile.last_name
+    display_name = (profile.display_name or profile.full_name or "").strip()
+    if not display_name:
+        return None
+    # Keep a canonical complete name intact rather than guessing its components.
+    return display_name, ""
+
+
 def set_remembered_participant_cookie(
     response: Response,
     *,
@@ -134,13 +144,10 @@ async def resolve(
     if not _is_passwordless_user(user):
         return None
     profile = await session.scalar(select(Profile).where(Profile.user_id == user.id))
-    if (
-        profile is None
-        or not profile.first_name
-        or not profile.last_name
-        or not profile.phone
-        or not user.email
-    ):
+    if profile is None or not profile.phone or not user.email:
+        return None
+    name_parts = _remembered_name_parts(profile)
+    if name_parts is None:
         return None
 
     if update_last_used:
@@ -148,8 +155,8 @@ async def resolve(
         await session.commit()
     return RememberedParticipant(
         user=user,
-        first_name=profile.first_name,
-        last_name=profile.last_name,
+        first_name=name_parts[0],
+        last_name=name_parts[1],
         phone=profile.phone,
         email=user.email,
     )
