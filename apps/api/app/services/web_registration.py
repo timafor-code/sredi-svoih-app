@@ -641,15 +641,29 @@ async def create_intent(
     *,
     current_user: AppUser | None = None,
 ) -> WebRegistrationIntentCreated:
+    profile_name_completion: tuple[Profile, str, str] | None = None
     if current_user is not None:
+        current_user_id = current_user.id
+        current_user = await session.scalar(
+            select(AppUser)
+            .where(AppUser.id == current_user_id)
+            .with_for_update(),
+        )
+        if current_user is None:
+            raise _error(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "incomplete_account_profile",
+                "Account profile is incomplete",
+            )
         profile = await session.scalar(
-            select(Profile).where(Profile.user_id == current_user.id),
+            select(Profile).where(Profile.user_id == current_user.id).with_for_update(),
         )
         if (
-            profile is None
+            current_user.status != "active"
+            or current_user.deletion_requested_at is not None
+            or current_user.erased_at is not None
+            or profile is None
             or not current_user.email
-            or not profile.first_name
-            or not profile.last_name
             or not profile.phone
         ):
             raise _error(
@@ -657,12 +671,16 @@ async def create_intent(
                 "incomplete_account_profile",
                 "Account profile is incomplete",
             )
+        first_name = profile.first_name or payload.first_name
+        last_name = profile.last_name or payload.last_name
+        if not profile.first_name or not profile.last_name:
+            profile_name_completion = (profile, first_name, last_name)
         try:
             payload = WebRegistrationIntentRequest.model_validate(
                 {
                     **payload.model_dump(mode="json"),
-                    "first_name": profile.first_name,
-                    "last_name": profile.last_name,
+                    "first_name": first_name,
+                    "last_name": last_name,
                     "phone": profile.phone,
                     "email": current_user.email,
                     "account_choice": "without_password",
@@ -902,6 +920,13 @@ async def create_intent(
                         status="open",
                     ),
                 )
+            if profile_name_completion is not None:
+                profile, first_name, last_name = profile_name_completion
+                if not profile.first_name:
+                    profile.first_name = first_name
+                if not profile.last_name:
+                    profile.last_name = last_name
+                profile.updated_at = now
             await session.commit()
             resolved_status = intent.status
             intent_id = intent.id

@@ -634,7 +634,11 @@ async def search_admin_registration_participants(
     event = await session.scalar(select(Event).where(Event.id == event_id))
     if event is None:
         raise _not_found("Event not found")
-    await authorization_service.require_admin(session, current_user.id, event.community_id)
+    await authorization_service.require_admin_or_event_manager(
+        session,
+        current_user.id,
+        event.community_id,
+    )
 
     normalized_search = _first_text(search)
     if normalized_search is None:
@@ -753,7 +757,7 @@ async def create_admin_event_registration(
             )
             if event is None:
                 raise _not_found("Event not found")
-            await authorization_service.require_admin(
+            await authorization_service.require_admin_or_event_manager(
                 session,
                 current_user.id,
                 event.community_id,

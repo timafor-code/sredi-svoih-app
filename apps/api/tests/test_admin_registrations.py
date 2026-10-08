@@ -902,7 +902,7 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
                         )
                         for user_id in self.unavailable_ids
                     ],
-                    CommunityMembership(community_id=self.community_id, user_id=self.inactive_admin_id, role="admin", status="suspended"),
+                    CommunityMembership(community_id=self.community_id, user_id=self.inactive_admin_id, role="event_manager", status="suspended"),
                     CommunityMembership(community_id=self.foreign_community_id, user_id=self.foreign_admin_id, role="admin", status="active"),
                     CommunityMembership(community_id=self.foreign_community_id, user_id=self.out_of_scope_id, role="member", status="active"),
                     EventCategory(community_id=self.community_id, slug="community", title="Community", color="#123456", icon="*", created_by=self.admin_id, updated_by=self.admin_id),
@@ -1017,13 +1017,38 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
         self.created_user_ids.append(user_id)
         return user_id
 
-    async def test_admin_only_authorization_and_strict_contract(self) -> None:
+    async def test_only_active_admin_or_event_manager_are_authorized_and_contract_is_strict(self) -> None:
         for role, headers in self.role_headers.items():
+            if role == "event_manager":
+                continue
             with self.subTest(role=role):
                 response = await self._post(self._existing_payload(self.existing_id), headers)
                 self.assertEqual(response.status_code, 403)
         unauthenticated = await self._post(self._existing_payload(self.existing_id))
         self.assertEqual(unauthenticated.status_code, 401)
+
+        manager_created = await self._post(
+            self._existing_payload(self.member_id),
+            self.role_headers["event_manager"],
+        )
+        self.assertEqual(manager_created.status_code, 200)
+        manager_registration_id = UUID(manager_created.json()["data"]["id"])
+        async with AsyncSessionLocal() as session:
+            manager_registration = await session.get(EventRegistration, manager_registration_id)
+        self.assertIsNotNone(manager_registration)
+        assert manager_registration is not None
+        self.assertEqual(manager_registration.source_channel, "admin")
+        self.assertEqual(
+            manager_registration.created_by_admin_user_id,
+            self.event_manager_id,
+        )
+
+        cross_community = await self._post(
+            self._existing_payload(self.out_of_scope_id),
+            self.role_headers["event_manager"],
+            event_id=self.foreign_event_id,
+        )
+        self.assertEqual(cross_community.status_code, 403)
 
         strict_payload = self._new_payload(1)
         strict_payload["source_channel"] = "mobile"
@@ -1162,13 +1187,28 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(blank.status_code, 200)
         self.assertEqual(blank.json()["data"], [])
 
-    async def test_picker_is_admin_only(self) -> None:
+    async def test_picker_allows_event_manager_but_rejects_other_roles(self) -> None:
+        allowed = await self._search_participants(
+            "Participant 0",
+            self.role_headers["event_manager"],
+        )
+        self.assertEqual(allowed.status_code, 200)
+        self.assertEqual([row["id"] for row in allowed.json()["data"]], [str(self.existing_id)])
         for role, headers in self.role_headers.items():
+            if role == "event_manager":
+                continue
             with self.subTest(role=role):
                 response = await self._search_participants("Participant", headers)
                 self.assertEqual(response.status_code, 403)
         unauthenticated = await self._search_participants("Participant")
         self.assertEqual(unauthenticated.status_code, 401)
+
+        cross_community = await self._search_participants(
+            "Participant",
+            self.role_headers["event_manager"],
+            event_id=self.foreign_event_id,
+        )
+        self.assertEqual(cross_community.status_code, 403)
 
     async def test_new_participants_are_unclaimed_without_membership_or_verification(self) -> None:
         no_email = await self._post(self._new_payload(2), self.admin_headers)
@@ -1194,6 +1234,50 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(user.phone_verified_at)
             self.assertIsNone(user.claimed_at)
         self.assertEqual({profile.full_name for profile in profiles}, {"New Admin Participant"})
+
+    async def test_event_manager_creates_new_participants_with_or_without_email(self) -> None:
+        without_email = await self._post(
+            self._new_payload(21),
+            self.role_headers["event_manager"],
+        )
+        self.assertEqual(without_email.status_code, 200)
+        without_email_id = await self._remember_created_user(without_email)
+        with_email_value = f"manager-new-{self.event_id.hex[:12]}@example.invalid"
+        with_email = await self._post(
+            self._new_payload(22, email=with_email_value),
+            self.role_headers["event_manager"],
+        )
+        self.assertEqual(with_email.status_code, 200)
+        with_email_id = await self._remember_created_user(with_email)
+
+        async with AsyncSessionLocal() as session:
+            users = list(
+                await session.scalars(
+                    select(AppUser).where(AppUser.id.in_([without_email_id, with_email_id])),
+                ),
+            )
+            membership_count = await session.scalar(
+                select(func.count())
+                .select_from(CommunityMembership)
+                .where(CommunityMembership.user_id.in_([without_email_id, with_email_id])),
+            )
+            registrations = list(
+                await session.scalars(
+                    select(EventRegistration).where(
+                        EventRegistration.user_id.in_([without_email_id, with_email_id]),
+                    ),
+                ),
+            )
+        self.assertEqual(len(users), 2)
+        self.assertEqual(membership_count, 0)
+        self.assertEqual({user.account_origin for user in users}, {"admin"})
+        self.assertEqual({user.claim_state for user in users}, {"unclaimed"})
+        self.assertEqual({user.email_verified_at for user in users}, {None})
+        self.assertEqual({registration.source_channel for registration in registrations}, {"admin"})
+        self.assertEqual(
+            {registration.created_by_admin_user_id for registration in registrations},
+            {self.event_manager_id},
+        )
 
     async def test_new_identity_conflicts_are_stable_and_do_not_expose_pii(self) -> None:
         phone = self._phone(4)
@@ -1255,7 +1339,7 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
             for option_id in self.option_ids
         ]
 
-        created = await self._post(payload, self.admin_headers)
+        created = await self._post(payload, self.role_headers["event_manager"])
         self.assertEqual(created.status_code, 200)
         data = created.json()["data"]
         self.assertEqual(data["seats_count"], 2)
@@ -1274,6 +1358,11 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(len(selections), 2)
         self.assertEqual({selection.quantity for selection in selections}, {1})
+        async with AsyncSessionLocal() as session:
+            registration = await session.get(EventRegistration, UUID(data["id"]))
+        self.assertIsNotNone(registration)
+        assert registration is not None
+        self.assertEqual(registration.created_by_admin_user_id, self.event_manager_id)
 
         invalid_quantity = self._existing_payload(self.member_id)
         invalid_quantity["option_selections"] = [

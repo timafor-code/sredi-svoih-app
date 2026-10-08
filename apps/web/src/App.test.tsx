@@ -421,6 +421,50 @@ describe("public event page", () => {
     expect(screen.queryByRole("button", { name: /Мои билеты|Управление аккаунтом|Выйти/ })).not.toBeInTheDocument();
   });
 
+  it("lets a remembered full-name-only participant complete names and continue registration", async () => {
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/web/participant-session")) {
+        return response(envelope({ state: "remembered", participant: {
+          first_name: "Иван Иванов", last_name: "", phone: "+79000000001", email: "ivan@example.ru",
+        } }));
+      }
+      if (url.endsWith("/registration-intents") && init?.method === "POST") {
+        return response(intentCreated(), 201);
+      }
+      return response(envelope(eventResponse()));
+    });
+    window.history.replaceState(null, "", `/events/${EVENT_ID}`);
+    render(<App />);
+    const user = userEvent.setup();
+
+    expect(await screen.findByRole("heading", { name: "Записываем вас как Иван Иванов" })).toBeInTheDocument();
+    expect(screen.getByText(/В вашей карточке указано полное имя «Иван Иванов»/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Имя")).toHaveValue("");
+    expect(screen.getByLabelText("Фамилия")).toHaveValue("");
+    expect(screen.queryByRole("textbox", { name: "Телефон" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Email" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: /Основное участие/ }));
+    await user.click(screen.getByLabelText(/Я ознакомился/));
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
+    expect(await screen.findAllByText("Заполните это поле.")).toHaveLength(2);
+
+    await user.type(screen.getByLabelText("Имя"), "Иван");
+    await user.type(screen.getByLabelText("Фамилия"), "Иванов");
+    await user.click(screen.getByRole("button", { name: "Записаться на мероприятие" }));
+    expect(await screen.findByRole("heading", { name: "Введите код из письма" })).toBeInTheDocument();
+    const registrationCall = vi.mocked(fetch).mock.calls.find(
+      ([url, request]) => String(url).endsWith("/registration-intents") && request?.method === "POST",
+    );
+    expect(JSON.parse(String(registrationCall?.[1]?.body))).toMatchObject({
+      first_name: "Иван",
+      last_name: "Иванов",
+      phone: "+79000000001",
+      email: "ivan@example.ru",
+    });
+  });
+
   it("keeps non-identity registration controls visible but fails closed when participant-session bootstrap fails", async () => {
     vi.mocked(fetch).mockImplementation((input) => String(input).endsWith("/web/participant-session")
       ? Promise.reject(new Error("temporary failure"))

@@ -5,7 +5,7 @@ import type { AdminMembership } from "../../types/auth";
 
 function membership(
   communityId: string,
-  role: AdminMembership["role"],
+  role: AdminMembership["role"] | "rabbi",
   status: AdminMembership["status"] = "active",
 ): AdminMembership {
   return {
@@ -14,7 +14,7 @@ function membership(
     community_name: null,
     community: null,
     user_id: "operator",
-    role,
+    role: role as AdminMembership["role"],
     status,
     joined_at: null,
     created_at: "2026-01-01T00:00:00Z",
@@ -33,33 +33,48 @@ describe("Add Participant event-community permission", () => {
     expect(canAddParticipantForEvent(event("community-a", "internal_paid"), memberships)).toBe(true);
   });
 
-  it("does not treat an event manager in the selected community as an Admin", () => {
+  it("allows active Event Managers in the selected community", () => {
     expect(canAddParticipantForEvent(
       event("community-a", "internal_free"),
       [membership("community-a", "event_manager")],
-    )).toBe(false);
+    )).toBe(true);
   });
 
   it("uses the selected event community instead of a global Admin role", () => {
     expect(canAddParticipantForEvent(
       event("community-b", "internal_free"),
       [membership("community-a", "admin"), membership("community-b", "event_manager")],
-    )).toBe(false);
+    )).toBe(true);
     expect(canAddParticipantForEvent(
       event("community-b", "internal_paid"),
       [membership("community-a", "event_manager"), membership("community-b", "admin")],
     )).toBe(true);
   });
 
-  it("rejects inactive Admin memberships and unsupported registration modes", () => {
+  it("rejects inactive operator memberships and unsupported registration modes", () => {
     for (const status of ["pending", "suspended", "left"] as const) {
       expect(canAddParticipantForEvent(
         event("community-a", "internal_free"),
         [membership("community-a", "admin", status)],
       )).toBe(false);
+      expect(canAddParticipantForEvent(
+        event("community-a", "internal_free"),
+        [membership("community-a", "event_manager", status)],
+      )).toBe(false);
     }
     const memberships = [membership("community-a", "admin")];
     expect(canAddParticipantForEvent(event("community-a", "none"), memberships)).toBe(false);
     expect(canAddParticipantForEvent(event("community-a", "external_link"), memberships)).toBe(false);
+  });
+
+  it("does not allow member or Rabbi memberships", () => {
+    expect(canAddParticipantForEvent(
+      event("community-a", "internal_free"),
+      [membership("community-a", "member")],
+    )).toBe(false);
+    expect(canAddParticipantForEvent(
+      event("community-a", "internal_free"),
+      [membership("community-a", "rabbi")],
+    )).toBe(false);
   });
 });

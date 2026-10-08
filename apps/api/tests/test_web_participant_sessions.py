@@ -98,6 +98,57 @@ class WebParticipantSessionTests(unittest.IsolatedAsyncioTestCase):
             row = await session.scalar(select(WebParticipantSession))
             self.assertIsNotNone(row.revoked_at)
 
+    async def test_admin_origin_display_name_only_session_restores_in_a_separate_request(self) -> None:
+        original_name = "Созданный Администратором"
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                user = await session.get(AppUser, self.user_id)
+                profile = await session.scalar(select(Profile).where(Profile.user_id == self.user_id))
+                assert user is not None
+                assert profile is not None
+                user.account_origin = "admin"
+                profile.first_name = None
+                profile.last_name = None
+                profile.full_name = original_name
+                profile.display_name = original_name
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as issuer:
+            issued = await issuer.post(
+                "/web/participant-session",
+                headers={"Authorization": f"Bearer {create_access_token(self.user_id)}"},
+            )
+            session_token = issued.cookies.get(service.COOKIE_NAME)
+        self.assertEqual(issued.status_code, 200)
+        self.assertIsNotNone(session_token)
+
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as restored_client:
+            restored_client.cookies.set(service.COOKIE_NAME, session_token)
+            restored = await restored_client.get("/web/participant-session")
+        self.assertEqual(restored.status_code, 200)
+        self.assertEqual(
+            restored.json()["data"],
+            {
+                "state": "remembered",
+                "participant": {
+                    "first_name": original_name,
+                    "last_name": "",
+                    "phone": f"+7900{int(self.marker[:8], 16) % 10**7:07d}",
+                    "email": self.email,
+                },
+            },
+        )
+        async with AsyncSessionLocal() as session:
+            row = await session.scalar(
+                select(WebParticipantSession).where(
+                    WebParticipantSession.token_hash == hash_token(session_token),
+                ),
+            )
+            profile = await session.scalar(select(Profile).where(Profile.user_id == self.user_id))
+        self.assertEqual(row.user_id, self.user_id)
+        self.assertEqual(profile.full_name, original_name)
+        self.assertEqual(profile.display_name, original_name)
+
     async def test_expired_revoked_and_unavailable_users_fail_closed(self) -> None:
         expired = await self._issue()
         revoked = await self._issue()
