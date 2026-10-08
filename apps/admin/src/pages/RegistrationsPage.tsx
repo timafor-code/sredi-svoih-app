@@ -1230,6 +1230,9 @@ export function RegistrationsPage() {
               : "Дата события не выбрана"
             : null}
           occurrenceRequired={eventHasOccurrences}
+          registrationMode={selectedEvent.registrationMode}
+          isRegistrationClosed={selectedOccurrence?.registrationState === "closed"
+            && selectedOccurrence.registrationStateReason === "registration_closes_at_past"}
           onClose={() => setAddParticipantOpen(false)}
           onRefresh={refreshAfterAction}
           onRefreshFailure={handleAddParticipantRefreshFailure}

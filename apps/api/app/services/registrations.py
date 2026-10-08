@@ -121,12 +121,20 @@ def _not_found(message: str = "Registration not found") -> HTTPException:
     return _error(status.HTTP_404_NOT_FOUND, "not_found", message)
 
 
-def _validation_error(message: str) -> HTTPException:
-    return _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", message)
+def _validation_error(
+    message: str,
+    *,
+    code: str = "validation_error",
+) -> HTTPException:
+    return _error(status.HTTP_422_UNPROCESSABLE_ENTITY, code, message)
 
 
-def _state_conflict(message: str) -> HTTPException:
-    return _error(status.HTTP_409_CONFLICT, "state_conflict", message)
+def _state_conflict(
+    message: str,
+    *,
+    code: str = "state_conflict",
+) -> HTTPException:
+    return _error(status.HTTP_409_CONFLICT, code, message)
 
 
 def _capacity_unavailable(message: str) -> HTTPException:
@@ -217,6 +225,8 @@ async def _lock_occurrence(
     session: AsyncSession,
     event: Event,
     occurrence_id: UUID | None,
+    *,
+    allow_closed_registration: bool = False,
 ) -> EventOccurrence | None:
     if occurrence_id is None:
         return None
@@ -237,12 +247,19 @@ async def _lock_occurrence(
         occurrence.registration_opens_at is not None
         and now < occurrence.registration_opens_at
     ):
-        raise _state_conflict("Registration is not open yet")
+        raise _state_conflict(
+            "Registration is not open yet",
+            code="registration_not_open",
+        )
     if (
         occurrence.registration_closes_at is not None
         and now > occurrence.registration_closes_at
     ):
-        raise _state_conflict("Registration is closed")
+        if not allow_closed_registration:
+            raise _state_conflict(
+                "Registration is closed",
+                code="registration_closed",
+            )
 
     return occurrence
 
@@ -401,7 +418,10 @@ async def _prepare_options(
 ) -> tuple[list[_PreparedSelection], list[_CapacityReservationDraft], int, int]:
     requested = payload.option_selections
     if event.registration_mode == PAID_REGISTRATION_MODE and not requested:
-        raise _validation_error("Select at least one participation option")
+        raise _validation_error(
+            "Select at least one participation option",
+            code="participation_option_required",
+        )
     if not requested:
         return [], [], payload.seats_count, payload.seats_count
 
@@ -482,9 +502,13 @@ async def _prepare_options(
         if not has_non_donation_selection:
             raise _validation_error(
                 "Select at least one non-donation participation option",
+                code="participation_option_required",
             )
         if registration_seats_count <= 0:
-            raise _validation_error("Select at least one option that reserves a seat")
+            raise _validation_error(
+                "Select at least one option that reserves a seat",
+                code="participation_option_required",
+            )
     elif registration_seats_count <= 0:
         registration_seats_count = payload.seats_count
 
@@ -978,6 +1002,7 @@ async def register_user_for_event(
     payload: RegisterEventRequest,
     source_channel: str,
     member_community_ids: Sequence[UUID] = (),
+    allow_closed_registration: bool = False,
 ) -> RegistrationWriteResult:
     """Create or return a registration inside the caller's transaction."""
     if source_channel not in {"mobile", "public_web", "admin"}:
@@ -993,7 +1018,12 @@ async def register_user_for_event(
     if _requires_occurrence(event, payload, has_occurrences=has_occurrences):
         raise _validation_error("occurrence_id is required for this event")
 
-    occurrence = await _lock_occurrence(session, event, payload.occurrence_id)
+    occurrence = await _lock_occurrence(
+        session,
+        event,
+        payload.occurrence_id,
+        allow_closed_registration=allow_closed_registration,
+    )
     prepared_selections, reservation_drafts, seats_count, legacy_seats_count = (
         await _prepare_options(session, event, payload)
     )

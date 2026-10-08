@@ -6,6 +6,8 @@ import {
   buildAdminRegistrationRequest,
   createExistingParticipantSearchState,
   deselectExistingParticipant,
+  getNewParticipantValidationError,
+  hasRequiredPaidParticipationOption,
   getExistingParticipantPickerView,
   mapAddParticipantError,
   refreshAfterRegistrationSaved,
@@ -13,6 +15,7 @@ import {
   selectExistingParticipant,
   updateExistingParticipantSearch,
 } from "./AddParticipantDialog";
+import { formatAdminPhoneInput } from "./phone";
 
 const selectedParticipant = {
   id: "participant-1",
@@ -78,7 +81,7 @@ describe("AddParticipantDialog request helpers", () => {
     });
   });
 
-  it("builds a trimmed new-participant request without privileged fields", () => {
+  it("builds a trimmed new-participant request with a normalized phone", () => {
     expect(buildAdminRegistrationRequest({
       comment: "Комментарий",
       email: " anna@example.invalid ",
@@ -93,7 +96,7 @@ describe("AddParticipantDialog request helpers", () => {
       participant: {
         mode: "new",
         fullName: "Анна Тестова",
-        phone: "+7 999 000 00 01",
+        phone: "+79990000001",
         email: "anna@example.invalid",
       },
       occurrenceId: null,
@@ -139,6 +142,9 @@ describe("AddParticipantDialog request helpers", () => {
     expect(mapAddParticipantError(error("admin_participant_identity_conflict"))).toContain("разным профилям");
     expect(mapAddParticipantError(error("capacity_unavailable"))).toContain("свободных мест");
     expect(mapAddParticipantError(error("already_registered"))).toContain("активная регистрация");
+    expect(mapAddParticipantError(error("participation_option_required", 422))).toBe("Выберите хотя бы один вариант участия.");
+    expect(mapAddParticipantError(error("registration_not_open"))).toBe("Регистрация на это событие ещё не открыта.");
+    expect(mapAddParticipantError(error("registration_closed"))).toBe("Регистрация на это событие завершена.");
     expect(mapAddParticipantError(error("validation_error", 422))).toContain("варианты участия");
     expect(mapAddParticipantError(error("network_error", 0))).toContain("временно недоступен");
   });
@@ -165,6 +171,30 @@ describe("AddParticipantDialog request helpers", () => {
       { donation: 2, online: 4 },
       3,
     )).toEqual({ seatsCount: 3, optionSeatsCount: 0, usesOptionSeats: false });
+  });
+
+  it("requires a selected seat-bearing option for paid registration only", () => {
+    const seat = capacityOption("seat");
+    const donation = nonCapacityOption("donation", true);
+    expect(hasRequiredPaidParticipationOption([seat, donation], {})).toBe(false);
+    expect(hasRequiredPaidParticipationOption([seat, donation], { donation: 1 })).toBe(false);
+    expect(hasRequiredPaidParticipationOption([seat, donation], { seat: 1 })).toBe(true);
+  });
+
+  it("formats Russian and international phones and rejects incomplete numbers", () => {
+    expect(formatAdminPhoneInput("89990000001")).toMatchObject({
+      canonical: "+79990000001",
+      country: "RU",
+      flag: "🇷🇺",
+    });
+    expect(formatAdminPhoneInput("+14155552671")).toMatchObject({
+      canonical: "+14155552671",
+      country: "US",
+      flag: "🇺🇸",
+    });
+    expect(getNewParticipantValidationError("Анна", "+7 999")).toBe(
+      "Укажите корректный номер телефона с кодом страны.",
+    );
   });
 
   it("reports a post-save refresh failure without turning it into a submit failure", async () => {
