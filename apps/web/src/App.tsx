@@ -1127,7 +1127,13 @@ function RegistrationForm({
   const usesCalculatedSeats = registrationMode === "internal_paid" && options.length > 0;
   const temporaryAuth = authenticatedAccount?.tokens ?? null;
   const existingAccount = authenticatedAccount?.identity ?? null;
-  const registrationIdentity = existingAccount ?? rememberedParticipant;
+  const rememberedParticipantNeedsNameCompletion = Boolean(
+    rememberedParticipant
+      && (!rememberedParticipant.first_name.trim() || !rememberedParticipant.last_name.trim()),
+  );
+  const registrationIdentity = existingAccount
+    ?? (rememberedParticipantNeedsNameCompletion ? null : rememberedParticipant);
+  const canonicalContactIdentity = existingAccount ?? rememberedParticipant;
   const rememberedParticipantInitials = rememberedParticipant
     ? [rememberedParticipant.first_name, rememberedParticipant.last_name]
       .map((name) => name.trim().charAt(0).toLocaleUpperCase())
@@ -1414,18 +1420,12 @@ function RegistrationForm({
       return;
     }
     if (submittingRef.current) return;
-    const signedInValues = registrationIdentity ? {
-      firstName: registrationIdentity.first_name,
-      lastName: registrationIdentity.last_name,
-      phone: registrationIdentity.phone,
-      email: registrationIdentity.email,
-    } : null;
     const normalizedValues = {
       ...values,
-      firstName: normalizeName(signedInValues?.firstName ?? values.firstName),
-      lastName: normalizeName(signedInValues?.lastName ?? values.lastName),
-      phone: signedInValues?.phone ?? values.phone,
-      email: signedInValues?.email ?? values.email.trim(),
+      firstName: normalizeName(registrationIdentity?.first_name ?? values.firstName),
+      lastName: normalizeName(registrationIdentity?.last_name ?? values.lastName),
+      phone: canonicalContactIdentity?.phone ?? values.phone,
+      email: canonicalContactIdentity?.email ?? values.email.trim(),
     };
     setValues(normalizedValues);
     const nextErrors: FormErrors = validatePersonalFields(normalizedValues);
@@ -2111,6 +2111,20 @@ function RegistrationForm({
                 <div><dt>Телефон</dt><dd>{registrationIdentity.phone}</dd></div>
                 <div><dt>Email</dt><dd>{registrationIdentity.email}</dd></div>
               </dl>
+            ) : rememberedParticipantNeedsNameCompletion && rememberedParticipant ? (
+              <>
+                <p className="form-notice" role="status">
+                  В вашей карточке указано полное имя «{rememberedParticipant.first_name}». Уточните имя и фамилию, чтобы продолжить регистрацию.
+                </p>
+                <div className="form-grid">
+                  {field("first-name", "firstName", "Имя", { autoComplete: "given-name", maxLength: 100 })}
+                  {field("last-name", "lastName", "Фамилия", { autoComplete: "family-name", maxLength: 100 })}
+                </div>
+                <dl className="account-identity" aria-label="Телефон и email из сохранённой карточки, только для чтения">
+                  <div><dt>Телефон</dt><dd>{rememberedParticipant.phone}</dd></div>
+                  <div><dt>Email</dt><dd>{rememberedParticipant.email}</dd></div>
+                </dl>
+              </>
             ) : participantSessionStatus === "checking" ? (
               <p className="participant-identity-pending" aria-live="polite">Проверяем данные для регистрации…</p>
             ) : participantSessionStatus === "error" ? (
