@@ -284,12 +284,86 @@ class WebRegistrationIntentTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNotNone(remembered_row.last_used_at)
 
-    async def test_authenticated_incomplete_profile_fails_without_intent(self) -> None:
+    async def test_remembered_full_name_only_profile_completes_names_and_registers_canonical_user(self) -> None:
         user = await self._add_authenticated_user(
-            email="intent-incomplete@example.invalid",
+            email="intent-name-completion@example.invalid",
             phone="+79000000032",
+            password_hash=None,
+            first_name=None,
             last_name=None,
         )
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                current_user = await session.get(AppUser, user.id)
+                profile = await session.scalar(select(Profile).where(Profile.user_id == user.id))
+                assert current_user is not None
+                assert profile is not None
+                current_user.account_origin = "admin"
+                current_user.claim_state = "unclaimed"
+                profile.full_name = "Иван Иванов"
+                profile.display_name = "Иван Иванов"
+                issued = await web_participant_sessions.issue(session, user=current_user)
+
+        payload = self.payload(
+            first_name="Иван",
+            last_name="Иванов",
+            phone="+79000000099",
+            email="attempted-replacement@example.invalid",
+            idempotency_key="remembered-name-completion",
+        ).model_dump(mode="json")
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            client.cookies.set(web_participant_sessions.COOKIE_NAME, issued.token)
+            before_completion = await client.get("/web/participant-session")
+            created = await client.post("/web/registration-intents", json=payload)
+            after_completion = await client.get("/web/participant-session")
+
+        self.assertEqual(before_completion.status_code, 200)
+        self.assertEqual(
+            before_completion.json()["data"]["participant"],
+            {
+                "first_name": "Иван Иванов",
+                "last_name": "",
+                "phone": user.phone,
+                "email": user.email,
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.json()["data"]["next_step"], "completed")
+        async with AsyncSessionLocal() as session:
+            profile = await session.scalar(select(Profile).where(Profile.user_id == user.id))
+            registration = await session.scalar(
+                select(EventRegistration).where(EventRegistration.event_id == self.event_id),
+            )
+            user_count = await session.scalar(
+                select(func.count()).select_from(AppUser).where(AppUser.phone == user.phone),
+            )
+        self.assertEqual((profile.first_name, profile.last_name), ("Иван", "Иванов"))
+        self.assertEqual((profile.full_name, profile.display_name), ("Иван Иванов", "Иван Иванов"))
+        self.assertEqual((profile.phone, profile.email), (user.phone, user.email))
+        self.assertEqual(registration.user_id, user.id)
+        self.assertEqual(user_count, 1)
+        self.assertEqual(
+            after_completion.json()["data"]["participant"],
+            {
+                "first_name": "Иван",
+                "last_name": "Иванов",
+                "phone": user.phone,
+                "email": user.email,
+            },
+        )
+
+    async def test_authenticated_profile_without_canonical_phone_fails_without_intent(self) -> None:
+        user = await self._add_authenticated_user(
+            email="intent-incomplete@example.invalid",
+            phone="+79000000033",
+            last_name=None,
+        )
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                profile = await session.scalar(select(Profile).where(Profile.user_id == user.id))
+                assert profile is not None
+                profile.phone = None
         with self.assertRaises(HTTPException) as raised:
             async with AsyncSessionLocal() as session:
                 await service.create_intent(session, self.payload(), None, current_user=user)
