@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
+import { polyfillCountryFlagEmojis } from "country-flag-emoji-polyfill";
+import flagFontUrl from "country-flag-emoji-polyfill/dist/TwemojiCountryFlags.woff2?url";
 
 import { Button } from "../ui/Button";
 import { ApiClientError } from "../../services/apiClient";
@@ -39,6 +41,13 @@ type AddParticipantDialogProps = {
 };
 
 const INITIAL_SEATS_COUNT = 1;
+let flagEmojiPolyfillReady = false;
+
+function ensureWindowsFlagEmojiSupport(): void {
+  if (flagEmojiPolyfillReady || !/Windows/i.test(navigator.userAgent)) return;
+  flagEmojiPolyfillReady = true;
+  polyfillCountryFlagEmojis("Twemoji Country Flags", flagFontUrl);
+}
 
 export function getExistingParticipantPickerView(
   selectedParticipant: AdminRegistrationParticipant | null,
@@ -235,6 +244,7 @@ export function AddParticipantDialog({
   onRefreshFailure,
   onSuccess,
 }: AddParticipantDialogProps) {
+  useEffect(ensureWindowsFlagEmojiSupport, []);
   const [mode, setMode] = useState<ParticipantMode>("existing");
   const [participantPicker, setParticipantPicker] = useState<ExistingParticipantPickerState>(
     createExistingParticipantSearchState(""),
