@@ -1742,6 +1742,88 @@ class WebRegistrationEmailFinalizeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(refreshed.phone, self.phone)
         self.assertEqual((profile.first_name, profile.last_name), ("Иван", "Тестов"))
 
+    async def test_admin_phone_only_identity_is_completed_only_after_email_verification(self) -> None:
+        admin_user = AppUser(
+            phone=self.phone,
+            password_hash=None,
+            account_origin="admin",
+            claim_state="unclaimed",
+            status="active",
+            email_verified_at=None,
+        )
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add(admin_user)
+                await session.flush()
+                session.add(
+                    Profile(
+                        user_id=admin_user.id,
+                        full_name="Созданный Админом",
+                        display_name="Созданный Админом",
+                        phone=self.phone,
+                        email=None,
+                    ),
+                )
+                session.add(
+                    EventRegistration(
+                        event_id=self.event_id,
+                        user_id=admin_user.id,
+                        status="confirmed",
+                        source_channel="admin",
+                        seats_count=1,
+                        guest_names=[],
+                        registered_at=self.now,
+                        confirmed_at=self.now,
+                        payment_status="not_required",
+                    ),
+                )
+
+        created, code = await self.create()
+        async with AsyncSessionLocal() as session:
+            before_verification = await session.get(AppUser, admin_user.id)
+            before_profile = await session.scalar(
+                select(Profile).where(Profile.user_id == admin_user.id),
+            )
+        self.assertIsNone(before_verification.email)
+        self.assertIsNone(before_verification.email_verified_at)
+        self.assertIsNone(before_profile.email)
+
+        async with AsyncSessionLocal() as session:
+            result = await service.confirm_email(
+                session,
+                created.flow_id,
+                code,
+                "192.0.2.82",
+            )
+            completed = await session.get(AppUser, admin_user.id)
+            profile = await session.scalar(select(Profile).where(Profile.user_id == admin_user.id))
+            registrations = list(
+                await session.scalars(
+                    select(EventRegistration).where(EventRegistration.user_id == admin_user.id),
+                ),
+            )
+            matching_user_count = await session.scalar(
+                select(func.count())
+                .select_from(AppUser)
+                .where(
+                    (AppUser.phone == self.phone)
+                    | (func.lower(AppUser.email) == self.email),
+                ),
+            )
+        self.assertEqual(result.outcome, "already_registered")
+        self.assertEqual(completed.email, self.email)
+        self.assertIsNotNone(completed.email_verified_at)
+        self.assertEqual(completed.account_origin, "admin")
+        self.assertEqual(completed.claim_state, "unclaimed")
+        self.assertIsNone(completed.password_hash)
+        self.assertEqual(profile.email, self.email)
+        self.assertEqual(profile.phone, self.phone)
+        self.assertEqual(profile.full_name, "Созданный Админом")
+        self.assertEqual(len(registrations), 1)
+        self.assertEqual(registrations[0].user_id, admin_user.id)
+        self.assertEqual(registrations[0].source_channel, "admin")
+        self.assertEqual(matching_user_count, 1)
+
     async def test_different_user_and_deletion_races_stay_generic(self) -> None:
         different_payload = self.payload(
             email=f"web-finalize-different-email-{self.marker}@example.invalid",

@@ -16,7 +16,7 @@ export function canAddParticipantForEvent(
   return supportsAdminRegistration && memberships.some((membership) => (
     membership.community_id === event.communityId &&
     membership.status === "active" &&
-    membership.role === "admin"
+    (membership.role === "admin" || membership.role === "event_manager")
   ));
 }
 
