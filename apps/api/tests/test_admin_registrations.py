@@ -7,6 +7,8 @@ from uuid import UUID, uuid4
 import httpx
 from sqlalchemy import delete, func, select
 
+from fastapi import HTTPException
+
 from app.core.tokens import create_access_token
 from app.db.models.core import (
     AppUser,
@@ -28,6 +30,8 @@ from app.db.models.core import (
 )
 from app.db.session import AsyncSessionLocal, engine
 from app.main import app
+from app.schemas.registrations import RegisterEventRequest
+from app.services import registrations as registrations_service
 
 
 class AdminRegistrationSourceTests(unittest.IsolatedAsyncioTestCase):
@@ -861,6 +865,9 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
         self.out_of_scope_id = uuid4()
         self.unavailable_ids = [uuid4() for _ in range(3)]
         self.option_ids = [uuid4(), uuid4()]
+        self.closed_occurrence_id = uuid4()
+        self.not_yet_open_occurrence_id = uuid4()
+        self.foreign_closed_occurrence_id = uuid4()
         self.created_user_ids: list[UUID] = []
         self.marker = uuid4().int % 10_000_000
         now = datetime.now(UTC).replace(microsecond=0)
@@ -976,6 +983,39 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
 
     def _existing_payload(self, user_id: UUID) -> dict[str, object]:
         return {"participant": {"mode": "existing", "user_id": str(user_id)}, "occurrence_id": None, "option_selections": [], "seats_count": 1, "guest_names": [], "comment": None}
+
+    def _closed_occurrence_payload(self, user_id: UUID) -> dict[str, object]:
+        payload = self._existing_payload(user_id)
+        payload["occurrence_id"] = str(self.closed_occurrence_id)
+        return payload
+
+    async def _create_registration_window_occurrences(self) -> None:
+        now = datetime.now(UTC).replace(microsecond=0)
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                session.add_all([
+                    EventOccurrence(
+                        id=self.closed_occurrence_id,
+                        event_id=self.event_id,
+                        title="Closed registration occurrence",
+                        starts_at=now + timedelta(days=2),
+                        registration_closes_at=now - timedelta(minutes=1),
+                    ),
+                    EventOccurrence(
+                        id=self.not_yet_open_occurrence_id,
+                        event_id=self.event_id,
+                        title="Future registration occurrence",
+                        starts_at=now + timedelta(days=3),
+                        registration_opens_at=now + timedelta(days=1),
+                    ),
+                    EventOccurrence(
+                        id=self.foreign_closed_occurrence_id,
+                        event_id=self.foreign_event_id,
+                        title="Foreign closed registration occurrence",
+                        starts_at=now + timedelta(days=2),
+                        registration_closes_at=now - timedelta(minutes=1),
+                    ),
+                ])
 
     def _new_payload(self, offset: int, *, email: str | None = None, **extra: object) -> dict[str, object]:
         participant: dict[str, object] = {"mode": "new", "full_name": "  New   Admin Participant  ", "phone": self._phone(offset), "email": email}
@@ -1330,6 +1370,129 @@ class AdminRegistrationWriteContractTests(unittest.IsolatedAsyncioTestCase):
         async with AsyncSessionLocal() as session:
             capacity_user = await session.scalar(select(AppUser).where(AppUser.phone == self._phone(8)))
         self.assertIsNone(capacity_user)
+
+    async def test_authorized_manual_registration_bypasses_only_closed_deadlines(self) -> None:
+        await self._create_registration_window_occurrences()
+        admin_created = await self._post(
+            self._closed_occurrence_payload(self.member_id),
+            self.admin_headers,
+        )
+        self.assertEqual(admin_created.status_code, 200)
+        self.assertEqual(admin_created.json()["data"]["source_channel"], "admin")
+        self.assertEqual(admin_created.json()["data"]["user_id"], str(self.member_id))
+
+        manager_payload = self._new_payload(31)
+        manager_payload["occurrence_id"] = str(self.closed_occurrence_id)
+        manager_payload["option_selections"] = [
+            {"option_id": str(self.option_ids[0]), "quantity": 1},
+        ]
+        manager_created = await self._post(
+            manager_payload,
+            self.role_headers["event_manager"],
+        )
+        self.assertEqual(manager_created.status_code, 200)
+        manager_user_id = await self._remember_created_user(manager_created)
+        self.assertEqual(manager_created.json()["data"]["source_channel"], "admin")
+        self.assertEqual(
+            manager_created.json()["data"]["selected_options"][0]["option_id"],
+            str(self.option_ids[0]),
+        )
+        async with AsyncSessionLocal() as session:
+            manager_registration = await session.get(
+                EventRegistration,
+                UUID(manager_created.json()["data"]["id"]),
+            )
+        self.assertIsNotNone(manager_registration)
+        assert manager_registration is not None
+        self.assertEqual(manager_registration.user_id, manager_user_id)
+        self.assertEqual(manager_registration.created_by_admin_user_id, self.event_manager_id)
+
+        unauthorized = await self._post(
+            self._closed_occurrence_payload(self.existing_id),
+            self.role_headers["member"],
+        )
+        self.assertEqual(unauthorized.status_code, 403)
+        foreign_payload = self._existing_payload(self.out_of_scope_id)
+        foreign_payload["occurrence_id"] = str(self.foreign_closed_occurrence_id)
+        cross_community = await self._post(
+            foreign_payload,
+            self.role_headers["event_manager"],
+            event_id=self.foreign_event_id,
+        )
+        self.assertEqual(cross_community.status_code, 403)
+
+        not_open = self._existing_payload(self.existing_id)
+        not_open["occurrence_id"] = str(self.not_yet_open_occurrence_id)
+        not_open_response = await self._post(not_open, self.admin_headers)
+        self.assertEqual(not_open_response.status_code, 409)
+        self.assertEqual(not_open_response.json()["error"]["code"], "registration_not_open")
+
+        async with AsyncSessionLocal() as session:
+            user = await session.get(AppUser, self.existing_id)
+            assert user is not None
+            for source_channel, member_community_ids in (
+                ("mobile", (self.community_id,)),
+                ("public_web", ()),
+            ):
+                with self.subTest(source_channel=source_channel):
+                    with self.assertRaises(HTTPException) as context:
+                        await registrations_service.register_user_for_event(
+                            session,
+                            user=user,
+                            event_id=self.event_id,
+                            payload=RegisterEventRequest(
+                                occurrence_id=self.closed_occurrence_id,
+                            ),
+                            source_channel=source_channel,
+                            member_community_ids=member_community_ids,
+                        )
+                    self.assertEqual(context.exception.status_code, 409)
+                    self.assertEqual(context.exception.detail["code"], "registration_closed")
+
+    async def test_closed_manual_registration_keeps_capacity_duplicate_and_paid_option_rules(self) -> None:
+        await self._create_registration_window_occurrences()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                occurrence = await session.get(EventOccurrence, self.closed_occurrence_id)
+                event = await session.get(Event, self.event_id)
+                assert occurrence is not None
+                assert event is not None
+                occurrence.capacity = 1
+
+        first = await self._post(self._closed_occurrence_payload(self.member_id), self.admin_headers)
+        self.assertEqual(first.status_code, 200)
+
+        duplicate = self._closed_occurrence_payload(self.member_id)
+        duplicate["seats_count"] = 2
+        duplicate_response = await self._post(duplicate, self.admin_headers)
+        self.assertEqual(duplicate_response.status_code, 409)
+        self.assertEqual(duplicate_response.json()["error"]["code"], "already_registered")
+
+        full_payload = self._new_payload(32)
+        full_payload["occurrence_id"] = str(self.closed_occurrence_id)
+        full_response = await self._post(full_payload, self.admin_headers)
+        self.assertEqual(full_response.status_code, 409)
+        self.assertEqual(full_response.json()["error"]["code"], "capacity_unavailable")
+        async with AsyncSessionLocal() as session:
+            rolled_back_user = await session.scalar(
+                select(AppUser).where(AppUser.phone == self._phone(32)),
+            )
+        self.assertIsNone(rolled_back_user)
+
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                event = await session.get(Event, self.event_id)
+                assert event is not None
+                event.registration_mode = "internal_paid"
+                event.capacity = 10
+
+        missing_option = self._closed_occurrence_payload(self.existing_id)
+        missing_option_response = await self._post(missing_option, self.admin_headers)
+        self.assertEqual(missing_option_response.status_code, 422)
+        self.assertEqual(
+            missing_option_response.json()["error"]["code"],
+            "participation_option_required",
+        )
 
     async def test_option_selections_are_forwarded_to_the_canonical_writer(self) -> None:
         payload = self._existing_payload(self.member_id)

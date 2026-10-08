@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
+import { polyfillCountryFlagEmojis } from "country-flag-emoji-polyfill";
+import flagFontUrl from "country-flag-emoji-polyfill/dist/TwemojiCountryFlags.woff2?url";
 
 import { Button } from "../ui/Button";
 import { ApiClientError } from "../../services/apiClient";
@@ -9,6 +11,7 @@ import {
 } from "../../services/adminRegistrationApiService";
 import { listAdminEventParticipationOptions } from "../../services/adminParticipationOptionsService";
 import type { ParticipationOption } from "../../types/participationOptions";
+import { formatAdminPhoneInput, normalizeAdminPhone } from "./phone";
 import type {
   AdminRegistrationParticipant,
   CreateAdminEventRegistrationRequest,
@@ -29,6 +32,8 @@ type AddParticipantDialogProps = {
   occurrenceId: string | null;
   occurrenceLabel: string | null;
   occurrenceRequired: boolean;
+  registrationMode: string;
+  isRegistrationClosed: boolean;
   onClose: () => void;
   onRefresh: () => Promise<void>;
   onRefreshFailure: () => void;
@@ -36,6 +41,13 @@ type AddParticipantDialogProps = {
 };
 
 const INITIAL_SEATS_COUNT = 1;
+let flagEmojiPolyfillReady = false;
+
+function ensureWindowsFlagEmojiSupport(): void {
+  if (flagEmojiPolyfillReady || !/Windows/i.test(navigator.userAgent)) return;
+  flagEmojiPolyfillReady = true;
+  polyfillCountryFlagEmojis("Twemoji Country Flags", flagFontUrl);
+}
 
 export function getExistingParticipantPickerView(
   selectedParticipant: AdminRegistrationParticipant | null,
@@ -58,6 +70,10 @@ export function deselectExistingParticipant(
 
 export function createExistingParticipantSearchState(search: string): ExistingParticipantPickerState {
   return { search, selectedParticipant: null };
+}
+
+export function getDuplicatePhoneParticipantSearch(phone: string): string {
+  return normalizeAdminPhone(phone) ?? phone.trim();
 }
 
 export function updateExistingParticipantSearch(
@@ -103,6 +119,12 @@ export function mapAddParticipantError(error: unknown): string {
       return "Недостаточно свободных мест для выбранных вариантов. Измените выбор и попробуйте снова.";
     case "already_registered":
       return "У участника уже есть активная регистрация на эту дату с другими параметрами участия. Проверьте существующую регистрацию перед повторной записью.";
+    case "participation_option_required":
+      return "Выберите хотя бы один вариант участия.";
+    case "registration_not_open":
+      return "Регистрация на это событие ещё не открыта.";
+    case "registration_closed":
+      return "Регистрация на это событие завершена.";
     case "forbidden":
     case "not_found":
       return "У вас нет доступа к этому событию или участнику.";
@@ -113,6 +135,28 @@ export function mapAddParticipantError(error: unknown): string {
         ? "Сервис временно недоступен. Попробуйте ещё раз."
         : "Не удалось сохранить регистрацию. Проверьте введённые данные.";
   }
+}
+
+export function hasRequiredPaidParticipationOption(
+  options: readonly ParticipationOption[],
+  optionSelections: OptionSelections,
+): boolean {
+  return options.some((option) => (
+    optionSelections[option.id] !== undefined
+    && !option.isDonation
+    && option.countsTowardCapacity
+  ));
+}
+
+export function getNewParticipantValidationError(
+  fullName: string,
+  phone: string,
+): string | null {
+  if (!fullName.trim() || !phone.trim()) return "Заполните ФИО и телефон.";
+  if (!normalizeAdminPhone(phone)) {
+    return "Укажите корректный номер телефона с кодом страны.";
+  }
+  return null;
 }
 
 export function resolveRegistrationSeats(
@@ -169,13 +213,14 @@ export function buildAdminRegistrationRequest({
     optionId,
     quantity,
   }));
+  const normalizedPhone = normalizeAdminPhone(phone);
   const identity = mode === "existing"
     ? participant ? { mode: "existing" as const, userId: participant.id } : null
-    : fullName.trim() && phone.trim()
+    : fullName.trim() && normalizedPhone
       ? {
         mode: "new" as const,
         fullName: fullName.trim(),
-        phone: phone.trim(),
+        phone: normalizedPhone,
         email: email.trim() || null,
       }
       : null;
@@ -196,11 +241,14 @@ export function AddParticipantDialog({
   occurrenceId,
   occurrenceLabel,
   occurrenceRequired,
+  registrationMode,
+  isRegistrationClosed,
   onClose,
   onRefresh,
   onRefreshFailure,
   onSuccess,
 }: AddParticipantDialogProps) {
+  useEffect(ensureWindowsFlagEmojiSupport, []);
   const [mode, setMode] = useState<ParticipantMode>("existing");
   const [participantPicker, setParticipantPicker] = useState<ExistingParticipantPickerState>(
     createExistingParticipantSearchState(""),
@@ -290,6 +338,7 @@ export function AddParticipantDialog({
     optionSelections,
     parsedSeatsCount,
   );
+  const phoneInput = formatAdminPhoneInput(phone);
 
   const switchMode = (nextMode: ParticipantMode) => {
     if (submitting || nextMode === mode) return;
@@ -346,6 +395,20 @@ export function AddParticipantDialog({
       setSubmitError("Сначала выберите дату события на странице регистраций.");
       return;
     }
+    if (
+      registrationMode === "internal_paid"
+      && !hasRequiredPaidParticipationOption(activeOptions, optionSelections)
+    ) {
+      setSubmitError("Выберите хотя бы один вариант участия.");
+      return;
+    }
+    if (mode === "new") {
+      const phoneValidationError = getNewParticipantValidationError(fullName, phone);
+      if (phoneValidationError) {
+        setSubmitError(phoneValidationError);
+        return;
+      }
+    }
     if (!Number.isInteger(resolvedSeats.seatsCount) || resolvedSeats.seatsCount < 1 || resolvedSeats.seatsCount > 1000) {
       setSubmitError("Количество мест должно быть целым числом от 1 до 1000.");
       return;
@@ -364,7 +427,7 @@ export function AddParticipantDialog({
     if (!request) {
       setSubmitError(mode === "existing"
         ? "Найдите и явно выберите участника из базы."
-        : "Заполните ФИО и телефон.");
+        : "Укажите корректный номер телефона с кодом страны.");
       return;
     }
 
@@ -377,7 +440,9 @@ export function AddParticipantDialog({
       setSubmitError(nextError);
       if (error instanceof ApiClientError && error.code === "admin_participant_phone_exists") {
         setMode("existing");
-        setParticipantPicker(createExistingParticipantSearchState(phone.trim()));
+        setParticipantPicker(
+          createExistingParticipantSearchState(getDuplicatePhoneParticipantSearch(phone)),
+        );
       }
       if (error instanceof ApiClientError && error.code === "admin_participant_email_exists") {
         setMode("existing");
@@ -411,6 +476,7 @@ export function AddParticipantDialog({
             <span>Дата события</span>
             <strong>{occurrenceLabel ?? "Для события не требуется отдельная дата"}</strong>
           </div>
+          {isRegistrationClosed ? <p className="add-participant-warning" role="status">Регистрация на это событие уже закрыта. Администратор или редактор может добавить участника вручную.</p> : null}
           <div className="add-participant-modes" role="tablist" aria-label="Способ выбора участника">
             <button aria-selected={mode === "existing"} className={mode === "existing" ? "is-active" : undefined} disabled={submitting} onClick={() => switchMode("existing")} role="tab" type="button">Из базы</button>
             <button aria-selected={mode === "new"} className={mode === "new" ? "is-active" : undefined} disabled={submitting} onClick={() => switchMode("new")} role="tab" type="button">Новый участник</button>
@@ -448,7 +514,7 @@ export function AddParticipantDialog({
           ) : (
             <section className="add-participant-section add-participant-fields" aria-label="Новый участник">
               <label className="add-participant-field"><span>ФИО</span><input autoComplete="name" disabled={submitting} onChange={(event) => setFullName(event.target.value)} value={fullName} /></label>
-              <label className="add-participant-field"><span>Телефон</span><input autoComplete="tel" disabled={submitting} onChange={(event) => setPhone(event.target.value)} type="tel" value={phone} /></label>
+              <label className="add-participant-field"><span>Телефон</span><div className="add-participant-phone-control"><span aria-hidden="true" className="add-participant-phone-flag">{phoneInput.flag}</span><input autoComplete="tel" disabled={submitting} inputMode="tel" maxLength={32} onChange={(event) => setPhone(formatAdminPhoneInput(event.target.value).display)} placeholder="+(код страны) …" type="tel" value={phone} /></div><small>Можно указать номер любой страны</small></label>
               <label className="add-participant-field"><span>Email <em>необязательно</em></span><input autoComplete="email" disabled={submitting} onChange={(event) => setEmail(event.target.value)} type="email" value={email} /></label>
             </section>
           )}

@@ -13526,6 +13526,17 @@ a {
 
 .add-participant-context strong { color: var(--text); font-size: 13px; }
 
+.add-participant-warning {
+  margin: 0;
+  border: 1px solid rgba(242, 184, 75, 0.38);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(242, 184, 75, 0.11);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .add-participant-modes {
   display: flex;
   gap: 6px;
@@ -13563,6 +13574,17 @@ a {
 }
 
 .add-participant-field textarea { resize: vertical; }
+.add-participant-field small { color: var(--text-soft); font-size: 12px; }
+.add-participant-fields { align-items: start; }
+.add-participant-fields > .add-participant-field { align-content: start; }
+.add-participant-fields > .add-participant-field > input,
+.add-participant-phone-control { min-height: 40px; box-sizing: border-box; }
+.add-participant-phone-control { display: flex; min-width: 0; align-items: center; border: 1px solid var(--glass-border); border-radius: 8px; background: rgba(255, 255, 255, 0.07); }
+.add-participant-phone-control input,
+.add-participant-phone-control input:focus { border: 0; border-radius: 0; outline: 0; box-shadow: none; background: transparent; }
+.add-participant-phone-control input:disabled { background: transparent; }
+.add-participant-phone-control:focus-within { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(242, 184, 75, 0.14); }
+.add-participant-phone-flag { padding-left: 10px; font-size: 18px; line-height: 1; }
 .add-participant-field em,
 .add-participant-option em { color: var(--text-muted); font-style: normal; font-weight: 650; text-transform: none; }
 .add-participant-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }

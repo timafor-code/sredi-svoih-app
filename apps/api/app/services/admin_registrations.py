@@ -803,6 +803,7 @@ async def create_admin_event_registration(
                 payload=registration_payload,
                 source_channel="admin",
                 member_community_ids=(event.community_id,),
+                allow_closed_registration=True,
             )
             if write_result.created:
                 write_result.registration.created_by_admin_user_id = current_user.id

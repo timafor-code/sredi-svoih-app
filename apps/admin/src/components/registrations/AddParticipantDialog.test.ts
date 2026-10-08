@@ -6,6 +6,9 @@ import {
   buildAdminRegistrationRequest,
   createExistingParticipantSearchState,
   deselectExistingParticipant,
+  getDuplicatePhoneParticipantSearch,
+  getNewParticipantValidationError,
+  hasRequiredPaidParticipationOption,
   getExistingParticipantPickerView,
   mapAddParticipantError,
   refreshAfterRegistrationSaved,
@@ -13,6 +16,8 @@ import {
   selectExistingParticipant,
   updateExistingParticipantSearch,
 } from "./AddParticipantDialog";
+import { formatAdminPhoneInput } from "./phone";
+import { isRegistrationClosedByDeadline } from "../../lib/registrationWindow";
 
 const selectedParticipant = {
   id: "participant-1",
@@ -54,6 +59,18 @@ describe("AddParticipantDialog request helpers", () => {
     });
   });
 
+  it("normalizes duplicate-phone recovery searches without selecting a participant", () => {
+    expect(getDuplicatePhoneParticipantSearch("+7 989 565-65-66")).toBe("+79895656566");
+    expect(getDuplicatePhoneParticipantSearch("+1 415 555 2671")).toBe("+14155552671");
+    expect(createExistingParticipantSearchState(
+      getDuplicatePhoneParticipantSearch("+7 989 565-65-66"),
+    )).toEqual({ search: "+79895656566", selectedParticipant: null });
+    expect(createExistingParticipantSearchState("anna@example.invalid")).toEqual({
+      search: "anna@example.invalid",
+      selectedParticipant: null,
+    });
+  });
+
   it("keeps several participation options in one existing-participant request", () => {
     expect(buildAdminRegistrationRequest({
       comment: "  ",
@@ -78,7 +95,7 @@ describe("AddParticipantDialog request helpers", () => {
     });
   });
 
-  it("builds a trimmed new-participant request without privileged fields", () => {
+  it("builds a trimmed new-participant request with a normalized phone", () => {
     expect(buildAdminRegistrationRequest({
       comment: "Комментарий",
       email: " anna@example.invalid ",
@@ -93,7 +110,7 @@ describe("AddParticipantDialog request helpers", () => {
       participant: {
         mode: "new",
         fullName: "Анна Тестова",
-        phone: "+7 999 000 00 01",
+        phone: "+79990000001",
         email: "anna@example.invalid",
       },
       occurrenceId: null,
@@ -139,6 +156,9 @@ describe("AddParticipantDialog request helpers", () => {
     expect(mapAddParticipantError(error("admin_participant_identity_conflict"))).toContain("разным профилям");
     expect(mapAddParticipantError(error("capacity_unavailable"))).toContain("свободных мест");
     expect(mapAddParticipantError(error("already_registered"))).toContain("активная регистрация");
+    expect(mapAddParticipantError(error("participation_option_required", 422))).toBe("Выберите хотя бы один вариант участия.");
+    expect(mapAddParticipantError(error("registration_not_open"))).toBe("Регистрация на это событие ещё не открыта.");
+    expect(mapAddParticipantError(error("registration_closed"))).toBe("Регистрация на это событие завершена.");
     expect(mapAddParticipantError(error("validation_error", 422))).toContain("варианты участия");
     expect(mapAddParticipantError(error("network_error", 0))).toContain("временно недоступен");
   });
@@ -165,6 +185,50 @@ describe("AddParticipantDialog request helpers", () => {
       { donation: 2, online: 4 },
       3,
     )).toEqual({ seatsCount: 3, optionSeatsCount: 0, usesOptionSeats: false });
+  });
+
+  it("requires a selected seat-bearing option for paid registration only", () => {
+    const seat = capacityOption("seat");
+    const donation = nonCapacityOption("donation", true);
+    expect(hasRequiredPaidParticipationOption([seat, donation], {})).toBe(false);
+    expect(hasRequiredPaidParticipationOption([seat, donation], { donation: 1 })).toBe(false);
+    expect(hasRequiredPaidParticipationOption([seat, donation], { seat: 1 })).toBe(true);
+  });
+
+  it("formats Russian and international phones and rejects incomplete numbers", () => {
+    expect(formatAdminPhoneInput("89990000001")).toMatchObject({
+      canonical: "+79990000001",
+      country: "RU",
+      flag: "🇷🇺",
+    });
+    expect(formatAdminPhoneInput("+14155552671")).toMatchObject({
+      canonical: "+14155552671",
+      country: "US",
+      flag: "🇺🇸",
+    });
+    expect(getNewParticipantValidationError("Анна", "+7 999")).toBe(
+      "Укажите корректный номер телефона с кодом страны.",
+    );
+  });
+
+  it("recalculates the deadline warning from active occurrence timestamps", () => {
+    const closesAt = Date.parse("2026-10-08T12:00:00Z");
+    const closedOccurrence = {
+      status: "active",
+      registrationOpensAt: "2026-10-08T10:00:00Z",
+      registrationClosesAt: "2026-10-08T12:00:00Z",
+      serverNow: "2026-10-08T11:00:00Z",
+    };
+    expect(isRegistrationClosedByDeadline(closedOccurrence, closesAt - 1)).toBe(false);
+    expect(isRegistrationClosedByDeadline(closedOccurrence, closesAt + 1)).toBe(true);
+    expect(isRegistrationClosedByDeadline({
+      ...closedOccurrence,
+      registrationOpensAt: "2026-10-08T13:00:00Z",
+    }, closesAt + 1)).toBe(false);
+    expect(isRegistrationClosedByDeadline({
+      ...closedOccurrence,
+      status: "cancelled",
+    }, closesAt + 1)).toBe(false);
   });
 
   it("reports a post-save refresh failure without turning it into a submit failure", async () => {
