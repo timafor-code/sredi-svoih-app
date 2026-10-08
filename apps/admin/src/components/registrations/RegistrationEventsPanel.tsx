@@ -3,6 +3,12 @@ import { Button } from "../ui/Button";
 import { GlassCard } from "../ui/GlassCard";
 import type { AdminBadgeTone } from "../../types/admin";
 import type { AdminRegistrationEventSummary } from "../../types/registrations";
+import type {
+  RegistrationEventListEntry,
+  RegistrationEventListPreferences,
+  RegistrationEventListSort,
+  RegistrationEventListTab,
+} from "../../lib/registrationEventList";
 import { formatDateTime } from "./formatters";
 import { RegistrationsState } from "./RegistrationsState";
 
@@ -11,7 +17,11 @@ type RegistrationEventsPanelProps = {
   events: AdminRegistrationEventSummary[];
   eventsError: string | null;
   eventsLoading: boolean;
-  filteredEvents: AdminRegistrationEventSummary[];
+  eventListPreferences: RegistrationEventListPreferences;
+  eventsInSelectedTab: RegistrationEventListEntry[];
+  filteredEvents: RegistrationEventListEntry[];
+  onEventListSortChange: (sort: RegistrationEventListSort) => void;
+  onEventListTabChange: (tab: RegistrationEventListTab) => void;
   onEventQueryChange: (query: string) => void;
   onRefresh: () => void;
   onRetry: () => void;
@@ -24,7 +34,11 @@ export function RegistrationEventsPanel({
   events,
   eventsError,
   eventsLoading,
+  eventListPreferences,
+  eventsInSelectedTab,
   filteredEvents,
+  onEventListSortChange,
+  onEventListTabChange,
   onEventQueryChange,
   onRefresh,
   onRetry,
@@ -35,6 +49,8 @@ export function RegistrationEventsPanel({
   const chooserId = useId();
   const chooserButtonRef = useRef<HTMLButtonElement>(null);
   const selectedEvent = events.find((event) => event.eventId === selectedEventId);
+  const selectedEntry = eventsInSelectedTab.find((entry) => entry.event.eventId === selectedEventId);
+  const hasEventQuery = eventQuery.trim().length > 0;
 
   return (
         <GlassCard className="registrations-events-panel" elevated>
@@ -51,7 +67,7 @@ export function RegistrationEventsPanel({
               <strong>{selectedEvent?.title ?? "Выбрать событие"}</strong>
               {eventsLoading ? <small>Загрузка событий…</small> : eventsError ? (
                 <small>Список не обновлён — откройте, чтобы повторить</small>
-              ) : selectedEvent ? <small>{formatDateTime(selectedEvent.startsAt)}</small> : null}
+              ) : selectedEvent ? <small>{formatDateTime(selectedEntry?.effectiveDate ?? selectedEvent.startsAt)}</small> : null}
             </span>
             <span aria-hidden="true">{isExpanded ? "▴" : "▾"}</span>
           </button>
@@ -62,7 +78,7 @@ export function RegistrationEventsPanel({
           <div className="registrations-panel__head">
             <div>
               <span>События</span>
-              <strong>{events.length}</strong>
+              <strong>{eventsInSelectedTab.length}</strong>
             </div>
             <Button disabled={eventsLoading} onClick={onRefresh} size="sm">
               {eventsLoading ? "..." : "Обновить"}
@@ -78,6 +94,42 @@ export function RegistrationEventsPanel({
               value={eventQuery}
             />
           </label>
+
+          <div className="registration-event-list-controls">
+            <div aria-label="Период событий" className="registration-event-list-tabs" role="tablist">
+              <button
+                aria-selected={eventListPreferences.tab === "current"}
+                className={eventListPreferences.tab === "current" ? "is-active" : ""}
+                onClick={() => onEventListTabChange("current")}
+                role="tab"
+                type="button"
+              >
+                Актуальные
+              </button>
+              <button
+                aria-selected={eventListPreferences.tab === "archive"}
+                className={eventListPreferences.tab === "archive" ? "is-active" : ""}
+                onClick={() => onEventListTabChange("archive")}
+                role="tab"
+                type="button"
+              >
+                Архив
+              </button>
+            </div>
+            <label className="registration-event-sort-field">
+              <span>Сортировка</span>
+              <select
+                onChange={(event) => onEventListSortChange(event.target.value as RegistrationEventListSort)}
+                value={eventListPreferences.sort}
+              >
+                <option value="nearest">Ближайшие по дате</option>
+                <option value="latest">По дате — сначала поздние</option>
+                <option value="registrations">По количеству регистраций</option>
+                <option value="new">По количеству NEW</option>
+                <option value="title">По названию (А–Я)</option>
+              </select>
+            </label>
+          </div>
 
           <div className="registration-event-list">
             {eventsLoading ? (
@@ -99,16 +151,27 @@ export function RegistrationEventsPanel({
                 description={
                   events.length === 0
                     ? "Для текущего admin context нет событий с доступными регистрациями. Mock-данные здесь не показываются."
-                    : "Поиск не нашёл событие. Очистите запрос или попробуйте название, дату либо тип события."
+                    : eventsInSelectedTab.length === 0
+                      ? eventListPreferences.tab === "current"
+                        ? "Нет актуальных событий. Проверьте архив событий."
+                        : "В архиве пока нет событий."
+                      : "Поиск не нашёл событие. Очистите запрос или попробуйте название, дату либо тип события."
                 }
-                title={events.length === 0 ? "Нет событий" : "Нет совпадений"}
+                title={
+                  events.length === 0
+                    ? "Нет событий"
+                    : hasEventQuery || eventsInSelectedTab.length > 0
+                      ? "Нет совпадений"
+                      : eventListPreferences.tab === "current" ? "Нет актуальных событий" : "Архив пуст"
+                }
               />
             ) : (
-              filteredEvents.map((event) => (
+              filteredEvents.map((entry) => (
                 <RegistrationEventCard
-                  event={event}
-                  isSelected={event.eventId === selectedEventId}
-                  key={event.eventId}
+                  effectiveDate={entry.effectiveDate}
+                  event={entry.event}
+                  isSelected={entry.event.eventId === selectedEventId}
+                  key={entry.event.eventId}
                   onSelect={(eventId) => {
                     onSelectEvent(eventId);
                     setIsExpanded(false);
@@ -130,10 +193,12 @@ function getEventCardNewCount(event: AdminRegistrationEventSummary): number {
 }
 
 function RegistrationEventCard({
+  effectiveDate,
   event,
   isSelected,
   onSelect,
 }: {
+  effectiveDate: string | null;
   event: AdminRegistrationEventSummary;
   isSelected: boolean;
   onSelect: (eventId: string) => void;
@@ -147,7 +212,7 @@ function RegistrationEventCard({
     >
       <div className="registration-event-card__title">
         <strong>{event.title}</strong>
-        <span>{formatDateTime(event.startsAt)}</span>
+        <span>{formatDateTime(effectiveDate)}</span>
       </div>
       <div className="registration-event-card__counters">
         <CounterPill label="new" tone="gold" value={getEventCardNewCount(event)} />

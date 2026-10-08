@@ -371,10 +371,18 @@ export async function listRegistrationEvents(): Promise<AdminRegistrationEventSu
         communityId: requiredString(event.community_id, ""),
         title: requiredString(event.title, "Untitled event"),
         startsAt: nullableString(event.starts_at),
+        endsAt: nullableString(event.ends_at),
+        status: requiredString(event.status, "draft"),
+        isPermanent: event.is_permanent === true,
         eventKind: requiredString(event.event_kind, "single"),
         registrationMode: requiredString(event.registration_mode, "none"),
         capacity: nullableNumber(event.capacity),
         occurrenceCount: occurrences.length,
+        occurrences: occurrences.map((occurrence) => ({
+          startsAt: occurrence.starts_at,
+          endsAt: occurrence.ends_at,
+          status: occurrence.status,
+        })),
         ...buildCounts(registrations),
       };
     }),
