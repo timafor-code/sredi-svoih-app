@@ -221,6 +221,8 @@ export function EventProgrammeEditor({
     try {
       const preparedSchedule = prepareProgrammeScheduleForSave({
         eventKind: event.eventKind,
+        eventStartsAt: event.startsAt,
+        occurrenceStartsAt: selectedOccurrence?.startsAt ?? null,
         persistedSchedule: event.schedule ?? null,
         draftSchedule: schedule,
       });
@@ -384,10 +386,14 @@ export function recalculateProgrammeForEventContext({
 
 export function prepareProgrammeScheduleForSave({
   eventKind,
+  eventStartsAt,
+  occurrenceStartsAt,
   persistedSchedule,
   draftSchedule,
 }: Readonly<{
   eventKind: string;
+  eventStartsAt?: string | null;
+  occurrenceStartsAt?: string | null;
   persistedSchedule: AdminEventSchedule | null;
   draftSchedule: AdminEventSchedule | null;
 }>): ProgrammeScheduleSavePreparation {
@@ -402,13 +408,9 @@ export function prepareProgrammeScheduleForSave({
     schedule: draftSchedule,
   });
   if (!withoutOccurrenceValues) return { ok: true, schedule: null };
-  if (!persistedSchedule) return {
-    ok: false,
-    error: "Нельзя сохранить программу Шабата без исходного шаблона: обновите программу после загрузки шаблона.",
-  };
 
   const sourceDaysByWeekday = new Map<number, AdminEventSchedule["days"][number]>();
-  for (const sourceDay of persistedSchedule.days) {
+  for (const sourceDay of persistedSchedule?.days ?? []) {
     const weekday = getWeekday(sourceDay.date);
     if (weekday === null || sourceDaysByWeekday.has(weekday)) {
       return {
@@ -419,19 +421,33 @@ export function prepareProgrammeScheduleForSave({
     sourceDaysByWeekday.set(weekday, sourceDay);
   }
 
+  const templateShabbatDates = getTemplateShabbatDates({
+    draftSchedule: withoutOccurrenceValues,
+    eventStartsAt,
+    occurrenceStartsAt,
+    sourceDaysByWeekday,
+  });
+  if (sourceDaysByWeekday.has(5) && sourceDaysByWeekday.has(6) && !templateShabbatDates) {
+    return {
+      ok: false,
+      error: "Нельзя безопасно сопоставить дни шаблона Шабата. Проверьте даты и повторите сохранение.",
+    };
+  }
+
   const usedWeekdays = new Set<number>();
   const restoredDates: AdminEventSchedule["days"] = [];
   for (const day of withoutOccurrenceValues.days) {
     const weekday = getWeekday(day.date);
     const sourceDay = weekday === null ? undefined : sourceDaysByWeekday.get(weekday);
-    if (weekday === null || !sourceDay || usedWeekdays.has(weekday)) {
+    const templateDate = sourceDay?.date ?? (weekday === null ? undefined : templateShabbatDates?.get(weekday));
+    if (weekday === null || !templateDate || usedWeekdays.has(weekday)) {
       return {
         ok: false,
         error: "Нельзя безопасно сопоставить дни изменённой программы Шабата с шаблоном. Проверьте даты и повторите сохранение.",
       };
     }
     usedWeekdays.add(weekday);
-    restoredDates.push({ ...day, date: sourceDay.date });
+    restoredDates.push({ ...day, date: templateDate });
   }
   return { ok: true, schedule: { version: 1, days: restoredDates } };
 }
@@ -439,6 +455,57 @@ export function prepareProgrammeScheduleForSave({
 export type ProgrammeScheduleSavePreparation =
   | { ok: true; schedule: AdminEventSchedule | null }
   | { ok: false; error: string };
+
+function getTemplateShabbatDates({
+  draftSchedule,
+  eventStartsAt,
+  occurrenceStartsAt,
+  sourceDaysByWeekday,
+}: Readonly<{
+  draftSchedule: AdminEventSchedule;
+  eventStartsAt: string | null | undefined;
+  occurrenceStartsAt: string | null | undefined;
+  sourceDaysByWeekday: ReadonlyMap<number, AdminEventSchedule["days"][number]>;
+}>): Map<number, string> | null {
+  const existingFriday = sourceDaysByWeekday.get(5)?.date;
+  const existingSaturday = sourceDaysByWeekday.get(6)?.date;
+  if (existingFriday && existingSaturday) {
+    return areConsecutiveDates(existingFriday, existingSaturday)
+      ? new Map([[5, existingFriday], [6, existingSaturday]])
+      : null;
+  }
+  if (existingFriday) return shabbatDatesForReference(existingFriday);
+  if (existingSaturday) return shabbatDatesForReference(existingSaturday);
+
+  const reference = getEventStartDate(eventStartsAt ?? null)
+    ?? getEventStartDate(occurrenceStartsAt ?? null)
+    ?? draftSchedule.days.map((day) => day.date).find((date) => {
+      const weekday = getWeekday(date);
+      return weekday === 5 || weekday === 6;
+    });
+  return reference ? shabbatDatesForReference(reference) : null;
+}
+
+function shabbatDatesForReference(referenceDate: string): Map<number, string> | null {
+  const weekday = getWeekday(referenceDate);
+  if (weekday === null) return null;
+  const saturday = addCalendarDays(referenceDate, (6 - weekday + 7) % 7);
+  if (!saturday) return null;
+  const friday = addCalendarDays(saturday, -1);
+  if (!friday) return null;
+  return new Map([[5, friday], [6, saturday]]);
+}
+
+function addCalendarDays(date: string, days: number): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) return null;
+  const value = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + days));
+  return Number.isNaN(value.getTime()) ? null : `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
+}
+
+function areConsecutiveDates(first: string, second: string): boolean {
+  return addCalendarDays(first, 1) === second;
+}
 
 function automateProgramme(
   event: AdminEvent,
