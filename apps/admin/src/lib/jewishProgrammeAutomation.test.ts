@@ -6,7 +6,13 @@ import {
   parseProgrammeGregorianDate,
 } from "../../../../src/lib/jewishProgrammeCalendar";
 import { getDailyZmanim } from "../../../../src/lib/zmanim";
+import {
+  createProgrammeDraft,
+  prepareProgrammeScheduleForSave,
+  recalculateProgrammeForEventContext,
+} from "../components/events/EventProgrammeEditor";
 import type { AdminEventSchedule } from "../types/events";
+import type { AdminEvent } from "../types/events";
 import { applyJewishProgrammeAutomation } from "./jewishProgrammeAutomation";
 
 const MANUAL_OPTION_ID = "11111111-1111-4111-8111-111111111111";
@@ -43,7 +49,86 @@ function generatedItems(schedule: AdminEventSchedule | null) {
     .map((item) => ({ date: day.date, ...item }))) ?? [];
 }
 
+function eventFixture(overrides: Partial<AdminEvent>): AdminEvent {
+  return {
+    id: "event-a",
+    eventKind: "shabbat",
+    startsAt: "2026-07-03T16:00:00.000Z",
+    schedule: scheduleFixture(),
+    ...overrides,
+  } as AdminEvent;
+}
+
 describe("applyJewishProgrammeAutomation", () => {
+  it("keeps Holiday auto-generation as an explicit programme change", () => {
+    const draft = createProgrammeDraft(eventFixture({
+      eventKind: "holiday",
+      startsAt: "2026-09-11T16:00:00.000Z",
+    }), null);
+
+    expect(generatedItems(draft.schedule)).not.toEqual([]);
+    expect(generatedItems(draft.baseline)).toEqual([]);
+    expect(draft.schedule).not.toEqual(draft.baseline);
+  });
+
+  it("recalculates a clean programme for changed event type or parent date", () => {
+    const holiday = eventFixture({ eventKind: "holiday", startsAt: "2026-09-11T16:00:00.000Z" });
+    const movedHoliday = { ...holiday, startsAt: "2026-09-18T16:00:00.000Z" };
+    const single = { ...holiday, eventKind: "single" };
+
+    expect(generatedItems(createProgrammeDraft(holiday, null).schedule))
+      .not.toEqual(generatedItems(createProgrammeDraft(movedHoliday, null).schedule));
+    expect(generatedItems(createProgrammeDraft(single, null).schedule)).toEqual([]);
+  });
+
+  it("does not replace an unsaved draft when event context changes", () => {
+    const changedEvent = eventFixture({ eventKind: "holiday", startsAt: "2026-09-18T16:00:00.000Z" });
+
+    expect(recalculateProgrammeForEventContext({
+      event: changedEvent,
+      hasUnsavedDraft: true,
+      occurrence: null,
+    })).toBeNull();
+  });
+
+  it("saves Shabbat manual edits into the reusable template rather than the displayed occurrence", () => {
+    const template = scheduleFixture();
+    const octoberDraft = applyJewishProgrammeAutomation({
+      eventKind: "shabbat",
+      referenceDate: "2026-10-16",
+      schedule: template,
+    })!;
+    const editedDraft: AdminEventSchedule = {
+      ...octoberDraft,
+      days: octoberDraft.days.map((day) => ({
+        ...day,
+        items: day.items.map((item) => (
+          item.title === "Минха" ? { ...item, title: "Поздняя Минха", time: "19:15" } : item
+        )),
+      })),
+    };
+    const savedTemplate = prepareProgrammeScheduleForSave({
+      eventKind: "shabbat",
+      persistedSchedule: template,
+      draftSchedule: editedDraft,
+    });
+    const reopenedForNextShabbat = applyJewishProgrammeAutomation({
+      eventKind: "shabbat",
+      referenceDate: "2026-10-23",
+      schedule: savedTemplate,
+    });
+
+    expect(savedTemplate?.days.map((day) => day.date)).toEqual(["2026-07-10", "2026-07-11"]);
+    expect(generatedItems(savedTemplate)).toEqual([]);
+    expect(savedTemplate?.days[0].items).toContainEqual({
+      time: "19:15", title: "Поздняя Минха", optionId: MANUAL_OPTION_ID,
+    });
+    expect(reopenedForNextShabbat?.days.map((day) => day.date)).toEqual(["2026-10-23", "2026-10-24"]);
+    expect(reopenedForNextShabbat?.days[0].items).toContainEqual({
+      time: "19:15", title: "Поздняя Минха", optionId: MANUAL_OPTION_ID,
+    });
+  });
+
   it("adds deterministic Moscow Shabbat rows without touching a manual title collision", () => {
     const result = applyJewishProgrammeAutomation({
       eventKind: "shabbat",

@@ -36,7 +36,7 @@ export function EventProgrammeEditor({
     automateProgramme(event, event.schedule ?? null, null)
   ));
   const [baseline, setBaseline] = useState<AdminEventSchedule | null>(() => (
-    automateProgramme(event, event.schedule ?? null, null)
+    getProgrammeBaseline(event, event.schedule ?? null, null)
   ));
   const [selectedOccurrence, setSelectedOccurrence] = useState<AdminEventOccurrence | null>(null);
   const [projectionNotice, setProjectionNotice] = useState<string | null>(null);
@@ -66,12 +66,12 @@ export function EventProgrammeEditor({
     || (!optionsError && loadedOptionsRevision !== participationOptionsRevision);
 
   useEffect(() => {
-    const nextSchedule = automateProgramme(event, event.schedule ?? null, null);
-    baselineRef.current = cloneSchedule(nextSchedule);
+    const nextDraft = createProgrammeDraft(event, null);
+    baselineRef.current = cloneSchedule(nextDraft.baseline);
     scheduleDirtyRef.current = false;
     pendingOccurrenceRef.current = null;
-    setSchedule(nextSchedule);
-    setBaseline(cloneSchedule(nextSchedule));
+    setSchedule(nextDraft.schedule);
+    setBaseline(cloneSchedule(nextDraft.baseline));
     setSelectedOccurrence(null);
     setProjectionNotice(null);
     setSourceText("");
@@ -85,6 +85,18 @@ export function EventProgrammeEditor({
     setLoadedOptionsRevision(null);
     setSaving(false);
   }, [event.id]);
+
+  useEffect(() => {
+    const nextDraft = recalculateProgrammeForEventContext({
+      event,
+      hasUnsavedDraft: scheduleDirtyRef.current,
+      occurrence: selectedOccurrence,
+    });
+    if (!nextDraft) return;
+    baselineRef.current = cloneSchedule(nextDraft.baseline);
+    setSchedule(nextDraft.schedule);
+    setBaseline(cloneSchedule(nextDraft.baseline));
+  }, [event.eventKind, event.startsAt]);
 
   useEffect(() => {
     if (!active || event.eventKind !== "shabbat") return;
@@ -207,7 +219,11 @@ export function EventProgrammeEditor({
     setSaveError(null);
     setValidationError(null);
     try {
-      const confirmed = await onSave(schedule);
+      const confirmed = await onSave(prepareProgrammeScheduleForSave({
+        eventKind: event.eventKind,
+        persistedSchedule: event.schedule ?? null,
+        draftSchedule: schedule,
+      }));
       if (!confirmed) {
         setSaveError("Программа сейчас не может быть сохранена. Дождитесь завершения другого изменения и повторите попытку.");
         return;
@@ -328,6 +344,70 @@ function getEventStartDate(startsAt: string | null): string | null {
   }
 }
 
+function getProgrammeBaseline(
+  event: AdminEvent,
+  schedule: AdminEventSchedule | null,
+  occurrence: AdminEventOccurrence | null,
+): AdminEventSchedule | null {
+  // Holiday generation remains an authoring aid: generated values differ from
+  // the stored template and therefore retain the existing explicit-save flow.
+  if (event.eventKind !== "shabbat") return cloneSchedule(schedule);
+  return automateProgramme(event, schedule, occurrence);
+}
+
+export function createProgrammeDraft(
+  event: AdminEvent,
+  occurrence: AdminEventOccurrence | null,
+): { schedule: AdminEventSchedule | null; baseline: AdminEventSchedule | null } {
+  return {
+    schedule: automateProgramme(event, event.schedule ?? null, occurrence),
+    baseline: getProgrammeBaseline(event, event.schedule ?? null, occurrence),
+  };
+}
+
+export function recalculateProgrammeForEventContext({
+  event,
+  hasUnsavedDraft,
+  occurrence,
+}: Readonly<{
+  event: AdminEvent;
+  hasUnsavedDraft: boolean;
+  occurrence: AdminEventOccurrence | null;
+}>): { schedule: AdminEventSchedule | null; baseline: AdminEventSchedule | null } | null {
+  return hasUnsavedDraft ? null : createProgrammeDraft(event, occurrence);
+}
+
+export function prepareProgrammeScheduleForSave({
+  eventKind,
+  persistedSchedule,
+  draftSchedule,
+}: Readonly<{
+  eventKind: string;
+  persistedSchedule: AdminEventSchedule | null;
+  draftSchedule: AdminEventSchedule | null;
+}>): AdminEventSchedule | null {
+  if (eventKind !== "shabbat") return cloneSchedule(draftSchedule);
+
+  // A Shabbat draft is rendered for one concrete occurrence, but the event
+  // stores a reusable programme template. Drop derived values and restore the
+  // source dates for unchanged logical days before the explicit save request.
+  const withoutOccurrenceValues = applyJewishProgrammeAutomation({
+    eventKind: "single",
+    referenceDate: null,
+    schedule: draftSchedule,
+  });
+  if (!withoutOccurrenceValues || !persistedSchedule) return withoutOccurrenceValues;
+
+  const restoredDates = withoutOccurrenceValues.days.map((day, index) => {
+    const sourceDay = persistedSchedule.days[index];
+    if (sourceDay && getWeekday(day.date) === getWeekday(sourceDay.date)) {
+      return { ...day, date: sourceDay.date };
+    }
+    return day;
+  });
+  return { version: 1, days: restoredDates };
+}
+
 function automateProgramme(
   event: AdminEvent,
   schedule: AdminEventSchedule | null,
@@ -340,6 +420,17 @@ function automateProgramme(
       : getEventStartDate(event.startsAt),
     schedule,
   });
+}
+
+function getWeekday(date: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) return null;
+  const civilDate = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return civilDate.getUTCFullYear() === Number(match[1])
+    && civilDate.getUTCMonth() === Number(match[2]) - 1
+    && civilDate.getUTCDate() === Number(match[3])
+    ? civilDate.getUTCDay()
+    : null;
 }
 
 function formatDate(date: Date, timezone?: string): string | null {
