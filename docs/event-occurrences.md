@@ -124,6 +124,24 @@ always. The UI may still format stored timestamps for editing and display, but
 it must not recalculate registration availability from local `new Date()`,
 `Date.now()`, or a separate timing helper.
 
+## Web-admin Shabbat programme projection
+
+The Admin Center Programme tab loads occurrences through the authenticated
+admin occurrence endpoint when that tab becomes active. For a Shabbat parent,
+it selects the earliest `active` occurrence whose `ends_at` (or `starts_at`)
+is later than the endpoint's `server_now`, ordering ties by occurrence ID. The
+registration window is intentionally not part of this selection: a closed
+registration can still belong to the Shabbat currently shown on Public Web.
+
+The selected occurrence is used only to project the reusable event-level
+programme template in the editor: Moscow candle-lighting and Shabbat-end
+markers, Friday/Saturday dates, and the Torah portion are recalculated in the
+draft display. Opening the Programme tab does not PATCH `events.schedule` and
+does not make the programme dirty. Explicit programme edits retain the normal
+`Сохранить программу` flow. If there is no eligible occurrence, the response
+is invalid, or it cannot be loaded, Admin Center leaves the stored template
+unchanged and explains that a current calendar projection is unavailable.
+
 ## Access
 
 Active occurrences are visible when their parent event is visible:
