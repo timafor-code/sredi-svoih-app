@@ -12,7 +12,7 @@ export function isSameProgrammeSaveRequest(
   return left?.eventId === right.eventId && left.revision === right.revision;
 }
 
-type ProgrammeAutosaveOutcome = "saved" | "blocked" | "failed" | "invalid";
+type ProgrammeAutosaveOutcome = "saved" | "blocked" | "dependency" | "failed" | "invalid";
 
 type ProgrammeAutosaveTimer = Pick<typeof globalThis, "clearTimeout" | "setTimeout">;
 
@@ -27,7 +27,7 @@ export class ProgrammeAutosaveCoordinator {
   private pending = false;
   private ready = false;
   private saving = false;
-  private paused: "none" | "blocked" | "failed" | "invalid" = "none";
+  private paused: "none" | "blocked" | "dependency" | "failed" | "invalid" = "none";
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -103,7 +103,7 @@ export class ProgrammeAutosaveCoordinator {
     // A failed older request must not turn a newer revision into a failed
     // draft. Its timer/readiness state remains intact and can save safely once
     // this request releases the single-write lock.
-    if (!completedLatestRevision && outcome !== "blocked") {
+    if (!completedLatestRevision && outcome !== "blocked" && outcome !== "dependency") {
       return {
         current: true,
         completedLatestRevision: false,
@@ -123,6 +123,12 @@ export class ProgrammeAutosaveCoordinator {
 
   resumeWhenParentIsAvailable(): boolean {
     if (!this.pending || this.paused !== "blocked") return false;
+    this.paused = "none";
+    return this.ready && !this.saving;
+  }
+
+  resumeWhenValidationDependenciesAreAvailable(): boolean {
+    if (!this.pending || this.paused !== "dependency") return false;
     this.paused = "none";
     return this.ready && !this.saving;
   }

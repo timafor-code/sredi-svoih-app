@@ -18,6 +18,9 @@ import {
   EventScheduleConstructor,
   validateEventSchedule,
 } from "./EventScheduleConstructor";
+import type { EventScheduleValidation } from "./EventScheduleConstructor";
+
+const OPTIONS_VALIDATION_UNAVAILABLE = "Нельзя проверить связанные варианты участия. Дождитесь загрузки или повторите попытку.";
 
 type EventProgrammeEditorProps = {
   active: boolean;
@@ -50,6 +53,9 @@ export function EventProgrammeEditor({
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [optionsError, setOptionsError] = useState<string | null>(null);
   const [loadedOptionsRevision, setLoadedOptionsRevision] = useState<number | null>(null);
+  const [loadedOptionsEventId, setLoadedOptionsEventId] = useState<string | null>(null);
+  const [optionsReloadAttempt, setOptionsReloadAttempt] = useState(0);
+  const [optionsValidationState, setOptionsValidationState] = useState<"idle" | "waiting" | "failed">("idle");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -87,6 +93,7 @@ export function EventProgrammeEditor({
   const scheduleDirty = hasUnconfirmedUserIntent || !sameSchedule(schedule, baseline);
   const optionsAreCurrent = !optionsLoading
     && !optionsError
+    && loadedOptionsEventId === event.id
     && loadedOptionsRevision === participationOptionsRevision;
   const optionsLoadingForSchedule = optionsLoading
     || (!optionsError && loadedOptionsRevision !== participationOptionsRevision);
@@ -99,10 +106,8 @@ export function EventProgrammeEditor({
     selectedOccurrenceRef.current = selectedOccurrence;
   }, [selectedOccurrence]);
 
-  useEffect(() => {
-    participationOptionsRef.current = participationOptions;
-    optionsAreCurrentRef.current = optionsAreCurrent;
-  }, [optionsAreCurrent, participationOptions]);
+  participationOptionsRef.current = participationOptions;
+  optionsAreCurrentRef.current = optionsAreCurrent;
 
   useEffect(() => {
     const nextDraft = createProgrammeDraft(event, null);
@@ -128,6 +133,9 @@ export function EventProgrammeEditor({
     setOptionsLoading(false);
     setOptionsError(null);
     setLoadedOptionsRevision(null);
+    setLoadedOptionsEventId(null);
+    setOptionsReloadAttempt(0);
+    setOptionsValidationState("idle");
     setSaving(false);
   }, [event.id]);
 
@@ -200,25 +208,32 @@ export function EventProgrammeEditor({
 
   useEffect(() => {
     let active = true;
+    const requestedEventId = event.id;
     setOptionsLoading(true);
     setOptionsError(null);
+    if (autosaveRef.current?.hasPendingChanges) setOptionsValidationState("waiting");
     void listAdminEventParticipationOptions(event.id)
       .then((options) => {
         if (!active) return;
         setParticipationOptions(options);
         setLoadedOptionsRevision(participationOptionsRevision);
+        setLoadedOptionsEventId(requestedEventId);
       })
       .catch(() => {
         if (!active) return;
         setParticipationOptions([]);
         setOptionsError("Не удалось загрузить варианты участия. Повторите попытку позже.");
+        if (autosaveRef.current?.hasPendingChanges) {
+          setOptionsValidationState("failed");
+          setSaveError("Не удалось загрузить варианты участия. Проверьте подключение и повторите попытку.");
+        }
       })
       .finally(() => {
         if (active) setOptionsLoading(false);
       });
 
     return () => { active = false; };
-  }, [event.id, participationOptionsRevision]);
+  }, [event.id, optionsReloadAttempt, participationOptionsRevision]);
 
   useEffect(() => {
     scheduleDirtyRef.current = scheduleDirty;
@@ -279,6 +294,17 @@ export function EventProgrammeEditor({
       draftSchedule,
       optionsAreCurrentRef.current ? participationOptionsRef.current.map((option) => option.id) : null,
     );
+    if (isProgrammeValidationWaitingForOptions(draftSchedule, validation)) {
+      const completion = autosave.complete(request, "dependency");
+      if (completion.current && completion.completedLatestRevision) {
+        setValidationError(null);
+        setOptionsValidationState(optionsError ? "failed" : "waiting");
+        if (optionsError) {
+          setSaveError("Не удалось загрузить варианты участия. Проверьте подключение и повторите попытку.");
+        }
+      }
+      return;
+    }
     if (!validation.valid) {
       const completion = autosave.complete(request, "invalid");
       if (completion.current && completion.completedLatestRevision) {
@@ -291,6 +317,7 @@ export function EventProgrammeEditor({
     activeSaveRequestRef.current = request;
     setSaveError(null);
     setValidationError(null);
+    setOptionsValidationState("idle");
     try {
       const currentEvent = eventRef.current;
       const preparedSchedule = prepareProgrammeScheduleForSave({
@@ -358,7 +385,20 @@ export function EventProgrammeEditor({
     }
   }, [saveDisabled]);
 
+  useEffect(() => {
+    const autosave = autosaveRef.current;
+    if (optionsAreCurrent && autosave?.resumeWhenValidationDependenciesAreAvailable()) {
+      setOptionsValidationState("idle");
+      void savePendingProgramme();
+    }
+  }, [optionsAreCurrent]);
+
   const retrySave = () => {
+    if (optionsValidationState === "failed") {
+      setOptionsValidationState("waiting");
+      setOptionsReloadAttempt((current) => current + 1);
+      return;
+    }
     if (autosaveRef.current?.retry()) {
       setAutosaveScheduled(false);
       void savePendingProgramme();
@@ -412,6 +452,9 @@ export function EventProgrammeEditor({
       />
 
       {validationError ? <p className="event-programme-editor__error" role="alert">{validationError}</p> : null}
+      {optionsValidationState === "waiting" ? <p className="event-programme-editor__notice" role="status">
+        Проверяем варианты участия перед автосохранением…
+      </p> : null}
       <div className="event-programme-editor__save">
         <SaveStatusView
           error={saveError}
@@ -441,6 +484,18 @@ export function cloneSchedule(schedule: AdminEventSchedule | null): AdminEventSc
 
 function sameSchedule(left: AdminEventSchedule | null, right: AdminEventSchedule | null): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+export function isProgrammeValidationWaitingForOptions(
+  schedule: AdminEventSchedule | null,
+  validation: EventScheduleValidation,
+): boolean {
+  if (validation.form !== OPTIONS_VALIDATION_UNAVAILABLE || schedule === null) return false;
+  const hasStructuralErrors = validation.days.some((day) => (
+    Boolean(day.date || day.label || day.note)
+    || day.items.some((item) => Boolean(item.time || item.title))
+  ));
+  return !hasStructuralErrors && schedule.days.some((day) => day.items.some((item) => item.optionId));
 }
 
 function hasMeaningfulSchedule(schedule: AdminEventSchedule | null): boolean {

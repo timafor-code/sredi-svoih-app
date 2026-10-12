@@ -5,6 +5,23 @@ import {
   PROGRAMME_AUTOSAVE_DELAY_MS,
   ProgrammeAutosaveCoordinator,
 } from "./adminProgrammeAutosave";
+import { isProgrammeValidationWaitingForOptions } from "../components/events/EventProgrammeEditor";
+import { validateEventSchedule } from "../components/events/EventScheduleConstructor";
+import type { AdminEventSchedule } from "../types/events";
+
+const LINKED_OPTION_ID = "11111111-1111-4111-8111-111111111111";
+
+function programmeWithLinkedOption(optionId: string | null = LINKED_OPTION_ID): AdminEventSchedule {
+  return {
+    version: 1,
+    days: [{
+      date: "2026-10-16",
+      label: null,
+      note: null,
+      items: [{ time: "19:00", title: "Минха", optionId }],
+    }],
+  };
+}
 
 describe("ProgrammeAutosaveCoordinator", () => {
   afterEach(() => vi.useRealTimers());
@@ -156,6 +173,70 @@ describe("ProgrammeAutosaveCoordinator", () => {
     vi.advanceTimersByTime(PROGRAMME_AUTOSAVE_DELAY_MS * 2);
     expect(ready).not.toHaveBeenCalled();
     expect(autosave.takeSaveRequest()).toBeNull();
+  });
+
+  it("waits for linked options after debounce, then saves the same revision once validation is ready", () => {
+    vi.useFakeTimers();
+    const autosave = new ProgrammeAutosaveCoordinator("event-a", vi.fn());
+    const programme = programmeWithLinkedOption();
+
+    autosave.markUserEdit();
+    vi.advanceTimersByTime(PROGRAMME_AUTOSAVE_DELAY_MS);
+    const request = autosave.takeSaveRequest();
+    const waitingValidation = validateEventSchedule(programme, null);
+    expect(waitingValidation.valid).toBe(false);
+    expect(isProgrammeValidationWaitingForOptions(programme, waitingValidation)).toBe(true);
+    autosave.complete(request!, "dependency");
+    expect(autosave.takeSaveRequest()).toBeNull();
+
+    expect(validateEventSchedule(programme, [LINKED_OPTION_ID]).valid).toBe(true);
+    expect(autosave.resumeWhenValidationDependenciesAreAvailable()).toBe(true);
+    expect(autosave.takeSaveRequest()).toEqual({ eventId: "event-a", revision: 1 });
+  });
+
+  it("keeps the remaining debounce when linked options arrive early", () => {
+    vi.useFakeTimers();
+    const autosave = new ProgrammeAutosaveCoordinator("event-a", vi.fn());
+    const programme = programmeWithLinkedOption();
+
+    autosave.markUserEdit();
+    vi.advanceTimersByTime(1_000);
+    expect(validateEventSchedule(programme, [LINKED_OPTION_ID]).valid).toBe(true);
+    expect(autosave.resumeWhenValidationDependenciesAreAvailable()).toBe(false);
+    vi.advanceTimersByTime(999);
+    expect(autosave.takeSaveRequest()).toBeNull();
+    vi.advanceTimersByTime(1);
+    expect(autosave.takeSaveRequest()).toEqual({ eventId: "event-a", revision: 1 });
+  });
+
+  it("rejects an invalid linked option rather than treating it as a loading dependency", () => {
+    const programme = programmeWithLinkedOption();
+    const validation = validateEventSchedule(programme, ["deleted-option"]);
+
+    expect(validation.valid).toBe(false);
+    expect(isProgrammeValidationWaitingForOptions(programme, validation)).toBe(false);
+  });
+
+  it("does not block a Programme without linked options while options are unavailable", () => {
+    const programme = programmeWithLinkedOption(null);
+    const validation = validateEventSchedule(programme, null);
+
+    expect(validation.valid).toBe(true);
+    expect(isProgrammeValidationWaitingForOptions(programme, validation)).toBe(false);
+  });
+
+  it("retains a dependency-paused draft until a successful dependency retry resumes it", () => {
+    vi.useFakeTimers();
+    const autosave = new ProgrammeAutosaveCoordinator("event-a", vi.fn());
+
+    autosave.markUserEdit();
+    vi.advanceTimersByTime(PROGRAMME_AUTOSAVE_DELAY_MS);
+    const request = autosave.takeSaveRequest();
+    autosave.complete(request!, "dependency");
+    expect(autosave.takeSaveRequest()).toBeNull();
+
+    expect(autosave.resumeWhenValidationDependenciesAreAvailable()).toBe(true);
+    expect(autosave.takeSaveRequest()).toEqual({ eventId: "event-a", revision: 1 });
   });
 
   it("keeps an invalid draft pending without submitting another request until it is corrected", () => {
