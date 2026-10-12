@@ -5,6 +5,23 @@ import {
   PROGRAMME_AUTOSAVE_DELAY_MS,
   ProgrammeAutosaveCoordinator,
 } from "./adminProgrammeAutosave";
+import { isWaitingForParticipationOptionsValidation } from "../components/events/EventProgrammeEditor";
+import { validateEventSchedule } from "../components/events/EventScheduleConstructor";
+import type { AdminEventSchedule } from "../types/events";
+
+const LINKED_OPTION_ID = "11111111-1111-4111-8111-111111111111";
+
+function linkedProgramme(): AdminEventSchedule {
+  return {
+    version: 1,
+    days: [{
+      date: "2026-10-16",
+      label: null,
+      note: null,
+      items: [{ time: "19:00", title: "Минха", optionId: LINKED_OPTION_ID }],
+    }],
+  };
+}
 
 describe("ProgrammeAutosaveCoordinator", () => {
   afterEach(() => vi.useRealTimers());
@@ -156,6 +173,62 @@ describe("ProgrammeAutosaveCoordinator", () => {
     vi.advanceTimersByTime(PROGRAMME_AUTOSAVE_DELAY_MS * 2);
     expect(ready).not.toHaveBeenCalled();
     expect(autosave.takeSaveRequest()).toBeNull();
+  });
+
+  it("waits for linked participation options, then saves the pending revision once verified", () => {
+    vi.useFakeTimers();
+    const autosave = new ProgrammeAutosaveCoordinator("event-a", vi.fn());
+    const programme = linkedProgramme();
+
+    autosave.markUserEdit();
+    vi.advanceTimersByTime(PROGRAMME_AUTOSAVE_DELAY_MS);
+    const request = autosave.takeSaveRequest();
+    const waitingValidation = validateEventSchedule(programme, null);
+    expect(waitingValidation.valid).toBe(false);
+    expect(isWaitingForParticipationOptionsValidation(programme, waitingValidation)).toBe(true);
+    autosave.complete(request!, "dependency");
+    expect(autosave.takeSaveRequest()).toBeNull();
+
+    expect(validateEventSchedule(programme, [LINKED_OPTION_ID]).valid).toBe(true);
+    expect(autosave.resumeWhenValidationDependenciesAreAvailable()).toBe(true);
+    expect(autosave.takeSaveRequest()).toEqual({ eventId: "event-a", revision: 1 });
+  });
+
+  it("keeps the remaining debounce when options become ready before it expires", () => {
+    vi.useFakeTimers();
+    const autosave = new ProgrammeAutosaveCoordinator("event-a", vi.fn());
+    const programme = linkedProgramme();
+
+    autosave.markUserEdit();
+    vi.advanceTimersByTime(1_000);
+    expect(validateEventSchedule(programme, [LINKED_OPTION_ID]).valid).toBe(true);
+    expect(autosave.resumeWhenValidationDependenciesAreAvailable()).toBe(false);
+    vi.advanceTimersByTime(999);
+    expect(autosave.takeSaveRequest()).toBeNull();
+    vi.advanceTimersByTime(1);
+    expect(autosave.takeSaveRequest()).toEqual({ eventId: "event-a", revision: 1 });
+  });
+
+  it("does not mistake a genuinely invalid linked option for a loading dependency", () => {
+    const programme = linkedProgramme();
+    const invalidValidation = validateEventSchedule(programme, ["other-option"]);
+
+    expect(invalidValidation.valid).toBe(false);
+    expect(isWaitingForParticipationOptionsValidation(programme, invalidValidation)).toBe(false);
+  });
+
+  it("retains a dependency-paused draft through an options failure until a later successful reload", () => {
+    vi.useFakeTimers();
+    const autosave = new ProgrammeAutosaveCoordinator("event-a", vi.fn());
+
+    autosave.markUserEdit();
+    vi.advanceTimersByTime(PROGRAMME_AUTOSAVE_DELAY_MS);
+    const request = autosave.takeSaveRequest();
+    autosave.complete(request!, "dependency");
+    expect(autosave.takeSaveRequest()).toBeNull();
+
+    expect(autosave.resumeWhenValidationDependenciesAreAvailable()).toBe(true);
+    expect(autosave.takeSaveRequest()).toEqual({ eventId: "event-a", revision: 1 });
   });
 
   it("keeps an invalid draft pending without submitting another request until it is corrected", () => {
