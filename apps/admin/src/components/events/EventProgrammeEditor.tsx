@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { selectAdminProgrammeOccurrence } from "../../lib/adminProgrammeOccurrence";
 import {
+  isSameProgrammeSaveRequest,
   ProgrammeAutosaveCoordinator,
+  type ProgrammeSaveRequest,
 } from "../../lib/adminProgrammeAutosave";
 import { parseEventScheduleDescription } from "../../lib/eventScheduleParser";
 import { applyJewishProgrammeAutomation } from "../../lib/jewishProgrammeAutomation";
@@ -53,6 +55,7 @@ export function EventProgrammeEditor({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [autosaveScheduled, setAutosaveScheduled] = useState(false);
+  const [hasUnconfirmedUserIntent, setHasUnconfirmedUserIntent] = useState(false);
   const baselineRef = useRef(baseline);
   const scheduleRef = useRef(schedule);
   const scheduleDirtyRef = useRef(false);
@@ -64,6 +67,7 @@ export function EventProgrammeEditor({
   const onSaveRef = useRef(onSave);
   const attemptAutosaveRef = useRef<() => void>(() => undefined);
   const autosaveRef = useRef<ProgrammeAutosaveCoordinator | null>(null);
+  const activeSaveRequestRef = useRef<ProgrammeSaveRequest | null>(null);
   const requestIdRef = useRef(0);
   const pendingOccurrenceRef = useRef<AdminEventOccurrence | null>(null);
 
@@ -80,7 +84,7 @@ export function EventProgrammeEditor({
   const startDate = useMemo(() => (
     getEventStartDate(selectedOccurrence?.startsAt ?? event.startsAt)
   ), [event.startsAt, selectedOccurrence?.startsAt]);
-  const scheduleDirty = !sameSchedule(schedule, baseline);
+  const scheduleDirty = hasUnconfirmedUserIntent || !sameSchedule(schedule, baseline);
   const optionsAreCurrent = !optionsLoading
     && !optionsError
     && loadedOptionsRevision === participationOptionsRevision;
@@ -106,6 +110,7 @@ export function EventProgrammeEditor({
     baselineRef.current = cloneSchedule(nextDraft.baseline);
     scheduleRef.current = nextDraft.schedule;
     scheduleDirtyRef.current = false;
+    activeSaveRequestRef.current = null;
     selectedOccurrenceRef.current = null;
     pendingOccurrenceRef.current = null;
     setSchedule(nextDraft.schedule);
@@ -118,6 +123,7 @@ export function EventProgrammeEditor({
     setValidationError(null);
     setSavedAt(null);
     setAutosaveScheduled(false);
+    setHasUnconfirmedUserIntent(false);
     setParticipationOptions([]);
     setOptionsLoading(false);
     setOptionsError(null);
@@ -223,16 +229,19 @@ export function EventProgrammeEditor({
 
   const changeSchedule = (nextSchedule: AdminEventSchedule | null) => {
     const automated = automateProgramme(event, nextSchedule, selectedOccurrence);
-    scheduleDirtyRef.current = !sameSchedule(automated, baselineRef.current);
+    if (sameSchedule(automated, scheduleRef.current)) return;
+
+    // A return to an older baseline is still a new user intent while an older
+    // write is in flight. Always give a real user edit a new revision.
+    scheduleDirtyRef.current = true;
     scheduleRef.current = automated;
     setSchedule(automated);
+    setHasUnconfirmedUserIntent(true);
     setSaveError(null);
     setValidationError(null);
     setSavedAt(null);
-    if (scheduleDirtyRef.current) {
-      autosaveRef.current?.markUserEdit();
-      setAutosaveScheduled(true);
-    }
+    autosaveRef.current?.markUserEdit();
+    setAutosaveScheduled(true);
   };
 
   const parseSchedule = () => {
@@ -271,12 +280,15 @@ export function EventProgrammeEditor({
       optionsAreCurrentRef.current ? participationOptionsRef.current.map((option) => option.id) : null,
     );
     if (!validation.valid) {
-      autosave.complete(request, "invalid");
-      setValidationError("Проверьте программу события.");
+      const completion = autosave.complete(request, "invalid");
+      if (completion.current && completion.completedLatestRevision) {
+        setValidationError("Проверьте программу события.");
+      }
       return;
     }
 
     setSaving(true);
+    activeSaveRequestRef.current = request;
     setSaveError(null);
     setValidationError(null);
     try {
@@ -289,8 +301,10 @@ export function EventProgrammeEditor({
         draftSchedule,
       });
       if (!preparedSchedule.ok) {
-        autosave.complete(request, "invalid");
-        setSaveError(preparedSchedule.error);
+        const completion = autosave.complete(request, "invalid");
+        if (completion.current && completion.completedLatestRevision) {
+          setSaveError(preparedSchedule.error);
+        }
         return;
       }
       const confirmed = await onSaveRef.current(preparedSchedule.schedule);
@@ -307,7 +321,7 @@ export function EventProgrammeEditor({
       const projected = automateProgramme(confirmedEvent, confirmedSchedule, occurrenceAfterSave);
       baselineRef.current = cloneSchedule(projected);
       setBaseline(cloneSchedule(projected));
-      if (completion.savedCurrentRevision) {
+      if (completion.completedLatestRevision) {
         pendingOccurrenceRef.current = null;
         scheduleDirtyRef.current = false;
         scheduleRef.current = projected;
@@ -315,18 +329,23 @@ export function EventProgrammeEditor({
         setSchedule(projected);
         setSelectedOccurrence(occurrenceAfterSave);
         setProjectionNotice(null);
+        setHasUnconfirmedUserIntent(false);
         setSavedAt(new Date().toISOString());
       } else {
-        scheduleDirtyRef.current = !sameSchedule(scheduleRef.current, projected);
+        scheduleDirtyRef.current = true;
       }
       if (completion.shouldSave) void savePendingProgramme();
     } catch (error) {
       const completion = autosave.complete(request, "failed");
-      if (completion.current) {
+      if (completion.current && completion.completedLatestRevision) {
         setSaveError(error instanceof Error ? error.message : "Не удалось сохранить программу. Повторите попытку.");
       }
+      if (completion.shouldSave) void savePendingProgramme();
     } finally {
-      if (request.eventId === eventRef.current.id) setSaving(false);
+      if (isSameProgrammeSaveRequest(activeSaveRequestRef.current, request)) {
+        activeSaveRequestRef.current = null;
+        setSaving(false);
+      }
     }
   };
 

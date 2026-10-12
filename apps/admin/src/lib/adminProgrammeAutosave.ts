@@ -5,6 +5,13 @@ export type ProgrammeSaveRequest = Readonly<{
   revision: number;
 }>;
 
+export function isSameProgrammeSaveRequest(
+  left: ProgrammeSaveRequest | null,
+  right: ProgrammeSaveRequest,
+): boolean {
+  return left?.eventId === right.eventId && left.revision === right.revision;
+}
+
 type ProgrammeAutosaveOutcome = "saved" | "blocked" | "failed" | "invalid";
 
 type ProgrammeAutosaveTimer = Pick<typeof globalThis, "clearTimeout" | "setTimeout">;
@@ -39,6 +46,10 @@ export class ProgrammeAutosaveCoordinator {
     return this.timer !== null;
   }
 
+  get isSaving(): boolean {
+    return this.saving;
+  }
+
   reset(eventId: string): void {
     this.clearTimer();
     this.eventId = eventId;
@@ -65,27 +76,43 @@ export class ProgrammeAutosaveCoordinator {
 
   complete(request: ProgrammeSaveRequest, outcome: ProgrammeAutosaveOutcome): {
     current: boolean;
-    savedCurrentRevision: boolean;
+    completedLatestRevision: boolean;
     shouldSave: boolean;
   } {
     if (request.eventId !== this.eventId) {
-      return { current: false, savedCurrentRevision: false, shouldSave: false };
+      return { current: false, completedLatestRevision: false, shouldSave: false };
     }
 
     this.saving = false;
-    if (outcome === "saved" && request.revision === this.revision) {
+    const completedLatestRevision = request.revision === this.revision;
+    if (outcome === "saved" && completedLatestRevision) {
       this.pending = false;
       this.ready = false;
       this.paused = "none";
-      return { current: true, savedCurrentRevision: true, shouldSave: false };
+      return { current: true, completedLatestRevision: true, shouldSave: false };
     }
 
     if (outcome === "saved") {
-      return { current: true, savedCurrentRevision: false, shouldSave: this.ready && this.paused === "none" };
+      return {
+        current: true,
+        completedLatestRevision: false,
+        shouldSave: this.ready && this.paused === "none",
+      };
+    }
+
+    // A failed older request must not turn a newer revision into a failed
+    // draft. Its timer/readiness state remains intact and can save safely once
+    // this request releases the single-write lock.
+    if (!completedLatestRevision && outcome !== "blocked") {
+      return {
+        current: true,
+        completedLatestRevision: false,
+        shouldSave: this.ready && this.paused === "none",
+      };
     }
 
     this.paused = outcome;
-    return { current: true, savedCurrentRevision: false, shouldSave: false };
+    return { current: true, completedLatestRevision, shouldSave: false };
   }
 
   pauseForBlockedParent(): void {
