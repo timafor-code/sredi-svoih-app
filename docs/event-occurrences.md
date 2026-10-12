@@ -138,8 +138,10 @@ programme template in the editor: Moscow candle-lighting and Shabbat-end
 markers, Friday/Saturday dates, and the Torah portion are recalculated in the
 draft display. Opening the Programme tab does not PATCH `events.schedule` and
 does not make the programme dirty. Explicit programme edits retain the normal
-`Сохранить программу` flow. If there is no eligible occurrence, the response
-is invalid, or it cannot be loaded, Admin Center leaves the stored template
+two-second debounced autosave flow. Only user changes are saved: opening the
+tab, changing the selected occurrence, or recalculating Hebcal values never
+PATCH `events.schedule`. If there is no eligible occurrence, the response is
+invalid, or it cannot be loaded, Admin Center leaves the stored template
 unchanged and explains that a current calendar projection is unavailable.
 
 ## Access

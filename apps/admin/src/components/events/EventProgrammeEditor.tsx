@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { selectAdminProgrammeOccurrence } from "../../lib/adminProgrammeOccurrence";
+import {
+  ProgrammeAutosaveCoordinator,
+} from "../../lib/adminProgrammeAutosave";
 import { parseEventScheduleDescription } from "../../lib/eventScheduleParser";
 import { applyJewishProgrammeAutomation } from "../../lib/jewishProgrammeAutomation";
 import { listAdminEventOccurrences } from "../../services/adminEventOccurrencesService";
@@ -8,7 +11,6 @@ import { listAdminEventParticipationOptions } from "../../services/adminParticip
 import type { AdminEvent, AdminEventSchedule } from "../../types/events";
 import type { AdminEventOccurrence } from "../../types/eventOccurrences";
 import type { ParticipationOption } from "../../types/participationOptions";
-import { Button } from "../ui/Button";
 import { SaveStatusView } from "../ui/SaveStatusView";
 import {
   EventScheduleConstructor,
@@ -50,10 +52,30 @@ export function EventProgrammeEditor({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [autosaveScheduled, setAutosaveScheduled] = useState(false);
   const baselineRef = useRef(baseline);
+  const scheduleRef = useRef(schedule);
   const scheduleDirtyRef = useRef(false);
+  const selectedOccurrenceRef = useRef<AdminEventOccurrence | null>(null);
+  const eventRef = useRef(event);
+  const participationOptionsRef = useRef<ParticipationOption[]>([]);
+  const optionsAreCurrentRef = useRef(false);
+  const saveDisabledRef = useRef(saveDisabled);
+  const onSaveRef = useRef(onSave);
+  const attemptAutosaveRef = useRef<() => void>(() => undefined);
+  const autosaveRef = useRef<ProgrammeAutosaveCoordinator | null>(null);
   const requestIdRef = useRef(0);
   const pendingOccurrenceRef = useRef<AdminEventOccurrence | null>(null);
+
+  if (!autosaveRef.current) {
+    autosaveRef.current = new ProgrammeAutosaveCoordinator(event.id, () => {
+      setAutosaveScheduled(false);
+      attemptAutosaveRef.current();
+    });
+  }
+  eventRef.current = event;
+  saveDisabledRef.current = saveDisabled;
+  onSaveRef.current = onSave;
 
   const startDate = useMemo(() => (
     getEventStartDate(selectedOccurrence?.startsAt ?? event.startsAt)
@@ -66,9 +88,25 @@ export function EventProgrammeEditor({
     || (!optionsError && loadedOptionsRevision !== participationOptionsRevision);
 
   useEffect(() => {
+    scheduleRef.current = schedule;
+  }, [schedule]);
+
+  useEffect(() => {
+    selectedOccurrenceRef.current = selectedOccurrence;
+  }, [selectedOccurrence]);
+
+  useEffect(() => {
+    participationOptionsRef.current = participationOptions;
+    optionsAreCurrentRef.current = optionsAreCurrent;
+  }, [optionsAreCurrent, participationOptions]);
+
+  useEffect(() => {
     const nextDraft = createProgrammeDraft(event, null);
+    autosaveRef.current?.reset(event.id);
     baselineRef.current = cloneSchedule(nextDraft.baseline);
+    scheduleRef.current = nextDraft.schedule;
     scheduleDirtyRef.current = false;
+    selectedOccurrenceRef.current = null;
     pendingOccurrenceRef.current = null;
     setSchedule(nextDraft.schedule);
     setBaseline(cloneSchedule(nextDraft.baseline));
@@ -79,12 +117,15 @@ export function EventProgrammeEditor({
     setSaveError(null);
     setValidationError(null);
     setSavedAt(null);
+    setAutosaveScheduled(false);
     setParticipationOptions([]);
     setOptionsLoading(false);
     setOptionsError(null);
     setLoadedOptionsRevision(null);
     setSaving(false);
   }, [event.id]);
+
+  useEffect(() => () => autosaveRef.current?.cancel(), []);
 
   useEffect(() => {
     const nextDraft = recalculateProgrammeForEventContext({
@@ -94,6 +135,7 @@ export function EventProgrammeEditor({
     });
     if (!nextDraft) return;
     baselineRef.current = cloneSchedule(nextDraft.baseline);
+    scheduleRef.current = nextDraft.schedule;
     setSchedule(nextDraft.schedule);
     setBaseline(cloneSchedule(nextDraft.baseline));
   }, [event.eventKind, event.startsAt]);
@@ -116,9 +158,11 @@ export function EventProgrammeEditor({
           }
           const templateProjection = automateProgramme(event, event.schedule ?? null, null);
           baselineRef.current = cloneSchedule(templateProjection);
+          scheduleRef.current = templateProjection;
           setSchedule(templateProjection);
           setBaseline(cloneSchedule(templateProjection));
           setSelectedOccurrence(null);
+          selectedOccurrenceRef.current = null;
           setProjectionNotice(selection.kind === "invalid"
             ? "Не удалось проверить актуальную дату Шабата. Сохранённая программа не изменена."
             : "Нет активной незавершённой даты Шабата для календарной проекции. Показан шаблон программы без актуальных значений.");
@@ -133,9 +177,11 @@ export function EventProgrammeEditor({
 
         const projected = automateProgramme(event, event.schedule ?? null, selection.occurrence);
         baselineRef.current = cloneSchedule(projected);
+        scheduleRef.current = projected;
         setSchedule(projected);
         setBaseline(cloneSchedule(projected));
         setSelectedOccurrence(selection.occurrence);
+        selectedOccurrenceRef.current = selection.occurrence;
         setProjectionNotice(null);
       })
       .catch(() => {
@@ -178,10 +224,15 @@ export function EventProgrammeEditor({
   const changeSchedule = (nextSchedule: AdminEventSchedule | null) => {
     const automated = automateProgramme(event, nextSchedule, selectedOccurrence);
     scheduleDirtyRef.current = !sameSchedule(automated, baselineRef.current);
+    scheduleRef.current = automated;
     setSchedule(automated);
     setSaveError(null);
     setValidationError(null);
     setSavedAt(null);
+    if (scheduleDirtyRef.current) {
+      autosaveRef.current?.markUserEdit();
+      setAutosaveScheduled(true);
+    }
   };
 
   const parseSchedule = () => {
@@ -204,13 +255,23 @@ export function EventProgrammeEditor({
     setSavedAt(null);
   };
 
-  const save = async () => {
-    if (saving || saveDisabled) return;
+  const savePendingProgramme = async () => {
+    const autosave = autosaveRef.current;
+    if (!autosave) return;
+    if (saveDisabledRef.current) {
+      autosave.pauseForBlockedParent();
+      return;
+    }
+
+    const request = autosave.takeSaveRequest();
+    if (!request) return;
+    const draftSchedule = cloneSchedule(scheduleRef.current);
     const validation = validateEventSchedule(
-      schedule,
-      optionsAreCurrent ? participationOptions.map((option) => option.id) : null,
+      draftSchedule,
+      optionsAreCurrentRef.current ? participationOptionsRef.current.map((option) => option.id) : null,
     );
     if (!validation.valid) {
+      autosave.complete(request, "invalid");
       setValidationError("Проверьте программу события.");
       return;
     }
@@ -219,37 +280,69 @@ export function EventProgrammeEditor({
     setSaveError(null);
     setValidationError(null);
     try {
+      const currentEvent = eventRef.current;
       const preparedSchedule = prepareProgrammeScheduleForSave({
-        eventKind: event.eventKind,
-        eventStartsAt: event.startsAt,
-        occurrenceStartsAt: selectedOccurrence?.startsAt ?? null,
-        persistedSchedule: event.schedule ?? null,
-        draftSchedule: schedule,
+        eventKind: currentEvent.eventKind,
+        eventStartsAt: currentEvent.startsAt,
+        occurrenceStartsAt: selectedOccurrenceRef.current?.startsAt ?? null,
+        persistedSchedule: currentEvent.schedule ?? null,
+        draftSchedule,
       });
       if (!preparedSchedule.ok) {
+        autosave.complete(request, "invalid");
         setSaveError(preparedSchedule.error);
         return;
       }
-      const confirmed = await onSave(preparedSchedule.schedule);
+      const confirmed = await onSaveRef.current(preparedSchedule.schedule);
       if (!confirmed) {
-        setSaveError("Программа сейчас не может быть сохранена. Дождитесь завершения другого изменения и повторите попытку.");
+        autosave.complete(request, "blocked");
         return;
       }
+      const completion = autosave.complete(request, "saved");
+      if (!completion.current) return;
       const confirmedSchedule = cloneSchedule(confirmed.schedule ?? null);
-      const occurrenceAfterSave = pendingOccurrenceRef.current ?? selectedOccurrence;
-      const projected = automateProgramme(event, confirmedSchedule, occurrenceAfterSave);
-      pendingOccurrenceRef.current = null;
+      const occurrenceAfterSave = pendingOccurrenceRef.current ?? selectedOccurrenceRef.current;
+      const confirmedEvent = { ...eventRef.current, schedule: confirmedSchedule };
+      eventRef.current = confirmedEvent;
+      const projected = automateProgramme(confirmedEvent, confirmedSchedule, occurrenceAfterSave);
       baselineRef.current = cloneSchedule(projected);
-      scheduleDirtyRef.current = false;
-      setSchedule(projected);
       setBaseline(cloneSchedule(projected));
-      setSelectedOccurrence(occurrenceAfterSave);
-      setProjectionNotice(null);
-      setSavedAt(new Date().toISOString());
+      if (completion.savedCurrentRevision) {
+        pendingOccurrenceRef.current = null;
+        scheduleDirtyRef.current = false;
+        scheduleRef.current = projected;
+        selectedOccurrenceRef.current = occurrenceAfterSave;
+        setSchedule(projected);
+        setSelectedOccurrence(occurrenceAfterSave);
+        setProjectionNotice(null);
+        setSavedAt(new Date().toISOString());
+      } else {
+        scheduleDirtyRef.current = !sameSchedule(scheduleRef.current, projected);
+      }
+      if (completion.shouldSave) void savePendingProgramme();
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "Не удалось сохранить программу. Повторите попытку.");
+      const completion = autosave.complete(request, "failed");
+      if (completion.current) {
+        setSaveError(error instanceof Error ? error.message : "Не удалось сохранить программу. Повторите попытку.");
+      }
     } finally {
-      setSaving(false);
+      if (request.eventId === eventRef.current.id) setSaving(false);
+    }
+  };
+
+  attemptAutosaveRef.current = () => { void savePendingProgramme(); };
+
+  useEffect(() => {
+    const autosave = autosaveRef.current;
+    if (!saveDisabled && autosave?.resumeWhenParentIsAvailable()) {
+      void savePendingProgramme();
+    }
+  }, [saveDisabled]);
+
+  const retrySave = () => {
+    if (autosaveRef.current?.retry()) {
+      setAutosaveScheduled(false);
+      void savePendingProgramme();
     }
   };
 
@@ -279,7 +372,7 @@ export function EventProgrammeEditor({
       </p> : null}
 
       <EventScheduleConstructor
-        disabled={saving}
+        disabled={false}
         onChange={changeSchedule}
         options={participationOptions}
         optionsError={optionsError}
@@ -287,7 +380,7 @@ export function EventProgrammeEditor({
         parseControl={(
           <button
             className="event-schedule-constructor__parse"
-            disabled={saving || !sourceText.trim() || !startDate}
+            disabled={!sourceText.trim() || !startDate}
             onClick={parseSchedule}
             title={!startDate ? "Сначала укажите дату начала события." : undefined}
             type="button"
@@ -306,11 +399,10 @@ export function EventProgrammeEditor({
           recovery="Проверьте программу и повторите сохранение."
           savedAt={savedAt}
           saving={saving}
+          scheduled={autosaveScheduled}
           unsaved={scheduleDirty}
         />
-        <Button disabled={saveDisabled || saving || !scheduleDirty} onClick={() => void save()} variant="success">
-          Сохранить программу
-        </Button>
+        {saveError ? <button type="button" onClick={retrySave}>Повторить</button> : null}
       </div>
     </section>
   );
