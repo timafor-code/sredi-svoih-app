@@ -3,6 +3,7 @@ type SaveStatusViewProps = {
   errorLabel?: string;
   recovery?: string;
   savedAt?: string | null;
+  scheduled?: boolean;
   saving?: boolean;
   unsaved?: boolean;
 };
@@ -12,10 +13,11 @@ export function SaveStatusView({
   errorLabel = "Ошибка сохранения",
   recovery,
   savedAt,
+  scheduled = false,
   saving = false,
   unsaved = false,
 }: SaveStatusViewProps) {
-  const state = saving ? "saving" : error ? "error" : unsaved ? "unsaved" : savedAt ? "saved" : null;
+  const state = saving ? "saving" : error ? "error" : scheduled ? "scheduled" : unsaved ? "unsaved" : savedAt ? "saved" : null;
   const savedTime = savedAt
     ? new Date(savedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
     : null;
@@ -28,6 +30,7 @@ export function SaveStatusView({
     >
       {state === "saving" ? "Сохраняем…"
         : state === "error" ? `${errorLabel}: ${error}${recovery ? ` ${recovery}` : ""}`
+        : state === "scheduled" ? "Автосохранение через 2 секунды…"
         : state === "unsaved" ? "Есть несохранённые изменения"
         : state === "saved" ? `Сохранено в ${savedTime}`
         : null}
