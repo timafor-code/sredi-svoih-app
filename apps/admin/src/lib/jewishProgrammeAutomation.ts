@@ -176,7 +176,10 @@ function retargetShabbatDays(
     const fridayDate = days[fridayIndex].date;
     const saturdayDate = days[saturdayIndex].date;
     const usesOldLogicalPair = fridayDate !== fridayTarget || saturdayDate !== saturdayTarget;
-    if (usesOldLogicalPair && (saturdayIndex !== fridayIndex + 1 || !areConsecutiveDates(fridayDate, saturdayDate))) {
+    if (usesOldLogicalPair && (
+      Math.abs(saturdayIndex - fridayIndex) !== 1
+      || !areConsecutiveDates(fridayDate, saturdayDate)
+    )) {
       return false;
     }
   }

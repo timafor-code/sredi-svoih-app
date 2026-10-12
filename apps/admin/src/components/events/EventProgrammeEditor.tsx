@@ -219,11 +219,16 @@ export function EventProgrammeEditor({
     setSaveError(null);
     setValidationError(null);
     try {
-      const confirmed = await onSave(prepareProgrammeScheduleForSave({
+      const preparedSchedule = prepareProgrammeScheduleForSave({
         eventKind: event.eventKind,
         persistedSchedule: event.schedule ?? null,
         draftSchedule: schedule,
-      }));
+      });
+      if (!preparedSchedule.ok) {
+        setSaveError(preparedSchedule.error);
+        return;
+      }
+      const confirmed = await onSave(preparedSchedule.schedule);
       if (!confirmed) {
         setSaveError("Программа сейчас не может быть сохранена. Дождитесь завершения другого изменения и повторите попытку.");
         return;
@@ -385,28 +390,55 @@ export function prepareProgrammeScheduleForSave({
   eventKind: string;
   persistedSchedule: AdminEventSchedule | null;
   draftSchedule: AdminEventSchedule | null;
-}>): AdminEventSchedule | null {
-  if (eventKind !== "shabbat") return cloneSchedule(draftSchedule);
+}>): ProgrammeScheduleSavePreparation {
+  if (eventKind !== "shabbat") return { ok: true, schedule: cloneSchedule(draftSchedule) };
 
   // A Shabbat draft is rendered for one concrete occurrence, but the event
   // stores a reusable programme template. Drop derived values and restore the
-  // source dates for unchanged logical days before the explicit save request.
+  // source dates for uniquely matched logical weekdays before the explicit save request.
   const withoutOccurrenceValues = applyJewishProgrammeAutomation({
     eventKind: "single",
     referenceDate: null,
     schedule: draftSchedule,
   });
-  if (!withoutOccurrenceValues || !persistedSchedule) return withoutOccurrenceValues;
+  if (!withoutOccurrenceValues) return { ok: true, schedule: null };
+  if (!persistedSchedule) return {
+    ok: false,
+    error: "Нельзя сохранить программу Шабата без исходного шаблона: обновите программу после загрузки шаблона.",
+  };
 
-  const restoredDates = withoutOccurrenceValues.days.map((day, index) => {
-    const sourceDay = persistedSchedule.days[index];
-    if (sourceDay && getWeekday(day.date) === getWeekday(sourceDay.date)) {
-      return { ...day, date: sourceDay.date };
+  const sourceDaysByWeekday = new Map<number, AdminEventSchedule["days"][number]>();
+  for (const sourceDay of persistedSchedule.days) {
+    const weekday = getWeekday(sourceDay.date);
+    if (weekday === null || sourceDaysByWeekday.has(weekday)) {
+      return {
+        ok: false,
+        error: "Нельзя безопасно сопоставить дни шаблона Шабата. Проверьте даты и повторите сохранение.",
+      };
     }
-    return day;
-  });
-  return { version: 1, days: restoredDates };
+    sourceDaysByWeekday.set(weekday, sourceDay);
+  }
+
+  const usedWeekdays = new Set<number>();
+  const restoredDates: AdminEventSchedule["days"] = [];
+  for (const day of withoutOccurrenceValues.days) {
+    const weekday = getWeekday(day.date);
+    const sourceDay = weekday === null ? undefined : sourceDaysByWeekday.get(weekday);
+    if (weekday === null || !sourceDay || usedWeekdays.has(weekday)) {
+      return {
+        ok: false,
+        error: "Нельзя безопасно сопоставить дни изменённой программы Шабата с шаблоном. Проверьте даты и повторите сохранение.",
+      };
+    }
+    usedWeekdays.add(weekday);
+    restoredDates.push({ ...day, date: sourceDay.date });
+  }
+  return { ok: true, schedule: { version: 1, days: restoredDates } };
 }
+
+export type ProgrammeScheduleSavePreparation =
+  | { ok: true; schedule: AdminEventSchedule | null }
+  | { ok: false; error: string };
 
 function automateProgramme(
   event: AdminEvent,
