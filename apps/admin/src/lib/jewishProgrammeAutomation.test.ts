@@ -115,6 +115,45 @@ describe("applyJewishProgrammeAutomation", () => {
     ]));
   });
 
+  it("projects an old July template onto the selected October occurrence without changing manual rows", () => {
+    const base = scheduleFixture();
+    const julyTemplate: AdminEventSchedule = {
+      ...base,
+      days: [
+        { ...base.days[0], date: "2026-07-03" },
+        { ...base.days[1], date: "2026-07-04" },
+      ],
+    };
+    const october = applyJewishProgrammeAutomation({
+      eventKind: "shabbat",
+      referenceDate: "2026-10-16",
+      schedule: julyTemplate,
+    });
+    const followingWeek = applyJewishProgrammeAutomation({
+      eventKind: "shabbat",
+      referenceDate: "2026-10-23",
+      schedule: october,
+    });
+    const octoberCalendar = getMoscowJewishProgrammeCalendar({ eventKind: "shabbat", referenceDate: "2026-10-16" });
+    const followingCalendar = getMoscowJewishProgrammeCalendar({ eventKind: "shabbat", referenceDate: "2026-10-23" });
+
+    expect(october?.days.map((day) => day.date)).toEqual(["2026-10-16", "2026-10-17"]);
+    expect(generatedItems(october).map(({ date, systemKey, time }) => ({ date, systemKey, time })))
+      .toEqual(octoberCalendar.markers);
+    expect(october?.days[0].items).toContainEqual({ time: "19:00", title: "Минха", optionId: MANUAL_OPTION_ID });
+    expect(october?.days[1].items).toContainEqual({ time: "13:00", title: "Кидуш", optionId: null });
+    expect(october?.days[1].items).toContainEqual(expect.objectContaining({
+      systemKey: "torah_reading_parsha", optionId: MANUAL_OPTION_ID,
+    }));
+    expect(followingWeek?.days.map((day) => day.date)).toEqual(["2026-10-23", "2026-10-24"]);
+    expect(generatedItems(followingWeek).map(({ date, systemKey, time }) => ({ date, systemKey, time })))
+      .toEqual(followingCalendar.markers);
+    expect(generatedItems(followingWeek)).not.toEqual(generatedItems(october));
+    expect(applyJewishProgrammeAutomation({
+      eventKind: "shabbat", referenceDate: "2026-10-23", schedule: followingWeek,
+    })).toEqual(followingWeek);
+  });
+
   it("reuses a prior Friday/Saturday pair and places generated rows by their times", () => {
     const moved = applyJewishProgrammeAutomation({
       eventKind: "shabbat",

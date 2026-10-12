@@ -551,6 +551,7 @@ export function EditEventPage({ event, onBackToList, onSaved, onLeaveGuardChange
             onParticipationOptionsPersisted={() => setParticipationOptionsRevision((current) => current + 1)} />,
           programme: <GlassCard className="event-programme-card" elevated>
             <EventProgrammeEditor
+              active={activeTab === "programme"}
               event={currentEvent}
               onDirtyChange={setProgrammeDirty}
               onSave={saveProgramme}
